@@ -40,7 +40,7 @@ Exact SQL is migration-owned, but the initial schema has these records and keys:
 | settings | singleton | Concurrency, retention, execution PATH, maintenance defaults |
 | jobs | UUIDv7 | Stable metadata, exact live name, enabled and soft-delete facts, current revision |
 | job revisions | job UUID + revision number | Immutable normalized definition JSON and creation facts |
-| schedule cursors | job UUID + revision number | Reconciliation boundary, interval anchor, one-time resolution |
+| schedule cursors | job UUID + revision number | Reconciliation boundary, interval anchor, one-time resolution, optional disabled-since boundary |
 | runs | UUIDv7 | Trigger, nominal/request/eligibility times, queue sequence, snapshot, lifecycle and reason |
 | attempts | run UUID + attempt number | Lifetime owner, timing, process/HTTP result, resolved executable and state |
 | retry intents | run UUID | Prior attempt, durable not-before time and retry classification |
@@ -59,6 +59,9 @@ Complex job definitions and immutable run snapshots are canonical versioned JSON
 - A non-manual scheduled occurrence is unique by job identity, revision, and nominal scheduled instant.
 - Queue sequence is globally unique and increasing.
 - At most one pending normal replacement candidate exists per job.
+- A termination-unconfirmed predecessor remains in the active run set across scheduler lifetimes;
+  its attempt is `interrupted_unknown`, its replacement candidate is terminally failed in the same
+  transaction, and startup never acts on its recorded process identity.
 - At most one retry intent exists per run and it references the immediately preceding known attempt.
 - Legal run, attempt, output, trigger, and reason vocabulary is constrained.
 - Foreign keys are immediate unless one documented atomic transition requires deferral.
@@ -70,6 +73,12 @@ Complex job definitions and immutable run snapshots are canonical versioned JSON
 Dedicated store operations atomically perform job revision changes, manual snapshot/enqueue, reconciliation cursor plus run materialization, overlap/replacement decisions, admission plus fairness cursor movement, attempt completion plus retry intent, cancellation intent, stale-lifetime recovery, bounded retention selection, and whole-document settings/job import.
 
 Every operation revalidates the expected revision/state inside the transaction. A conflict returns a typed retry or conflict result; callers do not continue using stale in-memory decisions.
+
+Enable/disable is a cursor-aware transaction. A true-to-false transition records the first
+`disabled_since_us` for the current revision; repeated disable does not move it. False-to-true keeps
+that boundary so elapsed occurrences are classified as missed. Successful reconciliation advances
+the cursor and clears the boundary atomically with runs and range summaries. Metadata edits and
+same-value enable requests cannot fabricate disabled time.
 
 Import plans identify the expected destination job/revision and whether the schedule changed. One
 immediate transaction rechecks all source-ID/live-name mappings before applying any row. Creates may
@@ -90,6 +99,10 @@ The per-run payload allowance is shared across attempts. Physical file bytes det
 One permanent lock file is opened without replacement and held with a non-blocking exclusive OS lock by the daemon. Its descriptor is not inherited by children. Lock text is diagnostic only; the SQLite lifetime is the durable recovery record.
 
 The daemon locks before migrating. A CLI may migrate an older database only after proving the daemon lock is free. Each migration rechecks the version within its transaction and records its checksum. A database newer than the binary is rejected without mutation. Failed migrations roll back and leave actionable diagnostics.
+
+Migration 2 adds the nullable disabled-since cursor fact. Existing version-1 rows backfill to NULL,
+so upgrade does not invent historical disabled time; a later explicit transition establishes the
+fact. Upgrade verification checks both migration checksums and transactional version movement.
 
 ## Backup and direct access
 

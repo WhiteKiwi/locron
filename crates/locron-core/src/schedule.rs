@@ -3,10 +3,61 @@
 use std::collections::BTreeSet;
 use std::str::FromStr;
 
-use jiff::tz::TimeZone;
+use jiff::civil::Date;
+use jiff::tz::{AmbiguousOffset, TimeZone};
 use serde::{Deserialize, Serialize};
 
+use crate::policy::MissedRunPolicy;
 use crate::{DurationMicros, Timestamp, ValidationError};
+
+#[cfg(test)]
+thread_local! {
+    static CRON_COMPILE_COUNT: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Why a contiguous range of elapsed occurrences was not materialized.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OmittedRangeKind {
+    /// The occurrence was already outside its start deadline.
+    StartDeadline,
+    /// The selected missed-run policy discarded the occurrence.
+    MissedRunPolicy,
+    /// The newest bounded `all` window displaced older eligible occurrences.
+    CatchUpLimit,
+}
+
+/// One compact, exact explanation for a contiguous omitted occurrence range.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OmittedRange {
+    pub kind: OmittedRangeKind,
+    pub count: u64,
+    pub first: Timestamp,
+    pub last: Timestamp,
+}
+
+/// One selected occurrence and whether it is catch-up work.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SelectedOccurrence {
+    pub nominal: Timestamp,
+    pub catch_up: bool,
+}
+
+/// Pure result of reconciling one durable cursor interval.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ScheduleReconciliation {
+    pub selected: Vec<SelectedOccurrence>,
+    pub omitted: Vec<OmittedRange>,
+}
+
+/// Durable classification of elapsed cursor time for one reconciliation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ElapsedKind {
+    /// The daemon remained responsible for the elapsed range.
+    Normal,
+    /// Startup, disabled time, suspend, or downtime made the range missed.
+    Missed,
+}
 
 /// A normalized schedule with exactly one scheduling mode.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -34,7 +85,53 @@ pub enum ScheduleTimeZone {
     Iana(String),
 }
 
+/// A validated schedule whose calendar match cycle can be reused across passes.
+#[derive(Clone, Debug)]
+pub struct CompiledSchedule {
+    inner: CompiledScheduleKind,
+}
+
+#[derive(Clone, Debug)]
+enum CompiledScheduleKind {
+    Cron {
+        expression: Box<CronExpression>,
+        timezone: ScheduleTimeZone,
+    },
+    Every {
+        interval: DurationMicros,
+        anchor: Timestamp,
+    },
+    At {
+        at: Timestamp,
+    },
+}
+
 impl Schedule {
+    /// Validates and compiles work that is independent of the current wall clock and timezone.
+    pub fn compile(&self) -> Result<CompiledSchedule, ValidationError> {
+        let inner = match self {
+            Self::Cron {
+                expression,
+                timezone,
+            } => {
+                timezone.resolve().map(|_| ())?;
+                CompiledScheduleKind::Cron {
+                    expression: Box::new(CronExpression::parse(expression)?),
+                    timezone: timezone.clone(),
+                }
+            }
+            Self::Every { interval, anchor } => {
+                interval_occurrences(*interval, *anchor, *anchor, 0)?;
+                CompiledScheduleKind::Every {
+                    interval: *interval,
+                    anchor: *anchor,
+                }
+            }
+            Self::At { at } => CompiledScheduleKind::At { at: *at },
+        };
+        Ok(CompiledSchedule { inner })
+    }
+
     /// Validates and returns the next `count` instants strictly after `after`.
     pub fn next(&self, after: Timestamp, count: usize) -> Result<Vec<Timestamp>, ValidationError> {
         if count > 1000 {
@@ -62,24 +159,208 @@ impl Schedule {
 
     /// Checks that the schedule is executable without enumerating occurrences.
     pub fn validate(&self) -> Result<(), ValidationError> {
-        match self {
-            Self::Cron {
+        self.compile().map(|_| ())
+    }
+
+    /// Reconciles `(after, now]` using one already-sampled local timezone.
+    ///
+    /// Calendar selection retains only a bounded newest window and range
+    /// accounting never walks elapsed occurrences or UTC minutes.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn reconcile(
+        &self,
+        after: Timestamp,
+        now: Timestamp,
+        missed_run: MissedRunPolicy,
+        start_deadline: Option<DurationMicros>,
+        catch_up_limit: u16,
+        local_timezone: &TimeZone,
+        elapsed_kind: ElapsedKind,
+    ) -> Result<ScheduleReconciliation, ValidationError> {
+        self.compile()?.reconcile(
+            after,
+            now,
+            missed_run,
+            start_deadline,
+            catch_up_limit,
+            local_timezone,
+            elapsed_kind,
+        )
+    }
+}
+
+impl CompiledSchedule {
+    /// Reconciles `(after, now]` without recompiling the calendar expression.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn reconcile(
+        &self,
+        after: Timestamp,
+        now: Timestamp,
+        missed_run: MissedRunPolicy,
+        start_deadline: Option<DurationMicros>,
+        catch_up_limit: u16,
+        local_timezone: &TimeZone,
+        elapsed_kind: ElapsedKind,
+    ) -> Result<ScheduleReconciliation, ValidationError> {
+        if !(1..=1000).contains(&catch_up_limit) {
+            return Err(ValidationError::new(
+                "catch_up_limit",
+                "out_of_range",
+                "must be from 1 through 1000",
+            ));
+        }
+        if now <= after {
+            return Ok(ScheduleReconciliation::default());
+        }
+        let deadline_after = start_deadline.map_or(after, |deadline| {
+            let cutoff = now
+                .epoch_micros()
+                .saturating_sub(i64::try_from(deadline.get()).unwrap_or(i64::MAX));
+            Timestamp::from_epoch_micros(after.epoch_micros().max(cutoff.saturating_sub(1)))
+        });
+        let expired = if deadline_after > after {
+            self.range_stats(after, deadline_after, local_timezone)?
+        } else {
+            OccurrenceStats::default()
+        };
+        let eligible = self.range_stats(deadline_after, now, local_timezone)?;
+        let keep = usize::from(catch_up_limit);
+        let newest = self.newest_between(
+            deadline_after,
+            now,
+            keep.saturating_add(usize::from(matches!(elapsed_kind, ElapsedKind::Normal))),
+            local_timezone,
+        )?;
+        let mut selected = Vec::with_capacity(newest.len());
+        match elapsed_kind {
+            ElapsedKind::Missed => {
+                let retained = match missed_run {
+                    MissedRunPolicy::All => newest.as_slice(),
+                    MissedRunPolicy::Skip => &[],
+                    MissedRunPolicy::Latest => &newest[newest.len().saturating_sub(1)..],
+                };
+                selected.extend(retained.iter().copied().map(|nominal| SelectedOccurrence {
+                    nominal,
+                    catch_up: true,
+                }));
+            }
+            ElapsedKind::Normal => {
+                if let Some((&normal, missed_prefix)) = newest.split_last() {
+                    let retained = match missed_run {
+                        MissedRunPolicy::All => missed_prefix,
+                        MissedRunPolicy::Skip => &[],
+                        MissedRunPolicy::Latest => {
+                            &missed_prefix[missed_prefix.len().saturating_sub(1)..]
+                        }
+                    };
+                    selected.extend(retained.iter().copied().map(|nominal| SelectedOccurrence {
+                        nominal,
+                        catch_up: true,
+                    }));
+                    selected.push(SelectedOccurrence {
+                        nominal: normal,
+                        catch_up: false,
+                    });
+                }
+            }
+        }
+        let mut omitted = Vec::with_capacity(2);
+        if expired.count > 0 {
+            omitted.push(expired.into_range(OmittedRangeKind::StartDeadline));
+        }
+        let missed_total = eligible.count.saturating_sub(u64::from(
+            matches!(elapsed_kind, ElapsedKind::Normal) && eligible.count > 0,
+        ));
+        let selected_missed = selected.iter().filter(|item| item.catch_up).count() as u64;
+        let omitted_count = missed_total.saturating_sub(selected_missed);
+        if omitted_count > 0 {
+            let first = eligible
+                .first
+                .ok_or_else(|| cron_error("non-empty range has no first occurrence"))?;
+            let last = if let Some(selected_first) = selected.first().map(|item| item.nominal) {
+                self.newest_between(
+                    deadline_after,
+                    Timestamp::from_epoch_micros(selected_first.epoch_micros().saturating_sub(1)),
+                    1,
+                    local_timezone,
+                )?
+                .into_iter()
+                .next()
+                .ok_or_else(|| cron_error("omitted prefix has no last occurrence"))?
+            } else {
+                eligible
+                    .last
+                    .ok_or_else(|| cron_error("non-empty range has no last occurrence"))?
+            };
+            let kind = if matches!(missed_run, MissedRunPolicy::All) {
+                OmittedRangeKind::CatchUpLimit
+            } else {
+                OmittedRangeKind::MissedRunPolicy
+            };
+            omitted.push(OmittedRange {
+                kind,
+                count: omitted_count,
+                first,
+                last,
+            });
+        }
+        Ok(ScheduleReconciliation { selected, omitted })
+    }
+
+    fn range_stats(
+        &self,
+        after: Timestamp,
+        through: Timestamp,
+        local_timezone: &TimeZone,
+    ) -> Result<OccurrenceStats, ValidationError> {
+        if through <= after {
+            return Ok(OccurrenceStats::default());
+        }
+        match &self.inner {
+            CompiledScheduleKind::At { at } => Ok(if *at > after && *at <= through {
+                OccurrenceStats::one(*at)
+            } else {
+                OccurrenceStats::default()
+            }),
+            CompiledScheduleKind::Every { interval, anchor } => {
+                interval_range_stats(*interval, *anchor, after, through)
+            }
+            CompiledScheduleKind::Cron {
                 expression,
                 timezone,
             } => {
-                CronExpression::parse(expression)?;
-                timezone.resolve().map(|_| ())
+                let zone = timezone.resolve_with(local_timezone)?;
+                expression.range_stats(after, through, &zone)
             }
-            Self::Every { interval, .. }
-                if interval.get() < 1_000_000 || !interval.get().is_multiple_of(1_000_000) =>
-            {
-                Err(ValidationError::new(
-                    "every",
-                    "whole_seconds_required",
-                    "interval must be a positive whole number of seconds",
-                ))
+        }
+    }
+
+    fn newest_between(
+        &self,
+        after: Timestamp,
+        through: Timestamp,
+        limit: usize,
+        local_timezone: &TimeZone,
+    ) -> Result<Vec<Timestamp>, ValidationError> {
+        if limit == 0 || through <= after {
+            return Ok(Vec::new());
+        }
+        match &self.inner {
+            CompiledScheduleKind::At { at } => Ok(if *at > after && *at <= through {
+                vec![*at]
+            } else {
+                Vec::new()
+            }),
+            CompiledScheduleKind::Every { interval, anchor } => {
+                interval_newest(*interval, *anchor, after, through, limit)
             }
-            Self::Every { .. } | Self::At { .. } => Ok(()),
+            CompiledScheduleKind::Cron {
+                expression,
+                timezone,
+            } => {
+                let zone = timezone.resolve_with(local_timezone)?;
+                expression.newest_between(after, through, limit, &zone)
+            }
         }
     }
 }
@@ -91,6 +372,41 @@ impl ScheduleTimeZone {
             Self::Iana(name) => TimeZone::get(name).map_err(|error| {
                 ValidationError::new("timezone", "unknown_timezone", error.to_string())
             }),
+        }
+    }
+
+    fn resolve_with(&self, local: &TimeZone) -> Result<TimeZone, ValidationError> {
+        match self {
+            Self::Local => Ok(local.clone()),
+            Self::Iana(name) => TimeZone::get(name).map_err(|error| {
+                ValidationError::new("timezone", "unknown_timezone", error.to_string())
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct OccurrenceStats {
+    count: u64,
+    first: Option<Timestamp>,
+    last: Option<Timestamp>,
+}
+
+impl OccurrenceStats {
+    const fn one(at: Timestamp) -> Self {
+        Self {
+            count: 1,
+            first: Some(at),
+            last: Some(at),
+        }
+    }
+
+    fn into_range(self, kind: OmittedRangeKind) -> OmittedRange {
+        OmittedRange {
+            kind,
+            count: self.count,
+            first: self.first.expect("non-empty range has a first occurrence"),
+            last: self.last.expect("non-empty range has a last occurrence"),
         }
     }
 }
@@ -137,6 +453,77 @@ fn interval_occurrences(
     Ok(result)
 }
 
+fn interval_bounds(
+    interval: DurationMicros,
+    anchor: Timestamp,
+    after: Timestamp,
+    through: Timestamp,
+) -> Result<Option<(i64, i64, i64)>, ValidationError> {
+    let step = i64::try_from(interval.get())
+        .map_err(|_| ValidationError::new("every", "duration_overflow", "interval is too large"))?;
+    if step < 1_000_000 || step % 1_000_000 != 0 {
+        return Err(ValidationError::new(
+            "every",
+            "whole_seconds_required",
+            "interval must be a positive whole number of seconds",
+        ));
+    }
+    let first = after
+        .epoch_micros()
+        .saturating_sub(anchor.epoch_micros())
+        .div_euclid(step)
+        .saturating_add(1)
+        .max(0);
+    let last = through
+        .epoch_micros()
+        .saturating_sub(anchor.epoch_micros())
+        .div_euclid(step);
+    Ok((last >= first).then_some((step, first, last)))
+}
+
+fn interval_at(anchor: Timestamp, step: i64, index: i64) -> Result<Timestamp, ValidationError> {
+    anchor
+        .epoch_micros()
+        .checked_add(index.checked_mul(step).ok_or_else(|| {
+            ValidationError::new("every", "time_overflow", "occurrence time overflows")
+        })?)
+        .map(Timestamp::from_epoch_micros)
+        .ok_or_else(|| ValidationError::new("every", "time_overflow", "occurrence time overflows"))
+}
+
+fn interval_range_stats(
+    interval: DurationMicros,
+    anchor: Timestamp,
+    after: Timestamp,
+    through: Timestamp,
+) -> Result<OccurrenceStats, ValidationError> {
+    let Some((step, first, last)) = interval_bounds(interval, anchor, after, through)? else {
+        return Ok(OccurrenceStats::default());
+    };
+    Ok(OccurrenceStats {
+        count: u64::try_from(last.saturating_sub(first).saturating_add(1)).unwrap_or(u64::MAX),
+        first: Some(interval_at(anchor, step, first)?),
+        last: Some(interval_at(anchor, step, last)?),
+    })
+}
+
+fn interval_newest(
+    interval: DurationMicros,
+    anchor: Timestamp,
+    after: Timestamp,
+    through: Timestamp,
+    limit: usize,
+) -> Result<Vec<Timestamp>, ValidationError> {
+    let Some((step, first, last)) = interval_bounds(interval, anchor, after, through)? else {
+        return Ok(Vec::new());
+    };
+    let retain = i64::try_from(limit).unwrap_or(i64::MAX);
+    let bounded_first = first.max(last.saturating_sub(retain.saturating_sub(1)));
+    (bounded_first..=last)
+        .map(|index| interval_at(anchor, step, index))
+        .collect()
+}
+
 #[derive(Clone, Debug)]
 struct CronExpression {
     minute: Field,
@@ -144,6 +531,14 @@ struct CronExpression {
     day: Field,
     month: Field,
     weekday: Field,
+    matching_days: MatchingDayCycle,
+}
+
+#[derive(Clone, Debug)]
+struct MatchingDayCycle {
+    words: Box<[u64]>,
+    prefix: Box<[u32]>,
+    count: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -156,6 +551,8 @@ struct Field {
 
 impl CronExpression {
     fn parse(source: &str) -> Result<Self, ValidationError> {
+        #[cfg(test)]
+        CRON_COMPILE_COUNT.with(|count| count.set(count.get().saturating_add(1)));
         let expanded = match source.trim().to_ascii_lowercase().as_str() {
             "@yearly" | "@annually" => "0 0 1 1 *",
             "@monthly" => "0 0 1 * *",
@@ -169,7 +566,7 @@ impl CronExpression {
         if parts.len() != 5 {
             return Err(cron_error("cron expression must have exactly five fields"));
         }
-        Ok(Self {
+        let mut expression = Self {
             minute: Field::parse(parts[0], 0, 59, &[])?,
             hour: Field::parse(parts[1], 0, 23, &[])?,
             day: Field::parse(parts[2], 1, 31, &[])?,
@@ -207,7 +604,15 @@ impl CronExpression {
                 ],
             )?
             .normalize_sunday(),
-        })
+            matching_days: MatchingDayCycle::empty(),
+        };
+        expression.matching_days = expression.build_matching_day_offsets();
+        if expression.matching_days.count == 0 {
+            return Err(cron_error(
+                "calendar fields can never match a Gregorian date",
+            ));
+        }
+        Ok(expression)
     }
 
     fn next(
@@ -216,60 +621,402 @@ impl CronExpression {
         after: Timestamp,
         count: usize,
     ) -> Result<Vec<Timestamp>, ValidationError> {
+        let zone = timezone.resolve()?;
+        self.next_in_zone(after, count, &zone)
+    }
+
+    fn next_in_zone(
+        &self,
+        after: Timestamp,
+        count: usize,
+        zone: &TimeZone,
+    ) -> Result<Vec<Timestamp>, ValidationError> {
         if count == 0 {
             return Ok(Vec::new());
         }
-        let zone = timezone.resolve()?;
-        let minute = 60_000_000_i64;
-        let start = after
-            .epoch_micros()
-            .div_euclid(minute)
-            .saturating_add(1)
-            .saturating_mul(minute);
+        let lower = jiff::Timestamp::from_microsecond(after.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?
+            .to_zoned(zone.clone())
+            .date();
+        let mut date = self.matching_date_at_or_after(lower)?;
         let mut result = Vec::with_capacity(count);
-        let mut seen_civil = BTreeSet::new();
-        // Five years is a bounded guard and covers every valid five-field cron expression.
-        let max_steps = 5 * 366 * 24 * 60;
-        for step in 0..max_steps {
-            let micros = start
-                .checked_add(i64::from(step).saturating_mul(minute))
-                .ok_or_else(|| cron_error("occurrence time overflow"))?;
-            let timestamp = jiff::Timestamp::from_microsecond(micros)
-                .map_err(|error| cron_error(&error.to_string()))?;
-            let zoned = timestamp.to_zoned(zone.clone());
-            let weekday = zoned.weekday().to_sunday_zero_offset().cast_unsigned();
-            let civil = (
-                zoned.year(),
-                zoned.month(),
-                zoned.day(),
-                zoned.hour(),
-                zoned.minute(),
-            );
-            let day_matches = self.day.matches(zoned.day().cast_unsigned());
-            let weekday_matches = self.weekday.matches(weekday);
-            let calendar_day_matches = if self.day.wildcard && self.weekday.wildcard {
-                true
-            } else if self.day.wildcard {
-                weekday_matches
-            } else if self.weekday.wildcard {
-                day_matches
-            } else {
-                day_matches || weekday_matches
-            };
-            if self.minute.matches(zoned.minute().cast_unsigned())
-                && self.hour.matches(zoned.hour().cast_unsigned())
-                && self.month.matches(zoned.month().cast_unsigned())
-                && calendar_day_matches
-                && seen_civil.insert(civil)
-            {
-                result.push(Timestamp::from_epoch_micros(micros));
-                if result.len() == count {
-                    return Ok(result);
+        while let Some(candidate_date) = date {
+            for candidate in self.candidates_on_date(candidate_date, zone)? {
+                if candidate > after {
+                    result.push(candidate);
+                    if result.len() == count {
+                        return Ok(result);
+                    }
+                }
+            }
+            date = candidate_date
+                .tomorrow()
+                .ok()
+                .map(|next| self.matching_date_at_or_after(next))
+                .transpose()?
+                .flatten();
+        }
+        Ok(result)
+    }
+
+    fn date_matches(&self, date: Date) -> bool {
+        let day_matches = self.day.matches(date.day().cast_unsigned());
+        let weekday = date.weekday().to_sunday_zero_offset().cast_unsigned();
+        let weekday_matches = self.weekday.matches(weekday);
+        let calendar_day_matches = if self.day.wildcard && self.weekday.wildcard {
+            true
+        } else if self.day.wildcard {
+            weekday_matches
+        } else if self.weekday.wildcard {
+            day_matches
+        } else {
+            day_matches || weekday_matches
+        };
+        self.month.matches(date.month().cast_unsigned()) && calendar_day_matches
+    }
+
+    fn resolve_civil(
+        date: Date,
+        hour: u8,
+        minute: u8,
+        zone: &TimeZone,
+    ) -> Result<Option<Timestamp>, ValidationError> {
+        let civil = date.at(
+            i8::try_from(hour).expect("cron hour fits i8"),
+            i8::try_from(minute).expect("cron minute fits i8"),
+            0,
+            0,
+        );
+        let ambiguous = zone.to_ambiguous_timestamp(civil);
+        if matches!(ambiguous.offset(), AmbiguousOffset::Gap { .. }) {
+            return Ok(None);
+        }
+        let timestamp = ambiguous
+            .earlier()
+            .map_err(|error| cron_error(&error.to_string()))?;
+        Ok(Some(Timestamp::from_epoch_micros(
+            timestamp.as_microsecond(),
+        )))
+    }
+
+    fn candidates_on_date(
+        &self,
+        date: Date,
+        zone: &TimeZone,
+    ) -> Result<Vec<Timestamp>, ValidationError> {
+        if !self.date_matches(date) {
+            return Ok(Vec::new());
+        }
+        let mut candidates =
+            Vec::with_capacity(self.hour.allowed.len() * self.minute.allowed.len());
+        for &hour in &self.hour.allowed {
+            for &minute in &self.minute.allowed {
+                if let Some(timestamp) = Self::resolve_civil(date, hour, minute, zone)? {
+                    candidates.push(timestamp);
                 }
             }
         }
-        Err(cron_error("could not find occurrence within five years"))
+        candidates.sort_unstable();
+        candidates.dedup();
+        Ok(candidates)
     }
+
+    fn newest_between(
+        &self,
+        after: Timestamp,
+        through: Timestamp,
+        limit: usize,
+        zone: &TimeZone,
+    ) -> Result<Vec<Timestamp>, ValidationError> {
+        let lower = jiff::Timestamp::from_microsecond(after.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?
+            .to_zoned(zone.clone())
+            .date();
+        let upper = jiff::Timestamp::from_microsecond(through.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?
+            .to_zoned(zone.clone())
+            .date();
+        let mut date = self.matching_date_at_or_before(upper)?;
+        let mut newest = Vec::with_capacity(limit);
+        while let Some(candidate_date) = date {
+            if candidate_date < lower {
+                break;
+            }
+            let candidates = self.candidates_on_date(candidate_date, zone)?;
+            for candidate in candidates.into_iter().rev() {
+                if candidate > after && candidate <= through {
+                    newest.push(candidate);
+                    if newest.len() == limit {
+                        newest.reverse();
+                        return Ok(newest);
+                    }
+                }
+            }
+            date = candidate_date
+                .yesterday()
+                .ok()
+                .map(|previous| self.matching_date_at_or_before(previous))
+                .transpose()?
+                .flatten();
+        }
+        newest.reverse();
+        Ok(newest)
+    }
+
+    fn range_stats(
+        &self,
+        after: Timestamp,
+        through: Timestamp,
+        zone: &TimeZone,
+    ) -> Result<OccurrenceStats, ValidationError> {
+        let lower_zoned = jiff::Timestamp::from_microsecond(after.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?
+            .to_zoned(zone.clone());
+        let upper_zoned = jiff::Timestamp::from_microsecond(through.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?
+            .to_zoned(zone.clone());
+        let lower_date = lower_zoned.date();
+        let upper_date = upper_zoned.date();
+        let time_count = u64::try_from(self.hour.allowed.len())
+            .unwrap_or(u64::MAX)
+            .saturating_mul(u64::try_from(self.minute.allowed.len()).unwrap_or(u64::MAX));
+        let matching_days = self.matching_days_inclusive(lower_date, upper_date);
+        let mut count = matching_days.saturating_mul(time_count);
+
+        let mut exceptional_dates = BTreeSet::new();
+        exceptional_dates.insert(lower_date);
+        exceptional_dates.insert(upper_date);
+        let lower_timestamp = jiff::Timestamp::from_microsecond(after.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?;
+        let upper_timestamp = jiff::Timestamp::from_microsecond(through.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?;
+        for transition in zone.following(lower_timestamp) {
+            if transition.timestamp() > upper_timestamp {
+                break;
+            }
+            let at = transition.timestamp();
+            let before = at
+                .checked_sub(jiff::Span::new().microseconds(1))
+                .map_err(|error| cron_error(&error.to_string()))?
+                .to_zoned(zone.clone());
+            let after_transition = at.to_zoned(zone.clone());
+            if after_transition.datetime() > before.datetime() {
+                let mut date = before.date();
+                loop {
+                    exceptional_dates.insert(date);
+                    if date >= after_transition.date() {
+                        break;
+                    }
+                    date = date
+                        .tomorrow()
+                        .map_err(|error| cron_error(&error.to_string()))?;
+                }
+            }
+        }
+        for date in exceptional_dates {
+            if date < lower_date || date > upper_date || !self.date_matches(date) {
+                continue;
+            }
+            count = count.saturating_sub(time_count);
+            let actual = self
+                .candidates_on_date(date, zone)?
+                .into_iter()
+                .filter(|candidate| *candidate > after && *candidate <= through)
+                .count();
+            count = count.saturating_add(u64::try_from(actual).unwrap_or(u64::MAX));
+        }
+        if count == 0 {
+            return Ok(OccurrenceStats::default());
+        }
+        let first = self
+            .first_between(after, through, zone)?
+            .ok_or_else(|| cron_error("counted range has no first occurrence"))?;
+        let last = self
+            .newest_between(after, through, 1, zone)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| cron_error("counted range has no last occurrence"))?;
+        Ok(OccurrenceStats {
+            count,
+            first: Some(first),
+            last: Some(last),
+        })
+    }
+
+    fn first_between(
+        &self,
+        after: Timestamp,
+        through: Timestamp,
+        zone: &TimeZone,
+    ) -> Result<Option<Timestamp>, ValidationError> {
+        let lower = jiff::Timestamp::from_microsecond(after.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?
+            .to_zoned(zone.clone())
+            .date();
+        let upper = jiff::Timestamp::from_microsecond(through.epoch_micros())
+            .map_err(|error| cron_error(&error.to_string()))?
+            .to_zoned(zone.clone())
+            .date();
+        let mut date = self.matching_date_at_or_after(lower)?;
+        while let Some(candidate_date) = date {
+            if candidate_date > upper {
+                return Ok(None);
+            }
+            for candidate in self.candidates_on_date(candidate_date, zone)? {
+                if candidate > after && candidate <= through {
+                    return Ok(Some(candidate));
+                }
+            }
+            date = candidate_date
+                .tomorrow()
+                .ok()
+                .map(|next| self.matching_date_at_or_after(next))
+                .transpose()?
+                .flatten();
+        }
+        Ok(None)
+    }
+
+    fn matching_days_inclusive(&self, first: Date, last: Date) -> u64 {
+        if last < first {
+            return 0;
+        }
+        let before_first = matching_positions_before(date_day(first), &self.matching_days);
+        let after_last =
+            matching_positions_before(date_day(last).saturating_add(1), &self.matching_days);
+        u64::try_from(after_last.saturating_sub(before_first)).unwrap_or(u64::MAX)
+    }
+
+    fn build_matching_day_offsets(&self) -> MatchingDayCycle {
+        let mut words = vec![0_u64; GREGORIAN_CYCLE_WORDS];
+        let mut date = Date::ZERO;
+        let end = Date::new(400, 1, 1).expect("400-year cycle end is valid");
+        let mut offset = 0_usize;
+        while date < end {
+            if self.date_matches(date) {
+                words[offset / 64] |= 1_u64 << (offset % 64);
+            }
+            date = date.tomorrow().expect("400-year cycle remains in range");
+            offset += 1;
+        }
+        MatchingDayCycle::from_words(words)
+    }
+
+    fn matching_date_at_or_before(&self, date: Date) -> Result<Option<Date>, ValidationError> {
+        matching_date(date_day(date), &self.matching_days, false)
+    }
+
+    fn matching_date_at_or_after(&self, date: Date) -> Result<Option<Date>, ValidationError> {
+        matching_date(date_day(date), &self.matching_days, true)
+    }
+}
+
+const GREGORIAN_CYCLE_DAYS: i64 = 146_097;
+const GREGORIAN_CYCLE_WORDS: usize = 2_283;
+
+fn date_day(date: Date) -> i64 {
+    date.duration_since(Date::ZERO).as_secs() / 86_400
+}
+
+fn date_from_day(day: i64) -> Option<Date> {
+    Date::ZERO.checked_add(jiff::Span::new().days(day)).ok()
+}
+
+impl MatchingDayCycle {
+    fn empty() -> Self {
+        Self::from_words(vec![0; GREGORIAN_CYCLE_WORDS])
+    }
+
+    fn from_words(words: Vec<u64>) -> Self {
+        let mut prefix = Vec::with_capacity(words.len() + 1);
+        prefix.push(0_u32);
+        for word in &words {
+            prefix.push(
+                prefix
+                    .last()
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(word.count_ones()),
+            );
+        }
+        let count = prefix.last().copied().unwrap_or(0);
+        Self {
+            words: words.into_boxed_slice(),
+            prefix: prefix.into_boxed_slice(),
+            count,
+        }
+    }
+
+    fn rank_before(&self, offset: i64) -> u32 {
+        if offset <= 0 {
+            return 0;
+        }
+        if offset >= GREGORIAN_CYCLE_DAYS {
+            return self.count;
+        }
+        let offset = usize::try_from(offset).expect("cycle offset is non-negative");
+        let word = offset / 64;
+        let bit = offset % 64;
+        let mask = if bit == 0 { 0 } else { (1_u64 << bit) - 1 };
+        self.prefix[word].saturating_add((self.words[word] & mask).count_ones())
+    }
+
+    fn select(&self, rank: u32) -> Option<i64> {
+        if rank >= self.count {
+            return None;
+        }
+        let word_index = self.prefix.partition_point(|prefix| *prefix <= rank) - 1;
+        let mut word = self.words[word_index];
+        let mut remaining = rank - self.prefix[word_index];
+        while remaining > 0 {
+            word &= word - 1;
+            remaining -= 1;
+        }
+        let bit = word.trailing_zeros();
+        Some(i64::try_from(word_index).ok()?.saturating_mul(64) + i64::from(bit))
+    }
+}
+
+fn matching_positions_before(day: i64, cycle_days: &MatchingDayCycle) -> i128 {
+    let cycle = day.div_euclid(GREGORIAN_CYCLE_DAYS);
+    let within = day.rem_euclid(GREGORIAN_CYCLE_DAYS);
+    i128::from(cycle) * i128::from(cycle_days.count) + i128::from(cycle_days.rank_before(within))
+}
+
+fn matching_date(
+    day: i64,
+    cycle_days: &MatchingDayCycle,
+    forward: bool,
+) -> Result<Option<Date>, ValidationError> {
+    if cycle_days.count == 0 {
+        return Ok(None);
+    }
+    let mut cycle = day.div_euclid(GREGORIAN_CYCLE_DAYS);
+    let within = day.rem_euclid(GREGORIAN_CYCLE_DAYS);
+    let offset = if forward {
+        let rank = cycle_days.rank_before(within);
+        if let Some(offset) = cycle_days.select(rank) {
+            offset
+        } else {
+            cycle = cycle.saturating_add(1);
+            cycle_days.select(0).expect("cycle has matches")
+        }
+    } else {
+        let rank = cycle_days.rank_before(within.saturating_add(1));
+        if rank > 0 {
+            cycle_days.select(rank - 1).expect("rank is in cycle")
+        } else {
+            cycle = cycle.saturating_sub(1);
+            cycle_days
+                .select(cycle_days.count - 1)
+                .expect("cycle has matches")
+        }
+    };
+    let target = cycle
+        .checked_mul(GREGORIAN_CYCLE_DAYS)
+        .and_then(|base| base.checked_add(offset))
+        .ok_or_else(|| cron_error("calendar date overflows"))?;
+    Ok(date_from_day(target))
 }
 
 impl Field {
@@ -352,6 +1099,39 @@ fn cron_error(message: &str) -> ValidationError {
 mod tests {
     use super::*;
 
+    fn brute_force_calendar(
+        cron: &CronExpression,
+        after: Timestamp,
+        through: Timestamp,
+        zone: &TimeZone,
+    ) -> Vec<Timestamp> {
+        const MINUTE_US: i64 = 60_000_000;
+        let mut current = after
+            .epoch_micros()
+            .div_euclid(MINUTE_US)
+            .saturating_add(1)
+            .saturating_mul(MINUTE_US);
+        let mut result = Vec::new();
+        while current <= through.epoch_micros() {
+            let instant = jiff::Timestamp::from_microsecond(current).unwrap();
+            let zoned = instant.to_zoned(zone.clone());
+            let datetime = zoned.datetime();
+            let date = datetime.date();
+            let hour = datetime.hour().cast_unsigned();
+            let minute = datetime.minute().cast_unsigned();
+            if cron.date_matches(date)
+                && cron.hour.matches(hour)
+                && cron.minute.matches(minute)
+                && CronExpression::resolve_civil(date, hour, minute, zone).unwrap()
+                    == Some(Timestamp::from_epoch_micros(current))
+            {
+                result.push(Timestamp::from_epoch_micros(current));
+            }
+            current = current.saturating_add(MINUTE_US);
+        }
+        result
+    }
+
     fn utc_cron(expression: &str) -> Schedule {
         Schedule::Cron {
             expression: expression.into(),
@@ -418,5 +1198,396 @@ mod tests {
     fn rejects_six_fields_and_reboot() {
         assert!(CronExpression::parse("0 0 0 * * *").is_err());
         assert!(CronExpression::parse("@reboot").is_err());
+        assert!(CronExpression::parse("0 0 31 2 *").is_err());
+    }
+
+    #[test]
+    fn reconciliation_range_is_cursor_exclusive_and_now_inclusive() {
+        let schedule = Schedule::Every {
+            interval: "1s".parse().unwrap(),
+            anchor: Timestamp::UNIX_EPOCH,
+        };
+        let result = schedule
+            .reconcile(
+                Timestamp::from_epoch_micros(1_000_000),
+                Timestamp::from_epoch_micros(2_000_000),
+                MissedRunPolicy::All,
+                None,
+                10,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(result.selected.len(), 1);
+        assert_eq!(result.selected[0].nominal.epoch_micros(), 2_000_000);
+    }
+
+    #[test]
+    fn gregorian_jumps_terminate_at_supported_date_bounds() {
+        let cron = CronExpression::parse("0 0 29 2 *").unwrap();
+        assert!(cron.matching_date_at_or_after(Date::MIN).unwrap().is_some());
+        assert!(
+            cron.matching_date_at_or_before(Date::MAX)
+                .unwrap()
+                .is_some()
+        );
+        let never = CronExpression::parse("0 0 31 2 *");
+        assert!(never.is_err());
+    }
+
+    #[test]
+    fn steady_range_splits_older_boundaries_as_missed_without_silent_loss() {
+        let schedule = Schedule::Every {
+            interval: "1s".parse().unwrap(),
+            anchor: Timestamp::UNIX_EPOCH,
+        };
+        let result = schedule
+            .reconcile(
+                Timestamp::UNIX_EPOCH,
+                Timestamp::from_epoch_micros(3_000_000),
+                MissedRunPolicy::Skip,
+                None,
+                2,
+                &TimeZone::UTC,
+                ElapsedKind::Normal,
+            )
+            .unwrap();
+        assert_eq!(result.selected.len(), 1);
+        assert!(!result.selected[0].catch_up);
+        assert_eq!(result.selected[0].nominal.epoch_micros(), 3_000_000);
+        assert_eq!(result.omitted.len(), 1);
+        assert_eq!(result.omitted[0].count, 2);
+        assert_eq!(result.omitted[0].kind, OmittedRangeKind::MissedRunPolicy);
+    }
+
+    #[test]
+    fn interval_all_keeps_exact_newest_window_oldest_first() {
+        let schedule = Schedule::Every {
+            interval: "1s".parse().unwrap(),
+            anchor: "2026-01-01T00:00:00Z".parse().unwrap(),
+        };
+        let result = schedule
+            .reconcile(
+                "2026-01-01T00:00:00Z".parse().unwrap(),
+                "2026-01-12T13:46:40Z".parse().unwrap(),
+                MissedRunPolicy::All,
+                None,
+                1000,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(result.selected.len(), 1000);
+        assert!(
+            result
+                .selected
+                .windows(2)
+                .all(|pair| pair[0].nominal < pair[1].nominal)
+        );
+        assert_eq!(
+            result.selected[0].nominal.to_string(),
+            "2026-01-12T13:30:01Z"
+        );
+        assert_eq!(result.omitted[0].kind, OmittedRangeKind::CatchUpLimit);
+        assert_eq!(result.omitted[0].count, 999_000);
+        assert_eq!(result.omitted[0].first.to_string(), "2026-01-01T00:00:01Z");
+        assert_eq!(result.omitted[0].last.to_string(), "2026-01-12T13:30:00Z");
+    }
+
+    #[test]
+    fn deadline_cutoff_is_inclusive_at_one_microsecond() {
+        let schedule = Schedule::At {
+            at: Timestamp::from_epoch_micros(9),
+        };
+        let eligible = schedule
+            .reconcile(
+                Timestamp::from_epoch_micros(0),
+                Timestamp::from_epoch_micros(10),
+                MissedRunPolicy::Latest,
+                Some(DurationMicros::new(1)),
+                1,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(eligible.selected.len(), 1);
+
+        let expired = Schedule::At {
+            at: Timestamp::from_epoch_micros(8),
+        }
+        .reconcile(
+            Timestamp::from_epoch_micros(0),
+            Timestamp::from_epoch_micros(10),
+            MissedRunPolicy::Latest,
+            Some(DurationMicros::new(1)),
+            1,
+            &TimeZone::UTC,
+            ElapsedKind::Missed,
+        )
+        .unwrap();
+        assert!(expired.selected.is_empty());
+        assert_eq!(expired.omitted[0].kind, OmittedRangeKind::StartDeadline);
+        assert_eq!(expired.omitted[0].count, 1);
+    }
+
+    #[test]
+    fn missed_classification_is_explicit_not_wall_lateness() {
+        let schedule = Schedule::At {
+            at: "2026-01-01T00:00:00Z".parse().unwrap(),
+        };
+        let after = "2025-01-01T00:00:00Z".parse().unwrap();
+        let now = "2026-12-31T00:00:00Z".parse().unwrap();
+        let normal = schedule
+            .reconcile(
+                after,
+                now,
+                MissedRunPolicy::Skip,
+                None,
+                1,
+                &TimeZone::UTC,
+                ElapsedKind::Normal,
+            )
+            .unwrap();
+        let recovery = schedule
+            .reconcile(
+                after,
+                now,
+                MissedRunPolicy::Skip,
+                None,
+                1,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(normal.selected.len(), 1);
+        assert!(recovery.selected.is_empty());
+        assert_eq!(recovery.omitted[0].count, 1);
+    }
+
+    #[test]
+    fn long_sparse_calendar_range_has_exact_bounded_summary() {
+        let schedule = utc_cron("0 0 29 2 *");
+        let result = schedule
+            .reconcile(
+                "1900-01-01T00:00:00Z".parse().unwrap(),
+                "2026-12-31T23:59:59Z".parse().unwrap(),
+                MissedRunPolicy::All,
+                None,
+                10,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(result.selected.len(), 10);
+        assert_eq!(
+            result.selected[0].nominal.to_string(),
+            "1988-02-29T00:00:00Z"
+        );
+        assert_eq!(
+            result.selected[9].nominal.to_string(),
+            "2024-02-29T00:00:00Z"
+        );
+        assert_eq!(result.omitted[0].count, 21);
+        assert_eq!(result.omitted[0].first.to_string(), "1904-02-29T00:00:00Z");
+        assert_eq!(result.omitted[0].last.to_string(), "1984-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn compiled_calendar_is_reused_across_reconciliation_work() {
+        CRON_COMPILE_COUNT.with(|count| count.set(0));
+        let compiled = utc_cron("* * * * *").compile().unwrap();
+        for through in ["2026-01-02T00:00:00Z", "2126-01-02T00:00:00Z"] {
+            let result = compiled
+                .reconcile(
+                    "1900-01-01T00:00:00Z".parse().unwrap(),
+                    through.parse().unwrap(),
+                    MissedRunPolicy::Latest,
+                    None,
+                    1,
+                    &TimeZone::UTC,
+                    ElapsedKind::Missed,
+                )
+                .unwrap();
+            assert_eq!(result.selected.len(), 1);
+        }
+        CRON_COMPILE_COUNT.with(|count| assert_eq!(count.get(), 1));
+        let calendar = match &compiled.inner {
+            CompiledScheduleKind::Cron { expression, .. } => &expression.matching_days,
+            _ => unreachable!(),
+        };
+        assert!(calendar.words.len() < 2_500);
+        assert!(calendar.prefix.len() < 2_500);
+    }
+
+    #[test]
+    fn calendar_rank_and_newest_window_match_minute_oracle() {
+        let after: Timestamp = "2025-01-01T00:00:00Z".parse().unwrap();
+        let through: Timestamp = "2026-01-01T00:00:00Z".parse().unwrap();
+        for (source, zone_name) in [
+            ("*/17 1-5 * * mon-fri", "UTC"),
+            ("5,35 0,12 31 * mon", "Asia/Seoul"),
+            ("0 1-3 * 3,11 *", "America/New_York"),
+        ] {
+            let cron = CronExpression::parse(source).unwrap();
+            let zone = TimeZone::get(zone_name).unwrap();
+            let oracle = brute_force_calendar(&cron, after, through, &zone);
+            let stats = cron.range_stats(after, through, &zone).unwrap();
+            assert_eq!(stats.count, oracle.len() as u64, "{source} in {zone_name}");
+            assert_eq!(
+                stats.first,
+                oracle.first().copied(),
+                "{source} in {zone_name}"
+            );
+            assert_eq!(
+                stats.last,
+                oracle.last().copied(),
+                "{source} in {zone_name}"
+            );
+            let expected = oracle
+                .iter()
+                .rev()
+                .take(37)
+                .rev()
+                .copied()
+                .collect::<Vec<_>>();
+            assert_eq!(
+                cron.newest_between(after, through, 37, &zone).unwrap(),
+                expected,
+                "{source} in {zone_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn calendar_count_preserves_dom_dow_or_and_dst_rules() {
+        let or_schedule = utc_cron("0 9 31 * mon");
+        let result = or_schedule
+            .reconcile(
+                "2026-08-01T00:00:00Z".parse().unwrap(),
+                "2026-09-01T00:00:00Z".parse().unwrap(),
+                MissedRunPolicy::All,
+                None,
+                100,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(result.selected.len(), 5);
+
+        let gap = Schedule::Cron {
+            expression: "30 2 * * *".into(),
+            timezone: ScheduleTimeZone::Iana("America/New_York".into()),
+        };
+        let gap_result = gap
+            .reconcile(
+                "2026-03-07T00:00:00Z".parse().unwrap(),
+                "2026-03-11T00:00:00Z".parse().unwrap(),
+                MissedRunPolicy::All,
+                None,
+                100,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(gap_result.selected.len(), 3);
+        assert!(
+            gap_result
+                .selected
+                .iter()
+                .all(|item| !item.nominal.to_string().starts_with("2026-03-08"))
+        );
+
+        let fold = Schedule::Cron {
+            expression: "30 1 * * *".into(),
+            timezone: ScheduleTimeZone::Iana("America/New_York".into()),
+        };
+        let fold_result = fold
+            .reconcile(
+                "2026-10-31T00:00:00Z".parse().unwrap(),
+                "2026-11-03T00:00:00Z".parse().unwrap(),
+                MissedRunPolicy::All,
+                None,
+                100,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(fold_result.selected.len(), 3);
+        assert_eq!(
+            fold_result.selected[1].nominal.to_string(),
+            "2026-11-01T05:30:00Z"
+        );
+    }
+
+    #[test]
+    fn symbolic_local_follows_resolver_but_fixed_zone_does_not() {
+        let local = Schedule::Cron {
+            expression: "0 9 * * *".into(),
+            timezone: ScheduleTimeZone::Local,
+        };
+        let after = "2026-08-20T00:00:00Z".parse().unwrap();
+        let now = "2026-08-22T00:00:00Z".parse().unwrap();
+        let utc = local
+            .reconcile(
+                after,
+                now,
+                MissedRunPolicy::Latest,
+                None,
+                1,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        let seoul_zone = TimeZone::get("Asia/Seoul").unwrap();
+        let seoul = local
+            .reconcile(
+                after,
+                now,
+                MissedRunPolicy::Latest,
+                None,
+                1,
+                &seoul_zone,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(utc.selected[0].nominal.to_string(), "2026-08-21T09:00:00Z");
+        assert_eq!(
+            seoul.selected[0].nominal.to_string(),
+            "2026-08-22T00:00:00Z"
+        );
+
+        let fixed = utc_cron("0 9 * * *");
+        let fixed_with_seoul_resolver = fixed
+            .reconcile(
+                after,
+                now,
+                MissedRunPolicy::Latest,
+                None,
+                1,
+                &seoul_zone,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+        assert_eq!(fixed_with_seoul_resolver, utc);
+    }
+
+    #[test]
+    fn backward_wall_move_is_empty() {
+        let schedule = utc_cron("* * * * *");
+        assert!(
+            schedule
+                .reconcile(
+                    "2026-08-22T00:00:00Z".parse().unwrap(),
+                    "2026-08-21T00:00:00Z".parse().unwrap(),
+                    MissedRunPolicy::All,
+                    None,
+                    100,
+                    &TimeZone::UTC,
+                    ElapsedKind::Missed,
+                )
+                .unwrap()
+                .selected
+                .is_empty()
+        );
     }
 }

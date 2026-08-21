@@ -5,19 +5,24 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use locron_core::command::JobDefinition;
 use locron_core::policy::{BackoffMode, MissedRunPolicy, OverlapPolicy};
+use locron_core::ports::{Clock, TimeZoneResolver};
 use locron_core::schedule::{Schedule, ScheduleTimeZone};
 use locron_core::target::{
     Environment, HttpHeaderSource, HttpMethod, HttpTarget, Target, is_valid_environment_name,
     is_valid_http_header_name,
 };
-use locron_core::{JobId, SchedulerLifetimeId, Timestamp};
+use locron_core::{
+    CoreError, ElapsedKind, JobId, OmittedRangeKind, SchedulerLifetimeId, Timestamp,
+};
+use locron_engine::admission::{RetryClass, decide_retry};
 use locron_engine::daemon::{AdmittedAttempt, DaemonStore};
 use locron_engine::runner::{OutcomeKind, RunnerConfig};
 use locron_engine::{
@@ -25,8 +30,9 @@ use locron_engine::{
 };
 use locron_store::{
     AdmitAttempt, AttemptCompletion, CreateJob, CursorUpdate, ImportBatch, ImportJob,
-    ImportResolution, JobRecord, LockMetadata, NewScheduledRun, OutputRecord, RetryPlan, RunRecord,
-    SettingsRecord, StatePaths, Store, StoreError, UpdateJob,
+    ImportResolution, JobRecord, LockMetadata, NewScheduledRun, OutputRecord,
+    ReconciliationSummary, RetryPlan, RunRecord, SettingsRecord, StatePaths, Store, StoreError,
+    UpdateJob,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -1818,6 +1824,11 @@ async fn daemon(paths: StatePaths) -> Result<()> {
         store,
         lifetime,
         paths: paths.clone(),
+        clock: Arc::new(SystemClock::new()),
+        timezone: Arc::new(SystemTimeZoneResolver),
+        first_reconcile: AtomicBool::new(true),
+        last_clock_sample: Mutex::new(None),
+        compiled_schedules: Mutex::new(BTreeMap::new()),
         wake: Mutex::new(None),
         wake_task: Mutex::new(None),
         lock: Mutex::new(None),
@@ -1888,12 +1899,21 @@ struct StoreAdapter {
     store: Arc<Store>,
     lifetime: String,
     paths: StatePaths,
+    clock: Arc<dyn Clock>,
+    timezone: Arc<dyn TimeZoneResolver>,
+    first_reconcile: AtomicBool,
+    last_clock_sample: Mutex<Option<(i64, u64)>>,
+    compiled_schedules: Mutex<BTreeMap<(String, i64), locron_core::CompiledSchedule>>,
     wake: Mutex<Option<Arc<tokio::sync::Notify>>>,
     wake_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     lock: Mutex<Option<locron_store::DaemonLock>>,
 }
 
 impl StoreAdapter {
+    fn now_us(&self) -> i64 {
+        self.clock.now().epoch_micros()
+    }
+
     async fn fail_admitted_attempt(
         &self,
         attempt: &AdmitAttempt,
@@ -1943,7 +1963,7 @@ impl StoreAdapter {
                 &attempt.run_id,
                 attempt.attempt_number,
                 output.as_ref(),
-                now_us(),
+                self.now_us(),
                 &reason,
             )
             .map_err(|error| error.to_string())
@@ -1956,7 +1976,7 @@ impl DaemonStore for StoreAdapter {
         let metadata = LockMetadata {
             pid: std::process::id(),
             lifetime_id: self.lifetime.clone(),
-            started_at_us: now_us(),
+            started_at_us: self.now_us(),
             binary_version: env!("CARGO_PKG_VERSION").into(),
         };
         let lock = self
@@ -1976,59 +1996,118 @@ impl DaemonStore for StoreAdapter {
             .lock()
             .map_err(|_| "wake task mutex poisoned")? = Some(task);
         self.store
-            .begin_lifetime(&self.lifetime, now_us(), env!("CARGO_PKG_VERSION"))
+            .begin_lifetime(&self.lifetime, self.now_us(), env!("CARGO_PKG_VERSION"))
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
     async fn reconcile(&self) -> Result<usize, String> {
-        let now = now_us();
+        let now = self.now_us();
+        let monotonic = self.clock.monotonic_micros();
+        let clock_discontinuity = self
+            .last_clock_sample
+            .lock()
+            .map_err(|_| "clock sample mutex poisoned")?
+            .is_some_and(|(previous_wall, previous_monotonic)| {
+                let wall_delta = i128::from(now) - i128::from(previous_wall);
+                let monotonic_delta = i128::from(monotonic.saturating_sub(previous_monotonic));
+                (wall_delta - monotonic_delta).unsigned_abs() > 1_000_000
+            });
+        let local_timezone = self
+            .timezone
+            .local_timezone()
+            .map_err(|error| error.to_string())?;
+        let startup = self.first_reconcile.load(Ordering::Acquire);
         let mut total = 0;
-        for job in self.store.list_jobs(false).map_err(|e| e.to_string())? {
+        let jobs = self.store.list_jobs(false).map_err(|e| e.to_string())?;
+        let current_revisions = jobs
+            .iter()
+            .map(|job| (job.id.clone(), job.current_revision))
+            .collect::<BTreeSet<_>>();
+        self.compiled_schedules
+            .lock()
+            .map_err(|_| "compiled schedule cache mutex poisoned")?
+            .retain(|key, _| current_revisions.contains(key));
+        for job in jobs {
             let definition: JobDefinition =
                 serde_json::from_str(&job.definition_json).map_err(|e| e.to_string())?;
-            let mut occurrences = due_occurrences(
-                &definition.schedule,
-                job.cursor_us,
-                now,
-                usize::from(definition.policy.catch_up_limit),
-            )?;
-            if let Some(deadline) = definition.policy.start_deadline {
-                let cutoff = now.saturating_sub(i64::try_from(deadline.get()).unwrap_or(i64::MAX));
-                occurrences.retain(|at| at.epoch_micros() >= cutoff);
+            if now <= job.cursor_us {
+                continue;
             }
-            let latest_is_normal = occurrences
-                .last()
-                .is_some_and(|at| now.saturating_sub(at.epoch_micros()) <= 31_000_000);
-            let selected: Vec<_> = match definition.policy.missed_run {
-                MissedRunPolicy::Skip if latest_is_normal => {
-                    occurrences.last().copied().into_iter().collect()
-                }
-                MissedRunPolicy::Skip => Vec::new(),
-                MissedRunPolicy::Latest => occurrences.last().copied().into_iter().collect(),
-                MissedRunPolicy::All => occurrences,
+            let elapsed_kind = if startup || clock_discontinuity || job.disabled_since_us.is_some()
+            {
+                ElapsedKind::Missed
+            } else {
+                ElapsedKind::Normal
             };
-            let runs = selected
+            let reconciliation = {
+                let cache_key = (job.id.clone(), job.current_revision);
+                let mut cache = self
+                    .compiled_schedules
+                    .lock()
+                    .map_err(|_| "compiled schedule cache mutex poisoned")?;
+                cache.retain(|(job_id, revision), _| {
+                    job_id != &job.id || *revision == job.current_revision
+                });
+                let compiled = match cache.entry(cache_key) {
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::btree_map::Entry::Vacant(entry) => entry.insert(
+                        definition
+                            .schedule
+                            .compile()
+                            .map_err(|error| error.to_string())?,
+                    ),
+                };
+                compiled
+                    .reconcile(
+                        Timestamp::from_epoch_micros(job.cursor_us),
+                        Timestamp::from_epoch_micros(now),
+                        definition.policy.missed_run,
+                        definition.policy.start_deadline,
+                        definition.policy.catch_up_limit,
+                        &local_timezone,
+                        elapsed_kind,
+                    )
+                    .map_err(|error| error.to_string())?
+            };
+            let runs = reconciliation
+                .selected
                 .into_iter()
-                .map(|at| NewScheduledRun {
+                .map(|occurrence| NewScheduledRun {
                     id: Uuid::now_v7().to_string(),
                     job_id: job.id.clone(),
                     revision: job.current_revision,
-                    trigger: if now.saturating_sub(at.epoch_micros()) > 31_000_000 {
+                    trigger: if occurrence.catch_up {
                         "catch_up".into()
                     } else {
                         "scheduled".into()
                     },
-                    nominal_us: at.epoch_micros(),
+                    nominal_us: occurrence.nominal.epoch_micros(),
                     requested_at_us: now,
                     eligible_at_us: now,
                     snapshot_json: job.definition_json.clone(),
                 })
                 .collect::<Vec<_>>();
+            let summaries = reconciliation
+                .omitted
+                .into_iter()
+                .map(|summary| ReconciliationSummary {
+                    kind: match summary.kind {
+                        OmittedRangeKind::StartDeadline => "missed_start_deadline",
+                        OmittedRangeKind::MissedRunPolicy => "missed_policy_skipped",
+                        OmittedRangeKind::CatchUpLimit => "catch_up_omitted",
+                    }
+                    .into(),
+                    count: summary.count,
+                    first_nominal_us: summary.first.epoch_micros(),
+                    last_nominal_us: summary.last.epoch_micros(),
+                })
+                .collect::<Vec<_>>();
             total += self
                 .store
-                .materialize(
+                .materialize_with_summaries(
                     &job.id,
                     CursorUpdate {
+                        expected_revision: job.current_revision,
                         expected_cursor_us: job.cursor_us,
                         new_cursor_us: now,
                         resolve_one_time: matches!(
@@ -2037,11 +2116,17 @@ impl DaemonStore for StoreAdapter {
                         ),
                     },
                     &runs,
+                    &summaries,
                     now,
                 )
                 .map_err(|e| e.to_string())?
                 .inserted;
         }
+        *self
+            .last_clock_sample
+            .lock()
+            .map_err(|_| "clock sample mutex poisoned")? = Some((now, monotonic));
+        self.first_reconcile.store(false, Ordering::Release);
         Ok(total)
     }
     async fn admit(&self, capacity: usize) -> Result<Vec<AdmittedAttempt>, String> {
@@ -2053,7 +2138,7 @@ impl DaemonStore for StoreAdapter {
             .map_err(|e| e.to_string())?;
         let attempts = self
             .store
-            .admit(&self.lifetime, now_us(), capacity)
+            .admit(&self.lifetime, self.now_us(), capacity)
             .map_err(|e| e.to_string())?
             .attempts;
         let mut runnable = Vec::with_capacity(attempts.len());
@@ -2109,36 +2194,51 @@ impl DaemonStore for StoreAdapter {
         }
         Ok(runnable)
     }
+    async fn mark_running(&self, attempt: &AdmittedAttempt) -> Result<bool, String> {
+        self.store
+            .mark_attempt_running(
+                &attempt.run_id,
+                i64::from(attempt.context.attempt),
+                self.now_us(),
+            )
+            .map(|decision| matches!(decision, locron_store::StartDecision::Ready))
+            .map_err(|error| error.to_string())
+    }
+    fn completion_instant_us(&self) -> i64 {
+        self.now_us()
+    }
     async fn complete(
         &self,
         attempt: &AdmittedAttempt,
         outcome: &locron_engine::runner::ExecutionOutcome,
+        completed_at: i64,
     ) -> Result<(), String> {
         let run = self.store.run(&attempt.run_id).map_err(|e| e.to_string())?;
         let definition: JobDefinition =
             serde_json::from_str(&run.snapshot_json).map_err(|e| e.to_string())?;
-        let retryable = outcome.kind == OutcomeKind::FailedRetryable
-            || (outcome.kind == OutcomeKind::TimedOut && definition.policy.retry_timeout);
-        let retry = if retryable && attempt.context.attempt <= u32::from(definition.policy.retries)
-        {
-            let shift = attempt.context.attempt.saturating_sub(1).min(31);
-            let delay = definition
-                .policy
-                .retry_delay
-                .get()
-                .saturating_mul(1_u64 << shift)
-                .min(definition.policy.retry_cap.get());
-            Some(RetryPlan {
-                not_before_us: now_us().saturating_add(i64::try_from(delay).unwrap_or(i64::MAX)),
-                classification: format!("{:?}", outcome.kind).to_lowercase(),
-            })
-        } else {
-            None
+        let retry_class = match outcome.kind {
+            OutcomeKind::Succeeded => RetryClass::Succeeded,
+            OutcomeKind::FailedRetryable => RetryClass::KnownFailure,
+            OutcomeKind::TimedOut => RetryClass::Timeout,
+            OutcomeKind::Cancelled => RetryClass::Cancelled,
+            OutcomeKind::TerminationUnconfirmed => RetryClass::InterruptedUnknown,
+            OutcomeKind::Failed => RetryClass::Configuration,
         };
+        let retry = decide_retry(
+            &definition.policy,
+            attempt.context.attempt,
+            completed_at,
+            retry_class,
+        )
+        .map(|decision| RetryPlan {
+            not_before_us: decision.not_before_us,
+            classification: decision.classification.into(),
+        });
         let state = match outcome.kind {
             OutcomeKind::Succeeded => "succeeded",
             OutcomeKind::TimedOut => "timed_out",
             OutcomeKind::Cancelled => "cancelled",
+            OutcomeKind::TerminationUnconfirmed => "termination_unconfirmed",
             OutcomeKind::Failed | OutcomeKind::FailedRetryable => "failed",
         };
         self.store
@@ -2156,14 +2256,14 @@ impl DaemonStore for StoreAdapter {
                         .unwrap_or(i64::MAX),
                     truncated: outcome.output.truncated,
                 },
-                now_us(),
+                completed_at,
             )
             .map_err(|e| e.to_string())?;
         self.store
             .complete_attempt(&AttemptCompletion {
                 run_id: attempt.run_id.clone(),
                 attempt_number: i64::from(attempt.context.attempt),
-                now_us: now_us(),
+                now_us: completed_at,
                 duration_us: i64::try_from(outcome.duration_micros).unwrap_or(i64::MAX),
                 state: state.into(),
                 exit_code: outcome.exit_code,
@@ -2183,7 +2283,7 @@ impl DaemonStore for StoreAdapter {
     }
     async fn end_lifetime(&self) -> Result<(), String> {
         self.store
-            .end_lifetime(&self.lifetime, now_us())
+            .end_lifetime(&self.lifetime, self.now_us())
             .map_err(|e| e.to_string())?;
         if let Some(task) = self
             .wake_task
@@ -2199,62 +2299,6 @@ impl DaemonStore for StoreAdapter {
         self.lock.lock().map_err(|_| "lock mutex poisoned")?.take();
         Ok(())
     }
-}
-
-fn due_occurrences(
-    schedule: &Schedule,
-    cursor_us: i64,
-    now_us: i64,
-    limit: usize,
-) -> Result<Vec<Timestamp>, String> {
-    if let Schedule::Every { interval, anchor } = schedule {
-        let step = i64::try_from(interval.get()).map_err(|_| "interval is too large")?;
-        let first_index = cursor_us
-            .saturating_sub(anchor.epoch_micros())
-            .div_euclid(step)
-            .saturating_add(1)
-            .max(0);
-        let last_index = now_us
-            .saturating_sub(anchor.epoch_micros())
-            .div_euclid(step);
-        if last_index < first_index {
-            return Ok(Vec::new());
-        }
-        let bounded_first =
-            first_index.max(last_index.saturating_sub(limit.saturating_sub(1) as i64));
-        return (bounded_first..=last_index)
-            .map(|index| {
-                anchor
-                    .epoch_micros()
-                    .checked_add(index.saturating_mul(step))
-                    .map(Timestamp::from_epoch_micros)
-                    .ok_or_else(|| "occurrence time overflow".to_string())
-            })
-            .collect();
-    }
-    let mut found = Vec::new();
-    let mut cursor = Timestamp::from_epoch_micros(cursor_us);
-    // Calendar and one-time schedules are evaluated one occurrence at a time so
-    // sparse expressions do not require finding `limit` occurrences up front.
-    for _ in 0..=limit {
-        let Some(next) = schedule
-            .next(cursor, 1)
-            .map_err(|error| error.to_string())?
-            .first()
-            .copied()
-        else {
-            break;
-        };
-        if next.epoch_micros() > now_us {
-            break;
-        }
-        found.push(next);
-        cursor = next;
-    }
-    if found.len() > limit {
-        found.remove(0);
-    }
-    Ok(found)
 }
 
 fn engine_target(
@@ -2513,6 +2557,37 @@ fn now_us() -> i64 {
             i64::try_from(value.as_micros()).unwrap_or(i64::MAX)
         })
 }
+
+struct SystemClock {
+    started: Instant,
+}
+
+impl SystemClock {
+    fn new() -> Self {
+        Self {
+            started: Instant::now(),
+        }
+    }
+}
+
+impl Clock for SystemClock {
+    fn now(&self) -> Timestamp {
+        Timestamp::from_epoch_micros(now_us())
+    }
+
+    fn monotonic_micros(&self) -> u64 {
+        u64::try_from(self.started.elapsed().as_micros()).unwrap_or(u64::MAX)
+    }
+}
+
+struct SystemTimeZoneResolver;
+
+impl TimeZoneResolver for SystemTimeZoneResolver {
+    fn local_timezone(&self) -> std::result::Result<jiff::tz::TimeZone, CoreError> {
+        Ok(jiff::tz::TimeZone::system())
+    }
+}
+
 fn daemon_lock_free(paths: &StatePaths) -> bool {
     locron_store::DaemonLock::try_prove_free(&paths.daemon_lock).is_ok()
 }
@@ -2687,6 +2762,81 @@ fn exit_code(error: &anyhow::Error) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicI64, AtomicU64};
+
+    struct FakeClock {
+        wall: AtomicI64,
+        monotonic: AtomicU64,
+    }
+
+    impl FakeClock {
+        fn new(wall: i64, monotonic: u64) -> Self {
+            Self {
+                wall: AtomicI64::new(wall),
+                monotonic: AtomicU64::new(monotonic),
+            }
+        }
+
+        fn set(&self, wall: i64, monotonic: u64) {
+            self.wall.store(wall, Ordering::Release);
+            self.monotonic.store(monotonic, Ordering::Release);
+        }
+    }
+
+    impl Clock for FakeClock {
+        fn now(&self) -> Timestamp {
+            Timestamp::from_epoch_micros(self.wall.load(Ordering::Acquire))
+        }
+
+        fn monotonic_micros(&self) -> u64 {
+            self.monotonic.load(Ordering::Acquire)
+        }
+    }
+
+    struct FakeTimeZoneResolver {
+        name: Mutex<String>,
+    }
+
+    impl FakeTimeZoneResolver {
+        fn new(name: &str) -> Self {
+            Self {
+                name: Mutex::new(name.into()),
+            }
+        }
+
+        fn set(&self, name: &str) {
+            *self.name.lock().unwrap() = name.into();
+        }
+    }
+
+    impl TimeZoneResolver for FakeTimeZoneResolver {
+        fn local_timezone(&self) -> std::result::Result<jiff::tz::TimeZone, CoreError> {
+            jiff::tz::TimeZone::get(self.name.lock().unwrap().as_str())
+                .map_err(|error| CoreError::Unavailable(error.to_string()))
+        }
+    }
+
+    fn test_adapter(
+        store: Arc<Store>,
+        paths: StatePaths,
+        clock: Arc<dyn Clock>,
+        timezone: Arc<dyn TimeZoneResolver>,
+        first_reconcile: bool,
+    ) -> StoreAdapter {
+        StoreAdapter {
+            store,
+            lifetime: SchedulerLifetimeId::new().to_string(),
+            paths,
+            clock,
+            timezone,
+            first_reconcile: AtomicBool::new(first_reconcile),
+            last_clock_sample: Mutex::new(None),
+            compiled_schedules: Mutex::new(BTreeMap::new()),
+            wake: Mutex::new(None),
+            wake_task: Mutex::new(None),
+            lock: Mutex::new(None),
+        }
+    }
 
     #[test]
     fn interval_catch_up_keeps_newest_bounded_window() {
@@ -2694,11 +2844,22 @@ mod tests {
             interval: "1s".parse().unwrap(),
             anchor: Timestamp::UNIX_EPOCH,
         };
-        let occurrences = due_occurrences(&schedule, 0, 10_000_000, 3).unwrap();
+        let occurrences = schedule
+            .reconcile(
+                Timestamp::from_epoch_micros(0),
+                Timestamp::from_epoch_micros(10_000_000),
+                MissedRunPolicy::All,
+                None,
+                3,
+                &jiff::tz::TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap()
+            .selected;
         assert_eq!(
             occurrences
                 .iter()
-                .map(|at| at.epoch_micros())
+                .map(|item| item.nominal.epoch_micros())
                 .collect::<Vec<_>>(),
             [8_000_000, 9_000_000, 10_000_000]
         );
@@ -2712,9 +2873,221 @@ mod tests {
         };
         let cursor: Timestamp = "2025-06-01T00:00:00Z".parse().unwrap();
         let now: Timestamp = "2026-06-01T00:00:00Z".parse().unwrap();
-        let occurrences =
-            due_occurrences(&schedule, cursor.epoch_micros(), now.epoch_micros(), 100).unwrap();
-        assert_eq!(occurrences, ["2026-01-01T00:00:00Z".parse().unwrap()]);
+        let occurrences = schedule
+            .reconcile(
+                cursor,
+                now,
+                MissedRunPolicy::All,
+                None,
+                100,
+                &jiff::tz::TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap()
+            .selected;
+        assert_eq!(
+            occurrences[0].nominal,
+            "2026-01-01T00:00:00Z".parse().unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn injected_clock_handles_recovery_reenable_and_backward_wall_move() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
+        let job_id = JobId::new().to_string();
+        let definition = JobDefinition {
+            schedule: Schedule::Every {
+                interval: "1s".parse().unwrap(),
+                anchor: Timestamp::UNIX_EPOCH,
+            },
+            target: Target::Process {
+                executable: "/usr/bin/true".into(),
+                args: Vec::new(),
+            },
+            cwd: PathBuf::from("/tmp"),
+            environment: Environment::default(),
+            policy: locron_core::policy::ExecutionPolicy {
+                missed_run: MissedRunPolicy::Latest,
+                ..Default::default()
+            },
+        };
+        store
+            .create_job(&CreateJob {
+                id: job_id,
+                name: "clocked".into(),
+                description: None,
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: serde_json::to_string(&definition).unwrap(),
+                now_us: 0,
+                cursor_us: 0,
+            })
+            .unwrap();
+        let clock = Arc::new(FakeClock::new(10_000_000, 10_000_000));
+        let adapter = test_adapter(
+            Arc::clone(&store),
+            paths,
+            clock.clone(),
+            Arc::new(FakeTimeZoneResolver::new("UTC")),
+            true,
+        );
+
+        assert_eq!(adapter.reconcile().await.unwrap(), 1);
+        assert_eq!(store.history(Some("clocked"), 10).unwrap().len(), 1);
+        assert_eq!(store.job("clocked").unwrap().cursor_us, 10_000_000);
+
+        clock.set(5_000_000, 11_000_000);
+        assert_eq!(adapter.reconcile().await.unwrap(), 0);
+        assert_eq!(store.job("clocked").unwrap().cursor_us, 10_000_000);
+
+        store.set_enabled("clocked", false, 12_000_000).unwrap();
+        store.set_enabled("clocked", true, 13_000_000).unwrap();
+        clock.set(20_000_000, 20_000_000);
+        assert_eq!(adapter.reconcile().await.unwrap(), 1);
+        let history = store.history(Some("clocked"), 10).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].trigger, "catch_up");
+        assert_eq!(history[0].nominal_us, Some(20_000_000));
+    }
+
+    #[tokio::test]
+    async fn injected_local_timezone_change_recalculates_without_duplicates() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let cursor: Timestamp = "2026-08-20T00:00:00Z".parse().unwrap();
+        let first_now: Timestamp = "2026-08-21T10:00:00Z".parse().unwrap();
+        let second_now: Timestamp = "2026-08-22T00:00:00Z".parse().unwrap();
+        let store = Arc::new(Store::open(paths.clone(), "test", cursor.epoch_micros()).unwrap());
+        let definition = JobDefinition {
+            schedule: Schedule::Cron {
+                expression: "0 9 * * *".into(),
+                timezone: ScheduleTimeZone::Local,
+            },
+            target: Target::Process {
+                executable: "/usr/bin/true".into(),
+                args: Vec::new(),
+            },
+            cwd: PathBuf::from("/tmp"),
+            environment: Environment::default(),
+            policy: locron_core::policy::ExecutionPolicy {
+                missed_run: MissedRunPolicy::All,
+                ..Default::default()
+            },
+        };
+        store
+            .create_job(&CreateJob {
+                id: JobId::new().to_string(),
+                name: "local-zone".into(),
+                description: None,
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: serde_json::to_string(&definition).unwrap(),
+                now_us: cursor.epoch_micros(),
+                cursor_us: cursor.epoch_micros(),
+            })
+            .unwrap();
+        let clock = Arc::new(FakeClock::new(first_now.epoch_micros(), 1_000_000));
+        let timezone = Arc::new(FakeTimeZoneResolver::new("UTC"));
+        let adapter = test_adapter(
+            Arc::clone(&store),
+            paths,
+            clock.clone(),
+            timezone.clone(),
+            false,
+        );
+        assert_eq!(adapter.reconcile().await.unwrap(), 2);
+
+        timezone.set("Asia/Seoul");
+        let wall_delta = second_now.epoch_micros() - first_now.epoch_micros();
+        clock.set(
+            second_now.epoch_micros(),
+            1_000_000 + u64::try_from(wall_delta).unwrap(),
+        );
+        assert_eq!(adapter.reconcile().await.unwrap(), 1);
+        let history = store.history(Some("local-zone"), 10).unwrap();
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0].nominal_us, Some(second_now.epoch_micros()));
+        assert_ne!(history[0].nominal_us, history[1].nominal_us);
+        assert_eq!(adapter.compiled_schedules.lock().unwrap().len(), 1);
+
+        store
+            .set_enabled("local-zone", false, second_now.epoch_micros() + 1)
+            .unwrap();
+        assert_eq!(adapter.reconcile().await.unwrap(), 0);
+        assert!(adapter.compiled_schedules.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn real_store_completion_command_survives_applied_then_response_lost() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
+        let definition = JobDefinition {
+            schedule: Schedule::Every {
+                interval: "1h".parse().unwrap(),
+                anchor: Timestamp::UNIX_EPOCH,
+            },
+            target: Target::Process {
+                executable: "/bin/sh".into(),
+                args: vec!["-c".into(), "exit 7".into()],
+            },
+            cwd: temp.path().into(),
+            environment: Environment::default(),
+            policy: locron_core::policy::ExecutionPolicy {
+                retries: 1,
+                ..Default::default()
+            },
+        };
+        store
+            .create_job(&CreateJob {
+                id: JobId::new().to_string(),
+                name: "completion-loss".into(),
+                description: None,
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: serde_json::to_string(&definition).unwrap(),
+                now_us: 0,
+                cursor_us: 0,
+            })
+            .unwrap();
+        let run_id = Uuid::now_v7().to_string();
+        store.enqueue_manual("completion-loss", &run_id, 1).unwrap();
+        let clock = Arc::new(FakeClock::new(5_000_000, 5_000_000));
+        let adapter = test_adapter(
+            Arc::clone(&store),
+            paths,
+            clock.clone(),
+            Arc::new(FakeTimeZoneResolver::new("UTC")),
+            false,
+        );
+        store.begin_lifetime(&adapter.lifetime, 2, "test").unwrap();
+        let attempt = adapter.admit(1).await.unwrap().remove(0);
+        assert!(adapter.mark_running(&attempt).await.unwrap());
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&attempt.target, &attempt.context)
+            .await
+            .unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::FailedRetryable);
+        let completed_at = adapter.completion_instant_us();
+
+        let applied_then_lost = async {
+            adapter.complete(&attempt, &outcome, completed_at).await?;
+            Err::<(), String>("synthetic response loss after commit".into())
+        }
+        .await;
+        assert!(applied_then_lost.is_err());
+        clock.set(99_000_000, 99_000_000);
+        adapter
+            .complete(&attempt, &outcome, completed_at)
+            .await
+            .unwrap();
+
+        let run = store.run(&run_id).unwrap();
+        assert_eq!(run.state, "retry_wait");
+        assert_eq!(run.eligible_at_us, 15_000_000);
     }
 
     #[test]

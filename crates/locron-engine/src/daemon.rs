@@ -20,6 +20,10 @@ pub struct DaemonConfig {
     pub safety_reconciliation: Duration,
     /// Natural completion window after shutdown begins.
     pub shutdown_drain: Duration,
+    /// Initial retry delay for the required pre-spawn durable transition.
+    pub pre_spawn_retry_initial: Duration,
+    /// Maximum retry delay for the required pre-spawn durable transition.
+    pub pre_spawn_retry_cap: Duration,
 }
 
 impl Default for DaemonConfig {
@@ -28,6 +32,8 @@ impl Default for DaemonConfig {
             global_concurrency: 16,
             safety_reconciliation: Duration::from_secs(30),
             shutdown_drain: Duration::from_secs(30),
+            pre_spawn_retry_initial: Duration::from_millis(50),
+            pre_spawn_retry_cap: Duration::from_secs(1),
         }
     }
 }
@@ -61,11 +67,17 @@ pub trait DaemonStore: Send + Sync + 'static {
     async fn reconcile(&self) -> Result<usize, String>;
     /// Atomically admits up to `capacity` attempts using durable fairness.
     async fn admit(&self, capacity: usize) -> Result<Vec<AdmittedAttempt>, String>;
+    /// Acknowledges the final pre-execution boundary immediately before the
+    /// runner is allowed to create external side effects.
+    async fn mark_running(&self, attempt: &AdmittedAttempt) -> Result<bool, String>;
+    /// Samples the immutable completion instant once after target outcome.
+    fn completion_instant_us(&self) -> i64;
     /// Persists an attempt result and any durable retry intent.
     async fn complete(
         &self,
         attempt: &AdmittedAttempt,
         outcome: &ExecutionOutcome,
+        completed_at_us: i64,
     ) -> Result<(), String>;
     /// Reads a durable user or replacement cancellation intent.
     async fn cancellation_requested(&self, run_id: &str) -> Result<bool, String>;
@@ -87,6 +99,9 @@ pub enum DaemonError {
     /// Global concurrency setting is outside the product range.
     #[error("global concurrency must be between 1 and 64")]
     InvalidConcurrency,
+    /// Required-transition retry timing is invalid.
+    #[error("pre-spawn retry delay must be positive and no greater than its cap")]
+    InvalidRetryTiming,
 }
 
 /// Owns reconciliation, admission, execution tasks, and graceful shutdown.
@@ -104,6 +119,11 @@ impl<S: DaemonStore> Daemon<S> {
     pub fn new(store: Arc<S>, runner: Runner, config: DaemonConfig) -> Result<Self, DaemonError> {
         if !(1..=64).contains(&config.global_concurrency) {
             return Err(DaemonError::InvalidConcurrency);
+        }
+        if config.pre_spawn_retry_initial.is_zero()
+            || config.pre_spawn_retry_initial > config.pre_spawn_retry_cap
+        {
+            return Err(DaemonError::InvalidRetryTiming);
         }
         Ok(Self {
             store,
@@ -144,6 +164,7 @@ impl<S: DaemonStore> Daemon<S> {
             .map_err(DaemonError::Store)?;
         let admitted = attempts.len();
         for mut attempt in attempts {
+            let shutdown = self.cancellation.child_token();
             attempt.context.cancellation = self.cancellation.child_token();
             let permit = Arc::clone(semaphore)
                 .acquire_owned()
@@ -151,7 +172,37 @@ impl<S: DaemonStore> Daemon<S> {
                 .map_err(|_| DaemonError::Store("admission semaphore closed".into()))?;
             let store = Arc::clone(&self.store);
             let runner = self.runner.clone();
+            let retry_initial = self.config.pre_spawn_retry_initial;
+            let retry_cap = self.config.pre_spawn_retry_cap;
             self.tracker.spawn(async move {
+                let mut retry_delay = retry_initial;
+                loop {
+                    let decision = tokio::select! {
+                        biased;
+                        () = shutdown.cancelled() => {
+                            drop(permit);
+                            return;
+                        }
+                        decision = store.mark_running(&attempt) => decision,
+                    };
+                    match decision {
+                        Ok(true) => break,
+                        Ok(false) => {
+                            drop(permit);
+                            return;
+                        }
+                        Err(error) => store.persistence_degraded(&error).await,
+                    }
+                    tokio::select! {
+                        biased;
+                        () = shutdown.cancelled() => {
+                            drop(permit);
+                            return;
+                        }
+                        () = tokio::time::sleep(retry_delay) => {}
+                    }
+                    retry_delay = next_retry_delay(retry_delay, retry_cap);
+                }
                 let cancellation = attempt.context.cancellation.clone();
                 let execution = runner.execute(&attempt.target, &attempt.context);
                 tokio::pin!(execution);
@@ -169,8 +220,24 @@ impl<S: DaemonStore> Daemon<S> {
                 };
                 match outcome {
                     Ok(outcome) => {
-                        if let Err(error) = store.complete(&attempt, &outcome).await {
-                            store.persistence_degraded(&error).await;
+                        let completed_at_us = store.completion_instant_us();
+                        let mut retry_delay = retry_initial;
+                        loop {
+                            let completion = tokio::select! {
+                                biased;
+                                () = shutdown.cancelled() => break,
+                                completion = store.complete(&attempt, &outcome, completed_at_us) => completion,
+                            };
+                            match completion {
+                                Ok(()) => break,
+                                Err(error) => store.persistence_degraded(&error).await,
+                            }
+                            tokio::select! {
+                                biased;
+                                () = shutdown.cancelled() => break,
+                                () = tokio::time::sleep(retry_delay) => {}
+                            }
+                            retry_delay = next_retry_delay(retry_delay, retry_cap);
                         }
                     }
                     Err(error) => {
@@ -232,15 +299,144 @@ impl<S: DaemonStore> Daemon<S> {
     }
 }
 
+fn next_retry_delay(current: Duration, cap: Duration) -> Duration {
+    current.checked_mul(2).unwrap_or(Duration::MAX).min(cap)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, VecDeque};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
 
     #[derive(Default)]
     struct FakeStore {
         calls: Mutex<Vec<&'static str>>,
+    }
+
+    struct ScriptedStore {
+        attempt: Mutex<Option<AdmittedAttempt>>,
+        marks: Mutex<VecDeque<Result<bool, String>>>,
+        mark_calls: AtomicUsize,
+        completions: AtomicUsize,
+        successful_completions: AtomicUsize,
+        degradations: AtomicUsize,
+        completion_results: Mutex<VecDeque<Result<(), String>>>,
+        mark_notify: tokio::sync::Notify,
+        complete_notify: tokio::sync::Notify,
+    }
+
+    impl ScriptedStore {
+        fn new(temp: &tempfile::TempDir, marks: Vec<Result<bool, String>>) -> Self {
+            Self {
+                attempt: Mutex::new(Some(AdmittedAttempt {
+                    run_id: "run".into(),
+                    target: TargetSpec::Process(crate::runner::ProcessSpec {
+                        executable: "/bin/sh".into(),
+                        args: vec![
+                            "-c".into(),
+                            format!(
+                                "printf x >> '{}'",
+                                temp.path().join("side-effect").display()
+                            ),
+                        ],
+                        cwd: temp.path().into(),
+                        env: BTreeMap::new(),
+                    }),
+                    context: AttemptContext {
+                        run_id: "run".into(),
+                        attempt: 1,
+                        partial_output: temp.path().join("1.partial"),
+                        final_output: temp.path().join("1.log"),
+                        output_limit: 1024,
+                        timeout: Some(Duration::from_secs(1)),
+                        cancellation: CancellationToken::new(),
+                    },
+                })),
+                marks: Mutex::new(marks.into()),
+                mark_calls: AtomicUsize::new(0),
+                completions: AtomicUsize::new(0),
+                successful_completions: AtomicUsize::new(0),
+                degradations: AtomicUsize::new(0),
+                completion_results: Mutex::new(VecDeque::new()),
+                mark_notify: tokio::sync::Notify::new(),
+                complete_notify: tokio::sync::Notify::new(),
+            }
+        }
+
+        fn with_completion_results(self, results: Vec<Result<(), String>>) -> Self {
+            *self.completion_results.lock().unwrap() = results.into();
+            self
+        }
+
+        async fn wait_for_marks(&self, count: usize) {
+            while self.mark_calls.load(Ordering::Acquire) < count {
+                self.mark_notify.notified().await;
+            }
+        }
+    }
+
+    #[async_trait]
+    impl DaemonStore for ScriptedStore {
+        async fn begin_lifetime(&self) -> Result<(), String> {
+            Ok(())
+        }
+        async fn reconcile(&self) -> Result<usize, String> {
+            Ok(0)
+        }
+        async fn admit(&self, _: usize) -> Result<Vec<AdmittedAttempt>, String> {
+            Ok(self.attempt.lock().unwrap().take().into_iter().collect())
+        }
+        async fn mark_running(&self, _: &AdmittedAttempt) -> Result<bool, String> {
+            self.mark_calls.fetch_add(1, Ordering::AcqRel);
+            self.mark_notify.notify_one();
+            self.marks
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err("persistent mark-running failure".into()))
+        }
+        fn completion_instant_us(&self) -> i64 {
+            100
+        }
+        async fn complete(
+            &self,
+            _: &AdmittedAttempt,
+            _: &ExecutionOutcome,
+            _: i64,
+        ) -> Result<(), String> {
+            self.completions.fetch_add(1, Ordering::AcqRel);
+            self.complete_notify.notify_one();
+            let result = self
+                .completion_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()));
+            if result.is_ok() {
+                self.successful_completions.fetch_add(1, Ordering::AcqRel);
+            }
+            result
+        }
+        async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
+            Ok(false)
+        }
+        async fn persistence_degraded(&self, _: &str) {
+            self.degradations.fetch_add(1, Ordering::AcqRel);
+        }
+        async fn end_lifetime(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn retry_test_config() -> DaemonConfig {
+        DaemonConfig {
+            pre_spawn_retry_initial: Duration::from_millis(1),
+            pre_spawn_retry_cap: Duration::from_millis(2),
+            ..DaemonConfig::default()
+        }
     }
 
     #[async_trait]
@@ -257,7 +453,19 @@ mod tests {
             self.calls.lock().unwrap().push("admit");
             Ok(Vec::new())
         }
-        async fn complete(&self, _: &AdmittedAttempt, _: &ExecutionOutcome) -> Result<(), String> {
+        async fn mark_running(&self, _: &AdmittedAttempt) -> Result<bool, String> {
+            self.calls.lock().unwrap().push("running");
+            Ok(true)
+        }
+        fn completion_instant_us(&self) -> i64 {
+            100
+        }
+        async fn complete(
+            &self,
+            _: &AdmittedAttempt,
+            _: &ExecutionOutcome,
+            _: i64,
+        ) -> Result<(), String> {
             Ok(())
         }
         async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
@@ -304,5 +512,106 @@ mod tests {
             ),
             Err(DaemonError::InvalidConcurrency)
         ));
+    }
+
+    #[tokio::test]
+    async fn transient_mark_running_failure_retries_before_spawn() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(ScriptedStore::new(
+            &temp,
+            vec![Err("busy".into()), Ok(true)],
+        ));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+        daemon.tick(&Arc::new(Semaphore::new(1))).await.unwrap();
+        while store.completions.load(Ordering::Acquire) == 0 {
+            store.complete_notify.notified().await;
+        }
+        daemon.tracker.close();
+        daemon.tracker.wait().await;
+        assert_eq!(store.mark_calls.load(Ordering::Acquire), 2);
+        assert_eq!(store.degradations.load(Ordering::Acquire), 1);
+        assert_eq!(store.completions.load(Ordering::Acquire), 1);
+        assert!(temp.path().join("1.log").is_file());
+        assert_eq!(
+            std::fs::read(temp.path().join("side-effect")).unwrap(),
+            b"x"
+        );
+    }
+
+    #[tokio::test]
+    async fn transient_failure_then_durable_cancellation_never_spawns() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(ScriptedStore::new(
+            &temp,
+            vec![Err("busy".into()), Ok(false)],
+        ));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+        daemon.tick(&Arc::new(Semaphore::new(1))).await.unwrap();
+        store.wait_for_marks(2).await;
+        daemon.tracker.close();
+        daemon.tracker.wait().await;
+        assert_eq!(store.completions.load(Ordering::Acquire), 0);
+        assert!(!temp.path().join("1.log").exists());
+        assert!(!temp.path().join("1.partial").exists());
+        assert!(!temp.path().join("side-effect").exists());
+    }
+
+    #[tokio::test]
+    async fn persistent_mark_running_failure_waits_for_shutdown_without_spawn() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(ScriptedStore::new(&temp, Vec::new()));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+        daemon.tick(&Arc::new(Semaphore::new(1))).await.unwrap();
+        store.wait_for_marks(3).await;
+        daemon.cancellation.cancel();
+        daemon.tracker.close();
+        daemon.tracker.wait().await;
+        assert!(store.mark_calls.load(Ordering::Acquire) >= 3);
+        assert_eq!(store.completions.load(Ordering::Acquire), 0);
+        assert!(!temp.path().join("1.log").exists());
+        assert!(!temp.path().join("1.partial").exists());
+        assert!(!temp.path().join("side-effect").exists());
+    }
+
+    #[tokio::test]
+    async fn transient_completion_failure_retries_without_reexecuting_target() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            ScriptedStore::new(&temp, vec![Ok(true)])
+                .with_completion_results(vec![Err("busy after target exit".into()), Ok(())]),
+        );
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+        daemon.tick(&Arc::new(Semaphore::new(1))).await.unwrap();
+        while store.successful_completions.load(Ordering::Acquire) == 0 {
+            store.complete_notify.notified().await;
+        }
+        daemon.tracker.close();
+        daemon.tracker.wait().await;
+        assert_eq!(store.completions.load(Ordering::Acquire), 2);
+        assert_eq!(store.degradations.load(Ordering::Acquire), 1);
+        assert_eq!(
+            std::fs::read(temp.path().join("side-effect")).unwrap(),
+            b"x"
+        );
     }
 }

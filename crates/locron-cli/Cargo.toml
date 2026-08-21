@@ -15,6 +15,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 clap.workspace = true
+jiff.workspace = true
 locron-core = { path = "../locron-core" }
 locron-engine = { path = "../locron-engine" }
 locron-store = { path = "../locron-store" }

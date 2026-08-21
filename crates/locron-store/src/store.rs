@@ -89,6 +89,9 @@ pub struct JobRecord {
     pub current_revision: i64,
     pub definition_json: String,
     pub cursor_us: i64,
+    pub updated_at_us: i64,
+    pub cursor_updated_at_us: i64,
+    pub disabled_since_us: Option<i64>,
 }
 
 #[derive(Clone, Debug)]
@@ -105,6 +108,7 @@ pub struct NewScheduledRun {
 
 #[derive(Clone, Debug)]
 pub struct CursorUpdate {
+    pub expected_revision: i64,
     pub expected_cursor_us: i64,
     pub new_cursor_us: i64,
     pub resolve_one_time: bool,
@@ -114,6 +118,24 @@ pub struct CursorUpdate {
 pub struct MaterializedRun {
     pub inserted: usize,
     pub duplicates: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ReconciliationSummary {
+    pub kind: String,
+    pub count: u64,
+    pub first_nominal_us: i64,
+    pub last_nominal_us: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EventRecord {
+    pub id: i64,
+    pub occurred_at_us: i64,
+    pub kind: String,
+    pub job_id: Option<String>,
+    pub run_id: Option<String>,
+    pub details_json: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -143,6 +165,12 @@ pub struct AdmitAttempt {
 #[derive(Clone, Debug, Default)]
 pub struct Admission {
     pub attempts: Vec<AdmitAttempt>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StartDecision {
+    Ready,
+    CancelledBeforeSpawn,
 }
 
 #[derive(Clone, Debug)]
@@ -304,7 +332,7 @@ impl Store {
         }
         tx.execute("INSERT INTO jobs(id,name,description,tags_json,enabled,created_at_us,updated_at_us,current_revision) VALUES(?1,?2,?3,?4,?5,?6,?6,1)", params![job.id, job.name, job.description, job.tags_json, job.enabled, job.now_us])?;
         tx.execute("INSERT INTO job_revisions(job_id,revision,definition_json,created_at_us,created_by) VALUES(?1,1,?2,?3,'add')", params![job.id, job.definition_json, job.now_us])?;
-        tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us) VALUES(?1,1,?2,NULL,?3)", params![job.id, job.cursor_us, job.now_us])?;
+        tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us,disabled_since_us) VALUES(?1,1,?2,NULL,?3,CASE WHEN ?4 THEN NULL ELSE ?3 END)", params![job.id, job.cursor_us, job.now_us, job.enabled])?;
         event(&tx, job.now_us, "job_added", Some(&job.id), None, "{}")?;
         tx.commit()?;
         drop(conn);
@@ -345,7 +373,7 @@ impl Store {
             "INSERT INTO job_revisions VALUES(?1,?2,?3,?4,'update')",
             params![job.id, revision, job.definition_json, job.now_us],
         )?;
-        tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us) VALUES(?1,?2,?3,NULL,?4)", params![job.id,revision,job.cursor_us,job.now_us])?;
+        tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us,disabled_since_us) VALUES(?1,?2,?3,NULL,?4,CASE WHEN ?5 THEN NULL ELSE ?4 END)", params![job.id,revision,job.cursor_us,job.now_us,job.enabled])?;
         event(
             &tx,
             job.now_us,
@@ -362,14 +390,14 @@ impl Store {
     pub fn job(&self, reference: &str) -> StoreResult<JobRecord> {
         let conn = self.conn()?;
         conn.query_row(
-            "SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE (j.id=?1 OR j.name=?1) AND j.removed_at_us IS NULL",
+            "SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE (j.id=?1 OR j.name=?1) AND j.removed_at_us IS NULL",
             [reference], map_job,
         ).optional()?.ok_or_else(|| StoreError::NotFound(reference.into()))
     }
 
     pub fn list_jobs(&self, all: bool) -> StoreResult<Vec<JobRecord>> {
         let conn = self.conn()?;
-        let mut statement = conn.prepare("SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE j.removed_at_us IS NULL AND (?1 OR j.enabled=1) ORDER BY j.name COLLATE BINARY")?;
+        let mut statement = conn.prepare("SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE j.removed_at_us IS NULL AND (?1 OR j.enabled=1) ORDER BY j.name COLLATE BINARY")?;
         statement
             .query_map([all], map_job)?
             .collect::<Result<Vec<_>, _>>()
@@ -462,7 +490,7 @@ impl Store {
                 ImportJob::Create { job, .. } => {
                     tx.execute("INSERT INTO jobs(id,name,description,tags_json,enabled,created_at_us,updated_at_us,current_revision) VALUES(?1,?2,?3,?4,?5,?6,?6,1)", params![job.id,job.name,job.description,job.tags_json,job.enabled,batch.now_us])?;
                     tx.execute("INSERT INTO job_revisions(job_id,revision,definition_json,created_at_us,created_by) VALUES(?1,1,?2,?3,'import')", params![job.id,job.definition_json,batch.now_us])?;
-                    tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us) VALUES(?1,1,?2,NULL,?3)", params![job.id,job.cursor_us,batch.now_us])?;
+                    tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us,disabled_since_us) VALUES(?1,1,?2,NULL,?3,CASE WHEN ?4 THEN NULL ELSE ?3 END)", params![job.id,job.cursor_us,batch.now_us,job.enabled])?;
                     event(
                         &tx,
                         batch.now_us,
@@ -477,7 +505,7 @@ impl Store {
                     let revision = job.expected_revision + 1;
                     tx.execute("UPDATE jobs SET name=?2,description=?3,tags_json=?4,enabled=?5,updated_at_us=?6,current_revision=?7 WHERE id=?1", params![job.id,job.name,job.description,job.tags_json,job.enabled,batch.now_us,revision])?;
                     tx.execute("INSERT INTO job_revisions(job_id,revision,definition_json,created_at_us,created_by) VALUES(?1,?2,?3,?4,'import')", params![job.id,revision,job.definition_json,batch.now_us])?;
-                    tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us) VALUES(?1,?2,?3,NULL,?4)", params![job.id,revision,job.cursor_us,batch.now_us])?;
+                    tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us,disabled_since_us) VALUES(?1,?2,?3,NULL,?4,CASE WHEN ?5 THEN NULL ELSE ?4 END)", params![job.id,revision,job.cursor_us,batch.now_us,job.enabled])?;
                     event(
                         &tx,
                         batch.now_us,
@@ -506,14 +534,36 @@ impl Store {
         enabled: bool,
         now_us: i64,
     ) -> StoreResult<JobRecord> {
-        let job = self.job(reference)?;
-        let conn = self.conn()?;
-        conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current: Option<(String, bool, i64)> = tx
+            .query_row(
+                "SELECT id,enabled,current_revision FROM jobs WHERE (id=?1 OR name=?1) AND removed_at_us IS NULL",
+                [reference],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((job_id, was_enabled, revision)) = current else {
+            return Err(StoreError::NotFound(reference.into()));
+        };
+        tx.execute(
             "UPDATE jobs SET enabled=?2,updated_at_us=?3 WHERE id=?1",
-            params![job.id, enabled, now_us],
+            params![job_id, enabled, now_us],
         )?;
+        if enabled && !was_enabled {
+            tx.execute(
+                "UPDATE schedule_cursors SET disabled_since_us=COALESCE(disabled_since_us,cursor_us) WHERE job_id=?1 AND revision=?2",
+                params![job_id, revision],
+            )?;
+        } else if !enabled && was_enabled {
+            tx.execute(
+                "UPDATE schedule_cursors SET disabled_since_us=COALESCE(disabled_since_us,?3) WHERE job_id=?1 AND revision=?2",
+                params![job_id, revision, now_us],
+            )?;
+        }
+        tx.commit()?;
         drop(conn);
-        self.job(&job.id)
+        self.job(&job_id)
     }
 
     pub fn remove_job(&self, reference: &str, now_us: i64) -> StoreResult<()> {
@@ -543,10 +593,23 @@ impl Store {
             [&job.id],
             |row| row.get(0),
         )?;
+        let quarantined: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE job_id=?1 AND state='running' AND reason='termination_unconfirmed')",
+            [&job.id],
+            |row| row.get(0),
+        )?;
         let mut state = "queued";
         let mut reason: Option<&str> = None;
         let mut replacement_candidate = false;
-        if active_count > 0 {
+        if quarantined {
+            if policy.overlap == "replace" {
+                state = "failed";
+                reason = Some("replacement failed: predecessor termination unconfirmed");
+            } else {
+                state = "skipped_overlap";
+                reason = Some("predecessor termination unconfirmed");
+            }
+        } else if active_count > 0 {
             match policy.overlap.as_str() {
                 "skip" => {
                     state = "skipped_overlap";
@@ -557,17 +620,14 @@ impl Store {
                     reason = Some("per-job concurrency limit reached");
                 }
                 "replace" => {
-                    tx.execute(
-                        "UPDATE runs SET state=CASE WHEN state IN ('queued','retry_wait') THEN 'cancelled' ELSE state END,reason=CASE WHEN state IN ('queued','retry_wait') THEN 'superseded by newer replacement' ELSE reason END,finished_at_us=CASE WHEN state IN ('queued','retry_wait') THEN ?2 ELSE finished_at_us END,cancellation_requested_at_us=CASE WHEN state IN ('starting','running') THEN ?2 ELSE cancellation_requested_at_us END,cancellation_reason=CASE WHEN state IN ('starting','running') THEN 'replacement' ELSE cancellation_reason END,replacement_candidate=0 WHERE job_id=?1 AND state IN ('queued','starting','running','retry_wait')",
-                        params![job.id, now_us],
-                    )?;
+                    supersede_for_replacement(&tx, &job.id, now_us, Some(run_id))?;
                     replacement_candidate = true;
                 }
                 _ => {}
             }
         }
         let finished_at =
-            matches!(state, "skipped_overlap" | "skipped_concurrency").then_some(now_us);
+            matches!(state, "skipped_overlap" | "skipped_concurrency" | "failed").then_some(now_us);
         tx.execute(
             "INSERT INTO runs(id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,queue_sequence,snapshot_json,state,reason,replacement_candidate,finished_at_us) VALUES(?1,?2,?3,'manual',NULL,?4,?4,?5,?6,?7,?8,?9,?10)",
             params![run_id,job.id,job.current_revision,now_us,sequence,job.definition_json,state,reason,replacement_candidate,finished_at],
@@ -592,9 +652,20 @@ impl Store {
         runs: &[NewScheduledRun],
         now_us: i64,
     ) -> StoreResult<MaterializedRun> {
+        self.materialize_with_summaries(job_id, cursor, runs, &[], now_us)
+    }
+
+    pub fn materialize_with_summaries(
+        &self,
+        job_id: &str,
+        cursor: CursorUpdate,
+        runs: &[NewScheduledRun],
+        summaries: &[ReconciliationSummary],
+        now_us: i64,
+    ) -> StoreResult<MaterializedRun> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute("UPDATE schedule_cursors SET cursor_us=?3,one_time_resolved=CASE WHEN ?5 THEN 1 ELSE one_time_resolved END,updated_at_us=?4 WHERE job_id=?1 AND revision=(SELECT current_revision FROM jobs WHERE id=?1) AND cursor_us=?2", params![job_id,cursor.expected_cursor_us,cursor.new_cursor_us,now_us,cursor.resolve_one_time])?;
+        let changed = tx.execute("UPDATE schedule_cursors SET cursor_us=?4,one_time_resolved=CASE WHEN ?6 THEN 1 ELSE one_time_resolved END,updated_at_us=?5,disabled_since_us=NULL WHERE job_id=?1 AND revision=?2 AND revision=(SELECT current_revision FROM jobs WHERE id=?1) AND cursor_us=?3", params![job_id,cursor.expected_revision,cursor.expected_cursor_us,cursor.new_cursor_us,now_us,cursor.resolve_one_time])?;
         if changed != 1 {
             return Err(StoreError::Conflict("schedule cursor changed".into()));
         }
@@ -607,6 +678,11 @@ impl Store {
         }
         let mut result = MaterializedRun::default();
         for run in runs {
+            if run.job_id != job_id || run.revision != cursor.expected_revision {
+                return Err(StoreError::Conflict(
+                    "scheduled run does not match reconciled job revision".into(),
+                ));
+            }
             let sequence = next_queue_sequence(&tx)?;
             let policy = snapshot_admission_policy(&run.snapshot_json)?;
             let active_count: i64 = tx.query_row(
@@ -614,10 +690,23 @@ impl Store {
                 [&run.job_id],
                 |row| row.get(0),
             )?;
+            let quarantined: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM runs WHERE job_id=?1 AND state='running' AND reason='termination_unconfirmed')",
+                [&run.job_id],
+                |row| row.get(0),
+            )?;
             let mut state = "queued";
             let mut reason: Option<&str> = None;
             let mut replacement_candidate = false;
-            if run.trigger != "catch_up" && active_count > 0 {
+            if quarantined {
+                if policy.overlap == "replace" {
+                    state = "failed";
+                    reason = Some("replacement failed: predecessor termination unconfirmed");
+                } else {
+                    state = "skipped_overlap";
+                    reason = Some("predecessor termination unconfirmed");
+                }
+            } else if run.trigger != "catch_up" && active_count > 0 {
                 match policy.overlap.as_str() {
                     "skip" => {
                         state = "skipped_overlap";
@@ -628,17 +717,14 @@ impl Store {
                         reason = Some("per-job concurrency limit reached");
                     }
                     "replace" => {
-                        tx.execute(
-                            "UPDATE runs SET state=CASE WHEN state IN ('queued','retry_wait') THEN 'cancelled' ELSE state END,reason=CASE WHEN state IN ('queued','retry_wait') THEN 'superseded by newer replacement' ELSE reason END,finished_at_us=CASE WHEN state IN ('queued','retry_wait') THEN ?2 ELSE finished_at_us END,cancellation_requested_at_us=CASE WHEN state IN ('starting','running') THEN ?2 ELSE cancellation_requested_at_us END,cancellation_reason=CASE WHEN state IN ('starting','running') THEN 'replacement' ELSE cancellation_reason END,replacement_candidate=0 WHERE job_id=?1 AND state IN ('queued','starting','running','retry_wait')",
-                            params![run.job_id, now_us],
-                        )?;
+                        supersede_for_replacement(&tx, &run.job_id, now_us, Some(&run.id))?;
                         replacement_candidate = true;
                     }
                     _ => {}
                 }
             }
-            let finished_at =
-                matches!(state, "skipped_overlap" | "skipped_concurrency").then_some(now_us);
+            let finished_at = matches!(state, "skipped_overlap" | "skipped_concurrency" | "failed")
+                .then_some(now_us);
             let changed = tx.execute("INSERT OR IGNORE INTO runs(id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,queue_sequence,snapshot_json,state,reason,replacement_candidate,finished_at_us) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)", params![run.id,run.job_id,run.revision,run.trigger,run.nominal_us,run.requested_at_us,run.eligible_at_us,sequence,run.snapshot_json,state,reason,replacement_candidate,finished_at])?;
             if changed == 1 {
                 result.inserted += 1
@@ -646,8 +732,48 @@ impl Store {
                 result.duplicates += 1
             }
         }
+        for summary in summaries {
+            if summary.count == 0 || summary.first_nominal_us > summary.last_nominal_us {
+                return Err(StoreError::Conflict(
+                    "invalid reconciliation summary range".into(),
+                ));
+            }
+            let details = serde_json::json!({
+                "count": summary.count,
+                "first_nominal_us": summary.first_nominal_us,
+                "last_nominal_us": summary.last_nominal_us,
+            });
+            event(
+                &tx,
+                now_us,
+                &summary.kind,
+                Some(job_id),
+                None,
+                &serde_json::to_string(&details)?,
+            )?;
+        }
         tx.commit()?;
         Ok(result)
+    }
+
+    pub fn events_for_job(&self, job_id: &str) -> StoreResult<Vec<EventRecord>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id,occurred_at_us,kind,job_id,run_id,details_json FROM events WHERE job_id=?1 ORDER BY id",
+        )?;
+        statement
+            .query_map([job_id], |row| {
+                Ok(EventRecord {
+                    id: row.get(0)?,
+                    occurred_at_us: row.get(1)?,
+                    kind: row.get(2)?,
+                    job_id: row.get(3)?,
+                    run_id: row.get(4)?,
+                    details_json: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
     }
 
     pub fn run(&self, id: &str) -> StoreResult<RunRecord> {
@@ -743,8 +869,12 @@ impl Store {
     ) -> StoreResult<usize> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "DELETE FROM retry_intents WHERE run_id IN (SELECT run_id FROM attempts WHERE state IN ('starting','running'))",
+            [],
+        )?;
         let stale = tx.execute("UPDATE attempts SET state='interrupted_unknown',finished_at_us=?1,error_message='scheduler lifetime ended without a durable result' WHERE state IN ('starting','running')", [now_us])?;
-        tx.execute("UPDATE runs SET state='interrupted_unknown',finished_at_us=?1,reason='scheduler lifetime ended without a durable result' WHERE state IN ('starting','running')", [now_us])?;
+        tx.execute("UPDATE runs SET state='interrupted_unknown',finished_at_us=?1,reason='scheduler lifetime ended without a durable result' WHERE state IN ('starting','running') AND (reason IS NULL OR reason<>'termination_unconfirmed')", [now_us])?;
         tx.execute("UPDATE scheduler_lifetimes SET ended_at_us=?1,exit_class='stale' WHERE ended_at_us IS NULL", [now_us])?;
         tx.execute("INSERT INTO scheduler_lifetimes(id,pid,binary_version,started_at_us,heartbeat_at_us) VALUES(?1,?2,?3,?4,?4)", params![id,std::process::id(),binary_version,now_us])?;
         tx.commit()?;
@@ -762,7 +892,7 @@ impl Store {
         }
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let mut statement = tx.prepare("SELECT r.id,r.job_id,r.snapshot_json,COALESCE((SELECT MAX(attempt_number) FROM attempts a WHERE a.run_id=r.id),0)+1,r.trigger,r.nominal_us FROM runs r WHERE r.state IN ('queued','retry_wait') AND r.eligible_at_us<=?1 AND r.cancellation_requested_at_us IS NULL AND (r.replacement_candidate=0 OR NOT EXISTS(SELECT 1 FROM runs prior WHERE prior.job_id=r.job_id AND prior.id<>r.id AND prior.state IN ('starting','running','retry_wait'))) AND (r.trigger<>'catch_up' OR NOT EXISTS(SELECT 1 FROM runs earlier WHERE earlier.job_id=r.job_id AND earlier.queue_sequence<r.queue_sequence AND earlier.state IN ('queued','starting','running','retry_wait'))) ORDER BY r.eligible_at_us,r.queue_sequence LIMIT ?2")?;
+        let mut statement = tx.prepare("SELECT r.id,r.job_id,r.snapshot_json,COALESCE((SELECT MAX(attempt_number) FROM attempts a WHERE a.run_id=r.id),0)+1,r.trigger,r.nominal_us FROM runs r WHERE r.state IN ('queued','retry_wait') AND r.eligible_at_us<=?1 AND r.cancellation_requested_at_us IS NULL AND NOT EXISTS(SELECT 1 FROM runs quarantine WHERE quarantine.job_id=r.job_id AND quarantine.state='running' AND quarantine.reason='termination_unconfirmed') AND (r.replacement_candidate=0 OR NOT EXISTS(SELECT 1 FROM runs prior WHERE prior.job_id=r.job_id AND prior.id<>r.id AND prior.state IN ('starting','running','retry_wait'))) AND (r.trigger<>'catch_up' OR NOT EXISTS(SELECT 1 FROM runs earlier WHERE earlier.job_id=r.job_id AND earlier.queue_sequence<r.queue_sequence AND earlier.state IN ('queued','starting','running','retry_wait'))) ORDER BY r.eligible_at_us,r.queue_sequence LIMIT ?2")?;
         let scan_limit = capacity.saturating_mul(64).max(capacity);
         let rows = statement
             .query_map(params![now_us, scan_limit as i64], |row| {
@@ -791,15 +921,42 @@ impl Store {
             let split = jobs.partition_point(|job| job <= &last);
             jobs.rotate_left(split);
         }
+        let mut active_by_job = BTreeMap::<String, i64>::new();
+        {
+            let mut active = tx.prepare(
+                "SELECT job_id,count(*) FROM runs WHERE state IN ('starting','running') GROUP BY job_id",
+            )?;
+            for row in active.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })? {
+                let (job_id, count) = row?;
+                active_by_job.insert(job_id, count);
+            }
+        }
+        let mut selected_by_job = BTreeMap::<String, i64>::new();
         let mut selected = Vec::new();
         while selected.len() < capacity {
             let mut progressed = false;
             for job in &jobs {
                 if let Some(row) = grouped.get_mut(job).and_then(VecDeque::pop_front) {
-                    selected.push(row);
                     progressed = true;
-                    if selected.len() == capacity {
-                        break;
+                    let policy = snapshot_admission_policy(&row.2)?;
+                    let limit = if policy.overlap == "allow" {
+                        policy.per_job_concurrency.max(1)
+                    } else {
+                        1
+                    };
+                    let occupied = active_by_job
+                        .get(job)
+                        .copied()
+                        .unwrap_or(0)
+                        .saturating_add(selected_by_job.get(job).copied().unwrap_or(0));
+                    if occupied < limit {
+                        selected.push(row);
+                        *selected_by_job.entry(job.clone()).or_default() += 1;
+                        if selected.len() == capacity {
+                            break;
+                        }
                     }
                 }
             }
@@ -810,10 +967,10 @@ impl Store {
         let mut attempts = Vec::new();
         for (run_id, job_id, snapshot_json, number, trigger, nominal_us) in selected {
             tx.execute(
-                "UPDATE runs SET state='running' WHERE id=?1 AND state IN ('queued','retry_wait')",
+                "UPDATE runs SET state='starting' WHERE id=?1 AND state IN ('queued','retry_wait')",
                 [&run_id],
             )?;
-            tx.execute("INSERT INTO attempts(run_id,attempt_number,lifetime_id,state,started_at_us,running_at_us) VALUES(?1,?2,?3,'running',?4,?4)", params![run_id,number,lifetime_id,now_us])?;
+            tx.execute("INSERT INTO attempts(run_id,attempt_number,lifetime_id,state,started_at_us,running_at_us) VALUES(?1,?2,?3,'starting',?4,NULL)", params![run_id,number,lifetime_id,now_us])?;
             let relative = format!("{run_id}/{number}.partial");
             tx.execute("INSERT INTO output_artifacts(run_id,attempt_number,relative_path,state) VALUES(?1,?2,?3,'pending')", params![run_id,number,relative])?;
             tx.execute(
@@ -833,10 +990,168 @@ impl Store {
         Ok(Admission { attempts })
     }
 
+    pub fn mark_attempt_running(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+    ) -> StoreResult<StartDecision> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current: Option<(String, Option<String>, String)> = tx
+            .query_row(
+                "SELECT state,cancellation_reason,job_id FROM runs WHERE id=?1",
+                [run_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((state, cancellation_reason, job_id)) = current else {
+            return Err(StoreError::NotFound(run_id.into()));
+        };
+        if !matches!(state.as_str(), "starting" | "running") {
+            return Err(StoreError::Conflict(
+                "admitted run is no longer at the pre-spawn boundary".into(),
+            ));
+        }
+        if let Some(source) = cancellation_reason {
+            let reason = if source == "replacement" {
+                "replacement requested before spawn"
+            } else {
+                "cancelled by user before spawn"
+            };
+            let attempt = tx.execute(
+                "UPDATE attempts SET state='cancelled',finished_at_us=?3,duration_us=0,result_class='cancelled',error_message=?4 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')",
+                params![run_id, attempt_number, now_us, reason],
+            )?;
+            if attempt != 1 {
+                return Err(StoreError::Conflict(
+                    "admitted attempt is no longer starting".into(),
+                ));
+            }
+            tx.execute(
+                "UPDATE output_artifacts SET state='missing',finalized_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='pending'",
+                params![run_id, attempt_number, now_us],
+            )?;
+            tx.execute(
+                "UPDATE runs SET state='cancelled',reason=?2,finished_at_us=?3,replacement_candidate=0 WHERE id=?1 AND state IN ('starting','running')",
+                params![run_id, reason, now_us],
+            )?;
+            tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [run_id])?;
+            event(
+                &tx,
+                now_us,
+                "cancelled_before_spawn",
+                Some(&job_id),
+                Some(run_id),
+                &serde_json::to_string(&serde_json::json!({"source": source}))?,
+            )?;
+            tx.commit()?;
+            return Ok(StartDecision::CancelledBeforeSpawn);
+        }
+        if state == "running" {
+            let attempt_state: Option<String> = tx
+                .query_row(
+                    "SELECT state FROM attempts WHERE run_id=?1 AND attempt_number=?2",
+                    params![run_id, attempt_number],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if attempt_state.as_deref() != Some("running") {
+                return Err(StoreError::Conflict(
+                    "running run does not match the admitted attempt".into(),
+                ));
+            }
+            tx.commit()?;
+            return Ok(StartDecision::Ready);
+        }
+        let attempt = tx.execute(
+            "UPDATE attempts SET state='running',running_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='starting'",
+            params![run_id, attempt_number, now_us],
+        )?;
+        let run = tx.execute(
+            "UPDATE runs SET state='running' WHERE id=?1 AND state='starting'",
+            [run_id],
+        )?;
+        if attempt != 1 || run != 1 {
+            return Err(StoreError::Conflict(
+                "admitted attempt is no longer starting".into(),
+            ));
+        }
+        tx.commit()?;
+        Ok(StartDecision::Ready)
+    }
+
     pub fn complete_attempt(&self, completion: &AttemptCompletion) -> StoreResult<()> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        tx.execute("UPDATE attempts SET state=?3,finished_at_us=?4,duration_us=?5,exit_code=?6,http_status=?7,result_class=?3,error_message=?8 WHERE run_id=?1 AND attempt_number=?2", params![completion.run_id,completion.attempt_number,completion.state,completion.now_us,completion.duration_us,completion.exit_code,completion.http_status,completion.reason])?;
+        if completion.state == "termination_unconfirmed" {
+            if completion.retry.is_some() {
+                return Err(StoreError::Conflict(
+                    "termination-unconfirmed attempts cannot retry".into(),
+                ));
+            }
+            let changed = tx.execute(
+                "UPDATE attempts SET state='interrupted_unknown',finished_at_us=?3,duration_us=?4,result_class='termination_unconfirmed',error_message=?5 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')",
+                params![completion.run_id, completion.attempt_number, completion.now_us, completion.duration_us, completion.reason],
+            )?;
+            if changed != 1 {
+                if termination_completion_committed(&tx, completion)? {
+                    return Ok(());
+                }
+                return Err(StoreError::Conflict(
+                    "attempt is not active for quarantine".into(),
+                ));
+            }
+            tx.execute(
+                "DELETE FROM retry_intents WHERE run_id=?1",
+                [&completion.run_id],
+            )?;
+            let (job_id, cancellation_reason): (String, Option<String>) = tx.query_row(
+                "SELECT job_id,cancellation_reason FROM runs WHERE id=?1 AND state IN ('starting','running')",
+                [&completion.run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            tx.execute(
+                "UPDATE runs SET state='running',reason='termination_unconfirmed',finished_at_us=NULL WHERE id=?1",
+                [&completion.run_id],
+            )?;
+            if cancellation_reason.as_deref() == Some("replacement") {
+                tx.execute(
+                    "DELETE FROM retry_intents WHERE run_id IN (SELECT id FROM runs WHERE job_id=?1 AND replacement_candidate=1)",
+                    [&job_id],
+                )?;
+                tx.execute(
+                    "UPDATE runs SET state='failed',reason='replacement failed: predecessor termination unconfirmed',finished_at_us=?2,replacement_candidate=0 WHERE job_id=?1 AND replacement_candidate=1 AND state IN ('queued','retry_wait')",
+                    params![job_id, completion.now_us],
+                )?;
+            }
+            event(
+                &tx,
+                completion.now_us,
+                "termination_unconfirmed",
+                Some(&job_id),
+                Some(&completion.run_id),
+                &serde_json::to_string(&serde_json::json!({"detail": completion.reason}))?,
+            )?;
+            tx.commit()?;
+            return Ok(());
+        }
+        if completion.retry.is_some()
+            && !matches!(completion.state.as_str(), "failed" | "timed_out")
+        {
+            return Err(StoreError::Conflict(
+                "retry intent requires a known failed or timed-out attempt".into(),
+            ));
+        }
+        let changed = tx.execute("UPDATE attempts SET state=?3,finished_at_us=?4,duration_us=?5,exit_code=?6,http_status=?7,result_class=?3,error_message=?8 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')", params![completion.run_id,completion.attempt_number,completion.state,completion.now_us,completion.duration_us,completion.exit_code,completion.http_status,completion.reason])?;
+        if changed != 1 {
+            if completion_already_committed(&tx, completion)? {
+                return Ok(());
+            }
+            return Err(StoreError::Conflict(
+                "attempt is not active for completion".into(),
+            ));
+        }
         if let Some(retry) = &completion.retry {
             tx.execute(
                 "UPDATE runs SET state='retry_wait',eligible_at_us=?2,reason=?3 WHERE id=?1",
@@ -1062,6 +1377,108 @@ struct SnapshotAdmissionPolicy {
     per_job_concurrency: i64,
 }
 
+fn termination_completion_committed(
+    tx: &Transaction<'_>,
+    completion: &AttemptCompletion,
+) -> StoreResult<bool> {
+    type TerminationCompletionFacts = (
+        String,
+        Option<i64>,
+        Option<i64>,
+        Option<String>,
+        String,
+        Option<String>,
+    );
+    let current: Option<TerminationCompletionFacts> = tx
+        .query_row(
+            "SELECT a.state,a.finished_at_us,a.duration_us,a.error_message,r.state,r.reason FROM attempts a JOIN runs r ON r.id=a.run_id WHERE a.run_id=?1 AND a.attempt_number=?2",
+            params![completion.run_id, completion.attempt_number],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+        )
+        .optional()?;
+    Ok(matches!(
+        current,
+        Some((attempt_state, finished, duration, error, run_state, reason))
+            if attempt_state == "interrupted_unknown"
+                && finished == Some(completion.now_us)
+                && duration == Some(completion.duration_us)
+                && error.as_deref() == Some(completion.reason.as_str())
+                && run_state == "running"
+                && reason.as_deref() == Some("termination_unconfirmed")
+    ))
+}
+
+fn completion_already_committed(
+    tx: &Transaction<'_>,
+    completion: &AttemptCompletion,
+) -> StoreResult<bool> {
+    type CompletionFacts = (
+        String,
+        Option<i64>,
+        Option<i64>,
+        Option<i32>,
+        Option<i64>,
+        Option<String>,
+        String,
+        Option<String>,
+        i64,
+        Option<i64>,
+    );
+    let current: Option<CompletionFacts> = tx
+        .query_row(
+            "SELECT a.state,a.finished_at_us,a.duration_us,a.exit_code,a.http_status,a.error_message,r.state,r.reason,r.eligible_at_us,r.finished_at_us FROM attempts a JOIN runs r ON r.id=a.run_id WHERE a.run_id=?1 AND a.attempt_number=?2",
+            params![completion.run_id, completion.attempt_number],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?)),
+        )
+        .optional()?;
+    let Some((
+        attempt_state,
+        finished,
+        duration,
+        exit_code,
+        http_status,
+        error,
+        run_state,
+        reason,
+        eligible_at,
+        run_finished,
+    )) = current
+    else {
+        return Ok(false);
+    };
+    if attempt_state != completion.state
+        || finished != Some(completion.now_us)
+        || duration != Some(completion.duration_us)
+        || exit_code != completion.exit_code
+        || http_status != completion.http_status.map(i64::from)
+        || error.as_deref() != Some(completion.reason.as_str())
+        || reason.as_deref() != Some(completion.reason.as_str())
+    {
+        return Ok(false);
+    }
+    if let Some(retry) = &completion.retry {
+        if run_state != "retry_wait" || eligible_at != retry.not_before_us || run_finished.is_some()
+        {
+            return Ok(false);
+        }
+        let retry_matches: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM retry_intents WHERE run_id=?1 AND prior_attempt_number=?2 AND not_before_us=?3 AND classification=?4 AND created_at_us=?5)",
+            params![completion.run_id, completion.attempt_number, retry.not_before_us, retry.classification, completion.now_us],
+            |row| row.get(0),
+        )?;
+        Ok(retry_matches)
+    } else {
+        let retry_exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM retry_intents WHERE run_id=?1)",
+            [&completion.run_id],
+            |row| row.get(0),
+        )?;
+        Ok(!retry_exists
+            && run_state == completion.state
+            && run_finished == Some(completion.now_us))
+    }
+}
+
 fn snapshot_admission_policy(snapshot: &str) -> StoreResult<SnapshotAdmissionPolicy> {
     let value: serde_json::Value = serde_json::from_str(snapshot)?;
     let policy = value.get("policy");
@@ -1095,6 +1512,59 @@ fn next_queue_sequence(tx: &Transaction<'_>) -> StoreResult<i64> {
     Ok(value)
 }
 
+fn supersede_for_replacement(
+    tx: &Transaction<'_>,
+    job_id: &str,
+    now_us: i64,
+    successor_id: Option<&str>,
+) -> StoreResult<()> {
+    let mut statement = tx.prepare(
+        "SELECT id FROM runs WHERE job_id=?1 AND (state='retry_wait' OR (state='queued' AND trigger<>'catch_up')) ORDER BY queue_sequence",
+    )?;
+    let superseded = statement
+        .query_map([job_id], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+    for run_id in superseded {
+        tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [&run_id])?;
+        tx.execute(
+            "UPDATE runs SET state='skipped_overlap',reason='superseded by newer replacement',finished_at_us=?2,replacement_candidate=0 WHERE id=?1 AND state IN ('queued','retry_wait')",
+            params![run_id, now_us],
+        )?;
+        let details = serde_json::json!({
+            "reason": "superseded_by_newer_replacement",
+            "successor_run_id": successor_id,
+        });
+        event(
+            tx,
+            now_us,
+            "replacement_superseded",
+            Some(job_id),
+            Some(&run_id),
+            &serde_json::to_string(&details)?,
+        )?;
+    }
+    let active_changed = tx.execute(
+        "UPDATE runs SET cancellation_requested_at_us=COALESCE(cancellation_requested_at_us,?2),cancellation_reason=COALESCE(cancellation_reason,'replacement'),replacement_candidate=0 WHERE job_id=?1 AND state IN ('starting','running')",
+        params![job_id, now_us],
+    )?;
+    if active_changed > 0 {
+        let details = serde_json::json!({
+            "source": "replacement",
+            "successor_run_id": successor_id,
+        });
+        event(
+            tx,
+            now_us,
+            "replacement_requested",
+            Some(job_id),
+            None,
+            &serde_json::to_string(&details)?,
+        )?;
+    }
+    Ok(())
+}
+
 fn event(
     tx: &Transaction<'_>,
     at: i64,
@@ -1121,6 +1591,9 @@ fn map_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<JobRecord> {
         current_revision: row.get(6)?,
         definition_json: row.get(7)?,
         cursor_us: row.get(8)?,
+        updated_at_us: row.get(9)?,
+        cursor_updated_at_us: row.get(10)?,
+        disabled_since_us: row.get(11)?,
     })
 }
 
@@ -1155,7 +1628,7 @@ fn validate_import_resolution(
 
 fn import_destination(tx: &Transaction<'_>, id: &str) -> StoreResult<JobRecord> {
     tx.query_row(
-        "SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE j.id=?1 AND j.removed_at_us IS NULL",
+        "SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE j.id=?1 AND j.removed_at_us IS NULL",
         [id],
         map_job,
     )
@@ -1280,6 +1753,7 @@ mod tests {
             .materialize(
                 &job,
                 CursorUpdate {
+                    expected_revision: 1,
                     expected_cursor_us: 1,
                     new_cursor_us: 10,
                     resolve_one_time: false,
@@ -1293,6 +1767,7 @@ mod tests {
             .materialize(
                 &job,
                 CursorUpdate {
+                    expected_revision: 1,
                     expected_cursor_us: 10,
                     new_cursor_us: 20,
                     resolve_one_time: false,
@@ -1302,6 +1777,53 @@ mod tests {
             )
             .unwrap();
         assert_eq!(second.duplicates, 1);
+    }
+
+    #[test]
+    fn reconciliation_rejects_same_cursor_on_a_new_revision() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "x");
+        store
+            .update_job(&UpdateJob {
+                id: job.clone(),
+                expected_revision: 1,
+                name: "x".into(),
+                description: None,
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: "{\"revision\":2}".into(),
+                now_us: 2,
+                cursor_us: 1,
+            })
+            .unwrap();
+        let stale = NewScheduledRun {
+            id: Uuid::now_v7().to_string(),
+            job_id: job.clone(),
+            revision: 1,
+            trigger: "scheduled".into(),
+            nominal_us: 10,
+            requested_at_us: 10,
+            eligible_at_us: 10,
+            snapshot_json: "{}".into(),
+        };
+        assert!(matches!(
+            store.materialize(
+                &job,
+                CursorUpdate {
+                    expected_revision: 1,
+                    expected_cursor_us: 1,
+                    new_cursor_us: 10,
+                    resolve_one_time: false,
+                },
+                &[stale],
+                10,
+            ),
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(store.job("x").unwrap().current_revision, 2);
+        assert_eq!(store.job("x").unwrap().cursor_us, 1);
+        assert!(store.history(Some("x"), 10).unwrap().is_empty());
     }
 
     #[test]
@@ -1326,6 +1848,7 @@ mod tests {
             .materialize(
                 &job,
                 CursorUpdate {
+                    expected_revision: 1,
                     expected_cursor_us: 1,
                     new_cursor_us: 20,
                     resolve_one_time: true,
@@ -1341,6 +1864,7 @@ mod tests {
             .materialize(
                 &job,
                 CursorUpdate {
+                    expected_revision: 1,
                     expected_cursor_us: 20,
                     new_cursor_us: 30,
                     resolve_one_time: true,
@@ -1363,6 +1887,72 @@ mod tests {
         create(&store, &job, "x");
         let run = Uuid::now_v7().to_string();
         assert_eq!(store.enqueue_manual("x", &run, 2).unwrap().state, "queued");
+    }
+
+    #[test]
+    fn enable_transition_is_a_durable_fact_not_an_updated_at_heuristic() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "x");
+        assert_eq!(
+            store.set_enabled("x", true, 1).unwrap().disabled_since_us,
+            None
+        );
+
+        assert_eq!(
+            store.set_enabled("x", false, 10).unwrap().disabled_since_us,
+            Some(10)
+        );
+        assert_eq!(
+            store.set_enabled("x", false, 11).unwrap().disabled_since_us,
+            Some(10)
+        );
+        assert_eq!(
+            store.set_enabled("x", true, 11).unwrap().disabled_since_us,
+            Some(10)
+        );
+
+        store
+            .materialize(
+                &job,
+                CursorUpdate {
+                    expected_revision: 1,
+                    expected_cursor_us: 1,
+                    new_cursor_us: 20,
+                    resolve_one_time: false,
+                },
+                &[],
+                20,
+            )
+            .unwrap();
+        assert_eq!(store.job("x").unwrap().disabled_since_us, None);
+        assert!(matches!(
+            store.set_enabled("missing", false, 30),
+            Err(StoreError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn concurrent_enable_disable_transitions_serialize_in_sqlite() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let first = Store::open(paths.clone(), "test", 1).unwrap();
+        let second = Store::open(paths, "test", 1).unwrap();
+        let job = Uuid::now_v7().to_string();
+        create(&first, &job, "x");
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                barrier.wait();
+                first.set_enabled("x", false, 10).unwrap();
+            });
+            scope.spawn(|| {
+                barrier.wait();
+                second.set_enabled("x", true, 11).unwrap();
+            });
+        });
+        first.set_enabled("x", true, 12).unwrap();
+        assert!(first.job("x").unwrap().disabled_since_us.is_some());
     }
 
     #[test]
@@ -1641,7 +2231,515 @@ mod tests {
             store.enqueue_manual("x", &second, 3).unwrap().state,
             "queued"
         );
-        assert_eq!(store.run(&first).unwrap().state, "cancelled");
+        assert_eq!(store.run(&first).unwrap().state, "skipped_overlap");
+        assert_eq!(
+            store.run(&first).unwrap().reason.as_deref(),
+            Some("superseded by newer replacement")
+        );
         assert_eq!(store.run(&second).unwrap().state, "queued");
+    }
+
+    #[test]
+    fn reconciliation_summaries_are_compact_and_atomic_with_cursor() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "x");
+        store
+            .materialize_with_summaries(
+                &job,
+                CursorUpdate {
+                    expected_revision: 1,
+                    expected_cursor_us: 1,
+                    new_cursor_us: 1_000_000,
+                    resolve_one_time: false,
+                },
+                &[],
+                &[
+                    ReconciliationSummary {
+                        kind: "missed_start_deadline".into(),
+                        count: 99_000,
+                        first_nominal_us: 2,
+                        last_nominal_us: 99_001,
+                    },
+                    ReconciliationSummary {
+                        kind: "catch_up_omitted".into(),
+                        count: 900,
+                        first_nominal_us: 99_002,
+                        last_nominal_us: 999_000,
+                    },
+                ],
+                1_000_000,
+            )
+            .unwrap();
+        let events = store.events_for_job(&job).unwrap();
+        let summaries = events
+            .iter()
+            .filter(|event| event.kind.contains("missed") || event.kind.contains("omitted"))
+            .collect::<Vec<_>>();
+        assert_eq!(summaries.len(), 2);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&summaries[0].details_json).unwrap()["count"],
+            99_000
+        );
+
+        let conflict = store.materialize_with_summaries(
+            &job,
+            CursorUpdate {
+                expected_revision: 1,
+                expected_cursor_us: 1,
+                new_cursor_us: 2_000_000,
+                resolve_one_time: false,
+            },
+            &[],
+            &[ReconciliationSummary {
+                kind: "must_not_commit".into(),
+                count: 1,
+                first_nominal_us: 1,
+                last_nominal_us: 1,
+            }],
+            2_000_000,
+        );
+        assert!(matches!(conflict, Err(StoreError::Conflict(_))));
+        assert!(
+            store
+                .events_for_job(&job)
+                .unwrap()
+                .iter()
+                .all(|event| event.kind != "must_not_commit")
+        );
+    }
+
+    #[test]
+    fn replace_waits_for_active_confirmation_and_keeps_only_newest_candidate() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create_with_policy(&store, &job, "x", "replace", 1);
+        let first = Uuid::now_v7().to_string();
+        store.enqueue_manual("x", &first, 2).unwrap();
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        let first_attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+        assert_eq!(store.run(&first).unwrap().state, "starting");
+        assert_eq!(
+            store
+                .mark_attempt_running(&first, first_attempt.attempt_number, 4)
+                .unwrap(),
+            StartDecision::Ready
+        );
+        assert_eq!(
+            store
+                .mark_attempt_running(&first, first_attempt.attempt_number, 4)
+                .unwrap(),
+            StartDecision::Ready
+        );
+
+        let second = Uuid::now_v7().to_string();
+        let third = Uuid::now_v7().to_string();
+        store.enqueue_manual("x", &second, 5).unwrap();
+        store.enqueue_manual("x", &third, 6).unwrap();
+        assert_eq!(store.run(&second).unwrap().state, "skipped_overlap");
+        assert!(store.cancellation_requested(&first).unwrap());
+        assert!(store.admit(&lifetime, 6, 1).unwrap().attempts.is_empty());
+
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: first.clone(),
+                attempt_number: first_attempt.attempt_number,
+                now_us: 8,
+                duration_us: 4,
+                state: "cancelled".into(),
+                exit_code: None,
+                http_status: None,
+                reason: "replacement termination confirmed".into(),
+                retry: None,
+            })
+            .unwrap();
+        let replacement = store.admit(&lifetime, 9, 1).unwrap();
+        assert_eq!(replacement.attempts.len(), 1);
+        assert_eq!(replacement.attempts[0].run_id, third);
+    }
+
+    #[test]
+    fn cancellation_requested_while_starting_prevents_spawn() {
+        for replacement in [false, true] {
+            let (_temp, store) = store();
+            let job = Uuid::now_v7().to_string();
+            create_with_policy(
+                &store,
+                &job,
+                "x",
+                if replacement { "replace" } else { "skip" },
+                1,
+            );
+            let first = Uuid::now_v7().to_string();
+            store.enqueue_manual("x", &first, 2).unwrap();
+            let lifetime = Uuid::now_v7().to_string();
+            store.begin_lifetime(&lifetime, 3, "test").unwrap();
+            let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+
+            if replacement {
+                let successor = Uuid::now_v7().to_string();
+                store.enqueue_manual("x", &successor, 4).unwrap();
+            } else {
+                store.cancel(&first, 4).unwrap();
+            }
+
+            assert_eq!(
+                store
+                    .mark_attempt_running(&first, attempt.attempt_number, 5)
+                    .unwrap(),
+                StartDecision::CancelledBeforeSpawn
+            );
+            assert_eq!(store.run(&first).unwrap().state, "cancelled");
+            assert!(
+                store
+                    .events_for_job(&job)
+                    .unwrap()
+                    .iter()
+                    .any(|event| event.kind == "cancelled_before_spawn")
+            );
+        }
+    }
+
+    #[test]
+    fn ambiguous_mark_running_retry_rechecks_cancellation_before_spawn() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "x");
+        let run = Uuid::now_v7().to_string();
+        store.enqueue_manual("x", &run, 2).unwrap();
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+        assert_eq!(
+            store
+                .mark_attempt_running(&run, attempt.attempt_number, 4)
+                .unwrap(),
+            StartDecision::Ready
+        );
+        store.cancel(&run, 5).unwrap();
+        assert_eq!(
+            store
+                .mark_attempt_running(&run, attempt.attempt_number, 6)
+                .unwrap(),
+            StartDecision::CancelledBeforeSpawn
+        );
+        assert_eq!(store.run(&run).unwrap().state, "cancelled");
+    }
+
+    #[test]
+    fn identical_attempt_completion_is_idempotent_but_mismatch_conflicts() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "x");
+        let run = Uuid::now_v7().to_string();
+        store.enqueue_manual("x", &run, 2).unwrap();
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+        store
+            .mark_attempt_running(&run, attempt.attempt_number, 4)
+            .unwrap();
+        let completion = AttemptCompletion {
+            run_id: run,
+            attempt_number: attempt.attempt_number,
+            now_us: 5,
+            duration_us: 1,
+            state: "succeeded".into(),
+            exit_code: Some(0),
+            http_status: None,
+            reason: "known result".into(),
+            retry: None,
+        };
+        store.complete_attempt(&completion).unwrap();
+        store.complete_attempt(&completion).unwrap();
+        let mut mismatched = completion;
+        mismatched.reason = "different result".into();
+        assert!(matches!(
+            store.complete_attempt(&mismatched),
+            Err(StoreError::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn unconfirmed_replacement_termination_quarantines_predecessor_and_fails_candidate() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create_with_policy(&store, &job, "x", "replace", 1);
+        let predecessor = Uuid::now_v7().to_string();
+        store.enqueue_manual("x", &predecessor, 2).unwrap();
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+        assert_eq!(
+            store
+                .mark_attempt_running(&predecessor, attempt.attempt_number, 4)
+                .unwrap(),
+            StartDecision::Ready
+        );
+        let candidate = Uuid::now_v7().to_string();
+        store.enqueue_manual("x", &candidate, 5).unwrap();
+
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: predecessor.clone(),
+                attempt_number: attempt.attempt_number,
+                now_us: 6,
+                duration_us: 3,
+                state: "termination_unconfirmed".into(),
+                exit_code: None,
+                http_status: None,
+                reason: "TERM and KILL confirmation deadlines elapsed".into(),
+                retry: None,
+            })
+            .unwrap();
+        assert_eq!(store.run(&predecessor).unwrap().state, "running");
+        assert_eq!(
+            store.run(&predecessor).unwrap().reason.as_deref(),
+            Some("termination_unconfirmed")
+        );
+        assert_eq!(store.run(&candidate).unwrap().state, "failed");
+        assert!(store.admit(&lifetime, 7, 1).unwrap().attempts.is_empty());
+
+        let next_lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&next_lifetime, 8, "next").unwrap();
+        assert_eq!(store.run(&predecessor).unwrap().state, "running");
+        assert!(
+            store
+                .admit(&next_lifetime, 9, 1)
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        let later_replacement = Uuid::now_v7().to_string();
+        assert_eq!(
+            store
+                .enqueue_manual("x", &later_replacement, 10)
+                .unwrap()
+                .state,
+            "failed"
+        );
+        let current = store.job("x").unwrap();
+        store
+            .update_job(&UpdateJob {
+                id: current.id,
+                expected_revision: current.current_revision,
+                name: current.name,
+                description: current.description,
+                tags_json: current.tags_json,
+                enabled: true,
+                definition_json: "{\"policy\":{\"overlap\":\"allow\",\"per_job_concurrency\":2}}"
+                    .into(),
+                now_us: 11,
+                cursor_us: current.cursor_us,
+            })
+            .unwrap();
+        let allowed_snapshot = Uuid::now_v7().to_string();
+        assert_eq!(
+            store
+                .enqueue_manual("x", &allowed_snapshot, 12)
+                .unwrap()
+                .state,
+            "skipped_overlap"
+        );
+        let catch_up = Uuid::now_v7().to_string();
+        store
+            .materialize(
+                &job,
+                CursorUpdate {
+                    expected_revision: 2,
+                    expected_cursor_us: 1,
+                    new_cursor_us: 20,
+                    resolve_one_time: false,
+                },
+                &[NewScheduledRun {
+                    id: catch_up.clone(),
+                    job_id: job.clone(),
+                    revision: 2,
+                    trigger: "catch_up".into(),
+                    nominal_us: 20,
+                    requested_at_us: 20,
+                    eligible_at_us: 20,
+                    snapshot_json: "{\"policy\":{\"overlap\":\"allow\",\"per_job_concurrency\":2}}"
+                        .into(),
+                }],
+                20,
+            )
+            .unwrap();
+        assert_eq!(store.run(&catch_up).unwrap().state, "skipped_overlap");
+        assert!(
+            store
+                .admit(&next_lifetime, 12, 2)
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        let attempt_state: String = store
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM attempts WHERE run_id=?1 AND attempt_number=?2",
+                params![predecessor, attempt.attempt_number],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(attempt_state, "interrupted_unknown");
+    }
+
+    #[test]
+    fn crash_boundaries_recover_active_attempts_without_retry() {
+        for mark_running in [false, true] {
+            let (_temp, store) = store();
+            let job = Uuid::now_v7().to_string();
+            create(&store, &job, "x");
+            let run = Uuid::now_v7().to_string();
+            store.enqueue_manual("x", &run, 2).unwrap();
+            let old_lifetime = Uuid::now_v7().to_string();
+            store.begin_lifetime(&old_lifetime, 3, "old").unwrap();
+            let attempt = store.admit(&old_lifetime, 4, 1).unwrap().attempts.remove(0);
+            if mark_running {
+                store
+                    .mark_attempt_running(&run, attempt.attempt_number, 5)
+                    .unwrap();
+            }
+            store
+                .conn()
+                .unwrap()
+                .execute(
+                    "INSERT INTO retry_intents(run_id,prior_attempt_number,not_before_us,classification,created_at_us) VALUES(?1,?2,100,'injected_stale',5)",
+                    params![run, attempt.attempt_number],
+                )
+                .unwrap();
+
+            let new_lifetime = Uuid::now_v7().to_string();
+            assert_eq!(store.begin_lifetime(&new_lifetime, 6, "new").unwrap(), 1);
+            assert_eq!(store.run(&run).unwrap().state, "interrupted_unknown");
+            assert!(
+                store
+                    .admit(&new_lifetime, 100, 1)
+                    .unwrap()
+                    .attempts
+                    .is_empty()
+            );
+            let retry_count: i64 = store
+                .conn()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM retry_intents WHERE run_id=?1",
+                    [&run],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(retry_count, 0);
+        }
+    }
+
+    #[test]
+    fn retry_wait_survives_lifetime_restart_and_respects_not_before() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "x");
+        let run = Uuid::now_v7().to_string();
+        store.enqueue_manual("x", &run, 2).unwrap();
+        let first_lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&first_lifetime, 3, "first").unwrap();
+        let attempt = store
+            .admit(&first_lifetime, 3, 1)
+            .unwrap()
+            .attempts
+            .remove(0);
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: run.clone(),
+                attempt_number: attempt.attempt_number,
+                now_us: 4,
+                duration_us: 1,
+                state: "failed".into(),
+                exit_code: Some(1),
+                http_status: None,
+                reason: "known failure".into(),
+                retry: Some(RetryPlan {
+                    not_before_us: 100,
+                    classification: "known_failure".into(),
+                }),
+            })
+            .unwrap();
+        let second_lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&second_lifetime, 5, "second").unwrap();
+        assert!(
+            store
+                .admit(&second_lifetime, 99, 1)
+                .unwrap()
+                .attempts
+                .is_empty()
+        );
+        let retry = store.admit(&second_lifetime, 100, 1).unwrap();
+        assert_eq!(retry.attempts.len(), 1);
+        assert_eq!(retry.attempts[0].attempt_number, 2);
+    }
+
+    #[test]
+    fn admission_enforces_same_job_slots_across_normal_and_catch_up_lanes() {
+        for (overlap, per_job_limit, expected_admitted) in
+            [("skip", 1, 1), ("replace", 1, 1), ("allow", 2, 2)]
+        {
+            let (_temp, store) = store();
+            let job = Uuid::now_v7().to_string();
+            create_with_policy(&store, &job, "x", overlap, per_job_limit);
+            let snapshot = store.job("x").unwrap().definition_json;
+            let scheduled = Uuid::now_v7().to_string();
+            let catch_up = Uuid::now_v7().to_string();
+            store
+                .materialize(
+                    &job,
+                    CursorUpdate {
+                        expected_revision: 1,
+                        expected_cursor_us: 1,
+                        new_cursor_us: 3,
+                        resolve_one_time: false,
+                    },
+                    &[
+                        NewScheduledRun {
+                            id: catch_up.clone(),
+                            job_id: job.clone(),
+                            revision: 1,
+                            trigger: "catch_up".into(),
+                            nominal_us: 2,
+                            requested_at_us: 3,
+                            eligible_at_us: 3,
+                            snapshot_json: snapshot.clone(),
+                        },
+                        NewScheduledRun {
+                            id: scheduled.clone(),
+                            job_id: job.clone(),
+                            revision: 1,
+                            trigger: "scheduled".into(),
+                            nominal_us: 3,
+                            requested_at_us: 3,
+                            eligible_at_us: 3,
+                            snapshot_json: snapshot,
+                        },
+                    ],
+                    3,
+                )
+                .unwrap();
+            let lifetime = Uuid::now_v7().to_string();
+            store.begin_lifetime(&lifetime, 4, "test").unwrap();
+            let first = store.admit(&lifetime, 4, 16).unwrap();
+            assert_eq!(first.attempts.len(), expected_admitted, "{overlap}");
+            assert_eq!(first.attempts[0].run_id, catch_up, "{overlap}");
+            assert_eq!(
+                first
+                    .attempts
+                    .iter()
+                    .filter(|attempt| attempt.job_id == job)
+                    .count(),
+                expected_admitted,
+                "{overlap}"
+            );
+            if overlap == "replace" {
+                assert_eq!(store.run(&scheduled).unwrap().state, "queued");
+            }
+        }
     }
 }

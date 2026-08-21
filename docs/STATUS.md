@@ -52,35 +52,46 @@ Local verification completed on 2026-08-21:
 
 | Toolchain | Format | Clippy | Tests |
 |---|---:|---:|---:|
-| Rust 1.94.0 (MSRV) | pass | pass with `-D warnings` | 78 tests pass |
-| Rust 1.98.0 (latest stable) | pass | pass with `-D warnings` | 78 tests pass |
+| Rust 1.94.0 (MSRV) | pass | pass with `-D warnings` | 113 tests pass |
+| Rust 1.98.0 (latest stable) | pass | pass with `-D warnings` | 113 tests pass |
 
 The suite includes deterministic core tests, temporary real SQLite tests, real subprocess tests,
 local TCP HTTP fixtures, CLI contract tests, wake-socket daemon execution, durable cancellation,
 redaction, and non-mutating dry-run checks. GitHub Actions
-[run 32483045803](https://github.com/whitekiwi/locron/actions/runs/32483045803) for commit
-`1f7b02e` passed all four hosted jobs: Ubuntu with Rust 1.94, Ubuntu with stable, macOS 14 with Rust
-1.94, and macOS 14 with stable. Every job passed formatting, Clippy with `-D warnings`, and all 57
+[run 32486709802](https://github.com/whitekiwi/locron/actions/runs/32486709802) for commit
+`af99df4` passed all four hosted jobs: Ubuntu with Rust 1.94, Ubuntu with stable, macOS 14 with Rust
+1.94, and macOS 14 with stable. Every job passed formatting, Clippy with `-D warnings`, and all 78
 tests. This is hosted-runner compatibility evidence; it does not replace the official architecture
 and process-lifetime matrix still listed below.
+
+The active correctness tranche now has a locally verified implementation of bounded exact
+reconciliation, revision-cached compact Gregorian rank/select, durable disabled intervals and schema
+v1-to-v2 migration, centralized retry timing, pre-spawn cancellation, replacement quarantine on
+unconfirmed process-group termination, and transactional per-job admission slots. The working-tree
+suite has 113 tests and passes format, all-target check, Clippy `-D warnings`, and workspace tests on
+both Rust 1.94 and current stable. This is local evidence, not a replacement for a published hosted
+run. The broad checklist items remain open until every clause in their larger verification matrices
+is covered.
 
 ## Remaining milestone gaps
 
 These are required before milestone 1 can be called complete:
 
-1. Replace the bounded calendar catch-up scan fallback with a mathematically bounded newest-window
-   algorithm and persist omitted/skipped range summary events. Prove disabled/re-enabled and
-   system-local timezone-change behavior with an injected engine clock.
-2. Complete replacement failure classification and exercise every overlap/concurrency interaction,
-   retry restart, fixed backoff, deadline, and one-time crash boundary in deterministic engine tests.
+1. Complete the exhaustive overlap/concurrency trigger matrix, retry/deadline interaction matrix,
+   capacity-reduction fixtures, and deterministic fault points before admission, before spawn,
+   after spawn, and after target exit. Exercise the 1,000-member catch-up boundary end to end.
+2. Define and implement an explicit operator-resolution workflow for the safe
+   `termination_unconfirmed` quarantine; until then it intentionally hard-blocks the job and
+   terminally explains new submissions.
 3. Wire startup output repair/orphan cleanup and automatic daemon maintenance; complete metadata
    age/count retention in addition to the implemented output byte/age prune path.
 4. Persist resolved executable/audit hashes and add TLS, process-grandchild, disappearing HTTP
    body-file, streaming-timeout, and noisy-output fixtures.
 5. Implement live partial-file follow and the reviewed `locron.stream/v1` terminal stream contract.
    Refine human rendering beyond the current readable JSON representation.
-6. Add migration-upgrade, concurrent-writer/busy, disk-failure, crash injection, retention
-   stress, concurrency 16/64, and catch-up 1,000 tests.
+6. Add broader concurrent-writer/busy, disk-failure, retention stress, concurrency 16/64, and
+   cross-process crash-injection tests beyond the deterministic migration/concurrency fixtures now
+   present.
 7. Run the official Linux/macOS architecture matrix and produce the 16-criterion completion matrix.
 
 No HTTP management/viewer, MCP, desktop, package-manager publication, or service-installer code has

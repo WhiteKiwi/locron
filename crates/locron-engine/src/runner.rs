@@ -7,7 +7,8 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use nix::sys::signal::{Signal, killpg};
+use nix::errno::Errno;
+use nix::sys::signal::{Signal, kill, killpg};
 use nix::unistd::Pid;
 use reqwest::header::{
     AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue,
@@ -96,6 +97,8 @@ pub enum OutcomeKind {
     TimedOut,
     /// Explicit cancellation or overlap replacement.
     Cancelled,
+    /// TERM/KILL completed without confirming that the owned child exited.
+    TerminationUnconfirmed,
 }
 
 /// Complete result of one target attempt.
@@ -238,50 +241,103 @@ impl Runner {
             .map(|duration| Box::pin(tokio::time::sleep(duration)));
         let mut result = None;
         let mut termination = None;
+        let mut termination_stage = 0_u8;
+        let mut termination_deadline = None;
+        let mut termination_errors = Vec::new();
+        let mut confirmation_failure = false;
+        let mut termination_confirmed = false;
 
-        while result.is_none() {
+        while !(confirmation_failure
+            || termination.is_none() && result.is_some()
+            || termination.is_some() && termination_confirmed)
+        {
             tokio::select! {
-                status = &mut wait => result = Some(status.map_err(RunnerError::Output)?),
+                biased;
+                status = &mut wait, if result.is_none() => {
+                    result = Some(status.map_err(RunnerError::Output)?);
+                    if termination.is_some() {
+                        termination_confirmed = observe_group_absence(pid, &mut termination_errors);
+                    }
+                }
                 Some((channel, bytes)) = receiver.recv() => {
                     writer.write(channel, start.elapsed(), &bytes).await?;
                 }
                 () = context.cancellation.cancelled(), if termination.is_none() => {
                     termination = Some(OutcomeKind::Cancelled);
-                    terminate_group(pid, self.config.termination_grace).await;
+                    record_signal_result(&mut termination_errors, Signal::SIGTERM, signal_group(pid, Signal::SIGTERM));
+                    termination_stage = 1;
+                    termination_deadline = Some(Box::pin(tokio::time::sleep(self.config.termination_grace)));
                 }
                 () = async { if let Some(timer) = &mut timeout { timer.await } }, if timeout.is_some() && termination.is_none() => {
                     termination = Some(OutcomeKind::TimedOut);
                     timeout = None;
-                    terminate_group(pid, self.config.termination_grace).await;
+                    record_signal_result(&mut termination_errors, Signal::SIGTERM, signal_group(pid, Signal::SIGTERM));
+                    termination_stage = 1;
+                    termination_deadline = Some(Box::pin(tokio::time::sleep(self.config.termination_grace)));
+                }
+                () = async { if let Some(deadline) = &mut termination_deadline { deadline.await } }, if termination_deadline.is_some() => {
+                    let group_absent = observe_group_absence(pid, &mut termination_errors);
+                    if group_absent && result.is_some() {
+                        termination_confirmed = true;
+                        termination_deadline = None;
+                    } else if termination_stage == 1 && !group_absent {
+                        record_signal_result(&mut termination_errors, Signal::SIGKILL, signal_group(pid, Signal::SIGKILL));
+                        termination_stage = 2;
+                        termination_deadline = Some(Box::pin(tokio::time::sleep(self.config.termination_grace)));
+                    } else if termination_stage == 1 {
+                        termination_stage = 2;
+                        termination_deadline = Some(Box::pin(tokio::time::sleep(self.config.termination_grace)));
+                    } else if !group_absent || result.is_none() {
+                        confirmation_failure = true;
+                        termination_deadline = None;
+                    }
                 }
             }
         }
-        // Both stream tasks finish when the process closes its pipe ends. Keep
-        // draining so a full bounded channel cannot deadlock their completion.
-        while let Some((channel, bytes)) = receiver.recv().await {
-            writer.write(channel, start.elapsed(), &bytes).await?;
-        }
-        let _ = stdout_task.await;
-        let _ = stderr_task.await;
-        let stats = writer.finalize(&context.final_output).await?;
-        let status = result.expect("wait result");
-        let kind = termination.unwrap_or_else(|| {
-            if status.success() {
-                OutcomeKind::Succeeded
-            } else {
-                OutcomeKind::FailedRetryable
+        if confirmation_failure {
+            stdout_task.abort();
+            stderr_task.abort();
+            drop(receiver);
+        } else {
+            // Both stream tasks finish when the process closes its pipe ends. Keep
+            // draining so a full bounded channel cannot deadlock their completion.
+            while let Some((channel, bytes)) = receiver.recv().await {
+                writer.write(channel, start.elapsed(), &bytes).await?;
             }
-        });
-        let reason = match kind {
-            OutcomeKind::Succeeded => "process exited successfully".into(),
-            OutcomeKind::FailedRetryable => format!("process exited with status {status}"),
-            OutcomeKind::TimedOut => "attempt timed out".into(),
-            OutcomeKind::Cancelled => "attempt was cancelled".into(),
-            OutcomeKind::Failed => "process failed".into(),
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+        }
+        let stats = writer.finalize(&context.final_output).await?;
+        let kind = if confirmation_failure {
+            OutcomeKind::TerminationUnconfirmed
+        } else {
+            let status = result.as_ref().expect("wait result");
+            termination.unwrap_or_else(|| {
+                if status.success() {
+                    OutcomeKind::Succeeded
+                } else {
+                    OutcomeKind::FailedRetryable
+                }
+            })
+        };
+        let reason = if confirmation_failure {
+            termination_confirmation_reason(&termination_errors)
+        } else {
+            match kind {
+                OutcomeKind::Succeeded => "process exited successfully".into(),
+                OutcomeKind::FailedRetryable => format!(
+                    "process exited with status {}",
+                    result.as_ref().expect("wait result")
+                ),
+                OutcomeKind::TimedOut => "attempt timed out".into(),
+                OutcomeKind::Cancelled => "attempt was cancelled".into(),
+                OutcomeKind::Failed => "process failed".into(),
+                OutcomeKind::TerminationUnconfirmed => unreachable!("reason handled above"),
+            }
         };
         Ok(ExecutionOutcome {
             kind,
-            exit_code: status.code(),
+            exit_code: result.as_ref().and_then(std::process::ExitStatus::code),
             http_status: None,
             reason,
             duration_micros: 0,
@@ -502,11 +558,44 @@ async fn read_stream<R: tokio::io::AsyncRead + Unpin>(
     }
 }
 
-async fn terminate_group(pid: Option<Pid>, grace: Duration) {
-    let Some(pid) = pid else { return };
-    let _ = killpg(pid, Signal::SIGTERM);
-    tokio::time::sleep(grace).await;
-    let _ = killpg(pid, Signal::SIGKILL);
+fn signal_group(pid: Option<Pid>, signal: Signal) -> Result<(), Errno> {
+    let Some(pid) = pid else {
+        return Err(Errno::ESRCH);
+    };
+    killpg(pid, signal)
+}
+
+fn observe_group_absence(pid: Option<Pid>, errors: &mut Vec<String>) -> bool {
+    let Some(pid) = pid else {
+        return false;
+    };
+    match kill(Pid::from_raw(pid.as_raw().saturating_neg()), None) {
+        Ok(()) | Err(Errno::EPERM) => false,
+        Err(Errno::ESRCH) => true,
+        Err(error) => {
+            errors.push(format!("group liveness: {error}"));
+            false
+        }
+    }
+}
+
+fn record_signal_result(errors: &mut Vec<String>, signal: Signal, result: Result<(), Errno>) {
+    if let Err(error) = result
+        && error != Errno::ESRCH
+    {
+        errors.push(format!("{signal:?}: {error}"));
+    }
+}
+
+fn termination_confirmation_reason(errors: &[String]) -> String {
+    if errors.is_empty() {
+        "termination confirmation failed after TERM and KILL deadlines".into()
+    } else {
+        format!(
+            "termination confirmation failed after TERM and KILL deadlines; signal errors: {}",
+            errors.join(", ")
+        )
+    }
 }
 
 async fn finalize_configuration_failure(
@@ -677,6 +766,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn injected_signal_results_distinguish_already_gone_from_unconfirmed_failure() {
+        let mut errors = Vec::new();
+        record_signal_result(&mut errors, Signal::SIGTERM, Err(Errno::ESRCH));
+        record_signal_result(&mut errors, Signal::SIGKILL, Err(Errno::EPERM));
+        assert_eq!(errors.len(), 1);
+        let reason = termination_confirmation_reason(&errors);
+        assert!(reason.contains("termination confirmation failed"));
+        assert!(reason.contains("EPERM"));
+    }
+
     #[tokio::test]
     async fn process_preserves_argv_and_streams_output() {
         let temp = tempfile::tempdir().unwrap();
@@ -766,6 +866,39 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(outcome.kind, OutcomeKind::TimedOut);
+    }
+
+    #[tokio::test]
+    async fn leader_exit_does_not_confirm_a_live_same_group_descendant() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut context = context(&temp);
+        context.timeout = None;
+        let cancellation = context.cancellation.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            cancellation.cancel();
+        });
+        let spec = ProcessSpec {
+            executable: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                "trap 'exit 0' TERM; sh -c 'trap \"\" TERM; sleep 5' & wait".into(),
+            ],
+            cwd: temp.path().into(),
+            env: BTreeMap::new(),
+        };
+        let start = Instant::now();
+        let outcome = Runner::new(RunnerConfig {
+            termination_grace: Duration::from_millis(40),
+            ..RunnerConfig::default()
+        })
+        .unwrap()
+        .execute(&TargetSpec::Process(spec), &context)
+        .await
+        .unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Cancelled);
+        assert!(start.elapsed() >= Duration::from_millis(40));
+        assert!(start.elapsed() < Duration::from_secs(2));
     }
 
     #[tokio::test]

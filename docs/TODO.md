@@ -52,6 +52,28 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 
 ## 5. Implement scheduler and admission semantics
 
+Current correctness tranche (2026-08-21):
+
+- [ ] Replace elapsed calendar scanning with bounded newest-window reconciliation and compact exact
+  range summaries shared by cron, interval, and one-time schedules.
+  **Verify:** pure tests cover long sparse ranges, deadline-before-policy ordering, limits 1 and
+  1,000, newest selection/oldest execution, DST gap/fold, backward/forward wall moves, local-zone
+  replacement, disable/re-enable, explicit recovery versus steady-state boundaries, exact cutoff and
+  1-microsecond deadline edges, and duplicate reconciliation without sleeps.
+- [ ] Centralize retry classification/backoff and prove durable `retry_wait` restart behavior and all
+  forbidden retry classes.
+  **Verify:** deterministic clock/store tests cover fixed and capped exponential delay, retry count
+  exhaustion, timeout opt-in, restart eligibility, cancellation/configuration/replacement/unknown
+  exclusion, and deadline interaction.
+- [ ] Make replacement supersession and confirmation fully durable and exercise admission capacity
+  interactions.
+  **Verify:** store/engine tests cover newest-only `skipped_overlap` supersession, queued/retry-wait
+  replacement without signal, active cancellation intent, confirmation failure, catch-up isolation,
+  and `skip|replace|allow` across scheduled/manual/catch-up and changed capacity.
+- [ ] Add deterministic lifecycle fault boundaries without acting on stale process identities.
+  **Verify:** injected faults before spawn, after admission, while running, and after target exit show
+  `interrupted_unknown`, no unknown retry, and no duplicate one-time occurrence.
+
 - [ ] Implement the long-lived daemon runtime in `locron-engine`, including lifetime/lock ownership, loop coordination, signals, bounded maintenance, and graceful shutdown.
 - [ ] Reconcile startup, wake, ticks, job revisions, disabled intervals, and wall-clock changes from durable cursors.
 - [x] Prove due one-time resolution disables atomically, downtime catch-up remains unique, and manual
@@ -116,3 +138,26 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 - [ ] Keep durable future decisions under `docs/decisions/` only when a reviewed ADR is needed; split CLI/storage contracts only after review justifies dedicated documents.
 
 **Verify:** a completion matrix links all 16 `docs/SPEC.md` criteria to passing evidence on the official macOS/Linux platform matrix; documentation examples execute successfully; architecture and implementation cross-links resolve; repository search and dependency/workspace inspection find no deferred surface implementation or premature empty ADR document.
+
+## Post-milestone delivery backlog
+
+These items begin only after every milestone-1 completion criterion above is satisfied. They do not
+change the package-publication exclusion in `docs/SPEC.md`, and this milestone does not implement
+their workflows or release infrastructure.
+
+- [ ] Define CI/CD policy and version/release policy. **Verify:** choose concrete evidence when the
+  follow-up delivery plan begins.
+- [ ] Complete GitHub build/test CI for release operations. **Verify:** choose the supported artifact
+  and runner matrix in the follow-up delivery plan.
+- [ ] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** choose install/upgrade/remove
+  checks when packaging work enters scope.
+- [ ] Automate Homebrew tap releases from approved version tags. **Verify:** choose provenance,
+  checksum, rollback, and end-to-end release checks in the follow-up delivery plan.
+- [ ] After milestone 1 and Homebrew delivery are complete, update this repository's README for
+  install, upgrade, operation, and troubleshooting, and update `whitekiwi/homebrew-tap`'s README for
+  tap/install, supported versions, and release provenance, with reciprocal links. **Verify:** choose
+  documentation example and link checks in the follow-up delivery plan. Before writing, inspect
+  `~/Downloads/locron.jpg` as a visual-asset candidate and research README patterns in established
+  public CLI/scheduler repositories. Cover badges, quick start, install/upgrade, examples, support
+  and release provenance, and documentation links; do not copy or modify the asset until that
+  follow-up is explicitly in scope.

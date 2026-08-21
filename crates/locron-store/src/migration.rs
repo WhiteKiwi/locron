@@ -3,10 +3,12 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use crate::{StoreError, StoreResult};
 
 pub const APPLICATION_ID: i32 = 0x4c4f_4352; // "LOCR"
-pub const LATEST_SCHEMA_VERSION: i64 = 1;
-const MIGRATION_NAME: &str = "initial durable state";
+pub const LATEST_SCHEMA_VERSION: i64 = 2;
+const INITIAL_MIGRATION_NAME: &str = "initial durable state";
+const DISABLED_CURSOR_MIGRATION_NAME: &str = "record disabled cursor intervals";
 
 const INITIAL_SCHEMA: &str = include_str!("../migrations/0001_initial.sql");
+const DISABLED_CURSOR_SCHEMA: &str = include_str!("../migrations/0002_disabled_cursor.sql");
 
 pub(crate) fn migrate(
     connection: &mut Connection,
@@ -34,40 +36,113 @@ pub(crate) fn migrate(
         }
         tx.execute_batch(INITIAL_SCHEMA)?;
         tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-        tx.pragma_update(None, "user_version", LATEST_SCHEMA_VERSION)?;
+        tx.pragma_update(None, "user_version", 1)?;
         let checksum = checksum(INITIAL_SCHEMA);
         tx.execute(
             "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (1, ?1, ?2, ?3, ?4)",
-            params![MIGRATION_NAME, checksum, binary_version, now_us],
+            params![INITIAL_MIGRATION_NAME, checksum, binary_version, now_us],
         )?;
         tx.commit()?;
-    } else {
-        verify_migration(connection)?;
     }
+    verify_migration(connection, 1, INITIAL_SCHEMA)?;
+    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version < 2 {
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let checked_version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if checked_version != 1 {
+            return Err(StoreError::MigrationConflict);
+        }
+        tx.execute_batch(DISABLED_CURSOR_SCHEMA)?;
+        tx.pragma_update(None, "user_version", 2)?;
+        tx.execute(
+            "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (2, ?1, ?2, ?3, ?4)",
+            params![DISABLED_CURSOR_MIGRATION_NAME, checksum(DISABLED_CURSOR_SCHEMA), binary_version, now_us],
+        )?;
+        tx.commit()?;
+    }
+    verify_migration(connection, 2, DISABLED_CURSOR_SCHEMA)?;
     Ok(())
 }
 
-fn verify_migration(connection: &Connection) -> StoreResult<()> {
+fn verify_migration(connection: &Connection, version: i64, sql: &str) -> StoreResult<()> {
     let recorded: Option<String> = connection
         .query_row(
-            "SELECT checksum FROM schema_migrations WHERE version = 1",
-            [],
+            "SELECT checksum FROM schema_migrations WHERE version = ?1",
+            [version],
             |row| row.get(0),
         )
         .optional()?;
-    let expected = checksum(INITIAL_SCHEMA);
+    let expected = checksum(sql);
     match recorded {
         Some(value) if value == expected => Ok(()),
         Some(value) => Err(StoreError::MigrationChecksumMismatch {
-            version: 1,
+            version,
             expected,
             found: value,
         }),
-        None => Err(StoreError::MissingMigration(1)),
+        None => Err(StoreError::MissingMigration(version)),
     }
 }
 
 fn checksum(sql: &str) -> String {
     let digest = crc32fast::hash(sql.as_bytes());
     format!("crc32:{digest:08x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upgrades_existing_v1_database_without_inventing_disabled_history() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(INITIAL_SCHEMA).unwrap();
+        connection
+            .pragma_update(None, "application_id", APPLICATION_ID)
+            .unwrap();
+        connection.pragma_update(None, "user_version", 1).unwrap();
+        connection
+            .execute(
+                "INSERT INTO schema_migrations(version,name,checksum,binary_version,applied_at_us) VALUES(1,?1,?2,'old',1)",
+                params![INITIAL_MIGRATION_NAME, checksum(INITIAL_SCHEMA)],
+            )
+            .unwrap();
+        let tx = connection.transaction().unwrap();
+        tx.pragma_update(None, "defer_foreign_keys", true).unwrap();
+        tx.execute_batch(
+            "INSERT INTO jobs(id,name,tags_json,enabled,created_at_us,updated_at_us,current_revision)
+             VALUES('018f3f74-8d70-7cc0-98a2-eef43f17eab4','legacy','[]',1,1,1,1);
+             INSERT INTO job_revisions(job_id,revision,definition_json,created_at_us,created_by)
+             VALUES('018f3f74-8d70-7cc0-98a2-eef43f17eab4',1,'{}',1,'add');
+             INSERT INTO schedule_cursors(job_id,revision,cursor_us,updated_at_us)
+             VALUES('018f3f74-8d70-7cc0-98a2-eef43f17eab4',1,42,1);",
+        )
+        .unwrap();
+        tx.commit().unwrap();
+
+        migrate(&mut connection, "new", 2).unwrap();
+
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, LATEST_SCHEMA_VERSION);
+        let disabled_since: Option<i64> = connection
+            .query_row(
+                "SELECT disabled_since_us FROM schedule_cursors WHERE job_id='018f3f74-8d70-7cc0-98a2-eef43f17eab4'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(disabled_since, None);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM schema_migrations WHERE version=2 AND binary_version='new'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
 }

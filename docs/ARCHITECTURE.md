@@ -120,7 +120,7 @@ Global capacity is shared through durable round-robin admission across eligible 
 
 Within a job, durable eligibility time and queue sequence provide stable ordering. A missed-run `all` batch is its own ordered lane: only its oldest non-terminal member advances, including through retry, before the next batch member. Normal occurrences may still interact with that active batch exactly as the job's overlap policy requires.
 
-A `replace` job retains at most one pending replacement candidate. A newer normal occurrence atomically terminalizes the previous candidate as `skipped_overlap` with a supersession reason and becomes the candidate. Termination intent is durable and signalling is not duplicated. No candidate is admitted until prior active termination is confirmed; inability to confirm termination terminalizes the newest candidate with an explicit failure reason. Members already selected into one missed-run `all` batch are not replacement candidates for one another.
+A `replace` job retains at most one pending replacement candidate. A newer normal occurrence atomically terminalizes the previous candidate as `skipped_overlap` with a supersession reason and becomes the candidate. Termination intent is durable and signalling is not duplicated. No candidate is admitted until prior active termination is confirmed. Inability to confirm termination atomically terminalizes the newest candidate with an explicit failure reason and leaves the unconfirmed predecessor in a durable active-blocking quarantine; restart preserves the block without signalling its stale PID/PGID. Members already selected into one missed-run `all` batch are not replacement candidates for one another.
 
 ## Durable model
 
@@ -128,7 +128,9 @@ SQLite is the authoritative local state. The names below are conceptual domain r
 
 - **Job**: stable identity, unique live name, description, tags, enabled/removed state, and current revision.
 - **Job revision**: immutable normalized schedule, target, environment references, policies, concurrency, and execution configuration.
-- **Schedule cursor**: the durable reconciliation boundary plus interval anchor and enable/disable facts needed to classify elapsed time.
+- **Schedule cursor**: the durable reconciliation boundary plus interval anchor and an optional
+  disabled-since boundary needed to classify elapsed time without inferring disablement from generic
+  job metadata timestamps.
 - **Run**: durable scheduled occurrence or manual request, trigger, nominal time, immutable execution snapshot, optional catch-up position, lifecycle, and final summary.
 - **Attempt**: ordered execution try, owning scheduler lifetime, timing, selected executable or HTTP summary, result, and state.
 - **Retry intent**: a known retryable failure plus durable not-before time belonging to the same run.
@@ -178,7 +180,7 @@ The following invariants hold regardless of the final schema or library selectio
 2. A run and its immutable execution snapshot exist before external execution begins. Later job edits, disablement, removal, or name reuse do not rewrite that snapshot or its history.
 3. Schedule edits create a new occurrence namespace. Interval anchors and reconciliation cursors survive daemon restart and non-schedule edits.
 4. SQLite transactions are short. Process execution, HTTP requests, signal waits, output streaming, and filesystem cleanup never occur inside a write transaction.
-5. Reconciliation atomically rechecks the revision/cursor, materializes unique runs or bounded summary facts, resolves one-time state by disabling the current job revision, and advances the cursor. A conflict retries from fresh durable state. Manual submission never resolves or disables a one-time schedule.
+5. Reconciliation atomically rechecks the revision/cursor, materializes unique runs or bounded summary facts, resolves one-time state by disabling the current job revision, and advances the cursor. A conflict retries from fresh durable state. Manual submission never resolves or disables a one-time schedule. Explicit disable records disabled-since on the current cursor; re-enable preserves it until the first successful reconciliation clears it in the same cursor/materialization commit.
 6. Manual submission atomically snapshots the job and creates its durable run; daemon availability is not a commit prerequisite.
 7. Admission atomically rechecks active runs, catch-up ordering, policy, cancellation, capacity, and run state before creating a durable attempt and moving the run toward execution. Capacity is not reserved only in memory.
 8. Attempt completion atomically records a known result and either a durable retry intent or a terminal run transition.
@@ -186,10 +188,12 @@ The following invariants hold regardless of the final schema or library selectio
    become terminal `cancelled` immediately, clear any retry intent, and need no engine signal;
    starting and running runs retain durable intent before signalling. A replacement is not admitted
    until prior termination is confirmed.
-10. A new daemon lifetime classifies stale non-terminal attempts from an older lifetime as `interrupted_unknown`. It neither infers their result nor signals a recorded stale PID/PGID.
+10. A new daemon lifetime classifies stale non-terminal attempts from an older lifetime as `interrupted_unknown`. It neither infers their result nor signals a recorded stale PID/PGID. A termination-unconfirmed quarantine is the exception to ordinary run terminalization: its attempt is unknown, but the predecessor run remains active-blocking across lifetimes until an explicit future operator-resolution workflow exists.
 11. Cleanup selects only eligible terminal data in bounded batches. It never prunes active runs and retains an explanation when output is truncated or removed.
 12. Legal stored states, foreign-key ownership, scheduled occurrence uniqueness, attempt ordering, and unique live job names are defended by database constraints where SQLite can express them and by domain validation for cross-record rules.
 13. External execution never starts until its attempt and logical output identity are durable. Output creation failure before spawn is a known execution failure; it cannot create an untracked child.
+    The final starting-to-running commit rechecks cancellation and can terminalize before spawn;
+    only its explicit ready decision authorizes the runner.
 14. A daemon that cannot durably commit a required transition stops new admission and retries the transition; it never continues scheduling from memory-only state.
 15. A wake notification is never evidence that a command exists or succeeded. Only committed durable state can cause the engine to act.
 16. Admission cursor movement and attempt creation commit together. A crash cannot advance fairness without admitting the corresponding attempt or admit an attempt without advancing the cursor.

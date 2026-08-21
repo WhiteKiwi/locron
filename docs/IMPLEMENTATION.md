@@ -124,7 +124,53 @@ On engine startup, wake, normal tick, and observed job revision, reconcile `(cur
 
 A backward wall-clock move does not rewind the durable cursor or recreate an occurrence. Re-enabling evaluates disabled elapsed time under missed-run policy and never resets an interval anchor. A new schedule revision begins at its creation/explicit anchor boundary and cannot backfill time before it existed.
 
+Disabled elapsed time is a dedicated nullable cursor fact, never an `updated_at` comparison. Disable
+sets it once, re-enable preserves it, and successful cursor/materialization clears it. Migration from
+schema v1 leaves existing rows NULL rather than guessing historical disablement.
+
 Trade-off: cursor-driven reconciliation requires more durable state than recomputing only the next time, but makes sleep, restart, timezone change, and missed ranges explainable and idempotent.
+
+The bounded reconciliation implementation separates occurrence *selection* from range accounting.
+Interval schedules derive first/last indexes and counts arithmetically. Calendar schedules compile
+one 400-year Gregorian match cycle, reject a calendar expression with no possible matching civil
+date, and use cycle-position binary search to jump directly between matching dates while retaining
+at most `catch_up_limit + 1` matching civil times. Calendar range counts use the same cycle arithmetic
+plus explicit timezone-gap correction, so summary counts do not create or visit every occurrence or
+elapsed UTC minute. Gap correction is linear only in actual timezone transitions inside the range;
+the supported Jiff civil domain (-9999 through 9999) gives this work a hard date bound and no tzdb
+transition pattern is assumed to repeat every 400 years.
+Compilation is distinct from reconciliation: one reconciliation pass shares exactly one compiled
+calendar object across deadline accounting, eligible accounting, newest selection, and summary
+boundary lookup. The daemon keeps a revision-keyed compiled-schedule cache, so unchanged jobs do not
+rebuild their Gregorian cycle on every safety tick; a revision change gets a new cache entry and
+symbolic local timezone resolution remains per pass rather than being cached. Tests compare a bounded
+oracle matrix and instrument compilation count, while a repeated-reconciliation work-bound test
+guards against elapsed-range-dependent compilation or allocation.
+One-time schedules remain a single comparison. All three return the same pure reconciliation result:
+the newest eligible window in chronological order and zero, one, or two compact range facts for
+deadline exclusion and policy/limit omission.
+
+The pure reconciliation input also carries an explicit missed/normal boundary derived from the
+durable reason for the pass. Startup, disabled elapsed time, and detected suspend/downtime mark their
+elapsed range missed; a steady-state schedule wake identifies the exact normal boundary it was
+waiting for. No fixed wall-lateness grace or safety-tick duration is allowed to infer this policy,
+because changing daemon latency must not change an occurrence from normal to missed. Start-deadline
+comparison is inclusive at the cutoff: an occurrence exactly `deadline` old remains eligible.
+
+The engine receives paired wall/monotonic clock samples plus a timezone resolver port; its
+coordinator supplies the explicit durable elapsed-range classification described above. A material
+wall/monotonic divergence is an explicit clock-jump or suspend reason classified as missed; it is
+not nominal-time lateness and does not depend on the safety interval. A steady-state `Normal` input
+splits by occurrence boundary: its newest due occurrence is the one normal wake boundary, while any
+older elapsed prefix is explicitly reconciled as missed under the job policy. Recovery,
+disabled, and suspend ranges are wholly `Missed`. This split retains at most
+`catch_up_limit` missed occurrences plus one normal occurrence, records an exact compact summary for
+the omitted prefix, and never silently drops work when a safety pass covers multiple boundaries.
+One reconciliation pass samples
+them once, then uses those immutable inputs for every job in that pass. A symbolic
+`local` schedule therefore follows a resolver change on the next pass, while a fixed IANA schedule is
+unaffected. Tests use mutable fake ports to model disable/re-enable, wall-clock jumps, suspend
+detection, and local-zone replacement without sleeps or process-global timezone mutation.
 
 ### Overlap, concurrency, and admission
 
@@ -149,7 +195,59 @@ starting or running run keeps its state and receives durable cancellation intent
 observe and confirm through normal termination. Missing identities are not found; every terminal
 state is a stable conflict rather than an apparently successful repeated request.
 
+The final mark-running transaction rechecks cancellation intent before external execution. If a
+user or replacement request arrived while the attempt was durably `starting`, the transaction
+terminalizes the attempt/run and its not-yet-created output artifact without spawning; the daemon
+treats this as a normal no-execute decision, not persistence degradation. A transient store error at
+this boundary never releases the admitted attempt or authorizes execution from memory. The task keeps
+its capacity permit and retries the same transaction with capped exponential delay; every retry
+therefore rechecks durable cancellation. Retry waiting is interruptible by daemon shutdown, which
+leaves the durable `starting` attempt for next-lifetime unknown recovery and still never spawns.
+Persistent failure reports degraded persistence and blocks that task until shutdown or a durable
+ready/no-execute decision.
+
+Required transitions are idempotent under a commit-success/response-loss ambiguity. Repeating
+mark-running for the same already-running attempt returns ready only after rechecking that exact
+attempt and current cancellation; cancellation observed on the ambiguous retry terminalizes before
+spawn. The runner produces a target outcome once, retains it in the task, and retries durable
+completion with the same capped backoff without re-executing the target. The composition clock is
+sampled exactly once when that outcome returns; the resulting completion instant, retry eligibility,
+and immutable completion command are reused across every retry rather than recalculated by the store
+adapter. Shutdown interrupts this
+retry and leaves the active durable record for next-lifetime unknown recovery. Repeating an already
+committed identical completion succeeds idempotently; a mismatched result remains a conflict.
+
+For a running process, termination is a bounded process-group-liveness state machine rather than a
+detached sleep task. Send TERM once and observe both the owned leader wait handle and process-group
+existence during the grace interval. Leader exit alone is insufficient because an in-group descendant
+may still be running. At the grace boundary send KILL only while the group still exists, then require
+both leader reap and group absence within a second bounded grace. Signal errors other than an already-gone group and an
+unconfirmed child become a typed non-retryable termination-confirmation result. Its completion
+transaction marks the attempt `interrupted_unknown`, keeps the original run in an active-blocking
+quarantine with no live runner ownership, and terminally fails the queued replacement candidate.
+Startup recovery preserves that quarantine but never inspects or signals its recorded PID/PGID;
+therefore neither the failed candidate nor later same-job work can overlap an unconfirmed process.
+Quarantine needs an explicit future operator-resolution workflow and is never cleared merely by a
+daemon restart. Admission hard-blocks the quarantined job regardless of a later `skip`, `replace`, or
+`allow` revision. `skip` submissions retain ordinary overlap explanations; a new `replace` submission
+terminally fails in its enqueue transaction instead of waiting forever; `allow`, scheduled, and
+catch-up submissions become explainable overlap terminals rather than a permanent queued backlog.
+Never signal a recorded stale PID/PGID after lifetime recovery. A process
+that deliberately escapes its inherited group remains outside v1 process-tree control.
+
 At daemon startup, the engine creates its lifetime and marks stale non-terminal attempts from an older lifetime `interrupted_unknown` before normal admission. It does not inspect, attach to, signal, or automatically retry a stale recorded PID/PGID. Fault injection must cover every transaction/spawn/completion boundary because persistence cannot prove whether an arbitrary external side effect occurred.
+
+Retry classification and timing are one pure decision over the immutable run snapshot, attempt
+number, known outcome class, and injected completion instant. Fixed delay never doubles;
+exponential delay is `base * 2^(attempt-1)` with saturating arithmetic and the configured cap.
+Durable `retry_wait` is the only restart-resumable retry source. Completion rejects retry plans for
+cancelled, configuration, replacement, or interrupted-unknown outcomes, and startup recovery deletes
+any inconsistent retry intent attached to an unknown run rather than synthesizing an attempt.
+
+Crash tests use store fault points at durable admission, spawn acknowledgement, and completion. A
+committed attempt without a committed result is always recovered as `interrupted_unknown`, including
+the target-exited/result-not-committed boundary. A queued one-time occurrence is never rematerialized
+because occurrence uniqueness and its advanced cursor are committed together.
 
 ### Process and shell runner
 
