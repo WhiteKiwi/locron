@@ -2,106 +2,56 @@
 
 ## Purpose
 
-This is an evidence and gap report for the current implementation. It does not weaken the frozen
-requirements in `SPEC.md` or turn partially implemented behavior into an accepted product change.
-`TODO.md` remains the progress checklist.
+This is the evidence report for the current implementation. It does not weaken the frozen
+requirements in `SPEC.md`. `TODO.md` remains the progress checklist and `ACCEPTANCE.md` maps every
+completion criterion to exact automated evidence.
 
 ## Verified implementation
 
-The repository currently provides one Rust binary assembled from the four approved crates. The
-following slices run end to end on macOS arm64:
+The repository provides one Rust binary assembled from the four approved crates. The current
+revision implements the complete milestone-1 surface on macOS arm64:
 
-- job creation, listing, inspection, complete normalized metadata/schedule/target/environment/policy
-  updates, enable, disable, soft removal, schedule preview, history, logs, manual submission,
-  cancellation, `why`, typed configuration, diagnostics, and source-level daemon startup;
-- non-mutating add/update/run/config/import/prune dry-run paths, including tests proving that
-  creation-oriented dry runs do not initialize state;
-- durable offline manual enqueue followed by prompt wake-socket admission when the daemon starts;
-- atomic offline queued/retry-wait cancellation with terminal finish facts, retry-intent cleanup,
-  stable terminal conflicts, and no later admission;
-- a single daemon owner enforced by the permanent OS-locked file, lifetime records, stale active
-  attempt classification, durable cancellation polling, and natural-drain shutdown before forced
-  cancellation;
-- UUIDv7 identity, epoch-microsecond timestamps, whole-second interval anchors, one-time schedules
-  that disable only when due resolution occurs, five-field cron aliases/names/day-OR behavior, and
-  DST gap/fold duplicate-safety behavior;
-- bundled SQLite WAL/FULL state with strict tables, foreign keys, scheduled-occurrence uniqueness,
-  immutable revisions/snapshots, queue sequence, attempts, retry intents, events, output metadata,
-  and resumable prune states;
-- manual and normal scheduled overlap admission for `skip`, bounded `allow`, and coalescing
-  `replace`; durable round-robin selection; ordered catch-up gating; default global concurrency 16;
-- direct argv, explicit shell, process groups, timeout/cancellation TERM-to-KILL behavior, layered
-  runtime environment, reserved `LOCRON_*` values, and runtime env/body files;
-- HTTP transport using Rustls, conventional `301`/`302`/`303` method rewriting, `307`/`308`
-  method/body preservation, cross-origin authorization removal, response streaming, default
-  success/retry status classification, and attempt timeout;
-- post-admission runtime configuration failures, including a disappearing environment file, become
-  non-retryable terminal attempts with finalized framed output rather than orphaned running rows;
-- checksummed framed binary output preserving channel order, bounded capture with discard accounting,
-  atomic partial-to-final rename, partial-tail repair, metadata finalization, and bounded pruning;
-- versioned `locron.cli/v1` non-streaming JSON envelopes and redaction of persisted inline
-  environment/header/body values from normal inspection and export;
-- typed `locron.export/v1` redacted and explicitly acknowledged plaintext export, explicit history
-  rejection, whole-document validation, deterministic ID/name import mapping, non-durable dry-run
-  collision plans, fresh-state round trip, no-op preservation, and transactional settings/job
-  application with mapping rechecks and rollback.
+- normalized job CRUD, schedule preview, enable/disable/remove, manual run, cancellation, history,
+  logs/follow, `why`, diagnostics, typed configuration, export/import, and recursive CLI help;
+- versioned human, `locron.cli/v1`, and `locron.stream/v1` output, including retry-aware wait/follow
+  and stable target outcome exit codes;
+- cron, interval, and one-time reconciliation with DST duplicate safety, bounded newest-window
+  catch-up, exact compact omission summaries, durable cursors, and one-time uniqueness;
+- durable overlap, concurrency, retry, replacement, cancellation, quarantine acknowledgement, and
+  crash-recovery state transitions with no unknown-outcome retry;
+- direct argv, explicit shell, layered environment, executable resolution, process groups,
+  TERM/KILL escalation, graceful service shutdown, HTTP/TLS/redirect behavior, and bounded output;
+- SQLite schema v5 with checksummed migrations, complete ordered attempts, final HTTP status and
+  content type, resolved executable, resumable output/metadata retention, and global environment;
+- startup and periodic maintenance for partial repair, missing/finalized reconciliation, pending
+  prune recovery, age/count/byte retention, and canonical unreferenced output cleanup;
+- output-storage failure boundaries that distinguish failure before execution from an unknown
+  post-execution outcome, terminate spawned process groups, and retry only durable persistence.
 
 ## Verification evidence
 
-Local working-tree verification completed on 2026-08-21:
+Fresh-target local validation completed on 2026-08-22 with Rust 1.94.0 on Darwin arm64:
 
-| Toolchain | Format | Clippy | Tests |
-|---|---:|---:|---:|
-| Rust 1.94.0 (MSRV) | pass | pass with `-D warnings` | 121 tests pass |
-| Rust 1.98.0 (latest stable) | pass | pass with `-D warnings` | 121 tests pass |
+| Command | Result |
+|---|---:|
+| `cargo fmt --all --check` | pass |
+| `cargo clippy --workspace --all-targets -- -D warnings` | pass |
+| `cargo test --workspace --all-targets` | 194 tests pass |
 
-The suite includes deterministic core tests, temporary real SQLite tests, real subprocess tests,
-local TCP HTTP fixtures, CLI contract tests, wake-socket daemon execution, durable cancellation,
-redaction, and non-mutating dry-run checks. GitHub Actions
-[run 32492286277](https://github.com/whitekiwi/locron/actions/runs/32492286277) for commit
-`422e736` passed all four hosted jobs: Ubuntu with Rust 1.94, Ubuntu with stable, macOS 14 with Rust
-1.94, and macOS 14 with stable. Every job passed formatting, Clippy with `-D warnings`, and all 113
-tests. The `actions/checkout@v4` steps emitted GitHub's Node 20 deprecation annotation, but it was
-not a test or workflow failure; reviewing the action's next major version remains post-milestone CI
-maintenance. This hosted-runner compatibility evidence does not replace the official architecture
-and process-lifetime matrix still listed below.
+The suite includes deterministic clock/time-zone tests, property tests, real temporary SQLite
+databases, concurrent writers, local HTTP/TLS fixtures, real subprocess trees, SIGTERM service
+lifetime checks, cross-process daemon death at four lifecycle boundaries, output/storage failure
+injection, retention recovery, and complete CLI acceptance scenarios.
 
-Commit `422e736` contains the correctness tranche's implementation of bounded exact
-reconciliation, revision-cached compact Gregorian rank/select, durable disabled intervals and schema
-v1-to-v2 migration, centralized retry timing, pre-spawn cancellation, replacement quarantine on
-unconfirmed process-group termination, and transactional per-job admission slots. Its 113-test suite
-passes format, all-target check, Clippy `-D warnings`, and workspace tests on both Rust 1.94 and
-current stable locally and in the hosted matrix above. The broad checklist items remain open until
-every clause in their larger verification matrices is covered.
+## Remaining milestone evidence
 
-Commit `58467fd` adds explicit operator acknowledgement for
-`termination_unconfirmed` quarantine, atomic durable global-concurrency rechecks at admission,
-table-driven overlap/trigger/capacity and retry/deadline coverage, and a real 1,000-member catch-up
-materialization/admission fixture with compact omission accounting. Its 121-test suite passes the
-same complete local Rust 1.94 and stable commands shown above. It has not yet been reproduced by a
-hosted run.
+The implementation and local acceptance matrix are complete. Milestone acceptance still requires a
+current-revision hosted run on Linux x86_64, Linux arm64, macOS x86_64, and macOS arm64 with Rust
+1.94 and latest stable. Every job must record its platform/toolchain and pass format, Clippy, and all
+workspace tests; the process-tree, service-lifetime, and crash fixtures must run rather than being
+filtered. Once that run passes, record its links in `ACCEPTANCE.md` and close the final platform
+checkbox in `TODO.md`.
 
-The current lifecycle fault-boundary slice (2026-08-22) makes admission persistence failure visibly
-degraded without starting a target and adds deterministic injected coverage before admission,
-starting before spawn, running after spawn, and after target outcome before completion commit. A
-real SQLite matrix proves one-time occurrence uniqueness and no unknown retry at every recovery
-boundary. Its 124-test suite passes formatting, Clippy with `-D warnings`, and all workspace targets
-locally on Rust 1.94.0.
-
-## Remaining milestone gaps
-
-These are required before milestone 1 can be called complete:
-
-1. Wire startup output repair/orphan cleanup and automatic daemon maintenance; complete metadata
-   age/count retention in addition to the implemented output byte/age prune path.
-2. Persist resolved executable/audit hashes and add TLS, process-grandchild, disappearing HTTP
-   body-file, streaming-timeout, and noisy-output fixtures.
-3. Implement live partial-file follow and the reviewed `locron.stream/v1` terminal stream contract.
-   Refine human rendering beyond the current readable JSON representation.
-4. Add broader concurrent-writer/busy, disk-failure, retention stress, concurrency 16/64, and
-   cross-process crash-injection tests beyond the deterministic migration/concurrency fixtures now
-   present.
-5. Run the official Linux/macOS architecture matrix and produce the 16-criterion completion matrix.
-
-No HTTP management/viewer, MCP, desktop, package-manager publication, or service-installer code has
-entered this milestone.
+Package publication and the HTTP viewer/API, MCP, desktop, and Mac App Store phases remain separate
+post-milestone programs. They are intentionally excluded by `SPEC.md` and require their own reviewed
+specifications before implementation or publication.
