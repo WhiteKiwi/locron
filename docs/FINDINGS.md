@@ -257,11 +257,13 @@ These values are product judgments between competitors’ seven-day and 10,000-r
 - Time alone is friendly to users but unsafe for high-frequency jobs.
 - Keeping failed logs longer than successful logs adds policy complexity. Start with one rule; users can export important logs before expiry.
 
-## Recommended v1 Policy Matrix
+## Initial Research Policy Matrix (Superseded Where Noted)
+
+This table records the research sub-session's initial recommendation, not the accepted product contract. Interactive review subsequently removed `queue-one`, changed global concurrency to 16, and refined other details in `docs/SPEC.md`. The specification always wins.
 
 | Concern | Stable values | Default | Bound or important rule |
 |---|---|---|---|
-| Overlap | `skip`, `queue-one`, `replace`, `allow` | `skip` | `queue-one` stores at most one pending latest occurrence |
+| Overlap | `skip`, `replace`, `allow` | `skip` | no general overlap queue; replace retains only the newest candidate |
 | Missed recurring run | `skip`, `latest`, `all` | `skip` | `all` defaults to 100, maximum 1,000 per reconciliation |
 | Missed one-time run | `skip`, `latest` | `latest` | unique durable occurrence prevents restart duplication |
 | Start lateness | duration or unlimited | recurring: not applicable under `skip`; one-time: unlimited | independently filters catch-up eligibility |
@@ -269,7 +271,7 @@ These values are product judgments between competitors’ seven-day and 10,000-r
 | Fixed interval | scheduled-time anchored | scheduled time | persisted anchor and schedule revision |
 | Retry | explicit eligible outcomes and backoff | `0` retries | never auto-retry `interrupted_unknown` in v1 |
 | Per-job concurrency | integer | `1` | greater than 1 requires overlap `allow` |
-| Global concurrency | integer | `4` | range `1..64` |
+| Global concurrency | integer | `16` | range `1..64` |
 | Executable lookup | absolute/relative-with-slash or bare name | runtime resolution for bare name | effective `PATH` is locron-owned; resolved path captured per run |
 | Environment | inline non-secret values, env-file reference | empty job override | values redacted; env-file contents never persisted |
 | Crash recovery | `interrupted_unknown` | no retry | do not reattach/kill stale PID on startup |
@@ -297,8 +299,22 @@ The following should not be added while implementing the first program milestone
 
 The ten specification questions are resolved by the recommendations above. Before the specification is frozen, implementation planning should turn the following into executable verification steps rather than reopen them as undefined policy:
 
-- Stress-test global concurrency `4` and the hard maximum `64` on a low-resource Linux VM and the oldest supported macOS target.
+- Stress-test global concurrency `16` and the hard maximum `64` on a low-resource Linux VM and the oldest supported macOS target.
 - Simulate clock movement, sleep, and downtime to verify scheduled-time anchoring and bounded catch-up.
 - Verify process-group cancellation for direct and explicit-shell commands, including grandchildren, on both operating systems.
 - Inject crashes at every durable-run/spawn state boundary and assert `interrupted_unknown`, occurrence uniqueness, and one-time restart safety.
 - Fill output beyond per-run and global bounds and verify truncation, eviction order, retained summaries, and bounded disk use.
+
+## Implementation Dependency Follow-up
+
+Research on 2026-08-21 checked the current primary documentation for the selected Rust building blocks:
+
+- Tokio exposes the timers, process, signal, Unix networking, synchronization, and deterministic test-time facilities needed by the engine without forcing a framework into the domain model. Source: https://docs.rs/tokio/latest/tokio/
+- `rusqlite` recommends its bundled feature for applications that control their own database, avoiding missing or old system SQLite versions. Source: https://docs.rs/crate/rusqlite/latest
+- Reqwest supports Rustls, streaming bodies, and disabled/custom redirect behavior. locron disables automatic redirects and owns the redirect loop so sensitive-header policy remains explicit. Source: https://docs.rs/reqwest/latest/reqwest/
+- Jiff exposes system and IANA time zones plus explicit gap/fold ambiguity, allowing locron to skip nonexistent civil minutes and select the first repeated minute. Source: https://docs.rs/jiff/latest/jiff/tz/index.html
+- Rust standard file locking has been stable since Rust 1.89, below locron's Rust 1.94 MSRV. Source: https://doc.rust-lang.org/stable/std/fs/struct.File.html
+
+Croner 3.0.1 was evaluated and rejected as the scheduler authority. Its documented fixed-time DST-gap behavior moves execution to the first valid time after a gap, and its wildcard DST-fold behavior may execute both repeated matches. Both conflict with the frozen locron rule: skip a nonexistent wall time and produce one occurrence for a repeated wall time. Croner also accepts extensions beyond the exact v1 grammar. Source: https://docs.rs/crate/croner/latest/source/README.md
+
+The accepted implementation therefore owns five-field parsing and civil-minute enumeration in `locron-core` and uses Jiff only for calendar/timezone primitives and explicit ambiguity classification. This is more code than adopting a cron iterator, but it keeps the most safety-sensitive behavior directly testable and prevents dependency defaults from silently changing product semantics.

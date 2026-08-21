@@ -40,6 +40,7 @@ The first program milestone is complete when all of the following can be observe
 13. Invalid schedules and conflicting options are rejected before they can become active.
 14. Stored state survives scheduler restarts and schema upgrades.
 15. Automated tests cover time progression, sleep or downtime recovery, daylight-saving transitions, overlap, timeout, cancellation, retry, and unclean restart behavior.
+16. A user can simulate a mutation or manual run without changing durable state, and can ask why a job or run is in its current state without enabling debug logs.
 
 ## In Scope
 
@@ -212,6 +213,14 @@ On normal scheduler termination, new admission stops and active attempts receive
 A run and its scheduled occurrence identity are durable before process or HTTP execution begins. After an unclean scheduler lifetime ends, every stale non-terminal attempt owned by that lifetime becomes `interrupted_unknown`. The scheduler does not infer success, failure, or cancellation; does not automatically retry the unknown outcome; and does not reattach to or signal a stale recorded process identity after restart.
 
 Durable occurrence uniqueness prevents a restart from creating the same scheduled occurrence or one-time run again. This does not promise exactly-once external side effects. Targets may use the reserved run identity as an idempotency key when they need stronger protection.
+
+## Inspection and Diagnostic Semantics
+
+Mutating commands and manual execution support a dry-run mode. A dry run performs parsing, normalization, validation, schedule calculation, target/path resolution when safely possible, and a current admission simulation, but does not mutate durable state, create a run identity, signal a process, execute a command, or issue an HTTP request. Its result is explicitly a point-in-time simulation and does not reserve future capacity.
+
+A dedicated explanation command reports why a job is or is not eligible, its next occurrence, applicable missed-run and overlap decisions, current concurrency blockers, daemon availability, and redacted target resolution. The same command can explain a run from its durable snapshot, attempts, events, supersession, and terminal reason. Explanations use durable facts and current calculations rather than requiring debug logging.
+
+Verbose output adds user-facing decision context without changing command behavior. Debug output emits developer-oriented operational traces to standard error. Neither mode may reveal configured environment values, sensitive headers, body content, or other redacted values. Machine-readable standard output remains a single valid result independent of diagnostic verbosity.
 
 ## Retention Semantics
 
