@@ -1,0 +1,237 @@
+# locron Specification
+
+## Status
+
+Frozen on 2026-08-21 after interactive product review. Changes to this document represent a change in product scope or behavior and must precede implementation changes.
+
+## Goal
+
+Build a local-first job scheduler that lets one user register, inspect, run, and manage scheduled work consistently on macOS and Linux.
+
+The product should retain the simplicity of cron while making execution behavior observable and explicit. A user should be able to understand what was scheduled, when it was expected to run, whether it actually ran, and why it did not run without consulting operating-system-specific scheduler files or logs.
+
+locron owns scheduling and execution semantics itself. It is not a management wrapper that translates individual jobs into cron, launchd, or systemd schedules. Operating-system service managers may keep locron available, but they do not become job-level scheduling backends.
+
+## Product Principles
+
+- Local-first: schedules and execution history belong to one machine and one user.
+- Predictable: missed schedules, overlapping runs, timeouts, retries, and manual triggers have documented behavior.
+- Observable: every attempted, skipped, cancelled, or interrupted run can be explained.
+- Safe by default: concurrency and retry behavior must not create accidental duplicate work.
+- Portable: the same user-facing behavior is available on supported macOS and Linux systems.
+- Independently useful: the command-line scheduler is complete without a web viewer, MCP integration, or desktop application.
+
+## Completion Criteria
+
+The first program milestone is complete when all of the following can be observed on both macOS and Linux:
+
+1. A user can register exactly one of a calendar schedule, fixed interval, or one-time schedule for a job.
+2. A user can register process and HTTP work without editing operating-system scheduler configuration.
+3. New and updated jobs are recognized without restarting the scheduler.
+4. A user can list, inspect, update, enable, disable, remove, and manually trigger jobs.
+5. A user can preview future scheduled times before enabling a job.
+6. Each scheduled occurrence receives a durable identity before execution begins.
+7. Each run exposes its scheduled time, actual start and finish times, trigger source, outcome, duration, and captured output.
+8. Long-running work is subject to a configurable timeout and cancellable as a process tree.
+9. Overlapping and missed occurrences follow explicit per-job policies.
+10. Failure retries occur only when explicitly configured and are visible as attempts of the same run.
+11. One-time jobs cannot execute more than once merely because the scheduler restarts.
+12. Restarting after an unclean shutdown produces an explainable terminal or recoverable state for previously active runs.
+13. Invalid schedules and conflicting options are rejected before they can become active.
+14. Stored state survives scheduler restarts and schema upgrades.
+15. Automated tests cover time progression, sleep or downtime recovery, daylight-saving transitions, overlap, timeout, cancellation, retry, and unclean restart behavior.
+
+## In Scope
+
+- Per-user operation on macOS and Linux.
+- One local machine and one user account per scheduler instance.
+- Calendar schedules using standard five-field cron expressions.
+- Fixed intervals with second-level duration units.
+- One-time schedules using unambiguous ISO 8601 timestamps.
+- Per-job time zones.
+- Direct process execution and explicitly requested shell execution as distinct target modes.
+- HTTP request execution.
+- Job metadata including stable identity, unique name, description, and tags.
+- Enable, disable, update, remove, manual trigger, history, log, and cancellation operations.
+- Explicit overlap, missed-run, timeout, and retry policies.
+- Global and per-job concurrency limits.
+- Durable local state, execution history, and bounded log retention.
+- Machine-readable command output for automation.
+- Export and import for backup and migration.
+- Diagnostics that explain effective paths, environment, scheduler health, and invalid jobs.
+
+## Out of Scope
+
+- Distributed scheduling or remote workers.
+- Multi-user or system-wide scheduling.
+- Workflow graphs, job dependencies, and business calendars.
+- Long-running service supervision.
+- Container orchestration.
+- Natural-language schedule parsing.
+- Built-in secret management.
+- A web viewer or HTTP management API.
+- MCP integration.
+- A desktop application.
+- Package-manager publication and operating-system service installation.
+
+The excluded delivery surfaces may influence compatibility boundaries, but they are not acceptance criteria for the first program milestone.
+
+## Required Policy Vocabulary
+
+The product must describe independent policies for:
+
+- What happens when an occurrence becomes due while a previous run is active.
+- What happens when an occurrence was missed while the scheduler or machine was unavailable.
+- How late an occurrence may start and still be useful.
+- Which failures are eligible for retry and how retry delays are calculated.
+- Whether a manual trigger returns immediately or waits for completion.
+- How active runs are classified after scheduler termination or machine restart.
+
+The term “fire-and-forget” must not be used as a persisted execution policy because it conflates caller waiting, durable queuing, process supervision, and result tracking.
+
+## Schedule Semantics
+
+Each job has exactly one schedule:
+
+- A standard five-field cron expression with minute-level resolution.
+- A fixed interval with second-level duration units.
+- An unambiguous one-time ISO 8601 timestamp that includes an offset.
+
+Calendar schedules support standard cron aliases and use traditional cron matching when both day-of-month and day-of-week are restricted. Each calendar schedule has either a symbolic system-local time zone or a fixed IANA time zone. A system-local schedule follows changes to the machine time zone; a fixed IANA schedule does not.
+
+During a daylight-saving transition, a nonexistent local wall-clock time is skipped and a repeated wall-clock time produces one occurrence. This favors duplicate safety over matching the same local clock value twice.
+
+A fixed interval is calculated from a durable anchor, not from the previous run's completion time. The default anchor is the time at which the schedule is created. Disabling and re-enabling a job does not move the anchor. A manual trigger does not move any schedule or affect its next occurrence.
+
+A one-time schedule becomes disabled after its scheduled occurrence is resolved. Its definition and history remain available, and manual triggers remain possible. Removing the definition is a separate explicit operation.
+
+Editing a schedule affects future occurrences only. It does not mutate runs that have already received durable identities.
+
+## Overlap Semantics
+
+Each job selects one of three overlap policies:
+
+- `skip`: while a run is active, each newly due occurrence is recorded as `skipped_overlap`. This is the default.
+- `replace`: request termination of the active process tree, wait through the normal termination grace period, and start the newest occurrence only after termination is confirmed. If termination cannot be confirmed, the replacement does not run concurrently and ends in an explainable failure state.
+- `allow`: make concurrent occurrences eligible for execution, subject to per-job and global concurrency limits.
+
+Overlap policy applies to scheduled and normal manual occurrences, including a new normal occurrence that becomes due while catch-up work is active. Members already selected into the same bounded catch-up batch remain durable queued work and are not discarded merely because another member of that batch is active. The first stable interface does not provide a force option that silently bypasses the selected policy or concurrency admission.
+
+Every due occurrence must remain explainable as executed, skipped, or otherwise terminal. No overlap queue is supported in the first stable interface.
+
+## Missed-run Semantics
+
+An occurrence is missed when its scheduled time passes without a run being created because the machine was powered off or asleep, the scheduler was stopped, or the job was disabled. Each job selects one missed-run policy:
+
+- `skip`: do not execute missed occurrences. This is the default for calendar and fixed-interval schedules.
+- `latest`: create one catch-up run representing the latest eligible missed scheduled time. This is the default for one-time schedules.
+- `all`: create eligible missed occurrences in chronological order as a bounded catch-up batch.
+
+Each job may define a start deadline that excludes occurrences older than the allowed lateness. One-time schedules have no default deadline. An `all` batch defaults to at most 100 occurrences and may be configured from 1 through 1,000. If more occurrences are eligible, the newest bounded window is retained and executed in chronological order. Omitted and skipped ranges are represented by summary events containing their count and time range instead of unbounded per-occurrence rows.
+
+Missed-run selection happens before overlap admission. A selected catch-up batch is a durable queue and its members run in scheduled-time order. If a new normal occurrence becomes due while a catch-up member is active, the job's overlap policy controls that new occurrence: `skip` discards it, `replace` terminates the active catch-up run before starting it, and `allow` permits it subject to concurrency limits.
+
+Every scheduled occurrence is uniquely identified by job identity, schedule revision, and scheduled time. Restart, reconciliation, or a backward clock adjustment must not create the same occurrence twice.
+
+## Retry Semantics
+
+A retry is another attempt of the same durable run and scheduled occurrence, not a new run. Each attempt retains its own timing, outcome, exit or HTTP status, and captured output. A run exposes both its final outcome and the complete ordered attempt history.
+
+Automatic retry is disabled by default. A job may request up to 10 retries in addition to the initial attempt. Retry delay defaults to 10 seconds with exponential backoff capped at five minutes. Fixed backoff is also supported. Random jitter is not part of the first stable interface.
+
+By default, only known execution failures are eligible:
+
+- A process exits with a non-zero status.
+- An HTTP request fails because of a connection, name-resolution, or transport error.
+- An HTTP response has status 408, 429, or a 5xx status.
+
+Cancellation, overlap replacement, invalid execution configuration, and an outcome made unknown by scheduler termination are never retried automatically. Timeout is not retryable by default but may be explicitly selected by the job.
+
+Timeout applies independently to each attempt. Retry delays and repeated attempt time are not included in one total-run timeout. A run waiting for its next retry remains active for overlap purposes. A scheduler restart preserves a retry that was durably scheduled after a known failure, but it must not synthesize a retry for an attempt whose outcome is unknown.
+
+Retries do not move or recalculate the job's normal schedule.
+
+## Manual-run Semantics
+
+A normal manual trigger snapshots the current job definition, creates a durable manual run, prints its run identity, and returns after enqueue. Successful submission means the durable request exists; it does not mean the target has completed successfully. Submission remains possible while the scheduler is offline, and the result must clearly expose that the run is queued without an active scheduler.
+
+An optional wait mode follows output through all attempts and returns a status representing the final target outcome. Wait mode changes only caller attachment and does not create a different execution policy. Terminal disconnection or interruption of the waiting client does not cancel the durable run; cancellation is a separate explicit operation.
+
+A disabled job remains manually runnable. A manual trigger does not move the normal schedule and does not consume a one-time scheduled occurrence. Manual runs obey the job's overlap policy and ordinary concurrency admission. Human-readable and machine-readable submission output both include the run identity.
+
+## Concurrency Semantics
+
+The scheduler admits at most 16 active attempts globally by default. The configured limit may range from 1 through 64 and applies uniformly to process, shell, HTTP, retry, manual, and catch-up work. Recovery does not receive a separate execution pool. Reducing the limit does not terminate attempts that are already running; it affects subsequent admission.
+
+Global capacity exhaustion leaves an otherwise eligible durable run queued rather than discarding it. A queued run counts as active for same-job overlap decisions so global pressure cannot create an unbounded same-job queue.
+
+Jobs using `skip` or `replace` have an effective per-job concurrency of one. Jobs using `allow` default to two and may configure a value from two through the current global limit. Once that per-job limit is reached, a new normal occurrence is recorded as skipped for concurrency rather than queued without a bound. A bounded catch-up batch selected by missed-run `all` remains the explicit exception and is processed in scheduled-time order.
+
+## Process and Shell Targets
+
+Direct process execution is the default process target. The executable and each argument are stored as an explicit argument vector and are not interpreted for pipelines, redirection, globbing, variable substitution, command chaining, or home-directory expansion.
+
+Shell execution is a distinct, explicitly requested target. It stores one command string and defaults to predictable POSIX shell execution rather than implicitly selecting the registering terminal's shell or interactive configuration. A job or global setting may select another absolute shell executable.
+
+The default working directory is the absolute current directory at registration. An explicitly supplied working directory is expanded and normalized at registration. A missing working directory at execution is a non-retryable configuration failure.
+
+An executable containing a path separator is normalized against the job working directory at registration and persisted as an absolute path. A bare executable name remains bare. It is validated at registration when possible and resolved at execution against a locron-owned, inspectable effective path. Initial setup seeds the global execution path from the invoking terminal, jobs may override it, and the daemon service manager's implicit environment is not the source of truth. Each run snapshot records the absolute executable actually selected before spawn. Diagnostics expose the effective path and current resolution results.
+
+## Execution Environment
+
+Execution does not inherit the daemon's complete environment. A minimal operating-system environment supplies home, user identity, locale, and temporary-directory values. The locron-owned global execution path is then applied, followed in order by global environment values, a job environment file, job inline values, and reserved run metadata. Later layers override earlier layers.
+
+Inline non-secret values are supported and persisted as plaintext user-local configuration. Values are preserved in immutable run configuration but are redacted from normal list, inspection, log, diagnostic, and export output. Exporting values requires an explicit acknowledgement.
+
+An environment-file target is normalized to an absolute path and read at execution. Its contents are never copied into job or run records. A missing, unreadable, or malformed file is a non-retryable configuration failure. Diagnostics warn when file permissions are broader than the current user. The runtime may retain a content hash for audit without retaining the content.
+
+Reserved `LOCRON_*` names cannot be supplied or overridden by user configuration. Each attempt receives at least job identity, run identity, nominal scheduled time, trigger source, and attempt number through reserved values.
+
+Built-in encryption, key management, and secret-provider integration are out of scope. Documentation must state that inline values, process arguments, and shell command strings are plaintext local configuration. locron does not emit environment values itself, but it cannot prevent a target from writing sensitive data to captured output.
+
+## HTTP Targets
+
+An HTTP target uses an absolute HTTP or HTTPS URL and one of GET, POST, PUT, PATCH, DELETE, or HEAD. Relative routes and an implicit base URL are not supported. A response status from 200 through 299 is successful by default; jobs may add explicit successful status values or ranges.
+
+A request may use one inline body, one runtime body-file reference, or a JSON convenience form, and these forms are mutually exclusive. Inline bodies are plaintext job configuration. A body-file path is normalized to an absolute path and its content is read only at execution. Missing or unreadable request files are non-retryable configuration failures.
+
+Headers may use inline non-secret values or source their value from the effective execution environment. Sensitive request values are redacted from normal output. Response headers are not retained by default. The run captures response status, content type, and response body under the ordinary output-retention limits.
+
+Redirect following is disabled by default and may be explicitly enabled with a maximum of 10 redirects. Sensitive headers are not forwarded across origins. TLS certificate verification is mandatory in the first stable interface; local cleartext development targets may use loopback HTTP.
+
+Attempt timeout covers the complete HTTP request. Transport and name-resolution errors, status 408, status 429, and 5xx statuses use the approved known-failure retry semantics. Other 4xx statuses fail without default retry. Oversized response output is truncated for storage without changing the success decision.
+
+## Execution Lifecycle and Crash Recovery
+
+Run lifecycle distinguishes queued, starting, running, and retry-wait states from terminal success, failure, timeout, cancellation, overlap skip, concurrency skip, and interrupted-unknown outcomes.
+
+Each attempt has a 60-second timeout by default. A job may select another duration or explicitly remove the timeout. Process and shell attempts run in their own process group. Timeout, cancellation, and overlap replacement signal the process group for graceful termination, wait five seconds by default, and then force termination if necessary. Completion is not reported until termination is confirmed. A descendant that deliberately escapes the process group is outside the portable guarantee.
+
+On normal scheduler termination, new admission stops and active attempts receive 30 seconds by default to finish naturally. Remaining process groups then follow the ordinary graceful and forced termination sequence. Confirmed termination is cancellation; an unconfirmed outcome is interrupted-unknown.
+
+A run and its scheduled occurrence identity are durable before process or HTTP execution begins. After an unclean scheduler lifetime ends, every stale non-terminal attempt owned by that lifetime becomes `interrupted_unknown`. The scheduler does not infer success, failure, or cancellation; does not automatically retry the unknown outcome; and does not reattach to or signal a stale recorded process identity after restart.
+
+Durable occurrence uniqueness prevents a restart from creating the same scheduled occurrence or one-time run again. This does not promise exactly-once external side effects. Targets may use the reserved run identity as an idempotency key when they need stronger protection.
+
+## Retention Semantics
+
+Terminal run metadata is retained for 90 days by default, subject to a secondary cap of 1,000 runs per job and 10,000 runs globally. The first exceeded age or count bound evicts the oldest eligible metadata. Active runs are never pruned, and removing a job does not bypass normal retention.
+
+Captured process output and HTTP response bodies are retained for 30 days by default, capped at 10 MiB per run and 256 MiB globally. Per-run overflow does not terminate the target; capture stops with an explicit truncation marker and discarded-byte accounting. Global overflow removes the oldest terminal-run output first while preserving run metadata and the fact and time of pruning.
+
+Cleanup occurs at scheduler startup and periodically in bounded batches. Retention bounds are configurable, important output can be exported, explicit pruning is supported, and diagnostics expose current usage, last cleanup, and truncation or pruning counts.
+
+## Safety and Reliability Constraints
+
+- Exactly-once side effects cannot be promised for arbitrary external commands or HTTP endpoints.
+- Duplicate creation of the same scheduled occurrence must be prevented within local durable state.
+- Unknown outcomes after a crash must not be retried automatically by default.
+- Automatic retry defaults to disabled.
+- Overlapping execution defaults to disabled.
+- Catch-up behavior must be bounded so waking a machine cannot create an unlimited execution storm.
+- Sensitive values must not appear in normal list, inspect, or log output.
+- Removing a job must not silently erase its execution history.
+
+## Open Questions
+
+None. Implementation choices and their trade-offs are recorded separately from this frozen product specification.
