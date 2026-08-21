@@ -149,7 +149,10 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
   and after target exit/before final commit.
 - [x] Exercise retention age/count/byte limits and interrupted pruning/finalization.
 - [x] Stress global concurrency 16 and maximum 64, large elapsed intervals, maximum catch-up 1,000, noisy output, and SQLite contention.
-- [ ] Run process-group and service-lifetime checks on macOS 14+ and Linux kernel 5.14+/glibc 2.34+ for `aarch64` and `x86_64`.
+- [x] Run process-group and service-lifetime checks on macOS 14+ and Linux kernel 5.14+/glibc 2.34+
+  for `aarch64` and `x86_64`. **Evidence:** GitHub Actions run
+  [32506527959](https://github.com/WhiteKiwi/locron/actions/runs/32506527959) passed the complete
+  Rust 1.94/stable matrix on all four official platform targets.
 - [x] Treat Windows, 32-bit, and musl/Alpine results as deferred/informational rather than v1 release gates.
 - [x] Update the applicable `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION.md`, and `docs/TODO.md` content before applying any platform-driven design deviation.
 

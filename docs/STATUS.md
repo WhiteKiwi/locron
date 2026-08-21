@@ -43,14 +43,14 @@ databases, concurrent writers, local HTTP/TLS fixtures, real subprocess trees, S
 lifetime checks, cross-process daemon death at four lifecycle boundaries, output/storage failure
 injection, retention recovery, and complete CLI acceptance scenarios.
 
-## Remaining milestone evidence
+## Milestone evidence
 
-The implementation and local acceptance matrix are complete. Milestone acceptance still requires a
-current-revision hosted run on Linux x86_64, Linux arm64, macOS x86_64, and macOS arm64 with Rust
-1.94 and latest stable. Every job must record its platform/toolchain and pass format, Clippy, and all
-workspace tests; the process-tree, service-lifetime, and crash fixtures must run rather than being
-filtered. Once that run passes, record its links in `ACCEPTANCE.md` and close the final platform
-checkbox in `TODO.md`.
+GitHub Actions run
+[32506527959](https://github.com/WhiteKiwi/locron/actions/runs/32506527959) passed all eight official
+jobs: Linux x86_64, Linux arm64, macOS x86_64, and macOS arm64, each on Rust 1.94 and stable. Every
+job recorded `uname -a` and `rustc -vV`, then passed format, Clippy with `-D warnings`, and all 194
+tests, including the process-tree, service-lifetime, and cross-process crash fixtures. GitGuardian
+also passed. This completes all 16 milestone-1 criteria mapped in `ACCEPTANCE.md`.
 
 Package publication and the HTTP viewer/API, MCP, desktop, and Mac App Store phases remain separate
 post-milestone programs. They are intentionally excluded by `SPEC.md` and require their own reviewed
