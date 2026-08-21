@@ -244,6 +244,8 @@ pub struct SettingsRecord {
     pub run_retention_age_us: Option<i64>,
     pub output_limit_bytes: i64,
     pub per_run_output_limit_bytes: i64,
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -542,9 +544,10 @@ impl Store {
                 ImportJob::Verify { .. } => {}
             }
         }
+        let environment_json = serde_json::to_string(&batch.settings.environment)?;
         tx.execute(
-            "UPDATE settings SET global_concurrency=?1,execution_path=?2,run_retention_count=?3,run_retention_age_us=?4,output_limit_bytes=?5,per_run_output_limit_bytes=?6,updated_at_us=?7 WHERE singleton=1",
-            params![batch.settings.global_concurrency,batch.settings.execution_path,batch.settings.run_retention_count,batch.settings.run_retention_age_us,batch.settings.output_limit_bytes,batch.settings.per_run_output_limit_bytes,batch.now_us],
+            "UPDATE settings SET global_concurrency=?1,execution_path=?2,run_retention_count=?3,run_retention_age_us=?4,output_limit_bytes=?5,per_run_output_limit_bytes=?6,updated_at_us=?7,environment_json=?8 WHERE singleton=1",
+            params![batch.settings.global_concurrency,batch.settings.execution_path,batch.settings.run_retention_count,batch.settings.run_retention_age_us,batch.settings.output_limit_bytes,batch.settings.per_run_output_limit_bytes,batch.now_us,environment_json],
         )?;
         event(&tx, batch.now_us, "import_applied", None, None, "{}")?;
         tx.commit()?;
@@ -822,6 +825,21 @@ impl Store {
     pub fn run(&self, id: &str) -> StoreResult<RunRecord> {
         let conn = self.conn()?;
         conn.query_row("SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE id=?1", [id], map_run).optional()?.ok_or_else(|| StoreError::NotFound(id.into()))
+    }
+
+    pub fn attempt_resolved_executable(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+    ) -> StoreResult<Option<String>> {
+        self.conn()?
+            .query_row(
+                "SELECT resolved_executable FROM attempts WHERE run_id=?1 AND attempt_number=?2",
+                params![run_id, attempt_number],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("attempt {run_id}/{attempt_number}")))
     }
 
     pub fn history(&self, job: Option<&str>, limit: usize) -> StoreResult<Vec<RunRecord>> {
@@ -1109,6 +1127,16 @@ impl Store {
         attempt_number: i64,
         now_us: i64,
     ) -> StoreResult<StartDecision> {
+        self.mark_attempt_running_inner(run_id, attempt_number, now_us, None)
+    }
+
+    fn mark_attempt_running_inner(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+        resolved_executable: Option<&Path>,
+    ) -> StoreResult<StartDecision> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<(String, Option<String>, String)> = tx
@@ -1177,9 +1205,11 @@ impl Store {
             tx.commit()?;
             return Ok(StartDecision::Ready);
         }
+        let resolved_executable =
+            resolved_executable.map(|path| path.to_string_lossy().into_owned());
         let attempt = tx.execute(
-            "UPDATE attempts SET state='running',running_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='starting'",
-            params![run_id, attempt_number, now_us],
+            "UPDATE attempts SET state='running',running_at_us=?3,resolved_executable=?4 WHERE run_id=?1 AND attempt_number=?2 AND state='starting'",
+            params![run_id, attempt_number, now_us, resolved_executable],
         )?;
         let run = tx.execute(
             "UPDATE runs SET state='running' WHERE id=?1 AND state='starting'",
@@ -1458,11 +1488,96 @@ impl Store {
     }
 
     pub fn settings(&self) -> StoreResult<SettingsRecord> {
-        self.conn()?.query_row(
-            "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes FROM settings WHERE singleton=1",
+        let conn = self.conn()?;
+        let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        let (
+            global_concurrency,
+            execution_path,
+            run_retention_count,
+            run_retention_age_us,
+            output_limit_bytes,
+            per_run_output_limit_bytes,
+            environment_json,
+        ): (i64, String, i64, Option<i64>, i64, i64, String) = if version >= 4 {
+            conn.query_row(
+                "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes,environment_json FROM settings WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?)),
+            )?
+        } else {
+            let values = conn.query_row(
+                "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes FROM settings WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?)),
+            )?;
+            (
+                values.0,
+                values.1,
+                values.2,
+                values.3,
+                values.4,
+                values.5,
+                "{}".into(),
+            )
+        };
+        let environment = parse_environment_json(&environment_json)?;
+        Ok(SettingsRecord {
+            global_concurrency,
+            execution_path,
+            run_retention_count,
+            run_retention_age_us,
+            output_limit_bytes,
+            per_run_output_limit_bytes,
+            environment,
+        })
+    }
+
+    pub fn set_environment(
+        &self,
+        name: &str,
+        value: Option<&str>,
+        now_us: i64,
+    ) -> StoreResult<SettingsRecord> {
+        validate_environment_entry(name, value)?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let source: String = tx.query_row(
+            "SELECT environment_json FROM settings WHERE singleton=1",
             [],
-            |row| Ok(SettingsRecord { global_concurrency:row.get(0)?,execution_path:row.get(1)?,run_retention_count:row.get(2)?,run_retention_age_us:row.get(3)?,output_limit_bytes:row.get(4)?,per_run_output_limit_bytes:row.get(5)? }),
-        ).map_err(Into::into)
+            |row| row.get(0),
+        )?;
+        let mut environment = parse_environment_json(&source)?;
+        match value {
+            Some(value) => {
+                environment.insert(name.to_owned(), value.to_owned());
+            }
+            None => {
+                environment.remove(name);
+            }
+        }
+        let canonical = serde_json::to_string(&environment)?;
+        tx.execute(
+            "UPDATE settings SET environment_json=?1,updated_at_us=?2 WHERE singleton=1",
+            params![canonical, now_us],
+        )?;
+        tx.commit()?;
+        drop(conn);
+        self.settings()
+    }
+
+    pub fn mark_attempt_running_with_executable(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+        resolved_executable: Option<&Path>,
+    ) -> StoreResult<StartDecision> {
+        if resolved_executable.is_some_and(|path| !path.is_absolute()) {
+            return Err(StoreError::Conflict(
+                "resolved executable must be absolute".into(),
+            ));
+        }
+        self.mark_attempt_running_inner(run_id, attempt_number, now_us, resolved_executable)
     }
 
     pub fn set_setting(&self, key: &str, value: &str, now_us: i64) -> StoreResult<SettingsRecord> {
@@ -2044,6 +2159,41 @@ fn validate_import_settings(settings: &SettingsRecord) -> StoreResult<()> {
         return Err(StoreError::Conflict(
             "import retention and output limits must be non-negative".into(),
         ));
+    }
+    for (name, value) in &settings.environment {
+        validate_environment_entry(name, Some(value))?;
+    }
+    Ok(())
+}
+
+fn parse_environment_json(source: &str) -> StoreResult<BTreeMap<String, String>> {
+    let environment: BTreeMap<String, String> = serde_json::from_str(source)?;
+    for (name, value) in &environment {
+        validate_environment_entry(name, Some(value))?;
+    }
+    if serde_json::to_string(&environment)? != source {
+        return Err(StoreError::Conflict(
+            "global environment is not canonical JSON".into(),
+        ));
+    }
+    Ok(environment)
+}
+
+fn validate_environment_entry(name: &str, value: Option<&str>) -> StoreResult<()> {
+    let mut bytes = name.bytes();
+    let valid_start = bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_');
+    let valid_rest = bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
+    if !valid_start || !valid_rest || name.starts_with("LOCRON_") {
+        return Err(StoreError::Conflict(format!(
+            "invalid or reserved environment name {name}"
+        )));
+    }
+    if value.is_some_and(|value| value.contains('\0')) {
+        return Err(StoreError::Conflict(format!(
+            "environment value for {name} contains NUL"
+        )));
     }
     Ok(())
 }
@@ -4044,5 +4194,90 @@ mod tests {
             )
             .unwrap();
         assert_eq!(after_finish, ("pruned".into(), 0, Some(8)));
+    }
+
+    #[test]
+    fn global_environment_is_validated_and_stored_as_canonical_json() {
+        let (_temp, store) = store();
+
+        store.set_environment("Z_TOKEN", Some("last"), 2).unwrap();
+        store.set_environment("A_TOKEN", Some("first"), 3).unwrap();
+
+        assert_eq!(
+            store.settings().unwrap().environment,
+            BTreeMap::from([
+                ("A_TOKEN".into(), "first".into()),
+                ("Z_TOKEN".into(), "last".into()),
+            ])
+        );
+        let stored: String = store
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT environment_json FROM settings WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, r#"{"A_TOKEN":"first","Z_TOKEN":"last"}"#);
+
+        store.set_environment("A_TOKEN", None, 4).unwrap();
+        assert_eq!(
+            store.settings().unwrap().environment,
+            BTreeMap::from([("Z_TOKEN".into(), "last".into())])
+        );
+        assert!(matches!(
+            store.set_environment("LOCRON_RUN_ID", Some("spoof"), 5),
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store.set_environment("BAD-NAME", Some("value"), 5),
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store.set_environment("TOKEN", Some("bad\0value"), 5),
+            Err(StoreError::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn resolved_executable_is_committed_at_the_cancellable_pre_spawn_boundary() {
+        let (_temp, store) = store();
+        let job = Uuid::from_u128(6_001).to_string();
+        let run = Uuid::from_u128(6_002).to_string();
+        create(&store, &job, "resolved");
+        store.enqueue_manual("resolved", &run, 2).unwrap();
+        let lifetime = Uuid::from_u128(6_003).to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+
+        assert_eq!(
+            store
+                .mark_attempt_running_with_executable(
+                    &run,
+                    attempt.attempt_number,
+                    4,
+                    Some(Path::new("/usr/bin/true")),
+                )
+                .unwrap(),
+            StartDecision::Ready
+        );
+        assert_eq!(
+            store
+                .attempt_resolved_executable(&run, attempt.attempt_number)
+                .unwrap()
+                .as_deref(),
+            Some("/usr/bin/true")
+        );
+
+        assert!(matches!(
+            store.mark_attempt_running_with_executable(
+                &run,
+                attempt.attempt_number,
+                5,
+                Some(Path::new("relative/bin")),
+            ),
+            Err(StoreError::Conflict(_))
+        ));
     }
 }

@@ -25,7 +25,7 @@ use locron_core::{
 };
 use locron_engine::admission::{RetryClass, decide_retry};
 use locron_engine::daemon::{AdmittedAttempt, DaemonStore};
-use locron_engine::runner::{OutcomeKind, RunnerConfig};
+use locron_engine::runner::{OutcomeKind, RunnerConfig, resolve_executable};
 use locron_engine::{
     AttemptContext, Daemon, DaemonConfig, HttpSpec, OutputWriter, ProcessSpec, Runner, TargetSpec,
 };
@@ -152,7 +152,15 @@ Navigation:
 const CONFIG_SET_HELP: &str = "\
 Examples:
   locron config set global_concurrency 32
+  locron config set environment.API_TOKEN value
   locron config set global_concurrency 32 --dry-run
+
+Navigation:
+  Run 'locron config --help' for config commands or 'locron --help' for all commands.";
+const CONFIG_UNSET_HELP: &str = "\
+Examples:
+  locron config unset environment.API_TOKEN
+  locron config unset environment.API_TOKEN --dry-run
 
 Navigation:
   Run 'locron config --help' for config commands or 'locron --help' for all commands.";
@@ -328,6 +336,12 @@ enum ConfigCommand {
     Set {
         key: String,
         value: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    #[command(about = "Remove a global environment value", after_help = CONFIG_UNSET_HELP)]
+    Unset {
+        key: String,
         #[arg(long)]
         dry_run: bool,
     },
@@ -533,6 +547,8 @@ struct ExportDocument {
     values_mode: ValuesMode,
     settings: SettingsRecord,
     jobs: Vec<ExportJob>,
+    #[serde(default)]
+    omitted_values: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1611,20 +1627,29 @@ fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<
     match command {
         ConfigCommand::Get { key } => {
             let store = open(paths)?;
-            let settings = serde_json::to_value(store.settings()?)?;
-            let data = match key {
-                Some(key) => {
-                    json!({"key":key,"value":settings.get(&key).ok_or_else(||anyhow!("unknown configuration key"))?})
-                }
-                None => settings,
-            };
-            render(format, "config get", data, &[]);
+            let settings = store.settings()?;
+            render_config_get(format, key.as_deref(), &settings)?;
         }
         ConfigCommand::Set {
             key,
             value,
             dry_run,
         } => {
+            if let Some(name) = environment_config_name(&key)? {
+                validate_environment_value(name, &value)?;
+                let before = config_dry_run_settings(paths, dry_run)?;
+                let action = if before.environment.contains_key(name) {
+                    "replaced"
+                } else {
+                    "created"
+                };
+                if !dry_run {
+                    open(paths)?.set_environment(name, Some(&value), now_us())?;
+                    send_wake(paths);
+                }
+                render_environment_change(format, &key, action, true, dry_run);
+                return Ok(());
+            }
             if dry_run {
                 validate_config_value(&key, &value)?;
                 render(
@@ -1637,11 +1662,167 @@ fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<
                 let store = open(paths)?;
                 let settings = store.set_setting(&key, &value, now_us())?;
                 send_wake(paths);
-                render(format, "config set", json!(settings), &[]);
+                render(
+                    format,
+                    "config set",
+                    redacted_settings_value(&settings)?,
+                    &[],
+                );
             }
+        }
+        ConfigCommand::Unset { key, dry_run } => {
+            let name = environment_config_name(&key)?
+                .ok_or_else(|| anyhow!("only environment.NAME settings can be unset"))?;
+            let before = config_dry_run_settings(paths, dry_run)?;
+            let action = if before.environment.contains_key(name) {
+                "removed"
+            } else {
+                "unchanged"
+            };
+            if !dry_run {
+                open(paths)?.set_environment(name, None, now_us())?;
+                send_wake(paths);
+            }
+            render_environment_change(format, &key, action, false, dry_run);
         }
     }
     Ok(())
+}
+
+fn environment_config_name(key: &str) -> Result<Option<&str>> {
+    let Some(name) = key.strip_prefix("environment.") else {
+        if key == "environment" {
+            return Err(anyhow!("environment requires a named environment.NAME key"));
+        }
+        return Ok(None);
+    };
+    if !is_valid_environment_name(name) || name.starts_with("LOCRON_") {
+        return Err(anyhow!("invalid or reserved environment name {name}"));
+    }
+    Ok(Some(name))
+}
+
+fn validate_environment_value(name: &str, value: &str) -> Result<()> {
+    if value.contains('\0') {
+        return Err(anyhow!("environment value for {name} contains NUL"));
+    }
+    Ok(())
+}
+
+fn config_dry_run_settings(paths: &StatePaths, dry_run: bool) -> Result<SettingsRecord> {
+    if dry_run && !paths.database.is_file() {
+        return Ok(default_settings());
+    }
+    if dry_run {
+        open_read_only(paths)?.settings().map_err(Into::into)
+    } else {
+        open(paths)?.settings().map_err(Into::into)
+    }
+}
+
+fn default_settings() -> SettingsRecord {
+    SettingsRecord {
+        global_concurrency: 16,
+        execution_path: "/usr/local/bin:/usr/bin:/bin".into(),
+        run_retention_count: 10_000,
+        run_retention_age_us: Some(7_776_000_000_000),
+        output_limit_bytes: 268_435_456,
+        per_run_output_limit_bytes: 10_485_760,
+        environment: BTreeMap::new(),
+    }
+}
+
+fn render_config_get(format: Format, key: Option<&str>, settings: &SettingsRecord) -> Result<()> {
+    if let Some(key) = key
+        && let Some(name) = environment_config_name(key)?
+    {
+        let configured = settings.environment.contains_key(name);
+        if format == Format::Human {
+            println!(
+                "{key}: {}",
+                if configured {
+                    "configured (value redacted)"
+                } else {
+                    "not configured"
+                }
+            );
+        } else {
+            render(
+                format,
+                "config get",
+                json!({"key":key,"configured":configured,"value_redacted":true}),
+                &[],
+            );
+        }
+        return Ok(());
+    }
+
+    let mut value = redacted_settings_value(settings)?;
+    let object = value
+        .as_object_mut()
+        .expect("settings serialize as an object");
+    if let Some(key) = key {
+        let value = object
+            .get(key)
+            .ok_or_else(|| anyhow!("unknown configuration key"))?;
+        render(format, "config get", json!({"key":key,"value":value}), &[]);
+    } else if format == Format::Human {
+        for (name, value) in object.iter().filter(|(name, _)| *name != "environment") {
+            println!("{name}={value}");
+        }
+        for name in settings.environment.keys() {
+            println!("environment.{name}=<redacted>");
+        }
+    } else {
+        render(format, "config get", value, &[]);
+    }
+    Ok(())
+}
+
+fn redacted_settings_value(settings: &SettingsRecord) -> Result<Value> {
+    let mut value = serde_json::to_value(settings)?;
+    let environment = settings
+        .environment
+        .keys()
+        .map(|name| {
+            (
+                name.clone(),
+                json!({"configured":true,"value_redacted":true}),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    value
+        .as_object_mut()
+        .expect("settings serialize as an object")
+        .insert("environment".into(), Value::Object(environment));
+    Ok(value)
+}
+
+fn render_environment_change(
+    format: Format,
+    key: &str,
+    action: &str,
+    configured: bool,
+    dry_run: bool,
+) {
+    if format == Format::Human {
+        if configured {
+            println!("{key}: configured (value redacted)");
+        } else {
+            println!("{key}: unset");
+        }
+    } else {
+        render(
+            format,
+            if configured {
+                "config set"
+            } else {
+                "config unset"
+            },
+            json!({"key":key,"action":action,"configured":configured,"value_redacted":true,"dry_run":dry_run}),
+            &[],
+        );
+    }
 }
 
 fn validate_config_value(key: &str, value: &str) -> Result<()> {
@@ -1695,11 +1876,24 @@ fn export(
         .into_iter()
         .map(|job| export_job(job, values_mode))
         .collect::<Result<Vec<_>>>()?;
+    let mut settings = store.settings()?;
+    let omitted_values = if values_mode == ValuesMode::Redacted {
+        let omitted = settings
+            .environment
+            .keys()
+            .map(|name| format!("settings.environment.{name}"))
+            .collect();
+        settings.environment.clear();
+        omitted
+    } else {
+        Vec::new()
+    };
     let document = ExportDocument {
         schema: "locron.export/v1".into(),
         values_mode,
-        settings: store.settings()?,
+        settings,
         jobs,
+        omitted_values,
     };
     match format {
         Format::Json => render(format, "export", serde_json::to_value(&document)?, &[]),
@@ -1827,10 +2021,11 @@ fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDo
             ));
         }
         ValuesMode::Redacted => {
-            if document
-                .jobs
-                .iter()
-                .any(|job| !job.omitted_values.is_empty())
+            if !document.omitted_values.is_empty()
+                || document
+                    .jobs
+                    .iter()
+                    .any(|job| !job.omitted_values.is_empty())
             {
                 return Err(anyhow!(
                     "redacted export contains omitted values and cannot be imported faithfully"
@@ -1838,10 +2033,11 @@ fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDo
             }
         }
         ValuesMode::Plaintext => {
-            if document
-                .jobs
-                .iter()
-                .any(|job| !job.omitted_values.is_empty())
+            if !document.omitted_values.is_empty()
+                || document
+                    .jobs
+                    .iter()
+                    .any(|job| !job.omitted_values.is_empty())
             {
                 return Err(anyhow!(
                     "plaintext export must not contain omitted_values entries"
@@ -1916,6 +2112,10 @@ fn validate_import_settings_cli(settings: &SettingsRecord) -> Result<()> {
     }
     if settings.execution_path.contains('\0') {
         return Err(anyhow!("import execution_path contains NUL"));
+    }
+    for (name, value) in &settings.environment {
+        environment_config_name(&format!("environment.{name}"))?;
+        validate_environment_value(name, value)?;
     }
     Ok(())
 }
@@ -2116,10 +2316,55 @@ fn import_plan_value(plan: &ImportPlan, dry_run: bool) -> Value {
 
 fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
     let store = open(paths)?;
+    let settings = store.settings()?;
+    let mut resolutions = Vec::new();
+    for job in store.list_jobs(true)? {
+        let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
+        let requested = match &definition.target {
+            Target::Process { executable, .. } => executable.clone(),
+            Target::Shell { shell, .. } => shell.display().to_string(),
+            Target::Http(_) => continue,
+        };
+        let diagnostic_attempt = AdmitAttempt {
+            run_id: Uuid::nil().to_string(),
+            job_id: job.id.clone(),
+            attempt_number: 1,
+            trigger: "diagnostic".into(),
+            nominal_us: None,
+            snapshot_json: String::new(),
+        };
+        match engine_target(&definition, &diagnostic_attempt, &settings) {
+            Ok(TargetSpec::Process(process)) => resolutions.push(json!({
+                "job_id":job.id,
+                "job_name":job.name,
+                "requested_executable":requested,
+                "effective_path":process.env.get("PATH"),
+                "resolved_executable":process.executable,
+                "status":"resolved"
+            })),
+            Ok(TargetSpec::Http(_)) => unreachable!("process target diagnostic returned HTTP"),
+            Err(error) => resolutions.push(json!({
+                "job_id":job.id,
+                "job_name":job.name,
+                "requested_executable":requested,
+                "status":"unresolved",
+                "error":error
+            })),
+        }
+    }
     render(
         format,
         "doctor",
-        json!({"state_dir":paths.root,"database":paths.database,"daemon_running":!daemon_lock_free(paths),"wake_socket":paths.wake_socket.exists(),"checks":store.integrity_check()?}),
+        json!({
+            "state_dir":paths.root,
+            "database":paths.database,
+            "daemon_running":!daemon_lock_free(paths),
+            "wake_socket":paths.wake_socket.exists(),
+            "execution_path":settings.execution_path,
+            "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
+            "process_resolution":resolutions,
+            "checks":store.integrity_check()?
+        }),
         &[],
     );
     Ok(())
@@ -2495,7 +2740,6 @@ impl DaemonStore for StoreAdapter {
     }
     async fn admit(&self, capacity: usize) -> Result<Vec<AdmittedAttempt>, String> {
         let settings = self.store.settings().map_err(|e| e.to_string())?;
-        let execution_path = settings.execution_path.clone();
         let global_retained = self
             .store
             .retained_output_bytes()
@@ -2510,7 +2754,7 @@ impl DaemonStore for StoreAdapter {
             let prepared = (|| {
                 let definition: JobDefinition =
                     serde_json::from_str(&attempt.snapshot_json).map_err(|e| e.to_string())?;
-                let target = engine_target(&definition, &attempt, &execution_path)?;
+                let target = engine_target(&definition, &attempt, &settings)?;
                 let number = u16::try_from(attempt.attempt_number)
                     .map_err(|_| "attempt number overflow".to_string())?;
                 let run_retained = self
@@ -2559,11 +2803,16 @@ impl DaemonStore for StoreAdapter {
         Ok(runnable)
     }
     async fn mark_running(&self, attempt: &AdmittedAttempt) -> Result<bool, String> {
+        let resolved_executable = match &attempt.target {
+            TargetSpec::Process(process) => Some(Path::new(&process.executable)),
+            TargetSpec::Http(_) => None,
+        };
         self.store
-            .mark_attempt_running(
+            .mark_attempt_running_with_executable(
                 &attempt.run_id,
                 i64::from(attempt.context.attempt),
                 self.now_us(),
+                resolved_executable,
             )
             .map(|decision| matches!(decision, locron_store::StartDecision::Ready))
             .map_err(|error| error.to_string())
@@ -2668,17 +2917,16 @@ impl DaemonStore for StoreAdapter {
 fn engine_target(
     definition: &JobDefinition,
     attempt: &locron_store::AdmitAttempt,
-    execution_path: &str,
+    settings: &SettingsRecord,
 ) -> Result<TargetSpec, String> {
     let mut env = minimal_env();
-    env.insert(
-        "PATH".into(),
-        definition
-            .environment
-            .path
-            .clone()
-            .unwrap_or_else(|| execution_path.to_owned()),
-    );
+    env.insert("PATH".into(), settings.execution_path.clone());
+    for (key, value) in &settings.environment {
+        env.insert(key.clone(), value.clone());
+    }
+    if let Some(path) = &definition.environment.path {
+        env.insert("PATH".into(), path.clone());
+    }
     if let Some(path) = &definition.environment.file {
         let content =
             std::fs::read_to_string(path).map_err(|error| format!("environment file: {error}"))?;
@@ -2713,18 +2961,30 @@ fn engine_target(
         }),
     );
     match &definition.target {
-        Target::Process { executable, args } => Ok(TargetSpec::Process(ProcessSpec {
-            executable: executable.clone(),
-            args: args.clone(),
-            cwd: definition.cwd.clone(),
-            env,
-        })),
-        Target::Shell { command, shell } => Ok(TargetSpec::Process(ProcessSpec {
-            executable: shell.display().to_string(),
-            args: vec!["-c".into(), command.clone()],
-            cwd: definition.cwd.clone(),
-            env,
-        })),
+        Target::Process { executable, args } => {
+            let executable = resolve_attempt_executable(executable, &definition.cwd, &env)?;
+            Ok(TargetSpec::Process(ProcessSpec {
+                executable,
+                args: args.clone(),
+                cwd: definition.cwd.clone(),
+                env,
+            }))
+        }
+        Target::Shell { command, shell } => {
+            let executable = resolve_attempt_executable(
+                shell
+                    .to_str()
+                    .ok_or_else(|| "shell executable path is not valid UTF-8".to_string())?,
+                &definition.cwd,
+                &env,
+            )?;
+            Ok(TargetSpec::Process(ProcessSpec {
+                executable,
+                args: vec!["-c".into(), command.clone()],
+                cwd: definition.cwd.clone(),
+                env,
+            }))
+        }
         Target::Http(http) => {
             let headers = http
                 .headers
@@ -2758,6 +3018,38 @@ fn engine_target(
             }))
         }
     }
+}
+
+fn resolve_attempt_executable(
+    executable: &str,
+    cwd: &Path,
+    env: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    let path = env.get("PATH").map_or("", String::as_str);
+    let absolute_directories = std::env::split_paths(path)
+        .map(|directory| {
+            if directory.is_absolute() {
+                directory
+            } else {
+                cwd.join(directory)
+            }
+        })
+        .collect::<Vec<_>>();
+    let normalized_path = std::env::join_paths(absolute_directories)
+        .map_err(|_| "effective PATH cannot be represented".to_string())?
+        .into_string()
+        .map_err(|_| "effective PATH is not valid UTF-8".to_string())?;
+    let resolved = resolve_executable(executable, cwd, Some(&normalized_path))
+        .ok_or_else(|| format!("executable not found: {executable}"))?;
+    let absolute = if resolved.is_absolute() {
+        resolved
+    } else {
+        cwd.join(resolved)
+    };
+    absolute
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "resolved executable path is not valid UTF-8".to_string())
 }
 fn minimal_env() -> BTreeMap<String, String> {
     [
@@ -3745,7 +4037,8 @@ mod tests {
             snapshot_json: String::new(),
         };
 
-        let TargetSpec::Http(http) = engine_target(&definition, &attempt, "/usr/bin").unwrap()
+        let TargetSpec::Http(http) =
+            engine_target(&definition, &attempt, &default_settings()).unwrap()
         else {
             panic!("expected HTTP target");
         };
@@ -3757,7 +4050,7 @@ mod tests {
         let mut missing = definition;
         missing.environment.values.clear();
         assert!(
-            engine_target(&missing, &attempt, "/usr/bin")
+            engine_target(&missing, &attempt, &default_settings())
                 .unwrap_err()
                 .contains("header environment TOKEN is missing")
         );

@@ -3,14 +3,16 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use crate::{StoreError, StoreResult};
 
 pub const APPLICATION_ID: i32 = 0x4c4f_4352; // "LOCR"
-pub const LATEST_SCHEMA_VERSION: i64 = 3;
+pub const LATEST_SCHEMA_VERSION: i64 = 4;
 const INITIAL_MIGRATION_NAME: &str = "initial durable state";
 const DISABLED_CURSOR_MIGRATION_NAME: &str = "record disabled cursor intervals";
 const RETENTION_RECOVERY_MIGRATION_NAME: &str = "bound retention and recovery";
+const GLOBAL_ENVIRONMENT_MIGRATION_NAME: &str = "persist global environment";
 
 const INITIAL_SCHEMA: &str = include_str!("../migrations/0001_initial.sql");
 const DISABLED_CURSOR_SCHEMA: &str = include_str!("../migrations/0002_disabled_cursor.sql");
 const RETENTION_RECOVERY_SCHEMA: &str = include_str!("../migrations/0003_retention_recovery.sql");
+const GLOBAL_ENVIRONMENT_SCHEMA: &str = include_str!("../migrations/0004_global_environment.sql");
 
 pub(crate) fn migrate(
     connection: &mut Connection,
@@ -79,6 +81,22 @@ pub(crate) fn migrate(
         tx.commit()?;
     }
     verify_migration(connection, 3, RETENTION_RECOVERY_SCHEMA)?;
+    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version < 4 {
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let checked_version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if checked_version != 3 {
+            return Err(StoreError::MigrationConflict);
+        }
+        tx.execute_batch(GLOBAL_ENVIRONMENT_SCHEMA)?;
+        tx.pragma_update(None, "user_version", 4)?;
+        tx.execute(
+            "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (4, ?1, ?2, ?3, ?4)",
+            params![GLOBAL_ENVIRONMENT_MIGRATION_NAME, checksum(GLOBAL_ENVIRONMENT_SCHEMA), binary_version, now_us],
+        )?;
+        tx.commit()?;
+    }
+    verify_migration(connection, 4, GLOBAL_ENVIRONMENT_SCHEMA)?;
     Ok(())
 }
 
@@ -183,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn clean_database_receives_v3_retention_default() {
+    fn clean_database_receives_current_defaults() {
         let mut connection = Connection::open_in_memory().unwrap();
 
         migrate(&mut connection, "new", 2).unwrap();
@@ -207,6 +225,52 @@ mod tests {
                 )
                 .unwrap(),
             1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT environment_json FROM settings WHERE singleton=1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "{}"
+        );
+    }
+
+    #[test]
+    fn upgrades_v3_settings_with_an_empty_global_environment() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection, "old", 1).unwrap();
+        connection.pragma_update(None, "user_version", 3).unwrap();
+        connection
+            .execute("DELETE FROM schema_migrations WHERE version=4", [])
+            .unwrap();
+        connection
+            .execute("ALTER TABLE settings DROP COLUMN environment_json", [])
+            .unwrap();
+
+        migrate(&mut connection, "new", 2).unwrap();
+
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT environment_json FROM settings WHERE singleton=1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "{}"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT binary_version FROM schema_migrations WHERE version=4",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "new"
         );
     }
 }

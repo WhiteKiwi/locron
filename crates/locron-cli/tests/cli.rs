@@ -154,6 +154,13 @@ fn complete_command_tree_has_consistent_help_surface() {
         commands.push((path, !children.is_empty()));
     }
 
+    assert!(
+        commands
+            .iter()
+            .any(|(path, _)| path == &["config".to_owned(), "unset".to_owned()]),
+        "recursive help discovery must include config unset"
+    );
+
     for (path, has_subcommands) in &commands {
         for flag in ["-h", "--help"] {
             let mut arguments = path.clone();
