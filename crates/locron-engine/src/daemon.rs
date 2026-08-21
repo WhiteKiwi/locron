@@ -11,6 +11,8 @@ use tokio_util::task::TaskTracker;
 
 use crate::runner::{AttemptContext, ExecutionOutcome, Runner, RunnerError, TargetSpec};
 
+const MAX_GLOBAL_CONCURRENCY: usize = 64;
+
 /// Daemon timing and resource limits.
 #[derive(Clone, Debug)]
 pub struct DaemonConfig {
@@ -65,8 +67,9 @@ pub trait DaemonStore: Send + Sync + 'static {
     async fn begin_lifetime(&self) -> Result<(), String>;
     /// Reconciles due schedules and durable retry intents.
     async fn reconcile(&self) -> Result<usize, String>;
-    /// Atomically admits up to `capacity` attempts using durable fairness.
-    async fn admit(&self, capacity: usize) -> Result<Vec<AdmittedAttempt>, String>;
+    /// Atomically applies durable concurrency and admits attempts, additionally
+    /// bounded by the process-local hard-guard permits currently available.
+    async fn admit(&self, hard_guard_available: usize) -> Result<Vec<AdmittedAttempt>, String>;
     /// Acknowledges the final pre-execution boundary immediately before the
     /// runner is allowed to create external side effects.
     async fn mark_running(&self, attempt: &AdmittedAttempt) -> Result<bool, String>;
@@ -117,7 +120,7 @@ pub struct Daemon<S> {
 impl<S: DaemonStore> Daemon<S> {
     /// Constructs a daemon after validating resource bounds.
     pub fn new(store: Arc<S>, runner: Runner, config: DaemonConfig) -> Result<Self, DaemonError> {
-        if !(1..=64).contains(&config.global_concurrency) {
+        if !(1..=MAX_GLOBAL_CONCURRENCY).contains(&config.global_concurrency) {
             return Err(DaemonError::InvalidConcurrency);
         }
         if config.pre_spawn_retry_initial.is_zero()
@@ -150,8 +153,11 @@ impl<S: DaemonStore> Daemon<S> {
                 return Err(DaemonError::Store(error));
             }
         };
-        let capacity = semaphore.available_permits();
-        if capacity == 0 {
+        let available = semaphore.available_permits();
+        if available > MAX_GLOBAL_CONCURRENCY {
+            return Err(DaemonError::InvalidConcurrency);
+        }
+        if available == 0 {
             return Ok(TickResult {
                 reconciled,
                 admitted: 0,
@@ -159,7 +165,7 @@ impl<S: DaemonStore> Daemon<S> {
         }
         let attempts = self
             .store
-            .admit(capacity)
+            .admit(available)
             .await
             .map_err(DaemonError::Store)?;
         let admitted = attempts.len();
@@ -259,7 +265,7 @@ impl<S: DaemonStore> Daemon<S> {
             .begin_lifetime()
             .await
             .map_err(DaemonError::Store)?;
-        let semaphore = Arc::new(Semaphore::new(self.config.global_concurrency));
+        let semaphore = Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY));
         let mut first = true;
         loop {
             if !first {
@@ -326,6 +332,24 @@ mod tests {
         completion_results: Mutex<VecDeque<Result<(), String>>>,
         mark_notify: tokio::sync::Notify,
         complete_notify: tokio::sync::Notify,
+    }
+
+    struct DynamicCapacityStore {
+        global: AtomicUsize,
+        capacities: Mutex<Vec<usize>>,
+    }
+
+    impl DynamicCapacityStore {
+        fn new(global: usize) -> Self {
+            Self {
+                global: AtomicUsize::new(global),
+                capacities: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn set_global(&self, value: usize) {
+            self.global.store(value, Ordering::Release);
+        }
     }
 
     impl ScriptedStore {
@@ -478,6 +502,47 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl DaemonStore for DynamicCapacityStore {
+        async fn begin_lifetime(&self) -> Result<(), String> {
+            Ok(())
+        }
+        async fn reconcile(&self) -> Result<usize, String> {
+            Ok(0)
+        }
+        async fn admit(&self, hard_guard_available: usize) -> Result<Vec<AdmittedAttempt>, String> {
+            let configured = self.global.load(Ordering::Acquire);
+            if !(1..=MAX_GLOBAL_CONCURRENCY).contains(&configured) {
+                return Err("global concurrency must be between 1 and 64".into());
+            }
+            let active = MAX_GLOBAL_CONCURRENCY.saturating_sub(hard_guard_available);
+            let capacity = configured.saturating_sub(active).min(hard_guard_available);
+            self.capacities.lock().unwrap().push(capacity);
+            Ok(Vec::new())
+        }
+        async fn mark_running(&self, _: &AdmittedAttempt) -> Result<bool, String> {
+            unreachable!("capacity-only store never admits")
+        }
+        fn completion_instant_us(&self) -> i64 {
+            0
+        }
+        async fn complete(
+            &self,
+            _: &AdmittedAttempt,
+            _: &ExecutionOutcome,
+            _: i64,
+        ) -> Result<(), String> {
+            unreachable!("capacity-only store never admits")
+        }
+        async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
+            unreachable!("capacity-only store never admits")
+        }
+        async fn persistence_degraded(&self, _: &str) {}
+        async fn end_lifetime(&self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
     #[tokio::test]
     async fn zero_capacity_never_calls_admission() {
         let store = Arc::new(FakeStore::default());
@@ -496,6 +561,57 @@ mod tests {
             }
         );
         assert_eq!(*store.calls.lock().unwrap(), ["reconcile"]);
+    }
+
+    #[tokio::test]
+    async fn durable_limit_changes_apply_to_next_admission_without_resizing_or_cancellation() {
+        let store = Arc::new(DynamicCapacityStore::new(1));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            DaemonConfig::default(),
+        )
+        .unwrap();
+        let semaphore = Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY));
+
+        daemon.tick(&semaphore).await.unwrap();
+        assert_eq!(*store.capacities.lock().unwrap(), [1]);
+
+        let active = Arc::clone(&semaphore).acquire_many_owned(2).await.unwrap();
+        store.set_global(3);
+        daemon.tick(&semaphore).await.unwrap();
+        assert_eq!(*store.capacities.lock().unwrap(), [1, 1]);
+        assert_eq!(semaphore.available_permits(), 62);
+
+        store.set_global(1);
+        let reduced = daemon.tick(&semaphore).await.unwrap();
+        assert_eq!(reduced.admitted, 0);
+        assert_eq!(*store.capacities.lock().unwrap(), [1, 1, 0]);
+        assert_eq!(semaphore.available_permits(), 62);
+
+        store.set_global(3);
+        daemon.tick(&semaphore).await.unwrap();
+        assert_eq!(*store.capacities.lock().unwrap(), [1, 1, 0, 1]);
+
+        drop(active);
+        assert_eq!(semaphore.available_permits(), MAX_GLOBAL_CONCURRENCY);
+    }
+
+    #[tokio::test]
+    async fn durable_limit_above_hard_max_is_rejected_before_store_admission() {
+        let store = Arc::new(DynamicCapacityStore::new(65));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            DaemonConfig::default(),
+        )
+        .unwrap();
+        let error = daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, DaemonError::Store(_)));
+        assert!(store.capacities.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -527,7 +643,10 @@ mod tests {
             retry_test_config(),
         )
         .unwrap();
-        daemon.tick(&Arc::new(Semaphore::new(1))).await.unwrap();
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
         while store.completions.load(Ordering::Acquire) == 0 {
             store.complete_notify.notified().await;
         }
@@ -556,7 +675,10 @@ mod tests {
             retry_test_config(),
         )
         .unwrap();
-        daemon.tick(&Arc::new(Semaphore::new(1))).await.unwrap();
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
         store.wait_for_marks(2).await;
         daemon.tracker.close();
         daemon.tracker.wait().await;
@@ -576,7 +698,10 @@ mod tests {
             retry_test_config(),
         )
         .unwrap();
-        daemon.tick(&Arc::new(Semaphore::new(1))).await.unwrap();
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
         store.wait_for_marks(3).await;
         daemon.cancellation.cancel();
         daemon.tracker.close();
@@ -601,7 +726,10 @@ mod tests {
             retry_test_config(),
         )
         .unwrap();
-        daemon.tick(&Arc::new(Semaphore::new(1))).await.unwrap();
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
         while store.successful_completions.load(Ordering::Acquire) == 0 {
             store.complete_notify.notified().await;
         }

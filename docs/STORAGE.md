@@ -61,7 +61,8 @@ Complex job definitions and immutable run snapshots are canonical versioned JSON
 - At most one pending normal replacement candidate exists per job.
 - A termination-unconfirmed predecessor remains in the active run set across scheduler lifetimes;
   its attempt is `interrupted_unknown`, its replacement candidate is terminally failed in the same
-  transaction, and startup never acts on its recorded process identity.
+  transaction, and startup never acts on its recorded process identity. Only a transaction that
+  explicitly acknowledges that exact quarantine may terminalize it and release the active block.
 - At most one retry intent exists per run and it references the immediately preceding known attempt.
 - Legal run, attempt, output, trigger, and reason vocabulary is constrained.
 - Foreign keys are immediate unless one documented atomic transition requires deferral.
@@ -71,6 +72,15 @@ Complex job definitions and immutable run snapshots are canonical versioned JSON
 ## Transaction boundaries
 
 Dedicated store operations atomically perform job revision changes, manual snapshot/enqueue, reconciliation cursor plus run materialization, overlap/replacement decisions, admission plus fairness cursor movement, attempt completion plus retry intent, cancellation intent, stale-lifetime recovery, bounded retention selection, and whole-document settings/job import.
+
+Cancellation reads the run state after taking immediate write intent. Ordinary cancellation of a
+termination-unconfirmed quarantine returns a conflict and cannot create an inert cancellation
+request. Explicit acknowledgement is a separate mode of the same operation: it succeeds only when
+the run is still `running` with reason `termination_unconfirmed`, changes it to terminal
+`interrupted_unknown` with acknowledgement time/reason, clears replacement candidacy, and appends a
+`termination_unconfirmed_acknowledged` event in the same transaction. It does not read attempt PID or
+PGID columns and performs no signalling. Every other state, including an already acknowledged run,
+is a stable conflict in acknowledgement mode.
 
 Every operation revalidates the expected revision/state inside the transaction. A conflict returns a typed retry or conflict result; callers do not continue using stale in-memory decisions.
 

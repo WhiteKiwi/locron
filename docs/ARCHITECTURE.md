@@ -120,7 +120,7 @@ Global capacity is shared through durable round-robin admission across eligible 
 
 Within a job, durable eligibility time and queue sequence provide stable ordering. A missed-run `all` batch is its own ordered lane: only its oldest non-terminal member advances, including through retry, before the next batch member. Normal occurrences may still interact with that active batch exactly as the job's overlap policy requires.
 
-A `replace` job retains at most one pending replacement candidate. A newer normal occurrence atomically terminalizes the previous candidate as `skipped_overlap` with a supersession reason and becomes the candidate. Termination intent is durable and signalling is not duplicated. No candidate is admitted until prior active termination is confirmed. Inability to confirm termination atomically terminalizes the newest candidate with an explicit failure reason and leaves the unconfirmed predecessor in a durable active-blocking quarantine; restart preserves the block without signalling its stale PID/PGID. Members already selected into one missed-run `all` batch are not replacement candidates for one another.
+A `replace` job retains at most one pending replacement candidate. A newer normal occurrence atomically terminalizes the previous candidate as `skipped_overlap` with a supersession reason and becomes the candidate. Termination intent is durable and signalling is not duplicated. No candidate is admitted until prior active termination is confirmed. Inability to confirm termination atomically terminalizes the newest candidate with an explicit failure reason and leaves the unconfirmed predecessor in a durable active-blocking quarantine; restart preserves the block without signalling its stale PID/PGID. Only an explicit operator acknowledgement of that exact run atomically terminalizes it as `interrupted_unknown` and releases the block. Members already selected into one missed-run `all` batch are not replacement candidates for one another.
 
 ## Durable model
 
@@ -188,7 +188,7 @@ The following invariants hold regardless of the final schema or library selectio
    become terminal `cancelled` immediately, clear any retry intent, and need no engine signal;
    starting and running runs retain durable intent before signalling. A replacement is not admitted
    until prior termination is confirmed.
-10. A new daemon lifetime classifies stale non-terminal attempts from an older lifetime as `interrupted_unknown`. It neither infers their result nor signals a recorded stale PID/PGID. A termination-unconfirmed quarantine is the exception to ordinary run terminalization: its attempt is unknown, but the predecessor run remains active-blocking across lifetimes until an explicit future operator-resolution workflow exists.
+10. A new daemon lifetime classifies stale non-terminal attempts from an older lifetime as `interrupted_unknown`. It neither infers their result nor signals a recorded stale PID/PGID. A termination-unconfirmed quarantine is the exception to ordinary run terminalization: its attempt is unknown, but the predecessor run remains active-blocking across lifetimes until an operator explicitly acknowledges that exact run. The acknowledgement transaction verifies the quarantine state, records an audit event, terminalizes the run as `interrupted_unknown`, and never inspects or signals stored process identities. Ordinary cancellation, an acknowledgement against another state, and repeated acknowledgement cannot release it.
 11. Cleanup selects only eligible terminal data in bounded batches. It never prunes active runs and retains an explanation when output is truncated or removed.
 12. Legal stored states, foreign-key ownership, scheduled occurrence uniqueness, attempt ordering, and unique live job names are defended by database constraints where SQLite can express them and by domain validation for cross-record rules.
 13. External execution never starts until its attempt and logical output identity are durable. Output creation failure before spawn is a known execution failure; it cannot create an untracked child.
@@ -202,6 +202,12 @@ The following invariants hold regardless of the final schema or library selectio
     completed durably. A known pre-execution failure finalizes an empty bounded output artifact and
     terminalizes the attempt and run as failed; adapter error propagation cannot orphan a running
     record.
+19. A fixed 64-attempt in-process permit ceiling is only a hard safety guard. The admission
+    transaction rereads durable global concurrency and counts durable starting/running attempts,
+    then caps selection by both the setting and available hard-guard permits. A concurrent setting
+    change serializes before or after that transaction rather than splitting its capacity decision.
+    A decrease below the active count admits zero and does not signal active work; an increase is
+    usable on the next pass without daemon restart.
 
 These boundaries allow crash ambiguity to be represented honestly without promising exactly-once external side effects. A target that requires stronger duplicate protection can use the durable run identity as an idempotency key.
 

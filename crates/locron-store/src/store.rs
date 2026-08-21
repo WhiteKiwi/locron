@@ -173,6 +173,13 @@ pub enum StartDecision {
     CancelledBeforeSpawn,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CancelOutcome {
+    CancelledBeforeExecution,
+    CancellationRequested,
+    AcknowledgedUnconfirmed,
+}
+
 #[derive(Clone, Debug)]
 pub struct RetryPlan {
     pub not_before_us: i64,
@@ -776,6 +783,26 @@ impl Store {
             .map_err(Into::into)
     }
 
+    pub fn events_for_run(&self, run_id: &str) -> StoreResult<Vec<EventRecord>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id,occurred_at_us,kind,job_id,run_id,details_json FROM events WHERE run_id=?1 ORDER BY id",
+        )?;
+        statement
+            .query_map([run_id], |row| {
+                Ok(EventRecord {
+                    id: row.get(0)?,
+                    occurred_at_us: row.get(1)?,
+                    kind: row.get(2)?,
+                    job_id: row.get(3)?,
+                    run_id: row.get(4)?,
+                    details_json: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
     pub fn run(&self, id: &str) -> StoreResult<RunRecord> {
         let conn = self.conn()?;
         conn.query_row("SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE id=?1", [id], map_run).optional()?.ok_or_else(|| StoreError::NotFound(id.into()))
@@ -794,20 +821,63 @@ impl Store {
             .map_err(Into::into)
     }
 
-    pub fn cancel(&self, id: &str, now_us: i64) -> StoreResult<()> {
+    pub fn cancel(&self, id: &str, now_us: i64) -> StoreResult<CancelOutcome> {
+        self.cancel_with_acknowledgement(id, now_us, false)
+    }
+
+    pub fn cancel_with_acknowledgement(
+        &self,
+        id: &str,
+        now_us: i64,
+        acknowledge_unconfirmed: bool,
+    ) -> StoreResult<CancelOutcome> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let current: Option<(String, String, Option<i64>)> = tx
+        let current: Option<(String, String, Option<i64>, Option<String>)> = tx
             .query_row(
-                "SELECT state,job_id,cancellation_requested_at_us FROM runs WHERE id=?1",
+                "SELECT state,job_id,cancellation_requested_at_us,reason FROM runs WHERE id=?1",
                 [id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .optional()?;
-        let Some((state, job_id, cancellation_requested_at_us)) = current else {
+        let Some((state, job_id, cancellation_requested_at_us, reason)) = current else {
             return Err(StoreError::NotFound(id.into()));
         };
-        match state.as_str() {
+        let quarantined =
+            state == "running" && reason.as_deref() == Some("termination_unconfirmed");
+        if acknowledge_unconfirmed {
+            if !quarantined {
+                return Err(StoreError::Conflict(format!(
+                    "run {id} is not an active termination-unconfirmed quarantine"
+                )));
+            }
+            let changed = tx.execute(
+                "UPDATE runs SET state='interrupted_unknown',reason='termination unconfirmed; risk acknowledged by operator',finished_at_us=?2,replacement_candidate=0 WHERE id=?1 AND state='running' AND reason='termination_unconfirmed'",
+                params![id, now_us],
+            )?;
+            if changed != 1 {
+                return Err(StoreError::Conflict(format!(
+                    "run {id} quarantine changed before acknowledgement"
+                )));
+            }
+            tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [id])?;
+            event(
+                &tx,
+                now_us,
+                "termination_unconfirmed_acknowledged",
+                Some(&job_id),
+                Some(id),
+                r#"{"source":"user","risk":"process_liveness_unconfirmed"}"#,
+            )?;
+            tx.commit()?;
+            return Ok(CancelOutcome::AcknowledgedUnconfirmed);
+        }
+        if quarantined {
+            return Err(StoreError::Conflict(format!(
+                "run {id} termination is unconfirmed; repeat cancel with --acknowledge-unconfirmed to accept the risk and release the quarantine"
+            )));
+        }
+        let outcome = match state.as_str() {
             "queued" | "retry_wait" => {
                 tx.execute(
                     "UPDATE runs SET state='cancelled',reason='cancelled by user before execution',finished_at_us=?2,cancellation_requested_at_us=?2,cancellation_reason='user',replacement_candidate=0 WHERE id=?1",
@@ -822,6 +892,7 @@ impl Store {
                     Some(id),
                     r#"{"source":"user","before_execution":true}"#,
                 )?;
+                CancelOutcome::CancelledBeforeExecution
             }
             "starting" | "running" => {
                 if cancellation_requested_at_us.is_none() {
@@ -838,15 +909,16 @@ impl Store {
                         r#"{"source":"user"}"#,
                     )?;
                 }
+                CancelOutcome::CancellationRequested
             }
             terminal => {
                 return Err(StoreError::Conflict(format!(
                     "run {id} is already terminal ({terminal})"
                 )));
             }
-        }
+        };
         tx.commit()?;
-        Ok(())
+        Ok(outcome)
     }
 
     pub fn cancellation_requested(&self, id: &str) -> StoreResult<bool> {
@@ -886,12 +958,37 @@ impl Store {
         Ok(())
     }
 
-    pub fn admit(&self, lifetime_id: &str, now_us: i64, capacity: usize) -> StoreResult<Admission> {
-        if capacity == 0 {
+    pub fn admit(
+        &self,
+        lifetime_id: &str,
+        now_us: i64,
+        hard_guard_available: usize,
+    ) -> StoreResult<Admission> {
+        if hard_guard_available == 0 {
             return Ok(Admission::default());
         }
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let configured_limit: i64 = tx.query_row(
+            "SELECT global_concurrency FROM settings WHERE singleton=1",
+            [],
+            |row| row.get(0),
+        )?;
+        if !(1..=64).contains(&configured_limit) {
+            return Err(StoreError::Conflict(
+                "global_concurrency must be from 1 through 64".into(),
+            ));
+        }
+        let active_attempts: i64 = tx.query_row(
+            "SELECT count(*) FROM attempts WHERE state IN ('starting','running')",
+            [],
+            |row| row.get(0),
+        )?;
+        let durable_available = configured_limit.saturating_sub(active_attempts).max(0);
+        let capacity = hard_guard_available.min(usize::try_from(durable_available).unwrap_or(0));
+        if capacity == 0 {
+            return Ok(Admission::default());
+        }
         let mut statement = tx.prepare("SELECT r.id,r.job_id,r.snapshot_json,COALESCE((SELECT MAX(attempt_number) FROM attempts a WHERE a.run_id=r.id),0)+1,r.trigger,r.nominal_us FROM runs r WHERE r.state IN ('queued','retry_wait') AND r.eligible_at_us<=?1 AND r.cancellation_requested_at_us IS NULL AND NOT EXISTS(SELECT 1 FROM runs quarantine WHERE quarantine.job_id=r.job_id AND quarantine.state='running' AND quarantine.reason='termination_unconfirmed') AND (r.replacement_candidate=0 OR NOT EXISTS(SELECT 1 FROM runs prior WHERE prior.job_id=r.job_id AND prior.id<>r.id AND prior.state IN ('starting','running','retry_wait'))) AND (r.trigger<>'catch_up' OR NOT EXISTS(SELECT 1 FROM runs earlier WHERE earlier.job_id=r.job_id AND earlier.queue_sequence<r.queue_sequence AND earlier.state IN ('queued','starting','running','retry_wait'))) ORDER BY r.eligible_at_us,r.queue_sequence LIMIT ?2")?;
         let scan_limit = capacity.saturating_mul(64).max(capacity);
         let rows = statement
@@ -2574,6 +2671,85 @@ mod tests {
                 .attempts
                 .is_empty()
         );
+        let ordinary_cancel = store.cancel(&predecessor, 21).unwrap_err();
+        assert!(
+            ordinary_cancel
+                .to_string()
+                .contains("--acknowledge-unconfirmed")
+        );
+        assert!(matches!(
+            store.cancel_with_acknowledgement(&candidate, 22, true),
+            Err(StoreError::Conflict(_))
+        ));
+        assert_eq!(
+            store
+                .cancel_with_acknowledgement(&predecessor, 23, true)
+                .unwrap(),
+            CancelOutcome::AcknowledgedUnconfirmed
+        );
+        let acknowledged = store.run(&predecessor).unwrap();
+        assert_eq!(acknowledged.state, "interrupted_unknown");
+        assert_eq!(acknowledged.finished_at_us, Some(23));
+        assert!(
+            acknowledged
+                .reason
+                .as_deref()
+                .unwrap()
+                .contains("acknowledged by operator")
+        );
+        let acknowledged_attempt_state: String = store
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM attempts WHERE run_id=?1 AND attempt_number=?2",
+                params![predecessor, attempt.attempt_number],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(acknowledged_attempt_state, "interrupted_unknown");
+        let retry_intents: i64 = store
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM retry_intents WHERE run_id=?1",
+                [&predecessor],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(retry_intents, 0);
+        let active_runs: i64 = store
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM runs WHERE id=?1 AND state IN ('queued','starting','running','retry_wait')",
+                [&predecessor],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(active_runs, 0);
+        let acknowledgement_events = store.events_for_run(&predecessor).unwrap();
+        assert!(acknowledgement_events.iter().any(|event| {
+            event.kind == "termination_unconfirmed_acknowledged"
+                && event.details_json.contains("process_liveness_unconfirmed")
+        }));
+        assert!(matches!(
+            store.cancel_with_acknowledgement(&predecessor, 24, true),
+            Err(StoreError::Conflict(_))
+        ));
+        let released = Uuid::now_v7().to_string();
+        assert_eq!(
+            store.enqueue_manual("x", &released, 25).unwrap().state,
+            "queued"
+        );
+        assert_eq!(
+            store
+                .admit(&next_lifetime, 25, 2)
+                .unwrap()
+                .attempts
+                .remove(0)
+                .run_id,
+            released
+        );
         let attempt_state: String = store
             .conn()
             .unwrap()
@@ -2741,5 +2917,221 @@ mod tests {
                 assert_eq!(store.run(&scheduled).unwrap().state, "queued");
             }
         }
+    }
+
+    #[test]
+    fn overlap_trigger_and_capacity_matrix_is_explainable_and_bounded() {
+        for overlap in ["skip", "replace", "allow"] {
+            for trigger in ["manual", "scheduled", "catch_up"] {
+                let (_temp, store) = store();
+                let job = Uuid::now_v7().to_string();
+                create_with_policy(&store, &job, "x", overlap, 2);
+                let predecessor = Uuid::now_v7().to_string();
+                store.enqueue_manual("x", &predecessor, 2).unwrap();
+                let candidate = Uuid::now_v7().to_string();
+                let candidate_record = if trigger == "manual" {
+                    store.enqueue_manual("x", &candidate, 3).unwrap()
+                } else {
+                    let snapshot = store.job("x").unwrap().definition_json;
+                    store
+                        .materialize(
+                            &job,
+                            CursorUpdate {
+                                expected_revision: 1,
+                                expected_cursor_us: 1,
+                                new_cursor_us: 3,
+                                resolve_one_time: false,
+                            },
+                            &[NewScheduledRun {
+                                id: candidate.clone(),
+                                job_id: job.clone(),
+                                revision: 1,
+                                trigger: trigger.into(),
+                                nominal_us: 3,
+                                requested_at_us: 3,
+                                eligible_at_us: 3,
+                                snapshot_json: snapshot,
+                            }],
+                            3,
+                        )
+                        .unwrap();
+                    store.run(&candidate).unwrap()
+                };
+                let expected_state = match (overlap, trigger) {
+                    (_, "catch_up") | ("replace" | "allow", _) => "queued",
+                    ("skip", _) => "skipped_overlap",
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    candidate_record.state, expected_state,
+                    "{overlap}/{trigger}"
+                );
+                if overlap == "replace" && trigger != "catch_up" {
+                    assert_eq!(
+                        store.run(&predecessor).unwrap().state,
+                        "skipped_overlap",
+                        "{overlap}/{trigger}"
+                    );
+                }
+                let lifetime = Uuid::now_v7().to_string();
+                store.begin_lifetime(&lifetime, 4, "test").unwrap();
+                assert!(store.admit(&lifetime, 4, 0).unwrap().attempts.is_empty());
+                let admitted = store.admit(&lifetime, 4, 64).unwrap();
+                let expected_count = usize::from(overlap == "allow" && trigger != "catch_up") + 1;
+                assert_eq!(
+                    admitted.attempts.len(),
+                    expected_count,
+                    "{overlap}/{trigger}"
+                );
+            }
+        }
+
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create_with_policy(&store, &job, "allow", "allow", 2);
+        let first = Uuid::now_v7().to_string();
+        let second = Uuid::now_v7().to_string();
+        let rejected = Uuid::now_v7().to_string();
+        store.enqueue_manual("allow", &first, 2).unwrap();
+        store.enqueue_manual("allow", &second, 3).unwrap();
+        assert_eq!(
+            store.enqueue_manual("allow", &rejected, 4).unwrap().state,
+            "skipped_concurrency"
+        );
+        let catch_up = Uuid::now_v7().to_string();
+        let snapshot = store.job("allow").unwrap().definition_json;
+        store
+            .materialize(
+                &job,
+                CursorUpdate {
+                    expected_revision: 1,
+                    expected_cursor_us: 1,
+                    new_cursor_us: 5,
+                    resolve_one_time: false,
+                },
+                &[NewScheduledRun {
+                    id: catch_up.clone(),
+                    job_id: job.clone(),
+                    revision: 1,
+                    trigger: "catch_up".into(),
+                    nominal_us: 5,
+                    requested_at_us: 5,
+                    eligible_at_us: 5,
+                    snapshot_json: snapshot,
+                }],
+                5,
+            )
+            .unwrap();
+        assert_eq!(store.run(&catch_up).unwrap().state, "queued");
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 6, "test").unwrap();
+        assert_eq!(store.admit(&lifetime, 6, 64).unwrap().attempts.len(), 2);
+        assert_eq!(store.run(&catch_up).unwrap().state, "queued");
+    }
+
+    #[test]
+    fn retry_wait_interacts_with_normal_occurrences_by_overlap_policy() {
+        for overlap in ["skip", "replace", "allow"] {
+            let (_temp, store) = store();
+            let job = Uuid::now_v7().to_string();
+            create_with_policy(&store, &job, "x", overlap, 2);
+            let retried = Uuid::now_v7().to_string();
+            store.enqueue_manual("x", &retried, 2).unwrap();
+            let lifetime = Uuid::now_v7().to_string();
+            store.begin_lifetime(&lifetime, 3, "test").unwrap();
+            let attempt = store.admit(&lifetime, 3, 64).unwrap().attempts.remove(0);
+            store
+                .complete_attempt(&AttemptCompletion {
+                    run_id: retried.clone(),
+                    attempt_number: attempt.attempt_number,
+                    now_us: 4,
+                    duration_us: 1,
+                    state: "failed".into(),
+                    exit_code: Some(7),
+                    http_status: None,
+                    reason: "known failure".into(),
+                    retry: Some(RetryPlan {
+                        not_before_us: 10,
+                        classification: "known_failure".into(),
+                    }),
+                })
+                .unwrap();
+            let normal = Uuid::now_v7().to_string();
+            let normal_record = store.enqueue_manual("x", &normal, 5).unwrap();
+            match overlap {
+                "skip" => {
+                    assert_eq!(normal_record.state, "skipped_overlap");
+                    assert_eq!(store.run(&retried).unwrap().state, "retry_wait");
+                    let admitted = store.admit(&lifetime, 10, 64).unwrap();
+                    assert_eq!(admitted.attempts.len(), 1);
+                    assert_eq!(admitted.attempts[0].run_id, retried);
+                }
+                "replace" => {
+                    assert_eq!(normal_record.state, "queued");
+                    assert_eq!(store.run(&retried).unwrap().state, "skipped_overlap");
+                    let admitted = store.admit(&lifetime, 10, 64).unwrap();
+                    assert_eq!(admitted.attempts.len(), 1);
+                    assert_eq!(admitted.attempts[0].run_id, normal);
+                }
+                "allow" => {
+                    assert_eq!(normal_record.state, "queued");
+                    assert_eq!(store.run(&retried).unwrap().state, "retry_wait");
+                    let admitted = store.admit(&lifetime, 10, 64).unwrap();
+                    assert_eq!(admitted.attempts.len(), 2);
+                    assert!(admitted.attempts.iter().any(|item| item.run_id == retried));
+                    assert!(admitted.attempts.iter().any(|item| item.run_id == normal));
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn admission_atomically_rechecks_durable_limit_across_stale_increase_and_decrease_reads() {
+        let (_temp, store) = store();
+        for index in 0..4 {
+            let job = Uuid::now_v7().to_string();
+            let name = format!("job-{index}");
+            create_with_policy(&store, &job, &name, "skip", 1);
+            store
+                .enqueue_manual(&name, &Uuid::now_v7().to_string(), 2)
+                .unwrap();
+        }
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+
+        store.set_setting("global_concurrency", "3", 4).unwrap();
+        let stale_high = store.settings().unwrap().global_concurrency;
+        assert_eq!(stale_high, 3);
+        store.set_setting("global_concurrency", "1", 5).unwrap();
+        let first = store.admit(&lifetime, 5, 64).unwrap();
+        assert_eq!(first.attempts.len(), 1);
+
+        let stale_low = store.settings().unwrap().global_concurrency;
+        assert_eq!(stale_low, 1);
+        store.set_setting("global_concurrency", "3", 6).unwrap();
+        let expanded = store.admit(&lifetime, 6, 63).unwrap();
+        assert_eq!(expanded.attempts.len(), 2);
+
+        store.set_setting("global_concurrency", "1", 7).unwrap();
+        assert!(store.admit(&lifetime, 7, 61).unwrap().attempts.is_empty());
+
+        for attempt in expanded.attempts {
+            store
+                .complete_attempt(&AttemptCompletion {
+                    run_id: attempt.run_id,
+                    attempt_number: attempt.attempt_number,
+                    now_us: 8,
+                    duration_us: 0,
+                    state: "succeeded".into(),
+                    exit_code: Some(0),
+                    http_status: None,
+                    reason: "test completion".into(),
+                    retry: None,
+                })
+                .unwrap();
+        }
+        store.set_setting("global_concurrency", "3", 9).unwrap();
+        assert_eq!(store.admit(&lifetime, 9, 63).unwrap().attempts.len(), 1);
     }
 }

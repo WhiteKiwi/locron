@@ -150,6 +150,12 @@ Cancellation, overlap replacement, invalid execution configuration, and an outco
 
 Timeout applies independently to each attempt. Retry delays and repeated attempt time are not included in one total-run timeout. A run waiting for its next retry remains active for overlap purposes. A scheduler restart preserves a retry that was durably scheduled after a known failure, but it must not synthesize a retry for an attempt whose outcome is unknown.
 
+The start deadline decides whether a newly due occurrence may begin its first attempt. Once a run has
+started and a known retry has been durably scheduled, that retry remains eligible after its original
+occurrence passes the start deadline. It is still subject to cancellation and ordinary global and
+per-job admission. This prevents the meaning of an accepted run from changing while it waits for an
+explicitly configured retry.
+
 Retries do not move or recalculate the job's normal schedule.
 
 ## Manual-run Semantics
@@ -162,7 +168,7 @@ A disabled job remains manually runnable. A manual trigger does not move the nor
 
 ## Concurrency Semantics
 
-The scheduler admits at most 16 active attempts globally by default. The configured limit may range from 1 through 64 and applies uniformly to process, shell, HTTP, retry, manual, and catch-up work. Recovery does not receive a separate execution pool. Reducing the limit does not terminate attempts that are already running; it affects subsequent admission.
+The scheduler admits at most 16 active attempts globally by default. The configured limit may range from 1 through 64 and applies uniformly to process, shell, HTTP, retry, manual, and catch-up work. Recovery does not receive a separate execution pool. A running scheduler applies a durable limit change to its next admission decision without restart. Reducing the limit does not terminate attempts that are already running; while the active count is at or above the new limit no additional attempt is admitted. Increasing the limit makes the additional capacity available without restarting the scheduler.
 
 Global capacity exhaustion leaves an otherwise eligible durable run queued rather than discarding it. A queued run counts as active for same-job overlap decisions so global pressure cannot create an unbounded same-job queue.
 
@@ -211,6 +217,15 @@ Each attempt has a 60-second timeout by default. A job may select another durati
 On normal scheduler termination, new admission stops and active attempts receive 30 seconds by default to finish naturally. Remaining process groups then follow the ordinary graceful and forced termination sequence. Confirmed termination is cancellation; an unconfirmed outcome is interrupted-unknown.
 
 A run and its scheduled occurrence identity are durable before process or HTTP execution begins. After an unclean scheduler lifetime ends, every stale non-terminal attempt owned by that lifetime becomes `interrupted_unknown`. The scheduler does not infer success, failure, or cancellation; does not automatically retry the unknown outcome; and does not reattach to or signal a stale recorded process identity after restart.
+
+If process-group termination cannot be confirmed, locron keeps the run in an active-blocking
+quarantine because the target may still be executing. Ordinary cancellation cannot silently clear
+that uncertainty. The operator may explicitly acknowledge the exact quarantined run identity and
+accept that risk; this atomically records an acknowledgement event, finishes the run as
+`interrupted_unknown`, and releases later same-job work without inspecting or signalling the
+recorded PID or process group. Acknowledgement is valid only for that quarantine state. Omitting the
+acknowledgement, acknowledging another state, or repeating an already completed acknowledgement is
+an actionable stable conflict rather than a successful no-op.
 
 Durable occurrence uniqueness prevents a restart from creating the same scheduled occurrence or one-time run again. This does not promise exactly-once external side effects. Targets may use the reserved run identity as an idempotency key when they need stronger protection.
 

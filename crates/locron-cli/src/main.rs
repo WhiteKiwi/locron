@@ -29,8 +29,8 @@ use locron_engine::{
     AttemptContext, Daemon, DaemonConfig, HttpSpec, OutputWriter, ProcessSpec, Runner, TargetSpec,
 };
 use locron_store::{
-    AdmitAttempt, AttemptCompletion, CreateJob, CursorUpdate, ImportBatch, ImportJob,
-    ImportResolution, JobRecord, LockMetadata, NewScheduledRun, OutputRecord,
+    AdmitAttempt, AttemptCompletion, CancelOutcome, CreateJob, CursorUpdate, ImportBatch,
+    ImportJob, ImportResolution, JobRecord, LockMetadata, NewScheduledRun, OutputRecord,
     ReconciliationSummary, RetryPlan, RunRecord, SettingsRecord, StatePaths, Store, StoreError,
     UpdateJob,
 };
@@ -97,6 +97,8 @@ enum Command {
     },
     Cancel {
         run_id: String,
+        #[arg(long)]
+        acknowledge_unconfirmed: bool,
     },
     History {
         name: Option<String>,
@@ -451,16 +453,29 @@ async fn execute(cli: Cli, format: Format) -> Result<()> {
             wait,
             dry_run,
         } => run_job(&paths, &name, wait, dry_run, format).await,
-        Command::Cancel { run_id } => {
+        Command::Cancel {
+            run_id,
+            acknowledge_unconfirmed,
+        } => {
             Uuid::parse_str(&run_id).context("invalid run UUID")?;
-            open(&paths)?.cancel(&run_id, now_us())?;
+            let outcome = open(&paths)?.cancel_with_acknowledgement(
+                &run_id,
+                now_us(),
+                acknowledge_unconfirmed,
+            )?;
             send_wake(&paths);
-            render(
-                format,
-                "cancel",
-                json!({"run_id":run_id,"requested":true}),
-                &[],
-            );
+            let data = match outcome {
+                CancelOutcome::CancelledBeforeExecution => {
+                    json!({"run_id":run_id,"requested":true,"cancelled":true,"before_execution":true})
+                }
+                CancelOutcome::CancellationRequested => {
+                    json!({"run_id":run_id,"requested":true})
+                }
+                CancelOutcome::AcknowledgedUnconfirmed => {
+                    json!({"run_id":run_id,"acknowledged_unconfirmed":true,"state":"interrupted_unknown"})
+                }
+            };
+            render(format, "cancel", data, &[]);
             Ok(())
         }
         Command::History { name, limit } => {
@@ -1231,10 +1246,11 @@ fn why(
             Ok(())
         }
         (None, Some(id)) => {
+            let durable_events = store.events_for_run(&id)?;
             render(
                 format,
                 "why",
-                json!({"run":redacted_run(store.run(&id)?)?,"daemon_running":!daemon_lock_free(paths),"explanation":"terminal reason and immutable snapshot are durable facts"}),
+                json!({"run":redacted_run(store.run(&id)?)?,"events":durable_events,"daemon_running":!daemon_lock_free(paths),"explanation":"terminal reason, immutable snapshot, and audit events are durable facts"}),
                 &[],
             );
             Ok(())
@@ -2865,6 +2881,117 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn catch_up_limit_one_thousand_materializes_compactly_and_admits_oldest_first() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
+        let job_id = JobId::new().to_string();
+        let definition = JobDefinition {
+            schedule: Schedule::Every {
+                interval: "1s".parse().unwrap(),
+                anchor: Timestamp::UNIX_EPOCH,
+            },
+            target: Target::Process {
+                executable: "/usr/bin/true".into(),
+                args: Vec::new(),
+            },
+            cwd: PathBuf::from("/tmp"),
+            environment: Environment::default(),
+            policy: locron_core::policy::ExecutionPolicy {
+                missed_run: MissedRunPolicy::All,
+                catch_up_limit: 1_000,
+                ..Default::default()
+            },
+        };
+        store
+            .create_job(&CreateJob {
+                id: job_id.clone(),
+                name: "thousand".into(),
+                description: None,
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: serde_json::to_string(&definition).unwrap(),
+                now_us: 0,
+                cursor_us: 0,
+            })
+            .unwrap();
+        let now = 2_000_000_000;
+        let clock = Arc::new(FakeClock::new(now, u64::try_from(now).unwrap()));
+        let adapter = test_adapter(
+            Arc::clone(&store),
+            paths,
+            clock,
+            Arc::new(FakeTimeZoneResolver::new("UTC")),
+            true,
+        );
+
+        assert_eq!(adapter.reconcile().await.unwrap(), 1_000);
+        let history = store.history(Some("thousand"), 1_000).unwrap();
+        assert_eq!(history.len(), 1_000);
+        assert_eq!(history.last().unwrap().nominal_us, Some(1_001_000_000));
+        assert_eq!(history.first().unwrap().nominal_us, Some(2_000_000_000));
+        let omitted = store
+            .events_for_job(&job_id)
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == "catch_up_omitted")
+            .collect::<Vec<_>>();
+        assert_eq!(omitted.len(), 1);
+        let details: Value = serde_json::from_str(&omitted[0].details_json).unwrap();
+        assert_eq!(details["count"], 1_000);
+        assert_eq!(details["first_nominal_us"], 1_000_000);
+        assert_eq!(details["last_nominal_us"], 1_000_000_000);
+        assert_eq!(adapter.reconcile().await.unwrap(), 0);
+        assert_eq!(store.history(Some("thousand"), 1_000).unwrap().len(), 1_000);
+        assert_eq!(
+            store
+                .events_for_job(&job_id)
+                .unwrap()
+                .into_iter()
+                .filter(|event| event.kind == "catch_up_omitted")
+                .count(),
+            1
+        );
+
+        let lifetime = SchedulerLifetimeId::new().to_string();
+        store.begin_lifetime(&lifetime, now, "test").unwrap();
+        for expected in 1_001_i64..=1_003 {
+            let admission = store.admit(&lifetime, now, 64).unwrap();
+            assert_eq!(admission.attempts.len(), 1);
+            let attempt = &admission.attempts[0];
+            assert_eq!(attempt.nominal_us, Some(expected * 1_000_000));
+            assert_eq!(
+                store
+                    .mark_attempt_running(&attempt.run_id, attempt.attempt_number, now)
+                    .unwrap(),
+                locron_store::StartDecision::Ready
+            );
+            store
+                .complete_attempt(&AttemptCompletion {
+                    run_id: attempt.run_id.clone(),
+                    attempt_number: attempt.attempt_number,
+                    now_us: now,
+                    duration_us: 0,
+                    state: "succeeded".into(),
+                    exit_code: Some(0),
+                    http_status: None,
+                    reason: "test completion".into(),
+                    retry: None,
+                })
+                .unwrap();
+        }
+        assert_eq!(
+            store
+                .history(Some("thousand"), 1_000)
+                .unwrap()
+                .into_iter()
+                .filter(|run| run.state == "queued")
+                .count(),
+            997
+        );
+    }
+
     #[test]
     fn sparse_cron_does_not_require_full_preview_count() {
         let schedule = Schedule::Cron {
@@ -3088,6 +3215,106 @@ mod tests {
         let run = store.run(&run_id).unwrap();
         assert_eq!(run.state, "retry_wait");
         assert_eq!(run.eligible_at_us, 15_000_000);
+    }
+
+    #[tokio::test]
+    async fn durable_retry_remains_eligible_beyond_original_start_deadline() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
+        let job_id = JobId::new().to_string();
+        let definition = JobDefinition {
+            schedule: Schedule::Every {
+                interval: "1h".parse().unwrap(),
+                anchor: Timestamp::UNIX_EPOCH,
+            },
+            target: Target::Process {
+                executable: "/usr/bin/true".into(),
+                args: Vec::new(),
+            },
+            cwd: temp.path().into(),
+            environment: Environment::default(),
+            policy: locron_core::policy::ExecutionPolicy {
+                retries: 1,
+                start_deadline: Some("1s".parse().unwrap()),
+                ..Default::default()
+            },
+        };
+        let snapshot = serde_json::to_string(&definition).unwrap();
+        store
+            .create_job(&CreateJob {
+                id: job_id.clone(),
+                name: "deadline-retry".into(),
+                description: None,
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: snapshot.clone(),
+                now_us: 0,
+                cursor_us: 0,
+            })
+            .unwrap();
+        let run_id = Uuid::now_v7().to_string();
+        store
+            .materialize(
+                &job_id,
+                CursorUpdate {
+                    expected_revision: 1,
+                    expected_cursor_us: 0,
+                    new_cursor_us: 1_000_000,
+                    resolve_one_time: false,
+                },
+                &[NewScheduledRun {
+                    id: run_id.clone(),
+                    job_id: job_id.clone(),
+                    revision: 1,
+                    trigger: "scheduled".into(),
+                    nominal_us: 1_000_000,
+                    requested_at_us: 1_000_000,
+                    eligible_at_us: 1_000_000,
+                    snapshot_json: snapshot,
+                }],
+                1_000_000,
+            )
+            .unwrap();
+        let clock = Arc::new(FakeClock::new(1_000_000, 1_000_000));
+        let adapter = test_adapter(
+            Arc::clone(&store),
+            paths,
+            clock.clone(),
+            Arc::new(FakeTimeZoneResolver::new("UTC")),
+            false,
+        );
+        store
+            .begin_lifetime(&adapter.lifetime, 1_000_000, "test")
+            .unwrap();
+        let attempt = adapter.admit(64).await.unwrap().remove(0);
+        assert!(adapter.mark_running(&attempt).await.unwrap());
+
+        clock.set(100_000_000, 100_000_000);
+        let completed_at = adapter.completion_instant_us();
+        adapter
+            .complete(
+                &attempt,
+                &locron_engine::runner::ExecutionOutcome {
+                    kind: OutcomeKind::FailedRetryable,
+                    exit_code: Some(7),
+                    http_status: None,
+                    reason: "known failure".into(),
+                    duration_micros: 1,
+                    output: locron_engine::OutputStats::default(),
+                },
+                completed_at,
+            )
+            .await
+            .unwrap();
+        assert_eq!(store.run(&run_id).unwrap().state, "retry_wait");
+        assert_eq!(store.run(&run_id).unwrap().eligible_at_us, 110_000_000);
+
+        clock.set(110_000_000, 110_000_000);
+        let retry = adapter.admit(64).await.unwrap();
+        assert_eq!(retry.len(), 1);
+        assert_eq!(retry[0].run_id, run_id);
+        assert_eq!(retry[0].context.attempt, 2);
     }
 
     #[test]

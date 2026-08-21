@@ -30,7 +30,7 @@ locron disable NAME
 locron remove NAME
 locron preview <schedule-or-name> [--count N]
 locron run NAME [--wait] [--dry-run]
-locron cancel RUN_ID
+locron cancel RUN_ID [--acknowledge-unconfirmed]
 locron history [NAME] [--limit N]
 locron logs RUN_ID [--attempt N] [--follow] [--channel all|stdout|stderr|body]
 locron why NAME
@@ -45,6 +45,15 @@ locron daemon run
 ```
 
 Job references accept an exact live name or canonical UUID. Run references are canonical UUIDs. Human output may abbreviate an ID only in decorative tables; copyable output always includes the full ID.
+
+Ordinary `cancel RUN_ID` retains the normal queued/active cancellation semantics. A run quarantined
+because process-group termination could not be confirmed rejects ordinary cancellation and explains
+that explicit acknowledgement is required. `--acknowledge-unconfirmed` is valid only for that exact
+quarantined run: it accepts the risk that the target may still exist outside locron's knowledge,
+records an audit event, terminalizes the run as `interrupted_unknown`, and releases same-job
+admission without signalling any recorded PID/PGID. Using the flag for another state or repeating it
+after completion is a durable conflict. JSON output distinguishes `requested` cancellation from an
+`acknowledged_unconfirmed` resolution.
 
 ## Schedule and target syntax
 
@@ -153,7 +162,7 @@ wake notification.
 
 `why NAME` reports the current revision, enabled/deleted state, normalized schedule and timezone, cursor and next occurrence, missed-run/deadline interpretation, active runs, applicable overlap/per-job/global capacity decision, daemon ownership health, and redacted execution resolution.
 
-`why --run RUN_ID` reports the immutable trigger and nominal time, state transitions, attempt outcomes, retry decisions, cancellation/replacement/supersession facts, output truncation/pruning facts, and terminal reason. Unknown facts are stated as unknown rather than inferred.
+`why --run RUN_ID` reports the immutable trigger and nominal time, state transitions, attempt outcomes, retry decisions, cancellation/replacement/supersession facts, termination-unconfirmed acknowledgement, output truncation/pruning facts, and terminal reason. Unknown facts are stated as unknown rather than inferred.
 
 Verbose and debug output never replaces `why`: verbosity explains what the current command is doing, while `why` explains durable scheduler decisions. Diagnostics go to stderr. Secrets and configured values remain redacted at every level.
 

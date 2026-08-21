@@ -4,7 +4,9 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use locron_store::{AttemptCompletion, StatePaths, Store};
 use predicates::prelude::*;
+use uuid::Uuid;
 
 fn locron(state: &tempfile::TempDir) -> Command {
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("locron"));
@@ -141,6 +143,98 @@ fn offline_queued_run_can_be_cancelled_terminally() {
     .failure()
     .code(3)
     .stdout(predicate::str::contains("already terminal"));
+}
+
+#[test]
+fn quarantine_requires_explicit_acknowledgement_and_is_visible_in_why_and_history() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "quarantine",
+                "--every",
+                "1h",
+                "--overlap",
+                "replace",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+
+    let store = Store::open(StatePaths::new(state.path().into()), "test", 0).unwrap();
+    let run_id = Uuid::now_v7().to_string();
+    store.enqueue_manual("quarantine", &run_id, 1).unwrap();
+    let lifetime = Uuid::now_v7().to_string();
+    store.begin_lifetime(&lifetime, 2, "test").unwrap();
+    let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+    store
+        .mark_attempt_running(&run_id, attempt.attempt_number, 4)
+        .unwrap();
+    store
+        .complete_attempt(&AttemptCompletion {
+            run_id: run_id.clone(),
+            attempt_number: attempt.attempt_number,
+            now_us: 5,
+            duration_us: 1,
+            state: "termination_unconfirmed".into(),
+            exit_code: None,
+            http_status: None,
+            reason: "synthetic unconfirmed process group".into(),
+            retry: None,
+        })
+        .unwrap();
+
+    assert_cmd::assert::Assert::new(locron(&state).args(["cancel", &run_id]).output().unwrap())
+        .failure()
+        .stderr(predicate::str::contains("--acknowledge-unconfirmed"));
+
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["--json", "cancel", &run_id, "--acknowledge-unconfirmed"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "\"acknowledged_unconfirmed\":true",
+    ))
+    .stdout(predicate::str::contains(
+        "\"state\":\"interrupted_unknown\"",
+    ));
+
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["--json", "why", "--run", &run_id])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "termination_unconfirmed_acknowledged",
+    ))
+    .stdout(predicate::str::contains("acknowledged by operator"));
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["--json", "history", "quarantine"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "\"state\":\"interrupted_unknown\"",
+    ));
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["cancel", &run_id, "--acknowledge-unconfirmed"])
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .stderr(predicate::str::contains("durable conflict"));
 }
 
 #[test]

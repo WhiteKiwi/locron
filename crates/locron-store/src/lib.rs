@@ -18,8 +18,8 @@ pub use output::{
 };
 pub use paths::StatePaths;
 pub use store::{
-    Admission, AdmitAttempt, AttemptCompletion, CreateJob, CursorUpdate, EventRecord, ImportBatch,
-    ImportJob, ImportResolution, ImportSummary, JobIdentity, JobRecord, MaterializedRun,
-    NewScheduledRun, OutputRecord, ReconciliationSummary, RetentionCandidate, RetryPlan, RunRecord,
-    SettingsRecord, StartDecision, Store, StoreError, StoreResult, UpdateJob,
+    Admission, AdmitAttempt, AttemptCompletion, CancelOutcome, CreateJob, CursorUpdate,
+    EventRecord, ImportBatch, ImportJob, ImportResolution, ImportSummary, JobIdentity, JobRecord,
+    MaterializedRun, NewScheduledRun, OutputRecord, ReconciliationSummary, RetentionCandidate,
+    RetryPlan, RunRecord, SettingsRecord, StartDecision, Store, StoreError, StoreResult, UpdateJob,
 };

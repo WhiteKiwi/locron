@@ -182,7 +182,24 @@ Queued and `retry_wait` runs count as active for same-job overlap. Normal schedu
 
 Members already materialized in one bounded `all` catch-up batch remain durable and run in scheduled-time order. Global capacity exhaustion leaves otherwise eligible work queued. The global default is 16 with range 1 through 64. `skip` and `replace` have effective concurrency one; `allow` defaults to two.
 
-Admission rechecks state and capacity transactionally immediately before creating an attempt. Decreasing the global limit never terminates attempts already running.
+Admission rechecks state and capacity transactionally immediately before creating an attempt. The
+daemon uses a fixed semaphore of 64 permits as the process-local hard ceiling and passes its current
+available permits to the admission store operation. In the same immediate transaction that selects
+attempts, the store rereads the durable global setting, counts durable starting/running attempts, and
+caps selection to `min(hard_guard_available, configured_limit - active_attempts)`. The setting remains
+validated to 1 through 64. This atomic recheck means a CLI setting writer serializes wholly before or
+after admission; a stale pre-read cannot over-admit after a decrease or hide capacity after an
+increase. Because one daemon serializes ticks, attempt tasks acquire their hard-guard permits before
+another admission pass; a concurrent completion can only make the calculation conservatively small.
+A decrease below current active work yields zero admission without cancellation, and a later
+increase is visible on the next wake/pass without rebuilding the semaphore or restarting the daemon.
+
+The acceptance matrix is deterministic store/engine testing rather than timing-based daemon tests.
+For each overlap policy it crosses scheduled, manual, and catch-up work with zero/global/per-job
+capacity, then repeats the relevant rows after a durable limit reduction. Retry-wait occupies the
+same-job overlap set, and an eligible retry remains the same catch-up lane member and precedes the
+next member. A retry already durably selected is not rechecked against its original occurrence's
+start deadline; deadline filtering is complete before the run's first attempt.
 
 ### Retry and crash recovery
 
@@ -227,11 +244,16 @@ transaction marks the attempt `interrupted_unknown`, keeps the original run in a
 quarantine with no live runner ownership, and terminally fails the queued replacement candidate.
 Startup recovery preserves that quarantine but never inspects or signals its recorded PID/PGID;
 therefore neither the failed candidate nor later same-job work can overlap an unconfirmed process.
-Quarantine needs an explicit future operator-resolution workflow and is never cleared merely by a
-daemon restart. Admission hard-blocks the quarantined job regardless of a later `skip`, `replace`, or
+Quarantine is never cleared merely by a daemon restart. Admission hard-blocks the quarantined job
+regardless of a later `skip`, `replace`, or
 `allow` revision. `skip` submissions retain ordinary overlap explanations; a new `replace` submission
 terminally fails in its enqueue transaction instead of waiting forever; `allow`, scheduled, and
 catch-up submissions become explainable overlap terminals rather than a permanent queued backlog.
+The existing cancel application command gains one explicit acknowledgement mode. Its immediate
+transaction accepts only the exact active-blocking `termination_unconfirmed` run, writes a dedicated
+audit event, and terminalizes that run as `interrupted_unknown`. Ordinary cancel returns an
+actionable conflict for quarantine, while acknowledgement of a non-quarantine or a repeated
+acknowledgement is a stable conflict. Neither path reads or signals a recorded process identity.
 Never signal a recorded stale PID/PGID after lifetime recovery. A process
 that deliberately escapes its inherited group remains outside v1 process-tree control.
 
@@ -248,6 +270,15 @@ Crash tests use store fault points at durable admission, spawn acknowledgement, 
 committed attempt without a committed result is always recovered as `interrupted_unknown`, including
 the target-exited/result-not-committed boundary. A queued one-time occurrence is never rematerialized
 because occurrence uniqueness and its advanced cursor are committed together.
+
+Acceptance fault tests inject failure before admission, after durable admission while starting,
+after the running acknowledgement, and after a target outcome but before completion commit. They
+assert no pre-admission attempt, no pre-spawn execution, unknown recovery without retry after an
+ambiguous external side effect, completion retry without a second execution, and one-time occurrence
+uniqueness across every recovery boundary. The 1,000 catch-up limit is exercised through the real
+adapter and SQLite store: exactly the newest 1,000 explicit runs are materialized, one compact event
+accounts for the omitted prefix, admission begins at the oldest retained nominal time, and duplicate
+reconciliation adds neither runs nor per-occurrence omission events.
 
 ### Process and shell runner
 

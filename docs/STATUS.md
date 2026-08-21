@@ -48,12 +48,12 @@ following slices run end to end on macOS arm64:
 
 ## Verification evidence
 
-Verification completed locally and was reproduced in hosted CI on 2026-08-21:
+Local working-tree verification completed on 2026-08-21:
 
 | Toolchain | Format | Clippy | Tests |
 |---|---:|---:|---:|
-| Rust 1.94.0 (MSRV) | pass | pass with `-D warnings` | 113 tests pass |
-| Rust 1.98.0 (latest stable) | pass | pass with `-D warnings` | 113 tests pass |
+| Rust 1.94.0 (MSRV) | pass | pass with `-D warnings` | 121 tests pass |
+| Rust 1.98.0 (latest stable) | pass | pass with `-D warnings` | 121 tests pass |
 
 The suite includes deterministic core tests, temporary real SQLite tests, real subprocess tests,
 local TCP HTTP fixtures, CLI contract tests, wake-socket daemon execution, durable cancellation,
@@ -74,26 +74,29 @@ passes format, all-target check, Clippy `-D warnings`, and workspace tests on bo
 current stable locally and in the hosted matrix above. The broad checklist items remain open until
 every clause in their larger verification matrices is covered.
 
+The current uncommitted acceptance slice adds explicit operator acknowledgement for
+`termination_unconfirmed` quarantine, atomic durable global-concurrency rechecks at admission,
+table-driven overlap/trigger/capacity and retry/deadline coverage, and a real 1,000-member catch-up
+materialization/admission fixture with compact omission accounting. Its 121-test suite passes the
+same complete local Rust 1.94 and stable commands shown above. It has not yet been reproduced by a
+hosted run.
+
 ## Remaining milestone gaps
 
 These are required before milestone 1 can be called complete:
 
-1. Complete the exhaustive overlap/concurrency trigger matrix, retry/deadline interaction matrix,
-   capacity-reduction fixtures, and deterministic fault points before admission, before spawn,
-   after spawn, and after target exit. Exercise the 1,000-member catch-up boundary end to end.
-2. Define and implement an explicit operator-resolution workflow for the safe
-   `termination_unconfirmed` quarantine; until then it intentionally hard-blocks the job and
-   terminally explains new submissions.
-3. Wire startup output repair/orphan cleanup and automatic daemon maintenance; complete metadata
+1. Complete the remaining deterministic fault points before admission, before spawn, after spawn,
+   and after target exit, including explicit one-time recovery identity coverage at each boundary.
+2. Wire startup output repair/orphan cleanup and automatic daemon maintenance; complete metadata
    age/count retention in addition to the implemented output byte/age prune path.
-4. Persist resolved executable/audit hashes and add TLS, process-grandchild, disappearing HTTP
+3. Persist resolved executable/audit hashes and add TLS, process-grandchild, disappearing HTTP
    body-file, streaming-timeout, and noisy-output fixtures.
-5. Implement live partial-file follow and the reviewed `locron.stream/v1` terminal stream contract.
+4. Implement live partial-file follow and the reviewed `locron.stream/v1` terminal stream contract.
    Refine human rendering beyond the current readable JSON representation.
-6. Add broader concurrent-writer/busy, disk-failure, retention stress, concurrency 16/64, and
+5. Add broader concurrent-writer/busy, disk-failure, retention stress, concurrency 16/64, and
    cross-process crash-injection tests beyond the deterministic migration/concurrency fixtures now
    present.
-7. Run the official Linux/macOS architecture matrix and produce the 16-criterion completion matrix.
+6. Run the official Linux/macOS architecture matrix and produce the 16-criterion completion matrix.
 
 No HTTP management/viewer, MCP, desktop, package-manager publication, or service-installer code has
 entered this milestone.

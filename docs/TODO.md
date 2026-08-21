@@ -52,7 +52,29 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 
 ## 5. Implement scheduler and admission semantics
 
-Current correctness tranche (2026-08-21):
+Current acceptance tranche (2026-08-21):
+
+- [x] Add explicit operator acknowledgement for `termination_unconfirmed` quarantine without stale
+  process signalling. **Verify:** store and CLI tests prove exact-state-only atomic release,
+  acknowledgement event/history/why visibility, ordinary-cancel guidance, no PID/PGID access,
+  non-quarantine rejection, and stable repeated conflict.
+- [x] Apply durable global concurrency changes to a running daemon. **Verify:** deterministic daemon
+  tests change 1→3→1→3 while attempts are active, prove no restart or active cancellation, zero
+  admission below active count, prompt expansion, hard maximum 64, and no store/semaphore over-admit.
+- [x] Complete the overlap/admission/retry matrix for this tranche. **Verify:** table-driven tests
+  cross `skip|replace|allow` with scheduled/manual/catch-up, zero/global/per-job capacity and
+  reductions; retry-wait versus a normal occurrence and retries beyond the original start deadline
+  remain deterministic and explainable.
+- [x] Exercise catch-up limit 1,000 through reconciliation and durable admission. **Verify:** a real
+  adapter/store test materializes exactly the newest 1,000 rows, executes/admit-orders them oldest
+  first, emits one compact exact omitted-range summary, and duplicate reconciliation is idempotent
+  without additional rows or events.
+- [ ] Complete deterministic lifecycle fault-boundary coverage feasible in this tranche. **Verify:**
+  injected store/executor tests cover before admission, starting before spawn, running after spawn,
+  outcome before completion, and one-time restart uniqueness without sleep-heavy timing or unknown
+  retry.
+
+Prior correctness tranche whose broad verification clauses remain open (2026-08-21):
 
 - [ ] Replace elapsed calendar scanning with bounded newest-window reconciliation and compact exact
   range summaries shared by cron, interval, and one-time schedules.
@@ -139,6 +161,17 @@ Current correctness tranche (2026-08-21):
 
 **Verify:** a completion matrix links all 16 `docs/SPEC.md` criteria to passing evidence on the official macOS/Linux platform matrix; documentation examples execute successfully; architecture and implementation cross-links resolve; repository search and dependency/workspace inspection find no deferred surface implementation or premature empty ADR document.
 
+## Follow-up CLI acceptance backlog
+
+- [ ] Audit and complete the entire CLI help surface without expanding the current scheduler
+  semantics tranche. Cover `locron help`, `locron -h`, `locron --help`, and every direct command's
+  `<cmd> help` form where Clap supports it, `<cmd> -h`, and `<cmd> --help`. Help must succeed without
+  otherwise-required arguments, exit zero, show the command's options and useful examples, provide
+  a route back to parent/top-level navigation, and follow an explicit stdout/stderr contract.
+  **Verify:** generate the complete Clap command tree in an acceptance test and exercise every
+  supported help spelling automatically so a newly added command or nested command cannot omit help
+  coverage.
+
 ## Post-milestone delivery backlog
 
 These items begin only after every milestone-1 completion criterion above is satisfied. They do not
@@ -147,11 +180,16 @@ their workflows or release infrastructure.
 
 - [ ] Define CI/CD policy and version/release policy. **Verify:** choose concrete evidence when the
   follow-up delivery plan begins.
-- [ ] Complete GitHub build/test CI for release operations and review the next supported major of
-  `actions/checkout` to remove the current Node 20 deprecation annotation. **Verify:** choose the
-  supported artifact, action-version, and runner matrix in the follow-up delivery plan.
+- [ ] Complete GitHub build/test CI and GitHub Releases for release operations, including macOS and
+  Linux architecture artifacts, checksums, provenance, signing policy, and rollback policy; review
+  the next supported major of `actions/checkout` to remove the current Node 20 deprecation
+  annotation. **Verify:** choose the supported artifact, action-version, runner, checksum,
+  provenance/signing, and rollback matrix in the follow-up delivery plan.
 - [ ] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** choose install/upgrade/remove
   checks when packaging work enters scope.
+- [ ] Publish apt/deb and yum/rpm-family packages through supported repositories. **Verify:** choose
+  distribution/version coverage plus install, upgrade, uninstall, and smoke checks when the separate
+  packaging specification begins.
 - [ ] Automate Homebrew tap releases from approved version tags. **Verify:** choose provenance,
   checksum, rollback, and end-to-end release checks in the follow-up delivery plan.
 - [ ] After milestone 1 and Homebrew delivery are complete, update this repository's README for
@@ -162,3 +200,21 @@ their workflows or release infrastructure.
   public CLI/scheduler repositories. Cover badges, quick start, install/upgrade, examples, support
   and release provenance, and documentation links; do not copy or modify the asset until that
   follow-up is explicitly in scope.
+
+## Ordered deferred product roadmap
+
+Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;
+none changes the exclusions in the current `docs/SPEC.md`.
+
+1. [ ] Define the local HTTP viewer and mutation API, including local-port binding, authentication,
+   origin/CSRF protections, exposure diagnostics, and reuse of durable application commands.
+2. [ ] Define the MCP surface over the same application boundary, including capability scope,
+   approval boundaries, redaction, and local transport/security behavior.
+3. [ ] Define the desktop application as a client of the same scheduler/application contracts,
+   without introducing another scheduling engine.
+4. [ ] Define macOS App Store delivery after the desktop contract, including sandboxing,
+   entitlements, background execution constraints, review requirements, update provenance, and the
+   relationship to direct/package-manager installations.
+
+**Verify:** each phase supplies its own completion criteria, threat/compatibility review, automated
+tests, and delivery evidence in its future SPEC/TODO set before its checkbox can be completed.
