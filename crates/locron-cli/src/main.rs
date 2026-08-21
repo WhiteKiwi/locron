@@ -704,10 +704,11 @@ async fn execute(cli: Cli, format: Format) -> Result<()> {
             Ok(())
         }
         Command::History { name, limit } => {
-            let runs = open(&paths)?
+            let store = open(&paths)?;
+            let runs = store
                 .history(name.as_deref(), limit)?
                 .into_iter()
-                .map(redacted_run)
+                .map(|run| redacted_observable_run(&store, run))
                 .collect::<Result<Vec<_>>>()?;
             render(format, "history", json!(runs), &[]);
             Ok(())
@@ -1613,10 +1614,11 @@ fn why(
         }
         (None, Some(id)) => {
             let durable_events = store.events_for_run(&id)?;
+            let run = redacted_observable_run(&store, store.run(&id)?)?;
             render(
                 format,
                 "why",
-                json!({"run":redacted_run(store.run(&id)?)?,"events":durable_events,"daemon_running":!daemon_lock_free(paths),"explanation":"terminal reason, immutable snapshot, and audit events are durable facts"}),
+                json!({"run":run,"events":durable_events,"daemon_running":!daemon_lock_free(paths),"explanation":"terminal reason, immutable snapshot, ordered attempts, and audit events are durable facts"}),
                 &[],
             );
             Ok(())
@@ -3321,6 +3323,46 @@ fn redacted_run(run: RunRecord) -> Result<Value> {
         ))?);
     }
     Ok(value)
+}
+
+fn redacted_observable_run(store: &Store, run: RunRecord) -> Result<Value> {
+    let source = run.trigger.clone();
+    let finished_at_us = run.finished_at_us;
+    let outcome = terminal_run_state(&run.state).then(|| run.state.clone());
+    let attempts = serde_json::to_value(store.attempts_for_run(&run.id)?)?;
+    let actual_started_at_us = attempts.as_array().and_then(|attempts| {
+        attempts
+            .iter()
+            .filter_map(|attempt| attempt["running_at_us"].as_i64())
+            .min()
+    });
+    let duration_us = actual_started_at_us
+        .zip(finished_at_us)
+        .and_then(|(started, finished)| finished.checked_sub(started))
+        .filter(|duration| *duration >= 0);
+    let mut value = redacted_run(run)?;
+    let object = value
+        .as_object_mut()
+        .expect("run records serialize as objects");
+    object.insert("source".into(), json!(source));
+    object.insert("outcome".into(), json!(outcome));
+    object.insert("actual_started_at_us".into(), json!(actual_started_at_us));
+    object.insert("duration_us".into(), json!(duration_us));
+    object.insert("attempts".into(), attempts);
+    Ok(value)
+}
+
+fn terminal_run_state(state: &str) -> bool {
+    matches!(
+        state,
+        "succeeded"
+            | "failed"
+            | "timed_out"
+            | "cancelled"
+            | "skipped_overlap"
+            | "skipped_concurrency"
+            | "interrupted_unknown"
+    )
 }
 
 fn redact_definition(mut definition: Value) -> Value {

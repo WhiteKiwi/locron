@@ -154,6 +154,37 @@ pub struct RunRecord {
     pub finished_at_us: Option<i64>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AttemptOutputRecord {
+    pub state: String,
+    pub retained_payload_bytes: i64,
+    pub physical_bytes: i64,
+    pub discarded_bytes: i64,
+    pub truncated: bool,
+    pub truncated_at_us: Option<i64>,
+    pub finalized_at_us: Option<i64>,
+    pub prune_started_at_us: Option<i64>,
+    pub pruned_at_us: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AttemptRecord {
+    pub run_id: String,
+    pub attempt_number: i64,
+    pub started_at_us: i64,
+    pub running_at_us: Option<i64>,
+    pub finished_at_us: Option<i64>,
+    pub duration_us: Option<i64>,
+    pub state: String,
+    pub outcome: Option<String>,
+    pub exit_code: Option<i32>,
+    pub http_status: Option<u16>,
+    pub resolved_executable: Option<String>,
+    pub error: Option<String>,
+    pub reason: Option<String>,
+    pub output: Option<AttemptOutputRecord>,
+}
+
 #[derive(Clone, Debug)]
 pub struct AdmitAttempt {
     pub run_id: String,
@@ -840,6 +871,68 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| StoreError::NotFound(format!("attempt {run_id}/{attempt_number}")))
+    }
+
+    pub fn attempts_for_run(&self, run_id: &str) -> StoreResult<Vec<AttemptRecord>> {
+        let conn = self.conn()?;
+        let exists = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE id=?1)",
+            [run_id],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !exists {
+            return Err(StoreError::NotFound(run_id.into()));
+        }
+        let mut statement = conn.prepare(
+            "SELECT a.run_id,a.attempt_number,a.started_at_us,a.running_at_us,a.finished_at_us,\
+                    a.duration_us,a.state,a.result_class,a.exit_code,a.http_status,\
+                    a.resolved_executable,a.error_message,\
+                    o.state,o.retained_payload_bytes,o.physical_bytes,o.discarded_bytes,o.truncated,\
+                    o.truncated_at_us,o.finalized_at_us,o.prune_started_at_us,o.pruned_at_us \
+             FROM attempts a \
+             LEFT JOIN output_artifacts o \
+               ON o.run_id=a.run_id AND o.attempt_number=a.attempt_number \
+             WHERE a.run_id=?1 \
+             ORDER BY a.attempt_number",
+        )?;
+        statement
+            .query_map([run_id], |row| {
+                let output_state: Option<String> = row.get(12)?;
+                let output = if let Some(state) = output_state {
+                    Some(AttemptOutputRecord {
+                        state,
+                        retained_payload_bytes: row.get(13)?,
+                        physical_bytes: row.get(14)?,
+                        discarded_bytes: row.get(15)?,
+                        truncated: row.get(16)?,
+                        truncated_at_us: row.get(17)?,
+                        finalized_at_us: row.get(18)?,
+                        prune_started_at_us: row.get(19)?,
+                        pruned_at_us: row.get(20)?,
+                    })
+                } else {
+                    None
+                };
+                let error: Option<String> = row.get(11)?;
+                Ok(AttemptRecord {
+                    run_id: row.get(0)?,
+                    attempt_number: row.get(1)?,
+                    started_at_us: row.get(2)?,
+                    running_at_us: row.get(3)?,
+                    finished_at_us: row.get(4)?,
+                    duration_us: row.get(5)?,
+                    state: row.get(6)?,
+                    outcome: row.get(7)?,
+                    exit_code: row.get(8)?,
+                    http_status: row.get(9)?,
+                    resolved_executable: row.get(10)?,
+                    reason: error.clone(),
+                    error,
+                    output,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
     }
 
     pub fn history(&self, job: Option<&str>, limit: usize) -> StoreResult<Vec<RunRecord>> {
