@@ -1,6 +1,6 @@
 //! `locron` command-line composition root.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,9 +11,12 @@ use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 use locron_core::command::JobDefinition;
-use locron_core::policy::{ExecutionPolicy, MissedRunPolicy, OverlapPolicy};
+use locron_core::policy::{BackoffMode, MissedRunPolicy, OverlapPolicy};
 use locron_core::schedule::{Schedule, ScheduleTimeZone};
-use locron_core::target::{Environment, HttpMethod, HttpTarget, Target};
+use locron_core::target::{
+    Environment, HttpHeaderSource, HttpMethod, HttpTarget, Target, is_valid_environment_name,
+    is_valid_http_header_name,
+};
 use locron_core::{JobId, SchedulerLifetimeId, Timestamp};
 use locron_engine::daemon::{AdmittedAttempt, DaemonStore};
 use locron_engine::runner::{OutcomeKind, RunnerConfig};
@@ -21,10 +24,11 @@ use locron_engine::{
     AttemptContext, Daemon, DaemonConfig, HttpSpec, OutputWriter, ProcessSpec, Runner, TargetSpec,
 };
 use locron_store::{
-    AdmitAttempt, AttemptCompletion, CreateJob, CursorUpdate, JobRecord, LockMetadata,
-    NewScheduledRun, OutputRecord, RetryPlan, RunRecord, StatePaths, Store, StoreError, UpdateJob,
+    AdmitAttempt, AttemptCompletion, CreateJob, CursorUpdate, ImportBatch, ImportJob,
+    ImportResolution, JobRecord, LockMetadata, NewScheduledRun, OutputRecord, RetryPlan, RunRecord,
+    SettingsRecord, StatePaths, Store, StoreError, UpdateJob,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
@@ -115,6 +119,8 @@ enum Command {
         #[arg(long)]
         include_values: bool,
         #[arg(long)]
+        acknowledge_plaintext: bool,
+        #[arg(long)]
         include_history: bool,
     },
     Import {
@@ -159,7 +165,7 @@ enum LogChannel {
     Body,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 struct ScheduleArgs {
     #[arg(long)]
     cron: Option<String>,
@@ -173,7 +179,8 @@ struct ScheduleArgs {
     anchor: Option<String>,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 struct TargetArgs {
     #[arg(long)]
     shell: Option<String>,
@@ -184,27 +191,78 @@ struct TargetArgs {
     #[arg(long = "env", value_parser = parse_key_value)]
     env: Vec<(String, String)>,
     #[arg(long)]
+    unset_env: Vec<String>,
+    #[arg(long)]
+    clear_env: bool,
+    #[arg(long)]
     env_file: Option<PathBuf>,
+    #[arg(long)]
+    no_env_file: bool,
+    #[arg(long)]
+    path: Option<String>,
+    #[arg(long)]
+    no_path: bool,
+    #[arg(long)]
+    shell_executable: Option<PathBuf>,
+    #[arg(long, conflicts_with_all = ["body_file", "json_body", "clear_body"])]
+    body: Option<String>,
+    #[arg(long, conflicts_with_all = ["body", "json_body", "clear_body"])]
+    body_file: Option<PathBuf>,
+    #[arg(long, conflicts_with_all = ["body", "body_file", "clear_body"])]
+    json_body: Option<String>,
+    #[arg(long, conflicts_with_all = ["body", "body_file", "json_body"])]
+    clear_body: bool,
+    #[arg(long, value_parser = parse_key_value)]
+    header: Vec<(String, String)>,
+    #[arg(long, value_parser = parse_key_value)]
+    header_env: Vec<(String, String)>,
+    #[arg(long)]
+    unset_header: Vec<String>,
+    #[arg(long)]
+    clear_headers: bool,
+    #[arg(long)]
+    success_status: Vec<String>,
+    #[arg(long)]
+    clear_success_statuses: bool,
+    #[arg(long, conflicts_with = "no_follow_redirects")]
+    follow_redirects: bool,
+    #[arg(long, conflicts_with = "follow_redirects")]
+    no_follow_redirects: bool,
     #[arg(last = true)]
     command: Vec<String>,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)]
 struct PolicyArgs {
-    #[arg(long, value_enum, default_value = "skip")]
-    overlap: OverlapArg,
+    #[arg(long, value_enum)]
+    overlap: Option<OverlapArg>,
     #[arg(long, value_enum)]
     missed_run: Option<MissedArg>,
-    #[arg(long, default_value_t = 100)]
-    catch_up_limit: u16,
-    #[arg(long, default_value_t = 0)]
-    retries: u8,
-    #[arg(long, default_value = "60s")]
-    timeout: String,
     #[arg(long)]
+    start_deadline: Option<String>,
+    #[arg(long, conflicts_with = "start_deadline")]
+    no_start_deadline: bool,
+    #[arg(long)]
+    catch_up_limit: Option<u16>,
+    #[arg(long)]
+    retries: Option<u8>,
+    #[arg(long, value_enum)]
+    backoff: Option<BackoffArg>,
+    #[arg(long)]
+    retry_delay: Option<String>,
+    #[arg(long)]
+    retry_cap: Option<String>,
+    #[arg(long, conflicts_with = "no_timeout")]
+    timeout: Option<String>,
+    #[arg(long, conflicts_with = "timeout")]
     no_timeout: bool,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_retry_timeout")]
     retry_timeout: bool,
+    #[arg(long, conflicts_with = "retry_timeout")]
+    no_retry_timeout: bool,
+    #[arg(long)]
+    termination_grace: Option<String>,
     #[arg(long)]
     per_job_concurrency: Option<u8>,
 }
@@ -219,6 +277,12 @@ enum MissedArg {
     Skip,
     Latest,
     All,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum BackoffArg {
+    Fixed,
+    Exponential,
 }
 
 #[derive(Args, Debug)]
@@ -240,12 +304,29 @@ struct AddArgs {
     dry_run: bool,
 }
 #[derive(Args, Debug)]
+#[allow(clippy::struct_excessive_bools)]
 struct UpdateArgs {
     name: String,
+    #[command(flatten)]
+    schedule: ScheduleArgs,
+    #[command(flatten)]
+    target: TargetArgs,
+    #[command(flatten)]
+    policy: PolicyArgs,
     #[arg(long)]
     rename: Option<String>,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "clear_description")]
     description: Option<String>,
+    #[arg(long, conflicts_with = "description")]
+    clear_description: bool,
+    #[arg(long)]
+    tag: Vec<String>,
+    #[arg(long, conflicts_with = "tag")]
+    clear_tags: bool,
+    #[arg(long, conflicts_with = "disabled")]
+    enabled: bool,
+    #[arg(long, conflicts_with = "enabled")]
+    disabled: bool,
     #[arg(long)]
     dry_run: bool,
 }
@@ -256,6 +337,63 @@ struct PreviewArgs {
     schedule: ScheduleArgs,
     #[arg(long, default_value_t = 5)]
     count: usize,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ValuesMode {
+    Redacted,
+    Plaintext,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ExportDocument {
+    schema: String,
+    values_mode: ValuesMode,
+    settings: SettingsRecord,
+    jobs: Vec<ExportJob>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ExportJob {
+    id: String,
+    name: String,
+    description: Option<String>,
+    tags: Vec<String>,
+    enabled: bool,
+    definition: JobDefinition,
+    #[serde(default)]
+    omitted_values: Vec<String>,
+}
+
+#[derive(Debug)]
+enum PlannedImportJob {
+    Create {
+        source_id: String,
+        job: CreateJob,
+        resolution: ImportResolution,
+    },
+    Update {
+        source_id: String,
+        job: UpdateJob,
+        resolution: ImportResolution,
+    },
+    NoOp {
+        source_id: String,
+        destination_id: String,
+        job: UpdateJob,
+        resolution: ImportResolution,
+    },
+}
+
+#[derive(Debug)]
+struct ImportPlan {
+    settings: SettingsRecord,
+    settings_changed: bool,
+    jobs: Vec<PlannedImportJob>,
+    now_us: i64,
 }
 
 #[tokio::main]
@@ -274,7 +412,7 @@ async fn execute(cli: Cli, format: Format) -> Result<()> {
     let paths = StatePaths::discover(cli.state_dir.as_deref())?;
     match cli.command {
         Command::Add(args) => add(&paths, args, format),
-        Command::Update(args) => update(&paths, args, format),
+        Command::Update(args) => update(&paths, &args, format),
         Command::List { all } => {
             let jobs = open(&paths)?
                 .list_jobs(all)?
@@ -338,13 +476,20 @@ async fn execute(cli: Cli, format: Format) -> Result<()> {
         Command::Config { command } => config(&paths, command, format),
         Command::Export {
             include_values,
+            acknowledge_plaintext,
             include_history,
-        } => export(&paths, include_values, include_history, format),
+        } => export(
+            &paths,
+            include_values,
+            acknowledge_plaintext,
+            include_history,
+            format,
+        ),
         Command::Import {
             path,
             accept_plaintext_values,
             dry_run,
-        } => import(&path, accept_plaintext_values, dry_run, format),
+        } => import(&paths, &path, accept_plaintext_values, dry_run, format),
         Command::Prune { dry_run } => prune(&paths, dry_run, format),
         Command::Doctor => doctor(&paths, format),
         Command::Daemon {
@@ -364,18 +509,28 @@ fn open_read_only(paths: &StatePaths) -> Result<Store> {
 }
 
 fn add(paths: &StatePaths, args: AddArgs, format: Format) -> Result<()> {
-    let definition = build_definition(&args.schedule, &args.target, &args.policy)?;
+    let global_concurrency = configured_global_concurrency(paths)?;
+    let now = now_us();
+    let (definition, _) = normalize_definition(
+        None,
+        &args.schedule,
+        &args.target,
+        &args.policy,
+        global_concurrency,
+        now,
+    )?;
+    validate_metadata(&args.name, args.description.as_deref(), &args.tag)?;
+    let warnings = environment_warnings(&definition.environment);
     if args.dry_run {
         render(
             format,
             "add",
             json!({"dry_run":true,"normalized":{"name":args.name,"enabled":!args.disabled,"definition":redact_definition(serde_json::to_value(&definition)?)},"id":"<non-durable>"}),
-            &[],
+            &warnings,
         );
         return Ok(());
     }
     let store = open(paths)?;
-    let now = now_us();
     let record = store.create_job(&CreateJob {
         id: JobId::new().to_string(),
         name: args.name,
@@ -387,52 +542,156 @@ fn add(paths: &StatePaths, args: AddArgs, format: Format) -> Result<()> {
         cursor_us: now,
     })?;
     send_wake(paths);
-    render(format, "add", redacted_job(record)?, &[]);
+    render(format, "add", redacted_job(record)?, &warnings);
     Ok(())
 }
 
-fn update(paths: &StatePaths, args: UpdateArgs, format: Format) -> Result<()> {
+fn update(paths: &StatePaths, args: &UpdateArgs, format: Format) -> Result<()> {
     let store = if args.dry_run {
         open_read_only(paths)?
     } else {
         open(paths)?
     };
     let current = store.job(&args.name)?;
-    let name = args.rename.unwrap_or(current.name.clone());
-    let description = args.description.or(current.description.clone());
+    let current_definition: JobDefinition = serde_json::from_str(&current.definition_json)?;
+    let now = now_us();
+    let global_concurrency = u8::try_from(store.settings()?.global_concurrency)
+        .context("configured global concurrency is out of range")?;
+    let (definition, schedule_changed) = normalize_definition(
+        Some(&current_definition),
+        &args.schedule,
+        &args.target,
+        &args.policy,
+        global_concurrency,
+        now,
+    )?;
+    let name = args.rename.clone().unwrap_or_else(|| current.name.clone());
+    let description = if args.clear_description {
+        None
+    } else {
+        args.description
+            .clone()
+            .or_else(|| current.description.clone())
+    };
+    let tags = if args.clear_tags {
+        Vec::new()
+    } else if args.tag.is_empty() {
+        serde_json::from_str::<Vec<String>>(&current.tags_json)?
+    } else {
+        args.tag.clone()
+    };
+    let enabled = if args.enabled {
+        true
+    } else if args.disabled {
+        false
+    } else {
+        current.enabled
+    };
+    validate_metadata(&name, description.as_deref(), &tags)?;
+    let tags_json = serde_json::to_string(&tags)?;
+    if name == current.name
+        && description == current.description
+        && tags_json == current.tags_json
+        && enabled == current.enabled
+        && definition == current_definition
+    {
+        return Err(anyhow!("update does not change any field"));
+    }
+    let before = job_fields(
+        &current.name,
+        current.description.as_deref(),
+        &serde_json::from_str::<Vec<String>>(&current.tags_json)?,
+        current.enabled,
+        &current_definition,
+    )?;
+    let after = job_fields(&name, description.as_deref(), &tags, enabled, &definition)?;
+    let changed_fields = changed_fields(&before, &after);
+    let warnings = environment_warnings(&definition.environment);
     if args.dry_run {
         render(
             format,
             "update",
-            json!({"dry_run":true,"id":current.id,"revision":current.current_revision+1,"name":name,"description":description}),
-            &[],
+            json!({
+                "dry_run":true,"id":current.id,"revision":current.current_revision+1,
+                "schedule_changed":schedule_changed,
+                "changed_fields":changed_fields,
+                "before":redact_definition(before),
+                "after":redact_definition(after),
+                "cursor_us":if schedule_changed { now } else { current.cursor_us }
+            }),
+            &warnings,
         );
         return Ok(());
     }
-    let now = now_us();
     let record = store.update_job(&UpdateJob {
         id: current.id,
         expected_revision: current.current_revision,
         name,
         description,
-        tags_json: current.tags_json,
-        enabled: current.enabled,
-        definition_json: current.definition_json,
+        tags_json,
+        enabled,
+        definition_json: serde_json::to_string(&definition)?,
         now_us: now,
-        cursor_us: now,
+        cursor_us: if schedule_changed {
+            now
+        } else {
+            current.cursor_us
+        },
     })?;
     send_wake(paths);
-    render(format, "update", redacted_job(record)?, &[]);
+    render(format, "update", redacted_job(record)?, &warnings);
     Ok(())
 }
 
-fn build_definition(
+fn normalize_definition(
+    current: Option<&JobDefinition>,
     schedule: &ScheduleArgs,
     target: &TargetArgs,
     policy: &PolicyArgs,
-) -> Result<JobDefinition> {
-    let now = Timestamp::from_epoch_micros(now_us());
-    let schedule = match (&schedule.cron, &schedule.every, &schedule.at) {
+    global_concurrency: u8,
+    now_us: i64,
+) -> Result<(JobDefinition, bool)> {
+    if current.is_none()
+        && (target.clear_env
+            || !target.unset_env.is_empty()
+            || target.no_env_file
+            || target.no_path
+            || target.clear_body
+            || !target.unset_header.is_empty()
+            || target.clear_headers
+            || target.clear_success_statuses
+            || target.no_follow_redirects
+            || policy.no_start_deadline
+            || policy.no_retry_timeout)
+    {
+        return Err(anyhow!(
+            "clear, unset, and negative selector flags are update-only"
+        ));
+    }
+    let now = Timestamp::from_epoch_micros(now_us);
+    let schedule_selectors = usize::from(schedule.cron.is_some())
+        + usize::from(schedule.every.is_some())
+        + usize::from(schedule.at.is_some());
+    if schedule_selectors > 1 {
+        return Err(anyhow!(
+            "exactly one of --cron, --every, or --at may be supplied"
+        ));
+    }
+    if schedule_selectors == 0 && (schedule.timezone.is_some() || schedule.anchor.is_some()) {
+        return Err(anyhow!(
+            "--timezone and --anchor require a complete new schedule selector"
+        ));
+    }
+    if schedule.cron.is_some() && schedule.anchor.is_some() {
+        return Err(anyhow!("--anchor is valid only with --every"));
+    }
+    if schedule.every.is_some() && schedule.timezone.is_some() {
+        return Err(anyhow!("--timezone is valid only with --cron"));
+    }
+    if schedule.at.is_some() && (schedule.timezone.is_some() || schedule.anchor.is_some()) {
+        return Err(anyhow!("--at does not accept --timezone or --anchor"));
+    }
+    let normalized_schedule = match (&schedule.cron, &schedule.every, &schedule.at) {
         (Some(expr), None, None) => Schedule::Cron {
             expression: expr.clone(),
             timezone: match schedule.timezone.as_deref().unwrap_or("local") {
@@ -448,16 +707,31 @@ fn build_definition(
             },
         },
         (None, None, Some(at)) => Schedule::At { at: at.parse()? },
-        _ => {
-            return Err(anyhow!(
-                "exactly one of --cron, --every, or --at is required"
-            ));
-        }
+        (None, None, None) => current
+            .map(|definition| definition.schedule.clone())
+            .ok_or_else(|| anyhow!("exactly one of --cron, --every, or --at is required"))?,
+        _ => unreachable!("selector count was validated"),
     };
-    let target_kind = match (&target.shell, &target.http, target.command.is_empty()) {
+    let schedule_changed =
+        current.is_none_or(|definition| definition.schedule != normalized_schedule);
+
+    let target_selectors = usize::from(target.shell.is_some())
+        + usize::from(target.http.is_some())
+        + usize::from(!target.command.is_empty());
+    if target_selectors > 1 {
+        return Err(anyhow!(
+            "exactly one of -- COMMAND, --shell, or --http may be supplied"
+        ));
+    }
+    let mut normalized_target = match (&target.shell, &target.http, target.command.is_empty()) {
         (Some(command), None, true) => Target::Shell {
             command: command.clone(),
-            shell: "/bin/sh".into(),
+            shell: normalize_path(
+                target
+                    .shell_executable
+                    .as_deref()
+                    .unwrap_or_else(|| Path::new("/bin/sh")),
+            )?,
         },
         (None, Some(parts), true) => Target::Http(HttpTarget {
             method: parse_method(&parts[0])?,
@@ -472,62 +746,283 @@ fn build_definition(
             executable: target.command[0].clone(),
             args: target.command[1..].to_vec(),
         },
-        _ => {
-            return Err(anyhow!(
-                "exactly one of -- COMMAND, --shell, or --http is required"
-            ));
-        }
+        (None, None, true) => current
+            .map(|definition| definition.target.clone())
+            .ok_or_else(|| anyhow!("exactly one of -- COMMAND, --shell, or --http is required"))?,
+        _ => unreachable!("selector count was validated"),
     };
+    if let Some(shell) = &target.shell_executable {
+        match &mut normalized_target {
+            Target::Shell { shell: value, .. } => *value = normalize_path(shell)?,
+            _ => return Err(anyhow!("--shell-executable requires a shell target")),
+        }
+    }
+
     let cwd = match &target.cwd {
         Some(path) => normalize_path(path)?,
-        None => std::env::current_dir()?,
+        None => match current {
+            Some(definition) => definition.cwd.clone(),
+            None => std::env::current_dir()?,
+        },
     };
-    let mut execution = ExecutionPolicy::default();
-    execution.overlap = match policy.overlap {
-        OverlapArg::Skip => OverlapPolicy::Skip,
-        OverlapArg::Replace => OverlapPolicy::Replace,
-        OverlapArg::Allow => OverlapPolicy::Allow,
-    };
-    execution.missed_run = match policy.missed_run {
-        Some(MissedArg::Skip) => MissedRunPolicy::Skip,
-        Some(MissedArg::Latest) => MissedRunPolicy::Latest,
-        Some(MissedArg::All) => MissedRunPolicy::All,
-        None if matches!(schedule, Schedule::At { .. }) => MissedRunPolicy::Latest,
-        None => MissedRunPolicy::Skip,
-    };
-    execution.catch_up_limit = policy.catch_up_limit;
-    execution.retries = policy.retries;
-    execution.timeout = if policy.no_timeout {
-        None
-    } else {
-        Some(policy.timeout.parse()?)
-    };
-    execution.retry_timeout = policy.retry_timeout;
-    execution.per_job_concurrency =
-        policy
-            .per_job_concurrency
-            .unwrap_or(if execution.overlap == OverlapPolicy::Allow {
+    if target.cwd.is_some() && matches!(normalized_target, Target::Http(_)) {
+        return Err(anyhow!("--cwd requires a process or shell target"));
+    }
+    if let Target::Process { executable, .. } = &mut normalized_target
+        && executable.contains('/')
+    {
+        *executable = normalize_path_from(&cwd, Path::new(executable))?
+            .to_string_lossy()
+            .into_owned();
+    }
+    normalize_http_options(&mut normalized_target, target)?;
+    let mut environment = current
+        .map(|definition| definition.environment.clone())
+        .unwrap_or_default();
+    if target.clear_env {
+        environment.values.clear();
+    }
+    for name in &target.unset_env {
+        if !is_valid_environment_name(name) || name.starts_with("LOCRON_") {
+            return Err(anyhow!("invalid or reserved environment name: {name}"));
+        }
+        environment.values.remove(name);
+    }
+    environment.values.extend(target.env.iter().cloned());
+    if target.env_file.is_some() && target.no_env_file {
+        return Err(anyhow!("--env-file and --no-env-file conflict"));
+    }
+    if target.no_env_file {
+        environment.file = None;
+    } else if let Some(path) = &target.env_file {
+        environment.file = Some(normalize_path(path)?);
+    }
+    if target.path.is_some() && target.no_path {
+        return Err(anyhow!("--path and --no-path conflict"));
+    }
+    if target.no_path {
+        environment.path = None;
+    } else if let Some(path) = &target.path {
+        environment.path = Some(normalize_path_list(path)?);
+    }
+
+    let mut execution = current
+        .map(|definition| definition.policy.clone())
+        .unwrap_or_default();
+    if let Some(overlap) = policy.overlap {
+        let normalized_overlap = match overlap {
+            OverlapArg::Skip => OverlapPolicy::Skip,
+            OverlapArg::Replace => OverlapPolicy::Replace,
+            OverlapArg::Allow => OverlapPolicy::Allow,
+        };
+        let overlap_changed = normalized_overlap != execution.overlap;
+        execution.overlap = normalized_overlap;
+        if policy.per_job_concurrency.is_none() && (current.is_none() || overlap_changed) {
+            execution.per_job_concurrency = if execution.overlap == OverlapPolicy::Allow {
                 2
             } else {
                 1
-            });
+            };
+        }
+    }
+    if let Some(missed) = policy.missed_run {
+        execution.missed_run = match missed {
+            MissedArg::Skip => MissedRunPolicy::Skip,
+            MissedArg::Latest => MissedRunPolicy::Latest,
+            MissedArg::All => MissedRunPolicy::All,
+        };
+    } else if current.is_none() && matches!(normalized_schedule, Schedule::At { .. }) {
+        execution.missed_run = MissedRunPolicy::Latest;
+    }
+    if policy.start_deadline.is_some() && policy.no_start_deadline {
+        return Err(anyhow!("--start-deadline and --no-start-deadline conflict"));
+    }
+    if policy.no_start_deadline {
+        execution.start_deadline = None;
+    } else if let Some(value) = &policy.start_deadline {
+        execution.start_deadline = Some(value.parse()?);
+    }
+    if let Some(value) = policy.catch_up_limit {
+        execution.catch_up_limit = value;
+    }
+    if let Some(value) = policy.retries {
+        execution.retries = value;
+    }
+    if let Some(value) = policy.backoff {
+        execution.backoff = match value {
+            BackoffArg::Fixed => BackoffMode::Fixed,
+            BackoffArg::Exponential => BackoffMode::Exponential,
+        };
+    }
+    if let Some(value) = &policy.retry_delay {
+        execution.retry_delay = value.parse()?;
+    }
+    if let Some(value) = &policy.retry_cap {
+        execution.retry_cap = value.parse()?;
+    }
+    if policy.timeout.is_some() && policy.no_timeout {
+        return Err(anyhow!("--timeout and --no-timeout conflict"));
+    }
+    if policy.no_timeout {
+        execution.timeout = None;
+    } else if let Some(value) = &policy.timeout {
+        execution.timeout = Some(value.parse()?);
+    }
+    if policy.retry_timeout && policy.no_retry_timeout {
+        return Err(anyhow!("--retry-timeout and --no-retry-timeout conflict"));
+    }
+    if policy.retry_timeout {
+        execution.retry_timeout = true;
+    } else if policy.no_retry_timeout {
+        execution.retry_timeout = false;
+    }
+    if let Some(value) = &policy.termination_grace {
+        execution.termination_grace = value.parse()?;
+    }
+    if let Some(value) = policy.per_job_concurrency {
+        execution.per_job_concurrency = value;
+    }
     let definition = JobDefinition {
-        schedule,
-        target: target_kind,
+        schedule: normalized_schedule,
+        target: normalized_target,
         cwd,
-        environment: Environment {
-            file: target
-                .env_file
-                .clone()
-                .map(|path| normalize_path(&path))
-                .transpose()?,
-            values: target.env.iter().cloned().collect(),
-            path: None,
-        },
+        environment,
         policy: execution,
     };
-    definition.validate(16)?;
-    Ok(definition)
+    definition.validate(global_concurrency)?;
+    Ok((definition, schedule_changed))
+}
+
+fn normalize_http_options(normalized: &mut Target, args: &TargetArgs) -> Result<()> {
+    let has_http_options = args.body.is_some()
+        || args.body_file.is_some()
+        || args.json_body.is_some()
+        || args.clear_body
+        || !args.header.is_empty()
+        || !args.header_env.is_empty()
+        || !args.unset_header.is_empty()
+        || args.clear_headers
+        || !args.success_status.is_empty()
+        || args.clear_success_statuses
+        || args.follow_redirects
+        || args.no_follow_redirects;
+    let Target::Http(http) = normalized else {
+        if has_http_options {
+            return Err(anyhow!("HTTP request options require an HTTP target"));
+        }
+        return Ok(());
+    };
+    for (inline_name, _) in &args.header {
+        if args
+            .header_env
+            .iter()
+            .any(|(environment_name, _)| environment_name.eq_ignore_ascii_case(inline_name))
+        {
+            return Err(anyhow!(
+                "header {inline_name} cannot use both an inline and environment source"
+            ));
+        }
+    }
+    if args.clear_headers {
+        http.headers.clear();
+    }
+    for name in &args.unset_header {
+        if !is_valid_http_header_name(name) {
+            return Err(anyhow!("invalid HTTP header name: {name}"));
+        }
+        remove_header(&mut http.headers, name);
+    }
+    if args.clear_body {
+        http.body = None;
+        http.body_file = None;
+    } else if let Some(body) = &args.body {
+        http.body = Some(body.as_bytes().to_vec());
+        http.body_file = None;
+    } else if let Some(body) = &args.json_body {
+        let value: Value = serde_json::from_str(body).context("invalid --json-body value")?;
+        http.body = Some(serde_json::to_vec(&value)?);
+        http.body_file = None;
+        if !has_header(&http.headers, "Content-Type") {
+            set_header(
+                &mut http.headers,
+                "Content-Type",
+                HttpHeaderSource::Inline("application/json".into()),
+            );
+        }
+    } else if let Some(path) = &args.body_file {
+        http.body_file = Some(normalize_path(path)?);
+        http.body = None;
+    }
+    for (name, value) in &args.header {
+        set_header(
+            &mut http.headers,
+            name,
+            HttpHeaderSource::Inline(value.clone()),
+        );
+    }
+    for (name, value) in &args.header_env {
+        set_header(
+            &mut http.headers,
+            name,
+            HttpHeaderSource::Environment(value.clone()),
+        );
+    }
+    if args.clear_success_statuses {
+        http.success_statuses.clear();
+    }
+    if !args.success_status.is_empty() {
+        http.success_statuses = parse_success_statuses(&args.success_status)?;
+    }
+    if args.follow_redirects {
+        http.follow_redirects = true;
+    } else if args.no_follow_redirects {
+        http.follow_redirects = false;
+    }
+    Ok(())
+}
+
+fn set_header(
+    headers: &mut BTreeMap<String, HttpHeaderSource>,
+    name: &str,
+    value: HttpHeaderSource,
+) {
+    remove_header(headers, name);
+    headers.insert(name.to_owned(), value);
+}
+
+fn remove_header(headers: &mut BTreeMap<String, HttpHeaderSource>, name: &str) {
+    if let Some(key) = headers
+        .keys()
+        .find(|key| key.eq_ignore_ascii_case(name))
+        .cloned()
+    {
+        headers.remove(&key);
+    }
+}
+
+fn has_header(headers: &BTreeMap<String, HttpHeaderSource>, name: &str) -> bool {
+    headers.keys().any(|key| key.eq_ignore_ascii_case(name))
+}
+
+fn parse_success_statuses(values: &[String]) -> Result<Vec<u16>> {
+    let mut statuses = std::collections::BTreeSet::new();
+    for value in values {
+        if let Some((start, end)) = value.split_once('-') {
+            let start: u16 = start.parse().context("invalid success status range")?;
+            let end: u16 = end.parse().context("invalid success status range")?;
+            if start > end || !(100..=599).contains(&start) || !(100..=599).contains(&end) {
+                return Err(anyhow!("success status range must be within 100-599"));
+            }
+            statuses.extend(start..=end);
+        } else {
+            let status: u16 = value.parse().context("invalid success status")?;
+            if !(100..=599).contains(&status) {
+                return Err(anyhow!("success status must be within 100-599"));
+            }
+            statuses.insert(status);
+        }
+    }
+    Ok(statuses.into_iter().collect())
 }
 
 fn toggle(paths: &StatePaths, name: &str, enabled: bool, format: Format) -> Result<()> {
@@ -561,23 +1056,14 @@ fn preview(paths: &StatePaths, args: PreviewArgs, format: Format) -> Result<()> 
 fn build_schedule_only(args: &ScheduleArgs) -> Result<Schedule> {
     let target = TargetArgs {
         shell: Some(":".into()),
-        http: None,
         cwd: Some(std::env::current_dir()?),
-        env: vec![],
-        env_file: None,
-        command: vec![],
+        ..TargetArgs::default()
     };
-    let policy = PolicyArgs {
-        overlap: OverlapArg::Skip,
-        missed_run: None,
-        catch_up_limit: 100,
-        retries: 0,
-        timeout: "60s".into(),
-        no_timeout: false,
-        retry_timeout: false,
-        per_job_concurrency: None,
-    };
-    Ok(build_definition(args, &target, &policy)?.schedule)
+    Ok(
+        normalize_definition(None, args, &target, &PolicyArgs::default(), 16, now_us())?
+            .0
+            .schedule,
+    )
 }
 
 async fn run_job(
@@ -814,52 +1300,450 @@ fn validate_config_value(key: &str, value: &str) -> Result<()> {
 fn export(
     paths: &StatePaths,
     include_values: bool,
+    acknowledge_plaintext: bool,
     include_history: bool,
     format: Format,
 ) -> Result<()> {
-    if include_values {
+    if include_history {
         return Err(anyhow!(
-            "--include-values requires an explicit non-interactive acknowledgement not yet exposed"
+            "--include-history is not supported by locron.export/v1"
         ));
     }
-    let store = open(paths)?;
-    let history = if include_history {
-        json!(
-            store
-                .history(None, 1000)?
-                .into_iter()
-                .map(redacted_run)
-                .collect::<Result<Vec<_>>>()?
-        )
+    if include_values != acknowledge_plaintext {
+        return Err(anyhow!(
+            "plaintext export requires both --include-values and --acknowledge-plaintext"
+        ));
+    }
+    let values_mode = if include_values {
+        ValuesMode::Plaintext
     } else {
-        Value::Null
+        ValuesMode::Redacted
     };
+    let store = open(paths)?;
+    let jobs = store
+        .list_jobs(true)?
+        .into_iter()
+        .map(|job| export_job(job, values_mode))
+        .collect::<Result<Vec<_>>>()?;
+    let document = ExportDocument {
+        schema: "locron.export/v1".into(),
+        values_mode,
+        settings: store.settings()?,
+        jobs,
+    };
+    match format {
+        Format::Json => render(format, "export", serde_json::to_value(&document)?, &[]),
+        Format::Human => println!("{}", serde_json::to_string_pretty(&document)?),
+    }
+    Ok(())
+}
+fn import(
+    paths: &StatePaths,
+    path: &Path,
+    accept: bool,
+    dry_run: bool,
+    format: Format,
+) -> Result<()> {
+    let document = parse_import_document(path, accept)?;
+    let now = now_us();
+    let store = if dry_run {
+        paths
+            .database
+            .is_file()
+            .then(|| open_read_only(paths))
+            .transpose()?
+    } else {
+        Some(open(paths)?)
+    };
+    let plan = plan_import(store.as_ref(), document, now, dry_run)?;
+    let data = import_plan_value(&plan, dry_run);
+    if dry_run {
+        render(format, "import", data, &[]);
+        return Ok(());
+    }
+
+    let mut mutations = Vec::new();
+    let mut no_op = 0;
+    for action in plan.jobs {
+        match action {
+            PlannedImportJob::Create {
+                job, resolution, ..
+            } => mutations.push(ImportJob::Create { job, resolution }),
+            PlannedImportJob::Update {
+                job, resolution, ..
+            } => mutations.push(ImportJob::Update { job, resolution }),
+            PlannedImportJob::NoOp {
+                job, resolution, ..
+            } => {
+                no_op += 1;
+                mutations.push(ImportJob::Verify { job, resolution });
+            }
+        }
+    }
+    if no_op == mutations.len() && !plan.settings_changed {
+        render(
+            format,
+            "import",
+            json!({"created":0,"updated":0,"no_op":no_op,"settings_changed":false}),
+            &[],
+        );
+        return Ok(());
+    }
+    let summary = store
+        .as_ref()
+        .expect("non-dry import opens a store")
+        .apply_import(&ImportBatch {
+            settings: plan.settings,
+            jobs: mutations,
+            now_us: plan.now_us,
+        })?;
+    send_wake(paths);
     render(
         format,
-        "export",
-        json!({"schema":"locron.export/v1","jobs":store.list_jobs(true)?.into_iter().map(redacted_job).collect::<Result<Vec<_>>>()?,"history":history,"values_redacted":true}),
+        "import",
+        json!({"created":summary.created,"updated":summary.updated,"no_op":no_op,"settings_changed":plan.settings_changed}),
         &[],
     );
     Ok(())
 }
-fn import(path: &Path, accept: bool, dry_run: bool, format: Format) -> Result<()> {
-    let value: Value = serde_json::from_slice(&std::fs::read(path)?)?;
-    if value.get("schema") != Some(&Value::String("locron.export/v1".into())) {
-        return Err(anyhow!("unsupported export schema"));
+
+fn export_job(job: JobRecord, mode: ValuesMode) -> Result<ExportJob> {
+    let mut definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
+    let mut omitted_values = Vec::new();
+    if mode == ValuesMode::Redacted {
+        for name in definition.environment.values.keys() {
+            omitted_values.push(format!("definition.environment.values.{name}"));
+        }
+        definition.environment.values.clear();
+        if let Target::Http(http) = &mut definition.target {
+            let inline_headers = http
+                .headers
+                .iter()
+                .filter(|(_, source)| matches!(source, HttpHeaderSource::Inline(_)))
+                .map(|(name, _)| name.clone())
+                .collect::<Vec<_>>();
+            for name in inline_headers {
+                http.headers.remove(&name);
+                omitted_values.push(format!("definition.target.headers.{name}"));
+            }
+            if http.body.take().is_some() {
+                omitted_values.push("definition.target.body".into());
+            }
+        }
+        omitted_values.sort();
     }
-    if !accept && value.get("values_redacted") == Some(&Value::Bool(false)) {
+    Ok(ExportJob {
+        id: job.id,
+        name: job.name,
+        description: job.description,
+        tags: serde_json::from_str(&job.tags_json)?,
+        enabled: job.enabled,
+        definition,
+        omitted_values,
+    })
+}
+
+fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDocument> {
+    let mut document: ExportDocument =
+        serde_json::from_slice(&std::fs::read(path)?).context("invalid export document")?;
+    if document.schema != "locron.export/v1" {
+        return Err(anyhow!("unsupported export schema: {}", document.schema));
+    }
+    validate_import_settings_cli(&document.settings)?;
+    match document.values_mode {
+        ValuesMode::Plaintext if !accept_plaintext => {
+            return Err(anyhow!(
+                "plaintext values require --accept-plaintext-values"
+            ));
+        }
+        ValuesMode::Redacted => {
+            if document
+                .jobs
+                .iter()
+                .any(|job| !job.omitted_values.is_empty())
+            {
+                return Err(anyhow!(
+                    "redacted export contains omitted values and cannot be imported faithfully"
+                ));
+            }
+        }
+        ValuesMode::Plaintext => {
+            if document
+                .jobs
+                .iter()
+                .any(|job| !job.omitted_values.is_empty())
+            {
+                return Err(anyhow!(
+                    "plaintext export must not contain omitted_values entries"
+                ));
+            }
+        }
+    }
+
+    let mut ids = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    for job in &mut document.jobs {
+        let id = Uuid::parse_str(&job.id).context("invalid imported job UUID")?;
+        if id.to_string() != job.id {
+            return Err(anyhow!(
+                "imported job UUID must be lowercase canonical text"
+            ));
+        }
+        validate_metadata(&job.name, job.description.as_deref(), &job.tags)?;
+        if !ids.insert(job.id.clone()) {
+            return Err(anyhow!("duplicate imported job ID: {}", job.id));
+        }
+        if !names.insert(job.name.clone()) {
+            return Err(anyhow!("duplicate imported job name: {}", job.name));
+        }
+        normalize_import_definition(&mut job.definition)?;
+        job.definition
+            .validate(u8::try_from(document.settings.global_concurrency)?)?;
+        if document.values_mode == ValuesMode::Redacted
+            && definition_contains_inline_values(&job.definition)
+        {
+            return Err(anyhow!(
+                "redacted export unexpectedly contains inline plaintext values"
+            ));
+        }
+    }
+    document
+        .jobs
+        .sort_by(|left, right| (&left.name, &left.id).cmp(&(&right.name, &right.id)));
+    Ok(document)
+}
+
+fn definition_contains_inline_values(definition: &JobDefinition) -> bool {
+    if !definition.environment.values.is_empty() {
+        return true;
+    }
+    match &definition.target {
+        Target::Http(http) => {
+            http.body.is_some()
+                || http
+                    .headers
+                    .values()
+                    .any(|source| matches!(source, HttpHeaderSource::Inline(_)))
+        }
+        Target::Process { .. } | Target::Shell { .. } => false,
+    }
+}
+
+fn validate_import_settings_cli(settings: &SettingsRecord) -> Result<()> {
+    if !(1..=64).contains(&settings.global_concurrency) {
         return Err(anyhow!(
-            "plaintext values require --accept-plaintext-values"
+            "import global_concurrency must be from 1 through 64"
         ));
     }
-    if !dry_run {
+    if settings.run_retention_count < 0
+        || settings.run_retention_age_us.is_some_and(|value| value < 0)
+        || settings.output_limit_bytes < 0
+        || settings.per_run_output_limit_bytes < 0
+    {
         return Err(anyhow!(
-            "atomic import application is not implemented yet; use --dry-run to validate"
+            "import retention and output limits must be non-negative"
         ));
     }
-    render(format, "import", json!({"dry_run":true,"valid":true}), &[]);
+    if settings.execution_path.contains('\0') {
+        return Err(anyhow!("import execution_path contains NUL"));
+    }
     Ok(())
 }
+
+fn normalize_import_definition(definition: &mut JobDefinition) -> Result<()> {
+    definition.cwd = normalize_path(&definition.cwd)?;
+    if let Some(path) = &definition.environment.file {
+        definition.environment.file = Some(normalize_path(path)?);
+    }
+    if let Some(path) = &definition.environment.path {
+        definition.environment.path = Some(normalize_path_list(path)?);
+    }
+    match &mut definition.target {
+        Target::Process { executable, .. } if executable.contains('/') => {
+            *executable = normalize_path_from(&definition.cwd, Path::new(executable))?
+                .to_string_lossy()
+                .into_owned();
+        }
+        Target::Shell { shell, .. } => *shell = normalize_path(shell)?,
+        Target::Http(http) => {
+            if let Some(path) = &http.body_file {
+                http.body_file = Some(normalize_path(path)?);
+            }
+            http.success_statuses.sort_unstable();
+            http.success_statuses.dedup();
+        }
+        Target::Process { .. } => {}
+    }
+    Ok(())
+}
+
+fn plan_import(
+    store: Option<&Store>,
+    document: ExportDocument,
+    now_us: i64,
+    dry_run: bool,
+) -> Result<ImportPlan> {
+    let identities = store
+        .map(Store::job_identities)
+        .transpose()?
+        .unwrap_or_default();
+    let live_jobs = store
+        .map(|store| store.list_jobs(true))
+        .transpose()?
+        .unwrap_or_default();
+    let current_settings = store.map(Store::settings).transpose()?;
+    let settings_changed = current_settings.as_ref() != Some(&document.settings);
+    let live_by_id = live_jobs
+        .iter()
+        .map(|job| (job.id.as_str(), job))
+        .collect::<BTreeMap<_, _>>();
+    let live_by_name = live_jobs
+        .iter()
+        .map(|job| (job.name.as_str(), job))
+        .collect::<BTreeMap<_, _>>();
+    let mut owned_ids = identities
+        .iter()
+        .map(|identity| identity.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut claimed_destinations = BTreeSet::new();
+    let mut jobs = Vec::with_capacity(document.jobs.len());
+
+    for source in document.jobs {
+        let destination_by_id = live_by_id.get(source.id.as_str()).copied();
+        let destination_by_name = live_by_name.get(source.name.as_str()).copied();
+        let resolution = ImportResolution {
+            source_id: source.id.clone(),
+            source_name: source.name.clone(),
+            expected_id_destination: destination_by_id.map(|job| job.id.clone()),
+            expected_name_destination: destination_by_name.map(|job| job.id.clone()),
+        };
+        if let (Some(by_id), Some(by_name)) = (destination_by_id, destination_by_name)
+            && by_id.id != by_name.id
+        {
+            return Err(StoreError::Conflict(format!(
+                "source ID {} and name {} resolve to different destination jobs",
+                source.id, source.name
+            ))
+            .into());
+        }
+        let destination = destination_by_id.or(destination_by_name);
+        if let Some(destination) = destination {
+            if !claimed_destinations.insert(destination.id.clone()) {
+                return Err(StoreError::Conflict(format!(
+                    "multiple imported jobs resolve to destination {}",
+                    destination.id
+                ))
+                .into());
+            }
+            let destination_definition: JobDefinition =
+                serde_json::from_str(&destination.definition_json)?;
+            let destination_tags: Vec<String> = serde_json::from_str(&destination.tags_json)?;
+            if destination.name == source.name
+                && destination.description == source.description
+                && destination_tags == source.tags
+                && destination.enabled == source.enabled
+                && destination_definition == source.definition
+            {
+                jobs.push(PlannedImportJob::NoOp {
+                    source_id: source.id,
+                    destination_id: destination.id.clone(),
+                    job: UpdateJob {
+                        id: destination.id.clone(),
+                        expected_revision: destination.current_revision,
+                        name: source.name,
+                        description: source.description,
+                        tags_json: serde_json::to_string(&source.tags)?,
+                        enabled: source.enabled,
+                        definition_json: serde_json::to_string(&source.definition)?,
+                        now_us,
+                        cursor_us: destination.cursor_us,
+                    },
+                    resolution,
+                });
+                continue;
+            }
+            let schedule_changed = destination_definition.schedule != source.definition.schedule;
+            jobs.push(PlannedImportJob::Update {
+                source_id: source.id,
+                job: UpdateJob {
+                    id: destination.id.clone(),
+                    expected_revision: destination.current_revision,
+                    name: source.name,
+                    description: source.description,
+                    tags_json: serde_json::to_string(&source.tags)?,
+                    enabled: source.enabled,
+                    definition_json: serde_json::to_string(&source.definition)?,
+                    now_us,
+                    cursor_us: if schedule_changed {
+                        now_us
+                    } else {
+                        destination.cursor_us
+                    },
+                },
+                resolution,
+            });
+        } else {
+            let destination_id = if owned_ids.contains(&source.id) {
+                if dry_run {
+                    format!("<non-durable:{}>", source.id)
+                } else {
+                    Uuid::now_v7().to_string()
+                }
+            } else {
+                source.id.clone()
+            };
+            owned_ids.insert(destination_id.clone());
+            jobs.push(PlannedImportJob::Create {
+                source_id: source.id,
+                job: CreateJob {
+                    id: destination_id,
+                    name: source.name,
+                    description: source.description,
+                    tags_json: serde_json::to_string(&source.tags)?,
+                    enabled: source.enabled,
+                    definition_json: serde_json::to_string(&source.definition)?,
+                    now_us,
+                    cursor_us: now_us,
+                },
+                resolution,
+            });
+        }
+    }
+    Ok(ImportPlan {
+        settings: document.settings,
+        settings_changed,
+        jobs,
+        now_us,
+    })
+}
+
+fn import_plan_value(plan: &ImportPlan, dry_run: bool) -> Value {
+    let actions = plan
+        .jobs
+        .iter()
+        .map(|action| match action {
+            PlannedImportJob::Create { source_id, job, .. } => json!({
+                "action":"create","source_id":source_id,"destination_id":job.id,"name":job.name
+            }),
+            PlannedImportJob::Update { source_id, job, .. } => json!({
+                "action":"update","source_id":source_id,"destination_id":job.id,"name":job.name
+            }),
+            PlannedImportJob::NoOp {
+                source_id,
+                destination_id,
+                ..
+            } => json!({
+                "action":"no_op","source_id":source_id,"destination_id":destination_id
+            }),
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "dry_run":dry_run,
+        "settings_changed":plan.settings_changed,
+        "actions":actions
+    })
+}
+
 fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
     let store = open(paths)?;
     render(
@@ -1398,8 +2282,11 @@ fn engine_target(
             let (key, value) = line
                 .split_once('=')
                 .ok_or_else(|| format!("environment file line {} is malformed", line_number + 1))?;
-            if key.starts_with("LOCRON_") {
-                return Err(format!("reserved environment name {key}"));
+            if !is_valid_environment_name(key) || key.starts_with("LOCRON_") {
+                return Err(format!("invalid or reserved environment name {key}"));
+            }
+            if value.contains('\0') {
+                return Err(format!("environment file value for {key} contains NUL"));
             }
             env.insert(key.to_owned(), value.to_owned());
         }
@@ -1430,21 +2317,38 @@ fn engine_target(
             cwd: definition.cwd.clone(),
             env,
         })),
-        Target::Http(http) => Ok(TargetSpec::Http(HttpSpec {
-            method: http.method.as_str().into(),
-            url: http.url.parse().map_err(|e| format!("{e}"))?,
-            headers: http.headers.clone(),
-            body: match (&http.body, &http.body_file) {
-                (Some(body), None) => Some(body.clone()),
-                (None, Some(path)) => {
-                    Some(std::fs::read(path).map_err(|error| format!("HTTP body file: {error}"))?)
-                }
-                (None, None) => None,
-                (Some(_), Some(_)) => return Err("conflicting HTTP body sources".into()),
-            },
-            success_statuses: http.success_statuses.clone(),
-            follow_redirects: http.follow_redirects,
-        })),
+        Target::Http(http) => {
+            let headers = http
+                .headers
+                .iter()
+                .map(|(name, source)| {
+                    let value = match source {
+                        HttpHeaderSource::Inline(value) => value.clone(),
+                        HttpHeaderSource::Environment(environment) => {
+                            env.get(environment).cloned().ok_or_else(|| {
+                                format!("header environment {environment} is missing")
+                            })?
+                        }
+                    };
+                    Ok((name.clone(), value))
+                })
+                .collect::<Result<BTreeMap<_, _>, String>>()?;
+            Ok(TargetSpec::Http(HttpSpec {
+                method: http.method.as_str().into(),
+                url: http.url.parse().map_err(|e| format!("{e}"))?,
+                headers,
+                body: match (&http.body, &http.body_file) {
+                    (Some(body), None) => Some(body.clone()),
+                    (None, Some(path)) => Some(
+                        std::fs::read(path).map_err(|error| format!("HTTP body file: {error}"))?,
+                    ),
+                    (None, None) => None,
+                    (Some(_), Some(_)) => return Err("conflicting HTTP body sources".into()),
+                },
+                success_statuses: http.success_statuses.clone(),
+                follow_redirects: http.follow_redirects,
+            }))
+        }
     }
 }
 fn minimal_env() -> BTreeMap<String, String> {
@@ -1473,11 +2377,134 @@ fn parse_key_value(value: &str) -> Result<(String, String), String> {
         .ok_or_else(|| "expected KEY=VALUE".into())
 }
 fn normalize_path(path: &Path) -> Result<PathBuf> {
-    Ok(if path.is_absolute() {
-        path.to_path_buf()
+    let expanded = if let Ok(rest) = path.strip_prefix("~") {
+        let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is unavailable"))?;
+        PathBuf::from(home).join(rest)
     } else {
-        std::env::current_dir()?.join(path)
-    })
+        path.to_path_buf()
+    };
+    let absolute = if expanded.is_absolute() {
+        expanded
+    } else {
+        std::env::current_dir()?.join(expanded)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    Ok(normalized)
+}
+
+fn normalize_path_from(base: &Path, path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() || path.starts_with("~") {
+        normalize_path(path)
+    } else {
+        normalize_path(&base.join(path))
+    }
+}
+
+fn normalize_path_list(value: &str) -> Result<String> {
+    if value.is_empty() {
+        return Ok(String::new());
+    }
+    let paths = std::env::split_paths(value)
+        .map(|path| normalize_path(&path))
+        .collect::<Result<Vec<_>>>()?;
+    std::env::join_paths(paths)?
+        .into_string()
+        .map_err(|_| anyhow!("normalized PATH is not valid UTF-8"))
+}
+
+fn configured_global_concurrency(paths: &StatePaths) -> Result<u8> {
+    if !paths.database.is_file() {
+        return Ok(16);
+    }
+    let value = open_read_only(paths)?.settings()?.global_concurrency;
+    u8::try_from(value).context("configured global concurrency is out of range")
+}
+
+fn validate_metadata(name: &str, description: Option<&str>, tags: &[String]) -> Result<()> {
+    if name.trim().is_empty() || name.contains('\0') {
+        return Err(anyhow!("job name must be non-empty and contain no NUL"));
+    }
+    if tags
+        .iter()
+        .any(|tag| tag.trim().is_empty() || tag.contains('\0'))
+    {
+        return Err(anyhow!("tags must be non-empty and contain no NUL"));
+    }
+    if description.is_some_and(|description| description.contains('\0')) {
+        return Err(anyhow!("job description must not contain NUL"));
+    }
+    Ok(())
+}
+
+fn environment_warnings(environment: &Environment) -> Vec<&'static str> {
+    let Some(path) = &environment.file else {
+        return Vec::new();
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        if let Ok(metadata) = std::fs::metadata(path)
+            && metadata.permissions().mode() & 0o077 != 0
+        {
+            return vec!["environment file is readable or writable by group/others"];
+        }
+    }
+    Vec::new()
+}
+
+fn job_fields(
+    name: &str,
+    description: Option<&str>,
+    tags: &[String],
+    enabled: bool,
+    definition: &JobDefinition,
+) -> Result<Value> {
+    Ok(json!({
+        "name":name,"description":description,"tags":tags,"enabled":enabled,
+        "definition":serde_json::to_value(definition)?
+    }))
+}
+
+fn changed_fields(before: &Value, after: &Value) -> Vec<String> {
+    fn collect(
+        path: &str,
+        before: Option<&Value>,
+        after: Option<&Value>,
+        output: &mut Vec<String>,
+    ) {
+        if before == after {
+            return;
+        }
+        match (
+            before.and_then(Value::as_object),
+            after.and_then(Value::as_object),
+        ) {
+            (Some(before), Some(after)) => {
+                let keys = before.keys().chain(after.keys()).collect::<BTreeSet<_>>();
+                for key in keys {
+                    let child = if path.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{path}.{key}")
+                    };
+                    collect(&child, before.get(key), after.get(key), output);
+                }
+            }
+            _ => output.push(path.to_owned()),
+        }
+    }
+    let mut output = Vec::new();
+    collect("", Some(before), Some(after), &mut output);
+    output
 }
 fn now_us() -> i64 {
     SystemTime::now()
@@ -1559,6 +2586,10 @@ fn redacted_run(run: RunRecord) -> Result<Value> {
 }
 
 fn redact_definition(mut definition: Value) -> Value {
+    if let Some(nested) = definition.get_mut("definition") {
+        *nested = redact_definition(nested.take());
+        return definition;
+    }
     if let Some(values) = definition
         .get_mut("environment")
         .and_then(|environment| environment.get_mut("values"))
@@ -1574,8 +2605,19 @@ fn redact_definition(mut definition: Value) -> Value {
         .and_then(Value::as_object_mut)
     {
         for value in headers.values_mut() {
-            *value = Value::String("<redacted>".into());
+            if value.get("source").and_then(Value::as_str) == Some("inline")
+                && let Some(inline) = value.get_mut("value")
+            {
+                *inline = Value::String("<redacted>".into());
+            }
         }
+    }
+    if let Some(body) = definition
+        .get_mut("target")
+        .and_then(|target| target.get_mut("body"))
+        && !body.is_null()
+    {
+        *body = Value::String("<redacted>".into());
     }
     definition
 }
@@ -1673,5 +2715,92 @@ mod tests {
         let occurrences =
             due_occurrences(&schedule, cursor.epoch_micros(), now.epoch_micros(), 100).unwrap();
         assert_eq!(occurrences, ["2026-01-01T00:00:00Z".parse().unwrap()]);
+    }
+
+    #[test]
+    fn http_header_environment_sources_resolve_per_attempt() {
+        let definition = JobDefinition {
+            schedule: Schedule::Every {
+                interval: "1h".parse().unwrap(),
+                anchor: Timestamp::UNIX_EPOCH,
+            },
+            target: Target::Http(HttpTarget {
+                method: HttpMethod::Get,
+                url: "https://example.test".into(),
+                headers: BTreeMap::from([(
+                    "X-Token".into(),
+                    HttpHeaderSource::Environment("TOKEN".into()),
+                )]),
+                body: None,
+                body_file: None,
+                success_statuses: vec![],
+                follow_redirects: false,
+            }),
+            cwd: std::env::current_dir().unwrap(),
+            environment: Environment {
+                values: BTreeMap::from([("TOKEN".into(), "attempt-value".into())]),
+                ..Environment::default()
+            },
+            policy: Default::default(),
+        };
+        let attempt = AdmitAttempt {
+            run_id: Uuid::now_v7().to_string(),
+            job_id: Uuid::now_v7().to_string(),
+            attempt_number: 1,
+            trigger: "manual".into(),
+            nominal_us: None,
+            snapshot_json: String::new(),
+        };
+
+        let TargetSpec::Http(http) = engine_target(&definition, &attempt, "/usr/bin").unwrap()
+        else {
+            panic!("expected HTTP target");
+        };
+        assert_eq!(
+            http.headers.get("X-Token").map(String::as_str),
+            Some("attempt-value")
+        );
+
+        let mut missing = definition;
+        missing.environment.values.clear();
+        assert!(
+            engine_target(&missing, &attempt, "/usr/bin")
+                .unwrap_err()
+                .contains("header environment TOKEN is missing")
+        );
+    }
+
+    #[test]
+    fn process_executable_and_path_list_normalize_against_registration_context() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = TargetArgs {
+            cwd: Some(temp.path().to_path_buf()),
+            path: Some(format!("./tools{}../bin", std::path::MAIN_SEPARATOR)),
+            command: vec!["./scripts/task".into()],
+            ..TargetArgs::default()
+        };
+        let (definition, _) = normalize_definition(
+            None,
+            &ScheduleArgs {
+                every: Some("1h".into()),
+                ..ScheduleArgs::default()
+            },
+            &target,
+            &PolicyArgs::default(),
+            16,
+            1,
+        )
+        .unwrap();
+        let Target::Process { executable, .. } = definition.target else {
+            panic!("expected process target");
+        };
+        assert_eq!(PathBuf::from(executable), temp.path().join("scripts/task"));
+        assert!(
+            definition
+                .environment
+                .path
+                .as_deref()
+                .is_some_and(|path| Path::new(path).is_absolute())
+        );
     }
 }

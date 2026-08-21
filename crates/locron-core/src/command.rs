@@ -11,7 +11,7 @@ use crate::target::{Environment, Target};
 use crate::{Timestamp, ValidationError};
 
 /// Immutable normalized job definition stored in each revision and run snapshot.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct JobDefinition {
     pub schedule: Schedule,
     pub target: Target,

@@ -491,3 +491,691 @@ fn durable_cancel_terminates_a_running_process() {
         "durable cancellation did not terminate the process"
     );
 }
+
+#[test]
+fn update_dry_run_reports_sorted_changes_without_leaking_values() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "api",
+                "--every",
+                "1h",
+                "--env",
+                "TOKEN=environment-secret",
+                "--http",
+                "POST",
+                "https://example.test/hook",
+                "--body",
+                "body-secret",
+                "--header",
+                "Authorization=header-secret",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+
+    let output = locron(&state)
+        .args([
+            "--json",
+            "update",
+            "api",
+            "--description",
+            "changed",
+            "--unset-header",
+            "Authorization",
+            "--header-env",
+            "X-Token=TOKEN",
+            "--retries",
+            "2",
+            "--backoff",
+            "fixed",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+    assert_cmd::assert::Assert::new(output.clone())
+        .success()
+        .stdout(predicate::str::contains("environment-secret").not())
+        .stdout(predicate::str::contains("header-secret").not())
+        .stdout(predicate::str::contains("body-secret").not());
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let changed = envelope["data"]["changed_fields"].as_array().unwrap();
+    let changed = changed
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect::<Vec<_>>();
+    let mut sorted = changed.clone();
+    sorted.sort_unstable();
+    assert_eq!(changed, sorted);
+
+    let show = locron(&state)
+        .args(["--json", "show", "api"])
+        .output()
+        .unwrap();
+    let show: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(show["data"]["current_revision"], 1);
+    assert_eq!(show["data"]["description"], serde_json::Value::Null);
+}
+
+#[test]
+fn export_requires_plaintext_ack_and_omits_redacted_values() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "secret",
+                "--every",
+                "1h",
+                "--env",
+                "TOKEN=environment-secret",
+                "--http",
+                "POST",
+                "https://example.test/hook",
+                "--body",
+                "body-secret",
+                "--header",
+                "Authorization=header-secret",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+
+    let redacted = locron(&state).arg("export").output().unwrap();
+    assert_cmd::assert::Assert::new(redacted.clone())
+        .success()
+        .stdout(predicate::str::contains("environment-secret").not())
+        .stdout(predicate::str::contains("header-secret").not())
+        .stdout(predicate::str::contains("body-secret").not())
+        .stdout(predicate::str::contains("<redacted>").not());
+    let document: serde_json::Value = serde_json::from_slice(&redacted.stdout).unwrap();
+    assert_eq!(document["schema"], "locron.export/v1");
+    assert_eq!(document["values_mode"], "redacted");
+    assert_eq!(
+        document["jobs"][0]["definition"]["environment"]["values"],
+        serde_json::json!({})
+    );
+    assert!(
+        document["jobs"][0]["omitted_values"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 3
+    );
+
+    for arguments in [
+        vec!["export", "--include-values"],
+        vec!["export", "--acknowledge-plaintext"],
+        vec!["export", "--include-history"],
+    ] {
+        assert_cmd::assert::Assert::new(locron(&state).args(arguments).output().unwrap())
+            .failure()
+            .code(2);
+    }
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["export", "--include-values", "--acknowledge-plaintext"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("environment-secret"))
+    .stdout(predicate::str::contains("header-secret"))
+    .stdout(predicate::str::contains("body-secret").not());
+}
+
+#[test]
+fn plaintext_export_import_round_trips_and_second_import_is_no_op() {
+    let source = tempfile::tempdir().unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    let export_path = source.path().join("export.json");
+    assert_cmd::assert::Assert::new(
+        locron(&source)
+            .args([
+                "add",
+                "roundtrip",
+                "--cron",
+                "15 3 * * MON",
+                "--timezone",
+                "Asia/Seoul",
+                "--env",
+                "TOKEN=roundtrip-secret",
+                "--overlap",
+                "allow",
+                "--per-job-concurrency",
+                "4",
+                "--retries",
+                "3",
+                "--shell",
+                "printf ok",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let exported = locron(&source)
+        .args(["export", "--include-values", "--acknowledge-plaintext"])
+        .output()
+        .unwrap();
+    std::fs::write(&export_path, &exported.stdout).unwrap();
+
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&export_path)
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .code(2)
+    .stderr(predicate::str::contains("--accept-plaintext-values"));
+    assert!(!destination.path().join("state.db").exists());
+
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&export_path)
+            .arg("--accept-plaintext-values")
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("\"created\": 1"));
+    let destination_export = locron(&destination)
+        .args(["export", "--include-values", "--acknowledge-plaintext"])
+        .output()
+        .unwrap();
+    let source_document: serde_json::Value = serde_json::from_slice(&exported.stdout).unwrap();
+    let destination_document: serde_json::Value =
+        serde_json::from_slice(&destination_export.stdout).unwrap();
+    assert_eq!(source_document, destination_document);
+
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&export_path)
+            .arg("--accept-plaintext-values")
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("\"no_op\": 1"));
+    let show = locron(&destination)
+        .args(["--json", "show", "roundtrip"])
+        .output()
+        .unwrap();
+    let show: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(show["data"]["current_revision"], 1);
+}
+
+#[test]
+fn import_dry_run_and_rejected_redacted_import_do_not_initialize_state() {
+    let source = tempfile::tempdir().unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    let export_path = source.path().join("export.json");
+    assert_cmd::assert::Assert::new(
+        locron(&source)
+            .args(["add", "safe", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let safe_export = locron(&source).arg("export").output().unwrap();
+    std::fs::write(&export_path, &safe_export.stdout).unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&export_path)
+            .arg("--dry-run")
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("<non-durable").not());
+    assert!(!destination.path().join("state.db").exists());
+
+    let secret = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&secret)
+            .args([
+                "add",
+                "unsafe",
+                "--every",
+                "1h",
+                "--env",
+                "TOKEN=value",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let omitted_export = locron(&secret).arg("export").output().unwrap();
+    std::fs::write(&export_path, &omitted_export.stdout).unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&export_path)
+            .arg("--dry-run")
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .code(2)
+    .stderr(predicate::str::contains("cannot be imported faithfully"));
+    assert!(!destination.path().join("state.db").exists());
+}
+
+#[test]
+fn import_maps_by_live_name_and_reallocates_a_removed_id_collision() {
+    let source = tempfile::tempdir().unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    let export_path = source.path().join("mapping.json");
+    assert_cmd::assert::Assert::new(
+        locron(&source)
+            .args([
+                "add",
+                "mapped",
+                "--every",
+                "2h",
+                "--description",
+                "source-definition",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let source_show = locron(&source)
+        .args(["--json", "show", "mapped"])
+        .output()
+        .unwrap();
+    let source_show: serde_json::Value = serde_json::from_slice(&source_show.stdout).unwrap();
+    let source_id = source_show["data"]["id"].as_str().unwrap().to_owned();
+    let export = locron(&source).arg("export").output().unwrap();
+    std::fs::write(&export_path, export.stdout).unwrap();
+
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .args(["add", "mapped", "--every", "1h", "--", "/usr/bin/false"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let before = locron(&destination)
+        .args(["--json", "show", "mapped"])
+        .output()
+        .unwrap();
+    let before: serde_json::Value = serde_json::from_slice(&before.stdout).unwrap();
+    let local_id = before["data"]["id"].as_str().unwrap().to_owned();
+    assert_ne!(local_id, source_id);
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&export_path)
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("\"updated\": 1"));
+    let mapped = locron(&destination)
+        .args(["--json", "show", "mapped"])
+        .output()
+        .unwrap();
+    let mapped: serde_json::Value = serde_json::from_slice(&mapped.stdout).unwrap();
+    assert_eq!(mapped["data"]["id"], local_id);
+    assert_eq!(mapped["data"]["description"], "source-definition");
+
+    let collision = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&collision)
+            .arg("import")
+            .arg(&export_path)
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&collision)
+            .args(["remove", "mapped"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&collision)
+            .arg("import")
+            .arg(&export_path)
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("\"created\": 1"));
+    let recreated = locron(&collision)
+        .args(["--json", "show", "mapped"])
+        .output()
+        .unwrap();
+    let recreated: serde_json::Value = serde_json::from_slice(&recreated.stdout).unwrap();
+    assert_ne!(recreated["data"]["id"], source_id);
+}
+
+#[cfg(unix)]
+#[test]
+fn broad_env_file_permissions_warn_without_reading_or_mutating_on_dry_run() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let state = tempfile::tempdir().unwrap();
+    let env_file = state.path().join("broad.env");
+    std::fs::write(&env_file, "SECRET=warning-must-not-read-this\n").unwrap();
+    std::fs::set_permissions(&env_file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let output = locron(&state)
+        .arg("--json")
+        .arg("add")
+        .arg("permissions")
+        .args(["--every", "1h", "--env-file"])
+        .arg(&env_file)
+        .args(["--dry-run", "--", "/usr/bin/true"])
+        .output()
+        .unwrap();
+    assert_cmd::assert::Assert::new(output)
+        .success()
+        .stdout(predicate::str::contains(
+            "readable or writable by group/others",
+        ))
+        .stdout(predicate::str::contains("warning-must-not-read-this").not());
+    assert!(!state.path().join("state.db").exists());
+}
+
+#[test]
+fn per_job_concurrency_uses_current_durable_global_limit() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "set", "global_concurrency", "2"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "too-wide",
+                "--every",
+                "1h",
+                "--overlap",
+                "allow",
+                "--per-job-concurrency",
+                "3",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .code(2)
+    .stderr(predicate::str::contains("global concurrency"));
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["--json", "list", "--all"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("too-wide").not());
+}
+
+#[test]
+fn partial_json_body_update_preserves_explicit_content_type() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "content-type",
+                "--every",
+                "1h",
+                "--http",
+                "POST",
+                "https://example.test/hook",
+                "--header",
+                "Content-Type=application/vnd.example+json",
+                "--success-status",
+                "201",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "update",
+                "content-type",
+                "--clear-success-statuses",
+                "--success-status",
+                "202-203",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "update",
+                "content-type",
+                "--json-body",
+                "{\"updated\":true}",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+
+    let export = locron(&state)
+        .args(["export", "--include-values", "--acknowledge-plaintext"])
+        .output()
+        .unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&export.stdout).unwrap();
+    assert_eq!(
+        document["jobs"][0]["definition"]["target"]["headers"]["Content-Type"]["value"],
+        "application/vnd.example+json"
+    );
+    assert_eq!(
+        document["jobs"][0]["definition"]["target"]["success_statuses"],
+        serde_json::json!([202, 203])
+    );
+}
+
+#[test]
+fn repeated_overlap_selector_preserves_custom_concurrency_and_is_a_no_op() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "allow-wide",
+                "--every",
+                "1h",
+                "--overlap",
+                "allow",
+                "--per-job-concurrency",
+                "10",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["update", "allow-wide", "--overlap", "allow"])
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .code(2)
+    .stderr(predicate::str::contains("does not change any field"));
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "update",
+                "allow-wide",
+                "--overlap",
+                "allow",
+                "--description",
+                "preserved",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let show = locron(&state)
+        .args(["--json", "show", "allow-wide"])
+        .output()
+        .unwrap();
+    let show: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    let definition: serde_json::Value =
+        serde_json::from_str(show["data"]["definition_json"].as_str().unwrap()).unwrap();
+    assert_eq!(definition["policy"]["per_job_concurrency"], 10);
+}
+
+#[test]
+fn selector_specific_schedule_options_are_rejected_without_state() {
+    for arguments in [
+        vec![
+            "add",
+            "bad",
+            "--every",
+            "1h",
+            "--timezone",
+            "UTC",
+            "--dry-run",
+            "--",
+            "/usr/bin/true",
+        ],
+        vec![
+            "add",
+            "bad",
+            "--cron",
+            "* * * * *",
+            "--anchor",
+            "2026-01-01T00:00:00Z",
+            "--dry-run",
+            "--",
+            "/usr/bin/true",
+        ],
+        vec![
+            "add",
+            "bad",
+            "--at",
+            "2026-01-01T00:00:00Z",
+            "--timezone",
+            "UTC",
+            "--dry-run",
+            "--",
+            "/usr/bin/true",
+        ],
+    ] {
+        let state = tempfile::tempdir().unwrap();
+        assert_cmd::assert::Assert::new(locron(&state).args(arguments).output().unwrap())
+            .failure()
+            .code(2);
+        assert!(!state.path().join("state.db").exists());
+    }
+}
+
+#[test]
+fn import_rejects_source_id_name_destination_ambiguity_as_durable_conflict() {
+    let state = tempfile::tempdir().unwrap();
+    for name in ["alpha", "beta"] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", name, "--every", "1h", "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    let export = locron(&state).arg("export").output().unwrap();
+    let mut document: serde_json::Value = serde_json::from_slice(&export.stdout).unwrap();
+    let jobs = document["jobs"].as_array_mut().unwrap();
+    let mut alpha = jobs
+        .iter()
+        .find(|job| job["name"] == "alpha")
+        .unwrap()
+        .clone();
+    alpha["name"] = serde_json::Value::String("beta".into());
+    *jobs = vec![alpha];
+    let path = state.path().join("ambiguous.json");
+    std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .arg("import")
+            .arg(&path)
+            .arg("--dry-run")
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .code(3)
+    .stderr(predicate::str::contains(
+        "resolve to different destination jobs",
+    ));
+    for name in ["alpha", "beta"] {
+        let show = locron(&state)
+            .args(["--json", "show", name])
+            .output()
+            .unwrap();
+        let show: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+        assert_eq!(show["data"]["current_revision"], 1);
+    }
+}
+
+#[test]
+fn duplicate_add_and_rename_are_stable_durable_conflicts() {
+    let state = tempfile::tempdir().unwrap();
+    for name in ["alpha", "beta"] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", name, "--every", "1h", "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "alpha", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .code(3)
+    .stderr(predicate::str::contains("durable conflict"));
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["update", "alpha", "--rename", "beta"])
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .code(3)
+    .stderr(predicate::str::contains("durable conflict"));
+    let alpha = locron(&state)
+        .args(["--json", "show", "alpha"])
+        .output()
+        .unwrap();
+    let alpha: serde_json::Value = serde_json::from_slice(&alpha.stdout).unwrap();
+    assert_eq!(alpha["data"]["current_revision"], 1);
+}

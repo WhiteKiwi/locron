@@ -31,7 +31,7 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 ## 3. Implement and test the domain core
 
 - [ ] Add stable identifiers, job/revision/schedule/target/policy/run/attempt/event types and application commands/results.
-- [ ] Add cross-field validation and normalization for exactly one schedule and target, all policy bounds, paths, environment, HTTP configuration, and reserved names.
+- [x] Add cross-field validation and normalization for exactly one schedule and target, all policy bounds, paths, environment, HTTP configuration, and reserved names.
 - [x] Implement pure cron, interval, and one-time occurrence enumeration with injected clock/timezone inputs.
 - [ ] Implement explicit legal run/attempt transitions and persistence, clock, and executor ports.
 - [ ] Update the applicable planning document first if a discovered edge case requires behavior or structure not represented in the current plan.
@@ -81,12 +81,17 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 ## 7. Implement the thin CLI composition and commands
 
 - [ ] Implement job CRUD, enable/disable/remove, schedule preview, history/show/logs, and cancellation.
+- [x] Complete shared add/update normalization for metadata, schedules, every target/environment
+  option, policy bounds, current global concurrency, cursor boundaries, dry-run diff, and no-op
+  rejection.
+- [x] Complete typed redacted/plaintext export and whole-document atomic import with acknowledgement,
+  collision planning, rollback, and fresh-state round trip tests; keep history explicitly deferred.
 - [ ] Implement durable offline manual enqueue, run ID output, wait/follow behavior, and outcome exit mapping.
 - [ ] Implement import/export with explicit env-value acknowledgement, pruning, and diagnostics.
 - [x] Expose `locron daemon run` as a thin composition entrypoint into the daemon runtime owned by `locron-engine`.
 - [ ] Provide equivalent versioned machine-readable results without requiring prose parsing.
 - [x] Implement non-mutating dry-run, durable-fact `why`, repeatable verbose context, and redacted debug tracing.
-- [ ] Ensure CLI handlers call shared application validation rather than duplicating policy.
+- [x] Ensure CLI handlers call shared application validation rather than duplicating policy.
 
 **Verify:** CLI contract tests pass for human and machine modes, all command families, offline enqueue, disabled/manual/one-time behavior, client disconnect without cancellation, redaction, import/export round trip, soft removal, invalid/conflicting options, diagnostics, and stable error categories; workspace inspection finds only the `locron` binary and confirms `locron daemon run` delegates to `locron-engine`.
 

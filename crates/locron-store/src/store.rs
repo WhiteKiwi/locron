@@ -185,7 +185,7 @@ pub struct RetentionCandidate {
     pub finalized_at_us: i64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SettingsRecord {
     pub global_concurrency: i64,
     pub execution_path: String,
@@ -193,6 +193,50 @@ pub struct SettingsRecord {
     pub run_retention_age_us: Option<i64>,
     pub output_limit_bytes: i64,
     pub per_run_output_limit_bytes: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JobIdentity {
+    pub id: String,
+    pub name: String,
+    pub removed: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ImportResolution {
+    pub source_id: String,
+    pub source_name: String,
+    pub expected_id_destination: Option<String>,
+    pub expected_name_destination: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ImportJob {
+    Create {
+        job: CreateJob,
+        resolution: ImportResolution,
+    },
+    Update {
+        job: UpdateJob,
+        resolution: ImportResolution,
+    },
+    Verify {
+        job: UpdateJob,
+        resolution: ImportResolution,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct ImportBatch {
+    pub settings: SettingsRecord,
+    pub jobs: Vec<ImportJob>,
+    pub now_us: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ImportSummary {
+    pub created: usize,
+    pub updated: usize,
 }
 
 /// Thread-safe serialized SQLite store.
@@ -242,6 +286,22 @@ impl Store {
         crate::paths::validate_uuid(&job.id)?;
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let identity_exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1)",
+            [&job.id],
+            |row| row.get(0),
+        )?;
+        let live_name_exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE name=?1 AND removed_at_us IS NULL)",
+            [&job.name],
+            |row| row.get(0),
+        )?;
+        if identity_exists || live_name_exists {
+            return Err(StoreError::Conflict(format!(
+                "job identity or live name already exists: {}",
+                job.name
+            )));
+        }
         tx.execute("INSERT INTO jobs(id,name,description,tags_json,enabled,created_at_us,updated_at_us,current_revision) VALUES(?1,?2,?3,?4,?5,?6,?6,1)", params![job.id, job.name, job.description, job.tags_json, job.enabled, job.now_us])?;
         tx.execute("INSERT INTO job_revisions(job_id,revision,definition_json,created_at_us,created_by) VALUES(?1,1,?2,?3,'add')", params![job.id, job.definition_json, job.now_us])?;
         tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us) VALUES(?1,1,?2,NULL,?3)", params![job.id, job.cursor_us, job.now_us])?;
@@ -266,6 +326,17 @@ impl Store {
             return Err(StoreError::Conflict(format!(
                 "expected revision {}, found {current}",
                 job.expected_revision
+            )));
+        }
+        let other_name: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE name=?1 AND id<>?2 AND removed_at_us IS NULL)",
+            params![job.name, job.id],
+            |row| row.get(0),
+        )?;
+        if other_name {
+            return Err(StoreError::Conflict(format!(
+                "job live name already exists: {}",
+                job.name
             )));
         }
         let revision = current + 1;
@@ -303,6 +374,130 @@ impl Store {
             .query_map([all], map_job)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(Into::into)
+    }
+
+    pub fn job_identities(&self) -> StoreResult<Vec<JobIdentity>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT id,name,removed_at_us IS NOT NULL FROM jobs ORDER BY id COLLATE BINARY",
+        )?;
+        statement
+            .query_map([], |row| {
+                Ok(JobIdentity {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    removed: row.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    /// Applies a prevalidated import as one immediate transaction. Identity and
+    /// optimistic-revision facts are rechecked inside the transaction.
+    pub fn apply_import(&self, batch: &ImportBatch) -> StoreResult<ImportSummary> {
+        validate_import_settings(&batch.settings)?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut summary = ImportSummary::default();
+        for import in &batch.jobs {
+            let resolution = match import {
+                ImportJob::Create { resolution, .. }
+                | ImportJob::Update { resolution, .. }
+                | ImportJob::Verify { resolution, .. } => resolution,
+            };
+            validate_import_resolution(&tx, resolution)?;
+            match import {
+                ImportJob::Create { job, .. } => {
+                    crate::paths::validate_uuid(&job.id)?;
+                    let id_exists: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1)",
+                        [&job.id],
+                        |row| row.get(0),
+                    )?;
+                    let name_exists: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM jobs WHERE name=?1 AND removed_at_us IS NULL)",
+                        [&job.name],
+                        |row| row.get(0),
+                    )?;
+                    if id_exists || name_exists {
+                        return Err(StoreError::Conflict(format!(
+                            "import create identity collision for {}",
+                            job.name
+                        )));
+                    }
+                }
+                ImportJob::Update { job, .. } | ImportJob::Verify { job, .. } => {
+                    let current = import_destination(&tx, &job.id)?;
+                    if current.current_revision != job.expected_revision {
+                        return Err(StoreError::Conflict(format!(
+                            "expected revision {}, found {}",
+                            job.expected_revision, current.current_revision
+                        )));
+                    }
+                    let other_name: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM jobs WHERE name=?1 AND id<>?2 AND removed_at_us IS NULL)",
+                        params![job.name,job.id],
+                        |row| row.get(0),
+                    )?;
+                    if other_name {
+                        return Err(StoreError::Conflict(format!(
+                            "import update name collision for {}",
+                            job.name
+                        )));
+                    }
+                    if matches!(import, ImportJob::Verify { .. })
+                        && !import_job_matches(&current, job)
+                    {
+                        return Err(StoreError::Conflict(format!(
+                            "import no-op destination changed for {}",
+                            resolution.source_name
+                        )));
+                    }
+                }
+            }
+        }
+        for job in &batch.jobs {
+            match job {
+                ImportJob::Create { job, .. } => {
+                    tx.execute("INSERT INTO jobs(id,name,description,tags_json,enabled,created_at_us,updated_at_us,current_revision) VALUES(?1,?2,?3,?4,?5,?6,?6,1)", params![job.id,job.name,job.description,job.tags_json,job.enabled,batch.now_us])?;
+                    tx.execute("INSERT INTO job_revisions(job_id,revision,definition_json,created_at_us,created_by) VALUES(?1,1,?2,?3,'import')", params![job.id,job.definition_json,batch.now_us])?;
+                    tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us) VALUES(?1,1,?2,NULL,?3)", params![job.id,job.cursor_us,batch.now_us])?;
+                    event(
+                        &tx,
+                        batch.now_us,
+                        "job_imported",
+                        Some(&job.id),
+                        None,
+                        "{\"action\":\"create\"}",
+                    )?;
+                    summary.created += 1;
+                }
+                ImportJob::Update { job, .. } => {
+                    let revision = job.expected_revision + 1;
+                    tx.execute("UPDATE jobs SET name=?2,description=?3,tags_json=?4,enabled=?5,updated_at_us=?6,current_revision=?7 WHERE id=?1", params![job.id,job.name,job.description,job.tags_json,job.enabled,batch.now_us,revision])?;
+                    tx.execute("INSERT INTO job_revisions(job_id,revision,definition_json,created_at_us,created_by) VALUES(?1,?2,?3,?4,'import')", params![job.id,revision,job.definition_json,batch.now_us])?;
+                    tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us) VALUES(?1,?2,?3,NULL,?4)", params![job.id,revision,job.cursor_us,batch.now_us])?;
+                    event(
+                        &tx,
+                        batch.now_us,
+                        "job_imported",
+                        Some(&job.id),
+                        None,
+                        "{\"action\":\"update\"}",
+                    )?;
+                    summary.updated += 1;
+                }
+                ImportJob::Verify { .. } => {}
+            }
+        }
+        tx.execute(
+            "UPDATE settings SET global_concurrency=?1,execution_path=?2,run_retention_count=?3,run_retention_age_us=?4,output_limit_bytes=?5,per_run_output_limit_bytes=?6,updated_at_us=?7 WHERE singleton=1",
+            params![batch.settings.global_concurrency,batch.settings.execution_path,batch.settings.run_retention_count,batch.settings.run_retention_age_us,batch.settings.output_limit_bytes,batch.settings.per_run_output_limit_bytes,batch.now_us],
+        )?;
+        event(&tx, batch.now_us, "import_applied", None, None, "{}")?;
+        tx.commit()?;
+        Ok(summary)
     }
 
     pub fn set_enabled(
@@ -928,6 +1123,74 @@ fn map_job(row: &rusqlite::Row<'_>) -> rusqlite::Result<JobRecord> {
         cursor_us: row.get(8)?,
     })
 }
+
+fn validate_import_resolution(
+    tx: &Transaction<'_>,
+    resolution: &ImportResolution,
+) -> StoreResult<()> {
+    let by_id = tx
+        .query_row(
+            "SELECT id FROM jobs WHERE id=?1 AND removed_at_us IS NULL",
+            [&resolution.source_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let by_name = tx
+        .query_row(
+            "SELECT id FROM jobs WHERE name=?1 AND removed_at_us IS NULL",
+            [&resolution.source_name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if by_id != resolution.expected_id_destination
+        || by_name != resolution.expected_name_destination
+    {
+        return Err(StoreError::Conflict(format!(
+            "import source mapping changed for {}",
+            resolution.source_name
+        )));
+    }
+    Ok(())
+}
+
+fn import_destination(tx: &Transaction<'_>, id: &str) -> StoreResult<JobRecord> {
+    tx.query_row(
+        "SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE j.id=?1 AND j.removed_at_us IS NULL",
+        [id],
+        map_job,
+    )
+    .optional()?
+    .ok_or_else(|| StoreError::NotFound(id.into()))
+}
+
+fn import_job_matches(current: &JobRecord, expected: &UpdateJob) -> bool {
+    current.id == expected.id
+        && current.current_revision == expected.expected_revision
+        && current.name == expected.name
+        && current.description == expected.description
+        && current.tags_json == expected.tags_json
+        && current.enabled == expected.enabled
+        && current.definition_json == expected.definition_json
+        && current.cursor_us == expected.cursor_us
+}
+
+fn validate_import_settings(settings: &SettingsRecord) -> StoreResult<()> {
+    if !(1..=64).contains(&settings.global_concurrency) {
+        return Err(StoreError::Conflict(
+            "import global_concurrency must be from 1 through 64".into(),
+        ));
+    }
+    if settings.run_retention_count < 0
+        || settings.output_limit_bytes < 0
+        || settings.per_run_output_limit_bytes < 0
+        || settings.run_retention_age_us.is_some_and(|value| value < 0)
+    {
+        return Err(StoreError::Conflict(
+            "import retention and output limits must be non-negative".into(),
+        ));
+    }
+    Ok(())
+}
 fn map_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRecord> {
     Ok(RunRecord {
         id: row.get(0)?,
@@ -983,6 +1246,19 @@ mod tests {
                 cursor_us: 1,
             })
             .unwrap();
+    }
+
+    fn import_resolution(
+        source_id: &str,
+        source_name: &str,
+        destination: Option<&str>,
+    ) -> ImportResolution {
+        ImportResolution {
+            source_id: source_id.into(),
+            source_name: source_name.into(),
+            expected_id_destination: destination.map(str::to_owned),
+            expected_name_destination: destination.map(str::to_owned),
+        }
     }
 
     #[test]
@@ -1172,6 +1448,155 @@ mod tests {
             .unwrap();
         assert_eq!(retry_count, 0);
         assert!(store.admit(&lifetime, 100, 1).unwrap().attempts.is_empty());
+    }
+
+    #[test]
+    fn import_rolls_back_jobs_and_settings_on_late_conflict() {
+        let (_temp, store) = store();
+        let existing = Uuid::now_v7().to_string();
+        create(&store, &existing, "existing");
+        let before_settings = store.settings().unwrap();
+        let new_id = Uuid::now_v7().to_string();
+        let batch = ImportBatch {
+            settings: SettingsRecord {
+                global_concurrency: 32,
+                ..before_settings.clone()
+            },
+            jobs: vec![
+                ImportJob::Create {
+                    job: CreateJob {
+                        id: new_id.clone(),
+                        name: "created-before-conflict".into(),
+                        description: None,
+                        tags_json: "[]".into(),
+                        enabled: true,
+                        definition_json: "{}".into(),
+                        now_us: 10,
+                        cursor_us: 10,
+                    },
+                    resolution: import_resolution(&new_id, "created-before-conflict", None),
+                },
+                ImportJob::Update {
+                    job: UpdateJob {
+                        id: existing.clone(),
+                        expected_revision: 99,
+                        name: "existing".into(),
+                        description: None,
+                        tags_json: "[]".into(),
+                        enabled: true,
+                        definition_json: "{}".into(),
+                        now_us: 10,
+                        cursor_us: 10,
+                    },
+                    resolution: import_resolution(&existing, "existing", Some(&existing)),
+                },
+            ],
+            now_us: 10,
+        };
+
+        assert!(matches!(
+            store.apply_import(&batch),
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(store.job(&new_id), Err(StoreError::NotFound(_))));
+        assert_eq!(store.job(&existing).unwrap().current_revision, 1);
+        assert_eq!(store.settings().unwrap(), before_settings);
+    }
+
+    #[test]
+    fn import_applies_settings_create_and_update_in_one_commit() {
+        let (_temp, store) = store();
+        let existing = Uuid::now_v7().to_string();
+        create(&store, &existing, "existing");
+        let created = Uuid::now_v7().to_string();
+        let mut settings = store.settings().unwrap();
+        settings.global_concurrency = 24;
+        let summary = store
+            .apply_import(&ImportBatch {
+                settings: settings.clone(),
+                jobs: vec![
+                    ImportJob::Update {
+                        job: UpdateJob {
+                            id: existing.clone(),
+                            expected_revision: 1,
+                            name: "renamed".into(),
+                            description: Some("updated".into()),
+                            tags_json: "[\"tag\"]".into(),
+                            enabled: false,
+                            definition_json: "{\"version\":2}".into(),
+                            now_us: 10,
+                            cursor_us: 5,
+                        },
+                        resolution: ImportResolution {
+                            source_id: existing.clone(),
+                            source_name: "renamed".into(),
+                            expected_id_destination: Some(existing.clone()),
+                            expected_name_destination: None,
+                        },
+                    },
+                    ImportJob::Create {
+                        job: CreateJob {
+                            id: created.clone(),
+                            name: "created".into(),
+                            description: None,
+                            tags_json: "[]".into(),
+                            enabled: true,
+                            definition_json: "{}".into(),
+                            now_us: 10,
+                            cursor_us: 10,
+                        },
+                        resolution: import_resolution(&created, "created", None),
+                    },
+                ],
+                now_us: 10,
+            })
+            .unwrap();
+
+        assert_eq!(summary.created, 1);
+        assert_eq!(summary.updated, 1);
+        assert_eq!(store.settings().unwrap(), settings);
+        assert_eq!(store.job(&existing).unwrap().current_revision, 2);
+        assert_eq!(store.job(&created).unwrap().current_revision, 1);
+    }
+
+    #[test]
+    fn import_rechecks_source_id_and_name_mapping_inside_transaction() {
+        let (_temp, store) = store();
+        let destination = Uuid::now_v7().to_string();
+        create(&store, &destination, "mapped-name");
+        let source_id = Uuid::now_v7().to_string();
+        create(&store, &source_id, "racing-owner");
+        let before_settings = store.settings().unwrap();
+        let mut changed_settings = before_settings.clone();
+        changed_settings.global_concurrency = 20;
+
+        let result = store.apply_import(&ImportBatch {
+            settings: changed_settings,
+            jobs: vec![ImportJob::Update {
+                job: UpdateJob {
+                    id: destination.clone(),
+                    expected_revision: 1,
+                    name: "mapped-name".into(),
+                    description: Some("must not apply".into()),
+                    tags_json: "[]".into(),
+                    enabled: true,
+                    definition_json: "{}".into(),
+                    now_us: 10,
+                    cursor_us: 1,
+                },
+                resolution: ImportResolution {
+                    source_id,
+                    source_name: "mapped-name".into(),
+                    expected_id_destination: None,
+                    expected_name_destination: Some(destination.clone()),
+                },
+            }],
+            now_us: 10,
+        });
+
+        assert!(matches!(result, Err(StoreError::Conflict(_))));
+        assert_eq!(store.job(&destination).unwrap().description, None);
+        assert_eq!(store.settings().unwrap(), before_settings);
     }
 
     #[test]

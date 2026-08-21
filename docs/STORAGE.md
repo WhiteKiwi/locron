@@ -67,9 +67,15 @@ Complex job definitions and immutable run snapshots are canonical versioned JSON
 
 ## Transaction boundaries
 
-Dedicated store operations atomically perform job revision changes, manual snapshot/enqueue, reconciliation cursor plus run materialization, overlap/replacement decisions, admission plus fairness cursor movement, attempt completion plus retry intent, cancellation intent, stale-lifetime recovery, and bounded retention selection.
+Dedicated store operations atomically perform job revision changes, manual snapshot/enqueue, reconciliation cursor plus run materialization, overlap/replacement decisions, admission plus fairness cursor movement, attempt completion plus retry intent, cancellation intent, stale-lifetime recovery, bounded retention selection, and whole-document settings/job import.
 
 Every operation revalidates the expected revision/state inside the transaction. A conflict returns a typed retry or conflict result; callers do not continue using stale in-memory decisions.
+
+Import plans identify the expected destination job/revision and whether the schedule changed. One
+immediate transaction rechecks all source-ID/live-name mappings before applying any row. Creates may
+reuse a source UUID only when no live or removed job owns it. Updates append at most one immutable
+revision and preserve the previous cursor unless the schedule changed; settings and every job action
+roll back together on any conflict.
 
 ## Output file protocol
 

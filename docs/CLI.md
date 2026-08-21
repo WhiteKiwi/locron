@@ -37,7 +37,7 @@ locron why NAME
 locron why --run RUN_ID
 locron config get [KEY]
 locron config set KEY VALUE [--dry-run]
-locron export [--include-values] [--include-history]
+locron export [--include-values --acknowledge-plaintext] [--include-history]
 locron import PATH [--accept-plaintext-values] [--dry-run]
 locron prune [--dry-run]
 locron doctor
@@ -64,9 +64,79 @@ Exactly one target is required:
 --http METHOD URL                HTTP target
 ```
 
+The complete target and environment option vocabulary is:
+
+```text
+--cwd PATH
+--env NAME=VALUE... [--clear-env on update] [--unset-env NAME... on update]
+--env-file PATH | --no-env-file (update only)
+--path PATH_LIST | --no-path (update only)
+--shell-executable ABSOLUTE_PATH
+--body TEXT | --body-file PATH | --json-body JSON | --clear-body (update only)
+--header NAME=VALUE...
+--header-env NAME=ENV_NAME...
+--unset-header NAME... | --clear-headers (update only)
+--success-status STATUS_OR_RANGE... [--clear-success-statuses on update]
+--follow-redirects | --no-follow-redirects (update only)
+```
+
+`--cwd` and `--shell-executable` apply only to process/shell targets. Environment and PATH options
+apply to every target because HTTP header environment sources use the same effective environment.
+Runtime file and working-directory paths are expanded, made absolute, and lexically normalized at
+registration. Job execution-PATH entries receive the same normalization. A path-bearing process
+executable is normalized against the effective working directory; a bare executable remains bare.
+A readable env file with group/other permission bits produces a path-only warning without reading
+or printing its contents.
+
+`--json-body` validates one JSON value, stores its normalized UTF-8 encoding, and supplies
+`Content-Type: application/json` unless that header is explicitly configured. A partial body update
+preserves an existing explicit content type. Status input accepts one integer or an inclusive range
+such as `200-204`; ranges are normalized to a sorted unique list. Clearing and supplying success
+statuses in one update means clear-then-set. An inline header and `--header-env` for the same
+case-insensitive header name conflict.
+
+Policy options are shared by add and update:
+
+```text
+--overlap skip|replace|allow
+--missed-run skip|latest|all
+--start-deadline DURATION | --no-start-deadline (update only)
+--catch-up-limit 1..1000
+--retries 0..10
+--backoff fixed|exponential
+--retry-delay DURATION
+--retry-cap DURATION
+--retry-timeout | --no-retry-timeout (update only)
+--timeout DURATION | --no-timeout
+--termination-grace DURATION
+--per-job-concurrency N
+```
+
+Per-job concurrency is validated against the current durable global setting. A creation dry-run
+uses the durable setting when state exists and the documented default 16 otherwise.
+
 Five-field cron accepts wildcard, list, range, and step syntax; case-insensitive three-letter month and weekday names; Sunday as `0` or `7`; and `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, and `@hourly`. It rejects seconds, year fields, `@reboot`, and Quartz extensions. Duration input accepts integer `s`, `m`, `h`, and `d` units without calendar-month interpretation.
 
 Target-specific flags are rejected with another target kind. Options with mutually exclusive sources, such as inline body and body file, fail before persistence. `update` uses the same validators and creates an immutable revision; changing a schedule requires a complete new schedule selector.
+
+## Update semantics
+
+Every supplied update field is overlaid on the current normalized definition; omitted fields remain
+byte-for-byte equivalent after normalization. `--rename`, `--description`/`--clear-description`,
+`--tag`/`--clear-tags`, and `--enabled`/`--disabled` update metadata. Repeated `--tag` replaces the
+complete tag list. Repeated env and header flags upsert named entries; explicit unset/clear flags
+remove them.
+
+A new target selector replaces the target and must be complete. Target-specific options without a
+selector patch the existing compatible target and fail for another kind. A schedule change requires
+exactly one complete selector; its new revision cursor begins at update commit time, and a new
+interval without `--anchor` anchors at that same time. A non-schedule update carries the existing
+cursor boundary forward. A request with no effective normalized change is rejected and creates no
+revision.
+
+Update dry-run opens existing state read-only and returns redacted normalized `before`, `after`, and
+a deterministic sorted `changed_fields` list. It creates no revision, ID, cursor, queue sequence, or
+wake notification.
 
 ## Dry run
 
@@ -107,9 +177,36 @@ Progress, verbose context, debug traces, and wait/follow output do not corrupt t
 
 ## Export and import
 
-Exports use `locron.export/v1`. They contain normalized current job definitions and global settings by default, with optional retained history. Output files are separate artifacts and are not embedded unless explicitly exported by a future command.
+Exports use `locron.export/v1` and contain typed global settings plus normalized current live job
+definitions. Human-mode stdout is the bare export document suitable for redirection; JSON mode keeps
+the required single `locron.cli/v1` envelope and places that document in `data`. Output artifacts and
+history are not included in this tranche. `--include-history` is rejected explicitly rather than
+claiming an incomplete backup.
 
-Inline environment/header values are redacted by default. `--include-values` requires an interactive confirmation or an explicit non-interactive acknowledgement. Import rejects an export containing plaintext values unless `--accept-plaintext-values` is present. Import validates the whole document before one atomic application and preserves source IDs only when they do not conflict.
+Default exports use `values_mode: "redacted"`. Sensitive inline environment values, inline HTTP
+header values, and inline/JSON bodies are removed, never replaced with a literal sentinel, and each
+job carries a sorted `omitted_values` path list. Import rejects a redacted document with any omission
+because faithful creation or update is impossible. A redacted document without omissions remains
+importable.
+
+Plaintext export is deliberately non-interactive and requires both `--include-values` and
+`--acknowledge-plaintext`; either flag alone is invalid. Plaintext import requires
+`--accept-plaintext-values`. This two-sided acknowledgement is required for a faithful round trip.
+
+Import accepts a bare `locron.export/v1` document, validates and normalizes the entire document
+before opening a write transaction, and then applies settings and jobs atomically. Duplicate source
+IDs/names or destination ambiguities reject the whole document. Resolution is deterministic:
+
+1. A source ID matching a live destination job updates that job.
+2. Otherwise a source name matching one live destination job updates that job and keeps its local ID.
+3. Otherwise import creates a job, preserving the source ID only when no live or removed destination
+   job owns it; an ID collision allocates a new UUIDv7.
+4. A source ID and source name resolving to two different jobs is a conflict.
+
+An effective update creates exactly one immutable revision; an identical import entry is a no-op.
+Schedule changes begin at the import commit boundary, while unchanged schedules carry their cursor
+boundary forward. Import dry-run is read-only, allocates no durable IDs, and reports deterministic
+create/update/no-op actions; prospective collision allocations are shown as non-durable placeholders.
 
 ## Exit categories
 

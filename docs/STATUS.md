@@ -11,9 +11,9 @@ requirements in `SPEC.md` or turn partially implemented behavior into an accepte
 The repository currently provides one Rust binary assembled from the four approved crates. The
 following slices run end to end on macOS arm64:
 
-- job creation, listing, inspection, rename/description update, enable, disable, soft removal,
-  schedule preview, history, logs, manual submission, cancellation, `why`, typed configuration,
-  diagnostics, and source-level daemon startup;
+- job creation, listing, inspection, complete normalized metadata/schedule/target/environment/policy
+  updates, enable, disable, soft removal, schedule preview, history, logs, manual submission,
+  cancellation, `why`, typed configuration, diagnostics, and source-level daemon startup;
 - non-mutating add/update/run/config/import/prune dry-run paths, including tests proving that
   creation-oriented dry runs do not initialize state;
 - durable offline manual enqueue followed by prompt wake-socket admission when the daemon starts;
@@ -40,7 +40,11 @@ following slices run end to end on macOS arm64:
 - checksummed framed binary output preserving channel order, bounded capture with discard accounting,
   atomic partial-to-final rename, partial-tail repair, metadata finalization, and bounded pruning;
 - versioned `locron.cli/v1` non-streaming JSON envelopes and redaction of persisted inline
-  environment/header values from normal inspection and export.
+  environment/header/body values from normal inspection and export;
+- typed `locron.export/v1` redacted and explicitly acknowledged plaintext export, explicit history
+  rejection, whole-document validation, deterministic ID/name import mapping, non-durable dry-run
+  collision plans, fresh-state round trip, no-op preservation, and transactional settings/job
+  application with mapping rechecks and rollback.
 
 ## Verification evidence
 
@@ -48,8 +52,8 @@ Local verification completed on 2026-08-21:
 
 | Toolchain | Format | Clippy | Tests |
 |---|---:|---:|---:|
-| Rust 1.94.0 (MSRV) | pass | pass with `-D warnings` | 57 tests pass |
-| Rust 1.98.0 (latest stable) | pass | pass with `-D warnings` | 57 tests pass |
+| Rust 1.94.0 (MSRV) | pass | pass with `-D warnings` | 78 tests pass |
+| Rust 1.98.0 (latest stable) | pass | pass with `-D warnings` | 78 tests pass |
 
 The suite includes deterministic core tests, temporary real SQLite tests, real subprocess tests,
 local TCP HTTP fixtures, CLI contract tests, wake-socket daemon execution, durable cancellation,
@@ -64,24 +68,20 @@ and process-lifetime matrix still listed below.
 
 These are required before milestone 1 can be called complete:
 
-1. Finish the complete job-update syntax and atomic, ID-aware import application; support the
-   reviewed explicit plaintext-value acknowledgement flow instead of only safe redacted export and
-   import validation.
-2. Replace the bounded calendar catch-up scan fallback with a mathematically bounded newest-window
+1. Replace the bounded calendar catch-up scan fallback with a mathematically bounded newest-window
    algorithm and persist omitted/skipped range summary events. Prove disabled/re-enabled and
    system-local timezone-change behavior with an injected engine clock.
-3. Complete replacement failure classification and exercise every overlap/concurrency interaction,
+2. Complete replacement failure classification and exercise every overlap/concurrency interaction,
    retry restart, fixed backoff, deadline, and one-time crash boundary in deterministic engine tests.
-4. Wire startup output repair/orphan cleanup and automatic daemon maintenance; complete metadata
+3. Wire startup output repair/orphan cleanup and automatic daemon maintenance; complete metadata
    age/count retention in addition to the implemented output byte/age prune path.
-5. Expose the full reviewed HTTP/body/header/success-range and execution-environment CLI options,
-   persist resolved executable/audit hashes, warn on broad env-file permissions, and add TLS,
-   process-grandchild, disappearing HTTP body-file, streaming-timeout, and noisy-output fixtures.
-6. Implement live partial-file follow and the reviewed `locron.stream/v1` terminal stream contract.
+4. Persist resolved executable/audit hashes and add TLS, process-grandchild, disappearing HTTP
+   body-file, streaming-timeout, and noisy-output fixtures.
+5. Implement live partial-file follow and the reviewed `locron.stream/v1` terminal stream contract.
    Refine human rendering beyond the current readable JSON representation.
-7. Add migration-upgrade, concurrent-writer/busy, rollback/disk-failure, crash injection, retention
+6. Add migration-upgrade, concurrent-writer/busy, disk-failure, crash injection, retention
    stress, concurrency 16/64, and catch-up 1,000 tests.
-8. Run the official Linux/macOS architecture matrix and produce the 16-criterion completion matrix.
+7. Run the official Linux/macOS architecture matrix and produce the 16-criterion completion matrix.
 
 No HTTP management/viewer, MCP, desktop, package-manager publication, or service-installer code has
 entered this milestone.

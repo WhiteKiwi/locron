@@ -95,6 +95,25 @@ Use the command and diagnostic contract in `docs/CLI.md`, including non-mutating
 
 Use the state discovery, logical schema, output framing, migration, and ownership contract in `docs/STORAGE.md`. Milestone 1 has no separate configuration file; global configuration is typed durable state. Treat machine field names, policy vocabulary, export schema, frame version, SQLite migration order, and stable IDs as compatibility surfaces. Human prose and private table layout are not public APIs.
 
+Normalize add and update through one job-definition overlay/validation path. Add supplies required
+schedule and target values plus defaults; update begins with the current typed definition and applies
+only explicit tri-state changes. Compare normalized values before persistence, reject no-op updates,
+and pass the current durable global concurrency into policy validation. Persist one revision and one
+new cursor row in the same transaction; carry the prior cursor for a non-schedule edit and use commit
+time for a changed schedule.
+
+Represent HTTP headers as typed inline or effective-environment sources in the normalized domain.
+Expand success ranges before persistence, normalize JSON bodies to bytes, and resolve header env
+sources only at execution. Central redaction removes inline env/header/body payloads from normal
+rendering and records explicit omission paths in safe exports.
+
+Use typed `locron.export/v1` documents rather than reusing inspection JSON or serialized database
+rows. The CLI validates schema, settings, IDs, names, definitions, omissions, plaintext acceptance,
+and duplicate input before mutation. It computes deterministic destination actions, then one
+immediate store transaction revalidates destination identity/name facts and applies settings plus all
+job creates/updates. A failure rolls back the entire import. History/output import remains deferred
+and an explicit requested history export fails rather than returning partial data.
+
 ## Scheduler and runner implementation
 
 ### Schedule reconciliation
