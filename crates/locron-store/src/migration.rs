@@ -3,12 +3,14 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use crate::{StoreError, StoreResult};
 
 pub const APPLICATION_ID: i32 = 0x4c4f_4352; // "LOCR"
-pub const LATEST_SCHEMA_VERSION: i64 = 2;
+pub const LATEST_SCHEMA_VERSION: i64 = 3;
 const INITIAL_MIGRATION_NAME: &str = "initial durable state";
 const DISABLED_CURSOR_MIGRATION_NAME: &str = "record disabled cursor intervals";
+const RETENTION_RECOVERY_MIGRATION_NAME: &str = "bound retention and recovery";
 
 const INITIAL_SCHEMA: &str = include_str!("../migrations/0001_initial.sql");
 const DISABLED_CURSOR_SCHEMA: &str = include_str!("../migrations/0002_disabled_cursor.sql");
+const RETENTION_RECOVERY_SCHEMA: &str = include_str!("../migrations/0003_retention_recovery.sql");
 
 pub(crate) fn migrate(
     connection: &mut Connection,
@@ -61,6 +63,22 @@ pub(crate) fn migrate(
         tx.commit()?;
     }
     verify_migration(connection, 2, DISABLED_CURSOR_SCHEMA)?;
+    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version < 3 {
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let checked_version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if checked_version != 2 {
+            return Err(StoreError::MigrationConflict);
+        }
+        tx.execute_batch(RETENTION_RECOVERY_SCHEMA)?;
+        tx.pragma_update(None, "user_version", 3)?;
+        tx.execute(
+            "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (3, ?1, ?2, ?3, ?4)",
+            params![RETENTION_RECOVERY_MIGRATION_NAME, checksum(RETENTION_RECOVERY_SCHEMA), binary_version, now_us],
+        )?;
+        tx.commit()?;
+    }
+    verify_migration(connection, 3, RETENTION_RECOVERY_SCHEMA)?;
     Ok(())
 }
 
@@ -134,10 +152,56 @@ mod tests {
             )
             .unwrap();
         assert_eq!(disabled_since, None);
+        let retention_age_us: Option<i64> = connection
+            .query_row(
+                "SELECT run_retention_age_us FROM settings WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(retention_age_us, Some(7_776_000_000_000));
         assert_eq!(
             connection
                 .query_row(
                     "SELECT count(*) FROM schema_migrations WHERE version=2 AND binary_version='new'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM schema_migrations WHERE version=3 AND binary_version='new'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn clean_database_receives_v3_retention_default() {
+        let mut connection = Connection::open_in_memory().unwrap();
+
+        migrate(&mut connection, "new", 2).unwrap();
+
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT run_retention_age_us FROM settings WHERE singleton=1",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            7_776_000_000_000
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='run_retention_pending'",
                     [],
                     |row| row.get::<_, i64>(0),
                 )

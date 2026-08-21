@@ -12,6 +12,7 @@ use crate::migration::migrate;
 use crate::{DaemonLock, LockMetadata, StatePaths};
 
 type AdmissionRow = (String, String, String, i64, String, Option<i64>);
+const MAINTENANCE_BATCH_LIMIT: usize = 100;
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
@@ -218,6 +219,21 @@ pub struct RetentionCandidate {
     pub relative_path: String,
     pub physical_bytes: i64,
     pub finalized_at_us: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OutputRecoveryCandidate {
+    pub run_id: String,
+    pub attempt_number: i64,
+    pub relative_path: String,
+    pub state: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunRetentionCandidate {
+    pub run_id: String,
+    pub job_id: String,
+    pub finished_at_us: i64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1337,15 +1353,95 @@ impl Store {
     }
 
     pub fn finalize_output(&self, output: &OutputRecord, now_us: i64) -> StoreResult<()> {
+        self.reconcile_output_finalized(output, now_us)
+    }
+
+    pub fn referenced_partial_artifacts(
+        &self,
+        limit: usize,
+    ) -> StoreResult<Vec<OutputRecoveryCandidate>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT run_id,attempt_number,relative_path,state FROM output_artifacts WHERE state IN ('pending','active') ORDER BY run_id,attempt_number LIMIT ?1",
+        )?;
+        statement
+            .query_map([maintenance_limit(limit)], |row| {
+                Ok(OutputRecoveryCandidate {
+                    run_id: row.get(0)?,
+                    attempt_number: row.get(1)?,
+                    relative_path: row.get(2)?,
+                    state: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn pending_output_prunes(&self, limit: usize) -> StoreResult<Vec<RetentionCandidate>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT run_id,attempt_number,relative_path,physical_bytes,COALESCE(finalized_at_us,prune_started_at_us,0) FROM output_artifacts WHERE state='prune_pending' ORDER BY prune_started_at_us,run_id,attempt_number LIMIT ?1",
+        )?;
+        statement
+            .query_map([maintenance_limit(limit)], map_retention_candidate)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn reconcile_output_finalized(
+        &self,
+        output: &OutputRecord,
+        now_us: i64,
+    ) -> StoreResult<()> {
         let relative_path = format!("{}/{}.log", output.run_id, output.attempt_number);
-        let changed = self.conn()?.execute(
-            "UPDATE output_artifacts SET relative_path=?3,state='finalized',retained_payload_bytes=?4,physical_bytes=?5,discarded_bytes=?6,truncated=?7,truncated_at_us=CASE WHEN ?7 THEN ?8 ELSE NULL END,finalized_at_us=?8 WHERE run_id=?1 AND attempt_number=?2",
+        let conn = self.conn()?;
+        let changed = conn.execute(
+            "UPDATE output_artifacts SET relative_path=?3,state='finalized',retained_payload_bytes=?4,physical_bytes=?5,discarded_bytes=?6,truncated=?7,truncated_at_us=CASE WHEN ?7 THEN ?8 ELSE NULL END,finalized_at_us=?8 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('pending','active')",
             params![output.run_id,output.attempt_number,relative_path,output.retained_payload_bytes,output.physical_bytes,output.discarded_bytes,output.truncated,now_us],
         )?;
-        if changed != 1 {
-            return Err(StoreError::Conflict("output artifact is missing".into()));
+        if changed == 1 {
+            return Ok(());
         }
-        Ok(())
+        let already_reconciled: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2 AND state='finalized' AND relative_path=?3 AND retained_payload_bytes=?4 AND physical_bytes=?5 AND discarded_bytes=?6 AND truncated=?7 AND finalized_at_us=?8)",
+            params![output.run_id,output.attempt_number,relative_path,output.retained_payload_bytes,output.physical_bytes,output.discarded_bytes,output.truncated,now_us],
+            |row| row.get(0),
+        )?;
+        if already_reconciled {
+            Ok(())
+        } else {
+            Err(StoreError::Conflict(
+                "output artifact is not recoverable for finalization".into(),
+            ))
+        }
+    }
+
+    pub fn reconcile_output_missing(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+    ) -> StoreResult<()> {
+        let conn = self.conn()?;
+        let changed = conn.execute(
+            "UPDATE output_artifacts SET state='missing',retained_payload_bytes=0,physical_bytes=0,discarded_bytes=0,truncated=0,truncated_at_us=NULL,finalized_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('pending','active')",
+            params![run_id, attempt_number, now_us],
+        )?;
+        if changed == 1 {
+            return Ok(());
+        }
+        let already_missing: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2 AND state='missing')",
+            params![run_id, attempt_number],
+            |row| row.get(0),
+        )?;
+        if already_missing {
+            Ok(())
+        } else {
+            Err(StoreError::Conflict(
+                "output artifact is not recoverable as missing".into(),
+            ))
+        }
     }
 
     pub fn integrity_check(&self) -> StoreResult<Vec<String>> {
@@ -1389,7 +1485,10 @@ impl Store {
                 "execution_path",
                 rusqlite::types::Value::Text(value.to_owned()),
             ),
-            "run_retention_count" | "output_limit_bytes" | "per_run_output_limit_bytes" => {
+            "run_retention_count"
+            | "run_retention_age_us"
+            | "output_limit_bytes"
+            | "per_run_output_limit_bytes" => {
                 let parsed: i64 = value.parse().map_err(|_| {
                     StoreError::Conflict(format!("{key} must be a non-negative integer"))
                 })?;
@@ -1416,15 +1515,7 @@ impl Store {
             "SELECT o.run_id,o.attempt_number,o.relative_path,o.physical_bytes,o.finalized_at_us FROM output_artifacts o JOIN runs r ON r.id=o.run_id WHERE o.state='finalized' AND r.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown') ORDER BY o.finalized_at_us,o.run_id,o.attempt_number LIMIT ?1",
         )?;
         statement
-            .query_map([limit.min(1000) as i64], |row| {
-                Ok(RetentionCandidate {
-                    run_id: row.get(0)?,
-                    attempt_number: row.get(1)?,
-                    relative_path: row.get(2)?,
-                    physical_bytes: row.get(3)?,
-                    finalized_at_us: row.get(4)?,
-                })
-            })?
+            .query_map([maintenance_limit(limit)], map_retention_candidate)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(Into::into)
     }
@@ -1443,6 +1534,164 @@ impl Store {
             [run_id],
             |row| row.get(0),
         ).map_err(Into::into)
+    }
+
+    pub fn run_retention_candidates(
+        &self,
+        now_us: i64,
+        limit: usize,
+    ) -> StoreResult<Vec<RunRetentionCandidate>> {
+        let conn = self.conn()?;
+        let (retention_count, retention_age_us): (i64, Option<i64>) = conn.query_row(
+            "SELECT run_retention_count,run_retention_age_us FROM settings WHERE singleton=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let age_cutoff = retention_age_us.map(|age| now_us.saturating_sub(age));
+        let mut statement = conn.prepare(
+            "WITH terminal AS (
+                 SELECT id,job_id,finished_at_us,
+                        row_number() OVER (PARTITION BY job_id ORDER BY finished_at_us DESC,id DESC) AS per_job_rank,
+                        row_number() OVER (ORDER BY finished_at_us DESC,id DESC) AS global_rank
+                 FROM runs
+                 WHERE state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                   AND finished_at_us IS NOT NULL
+             )
+             SELECT id,job_id,finished_at_us
+             FROM terminal
+             WHERE NOT EXISTS (SELECT 1 FROM run_retention_pending p WHERE p.run_id=terminal.id)
+               AND ((?1 IS NOT NULL AND finished_at_us < ?1) OR per_job_rank > 1000 OR global_rank > ?2)
+             ORDER BY finished_at_us,id
+             LIMIT ?3",
+        )?;
+        statement
+            .query_map(
+                params![age_cutoff, retention_count, maintenance_limit(limit)],
+                map_run_retention_candidate,
+            )?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn mark_run_retention_pending(
+        &self,
+        candidate: &RunRetentionCandidate,
+        now_us: i64,
+    ) -> StoreResult<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (retention_count, retention_age_us): (i64, Option<i64>) = tx.query_row(
+            "SELECT run_retention_count,run_retention_age_us FROM settings WHERE singleton=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let age_cutoff = retention_age_us.map(|age| now_us.saturating_sub(age));
+        let eligible: bool = tx.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM runs candidate
+                 WHERE candidate.id=?1 AND candidate.job_id=?2 AND candidate.finished_at_us=?3
+                   AND candidate.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                   AND (
+                       (?4 IS NOT NULL AND candidate.finished_at_us < ?4)
+                       OR (SELECT count(*) FROM runs newer
+                           WHERE newer.job_id=candidate.job_id
+                             AND newer.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                             AND newer.finished_at_us IS NOT NULL
+                             AND (newer.finished_at_us > candidate.finished_at_us OR (newer.finished_at_us=candidate.finished_at_us AND newer.id > candidate.id))) >= 1000
+                       OR (SELECT count(*) FROM runs newer
+                           WHERE newer.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                             AND newer.finished_at_us IS NOT NULL
+                             AND (newer.finished_at_us > candidate.finished_at_us OR (newer.finished_at_us=candidate.finished_at_us AND newer.id > candidate.id))) >= ?5
+                   )
+             )",
+            params![candidate.run_id,candidate.job_id,candidate.finished_at_us,age_cutoff,retention_count],
+            |row| row.get(0),
+        )?;
+        if !eligible {
+            return Err(StoreError::Conflict(
+                "run is no longer eligible for metadata retention".into(),
+            ));
+        }
+        tx.execute(
+            "INSERT INTO run_retention_pending(run_id,selected_at_us) VALUES(?1,?2) ON CONFLICT(run_id) DO NOTHING",
+            params![candidate.run_id, now_us],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn pending_run_retention(&self, limit: usize) -> StoreResult<Vec<RunRetentionCandidate>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT r.id,r.job_id,r.finished_at_us FROM run_retention_pending p JOIN runs r ON r.id=p.run_id ORDER BY p.selected_at_us,r.finished_at_us,r.id LIMIT ?1",
+        )?;
+        statement
+            .query_map([maintenance_limit(limit)], map_run_retention_candidate)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn finish_run_retention(&self, candidate: &RunRetentionCandidate) -> StoreResult<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let pending: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM run_retention_pending WHERE run_id=?1)",
+            [&candidate.run_id],
+            |row| row.get(0),
+        )?;
+        if !pending {
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM runs WHERE id=?1)",
+                [&candidate.run_id],
+                |row| row.get(0),
+            )?;
+            return if exists {
+                Err(StoreError::Conflict(
+                    "run metadata is not pending retention deletion".into(),
+                ))
+            } else {
+                Ok(())
+            };
+        }
+        let safe: bool = tx.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM runs
+                 WHERE id=?1 AND job_id=?2 AND finished_at_us=?3
+                   AND state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                   AND NOT EXISTS (
+                       SELECT 1 FROM output_artifacts
+                       WHERE run_id=?1 AND state NOT IN ('pruned','missing')
+                   )
+             )",
+            params![candidate.run_id, candidate.job_id, candidate.finished_at_us],
+            |row| row.get(0),
+        )?;
+        if !safe {
+            return Err(StoreError::Conflict(
+                "run output must be pruned or missing before metadata deletion".into(),
+            ));
+        }
+        tx.execute(
+            "DELETE FROM retry_intents WHERE run_id=?1",
+            [&candidate.run_id],
+        )?;
+        tx.execute(
+            "DELETE FROM output_artifacts WHERE run_id=?1",
+            [&candidate.run_id],
+        )?;
+        tx.execute("DELETE FROM attempts WHERE run_id=?1", [&candidate.run_id])?;
+        tx.execute(
+            "DELETE FROM run_retention_pending WHERE run_id=?1",
+            [&candidate.run_id],
+        )?;
+        let changed = tx.execute("DELETE FROM runs WHERE id=?1", [&candidate.run_id])?;
+        if changed != 1 {
+            return Err(StoreError::Conflict(
+                "run metadata disappeared during retention deletion".into(),
+            ));
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn mark_output_prune_pending(
@@ -1464,9 +1713,46 @@ impl Store {
         candidate: &RetentionCandidate,
         now_us: i64,
     ) -> StoreResult<()> {
-        self.conn()?.execute("UPDATE output_artifacts SET state='pruned',physical_bytes=0,pruned_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='prune_pending'",params![candidate.run_id,candidate.attempt_number,now_us])?;
-        Ok(())
+        let conn = self.conn()?;
+        let changed=conn.execute("UPDATE output_artifacts SET state='pruned',retained_payload_bytes=0,physical_bytes=0,pruned_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='prune_pending'",params![candidate.run_id,candidate.attempt_number,now_us])?;
+        if changed == 1 {
+            return Ok(());
+        }
+        let already_pruned: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2 AND state='pruned' AND physical_bytes=0)",
+            params![candidate.run_id, candidate.attempt_number],
+            |row| row.get(0),
+        )?;
+        if already_pruned {
+            Ok(())
+        } else {
+            Err(StoreError::Conflict(
+                "output is not pending durable prune completion".into(),
+            ))
+        }
     }
+}
+
+fn maintenance_limit(limit: usize) -> i64 {
+    limit.min(MAINTENANCE_BATCH_LIMIT) as i64
+}
+
+fn map_retention_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RetentionCandidate> {
+    Ok(RetentionCandidate {
+        run_id: row.get(0)?,
+        attempt_number: row.get(1)?,
+        relative_path: row.get(2)?,
+        physical_bytes: row.get(3)?,
+        finalized_at_us: row.get(4)?,
+    })
+}
+
+fn map_run_retention_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRetentionCandidate> {
+    Ok(RunRetentionCandidate {
+        run_id: row.get(0)?,
+        job_id: row.get(1)?,
+        finished_at_us: row.get(2)?,
+    })
 }
 
 struct SnapshotAdmissionPolicy {
@@ -1816,6 +2102,34 @@ mod tests {
                 cursor_us: 1,
             })
             .unwrap();
+    }
+
+    fn insert_terminal_runs(
+        store: &Store,
+        job_id: &str,
+        first_identity: u128,
+        first_sequence: i64,
+        finished_at_us: &[i64],
+    ) -> Vec<String> {
+        let mut conn = store.conn().unwrap();
+        let tx = conn.transaction().unwrap();
+        let mut identities = Vec::with_capacity(finished_at_us.len());
+        for (offset, finished_at_us) in finished_at_us.iter().copied().enumerate() {
+            let run_id = Uuid::from_u128(first_identity + offset as u128).to_string();
+            tx.execute(
+                "INSERT INTO runs(id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,queue_sequence,snapshot_json,state,reason,finished_at_us) VALUES(?1,?2,1,'manual',NULL,?3,?3,?4,'{}','succeeded','test',?3)",
+                params![run_id, job_id, finished_at_us, first_sequence + offset as i64],
+            )
+            .unwrap();
+            identities.push(run_id);
+        }
+        tx.execute(
+            "UPDATE admission_state SET next_queue_sequence=(SELECT COALESCE(max(queue_sequence),0)+1 FROM runs) WHERE singleton=1",
+            [],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        identities
     }
 
     fn import_resolution(
@@ -3266,5 +3580,469 @@ mod tests {
         }
         store.set_setting("global_concurrency", "3", 9).unwrap();
         assert_eq!(store.admit(&lifetime, 9, 63).unwrap().attempts.len(), 1);
+    }
+
+    #[test]
+    fn admission_stresses_default_and_maximum_global_concurrency() {
+        for (configured_limit, expected_limit) in [(None, 16), (Some("64"), 64)] {
+            let (_temp, store) = store();
+            if let Some(limit) = configured_limit {
+                store.set_setting("global_concurrency", limit, 2).unwrap();
+            }
+            assert_eq!(store.settings().unwrap().global_concurrency, expected_limit);
+
+            for index in 0..=expected_limit {
+                let job_id = Uuid::from_u128(1_000 + index as u128).to_string();
+                let run_id = Uuid::from_u128(2_000 + index as u128).to_string();
+                let name = format!("stress-{index}");
+                create(&store, &job_id, &name);
+                store.enqueue_manual(&name, &run_id, 3).unwrap();
+            }
+
+            let lifetime = Uuid::from_u128(3_000 + expected_limit as u128).to_string();
+            store.begin_lifetime(&lifetime, 4, "test").unwrap();
+            let admitted = store.admit(&lifetime, 4, 64).unwrap();
+            assert_eq!(admitted.attempts.len(), expected_limit as usize);
+            assert!(store.admit(&lifetime, 4, 64).unwrap().attempts.is_empty());
+
+            let active: i64 = store
+                .conn()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM attempts WHERE state IN ('starting','running')",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(active, expected_limit);
+        }
+    }
+
+    #[test]
+    fn output_retention_candidates_exclude_active_runs_and_preserve_eviction_order() {
+        let (_temp, store) = store();
+        let active_job = Uuid::from_u128(4_001).to_string();
+        let terminal_job = Uuid::from_u128(4_002).to_string();
+        let active_run = Uuid::from_u128(4_003).to_string();
+        let terminal_run = Uuid::from_u128(4_004).to_string();
+        create(&store, &active_job, "active");
+        create(&store, &terminal_job, "terminal");
+        store.enqueue_manual("active", &active_run, 2).unwrap();
+        store.enqueue_manual("terminal", &terminal_run, 3).unwrap();
+        let lifetime = Uuid::from_u128(4_005).to_string();
+        store.begin_lifetime(&lifetime, 4, "test").unwrap();
+        let admitted = store.admit(&lifetime, 4, 2).unwrap();
+        assert_eq!(admitted.attempts.len(), 2);
+
+        store
+            .finalize_output(
+                &OutputRecord {
+                    run_id: active_run.clone(),
+                    attempt_number: 1,
+                    relative_path: String::new(),
+                    state: "finalized".into(),
+                    retained_payload_bytes: 10,
+                    physical_bytes: 12,
+                    discarded_bytes: 0,
+                    truncated: false,
+                },
+                10,
+            )
+            .unwrap();
+        store
+            .finalize_output(
+                &OutputRecord {
+                    run_id: terminal_run.clone(),
+                    attempt_number: 1,
+                    relative_path: String::new(),
+                    state: "finalized".into(),
+                    retained_payload_bytes: 20,
+                    physical_bytes: 24,
+                    discarded_bytes: 0,
+                    truncated: false,
+                },
+                20,
+            )
+            .unwrap();
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: terminal_run.clone(),
+                attempt_number: 1,
+                now_us: 21,
+                duration_us: 17,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+
+        let candidates = store.output_retention_candidates(10).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].run_id, terminal_run);
+
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: active_run.clone(),
+                attempt_number: 1,
+                now_us: 30,
+                duration_us: 26,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+        let candidates = store.output_retention_candidates(10).unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.run_id.as_str())
+                .collect::<Vec<_>>(),
+            [active_run.as_str(), terminal_run.as_str()]
+        );
+    }
+
+    #[test]
+    fn run_retention_unions_age_per_job_and_global_bounds_oldest_first() {
+        const DAY_US: i64 = 86_400_000_000;
+        let (_temp, store) = store();
+        let first_job = Uuid::from_u128(6_001).to_string();
+        let second_job = Uuid::from_u128(6_002).to_string();
+        create(&store, &first_job, "first-retention");
+        create(&store, &second_job, "second-retention");
+
+        store
+            .set_setting("run_retention_count", "10000", 2)
+            .unwrap();
+        store
+            .set_setting("run_retention_age_us", &i64::MAX.to_string(), 2)
+            .unwrap();
+        let per_job_runs = insert_terminal_runs(
+            &store,
+            &first_job,
+            10_000,
+            1,
+            &(1..=1_002).collect::<Vec<_>>(),
+        );
+        let per_job = store.run_retention_candidates(2_000, usize::MAX).unwrap();
+        assert_eq!(per_job.len(), 2);
+        assert_eq!(per_job[0].run_id, per_job_runs[0]);
+        assert_eq!(per_job[1].run_id, per_job_runs[1]);
+
+        store.set_setting("run_retention_count", "2", 3).unwrap();
+        let second_job_runs =
+            insert_terminal_runs(&store, &second_job, 20_000, 2_000, &[2_000, 3_000]);
+        let bounded = store.run_retention_candidates(4_000, usize::MAX).unwrap();
+        assert_eq!(bounded.len(), MAINTENANCE_BATCH_LIMIT);
+        assert_eq!(bounded[0].run_id, per_job_runs[0]);
+        assert!(!bounded.iter().any(|item| item.run_id == second_job_runs[1]));
+
+        store
+            .set_setting("run_retention_count", "10000", 4)
+            .unwrap();
+        store
+            .set_setting("run_retention_age_us", &(90 * DAY_US).to_string(), 4)
+            .unwrap();
+        let age_candidates = store
+            .run_retention_candidates(100 * DAY_US, usize::MAX)
+            .unwrap();
+        assert_eq!(age_candidates.len(), MAINTENANCE_BATCH_LIMIT);
+        assert_eq!(age_candidates[0].run_id, per_job_runs[0]);
+        assert!(
+            age_candidates
+                .windows(2)
+                .all(|pair| pair[0].finished_at_us <= pair[1].finished_at_us)
+        );
+    }
+
+    #[test]
+    fn run_retention_global_count_deduplicates_candidates_and_protects_active_runs() {
+        let (_temp, store) = store();
+        let first_job = Uuid::from_u128(7_001).to_string();
+        let second_job = Uuid::from_u128(7_002).to_string();
+        create(&store, &first_job, "global-first");
+        create(&store, &second_job, "global-second");
+        store.set_setting("run_retention_count", "2", 2).unwrap();
+        store
+            .set_setting("run_retention_age_us", &i64::MAX.to_string(), 2)
+            .unwrap();
+        let first = insert_terminal_runs(&store, &first_job, 30_000, 1, &[1, 3]);
+        let second = insert_terminal_runs(&store, &second_job, 40_000, 3, &[2, 4]);
+        let active_run = Uuid::from_u128(7_003).to_string();
+        store
+            .enqueue_manual("global-first", &active_run, 5)
+            .unwrap();
+
+        let candidates = store.run_retention_candidates(6, 100).unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.run_id.as_str())
+                .collect::<Vec<_>>(),
+            [first[0].as_str(), second[0].as_str()]
+        );
+        assert!(!candidates.iter().any(|item| item.run_id == active_run));
+        assert!(matches!(
+            store.mark_run_retention_pending(
+                &RunRetentionCandidate {
+                    run_id: active_run,
+                    job_id: first_job,
+                    finished_at_us: 0,
+                },
+                6,
+            ),
+            Err(StoreError::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn referenced_partial_finalization_and_missing_reconcile_after_reopen() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Store::open(paths.clone(), "test", 1).unwrap();
+        let job = Uuid::from_u128(8_001).to_string();
+        create_with_policy(&store, &job, "recover-output", "allow", 2);
+        let finalized_run = Uuid::from_u128(8_002).to_string();
+        let missing_run = Uuid::from_u128(8_003).to_string();
+        store
+            .enqueue_manual("recover-output", &finalized_run, 2)
+            .unwrap();
+        store
+            .enqueue_manual("recover-output", &missing_run, 3)
+            .unwrap();
+        let lifetime = Uuid::from_u128(8_004).to_string();
+        store.begin_lifetime(&lifetime, 4, "test").unwrap();
+        assert_eq!(store.admit(&lifetime, 4, 2).unwrap().attempts.len(), 2);
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE output_artifacts SET state='active' WHERE run_id=?1",
+                [&missing_run],
+            )
+            .unwrap();
+        drop(store);
+
+        let reopened = Store::open(paths, "test", 5).unwrap();
+        let partials = reopened.referenced_partial_artifacts(usize::MAX).unwrap();
+        assert_eq!(partials.len(), 2);
+        assert!(partials.iter().any(|item| item.run_id == finalized_run));
+        assert!(
+            partials
+                .iter()
+                .any(|item| item.run_id == missing_run && item.state == "active")
+        );
+        let output = OutputRecord {
+            run_id: finalized_run.clone(),
+            attempt_number: 1,
+            relative_path: format!("{finalized_run}/1.partial"),
+            state: "active".into(),
+            retained_payload_bytes: 12,
+            physical_bytes: 20,
+            discarded_bytes: 3,
+            truncated: true,
+        };
+        reopened.reconcile_output_finalized(&output, 6).unwrap();
+        reopened.reconcile_output_finalized(&output, 6).unwrap();
+        reopened
+            .reconcile_output_missing(&missing_run, 1, 7)
+            .unwrap();
+        reopened
+            .reconcile_output_missing(&missing_run, 1, 8)
+            .unwrap();
+        assert!(
+            reopened
+                .referenced_partial_artifacts(100)
+                .unwrap()
+                .is_empty()
+        );
+        let states: Vec<String> = reopened
+            .conn()
+            .unwrap()
+            .prepare("SELECT state FROM output_artifacts ORDER BY run_id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(states, ["finalized", "missing"]);
+    }
+
+    #[test]
+    fn metadata_retention_resumes_and_requires_output_prune_before_delete() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Store::open(paths.clone(), "test", 1).unwrap();
+        let job = Uuid::from_u128(9_001).to_string();
+        let run = Uuid::from_u128(9_002).to_string();
+        create(&store, &job, "metadata-prune");
+        store.enqueue_manual("metadata-prune", &run, 2).unwrap();
+        let lifetime = Uuid::from_u128(9_003).to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        store.admit(&lifetime, 3, 1).unwrap();
+        store
+            .finalize_output(
+                &OutputRecord {
+                    run_id: run.clone(),
+                    attempt_number: 1,
+                    relative_path: String::new(),
+                    state: "finalized".into(),
+                    retained_payload_bytes: 8,
+                    physical_bytes: 16,
+                    discarded_bytes: 0,
+                    truncated: false,
+                },
+                4,
+            )
+            .unwrap();
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: run.clone(),
+                attempt_number: 1,
+                now_us: 5,
+                duration_us: 2,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+        store.set_setting("run_retention_count", "0", 6).unwrap();
+        let candidate = store.run_retention_candidates(6, 1).unwrap().remove(0);
+        store.mark_run_retention_pending(&candidate, 6).unwrap();
+        drop(store);
+
+        let reopened = Store::open(paths, "test", 7).unwrap();
+        assert_eq!(
+            reopened.pending_run_retention(100).unwrap(),
+            std::slice::from_ref(&candidate)
+        );
+        assert!(matches!(
+            reopened.finish_run_retention(&candidate),
+            Err(StoreError::Conflict(_))
+        ));
+        let output = reopened.output_retention_candidates(1).unwrap().remove(0);
+        reopened.mark_output_prune_pending(&output, 8).unwrap();
+        assert_eq!(reopened.pending_output_prunes(usize::MAX).unwrap().len(), 1);
+        reopened.finish_output_prune(&output, 9).unwrap();
+        reopened.finish_run_retention(&candidate).unwrap();
+        reopened.finish_run_retention(&candidate).unwrap();
+        assert!(matches!(reopened.run(&run), Err(StoreError::NotFound(_))));
+        assert!(
+            reopened
+                .integrity_check()
+                .unwrap()
+                .iter()
+                .all(|line| { line == "integrity: ok" || line == "foreign_key_violations: 0" })
+        );
+    }
+
+    #[test]
+    fn sqlite_writer_contention_returns_busy_and_recovers_after_release() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let first = Store::open(paths.clone(), "test", 1).unwrap();
+        let second = Store::open(paths, "test", 1).unwrap();
+        second
+            .conn()
+            .unwrap()
+            .busy_timeout(std::time::Duration::ZERO)
+            .unwrap();
+
+        let first_connection = first.conn().unwrap();
+        first_connection.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let error = second
+            .set_setting("global_concurrency", "17", 2)
+            .unwrap_err();
+        let StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, _)) = error else {
+            panic!("expected SQLite busy failure, got {error}");
+        };
+        assert_eq!(code.code, rusqlite::ErrorCode::DatabaseBusy);
+        assert_eq!(second.settings().unwrap().global_concurrency, 16);
+
+        first_connection.execute_batch("ROLLBACK").unwrap();
+        drop(first_connection);
+        assert_eq!(
+            second
+                .set_setting("global_concurrency", "17", 3)
+                .unwrap()
+                .global_concurrency,
+            17
+        );
+    }
+
+    #[test]
+    fn prune_pending_state_survives_reopen_and_known_candidate_can_finish() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Store::open(paths.clone(), "test", 1).unwrap();
+        let job = Uuid::from_u128(5_001).to_string();
+        let run = Uuid::from_u128(5_002).to_string();
+        create(&store, &job, "prune");
+        store.enqueue_manual("prune", &run, 2).unwrap();
+        let lifetime = Uuid::from_u128(5_003).to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        store.admit(&lifetime, 3, 1).unwrap();
+        store
+            .finalize_output(
+                &OutputRecord {
+                    run_id: run.clone(),
+                    attempt_number: 1,
+                    relative_path: String::new(),
+                    state: "finalized".into(),
+                    retained_payload_bytes: 30,
+                    physical_bytes: 32,
+                    discarded_bytes: 0,
+                    truncated: false,
+                },
+                4,
+            )
+            .unwrap();
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: run.clone(),
+                attempt_number: 1,
+                now_us: 5,
+                duration_us: 2,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+        let candidate = store.output_retention_candidates(1).unwrap().remove(0);
+        store.mark_output_prune_pending(&candidate, 6).unwrap();
+        assert!(store.output_retention_candidates(1).unwrap().is_empty());
+        assert_eq!(store.retained_run_output_bytes(&run).unwrap(), 30);
+        drop(store);
+
+        let reopened = Store::open(paths, "test", 7).unwrap();
+        let before_finish: (String, i64, Option<i64>) = reopened
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state,physical_bytes,prune_started_at_us FROM output_artifacts WHERE run_id=?1 AND attempt_number=1",
+                [&run],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(before_finish, ("prune_pending".into(), 32, Some(6)));
+
+        reopened.finish_output_prune(&candidate, 8).unwrap();
+        let after_finish: (String, i64, Option<i64>) = reopened
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state,physical_bytes,pruned_at_us FROM output_artifacts WHERE run_id=?1 AND attempt_number=1",
+                [&run],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(after_finish, ("pruned".into(), 0, Some(8)));
     }
 }
