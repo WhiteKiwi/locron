@@ -2811,6 +2811,139 @@ mod tests {
     }
 
     #[test]
+    fn one_time_occurrence_stays_unique_across_lifecycle_fault_boundaries() {
+        #[derive(Clone, Copy, Debug)]
+        enum FaultBoundary {
+            BeforeAdmission,
+            StartingBeforeSpawn,
+            RunningAfterSpawn,
+            OutcomeBeforeCompletion,
+        }
+
+        for boundary in [
+            FaultBoundary::BeforeAdmission,
+            FaultBoundary::StartingBeforeSpawn,
+            FaultBoundary::RunningAfterSpawn,
+            FaultBoundary::OutcomeBeforeCompletion,
+        ] {
+            let (_temp, store) = store();
+            let job = Uuid::now_v7().to_string();
+            create(&store, &job, "once");
+            let run = Uuid::now_v7().to_string();
+            let scheduled = NewScheduledRun {
+                id: run.clone(),
+                job_id: job.clone(),
+                revision: 1,
+                trigger: "catch_up".into(),
+                nominal_us: 10,
+                requested_at_us: 20,
+                eligible_at_us: 20,
+                snapshot_json: "{}".into(),
+            };
+            assert_eq!(
+                store
+                    .materialize(
+                        &job,
+                        CursorUpdate {
+                            expected_revision: 1,
+                            expected_cursor_us: 1,
+                            new_cursor_us: 20,
+                            resolve_one_time: true,
+                        },
+                        std::slice::from_ref(&scheduled),
+                        20,
+                    )
+                    .unwrap()
+                    .inserted,
+                1,
+                "{boundary:?}"
+            );
+
+            if !matches!(boundary, FaultBoundary::BeforeAdmission) {
+                let old_lifetime = Uuid::now_v7().to_string();
+                store.begin_lifetime(&old_lifetime, 21, "old").unwrap();
+                let attempt = store
+                    .admit(&old_lifetime, 22, 1)
+                    .unwrap()
+                    .attempts
+                    .remove(0);
+                if matches!(
+                    boundary,
+                    FaultBoundary::RunningAfterSpawn | FaultBoundary::OutcomeBeforeCompletion
+                ) {
+                    store
+                        .mark_attempt_running(&run, attempt.attempt_number, 23)
+                        .unwrap();
+                }
+                store
+                    .conn()
+                    .unwrap()
+                    .execute(
+                        "INSERT INTO retry_intents(run_id,prior_attempt_number,not_before_us,classification,created_at_us) VALUES(?1,?2,100,'injected_stale',23)",
+                        params![run, attempt.attempt_number],
+                    )
+                    .unwrap();
+            }
+
+            let new_lifetime = Uuid::now_v7().to_string();
+            let recovered = store.begin_lifetime(&new_lifetime, 24, "new").unwrap();
+            let expected_recovered =
+                usize::from(!matches!(boundary, FaultBoundary::BeforeAdmission));
+            assert_eq!(recovered, expected_recovered, "{boundary:?}");
+
+            let duplicate = store
+                .materialize(
+                    &job,
+                    CursorUpdate {
+                        expected_revision: 1,
+                        expected_cursor_us: 20,
+                        new_cursor_us: 30,
+                        resolve_one_time: true,
+                    },
+                    &[NewScheduledRun {
+                        id: Uuid::now_v7().to_string(),
+                        requested_at_us: 30,
+                        eligible_at_us: 30,
+                        ..scheduled
+                    }],
+                    30,
+                )
+                .unwrap();
+            assert_eq!(duplicate.inserted, 0, "{boundary:?}");
+            assert_eq!(duplicate.duplicates, 1, "{boundary:?}");
+
+            let conn = store.conn().unwrap();
+            let occurrence_count: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM runs WHERE job_id=?1 AND revision=1 AND nominal_us=10 AND trigger<>'manual'",
+                    [&job],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let retry_count: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM retry_intents WHERE run_id=?1",
+                    [&run],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            drop(conn);
+            assert_eq!(occurrence_count, 1, "{boundary:?}");
+            assert_eq!(retry_count, 0, "{boundary:?}");
+            assert!(!store.job("once").unwrap().enabled, "{boundary:?}");
+            assert_eq!(
+                store.run(&run).unwrap().state,
+                if matches!(boundary, FaultBoundary::BeforeAdmission) {
+                    "queued"
+                } else {
+                    "interrupted_unknown"
+                },
+                "{boundary:?}"
+            );
+        }
+    }
+
+    #[test]
     fn retry_wait_survives_lifetime_restart_and_respects_not_before() {
         let (_temp, store) = store();
         let job = Uuid::now_v7().to_string();
