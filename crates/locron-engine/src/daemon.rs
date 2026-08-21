@@ -1,5 +1,6 @@
 //! Long-lived daemon coordination independent of SQLite implementation details.
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -230,11 +231,17 @@ impl<S: DaemonStore> Daemon<S> {
                     Ok(outcome) => {
                         let completed_at_us = store.completion_instant_us();
                         let mut retry_delay = retry_initial;
+                        let mut first_completion = true;
                         loop {
-                            let completion = tokio::select! {
-                                biased;
-                                () = shutdown.cancelled() => break,
-                                completion = store.complete(&attempt, &outcome, completed_at_us) => completion,
+                            let completion = if first_completion {
+                                first_completion = false;
+                                store.complete(&attempt, &outcome, completed_at_us).await
+                            } else {
+                                tokio::select! {
+                                    biased;
+                                    () = shutdown.cancelled() => break,
+                                    completion = store.complete(&attempt, &outcome, completed_at_us) => completion,
+                                }
                             };
                             match completion {
                                 Ok(()) => break,
@@ -263,31 +270,43 @@ impl<S: DaemonStore> Daemon<S> {
 
     /// Runs until the supplied cancellation token or an OS termination signal.
     pub async fn run(self, external_cancel: CancellationToken) -> Result<(), DaemonError> {
+        self.run_until(external_cancel, os_shutdown_signal()).await
+    }
+
+    async fn run_until<F>(
+        self,
+        external_cancel: CancellationToken,
+        shutdown_signal: F,
+    ) -> Result<(), DaemonError>
+    where
+        F: Future<Output = ()> + Send,
+    {
         self.store
             .begin_lifetime()
             .await
             .map_err(DaemonError::Store)?;
         let semaphore = Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY));
+        tokio::pin!(shutdown_signal);
         let mut first = true;
         loop {
             if !first {
                 tokio::select! {
-                    () = tokio::time::sleep(self.config.safety_reconciliation) => {}
-                    () = self.wake.notified() => {}
+                    biased;
                     () = external_cancel.cancelled() => break,
-                    result = tokio::signal::ctrl_c() => {
-                        if let Err(error) = result {
-                            tracing::warn!(%error, "failed to listen for ctrl-c");
-                        }
-                        break;
-                    }
+                    () = &mut shutdown_signal => break,
+                    () = self.wake.notified() => {}
+                    () = tokio::time::sleep(self.config.safety_reconciliation) => {}
                 }
             }
             first = false;
-            if external_cancel.is_cancelled() {
-                break;
-            }
-            if let Err(error) = self.tick(&semaphore).await {
+
+            let tick = tokio::select! {
+                biased;
+                () = external_cancel.cancelled() => break,
+                () = &mut shutdown_signal => break,
+                tick = self.tick(&semaphore) => tick,
+            };
+            if let Err(error) = tick {
                 tracing::error!(%error, "daemon tick failed; admission paused until next reconciliation");
             }
         }
@@ -301,10 +320,48 @@ impl<S: DaemonStore> Daemon<S> {
         {
             tracing::warn!("shutdown drain elapsed with active attempts");
             self.cancellation.cancel();
-            let _ = tokio::time::timeout(Duration::from_secs(10), &mut wait).await;
+            wait.await;
         }
         self.store.end_lifetime().await.map_err(DaemonError::Store)
     }
+}
+
+async fn wait_for_ctrl_c() {
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        tracing::warn!(%error, "failed to listen for ctrl-c");
+        std::future::pending().await
+    }
+}
+
+#[cfg(unix)]
+async fn wait_for_sigterm() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    match signal(SignalKind::terminate()) {
+        Ok(mut signals) => {
+            if signals.recv().await.is_none() {
+                tracing::warn!("SIGTERM signal stream closed");
+                std::future::pending().await
+            }
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to listen for SIGTERM");
+            std::future::pending().await
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn os_shutdown_signal() {
+    tokio::select! {
+        () = wait_for_ctrl_c() => {}
+        () = wait_for_sigterm() => {}
+    }
+}
+
+#[cfg(not(unix))]
+async fn os_shutdown_signal() {
+    wait_for_ctrl_c().await;
 }
 
 fn next_retry_delay(current: Duration, cap: Duration) -> Duration {
@@ -342,6 +399,16 @@ mod tests {
         capacities: Mutex<Vec<usize>>,
     }
 
+    struct ShutdownStore {
+        attempt: Mutex<Option<AdmittedAttempt>>,
+        events: Arc<Mutex<Vec<&'static str>>>,
+        admit_calls: AtomicUsize,
+        mark_calls: AtomicUsize,
+        outcome: Mutex<Option<crate::runner::OutcomeKind>>,
+        admit_notify: tokio::sync::Notify,
+        mark_notify: tokio::sync::Notify,
+    }
+
     impl DynamicCapacityStore {
         fn new(global: usize) -> Self {
             Self {
@@ -352,6 +419,55 @@ mod tests {
 
         fn set_global(&self, value: usize) {
             self.global.store(value, Ordering::Release);
+        }
+    }
+
+    impl ShutdownStore {
+        fn empty() -> Self {
+            Self {
+                attempt: Mutex::new(None),
+                events: Arc::new(Mutex::new(Vec::new())),
+                admit_calls: AtomicUsize::new(0),
+                mark_calls: AtomicUsize::new(0),
+                outcome: Mutex::new(None),
+                admit_notify: tokio::sync::Notify::new(),
+                mark_notify: tokio::sync::Notify::new(),
+            }
+        }
+
+        fn process(temp: &tempfile::TempDir, script: String) -> Self {
+            let store = Self::empty();
+            *store.attempt.lock().unwrap() = Some(AdmittedAttempt {
+                run_id: "shutdown-run".into(),
+                target: TargetSpec::Process(crate::runner::ProcessSpec {
+                    executable: "/bin/sh".into(),
+                    args: vec!["-c".into(), script],
+                    cwd: temp.path().into(),
+                    env: BTreeMap::new(),
+                }),
+                context: AttemptContext {
+                    run_id: "shutdown-run".into(),
+                    attempt: 1,
+                    partial_output: temp.path().join("shutdown.partial"),
+                    final_output: temp.path().join("shutdown.log"),
+                    output_limit: 1024,
+                    timeout: None,
+                    cancellation: CancellationToken::new(),
+                },
+            });
+            store
+        }
+
+        async fn wait_for_admits(&self, count: usize) {
+            while self.admit_calls.load(Ordering::Acquire) < count {
+                self.admit_notify.notified().await;
+            }
+        }
+
+        async fn wait_for_marks(&self, count: usize) {
+            while self.mark_calls.load(Ordering::Acquire) < count {
+                self.mark_notify.notified().await;
+            }
         }
     }
 
@@ -555,6 +671,59 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl DaemonStore for ShutdownStore {
+        async fn begin_lifetime(&self) -> Result<(), String> {
+            self.events.lock().unwrap().push("begin");
+            Ok(())
+        }
+
+        async fn reconcile(&self) -> Result<usize, String> {
+            self.events.lock().unwrap().push("reconcile");
+            Ok(0)
+        }
+
+        async fn admit(&self, _: usize) -> Result<Vec<AdmittedAttempt>, String> {
+            self.events.lock().unwrap().push("admit");
+            self.admit_calls.fetch_add(1, Ordering::AcqRel);
+            self.admit_notify.notify_one();
+            Ok(self.attempt.lock().unwrap().take().into_iter().collect())
+        }
+
+        async fn mark_running(&self, _: &AdmittedAttempt) -> Result<bool, String> {
+            self.events.lock().unwrap().push("running");
+            self.mark_calls.fetch_add(1, Ordering::AcqRel);
+            self.mark_notify.notify_one();
+            Ok(true)
+        }
+
+        fn completion_instant_us(&self) -> i64 {
+            100
+        }
+
+        async fn complete(
+            &self,
+            _: &AdmittedAttempt,
+            outcome: &ExecutionOutcome,
+            _: i64,
+        ) -> Result<(), String> {
+            self.events.lock().unwrap().push("complete");
+            *self.outcome.lock().unwrap() = Some(outcome.kind.clone());
+            Ok(())
+        }
+
+        async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
+            Ok(false)
+        }
+
+        async fn persistence_degraded(&self, _: &str) {}
+
+        async fn end_lifetime(&self) -> Result<(), String> {
+            self.events.lock().unwrap().push("end");
+            Ok(())
+        }
+    }
+
     #[tokio::test]
     async fn zero_capacity_never_calls_admission() {
         let store = Arc::new(FakeStore::default());
@@ -640,6 +809,130 @@ mod tests {
             ),
             Err(DaemonError::InvalidConcurrency)
         ));
+    }
+
+    #[tokio::test]
+    async fn injected_shutdown_signal_stops_admission() {
+        let store = Arc::new(ShutdownStore::empty());
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            DaemonConfig::default(),
+        )
+        .unwrap();
+        let signal = CancellationToken::new();
+        let signal_for_wait = signal.clone();
+        let events = Arc::clone(&store.events);
+        let task = tokio::spawn(daemon.run_until(CancellationToken::new(), async move {
+            signal_for_wait.cancelled().await;
+            events.lock().unwrap().push("signal");
+        }));
+
+        store.wait_for_admits(1).await;
+        signal.cancel();
+        task.await.unwrap().unwrap();
+
+        let events = store.events.lock().unwrap();
+        let signal_position = events.iter().position(|event| *event == "signal").unwrap();
+        assert_eq!(store.admit_calls.load(Ordering::Acquire), 1);
+        assert!(!events[signal_position + 1..].contains(&"admit"));
+        assert_eq!(events.last(), Some(&"end"));
+    }
+
+    #[tokio::test]
+    async fn shutdown_drain_allows_natural_completion_before_lifetime_end() {
+        let temp = tempfile::tempdir().unwrap();
+        let done = temp.path().join("done");
+        let term = temp.path().join("term");
+        let store = Arc::new(ShutdownStore::process(
+            &temp,
+            "trap 'printf term > term' TERM; sleep 0.05; printf done > done".into(),
+        ));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(crate::runner::RunnerConfig {
+                termination_grace: Duration::from_millis(10),
+                ..Default::default()
+            })
+            .unwrap(),
+            DaemonConfig {
+                shutdown_drain: Duration::from_secs(1),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let signal = CancellationToken::new();
+        let signal_for_wait = signal.clone();
+        let task = tokio::spawn(daemon.run_until(CancellationToken::new(), async move {
+            signal_for_wait.cancelled().await;
+        }));
+
+        store.wait_for_marks(1).await;
+        signal.cancel();
+        task.await.unwrap().unwrap();
+
+        assert_eq!(
+            *store.outcome.lock().unwrap(),
+            Some(crate::runner::OutcomeKind::Succeeded)
+        );
+        assert!(done.is_file());
+        assert!(!term.exists());
+        assert_eq!(store.events.lock().unwrap().last(), Some(&"end"));
+    }
+
+    #[tokio::test]
+    async fn elapsed_shutdown_drain_cancels_runner_before_lifetime_end() {
+        let temp = tempfile::tempdir().unwrap();
+        let ready = temp.path().join("ready");
+        let term = temp.path().join("term");
+        let store = Arc::new(ShutdownStore::process(
+            &temp,
+            "trap 'printf term > term; exit 0' TERM; printf ready > ready; while :; do sleep 1; done"
+                .into(),
+        ));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(crate::runner::RunnerConfig {
+                termination_grace: Duration::from_millis(20),
+                ..Default::default()
+            })
+            .unwrap(),
+            DaemonConfig {
+                shutdown_drain: Duration::from_millis(10),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let signal = CancellationToken::new();
+        let signal_for_wait = signal.clone();
+        let task = tokio::spawn(daemon.run_until(CancellationToken::new(), async move {
+            signal_for_wait.cancelled().await;
+        }));
+
+        for _ in 0..100 {
+            if ready.is_file() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(ready.is_file());
+        signal.cancel();
+        task.await.unwrap().unwrap();
+
+        assert_eq!(
+            *store.outcome.lock().unwrap(),
+            Some(crate::runner::OutcomeKind::Cancelled)
+        );
+        assert!(term.is_file());
+        let events = store.events.lock().unwrap();
+        assert_eq!(events.last(), Some(&"end"));
+        assert!(
+            events
+                .iter()
+                .position(|event| *event == "complete")
+                .unwrap()
+                < events.len() - 1
+        );
     }
 
     #[tokio::test]

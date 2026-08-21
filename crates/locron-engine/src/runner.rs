@@ -806,6 +806,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn noisy_process_output_is_drained_and_truncated() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut context = context(&temp);
+        context.output_limit = 4 * 1024;
+        context.timeout = Some(Duration::from_secs(5));
+        let spec = ProcessSpec {
+            executable: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                "i=0; while [ \"$i\" -lt 2048 ]; do printf 0123456789abcdef; printf 0123456789abcdef >&2; i=$((i + 1)); done".into(),
+            ],
+            cwd: temp.path().into(),
+            env: BTreeMap::new(),
+        };
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&TargetSpec::Process(spec), &context)
+            .await
+            .unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+        assert_eq!(outcome.output.retained_bytes, 4 * 1024);
+        assert_eq!(outcome.output.discarded_bytes, 60 * 1024);
+        assert!(outcome.output.truncated);
+        let retained = crate::output::read_frames(temp.path().join("1.log"))
+            .unwrap()
+            .iter()
+            .map(|frame| frame.payload.len())
+            .sum::<usize>();
+        assert_eq!(retained, 4 * 1024);
+    }
+
+    #[tokio::test]
     async fn missing_executable_is_a_finalized_configuration_outcome() {
         let temp = tempfile::tempdir().unwrap();
         let spec = ProcessSpec {
@@ -869,20 +901,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn leader_exit_does_not_confirm_a_live_same_group_descendant() {
+    async fn cancellation_kills_a_live_process_grandchild() {
         let temp = tempfile::tempdir().unwrap();
+        let child_script = temp.path().join("child.sh");
+        let grandchild_script = temp.path().join("grandchild.sh");
+        let ready = temp.path().join("grandchild-ready");
+        std::fs::write(
+            &child_script,
+            format!(
+                "trap 'exit 0' TERM\n/bin/sh {} &\nwait\n",
+                grandchild_script.display()
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            &grandchild_script,
+            "trap '' TERM\nprintf ready > grandchild-ready\nsleep 5\n",
+        )
+        .unwrap();
         let mut context = context(&temp);
         context.timeout = None;
         let cancellation = context.cancellation.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(30)).await;
+            for _ in 0..100 {
+                if tokio::fs::try_exists(&ready).await.unwrap() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
             cancellation.cancel();
         });
         let spec = ProcessSpec {
             executable: "/bin/sh".into(),
             args: vec![
                 "-c".into(),
-                "trap 'exit 0' TERM; sh -c 'trap \"\" TERM; sleep 5' & wait".into(),
+                format!(
+                    "trap 'exit 0' TERM; /bin/sh {} & wait",
+                    child_script.display()
+                ),
             ],
             cwd: temp.path().into(),
             env: BTreeMap::new(),
@@ -899,6 +955,45 @@ mod tests {
         assert_eq!(outcome.kind, OutcomeKind::Cancelled);
         assert!(start.elapsed() >= Duration::from_millis(40));
         assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn materialized_http_body_survives_source_file_disappearing() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let fixture = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_request(&mut stream).await;
+            tokio::io::AsyncWriteExt::write_all(
+                &mut stream,
+                b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+            request
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let body_path = temp.path().join("request.body");
+        std::fs::write(&body_path, b"materialized payload").unwrap();
+        let body = std::fs::read(&body_path).unwrap();
+        std::fs::remove_file(&body_path).unwrap();
+        let target = TargetSpec::Http(HttpSpec {
+            method: "POST".into(),
+            url: format!("http://{address}/body").parse().unwrap(),
+            headers: BTreeMap::new(),
+            body: Some(body),
+            success_statuses: vec![],
+            follow_redirects: false,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context(&temp))
+            .await
+            .unwrap();
+        let request = fixture.await.unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+        assert!(!body_path.exists());
+        assert!(request.ends_with(b"materialized payload"));
     }
 
     #[tokio::test]
@@ -937,6 +1032,134 @@ mod tests {
             crate::output::read_frames(temp.path().join("1.log")).unwrap()[0].payload,
             b"oops"
         );
+    }
+
+    #[tokio::test]
+    async fn timeout_while_streaming_finalizes_captured_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let fixture = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let _ = read_request(&mut stream).await;
+            tokio::io::AsyncWriteExt::write_all(
+                &mut stream,
+                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nhello\r\n",
+            )
+            .await
+            .unwrap();
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let mut context = context(&temp);
+        context.timeout = Some(Duration::from_millis(100));
+        let target = TargetSpec::Http(HttpSpec {
+            method: "GET".into(),
+            url: format!("http://{address}/stream").parse().unwrap(),
+            headers: BTreeMap::new(),
+            body: None,
+            success_statuses: vec![],
+            follow_redirects: false,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context)
+            .await
+            .unwrap();
+        fixture.await.unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::TimedOut);
+        assert_eq!(outcome.http_status, None);
+        assert!(!temp.path().join("1.partial").exists());
+        let body = crate::output::read_frames(temp.path().join("1.log"))
+            .unwrap()
+            .into_iter()
+            .flat_map(|frame| frame.payload)
+            .collect::<Vec<_>>();
+        assert_eq!(body, b"hello");
+    }
+
+    #[tokio::test]
+    async fn untrusted_local_tls_certificate_is_a_retryable_transport_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let certificate = temp.path().join("certificate.pem");
+        let private_key = temp.path().join("private-key.pem");
+        let generated = std::process::Command::new("openssl")
+            .args([
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                private_key.to_str().unwrap(),
+                "-out",
+                certificate.to_str().unwrap(),
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("openssl is required for the local TLS fixture");
+        assert!(generated.success());
+
+        let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = reservation.local_addr().unwrap();
+        drop(reservation);
+        let port = address.port().to_string();
+        let mut server = Command::new("openssl");
+        server
+            .args([
+                "s_server",
+                "-accept",
+                &port,
+                "-cert",
+                certificate.to_str().unwrap(),
+                "-key",
+                private_key.to_str().unwrap(),
+                "-www",
+                "-quiet",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let mut server = server.spawn().unwrap();
+        let mut listening = false;
+        for _ in 0..100 {
+            match tokio::net::TcpStream::connect(address).await {
+                Ok(stream) => {
+                    drop(stream);
+                    listening = true;
+                    break;
+                }
+                Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+            }
+        }
+        assert!(listening, "local TLS fixture did not start");
+
+        let target = TargetSpec::Http(HttpSpec {
+            method: "GET".into(),
+            url: format!("https://localhost:{}/", address.port())
+                .parse()
+                .unwrap(),
+            headers: BTreeMap::new(),
+            body: None,
+            success_statuses: vec![],
+            follow_redirects: false,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context(&temp))
+            .await
+            .unwrap();
+        server.start_kill().unwrap();
+        server.wait().await.unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::FailedRetryable);
+        assert_eq!(outcome.http_status, None);
+        assert!(outcome.reason.starts_with("HTTP transport error:"));
     }
 
     #[tokio::test]
