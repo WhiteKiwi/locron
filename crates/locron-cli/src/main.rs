@@ -1,5 +1,7 @@
 //! `locron` command-line composition root.
 
+mod maintenance;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt::Write as _;
@@ -2737,6 +2739,11 @@ impl DaemonStore for StoreAdapter {
             .map_err(|_| "clock sample mutex poisoned")? = Some((now, monotonic));
         self.first_reconcile.store(false, Ordering::Release);
         Ok(total)
+    }
+    async fn maintain(&self) -> Result<(), String> {
+        maintenance::maintain(&self.store, &self.paths, self.now_us())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
     async fn admit(&self, capacity: usize) -> Result<Vec<AdmittedAttempt>, String> {
         let settings = self.store.settings().map_err(|e| e.to_string())?;

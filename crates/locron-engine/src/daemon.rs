@@ -68,6 +68,10 @@ pub trait DaemonStore: Send + Sync + 'static {
     async fn begin_lifetime(&self) -> Result<(), String>;
     /// Reconciles due schedules and durable retry intents.
     async fn reconcile(&self) -> Result<usize, String>;
+    /// Runs one bounded storage and output maintenance pass.
+    async fn maintain(&self) -> Result<(), String> {
+        Ok(())
+    }
     /// Atomically applies durable concurrency and admits attempts, additionally
     /// bounded by the process-local hard-guard permits currently available.
     async fn admit(&self, hard_guard_available: usize) -> Result<Vec<AdmittedAttempt>, String>;
@@ -154,6 +158,10 @@ impl<S: DaemonStore> Daemon<S> {
                 return Err(DaemonError::Store(error));
             }
         };
+        if let Err(error) = self.store.maintain().await {
+            self.store.persistence_degraded(&error).await;
+            tracing::error!(%error, "daemon maintenance failed; continuing reconciliation");
+        }
         let available = semaphore.available_permits();
         if available > MAX_GLOBAL_CONCURRENCY {
             return Err(DaemonError::InvalidConcurrency);
@@ -381,6 +389,8 @@ mod tests {
     #[derive(Default)]
     struct FakeStore {
         calls: Mutex<Vec<&'static str>>,
+        maintenance_error: Mutex<Option<String>>,
+        degradations: AtomicUsize,
     }
 
     struct ScriptedStore {
@@ -603,6 +613,14 @@ mod tests {
             self.calls.lock().unwrap().push("reconcile");
             Ok(2)
         }
+        async fn maintain(&self) -> Result<(), String> {
+            self.calls.lock().unwrap().push("maintain");
+            self.maintenance_error
+                .lock()
+                .unwrap()
+                .take()
+                .map_or(Ok(()), Err)
+        }
         async fn admit(&self, _: usize) -> Result<Vec<AdmittedAttempt>, String> {
             self.calls.lock().unwrap().push("admit");
             Ok(Vec::new())
@@ -625,7 +643,9 @@ mod tests {
         async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
             Ok(false)
         }
-        async fn persistence_degraded(&self, _: &str) {}
+        async fn persistence_degraded(&self, _: &str) {
+            self.degradations.fetch_add(1, Ordering::AcqRel);
+        }
         async fn end_lifetime(&self) -> Result<(), String> {
             self.calls.lock().unwrap().push("end");
             Ok(())
@@ -743,7 +763,31 @@ mod tests {
                 admitted: 0
             }
         );
-        assert_eq!(*store.calls.lock().unwrap(), ["reconcile"]);
+        assert_eq!(*store.calls.lock().unwrap(), ["reconcile", "maintain"]);
+    }
+
+    #[tokio::test]
+    async fn maintenance_runs_before_admission_and_failure_only_degrades_the_pass() {
+        let store = Arc::new(FakeStore::default());
+        *store.maintenance_error.lock().unwrap() = Some("maintenance busy".into());
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            Default::default(),
+        )
+        .unwrap();
+
+        let result = daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
+
+        assert_eq!(result.reconciled, 2);
+        assert_eq!(
+            *store.calls.lock().unwrap(),
+            ["reconcile", "maintain", "admit"]
+        );
+        assert_eq!(store.degradations.load(Ordering::Acquire), 1);
     }
 
     #[tokio::test]
