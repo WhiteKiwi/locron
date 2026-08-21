@@ -1,10 +1,13 @@
 //! End-to-end command contract tests.
 
-use std::process::Command;
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use locron_store::{AttemptCompletion, StatePaths, Store};
+use locron_engine::{Channel, OutputWriter};
+use locron_store::{AttemptCompletion, DaemonLock, StatePaths, Store};
 use predicates::prelude::*;
 use uuid::Uuid;
 
@@ -22,6 +25,397 @@ fn timestamp_after(duration: Duration) -> String {
         .as_micros()
         .min(i64::MAX as u128) as i64;
     locron_core::Timestamp::from_epoch_micros(micros).to_string()
+}
+
+fn start_daemon(state: &tempfile::TempDir) -> Child {
+    let mut daemon = locron(state)
+        .args(["daemon", "run"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let lock_path = state.path().join("daemon.lock");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while DaemonLock::try_prove_free(&lock_path).is_ok() && Instant::now() < deadline {
+        assert_eq!(
+            daemon.try_wait().unwrap(),
+            None,
+            "daemon exited during startup"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        DaemonLock::try_prove_free(&lock_path).is_err(),
+        "daemon did not acquire its durable lock"
+    );
+    daemon
+}
+
+fn stream_records(output: &[u8]) -> Vec<serde_json::Value> {
+    String::from_utf8_lossy(output)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn wait_for_run_state(state: &tempfile::TempDir, name: &str, expected: &str) -> String {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        let history = locron(state)
+            .args(["--json", "history", name])
+            .output()
+            .unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&history.stdout).unwrap();
+        if let Some(run) = envelope["data"]
+            .as_array()
+            .and_then(|runs| runs.first())
+            .filter(|run| run["state"] == expected)
+        {
+            return run["id"].as_str().unwrap().to_owned();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "run {name} never entered {expected}: {}",
+            envelope["data"]
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn help_output(state: &tempfile::TempDir, arguments: &[String]) -> std::process::Output {
+    locron(state).args(arguments).output().unwrap()
+}
+
+fn direct_subcommands(help: &str) -> Vec<String> {
+    let Some((_, commands)) = help.split_once("Commands:\n") else {
+        return Vec::new();
+    };
+    commands
+        .lines()
+        .take_while(|line| line.is_empty() || line.starts_with("  "))
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|name| *name != "help")
+        .map(str::to_owned)
+        .collect()
+}
+
+fn assert_help_contract(path: &[String], spelling: &str, output: std::process::Output) -> String {
+    assert!(
+        output.status.success(),
+        "help failed for {path:?} via {spelling}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "successful help must not write stderr for {path:?} via {spelling}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "Usage:",
+        "Options:",
+        "Examples:\n  locron",
+        "Navigation:\n  Run 'locron",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "help for {path:?} via {spelling} omitted {expected:?}:\n{stdout}"
+        );
+    }
+    stdout
+}
+
+#[test]
+fn complete_command_tree_has_consistent_help_surface() {
+    let state = tempfile::tempdir().unwrap();
+    let mut pending = vec![Vec::<String>::new()];
+    let mut commands = Vec::new();
+
+    while let Some(path) = pending.pop() {
+        let mut arguments = path.clone();
+        arguments.push("--help".into());
+        let stdout = assert_help_contract(
+            &path,
+            "--help tree discovery",
+            help_output(&state, &arguments),
+        );
+        let children = direct_subcommands(&stdout);
+        if path.is_empty() {
+            assert!(
+                !children.is_empty(),
+                "top-level help did not expose a command tree:\n{stdout}"
+            );
+        }
+        for child in &children {
+            let mut child_path = path.clone();
+            child_path.push(child.clone());
+            pending.push(child_path);
+        }
+        commands.push((path, !children.is_empty()));
+    }
+
+    for (path, has_subcommands) in &commands {
+        for flag in ["-h", "--help"] {
+            let mut arguments = path.clone();
+            arguments.push(flag.into());
+            assert_help_contract(path, flag, help_output(&state, &arguments));
+        }
+
+        let mut prefixed_help = vec!["help".into()];
+        prefixed_help.extend(path.iter().cloned());
+        assert_help_contract(path, "help <COMMAND>", help_output(&state, &prefixed_help));
+
+        if *has_subcommands {
+            let mut trailing_help = path.clone();
+            trailing_help.push("help".into());
+            assert_help_contract(path, "<COMMAND> help", help_output(&state, &trailing_help));
+        }
+    }
+
+    assert!(
+        !state.path().join("state.db").exists(),
+        "help must not initialize durable state"
+    );
+}
+
+#[test]
+fn logs_follow_reads_partial_then_final_without_duplicate_frames() {
+    let state = tempfile::tempdir().unwrap();
+    let paths = StatePaths::new(state.path().to_path_buf());
+    let run_id = Uuid::now_v7().to_string();
+    let partial = paths.partial_output(&run_id, 1).unwrap();
+    let final_path = paths.final_output(&run_id, 1).unwrap();
+    let mut child = locron(&state)
+        .args(["--json", "logs", &run_id, "--follow"])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            sender.send(line.unwrap()).unwrap();
+        }
+    });
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut writer = runtime
+        .block_on(OutputWriter::create(&partial, 1_024))
+        .unwrap();
+    runtime
+        .block_on(writer.write(Channel::Stdout, Duration::from_millis(1), b"live\n"))
+        .unwrap();
+    runtime.block_on(writer.flush()).unwrap();
+
+    let frame: serde_json::Value = serde_json::from_str(
+        &receiver
+            .recv_timeout(Duration::from_secs(3))
+            .expect("follow did not emit the flushed partial frame"),
+    )
+    .unwrap();
+    assert_eq!(frame["schema"], "locron.stream/v1");
+    assert_eq!(frame["record"], "frame");
+    assert_eq!(frame["data"]["sequence"], 0);
+    assert!(partial.is_file());
+    assert!(!final_path.exists());
+
+    runtime.block_on(writer.finalize(&final_path)).unwrap();
+    let terminal: serde_json::Value = serde_json::from_str(
+        &receiver
+            .recv_timeout(Duration::from_secs(3))
+            .expect("follow did not finish after output finalization"),
+    )
+    .unwrap();
+    assert_eq!(terminal["schema"], "locron.stream/v1");
+    assert_eq!(terminal["record"], "result");
+    assert_eq!(terminal["terminal"], true);
+    assert_eq!(terminal["ok"], true);
+    assert!(child.wait().unwrap().success());
+    reader.join().unwrap();
+    assert!(
+        receiver.try_recv().is_err(),
+        "finalization re-emitted an already observed frame"
+    );
+}
+
+#[test]
+fn run_wait_streams_all_attempts_and_maps_target_outcomes() {
+    let state = tempfile::tempdir().unwrap();
+    let marker = state.path().join("retry-marker");
+    let marker_environment = format!("MARKER={}", marker.display());
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "wait-retry",
+                "--every",
+                "1h",
+                "--retries",
+                "1",
+                "--retry-delay",
+                "1s",
+                "--env",
+                &marker_environment,
+                "--shell",
+                "if [ -e \"$MARKER\" ]; then printf second; else : > \"$MARKER\"; printf first; exit 7; fi",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "wait-failure",
+                "--every",
+                "1h",
+                "--shell",
+                "printf failure; exit 9",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let success_waiter = locron(&state)
+        .args(["--json", "run", "wait-retry", "--wait"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    wait_for_run_state(&state, "wait-retry", "queued");
+    let mut daemon = start_daemon(&state);
+    wait_for_run_state(&state, "wait-retry", "retry_wait");
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+    thread::sleep(Duration::from_millis(1_100));
+    daemon = start_daemon(&state);
+    let success = success_waiter.wait_with_output().unwrap();
+    assert!(
+        success.status.success(),
+        "{}",
+        String::from_utf8_lossy(&success.stderr)
+    );
+    let records = stream_records(&success.stdout);
+    assert!(
+        records
+            .iter()
+            .all(|record| record["schema"] == "locron.stream/v1")
+    );
+    let attempts: Vec<u64> = records
+        .iter()
+        .filter(|record| record["record"] == "frame")
+        .map(|record| record["data"]["attempt"].as_u64().unwrap())
+        .collect();
+    assert!(attempts.contains(&1), "first attempt output was omitted");
+    assert!(attempts.contains(&2), "retry attempt output was omitted");
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["record"] == "result")
+            .count(),
+        1
+    );
+    let terminal = records.last().unwrap();
+    assert_eq!(terminal["record"], "result");
+    assert_eq!(terminal["terminal"], true);
+    assert_eq!(terminal["ok"], true);
+    assert_eq!(terminal["data"]["state"], "succeeded");
+
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+    let failure_waiter = locron(&state)
+        .args(["--json", "run", "wait-failure", "--wait"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    wait_for_run_state(&state, "wait-failure", "queued");
+    daemon = start_daemon(&state);
+    let failure = failure_waiter.wait_with_output().unwrap();
+    assert_eq!(failure.status.code(), Some(1));
+    let records = stream_records(&failure.stdout);
+    assert!(
+        records
+            .iter()
+            .all(|record| record["schema"] == "locron.stream/v1")
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["record"] == "result")
+            .count(),
+        1
+    );
+    let terminal = records.last().unwrap();
+    assert_eq!(terminal["record"], "result");
+    assert_eq!(terminal["terminal"], true);
+    assert_eq!(terminal["ok"], false);
+    assert_eq!(terminal["data"]["state"], "failed");
+    assert_eq!(terminal["error"]["code"], "target_outcome");
+
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+}
+
+#[test]
+fn disconnecting_run_wait_does_not_cancel_the_durable_run() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "wait-disconnect",
+                "--every",
+                "1h",
+                "--shell",
+                "sleep 1; printf survived",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let mut waiter = locron(&state)
+        .args(["--json", "run", "wait-disconnect", "--wait"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_for_run_state(&state, "wait-disconnect", "queued");
+    let mut daemon = start_daemon(&state);
+    let run_id = wait_for_run_state(&state, "wait-disconnect", "running");
+    waiter.kill().unwrap();
+    let _ = waiter.wait();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let history = locron(&state)
+            .args(["--json", "history", "wait-disconnect"])
+            .output()
+            .unwrap();
+        let envelope: serde_json::Value = serde_json::from_slice(&history.stdout).unwrap();
+        let run = envelope["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|run| run["id"] == run_id)
+            .unwrap();
+        if run["state"] == "succeeded" {
+            break;
+        }
+        assert_ne!(run["state"], "cancelled");
+        assert!(
+            Instant::now() < deadline,
+            "durable run did not survive waiter disconnection: {run}"
+        );
+        thread::sleep(Duration::from_millis(25));
+    }
+
+    let _ = daemon.kill();
+    let _ = daemon.wait();
 }
 
 #[test]

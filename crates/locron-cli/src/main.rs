@@ -1,6 +1,7 @@
 //! `locron` command-line composition root.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as StdError;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -40,11 +41,167 @@ use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
+const ROOT_HELP: &str = "\
+Examples:
+  locron list
+  locron add backup --every 1h -- /usr/bin/backup
+
+Navigation:
+  Run 'locron help <COMMAND>' for detailed command help.";
+const ADD_HELP: &str = "\
+Examples:
+  locron add backup --every 1h -- /usr/bin/backup
+  locron add heartbeat --cron '*/5 * * * *' --http GET https://example.test/health
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const UPDATE_HELP: &str = "\
+Examples:
+  locron update backup --retries 3 --dry-run
+  locron update heartbeat --cron '*/10 * * * *' --timezone UTC
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const LIST_HELP: &str = "\
+Examples:
+  locron list
+  locron list --all
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const SHOW_HELP: &str = "\
+Examples:
+  locron show backup
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const ENABLE_HELP: &str = "\
+Examples:
+  locron enable backup
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const DISABLE_HELP: &str = "\
+Examples:
+  locron disable backup
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const REMOVE_HELP: &str = "\
+Examples:
+  locron remove backup
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const PREVIEW_HELP: &str = "\
+Examples:
+  locron preview backup --count 10
+  locron preview --cron '0 9 * * MON-FRI' --timezone Europe/London
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const RUN_HELP: &str = "\
+Examples:
+  locron run backup
+  locron run backup --wait
+  locron run backup --dry-run
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const CANCEL_HELP: &str = "\
+Examples:
+  locron cancel 018f47a2-4a12-7c35-b9d8-0123456789ab
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const HISTORY_HELP: &str = "\
+Examples:
+  locron history
+  locron history backup --limit 50
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const LOGS_HELP: &str = "\
+Examples:
+  locron logs 018f47a2-4a12-7c35-b9d8-0123456789ab
+  locron logs 018f47a2-4a12-7c35-b9d8-0123456789ab --follow --channel stderr
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const WHY_HELP: &str = "\
+Examples:
+  locron why backup
+  locron why --run 018f47a2-4a12-7c35-b9d8-0123456789ab
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const CONFIG_HELP: &str = "\
+Examples:
+  locron config get
+  locron config set global_concurrency 32 --dry-run
+
+Navigation:
+  Run 'locron help config <COMMAND>' for a config command or 'locron --help' for all commands.";
+const CONFIG_GET_HELP: &str = "\
+Examples:
+  locron config get
+  locron config get global_concurrency
+
+Navigation:
+  Run 'locron config --help' for config commands or 'locron --help' for all commands.";
+const CONFIG_SET_HELP: &str = "\
+Examples:
+  locron config set global_concurrency 32
+  locron config set global_concurrency 32 --dry-run
+
+Navigation:
+  Run 'locron config --help' for config commands or 'locron --help' for all commands.";
+const EXPORT_HELP: &str = "\
+Examples:
+  locron export
+  locron export --include-values --acknowledge-plaintext
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const IMPORT_HELP: &str = "\
+Examples:
+  locron import backup.json --dry-run
+  locron import backup.json --accept-plaintext-values
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const PRUNE_HELP: &str = "\
+Examples:
+  locron prune --dry-run
+  locron prune
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const DOCTOR_HELP: &str = "\
+Examples:
+  locron doctor
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const DAEMON_HELP: &str = "\
+Examples:
+  locron daemon run
+
+Navigation:
+  Run 'locron help daemon <COMMAND>' for a daemon command or 'locron --help' for all commands.";
+const DAEMON_RUN_HELP: &str = "\
+Examples:
+  locron daemon run
+
+Navigation:
+  Run 'locron daemon --help' for daemon commands or 'locron --help' for all commands.";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "locron",
     version,
-    about = "A predictable local-first job scheduler"
+    about = "A predictable local-first job scheduler",
+    after_help = ROOT_HELP
 )]
 struct Cli {
     #[arg(long, global = true, env = "LOCRON_STATE_DIR")]
@@ -69,25 +226,29 @@ enum Format {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    #[command(about = "Register a scheduled job", after_help = ADD_HELP)]
     Add(AddArgs),
+    #[command(about = "Change an existing job", after_help = UPDATE_HELP)]
     Update(UpdateArgs),
+    #[command(about = "List jobs", after_help = LIST_HELP)]
     List {
         #[arg(long)]
         all: bool,
     },
-    Show {
-        name: String,
-    },
-    Enable {
-        name: String,
-    },
-    Disable {
-        name: String,
-    },
-    Remove {
-        name: String,
-    },
+    #[command(about = "Show a job's current definition", after_help = SHOW_HELP)]
+    Show { name: String },
+    #[command(about = "Enable a job", after_help = ENABLE_HELP)]
+    Enable { name: String },
+    #[command(about = "Disable a job", after_help = DISABLE_HELP)]
+    Disable { name: String },
+    #[command(about = "Soft-remove a job", after_help = REMOVE_HELP)]
+    Remove { name: String },
+    #[command(
+        about = "Preview upcoming schedule occurrences",
+        after_help = PREVIEW_HELP
+    )]
     Preview(PreviewArgs),
+    #[command(about = "Queue a manual run", after_help = RUN_HELP)]
     Run {
         name: String,
         #[arg(long)]
@@ -95,16 +256,19 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    #[command(about = "Cancel a queued or active run", after_help = CANCEL_HELP)]
     Cancel {
         run_id: String,
         #[arg(long)]
         acknowledge_unconfirmed: bool,
     },
+    #[command(about = "List run history", after_help = HISTORY_HELP)]
     History {
         name: Option<String>,
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    #[command(about = "Read captured run output", after_help = LOGS_HELP)]
     Logs {
         run_id: String,
         #[arg(long)]
@@ -114,15 +278,18 @@ enum Command {
         #[arg(long, value_enum, default_value = "all")]
         channel: LogChannel,
     },
+    #[command(about = "Explain durable job or run decisions", after_help = WHY_HELP)]
     Why {
         name: Option<String>,
         #[arg(long)]
         run: Option<String>,
     },
+    #[command(about = "Inspect or change global settings", after_help = CONFIG_HELP)]
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    #[command(about = "Export settings and job definitions", after_help = EXPORT_HELP)]
     Export {
         #[arg(long)]
         include_values: bool,
@@ -131,6 +298,7 @@ enum Command {
         #[arg(long)]
         include_history: bool,
     },
+    #[command(about = "Import settings and job definitions", after_help = IMPORT_HELP)]
     Import {
         path: PathBuf,
         #[arg(long)]
@@ -138,11 +306,14 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    #[command(about = "Apply configured retention limits", after_help = PRUNE_HELP)]
     Prune {
         #[arg(long)]
         dry_run: bool,
     },
+    #[command(about = "Report state and daemon diagnostics", after_help = DOCTOR_HELP)]
     Doctor,
+    #[command(about = "Run scheduler service commands", after_help = DAEMON_HELP)]
     Daemon {
         #[command(subcommand)]
         command: DaemonCommand,
@@ -151,9 +322,9 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum ConfigCommand {
-    Get {
-        key: Option<String>,
-    },
+    #[command(about = "Read one or all global settings", after_help = CONFIG_GET_HELP)]
+    Get { key: Option<String> },
+    #[command(about = "Change a global setting", after_help = CONFIG_SET_HELP)]
     Set {
         key: String,
         value: String,
@@ -163,6 +334,7 @@ enum ConfigCommand {
 }
 #[derive(Subcommand, Debug)]
 enum DaemonCommand {
+    #[command(about = "Run the scheduler in the foreground", after_help = DAEMON_RUN_HELP)]
     Run,
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -404,16 +576,51 @@ struct ImportPlan {
     now_us: i64,
 }
 
+#[derive(Debug)]
+struct TargetOutcomeError {
+    run_id: String,
+    state: String,
+    reason: Option<String>,
+}
+
+impl std::fmt::Display for TargetOutcomeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "target for run {} finished with {}",
+            self.run_id, self.state
+        )
+    }
+}
+
+impl StdError for TargetOutcomeError {}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
     init_tracing(cli.verbose, cli.debug);
     let format = if cli.json { Format::Json } else { cli.format };
     let command_name = command_name(&cli.command);
+    let streaming = format == Format::Json && command_uses_stream(&cli.command);
     if let Err(error) = execute(cli, format).await {
-        render_error(format, command_name, &error);
+        if streaming {
+            render_stream_error(command_name, &error);
+        } else {
+            render_error(format, command_name, &error);
+        }
         std::process::exit(exit_code(&error));
     }
+}
+
+fn command_uses_stream(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Run {
+            wait: true,
+            dry_run: false,
+            ..
+        } | Command::Logs { follow: true, .. }
+    )
 }
 
 async fn execute(cli: Cli, format: Format) -> Result<()> {
@@ -1137,21 +1344,48 @@ async fn run_job(
     } else {
         vec![]
     };
-    render(
-        format,
-        "run",
-        json!({"run_id":run.id,"state":run.state}),
-        &warnings,
-    );
+    if !wait || format == Format::Human {
+        render(
+            format,
+            "run",
+            json!({"run_id":run.id,"state":run.state}),
+            &warnings,
+        );
+    }
     if wait {
-        wait_run(&store, &run_id, format).await?
+        let run = wait_run(paths, &store, &run_id, format).await?;
+        if format == Format::Json {
+            render_stream_result(
+                "run",
+                true,
+                json!({"run_id":run.id,"state":run.state,"reason":run.reason}),
+                &warnings,
+                None,
+            );
+        }
     }
     Ok(())
 }
 
-async fn wait_run(store: &Store, id: &str, format: Format) -> Result<()> {
+async fn wait_run(
+    paths: &StatePaths,
+    store: &Store,
+    id: &str,
+    format: Format,
+) -> Result<RunRecord> {
+    let mut attempt = 1_u16;
+    let mut emitted = 0_usize;
     loop {
         let run = store.run(id)?;
+        let finalized = emit_available_attempt_output(
+            paths,
+            id,
+            attempt,
+            &mut emitted,
+            LogChannel::All,
+            format,
+            "run",
+        )?;
         if !matches!(
             run.state.as_str(),
             "queued" | "starting" | "running" | "retry_wait"
@@ -1160,9 +1394,20 @@ async fn wait_run(store: &Store, id: &str, format: Format) -> Result<()> {
                 println!("{}: {}", run.id, run.state);
             }
             if run.state != "succeeded" {
-                return Err(anyhow!("target finished with {}", run.state));
+                return Err(TargetOutcomeError {
+                    run_id: run.id,
+                    state: run.state,
+                    reason: run.reason,
+                }
+                .into());
             }
-            return Ok(());
+            return Ok(run);
+        }
+        if finalized {
+            attempt = attempt
+                .checked_add(1)
+                .ok_or_else(|| anyhow!("attempt number exceeds output path range"))?;
+            emitted = 0;
         }
         tokio::time::sleep(Duration::from_millis(200)).await
     }
@@ -1176,37 +1421,140 @@ async fn logs(
     channel: LogChannel,
     format: Format,
 ) -> Result<()> {
-    let path = paths.final_output(run_id, attempt.unwrap_or(1))?;
-    loop {
-        if path.exists() {
-            for frame in locron_engine::read_frames(&path)? {
-                let selected = matches!(channel, LogChannel::All)
-                    || matches!(
-                        (channel, frame.channel),
-                        (LogChannel::Stdout, locron_engine::Channel::Stdout)
-                            | (LogChannel::Stderr, locron_engine::Channel::Stderr)
-                            | (LogChannel::Body, locron_engine::Channel::Body)
+    let attempt = attempt.unwrap_or(1);
+    if follow {
+        let mut emitted = 0;
+        loop {
+            if emit_available_attempt_output(
+                paths,
+                run_id,
+                attempt,
+                &mut emitted,
+                channel,
+                format,
+                "logs",
+            )? {
+                if format == Format::Json {
+                    render_stream_result(
+                        "logs",
+                        true,
+                        json!({"run_id":run_id,"attempt":attempt,"state":"finalized"}),
+                        &[],
+                        None,
                     );
-                if selected {
-                    if format == Format::Human {
-                        print!("{}", String::from_utf8_lossy(&frame.payload))
-                    } else {
-                        render(
-                            format,
-                            "logs",
-                            json!({"channel":format!("{:?}",frame.channel).to_lowercase(),"sequence":frame.sequence,"bytes":base64::engine::general_purpose::STANDARD.encode(&frame.payload),"encoding":"base64"}),
-                            &[],
-                        )
-                    }
+                }
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
+    let path = paths.final_output(run_id, attempt)?;
+    if path.exists() {
+        for frame in locron_engine::read_frames(&path)? {
+            if channel_selected(channel, frame.channel) {
+                if format == Format::Human {
+                    print!("{}", String::from_utf8_lossy(&frame.payload))
+                } else {
+                    render(
+                        format,
+                        "logs",
+                        json!({"channel":format!("{:?}",frame.channel).to_lowercase(),"sequence":frame.sequence,"bytes":base64::engine::general_purpose::STANDARD.encode(&frame.payload),"encoding":"base64"}),
+                        &[],
+                    )
                 }
             }
-            return Ok(());
         }
-        if !follow {
-            return Err(anyhow!("output not found"));
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await
+        return Ok(());
     }
+    Err(anyhow!("output not found"))
+}
+
+fn emit_available_attempt_output(
+    paths: &StatePaths,
+    run_id: &str,
+    attempt: u16,
+    emitted: &mut usize,
+    channel: LogChannel,
+    format: Format,
+    command: &str,
+) -> Result<bool> {
+    let final_path = paths.final_output(run_id, attempt)?;
+    let partial_path = paths.partial_output(run_id, attempt)?;
+    let (frames, finalized) = match locron_engine::read_frames(&final_path) {
+        Ok(frames) => (frames, true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match locron_engine::read_frames(&partial_path) {
+                Ok(frames) => (frames, false),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::UnexpectedEof
+                    ) =>
+                {
+                    (Vec::new(), false)
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(error) => return Err(error.into()),
+    };
+
+    if frames.len() < *emitted {
+        return Err(anyhow!(
+            "attempt output regressed from {} to {} frames",
+            *emitted,
+            frames.len()
+        ));
+    }
+    for frame in &frames[*emitted..] {
+        if channel_selected(channel, frame.channel) {
+            emit_output_frame(format, command, run_id, attempt, frame);
+        }
+    }
+    *emitted = frames.len();
+    Ok(finalized)
+}
+
+fn channel_selected(channel: LogChannel, frame_channel: locron_engine::Channel) -> bool {
+    matches!(channel, LogChannel::All)
+        || matches!(
+            (channel, frame_channel),
+            (LogChannel::Stdout, locron_engine::Channel::Stdout)
+                | (LogChannel::Stderr, locron_engine::Channel::Stderr)
+                | (LogChannel::Body, locron_engine::Channel::Body)
+        )
+}
+
+fn emit_output_frame(
+    format: Format,
+    command: &str,
+    run_id: &str,
+    attempt: u16,
+    frame: &locron_engine::Frame,
+) {
+    if format == Format::Human {
+        print!("{}", String::from_utf8_lossy(&frame.payload));
+    } else {
+        println!(
+            "{}",
+            json!({
+                "schema":"locron.stream/v1",
+                "record":"frame",
+                "command":command,
+                "data":{
+                    "run_id":run_id,
+                    "attempt":attempt,
+                    "channel":format!("{:?}",frame.channel).to_lowercase(),
+                    "sequence":frame.sequence,
+                    "elapsed_micros":frame.elapsed_micros,
+                    "bytes":base64::engine::general_purpose::STANDARD.encode(&frame.payload),
+                    "encoding":"base64"
+                }
+            })
+        );
+    }
+    let _ = std::io::Write::flush(&mut std::io::stdout());
 }
 
 fn why(
@@ -2747,8 +3095,51 @@ fn render_error(format: Format, command: &str, error: &anyhow::Error) {
         eprintln!("error: {error:#}")
     }
 }
+fn render_stream_result(
+    command: &str,
+    ok: bool,
+    data: Value,
+    warnings: &[&str],
+    error: Option<Value>,
+) {
+    let mut record = json!({
+        "schema":"locron.stream/v1",
+        "record":"result",
+        "terminal":true,
+        "ok":ok,
+        "command":command,
+        "data":null,
+        "warnings":warnings,
+    });
+    record["data"] = data;
+    if let Some(error) = error {
+        record["error"] = error;
+    }
+    println!("{record}");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+fn render_stream_error(command: &str, error: &anyhow::Error) {
+    let data = error
+        .downcast_ref::<TargetOutcomeError>()
+        .map_or(Value::Null, |target| {
+            json!({
+                "run_id":target.run_id,
+                "state":target.state,
+                "reason":target.reason,
+            })
+        });
+    render_stream_result(
+        command,
+        false,
+        data,
+        &[],
+        Some(json!({"code":error_code(error),"message":error.to_string()})),
+    );
+}
 fn error_code(error: &anyhow::Error) -> &'static str {
-    if let Some(store) = error.downcast_ref::<StoreError>() {
+    if error.downcast_ref::<TargetOutcomeError>().is_some() {
+        "target_outcome"
+    } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) => "not_found",
             StoreError::Conflict(_) => "durable_conflict",
@@ -2762,7 +3153,9 @@ fn error_code(error: &anyhow::Error) -> &'static str {
     }
 }
 fn exit_code(error: &anyhow::Error) -> i32 {
-    if let Some(store) = error.downcast_ref::<StoreError>() {
+    if error.downcast_ref::<TargetOutcomeError>().is_some() {
+        1
+    } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) | StoreError::Conflict(_) => 3,
             StoreError::DaemonAlreadyRunning
