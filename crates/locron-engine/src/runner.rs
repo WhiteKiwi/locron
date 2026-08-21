@@ -1,0 +1,907 @@
+//! Process, shell, and HTTP target runners.
+
+use std::collections::BTreeMap;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+
+use futures_util::StreamExt;
+use nix::sys::signal::{Signal, killpg};
+use nix::unistd::Pid;
+use reqwest::header::{
+    AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue,
+    PROXY_AUTHORIZATION, TRANSFER_ENCODING,
+};
+use reqwest::{Method, StatusCode};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+use tokio::io::AsyncReadExt;
+use tokio::process::Command;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use url::Url;
+
+use crate::output::{Channel, OutputStats, OutputWriter};
+
+/// Direct or explicit-shell process configuration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProcessSpec {
+    /// Executable for direct mode, or absolute shell executable for shell mode.
+    pub executable: String,
+    /// Arguments for direct mode. Shell mode normally uses `-c, command`.
+    pub args: Vec<String>,
+    /// Absolute execution directory.
+    pub cwd: PathBuf,
+    /// Fully layered effective environment.
+    pub env: BTreeMap<String, String>,
+}
+
+/// HTTP request configuration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HttpSpec {
+    /// Accepted HTTP method.
+    pub method: String,
+    /// Absolute HTTP(S) URL.
+    pub url: Url,
+    /// Header names and resolved values.
+    pub headers: BTreeMap<String, String>,
+    /// Optional body bytes.
+    pub body: Option<Vec<u8>>,
+    /// Additional successful statuses.
+    pub success_statuses: Vec<u16>,
+    /// Whether redirects are followed.
+    pub follow_redirects: bool,
+}
+
+/// Target snapshot selected for one attempt.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum TargetSpec {
+    /// Direct process or shell represented as explicit argv.
+    Process(ProcessSpec),
+    /// HTTP request.
+    Http(HttpSpec),
+}
+
+/// Durable facts made available to a runner.
+#[derive(Clone, Debug)]
+pub struct AttemptContext {
+    /// Run identity for paths and reserved metadata.
+    pub run_id: String,
+    /// One-based attempt number.
+    pub attempt: u32,
+    /// Partial output path.
+    pub partial_output: PathBuf,
+    /// Final output path.
+    pub final_output: PathBuf,
+    /// Remaining capture allowance for the run.
+    pub output_limit: u64,
+    /// Attempt timeout; `None` means no timeout.
+    pub timeout: Option<Duration>,
+    /// External cancellation request.
+    pub cancellation: CancellationToken,
+}
+
+/// Stable target result classification.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutcomeKind {
+    /// Process exited zero or HTTP status matched success policy.
+    Succeeded,
+    /// Known target failure that is retryable by default.
+    FailedRetryable,
+    /// Known target/configuration failure that is not retryable by default.
+    Failed,
+    /// Attempt exceeded its timeout.
+    TimedOut,
+    /// Explicit cancellation or overlap replacement.
+    Cancelled,
+}
+
+/// Complete result of one target attempt.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExecutionOutcome {
+    /// Stable classification.
+    pub kind: OutcomeKind,
+    /// Process exit code when available.
+    pub exit_code: Option<i32>,
+    /// HTTP response status when available.
+    pub http_status: Option<u16>,
+    /// Operator-facing non-secret reason.
+    pub reason: String,
+    /// Monotonic elapsed time.
+    pub duration_micros: u64,
+    /// Output capture counters.
+    #[serde(skip)]
+    pub output: OutputStats,
+}
+
+/// Runner construction defaults.
+#[derive(Clone, Debug)]
+pub struct RunnerConfig {
+    /// TERM-to-KILL grace period.
+    pub termination_grace: Duration,
+    /// Maximum redirect hops.
+    pub max_redirects: usize,
+}
+
+impl Default for RunnerConfig {
+    fn default() -> Self {
+        Self {
+            termination_grace: Duration::from_secs(5),
+            max_redirects: 10,
+        }
+    }
+}
+
+/// Runner failure before a target outcome can be produced.
+#[derive(Debug, Error)]
+pub enum RunnerError {
+    /// Output artifact could not be prepared or finalized.
+    #[error("output error: {0}")]
+    Output(#[from] io::Error),
+    /// Target configuration is invalid at execution time.
+    #[error("configuration error: {0}")]
+    Configuration(String),
+}
+
+/// Executes normalized target snapshots.
+#[derive(Clone)]
+pub struct Runner {
+    config: RunnerConfig,
+    http: reqwest::Client,
+}
+
+impl Runner {
+    /// Builds a runner with TLS verification and automatic redirects disabled.
+    pub fn new(config: RunnerConfig) -> Result<Self, RunnerError> {
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .build()
+            .map_err(|error| RunnerError::Configuration(error.to_string()))?;
+        Ok(Self { config, http })
+    }
+
+    /// Executes one target and finalizes its output artifact.
+    pub async fn execute(
+        &self,
+        target: &TargetSpec,
+        context: &AttemptContext,
+    ) -> Result<ExecutionOutcome, RunnerError> {
+        let writer = OutputWriter::create(&context.partial_output, context.output_limit).await?;
+        let start = Instant::now();
+        let mut outcome = match target {
+            TargetSpec::Process(spec) => self.run_process(spec, context, writer, start).await?,
+            TargetSpec::Http(spec) => self.run_http(spec, context, writer, start).await?,
+        };
+        // Both branches finalize the writer because they need to serialize while running.
+        outcome.duration_micros = start.elapsed().as_micros().min(u128::from(u64::MAX)) as u64;
+        Ok(outcome)
+    }
+
+    async fn run_process(
+        &self,
+        spec: &ProcessSpec,
+        context: &AttemptContext,
+        writer: OutputWriter,
+        start: Instant,
+    ) -> Result<ExecutionOutcome, RunnerError> {
+        if !spec.cwd.is_absolute() || !spec.cwd.is_dir() {
+            return finalize_configuration_failure(
+                writer,
+                context,
+                start,
+                "working directory is missing",
+            )
+            .await;
+        }
+        let Some(executable) =
+            resolve_executable(&spec.executable, &spec.cwd, spec.env.get("PATH"))
+        else {
+            return finalize_configuration_failure(
+                writer,
+                context,
+                start,
+                &format!("executable not found: {}", spec.executable),
+            )
+            .await;
+        };
+        let mut command = Command::new(executable);
+        command
+            .args(&spec.args)
+            .current_dir(&spec.cwd)
+            .env_clear()
+            .envs(&spec.env)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        command.process_group(0);
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                return finalize_configuration_failure(writer, context, start, &error.to_string())
+                    .await;
+            }
+        };
+        let pid = child.id().map(|id| Pid::from_raw(id as i32));
+        let stdout = child.stdout.take().expect("piped stdout");
+        let stderr = child.stderr.take().expect("piped stderr");
+        let (sender, mut receiver) = mpsc::channel::<(Channel, Vec<u8>)>(32);
+        let stdout_task = tokio::spawn(read_stream(stdout, Channel::Stdout, sender.clone()));
+        let stderr_task = tokio::spawn(read_stream(stderr, Channel::Stderr, sender));
+        let mut writer = writer;
+        let mut wait = Box::pin(child.wait());
+        let mut timeout = context
+            .timeout
+            .map(|duration| Box::pin(tokio::time::sleep(duration)));
+        let mut result = None;
+        let mut termination = None;
+
+        while result.is_none() {
+            tokio::select! {
+                status = &mut wait => result = Some(status.map_err(RunnerError::Output)?),
+                Some((channel, bytes)) = receiver.recv() => {
+                    writer.write(channel, start.elapsed(), &bytes).await?;
+                }
+                () = context.cancellation.cancelled(), if termination.is_none() => {
+                    termination = Some(OutcomeKind::Cancelled);
+                    terminate_group(pid, self.config.termination_grace).await;
+                }
+                () = async { if let Some(timer) = &mut timeout { timer.await } }, if timeout.is_some() && termination.is_none() => {
+                    termination = Some(OutcomeKind::TimedOut);
+                    timeout = None;
+                    terminate_group(pid, self.config.termination_grace).await;
+                }
+            }
+        }
+        // Both stream tasks finish when the process closes its pipe ends. Keep
+        // draining so a full bounded channel cannot deadlock their completion.
+        while let Some((channel, bytes)) = receiver.recv().await {
+            writer.write(channel, start.elapsed(), &bytes).await?;
+        }
+        let _ = stdout_task.await;
+        let _ = stderr_task.await;
+        let stats = writer.finalize(&context.final_output).await?;
+        let status = result.expect("wait result");
+        let kind = termination.unwrap_or_else(|| {
+            if status.success() {
+                OutcomeKind::Succeeded
+            } else {
+                OutcomeKind::FailedRetryable
+            }
+        });
+        let reason = match kind {
+            OutcomeKind::Succeeded => "process exited successfully".into(),
+            OutcomeKind::FailedRetryable => format!("process exited with status {status}"),
+            OutcomeKind::TimedOut => "attempt timed out".into(),
+            OutcomeKind::Cancelled => "attempt was cancelled".into(),
+            OutcomeKind::Failed => "process failed".into(),
+        };
+        Ok(ExecutionOutcome {
+            kind,
+            exit_code: status.code(),
+            http_status: None,
+            reason,
+            duration_micros: 0,
+            output: stats,
+        })
+    }
+
+    async fn run_http(
+        &self,
+        spec: &HttpSpec,
+        context: &AttemptContext,
+        mut writer: OutputWriter,
+        start: Instant,
+    ) -> Result<ExecutionOutcome, RunnerError> {
+        if !matches!(spec.url.scheme(), "http" | "https") {
+            return finalize_configuration_failure(
+                writer,
+                context,
+                start,
+                "URL must be HTTP or HTTPS",
+            )
+            .await;
+        }
+        let Ok(mut method) = Method::from_bytes(spec.method.as_bytes()) else {
+            return finalize_configuration_failure(writer, context, start, "invalid HTTP method")
+                .await;
+        };
+        if !matches!(
+            method,
+            Method::GET
+                | Method::POST
+                | Method::PUT
+                | Method::PATCH
+                | Method::DELETE
+                | Method::HEAD
+        ) {
+            return finalize_configuration_failure(
+                writer,
+                context,
+                start,
+                "unsupported HTTP method",
+            )
+            .await;
+        }
+        let mut headers = match build_headers(&spec.headers) {
+            Ok(headers) => headers,
+            Err(RunnerError::Configuration(reason)) => {
+                return finalize_configuration_failure(writer, context, start, &reason).await;
+            }
+            Err(error) => return Err(error),
+        };
+        let mut url = spec.url.clone();
+        let mut body = spec.body.clone();
+        let request = async {
+            for hop in 0..=self.config.max_redirects {
+                let mut builder = self
+                    .http
+                    .request(method.clone(), url.clone())
+                    .headers(headers.clone());
+                if let Some(bytes) = &body {
+                    builder = builder.body(bytes.clone());
+                }
+                let response = builder.send().await?;
+                if !spec.follow_redirects || !response.status().is_redirection() {
+                    return Ok::<_, reqwest::Error>(response);
+                }
+                if hop == self.config.max_redirects {
+                    return Ok(response);
+                }
+                let Some(location) = response.headers().get(reqwest::header::LOCATION) else {
+                    return Ok(response);
+                };
+                let Ok(location) = location.to_str() else {
+                    return Ok(response);
+                };
+                let Ok(next) = url.join(location) else {
+                    return Ok(response);
+                };
+                if !same_origin(&url, &next) {
+                    headers.remove(AUTHORIZATION);
+                    headers.remove(PROXY_AUTHORIZATION);
+                    headers.remove(COOKIE);
+                }
+                let rewrite_to_get = (response.status() == StatusCode::SEE_OTHER
+                    && method != Method::HEAD)
+                    || ((response.status() == StatusCode::MOVED_PERMANENTLY
+                        || response.status() == StatusCode::FOUND)
+                        && method == Method::POST);
+                if rewrite_to_get {
+                    method = Method::GET;
+                    body = None;
+                    headers.remove(CONTENT_LENGTH);
+                    headers.remove(CONTENT_TYPE);
+                    headers.remove(TRANSFER_ENCODING);
+                }
+                url = next;
+            }
+            unreachable!("bounded redirect loop returns")
+        };
+        let response = tokio::select! {
+            () = context.cancellation.cancelled() => {
+                let stats = writer.finalize(&context.final_output).await?;
+                return Ok(simple_outcome(OutcomeKind::Cancelled, "attempt was cancelled", start, stats));
+            }
+            result = async {
+                if let Some(timeout) = context.timeout {
+                    tokio::time::timeout(timeout, request).await.map_err(|_| HttpRunError::Timeout)?
+                } else {
+                    request.await
+                }.map_err(HttpRunError::Request)
+            } => result,
+        };
+        let response = match response {
+            Ok(response) => response,
+            Err(HttpRunError::Timeout) => {
+                let stats = writer.finalize(&context.final_output).await?;
+                return Ok(simple_outcome(
+                    OutcomeKind::TimedOut,
+                    "attempt timed out",
+                    start,
+                    stats,
+                ));
+            }
+            Err(HttpRunError::Request(error)) => {
+                let stats = writer.finalize(&context.final_output).await?;
+                return Ok(simple_outcome(
+                    OutcomeKind::FailedRetryable,
+                    &format!("HTTP transport error: {error}"),
+                    start,
+                    stats,
+                ));
+            }
+        };
+        let status = response.status();
+        let mut stream = response.bytes_stream();
+        loop {
+            let next = async {
+                if let Some(timeout) = context.timeout {
+                    let remaining = timeout.saturating_sub(start.elapsed());
+                    tokio::time::timeout(remaining, stream.next())
+                        .await
+                        .map_err(|_| HttpRunError::Timeout)
+                } else {
+                    Ok(stream.next().await)
+                }
+            };
+            tokio::select! {
+                () = context.cancellation.cancelled() => {
+                    let stats = writer.finalize(&context.final_output).await?;
+                    return Ok(simple_outcome(OutcomeKind::Cancelled, "attempt was cancelled", start, stats));
+                }
+                item = next => match item {
+                    Err(HttpRunError::Timeout) => {
+                        let stats = writer.finalize(&context.final_output).await?;
+                        return Ok(simple_outcome(OutcomeKind::TimedOut, "attempt timed out", start, stats));
+                    }
+                    Err(HttpRunError::Request(error)) => {
+                        let stats = writer.finalize(&context.final_output).await?;
+                        return Ok(simple_outcome(OutcomeKind::FailedRetryable, &format!("HTTP body error: {error}"), start, stats));
+                    }
+                    Ok(Some(Ok(bytes))) => writer.write(Channel::Body, start.elapsed(), &bytes).await?,
+                    Ok(Some(Err(error))) => {
+                        let stats = writer.finalize(&context.final_output).await?;
+                        return Ok(simple_outcome(OutcomeKind::FailedRetryable, &format!("HTTP body error: {error}"), start, stats));
+                    }
+                    Ok(None) => break,
+                }
+            }
+        }
+        let stats = writer.finalize(&context.final_output).await?;
+        let success = status.is_success() || spec.success_statuses.contains(&status.as_u16());
+        let kind = if success {
+            OutcomeKind::Succeeded
+        } else if status == StatusCode::REQUEST_TIMEOUT
+            || status == StatusCode::TOO_MANY_REQUESTS
+            || status.is_server_error()
+        {
+            OutcomeKind::FailedRetryable
+        } else {
+            OutcomeKind::Failed
+        };
+        Ok(ExecutionOutcome {
+            kind,
+            exit_code: None,
+            http_status: Some(status.as_u16()),
+            reason: format!("HTTP response {status}"),
+            duration_micros: 0,
+            output: stats,
+        })
+    }
+}
+
+#[derive(Debug)]
+enum HttpRunError {
+    Timeout,
+    Request(reqwest::Error),
+}
+
+async fn read_stream<R: tokio::io::AsyncRead + Unpin>(
+    mut input: R,
+    channel: Channel,
+    sender: mpsc::Sender<(Channel, Vec<u8>)>,
+) {
+    let mut buffer = vec![0_u8; 16 * 1024];
+    loop {
+        match input.read(&mut buffer).await {
+            Ok(0) | Err(_) => break,
+            Ok(count) => {
+                if sender
+                    .send((channel, buffer[..count].to_vec()))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async fn terminate_group(pid: Option<Pid>, grace: Duration) {
+    let Some(pid) = pid else { return };
+    let _ = killpg(pid, Signal::SIGTERM);
+    tokio::time::sleep(grace).await;
+    let _ = killpg(pid, Signal::SIGKILL);
+}
+
+async fn finalize_configuration_failure(
+    writer: OutputWriter,
+    context: &AttemptContext,
+    start: Instant,
+    reason: &str,
+) -> Result<ExecutionOutcome, RunnerError> {
+    let stats = writer.finalize(&context.final_output).await?;
+    Ok(simple_outcome(OutcomeKind::Failed, reason, start, stats))
+}
+
+fn simple_outcome(
+    kind: OutcomeKind,
+    reason: &str,
+    start: Instant,
+    output: OutputStats,
+) -> ExecutionOutcome {
+    ExecutionOutcome {
+        kind,
+        exit_code: None,
+        http_status: None,
+        reason: reason.into(),
+        duration_micros: start.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
+        output,
+    }
+}
+
+fn build_headers(values: &BTreeMap<String, String>) -> Result<HeaderMap, RunnerError> {
+    let mut headers = HeaderMap::new();
+    for (name, value) in values {
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| RunnerError::Configuration(format!("invalid header name: {name}")))?;
+        let value = HeaderValue::from_str(value)
+            .map_err(|_| RunnerError::Configuration("invalid header value".into()))?;
+        headers.insert(name, value);
+    }
+    Ok(headers)
+}
+
+fn same_origin(left: &Url, right: &Url) -> bool {
+    left.scheme() == right.scheme()
+        && left.host_str() == right.host_str()
+        && left.port_or_known_default() == right.port_or_known_default()
+}
+
+/// Resolves a path-bearing executable or searches an explicit PATH.
+#[must_use]
+pub fn resolve_executable(executable: &str, cwd: &Path, path: Option<&String>) -> Option<PathBuf> {
+    let executable_path = Path::new(executable);
+    if executable_path.components().count() > 1 {
+        let candidate = if executable_path.is_absolute() {
+            executable_path.to_path_buf()
+        } else {
+            cwd.join(executable_path)
+        };
+        return candidate.is_file().then_some(candidate);
+    }
+    for directory in std::env::split_paths(path.map_or("", String::as_str)) {
+        let candidate = directory.join(executable);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn read_request(stream: &mut tokio::net::TcpStream) -> Vec<u8> {
+        let mut request = Vec::new();
+        loop {
+            let mut chunk = [0_u8; 1024];
+            let count = stream.read(&mut chunk).await.unwrap();
+            if count == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..count]);
+            let Some(header_end) = request.windows(4).position(|part| part == b"\r\n\r\n") else {
+                continue;
+            };
+            let header_end = header_end + 4;
+            let headers = String::from_utf8_lossy(&request[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    line.split_once(':').and_then(|(name, value)| {
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                })
+                .unwrap_or(0);
+            if request.len() >= header_end + content_length {
+                break;
+            }
+        }
+        request
+    }
+
+    async fn follow_redirect(status: u16, method: &str) -> (ExecutionOutcome, String) {
+        let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let destination_address = destination.local_addr().unwrap();
+        let (request_sender, request_receiver) = tokio::sync::oneshot::channel();
+        let destination_task = tokio::spawn(async move {
+            let (mut stream, _) = destination.accept().await.unwrap();
+            request_sender
+                .send(read_request(&mut stream).await)
+                .unwrap();
+            tokio::io::AsyncWriteExt::write_all(
+                &mut stream,
+                b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        });
+        let source = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let source_address = source.local_addr().unwrap();
+        let source_task = tokio::spawn(async move {
+            let (mut stream, _) = source.accept().await.unwrap();
+            let _ = read_request(&mut stream).await;
+            let reason = match status {
+                301 => "Moved Permanently",
+                302 => "Found",
+                303 => "See Other",
+                307 => "Temporary Redirect",
+                308 => "Permanent Redirect",
+                _ => panic!("unsupported fixture status"),
+            };
+            let response = format!(
+                "HTTP/1.1 {status} {reason}\r\nLocation: http://{destination_address}/target\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes())
+                .await
+                .unwrap();
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let target = TargetSpec::Http(HttpSpec {
+            method: method.into(),
+            url: format!("http://{source_address}/start").parse().unwrap(),
+            headers: BTreeMap::from([("Content-Type".into(), "text/plain".into())]),
+            body: Some(b"payload".to_vec()),
+            success_statuses: vec![],
+            follow_redirects: true,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context(&temp))
+            .await
+            .unwrap();
+        source_task.await.unwrap();
+        destination_task.await.unwrap();
+        let request = String::from_utf8(request_receiver.await.unwrap()).unwrap();
+        (outcome, request)
+    }
+
+    fn context(temp: &tempfile::TempDir) -> AttemptContext {
+        AttemptContext {
+            run_id: "run".into(),
+            attempt: 1,
+            partial_output: temp.path().join("1.partial"),
+            final_output: temp.path().join("1.log"),
+            output_limit: 1024,
+            timeout: Some(Duration::from_secs(2)),
+            cancellation: CancellationToken::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn process_preserves_argv_and_streams_output() {
+        let temp = tempfile::tempdir().unwrap();
+        let spec = ProcessSpec {
+            executable: "/bin/sh".into(),
+            args: vec!["-c".into(), "printf 'hello'; printf 'bad' >&2".into()],
+            cwd: temp.path().into(),
+            env: BTreeMap::new(),
+        };
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&TargetSpec::Process(spec), &context(&temp))
+            .await
+            .unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+        let frames = crate::output::read_frames(temp.path().join("1.log")).unwrap();
+        assert!(
+            frames
+                .iter()
+                .any(|frame| frame.channel == Channel::Stdout && frame.payload == b"hello")
+        );
+        assert!(
+            frames
+                .iter()
+                .any(|frame| frame.channel == Channel::Stderr && frame.payload == b"bad")
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_executable_is_a_finalized_configuration_outcome() {
+        let temp = tempfile::tempdir().unwrap();
+        let spec = ProcessSpec {
+            executable: "definitely-not-a-locron-test-executable".into(),
+            args: Vec::new(),
+            cwd: temp.path().into(),
+            env: BTreeMap::from([("PATH".into(), temp.path().display().to_string())]),
+        };
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&TargetSpec::Process(spec), &context(&temp))
+            .await
+            .unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Failed);
+        assert!(outcome.reason.contains("executable not found"));
+        assert!(temp.path().join("1.log").is_file());
+        assert!(!temp.path().join("1.partial").exists());
+    }
+
+    #[tokio::test]
+    async fn missing_working_directory_is_a_finalized_configuration_outcome() {
+        let temp = tempfile::tempdir().unwrap();
+        let spec = ProcessSpec {
+            executable: "/usr/bin/true".into(),
+            args: Vec::new(),
+            cwd: temp.path().join("removed"),
+            env: BTreeMap::new(),
+        };
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&TargetSpec::Process(spec), &context(&temp))
+            .await
+            .unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Failed);
+        assert!(outcome.reason.contains("working directory"));
+        assert!(temp.path().join("1.log").is_file());
+        assert!(!temp.path().join("1.partial").exists());
+    }
+
+    #[tokio::test]
+    async fn timeout_is_explicit() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut context = context(&temp);
+        context.timeout = Some(Duration::from_millis(20));
+        let spec = ProcessSpec {
+            executable: "/bin/sh".into(),
+            args: vec!["-c".into(), "sleep 2".into()],
+            cwd: temp.path().into(),
+            env: BTreeMap::new(),
+        };
+        let runner = Runner::new(RunnerConfig {
+            termination_grace: Duration::from_millis(10),
+            ..RunnerConfig::default()
+        })
+        .unwrap();
+        let outcome = runner
+            .execute(&TargetSpec::Process(spec), &context)
+            .await
+            .unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::TimedOut);
+    }
+
+    #[tokio::test]
+    async fn http_500_is_retryable_and_body_is_captured() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let fixture = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).await.unwrap();
+            tokio::io::AsyncWriteExt::write_all(
+                &mut stream,
+                b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 4\r\nConnection: close\r\n\r\noops",
+            )
+            .await
+            .unwrap();
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let target = TargetSpec::Http(HttpSpec {
+            method: "GET".into(),
+            url: format!("http://{address}/failure").parse().unwrap(),
+            headers: BTreeMap::new(),
+            body: None,
+            success_statuses: vec![],
+            follow_redirects: false,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context(&temp))
+            .await
+            .unwrap();
+        fixture.await.unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::FailedRetryable);
+        assert_eq!(outcome.http_status, Some(500));
+        assert_eq!(
+            crate::output::read_frames(temp.path().join("1.log")).unwrap()[0].payload,
+            b"oops"
+        );
+    }
+
+    #[tokio::test]
+    async fn cross_origin_redirect_removes_authorization() {
+        let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let destination_address = destination.local_addr().unwrap();
+        let (request_sender, request_receiver) = tokio::sync::oneshot::channel();
+        let destination_task = tokio::spawn(async move {
+            let (mut stream, _) = destination.accept().await.unwrap();
+            let mut request = vec![0_u8; 4096];
+            let count = stream.read(&mut request).await.unwrap();
+            request.truncate(count);
+            request_sender.send(request).unwrap();
+            tokio::io::AsyncWriteExt::write_all(
+                &mut stream,
+                b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        });
+        let source = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let source_address = source.local_addr().unwrap();
+        let source_task = tokio::spawn(async move {
+            let (mut stream, _) = source.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 302 Found\r\nLocation: http://{destination_address}/target\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes())
+                .await
+                .unwrap();
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let target = TargetSpec::Http(HttpSpec {
+            method: "GET".into(),
+            url: format!("http://{source_address}/start").parse().unwrap(),
+            headers: BTreeMap::from([("Authorization".into(), "Bearer secret".into())]),
+            body: None,
+            success_statuses: vec![],
+            follow_redirects: true,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context(&temp))
+            .await
+            .unwrap();
+        source_task.await.unwrap();
+        destination_task.await.unwrap();
+        let request = String::from_utf8(request_receiver.await.unwrap()).unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+        assert!(!request.to_ascii_lowercase().contains("authorization:"));
+    }
+
+    #[tokio::test]
+    async fn conventional_redirects_rewrite_method_and_drop_body() {
+        for (status, method) in [(301, "POST"), (302, "POST"), (303, "PUT")] {
+            let (outcome, request) = follow_redirect(status, method).await;
+            assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+            assert!(request.starts_with("GET /target HTTP/1.1\r\n"), "{request}");
+            assert!(!request.ends_with("payload"), "{request}");
+            assert!(!request.to_ascii_lowercase().contains("content-type:"));
+        }
+    }
+
+    #[tokio::test]
+    async fn strict_redirects_preserve_method_and_body() {
+        for (status, method) in [(307, "POST"), (308, "PATCH")] {
+            let (outcome, request) = follow_redirect(status, method).await;
+            assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+            assert!(
+                request.starts_with(&format!("{method} /target HTTP/1.1\r\n")),
+                "{request}"
+            );
+            assert!(request.ends_with("payload"), "{request}");
+            assert!(request.to_ascii_lowercase().contains("content-type:"));
+        }
+    }
+
+    #[tokio::test]
+    async fn see_other_preserves_head() {
+        let (outcome, request) = follow_redirect(303, "HEAD").await;
+        assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+        assert!(
+            request.starts_with("HEAD /target HTTP/1.1\r\n"),
+            "{request}"
+        );
+    }
+
+    #[test]
+    fn strips_sensitive_headers_on_cross_origin() {
+        assert!(!same_origin(
+            &Url::parse("https://a.test/x").unwrap(),
+            &Url::parse("https://b.test/x").unwrap()
+        ));
+        assert!(same_origin(
+            &Url::parse("https://a.test/x").unwrap(),
+            &Url::parse("https://a.test/y").unwrap()
+        ));
+    }
+}

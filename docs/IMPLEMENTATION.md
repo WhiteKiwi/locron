@@ -101,7 +101,7 @@ Use the state discovery, logical schema, output framing, migration, and ownershi
 
 Implement schedule evaluation as a pure operation over a normalized revision, durable cursor facts, previous events, and an injected clock. Cron uses the configured IANA or symbolic system-local zone; interval schedules advance by whole multiples from the durable anchor; one-time schedules yield at most one scheduled occurrence.
 
-On engine startup, wake, normal tick, and observed job revision, reconcile `(cursor, now]`. Apply start deadline, then `skip`, `latest`, or bounded `all`, then persist unique runs and bounded range summaries with the cursor in one optimistic transaction. On a conflict, recalculate from fresh state rather than committing a partial batch.
+On engine startup, wake, normal tick, and observed job revision, reconcile `(cursor, now]`. Apply start deadline, then `skip`, `latest`, or bounded `all`, then persist unique runs and bounded range summaries with the cursor in one optimistic transaction. Resolving a due one-time schedule also marks its current job revision disabled in that transaction, whether the occurrence executes or is explained by missed-run policy; a manual run never performs this transition. On a conflict, recalculate from fresh state rather than committing a partial batch.
 
 A backward wall-clock move does not rewind the durable cursor or recreate an occurrence. Re-enabling evaluates disabled elapsed time under missed-run policy and never resets an interval anchor. A new schedule revision begins at its creation/explicit anchor boundary and cannot backfill time before it existed.
 
@@ -123,11 +123,24 @@ Admission rechecks state and capacity transactionally immediately before creatin
 
 Classify an attempt result before scheduling retry. Retries default to zero, are capped at 10, and use fixed or capped exponential delay without jitter. A retry intent and not-before time are durable and continue as part of the same run. Timeout qualifies only when explicitly selected; cancellation, configuration error, replacement, and unknown crash outcome never do.
 
+Resolve user cancellation in one immediate transaction after reading the current run state. A
+queued or retry-wait run has no process to terminate, so mark it terminal `cancelled`, set its finish
+time and reason, remove any retry intent, and append the cancellation event in that transaction. A
+starting or running run keeps its state and receives durable cancellation intent for the engine to
+observe and confirm through normal termination. Missing identities are not found; every terminal
+state is a stable conflict rather than an apparently successful repeated request.
+
 At daemon startup, the engine creates its lifetime and marks stale non-terminal attempts from an older lifetime `interrupted_unknown` before normal admission. It does not inspect, attach to, signal, or automatically retry a stale recorded PID/PGID. Fault injection must cover every transaction/spawn/completion boundary because persistence cannot prove whether an arbitrary external side effect occurred.
 
 ### Process and shell runner
 
 Resolve execution configuration immediately before an attempt. Direct execution preserves argv boundaries. Shell execution selects an explicit absolute shell and never loads interactive configuration implicitly. Resolve a bare executable from the locron-owned effective `PATH` and persist the selected absolute path before spawn.
+
+Durable admission precedes runtime file reads and target construction. Resolve each admitted attempt
+independently: if its immutable snapshot, environment file, body file, URL, path, or other runtime
+configuration cannot be resolved, create and finalize its empty framed output artifact and commit a
+known non-retryable failed attempt/run. Do not fail an admitted batch collection in a way that leaves
+one or more rows running without an execution task.
 
 Construct the environment in the order frozen by `docs/SPEC.md`, writing reserved `LOCRON_*` values last. Missing CWD/executable/env-file and malformed runtime configuration are known non-retryable failures.
 
@@ -136,6 +149,11 @@ Start process and shell targets in a new Unix process group. Timeout, cancellati
 ### HTTP runner
 
 Validate method, absolute URL, body-source exclusivity, header sources, and success ranges before queueing. At execution, verify TLS, follow redirects only when explicitly configured, cap redirects at 10, and remove sensitive headers across origins. The attempt timeout covers the whole request.
+
+Manual redirect handling follows conventional method semantics: `303` becomes `GET` except for
+`HEAD`; `301` and `302` rewrite `POST` to `GET`; `307` and `308` preserve method and body. Whenever
+the method becomes `GET`, discard the request body and entity headers. Sensitive authentication and
+cookie headers remain stripped whenever the redirect crosses origins.
 
 Map connection/name-resolution/transport failure, status 408/429, and 5xx to known retry-eligible failures. Other 4xx responses fail without default retry. Stream the response body through the same bounded capture mechanism as process output; truncation never changes HTTP success classification.
 

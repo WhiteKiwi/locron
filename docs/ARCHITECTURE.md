@@ -2,7 +2,9 @@
 
 ## Status and document map
 
-This document describes the durable system structure and invariants planned for locron milestone 1. No implementation exists yet, so it is an architecture contract for the first build rather than a description reverse-engineered from code.
+This document is the durable architecture contract for locron milestone 1. The repository now
+contains a partial implementation of this contract; `docs/STATUS.md` records verified behavior and
+remaining gaps without weakening these invariants.
 
 - `docs/SPEC.md` is the frozen authority for product behavior and scope.
 - `docs/ARCHITECTURE.md` owns durable system boundaries, component responsibilities, dependency direction, runtime topology, and persistence invariants.
@@ -176,11 +178,14 @@ The following invariants hold regardless of the final schema or library selectio
 2. A run and its immutable execution snapshot exist before external execution begins. Later job edits, disablement, removal, or name reuse do not rewrite that snapshot or its history.
 3. Schedule edits create a new occurrence namespace. Interval anchors and reconciliation cursors survive daemon restart and non-schedule edits.
 4. SQLite transactions are short. Process execution, HTTP requests, signal waits, output streaming, and filesystem cleanup never occur inside a write transaction.
-5. Reconciliation atomically rechecks the revision/cursor, materializes unique runs or bounded summary facts, resolves one-time state, and advances the cursor. A conflict retries from fresh durable state.
+5. Reconciliation atomically rechecks the revision/cursor, materializes unique runs or bounded summary facts, resolves one-time state by disabling the current job revision, and advances the cursor. A conflict retries from fresh durable state. Manual submission never resolves or disables a one-time schedule.
 6. Manual submission atomically snapshots the job and creates its durable run; daemon availability is not a commit prerequisite.
 7. Admission atomically rechecks active runs, catch-up ordering, policy, cancellation, capacity, and run state before creating a durable attempt and moving the run toward execution. Capacity is not reserved only in memory.
 8. Attempt completion atomically records a known result and either a durable retry intent or a terminal run transition.
-9. Cancellation and replacement record durable intent before signalling. A replacement is not admitted until prior termination is confirmed.
+9. Cancellation is resolved atomically against the current run state. Queued and retry-wait runs
+   become terminal `cancelled` immediately, clear any retry intent, and need no engine signal;
+   starting and running runs retain durable intent before signalling. A replacement is not admitted
+   until prior termination is confirmed.
 10. A new daemon lifetime classifies stale non-terminal attempts from an older lifetime as `interrupted_unknown`. It neither infers their result nor signals a recorded stale PID/PGID.
 11. Cleanup selects only eligible terminal data in bounded batches. It never prunes active runs and retains an explanation when output is truncated or removed.
 12. Legal stored states, foreign-key ownership, scheduled occurrence uniqueness, attempt ordering, and unique live job names are defended by database constraints where SQLite can express them and by domain validation for cross-record rules.
@@ -189,6 +194,10 @@ The following invariants hold regardless of the final schema or library selectio
 15. A wake notification is never evidence that a command exists or succeeded. Only committed durable state can cause the engine to act.
 16. Admission cursor movement and attempt creation commit together. A crash cannot advance fairness without admitting the corresponding attempt or admit an attempt without advancing the cursor.
 17. At most one normal replacement candidate exists for a job. Superseding it and installing its successor is one durable transition.
+18. Once admission creates an attempt, every target-resolution or runtime-configuration result is
+    completed durably. A known pre-execution failure finalizes an empty bounded output artifact and
+    terminalizes the attempt and run as failed; adapter error propagation cannot orphan a running
+    record.
 
 These boundaries allow crash ambiguity to be represented honestly without promising exactly-once external side effects. A target that requires stronger duplicate protection can use the durable run identity as an idempotency key.
 

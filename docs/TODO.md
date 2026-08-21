@@ -21,10 +21,10 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 
 ## 2. Establish the Rust workspace
 
-- [ ] Create the Rust edition 2024, resolver-3 virtual workspace with exactly `locron-core`, `locron-store`, `locron-engine`, and `locron-cli`.
-- [ ] Set Rust 1.94 as workspace MSRV and configure shared package metadata, dependencies, profiles, formatting, lints, and one lockfile.
+- [x] Create the Rust edition 2024, resolver-3 virtual workspace with exactly `locron-core`, `locron-store`, `locron-engine`, and `locron-cli`.
+- [x] Set Rust 1.94 as workspace MSRV and configure shared package metadata, dependencies, profiles, formatting, lints, and one lockfile.
 - [ ] Run CI on Rust 1.94 and latest stable and enforce the dependency direction documented in `docs/ARCHITECTURE.md`.
-- [ ] Keep one v1 distributable `locron` binary with `locron daemon run`; do not create `locrond`, a `locron-daemon` crate, or future-surface crates.
+- [x] Keep one v1 distributable `locron` binary with `locron daemon run`; do not create `locrond`, a `locron-daemon` crate, or future-surface crates.
 
 **Verify:** from the repository root, workspace metadata reports edition 2024, resolver 3, `rust-version = "1.94"`, exactly the four approved members, and one `locron` binary; format, compile, lint, and test commands pass on Rust 1.94 and latest stable; dependency inspection shows no forbidden crate edge or daemon crate/binary.
 
@@ -32,7 +32,7 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 
 - [ ] Add stable identifiers, job/revision/schedule/target/policy/run/attempt/event types and application commands/results.
 - [ ] Add cross-field validation and normalization for exactly one schedule and target, all policy bounds, paths, environment, HTTP configuration, and reserved names.
-- [ ] Implement pure cron, interval, and one-time occurrence enumeration with injected clock/timezone inputs.
+- [x] Implement pure cron, interval, and one-time occurrence enumeration with injected clock/timezone inputs.
 - [ ] Implement explicit legal run/attempt transitions and persistence, clock, and executor ports.
 - [ ] Update the applicable planning document first if a discovered edge case requires behavior or structure not represented in the current plan.
 
@@ -40,10 +40,12 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 
 ## 4. Implement durable SQLite state
 
-- [ ] Add versioned migrations for the durable model and invariants in `docs/ARCHITECTURE.md` using the accepted choices from `docs/IMPLEMENTATION.md`.
+- [x] Add versioned migrations for the durable model and invariants in `docs/ARCHITECTURE.md` using the accepted choices from `docs/IMPLEMENTATION.md`.
 - [ ] Implement atomic job revision/cursor mutation, manual run creation, reconciliation materialization, admission, attempt completion/retry, cancellation intent, recovery, and retention operations.
-- [ ] Enforce scheduled occurrence uniqueness, ordered attempt uniqueness, foreign keys, soft deletion, and legal persisted states.
-- [ ] Add single-scheduler ownership and safe concurrent CLI access.
+- [x] Prove queued/retry-wait cancellation terminalizes atomically while active cancellation remains
+  durable intent, with stable not-found/conflict results.
+- [x] Enforce scheduled occurrence uniqueness, ordered attempt uniqueness, foreign keys, soft deletion, and legal persisted states.
+- [x] Add single-scheduler ownership and safe concurrent CLI access.
 - [ ] Implement output metadata and the accepted output-storage consistency protocol.
 
 **Verify:** integration tests against temporary real databases pass for clean and upgrade migrations, concurrent writers, rollback injection, duplicate occurrence insertion, cursor/run atomicity, stale lifetime recovery, soft-delete history, busy/disk failure handling, and interrupted output finalization.
@@ -52,6 +54,8 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 
 - [ ] Implement the long-lived daemon runtime in `locron-engine`, including lifetime/lock ownership, loop coordination, signals, bounded maintenance, and graceful shutdown.
 - [ ] Reconcile startup, wake, ticks, job revisions, disabled intervals, and wall-clock changes from durable cursors.
+- [x] Prove due one-time resolution disables atomically, downtime catch-up remains unique, and manual
+  submission neither consumes nor disables the schedule.
 - [ ] Apply start deadline and `skip|latest|all`, including newest bounded selection, oldest-first catch-up execution, and bounded summary events.
 - [ ] Apply `skip|replace|allow`, queued/retry-wait active accounting, global default 16/range 1..64, and per-job limits.
 - [ ] Implement known-failure retry classification, fixed/capped-exponential delay, durable retry wait, and no retry for unknown outcomes.
@@ -66,7 +70,11 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 - [ ] Build the minimal/layered environment and inject reserved `LOCRON_*` values last.
 - [ ] Create and supervise process groups with timeout, TERM grace, KILL escalation, cancellation, replacement, and graceful daemon shutdown.
 - [ ] Implement HTTP methods, absolute URLs, bodies/files, headers/env headers, success ranges, TLS, redirect policy, timeout, and retry classification.
+- [x] Prove `301`/`302`/`303` redirect method rewriting and `307`/`308` method/body preservation while
+  retaining cross-origin sensitive-header stripping.
 - [ ] Stream, follow, truncate, finalize, and prune output under approved limits without blocking target completion.
+- [x] Prove a post-admission runtime-file/configuration failure becomes a non-retryable terminal run
+  with consistent finalized output rather than an orphaned running attempt.
 
 **Verify:** real process-tree and local HTTP fixture tests pass on macOS and Linux for argv/env/CWD/PATH, grandchildren, TERM/KILL, disappearing runtime files, redirects across origins, TLS, response classes, timeout while streaming, output truncation, redaction boundaries, and target exit/result mapping.
 
@@ -75,9 +83,9 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 - [ ] Implement job CRUD, enable/disable/remove, schedule preview, history/show/logs, and cancellation.
 - [ ] Implement durable offline manual enqueue, run ID output, wait/follow behavior, and outcome exit mapping.
 - [ ] Implement import/export with explicit env-value acknowledgement, pruning, and diagnostics.
-- [ ] Expose `locron daemon run` as a thin composition entrypoint into the daemon runtime owned by `locron-engine`.
+- [x] Expose `locron daemon run` as a thin composition entrypoint into the daemon runtime owned by `locron-engine`.
 - [ ] Provide equivalent versioned machine-readable results without requiring prose parsing.
-- [ ] Implement non-mutating dry-run, durable-fact `why`, repeatable verbose context, and redacted debug tracing.
+- [x] Implement non-mutating dry-run, durable-fact `why`, repeatable verbose context, and redacted debug tracing.
 - [ ] Ensure CLI handlers call shared application validation rather than duplicating policy.
 
 **Verify:** CLI contract tests pass for human and machine modes, all command families, offline enqueue, disabled/manual/one-time behavior, client disconnect without cancellation, redaction, import/export round trip, soft removal, invalid/conflicting options, diagnostics, and stable error categories; workspace inspection finds only the `locron` binary and confirms `locron daemon run` delegates to `locron-engine`.
@@ -95,7 +103,7 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 
 ## 9. Complete documentation and milestone acceptance
 
-- [ ] Document installation-from-source and operation of the program milestone without claiming package-manager support.
+- [x] Document installation-from-source and operation of the program milestone without claiming package-manager support.
 - [ ] Document schedule, overlap, missed-run, retry, concurrency, timeout/cancellation, crash, retention, plaintext secret boundary, and exactly-once limitations.
 - [ ] Document diagnostics and recovery procedures plus human and machine CLI examples.
 - [ ] Map every frozen completion criterion to automated or cross-platform verification evidence.

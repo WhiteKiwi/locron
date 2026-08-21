@@ -1,0 +1,28 @@
+[package]
+name = "locron-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Daemon runtime and target execution engine for locron"
+
+[dependencies]
+async-trait.workspace = true
+crc32fast.workspace = true
+futures-util.workspace = true
+locron-core = { path = "../locron-core" }
+nix.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
