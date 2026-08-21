@@ -5,7 +5,7 @@ use std::future::Future;
 use jiff::tz::TimeZone;
 
 use crate::command::ApplicationCommand;
-use crate::{Result, Timestamp};
+use crate::{CoreError, Result, Timestamp};
 
 /// Applies one normalized application command to durable state.
 ///
@@ -15,7 +15,13 @@ pub trait PersistencePort<C>: Send + Sync
 where
     C: ApplicationCommand,
 {
-    fn apply(&self, command: C) -> Result<C::Result>;
+    /// Adapter-native error retained until the application boundary maps it.
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn apply(&self, command: C) -> std::result::Result<C::Result, Self::Error>;
+
+    /// Converts adapter details into the stable application error vocabulary.
+    fn map_error(error: Self::Error) -> CoreError;
 }
 
 /// Injected wall-clock source for deterministic scheduling tests.
@@ -60,11 +66,17 @@ mod tests {
     struct FakePersistence;
 
     impl PersistencePort<AddJob> for FakePersistence {
+        type Error = CoreError;
+
         fn apply(&self, command: AddJob) -> Result<AddJobResult> {
             Ok(AddJobResult {
                 job_id: command.id,
-                revision: 1,
+                revision: crate::RevisionNumber::new(1).unwrap(),
             })
+        }
+
+        fn map_error(error: Self::Error) -> CoreError {
+            error
         }
     }
 
@@ -90,5 +102,11 @@ mod tests {
         assert_port::<FakePersistence>();
         assert_executor::<FakeExecutor>();
         let _future = FakeExecutor.execute(41);
+    }
+
+    #[test]
+    fn persistence_errors_have_an_explicit_core_mapping() {
+        let error = FakePersistence::map_error(CoreError::Conflict("duplicate".into()));
+        assert!(matches!(error, CoreError::Conflict(message) if message == "duplicate"));
     }
 }

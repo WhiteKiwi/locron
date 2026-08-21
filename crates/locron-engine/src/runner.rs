@@ -7,6 +7,8 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
+use locron_core::CoreError;
+use locron_core::ports::ExecutorPort;
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill, killpg};
 use nix::unistd::Pid;
@@ -81,6 +83,15 @@ pub struct AttemptContext {
     pub timeout: Option<Duration>,
     /// External cancellation request.
     pub cancellation: CancellationToken,
+}
+
+/// Owned request passed through the runtime-neutral core executor port.
+#[derive(Clone, Debug)]
+pub struct ExecutionRequest {
+    /// Fully materialized target to execute.
+    pub target: TargetSpec,
+    /// Durable attempt identity, output paths, limits, and cancellation.
+    pub context: AttemptContext,
 }
 
 /// Stable target result classification.
@@ -531,6 +542,17 @@ impl Runner {
     }
 }
 
+impl ExecutorPort for Runner {
+    type Request = ExecutionRequest;
+    type Output = ExecutionOutcome;
+
+    async fn execute(&self, request: Self::Request) -> locron_core::Result<Self::Output> {
+        Runner::execute(self, &request.target, &request.context)
+            .await
+            .map_err(|error| CoreError::Execution(error.to_string()))
+    }
+}
+
 #[derive(Debug)]
 enum HttpRunError {
     Timeout,
@@ -765,6 +787,30 @@ mod tests {
             timeout: Some(Duration::from_secs(2)),
             cancellation: CancellationToken::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn core_executor_port_maps_runner_failures_to_execution_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("blocked-parent"), b"not a directory").unwrap();
+        let mut attempt = context(&temp);
+        attempt.partial_output = temp.path().join("blocked-parent/attempt.partial");
+        let request = ExecutionRequest {
+            target: TargetSpec::Process(ProcessSpec {
+                executable: "/usr/bin/true".into(),
+                args: Vec::new(),
+                cwd: temp.path().into(),
+                env: BTreeMap::new(),
+            }),
+            context: attempt,
+        };
+
+        let error = ExecutorPort::execute(&Runner::new(RunnerConfig::default()).unwrap(), request)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, CoreError::Execution(message) if message.starts_with("output error:"))
+        );
     }
 
     #[test]

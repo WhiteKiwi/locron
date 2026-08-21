@@ -980,6 +980,7 @@ name = "locron-store"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
+ "locron-core",
  "rusqlite",
  "serde",
  "serde_json",

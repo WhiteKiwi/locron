@@ -2,6 +2,15 @@ use std::collections::{BTreeMap, VecDeque};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
+use locron_core::command::{
+    AddJob as AddJobCommand, AddJobResult, CancelRun, CancelRunResult, CancellationDecision,
+    Configuration, ConfigurationChange, ManualRun, ManualRunResult, RemoveJob, RemoveJobResult,
+    SetJobEnabled, SetJobEnabledResult, UpdateConfiguration, UpdateJob as UpdateJobCommand,
+    UpdateJobResult,
+};
+use locron_core::lifecycle::RunState;
+use locron_core::ports::PersistencePort;
+use locron_core::{CoreError, DurationMicros, JobId, RevisionNumber};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -52,6 +61,17 @@ pub enum StoreError {
     NotFound(String),
     #[error("durable conflict: {0}")]
     Conflict(String),
+}
+
+/// Error produced while adapting a core application command to SQLite.
+#[derive(Debug, Error)]
+pub enum StorePortError {
+    #[error(transparent)]
+    Core(#[from] CoreError),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }
 
 #[derive(Clone, Debug)]
@@ -1941,6 +1961,301 @@ impl Store {
     }
 }
 
+impl PersistencePort<AddJobCommand> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: AddJobCommand) -> Result<AddJobResult, Self::Error> {
+        let settings = configuration_from_record(self.settings()?)?;
+        command
+            .validate(settings.global_concurrency)
+            .map_err(CoreError::from)?;
+        let record = self.create_job(&CreateJob {
+            id: command.id.to_string(),
+            name: command.name,
+            description: command.description,
+            tags_json: serde_json::to_string(&command.tags)?,
+            enabled: command.enabled,
+            definition_json: serde_json::to_string(&command.definition)?,
+            now_us: command.created_at.epoch_micros(),
+            cursor_us: command.cursor_at.epoch_micros(),
+        })?;
+        Ok(AddJobResult {
+            job_id: parse_job_id(&record.id)?,
+            revision: revision_number(record.current_revision)?,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<UpdateJobCommand> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: UpdateJobCommand) -> Result<UpdateJobResult, Self::Error> {
+        let settings = configuration_from_record(self.settings()?)?;
+        command
+            .validate(settings.global_concurrency)
+            .map_err(CoreError::from)?;
+        let record = self.update_job(&UpdateJob {
+            id: command.job_id.to_string(),
+            expected_revision: sequence_i64(command.expected_revision.get(), "revision")?,
+            name: command.name,
+            description: command.description,
+            tags_json: serde_json::to_string(&command.tags)?,
+            enabled: command.enabled,
+            definition_json: serde_json::to_string(&command.definition)?,
+            now_us: command.updated_at.epoch_micros(),
+            cursor_us: command.cursor_at.epoch_micros(),
+        })?;
+        Ok(UpdateJobResult {
+            job_id: parse_job_id(&record.id)?,
+            revision: revision_number(record.current_revision)?,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<SetJobEnabled> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: SetJobEnabled) -> Result<SetJobEnabledResult, Self::Error> {
+        let record = self.set_enabled(
+            &command.job_id.to_string(),
+            command.enabled,
+            command.changed_at.epoch_micros(),
+        )?;
+        Ok(SetJobEnabledResult {
+            job_id: parse_job_id(&record.id)?,
+            revision: revision_number(record.current_revision)?,
+            enabled: record.enabled,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<RemoveJob> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: RemoveJob) -> Result<RemoveJobResult, Self::Error> {
+        self.remove_job(
+            &command.job_id.to_string(),
+            command.removed_at.epoch_micros(),
+        )?;
+        Ok(RemoveJobResult {
+            job_id: command.job_id,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<ManualRun> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: ManualRun) -> Result<ManualRunResult, Self::Error> {
+        let record = self.enqueue_manual(
+            &command.job_id.to_string(),
+            &command.run_id.to_string(),
+            command.requested_at.epoch_micros(),
+        )?;
+        Ok(ManualRunResult {
+            run_id: command.run_id,
+            state: parse_run_state(&record.state)?,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<CancelRun> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: CancelRun) -> Result<CancelRunResult, Self::Error> {
+        let decision = match self.cancel_with_acknowledgement(
+            &command.run_id.to_string(),
+            command.requested_at.epoch_micros(),
+            command.acknowledge_unconfirmed,
+        )? {
+            CancelOutcome::CancelledBeforeExecution => {
+                CancellationDecision::CancelledBeforeExecution
+            }
+            CancelOutcome::CancellationRequested => CancellationDecision::CancellationRequested,
+            CancelOutcome::AcknowledgedUnconfirmed => CancellationDecision::AcknowledgedUnconfirmed,
+        };
+        Ok(CancelRunResult {
+            run_id: command.run_id,
+            decision,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<UpdateConfiguration> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: UpdateConfiguration) -> Result<Configuration, Self::Error> {
+        command.change.validate().map_err(CoreError::from)?;
+        let now_us = command.changed_at.epoch_micros();
+        let record = match command.change {
+            ConfigurationChange::GlobalConcurrency(value) => {
+                self.set_setting("global_concurrency", &value.to_string(), now_us)?
+            }
+            ConfigurationChange::ExecutionPath(value) => {
+                self.set_setting("execution_path", &value, now_us)?
+            }
+            ConfigurationChange::RunRetentionCount(value) => self.set_setting(
+                "run_retention_count",
+                &storage_integer(value, "run_retention_count")?,
+                now_us,
+            )?,
+            ConfigurationChange::RunRetentionAge(value) => self.set_setting(
+                "run_retention_age_us",
+                &storage_integer(value.get(), "run_retention_age")?,
+                now_us,
+            )?,
+            ConfigurationChange::OutputLimitBytes(value) => self.set_setting(
+                "output_limit_bytes",
+                &storage_integer(value, "output_limit_bytes")?,
+                now_us,
+            )?,
+            ConfigurationChange::PerRunOutputLimitBytes(value) => self.set_setting(
+                "per_run_output_limit_bytes",
+                &storage_integer(value, "per_run_output_limit_bytes")?,
+                now_us,
+            )?,
+            ConfigurationChange::Environment { name, value } => {
+                self.set_environment(&name, value.as_deref(), now_us)?
+            }
+        };
+        configuration_from_record(record)
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+fn map_store_port_error(error: StorePortError) -> CoreError {
+    match error {
+        StorePortError::Core(error) => error,
+        StorePortError::Store(StoreError::NotFound(value)) => CoreError::NotFound(value),
+        StorePortError::Store(StoreError::Conflict(value)) => CoreError::Conflict(value),
+        StorePortError::Store(StoreError::DaemonAlreadyRunning) => {
+            CoreError::Conflict("another locron daemon owns this state directory".into())
+        }
+        StorePortError::Store(StoreError::Sqlite(error))
+            if matches!(
+                error.sqlite_error_code(),
+                Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+            ) =>
+        {
+            CoreError::Unavailable("SQLite is busy".into())
+        }
+        StorePortError::Store(error) => CoreError::Persistence(error.to_string()),
+        StorePortError::Json(error) => CoreError::Persistence(error.to_string()),
+    }
+}
+
+fn parse_job_id(value: &str) -> Result<JobId, StorePortError> {
+    value
+        .parse::<JobId>()
+        .map_err(CoreError::from)
+        .map_err(Into::into)
+}
+
+fn revision_number(value: i64) -> Result<RevisionNumber, StorePortError> {
+    let value = u64::try_from(value).map_err(|_| {
+        CoreError::Persistence("stored revision is outside the domain range".into())
+    })?;
+    RevisionNumber::new(value)
+        .map_err(CoreError::from)
+        .map_err(Into::into)
+}
+
+fn sequence_i64(value: u64, field: &'static str) -> Result<i64, StorePortError> {
+    i64::try_from(value).map_err(|_| {
+        CoreError::Validation(locron_core::ValidationError::new(
+            field,
+            "out_of_range",
+            "sequence exceeds the durable integer range",
+        ))
+        .into()
+    })
+}
+
+fn storage_integer(value: u64, field: &'static str) -> Result<String, StorePortError> {
+    sequence_i64(value, field).map(|value| value.to_string())
+}
+
+fn parse_run_state(value: &str) -> Result<RunState, StorePortError> {
+    let state = match value {
+        "queued" => RunState::Queued,
+        "starting" => RunState::Starting,
+        "running" => RunState::Running,
+        "retry_wait" => RunState::RetryWait,
+        "succeeded" => RunState::Succeeded,
+        "failed" => RunState::Failed,
+        "timed_out" => RunState::TimedOut,
+        "cancelled" => RunState::Cancelled,
+        "skipped_overlap" => RunState::SkippedOverlap,
+        "skipped_concurrency" => RunState::SkippedConcurrency,
+        "interrupted_unknown" => RunState::InterruptedUnknown,
+        other => {
+            return Err(CoreError::Persistence(format!(
+                "stored run state is outside the domain vocabulary: {other}"
+            ))
+            .into());
+        }
+    };
+    Ok(state)
+}
+
+fn configuration_from_record(record: SettingsRecord) -> Result<Configuration, StorePortError> {
+    let global_concurrency = u8::try_from(record.global_concurrency).map_err(|_| {
+        CoreError::Persistence("stored global concurrency is outside the domain range".into())
+    })?;
+    if !(1..=64).contains(&global_concurrency) {
+        return Err(CoreError::Persistence(
+            "stored global concurrency is outside the domain range".into(),
+        )
+        .into());
+    }
+    let unsigned = |value: i64, field: &str| {
+        u64::try_from(value)
+            .map_err(|_| CoreError::Persistence(format!("stored {field} is negative")))
+    };
+    Ok(Configuration {
+        global_concurrency,
+        execution_path: record.execution_path,
+        run_retention_count: unsigned(record.run_retention_count, "run retention count")?,
+        run_retention_age: record
+            .run_retention_age_us
+            .map(|value| unsigned(value, "run retention age").map(DurationMicros::new))
+            .transpose()?,
+        output_limit_bytes: unsigned(record.output_limit_bytes, "output limit")?,
+        per_run_output_limit_bytes: unsigned(
+            record.per_run_output_limit_bytes,
+            "per-run output limit",
+        )?,
+        environment: record.environment,
+    })
+}
+
 fn maintenance_limit(limit: usize) -> i64 {
     limit.min(MAINTENANCE_BATCH_LIMIT) as i64
 }
@@ -2309,6 +2624,11 @@ fn map_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use locron_core::command::JobDefinition;
+    use locron_core::policy::ExecutionPolicy;
+    use locron_core::schedule::Schedule;
+    use locron_core::target::{Environment, Target};
+    use locron_core::{RunId, Timestamp};
 
     fn store() -> (tempfile::TempDir, Store) {
         let temp = tempfile::tempdir().unwrap();
@@ -2386,6 +2706,154 @@ mod tests {
             expected_id_destination: destination.map(str::to_owned),
             expected_name_destination: destination.map(str::to_owned),
         }
+    }
+
+    fn application_definition(cwd: &Path) -> JobDefinition {
+        JobDefinition {
+            schedule: Schedule::Every {
+                interval: DurationMicros::SECOND,
+                anchor: Timestamp::UNIX_EPOCH,
+            },
+            target: Target::Process {
+                executable: "/usr/bin/true".into(),
+                args: Vec::new(),
+            },
+            cwd: cwd.into(),
+            environment: Environment::default(),
+            policy: ExecutionPolicy::default(),
+        }
+    }
+
+    #[test]
+    fn core_application_ports_drive_real_sqlite_mutations_with_typed_results() {
+        let (temp, store) = store();
+        let job_id = JobId::new();
+        let added = PersistencePort::apply(
+            &store,
+            AddJobCommand {
+                id: job_id,
+                name: "ported".into(),
+                description: Some("through core".into()),
+                tags: vec!["adapter".into()],
+                enabled: true,
+                definition: application_definition(temp.path()),
+                created_at: Timestamp::from_epoch_micros(10),
+                cursor_at: Timestamp::from_epoch_micros(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(added.job_id, job_id);
+        assert_eq!(added.revision.get(), 1);
+
+        let updated = PersistencePort::apply(
+            &store,
+            UpdateJobCommand {
+                job_id,
+                expected_revision: added.revision,
+                name: "ported-renamed".into(),
+                description: None,
+                tags: vec!["typed".into()],
+                enabled: true,
+                definition: application_definition(temp.path()),
+                updated_at: Timestamp::from_epoch_micros(11),
+                cursor_at: Timestamp::from_epoch_micros(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.revision.get(), 2);
+
+        let disabled = PersistencePort::apply(
+            &store,
+            SetJobEnabled {
+                job_id,
+                enabled: false,
+                changed_at: Timestamp::from_epoch_micros(12),
+            },
+        )
+        .unwrap();
+        assert!(!disabled.enabled);
+        assert_eq!(disabled.revision, updated.revision);
+
+        let run_id = RunId::new();
+        let manual = PersistencePort::apply(
+            &store,
+            ManualRun {
+                run_id,
+                job_id,
+                requested_at: Timestamp::from_epoch_micros(13),
+            },
+        )
+        .unwrap();
+        assert_eq!(manual.run_id, run_id);
+        assert_eq!(manual.state, RunState::Queued);
+
+        let cancelled = PersistencePort::apply(
+            &store,
+            CancelRun {
+                run_id,
+                requested_at: Timestamp::from_epoch_micros(14),
+                acknowledge_unconfirmed: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            cancelled.decision,
+            CancellationDecision::CancelledBeforeExecution
+        );
+
+        let configuration = PersistencePort::apply(
+            &store,
+            UpdateConfiguration {
+                change: ConfigurationChange::Environment {
+                    name: "PORT_TEST".into(),
+                    value: Some("present".into()),
+                },
+                changed_at: Timestamp::from_epoch_micros(15),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            configuration
+                .environment
+                .get("PORT_TEST")
+                .map(String::as_str),
+            Some("present")
+        );
+
+        let removed = PersistencePort::apply(
+            &store,
+            RemoveJob {
+                job_id,
+                removed_at: Timestamp::from_epoch_micros(16),
+            },
+        )
+        .unwrap();
+        assert_eq!(removed.job_id, job_id);
+        assert!(matches!(
+            store.job(&job_id.to_string()),
+            Err(StoreError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn core_application_port_maps_store_conflicts_without_sqlite_leakage() {
+        let (temp, store) = store();
+        let command = AddJobCommand {
+            id: JobId::new(),
+            name: "duplicate".into(),
+            description: None,
+            tags: Vec::new(),
+            enabled: true,
+            definition: application_definition(temp.path()),
+            created_at: Timestamp::from_epoch_micros(10),
+            cursor_at: Timestamp::from_epoch_micros(10),
+        };
+        PersistencePort::apply(&store, command.clone()).unwrap();
+        let duplicate = PersistencePort::apply(&store, command).unwrap_err();
+        let mapped = <Store as PersistencePort<AddJobCommand>>::map_error(duplicate);
+        assert!(
+            matches!(mapped, CoreError::Conflict(message) if message.contains("already exists"))
+        );
     }
 
     #[test]
