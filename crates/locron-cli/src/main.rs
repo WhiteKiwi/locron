@@ -2890,10 +2890,31 @@ impl DaemonStore for StoreAdapter {
                 state: state.into(),
                 exit_code: outcome.exit_code,
                 http_status: outcome.http_status,
+                http_content_type: outcome.http_content_type.clone(),
                 reason: outcome.reason.clone(),
                 retry,
             })
             .map_err(|e| e.to_string())
+    }
+    async fn complete_runner_failure(
+        &self,
+        attempt: &AdmittedAttempt,
+        kind: locron_engine::runner::RunnerFailureKind,
+        reason: &str,
+        completed_at: i64,
+    ) -> Result<(), String> {
+        self.store
+            .complete_runner_failure(
+                &attempt.run_id,
+                i64::from(attempt.context.attempt),
+                completed_at,
+                reason,
+                matches!(
+                    kind,
+                    locron_engine::runner::RunnerFailureKind::ExecutionMayHaveStarted
+                ),
+            )
+            .map_err(|error| error.to_string())
     }
     async fn persistence_degraded(&self, reason: &str) {
         tracing::error!(%reason, "persistence degraded")
@@ -3710,6 +3731,7 @@ mod tests {
                     state: "succeeded".into(),
                     exit_code: Some(0),
                     http_status: None,
+                    http_content_type: None,
                     reason: "test completion".into(),
                     retry: None,
                 })
@@ -4033,6 +4055,7 @@ mod tests {
                     kind: OutcomeKind::FailedRetryable,
                     exit_code: Some(7),
                     http_status: None,
+                    http_content_type: None,
                     reason: "known failure".into(),
                     duration_micros: 1,
                     output: locron_engine::OutputStats::default(),

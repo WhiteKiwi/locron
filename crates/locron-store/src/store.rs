@@ -199,6 +199,7 @@ pub struct AttemptRecord {
     pub outcome: Option<String>,
     pub exit_code: Option<i32>,
     pub http_status: Option<u16>,
+    pub http_content_type: Option<String>,
     pub resolved_executable: Option<String>,
     pub error: Option<String>,
     pub reason: Option<String>,
@@ -247,6 +248,7 @@ pub struct AttemptCompletion {
     pub state: String,
     pub exit_code: Option<i32>,
     pub http_status: Option<u16>,
+    pub http_content_type: Option<String>,
     pub reason: String,
     pub retry: Option<RetryPlan>,
 }
@@ -906,7 +908,7 @@ impl Store {
         let mut statement = conn.prepare(
             "SELECT a.run_id,a.attempt_number,a.started_at_us,a.running_at_us,a.finished_at_us,\
                     a.duration_us,a.state,a.result_class,a.exit_code,a.http_status,\
-                    a.resolved_executable,a.error_message,\
+                    a.http_content_type,a.resolved_executable,a.error_message,\
                     o.state,o.retained_payload_bytes,o.physical_bytes,o.discarded_bytes,o.truncated,\
                     o.truncated_at_us,o.finalized_at_us,o.prune_started_at_us,o.pruned_at_us \
              FROM attempts a \
@@ -917,23 +919,23 @@ impl Store {
         )?;
         statement
             .query_map([run_id], |row| {
-                let output_state: Option<String> = row.get(12)?;
+                let output_state: Option<String> = row.get(13)?;
                 let output = if let Some(state) = output_state {
                     Some(AttemptOutputRecord {
                         state,
-                        retained_payload_bytes: row.get(13)?,
-                        physical_bytes: row.get(14)?,
-                        discarded_bytes: row.get(15)?,
-                        truncated: row.get(16)?,
-                        truncated_at_us: row.get(17)?,
-                        finalized_at_us: row.get(18)?,
-                        prune_started_at_us: row.get(19)?,
-                        pruned_at_us: row.get(20)?,
+                        retained_payload_bytes: row.get(14)?,
+                        physical_bytes: row.get(15)?,
+                        discarded_bytes: row.get(16)?,
+                        truncated: row.get(17)?,
+                        truncated_at_us: row.get(18)?,
+                        finalized_at_us: row.get(19)?,
+                        prune_started_at_us: row.get(20)?,
+                        pruned_at_us: row.get(21)?,
                     })
                 } else {
                     None
                 };
-                let error: Option<String> = row.get(11)?;
+                let error: Option<String> = row.get(12)?;
                 Ok(AttemptRecord {
                     run_id: row.get(0)?,
                     attempt_number: row.get(1)?,
@@ -945,7 +947,8 @@ impl Store {
                     outcome: row.get(7)?,
                     exit_code: row.get(8)?,
                     http_status: row.get(9)?,
-                    resolved_executable: row.get(10)?,
+                    http_content_type: row.get(10)?,
+                    resolved_executable: row.get(11)?,
                     reason: error.clone(),
                     error,
                     output,
@@ -1399,7 +1402,7 @@ impl Store {
                 "retry intent requires a known failed or timed-out attempt".into(),
             ));
         }
-        let changed = tx.execute("UPDATE attempts SET state=?3,finished_at_us=?4,duration_us=?5,exit_code=?6,http_status=?7,result_class=?3,error_message=?8 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')", params![completion.run_id,completion.attempt_number,completion.state,completion.now_us,completion.duration_us,completion.exit_code,completion.http_status,completion.reason])?;
+        let changed = tx.execute("UPDATE attempts SET state=?3,finished_at_us=?4,duration_us=?5,exit_code=?6,http_status=?7,http_content_type=?8,result_class=?3,error_message=?9 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')", params![completion.run_id,completion.attempt_number,completion.state,completion.now_us,completion.duration_us,completion.exit_code,completion.http_status,completion.http_content_type,completion.reason])?;
         if changed != 1 {
             if completion_already_committed(&tx, completion)? {
                 return Ok(());
@@ -1495,6 +1498,108 @@ impl Store {
         Ok(())
     }
 
+    pub fn complete_runner_failure(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+        reason: &str,
+        execution_may_have_started: bool,
+    ) -> StoreResult<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let state = if execution_may_have_started {
+            "interrupted_unknown"
+        } else {
+            "failed"
+        };
+        let result_class = if execution_may_have_started {
+            "interrupted_unknown"
+        } else {
+            "output_preparation_failed"
+        };
+        let duration_us = if execution_may_have_started {
+            tx.query_row(
+                "SELECT max(0,?3-COALESCE(running_at_us,started_at_us)) FROM attempts WHERE run_id=?1 AND attempt_number=?2",
+                params![run_id, attempt_number, now_us],
+                |row| row.get::<_, i64>(0),
+            )?
+        } else {
+            0
+        };
+        let output_changed = tx.execute(
+            "UPDATE output_artifacts SET state='missing',retained_payload_bytes=0,physical_bytes=0,discarded_bytes=0,truncated=0,truncated_at_us=NULL,finalized_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('pending','active')",
+            params![run_id, attempt_number, now_us],
+        )?;
+        let attempt_changed = tx.execute(
+            "UPDATE attempts SET state=?3,finished_at_us=?4,duration_us=?5,result_class=?6,error_message=?7 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')",
+            params![run_id, attempt_number, state, now_us, duration_us, result_class, reason],
+        )?;
+        let run_changed = tx.execute(
+            "UPDATE runs SET state=?2,reason=?3,finished_at_us=?4,replacement_candidate=0 WHERE id=?1 AND state IN ('starting','running')",
+            params![run_id, state, reason, now_us],
+        )?;
+        tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [run_id])?;
+
+        if output_changed == 1 && attempt_changed == 1 && run_changed == 1 {
+            let job_id: String =
+                tx.query_row("SELECT job_id FROM runs WHERE id=?1", [run_id], |row| {
+                    row.get(0)
+                })?;
+            event(
+                &tx,
+                now_us,
+                if execution_may_have_started {
+                    "attempt_infrastructure_interrupted"
+                } else {
+                    "attempt_output_preparation_failed"
+                },
+                Some(&job_id),
+                Some(run_id),
+                &serde_json::to_string(&serde_json::json!({
+                    "retryable": false,
+                    "execution_may_have_started": execution_may_have_started,
+                }))?,
+            )?;
+            tx.commit()?;
+            return Ok(());
+        }
+
+        let already_committed: bool = tx.query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM attempts a
+                JOIN runs r ON r.id=a.run_id
+                JOIN output_artifacts o
+                  ON o.run_id=a.run_id AND o.attempt_number=a.attempt_number
+                WHERE a.run_id=?1 AND a.attempt_number=?2
+                  AND a.state=?3 AND a.finished_at_us=?4 AND a.duration_us=?5
+                  AND a.result_class=?6 AND a.error_message=?7
+                  AND r.state=?3 AND r.reason=?7 AND r.finished_at_us=?4
+                  AND o.state='missing' AND o.finalized_at_us=?4
+                  AND NOT EXISTS (SELECT 1 FROM retry_intents WHERE run_id=?1)
+            )",
+            params![
+                run_id,
+                attempt_number,
+                state,
+                now_us,
+                duration_us,
+                result_class,
+                reason
+            ],
+            |row| row.get(0),
+        )?;
+        if already_committed {
+            tx.commit()?;
+            Ok(())
+        } else {
+            Err(StoreError::Conflict(
+                "runner failure is not applicable to this attempt".into(),
+            ))
+        }
+    }
+
     pub fn finalize_output(&self, output: &OutputRecord, now_us: i64) -> StoreResult<()> {
         self.reconcile_output_finalized(output, now_us)
     }
@@ -1517,6 +1622,24 @@ impl Store {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn output_artifact_references(
+        &self,
+        run_id: &str,
+        relative_path: &str,
+    ) -> StoreResult<bool> {
+        self.conn()?
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM output_artifacts
+                    WHERE run_id=?1 AND relative_path=?2
+                    LIMIT 1
+                )",
+                params![run_id, relative_path],
+                |row| row.get(0),
+            )
             .map_err(Into::into)
     }
 
@@ -2325,6 +2448,7 @@ fn completion_already_committed(
         Option<i32>,
         Option<i64>,
         Option<String>,
+        Option<String>,
         String,
         Option<String>,
         i64,
@@ -2332,9 +2456,9 @@ fn completion_already_committed(
     );
     let current: Option<CompletionFacts> = tx
         .query_row(
-            "SELECT a.state,a.finished_at_us,a.duration_us,a.exit_code,a.http_status,a.error_message,r.state,r.reason,r.eligible_at_us,r.finished_at_us FROM attempts a JOIN runs r ON r.id=a.run_id WHERE a.run_id=?1 AND a.attempt_number=?2",
+            "SELECT a.state,a.finished_at_us,a.duration_us,a.exit_code,a.http_status,a.http_content_type,a.error_message,r.state,r.reason,r.eligible_at_us,r.finished_at_us FROM attempts a JOIN runs r ON r.id=a.run_id WHERE a.run_id=?1 AND a.attempt_number=?2",
             params![completion.run_id, completion.attempt_number],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?, row.get(10)?)),
         )
         .optional()?;
     let Some((
@@ -2343,6 +2467,7 @@ fn completion_already_committed(
         duration,
         exit_code,
         http_status,
+        http_content_type,
         error,
         run_state,
         reason,
@@ -2357,6 +2482,7 @@ fn completion_already_committed(
         || duration != Some(completion.duration_us)
         || exit_code != completion.exit_code
         || http_status != completion.http_status.map(i64::from)
+        || http_content_type.as_deref() != completion.http_content_type.as_deref()
         || error.as_deref() != Some(completion.reason.as_str())
         || reason.as_deref() != Some(completion.reason.as_str())
     {
@@ -3137,6 +3263,7 @@ mod tests {
                 state: "failed".into(),
                 exit_code: Some(1),
                 http_status: None,
+                http_content_type: None,
                 reason: "retryable failure".into(),
                 retry: Some(RetryPlan {
                     not_before_us: 100,
@@ -3472,6 +3599,7 @@ mod tests {
                 state: "cancelled".into(),
                 exit_code: None,
                 http_status: None,
+                http_content_type: None,
                 reason: "replacement termination confirmed".into(),
                 retry: None,
             })
@@ -3569,12 +3697,19 @@ mod tests {
             duration_us: 1,
             state: "succeeded".into(),
             exit_code: Some(0),
-            http_status: None,
+            http_status: Some(200),
+            http_content_type: Some("application/json; charset=utf-8".into()),
             reason: "known result".into(),
             retry: None,
         };
         store.complete_attempt(&completion).unwrap();
         store.complete_attempt(&completion).unwrap();
+        let persisted = store.attempts_for_run(&completion.run_id).unwrap();
+        assert_eq!(persisted[0].http_status, Some(200));
+        assert_eq!(
+            persisted[0].http_content_type.as_deref(),
+            Some("application/json; charset=utf-8")
+        );
         let mut mismatched = completion;
         mismatched.reason = "different result".into();
         assert!(matches!(
@@ -3611,6 +3746,7 @@ mod tests {
                 state: "termination_unconfirmed".into(),
                 exit_code: None,
                 http_status: None,
+                http_content_type: None,
                 reason: "TERM and KILL confirmation deadlines elapsed".into(),
                 retry: None,
             })
@@ -3991,6 +4127,7 @@ mod tests {
                 state: "failed".into(),
                 exit_code: Some(1),
                 http_status: None,
+                http_content_type: None,
                 reason: "known failure".into(),
                 retry: Some(RetryPlan {
                     not_before_us: 100,
@@ -4207,6 +4344,7 @@ mod tests {
                     state: "failed".into(),
                     exit_code: Some(7),
                     http_status: None,
+                    http_content_type: None,
                     reason: "known failure".into(),
                     retry: Some(RetryPlan {
                         not_before_us: 10,
@@ -4284,6 +4422,7 @@ mod tests {
                     state: "succeeded".into(),
                     exit_code: Some(0),
                     http_status: None,
+                    http_content_type: None,
                     reason: "test completion".into(),
                     retry: None,
                 })
@@ -4384,6 +4523,7 @@ mod tests {
                 state: "succeeded".into(),
                 exit_code: Some(0),
                 http_status: None,
+                http_content_type: None,
                 reason: "completed".into(),
                 retry: None,
             })
@@ -4402,6 +4542,7 @@ mod tests {
                 state: "succeeded".into(),
                 exit_code: Some(0),
                 http_status: None,
+                http_content_type: None,
                 reason: "completed".into(),
                 retry: None,
             })
@@ -4618,6 +4759,7 @@ mod tests {
                 state: "succeeded".into(),
                 exit_code: Some(0),
                 http_status: None,
+                http_content_type: None,
                 reason: "completed".into(),
                 retry: None,
             })
@@ -4722,6 +4864,7 @@ mod tests {
                 state: "succeeded".into(),
                 exit_code: Some(0),
                 http_status: None,
+                http_content_type: None,
                 reason: "completed".into(),
                 retry: None,
             })
@@ -4799,6 +4942,92 @@ mod tests {
             store.set_environment("TOKEN", Some("bad\0value"), 5),
             Err(StoreError::Conflict(_))
         ));
+    }
+
+    #[test]
+    fn runner_failures_atomically_mark_output_missing_and_never_retry() {
+        for (execution_may_have_started, expected_state, expected_class) in [
+            (false, "failed", "output_preparation_failed"),
+            (true, "interrupted_unknown", "interrupted_unknown"),
+        ] {
+            let (_temp, store) = store();
+            let job = Uuid::now_v7().to_string();
+            let run = Uuid::now_v7().to_string();
+            let lifetime = Uuid::now_v7().to_string();
+            create(&store, &job, "runner-failure");
+            store.enqueue_manual("runner-failure", &run, 2).unwrap();
+            store.begin_lifetime(&lifetime, 3, "test").unwrap();
+            let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+            assert_eq!(
+                store
+                    .mark_attempt_running(&run, attempt.attempt_number, 4)
+                    .unwrap(),
+                StartDecision::Ready
+            );
+
+            store
+                .complete_runner_failure(
+                    &run,
+                    attempt.attempt_number,
+                    10,
+                    "output storage failed",
+                    execution_may_have_started,
+                )
+                .unwrap();
+            store
+                .complete_runner_failure(
+                    &run,
+                    attempt.attempt_number,
+                    10,
+                    "output storage failed",
+                    execution_may_have_started,
+                )
+                .unwrap();
+
+            let facts: (String, String, String, String, i64) = store
+                .conn()
+                .unwrap()
+                .query_row(
+                    "SELECT a.state,a.result_class,r.state,o.state,count(ri.run_id)
+                     FROM attempts a
+                     JOIN runs r ON r.id=a.run_id
+                     JOIN output_artifacts o
+                       ON o.run_id=a.run_id AND o.attempt_number=a.attempt_number
+                     LEFT JOIN retry_intents ri ON ri.run_id=a.run_id
+                     WHERE a.run_id=?1 AND a.attempt_number=?2",
+                    params![run, attempt.attempt_number],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                        ))
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                facts,
+                (
+                    expected_state.into(),
+                    expected_class.into(),
+                    expected_state.into(),
+                    "missing".into(),
+                    0,
+                )
+            );
+            assert!(
+                store
+                    .output_artifact_references(&run, &format!("{run}/1.partial"))
+                    .unwrap()
+            );
+            assert!(
+                !store
+                    .output_artifact_references(&run, &format!("{run}/2.log"))
+                    .unwrap()
+            );
+        }
     }
 
     #[test]

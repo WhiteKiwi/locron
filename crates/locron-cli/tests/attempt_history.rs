@@ -2,6 +2,8 @@
 
 //! End-to-end run and attempt observability contracts.
 
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -174,6 +176,7 @@ fn history_and_why_expose_complete_ordered_retry_attempts_without_secrets() {
         assert!(attempt["resolved_executable"].as_str().is_some());
         assert_output_facts(attempt);
         assert!(attempt["http_status"].is_null());
+        assert!(attempt["http_content_type"].is_null());
     }
     assert_eq!(attempts[0]["state"], "failed");
     assert_eq!(attempts[0]["outcome"], "failed");
@@ -197,4 +200,62 @@ fn history_and_why_expose_complete_ordered_retry_attempts_without_secrets() {
     assert_eq!(why["command"], "why");
     assert_eq!(&why["data"]["run"], run);
     assert!(why["data"]["events"].as_array().is_some());
+}
+
+#[test]
+fn history_persists_final_http_status_and_content_type() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let fixture = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 1024];
+        let _ = stream.read(&mut request).unwrap();
+        stream
+            .write_all(
+                b"HTTP/1.1 204 No Content\r\nContent-Type: application/vnd.locron.test+json; charset=utf-8\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .unwrap();
+    });
+    let state = tempfile::tempdir().unwrap();
+    successful_output(locron(&state).args([
+        "add",
+        "http-history",
+        "--every",
+        "1h",
+        "--http",
+        "GET",
+        &format!("http://{address}/status"),
+    ]));
+    let run = successful_output(locron(&state).args(["--json", "run", "http-history"]));
+    let run: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+    let run_id = run["data"]["run_id"].as_str().unwrap().to_owned();
+
+    let daemon = Daemon::start(&state);
+    let store = Store::open_read_only(&state.path().join("state.db")).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        let run = store.run(&run_id).unwrap();
+        if run.state == "succeeded" {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "HTTP run did not succeed: {} ({:?})",
+            run.state,
+            run.reason
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    fixture.join().unwrap();
+    drop(daemon);
+
+    let (history, _) =
+        json_output(locron(&state).args(["--json", "history", "http-history", "--limit", "1"]));
+    let attempt = &history["data"][0]["attempts"][0];
+    assert_eq!(attempt["http_status"], 204);
+    assert_eq!(
+        attempt["http_content_type"],
+        "application/vnd.locron.test+json; charset=utf-8"
+    );
+    assert!(attempt["duration_us"].as_i64().unwrap() > 0);
 }

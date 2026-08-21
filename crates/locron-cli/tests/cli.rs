@@ -584,6 +584,7 @@ fn quarantine_requires_explicit_acknowledgement_and_is_visible_in_why_and_histor
             state: "termination_unconfirmed".into(),
             exit_code: None,
             http_status: None,
+            http_content_type: None,
             reason: "synthetic unconfirmed process group".into(),
             retry: None,
         })

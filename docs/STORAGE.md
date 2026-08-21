@@ -42,7 +42,7 @@ Exact SQL is migration-owned, but the initial schema has these records and keys:
 | job revisions | job UUID + revision number | Immutable normalized definition JSON and creation facts |
 | schedule cursors | job UUID + revision number | Reconciliation boundary, interval anchor, one-time resolution, optional disabled-since boundary |
 | runs | UUIDv7 | Trigger, nominal/request/eligibility times, queue sequence, snapshot, lifecycle and reason |
-| attempts | run UUID + attempt number | Lifetime owner, timing, process/HTTP result, resolved executable and state |
+| attempts | run UUID + attempt number | Lifetime owner, timing, process/HTTP status and content type, resolved executable and state |
 | retry intents | run UUID | Prior attempt, durable not-before time and retry classification |
 | events | increasing integer | Bounded audit and explanation cursor |
 | output artifacts | run UUID + attempt number | Logical key, lifecycle, byte/truncation/discard/prune facts |

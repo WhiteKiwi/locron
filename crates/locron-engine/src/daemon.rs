@@ -10,7 +10,9 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::runner::{AttemptContext, ExecutionOutcome, Runner, RunnerError, TargetSpec};
+use crate::runner::{
+    AttemptContext, ExecutionOutcome, Runner, RunnerError, RunnerFailureKind, TargetSpec,
+};
 
 const MAX_GLOBAL_CONCURRENCY: usize = 64;
 
@@ -85,6 +87,14 @@ pub trait DaemonStore: Send + Sync + 'static {
         &self,
         attempt: &AdmittedAttempt,
         outcome: &ExecutionOutcome,
+        completed_at_us: i64,
+    ) -> Result<(), String>;
+    /// Persists a runner infrastructure failure without retrying execution.
+    async fn complete_runner_failure(
+        &self,
+        attempt: &AdmittedAttempt,
+        kind: RunnerFailureKind,
+        reason: &str,
         completed_at_us: i64,
     ) -> Result<(), String>;
     /// Reads a durable user or replacement cancellation intent.
@@ -266,7 +276,45 @@ impl<S: DaemonStore> Daemon<S> {
                         }
                     }
                     Err(error) => {
-                        store.persistence_degraded(&error.to_string()).await;
+                        let completed_at_us = store.completion_instant_us();
+                        let kind = error.failure_kind();
+                        let reason = error.to_string();
+                        let mut retry_delay = retry_initial;
+                        let mut first_completion = true;
+                        loop {
+                            let completion = if first_completion {
+                                first_completion = false;
+                                store
+                                    .complete_runner_failure(
+                                        &attempt,
+                                        kind,
+                                        &reason,
+                                        completed_at_us,
+                                    )
+                                    .await
+                            } else {
+                                tokio::select! {
+                                    biased;
+                                    () = shutdown.cancelled() => break,
+                                    completion = store.complete_runner_failure(
+                                        &attempt,
+                                        kind,
+                                        &reason,
+                                        completed_at_us,
+                                    ) => completion,
+                                }
+                            };
+                            match completion {
+                                Ok(()) => break,
+                                Err(error) => store.persistence_degraded(&error).await,
+                            }
+                            tokio::select! {
+                                biased;
+                                () = shutdown.cancelled() => break,
+                                () = tokio::time::sleep(retry_delay) => {}
+                            }
+                            retry_delay = next_retry_delay(retry_delay, retry_cap);
+                        }
                     }
                 }
                 drop(permit);
@@ -400,6 +448,7 @@ mod tests {
         mark_calls: AtomicUsize,
         completions: AtomicUsize,
         successful_completions: AtomicUsize,
+        runner_failure_kinds: Mutex<Vec<RunnerFailureKind>>,
         degradations: AtomicUsize,
         completion_results: Mutex<VecDeque<Result<(), String>>>,
         mark_notify: tokio::sync::Notify,
@@ -515,6 +564,7 @@ mod tests {
                 mark_calls: AtomicUsize::new(0),
                 completions: AtomicUsize::new(0),
                 successful_completions: AtomicUsize::new(0),
+                runner_failure_kinds: Mutex::new(Vec::new()),
                 degradations: AtomicUsize::new(0),
                 completion_results: Mutex::new(VecDeque::new()),
                 mark_notify: tokio::sync::Notify::new(),
@@ -584,6 +634,27 @@ mod tests {
             }
             result
         }
+        async fn complete_runner_failure(
+            &self,
+            _: &AdmittedAttempt,
+            kind: RunnerFailureKind,
+            _: &str,
+            _: i64,
+        ) -> Result<(), String> {
+            self.runner_failure_kinds.lock().unwrap().push(kind);
+            self.completions.fetch_add(1, Ordering::AcqRel);
+            self.complete_notify.notify_one();
+            let result = self
+                .completion_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()));
+            if result.is_ok() {
+                self.successful_completions.fetch_add(1, Ordering::AcqRel);
+            }
+            result
+        }
         async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
             Ok(false)
         }
@@ -640,6 +711,15 @@ mod tests {
         ) -> Result<(), String> {
             Ok(())
         }
+        async fn complete_runner_failure(
+            &self,
+            _: &AdmittedAttempt,
+            _: RunnerFailureKind,
+            _: &str,
+            _: i64,
+        ) -> Result<(), String> {
+            Ok(())
+        }
         async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
             Ok(false)
         }
@@ -680,6 +760,15 @@ mod tests {
             &self,
             _: &AdmittedAttempt,
             _: &ExecutionOutcome,
+            _: i64,
+        ) -> Result<(), String> {
+            unreachable!("capacity-only store never admits")
+        }
+        async fn complete_runner_failure(
+            &self,
+            _: &AdmittedAttempt,
+            _: RunnerFailureKind,
+            _: &str,
             _: i64,
         ) -> Result<(), String> {
             unreachable!("capacity-only store never admits")
@@ -731,6 +820,17 @@ mod tests {
         ) -> Result<(), String> {
             self.events.lock().unwrap().push("complete");
             *self.outcome.lock().unwrap() = Some(outcome.kind.clone());
+            Ok(())
+        }
+
+        async fn complete_runner_failure(
+            &self,
+            _: &AdmittedAttempt,
+            _: RunnerFailureKind,
+            _: &str,
+            _: i64,
+        ) -> Result<(), String> {
+            self.events.lock().unwrap().push("runner_failure");
             Ok(())
         }
 
@@ -1114,6 +1214,99 @@ mod tests {
         daemon.tracker.wait().await;
         assert_eq!(store.completions.load(Ordering::Acquire), 2);
         assert_eq!(store.degradations.load(Ordering::Acquire), 1);
+        assert_eq!(
+            std::fs::read(temp.path().join("side-effect")).unwrap(),
+            b"x"
+        );
+    }
+
+    #[tokio::test]
+    async fn output_preparation_failure_is_completed_durably_without_spawning() {
+        let temp = tempfile::tempdir().unwrap();
+        let blocked_parent = temp.path().join("blocked-output-parent");
+        std::fs::write(&blocked_parent, b"not a directory").unwrap();
+        let store = Arc::new(
+            ScriptedStore::new(&temp, vec![Ok(true)])
+                .with_completion_results(vec![Err("busy".into()), Ok(())]),
+        );
+        store
+            .attempt
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .context
+            .partial_output = blocked_parent.join("1.partial");
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
+        while store.successful_completions.load(Ordering::Acquire) == 0 {
+            store.complete_notify.notified().await;
+        }
+        daemon.tracker.close();
+        daemon.tracker.wait().await;
+
+        assert_eq!(store.completions.load(Ordering::Acquire), 2);
+        assert_eq!(
+            *store.runner_failure_kinds.lock().unwrap(),
+            [
+                RunnerFailureKind::OutputPreparation,
+                RunnerFailureKind::OutputPreparation
+            ]
+        );
+        assert!(!temp.path().join("side-effect").exists());
+    }
+
+    #[tokio::test]
+    async fn post_spawn_output_failure_is_unknown_and_completion_does_not_reexecute() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            ScriptedStore::new(&temp, vec![Ok(true)])
+                .with_completion_results(vec![Err("busy".into()), Ok(())]),
+        );
+        let final_output = store
+            .attempt
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .context
+            .final_output
+            .clone();
+        std::fs::create_dir(&final_output).unwrap();
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
+        while store.successful_completions.load(Ordering::Acquire) == 0 {
+            store.complete_notify.notified().await;
+        }
+        daemon.tracker.close();
+        daemon.tracker.wait().await;
+
+        assert_eq!(store.completions.load(Ordering::Acquire), 2);
+        assert_eq!(
+            *store.runner_failure_kinds.lock().unwrap(),
+            [
+                RunnerFailureKind::ExecutionMayHaveStarted,
+                RunnerFailureKind::ExecutionMayHaveStarted
+            ]
+        );
         assert_eq!(
             std::fs::read(temp.path().join("side-effect")).unwrap(),
             b"x"

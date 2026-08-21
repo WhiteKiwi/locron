@@ -377,14 +377,14 @@ fn remove_verified_orphans(
         if !is_canonical_uuid(run_id) || !is_safe_directory(&directory.path())? {
             continue;
         }
-        match store.run(run_id) {
-            Ok(_) => continue,
-            Err(StoreError::NotFound(_)) => {}
+        let run_exists = match store.run(run_id) {
+            Ok(_) => true,
+            Err(StoreError::NotFound(_)) => false,
             Err(error) => {
                 pass.record("verify orphan run identity", error);
                 continue;
             }
-        }
+        };
         for entry in sorted_entries(&directory.path())? {
             if pass.remaining() == 0 {
                 break;
@@ -394,6 +394,17 @@ fn remove_verified_orphans(
                 || file_kind(&path)? != FileKind::Regular
             {
                 continue;
+            }
+            if run_exists {
+                let relative_path = format!("{run_id}/{}", entry.file_name().to_string_lossy());
+                match store.output_artifact_references(run_id, &relative_path) {
+                    Ok(true) => continue,
+                    Ok(false) => {}
+                    Err(error) => {
+                        pass.record("verify output artifact reference", error);
+                        continue;
+                    }
+                }
             }
             let metadata = fs::symlink_metadata(&path)?;
             if metadata
@@ -596,6 +607,7 @@ mod tests {
                 state: "succeeded".into(),
                 exit_code: Some(0),
                 http_status: None,
+                http_content_type: None,
                 reason: "test".into(),
                 retry: None,
             })
@@ -698,6 +710,31 @@ mod tests {
             1
         );
         assert!(directory.join("unexpected").is_dir());
+    }
+
+    #[test]
+    fn orphan_cleanup_removes_unreferenced_canonical_file_inside_existing_run() {
+        let (_temp, paths, store) = open_store();
+        let run_id = uuid::Uuid::from_u128(11).to_string();
+        admit_one(&store, &run_id);
+        let directory = paths.output_directory(&run_id).unwrap();
+        fs::create_dir(&directory).unwrap();
+        let partial = paths.partial_output(&run_id, 1).unwrap();
+        let mut writer = FrameWriter::create(&partial).unwrap();
+        writer
+            .write(FrameChannel::Stdout, 1, b"referenced")
+            .unwrap();
+        writer.sync().unwrap();
+        drop(writer);
+        let orphan = directory.join("2.log");
+        fs::write(&orphan, b"unreferenced").unwrap();
+
+        let report = maintain(&store, &paths, i64::MAX / 2).unwrap();
+
+        assert_eq!(report.outputs_recovered, 1);
+        assert_eq!(report.orphans_removed, 1);
+        assert!(paths.final_output(&run_id, 1).unwrap().is_file());
+        assert!(!orphan.exists());
     }
 
     #[cfg(unix)]
