@@ -48,7 +48,7 @@ following slices run end to end on macOS arm64:
 
 ## Verification evidence
 
-Local verification completed on 2026-08-21:
+Verification completed locally and was reproduced in hosted CI on 2026-08-21:
 
 | Toolchain | Format | Clippy | Tests |
 |---|---:|---:|---:|
@@ -58,20 +58,21 @@ Local verification completed on 2026-08-21:
 The suite includes deterministic core tests, temporary real SQLite tests, real subprocess tests,
 local TCP HTTP fixtures, CLI contract tests, wake-socket daemon execution, durable cancellation,
 redaction, and non-mutating dry-run checks. GitHub Actions
-[run 32486709802](https://github.com/whitekiwi/locron/actions/runs/32486709802) for commit
-`af99df4` passed all four hosted jobs: Ubuntu with Rust 1.94, Ubuntu with stable, macOS 14 with Rust
-1.94, and macOS 14 with stable. Every job passed formatting, Clippy with `-D warnings`, and all 78
-tests. This is hosted-runner compatibility evidence; it does not replace the official architecture
+[run 32492286277](https://github.com/whitekiwi/locron/actions/runs/32492286277) for commit
+`422e736` passed all four hosted jobs: Ubuntu with Rust 1.94, Ubuntu with stable, macOS 14 with Rust
+1.94, and macOS 14 with stable. Every job passed formatting, Clippy with `-D warnings`, and all 113
+tests. The `actions/checkout@v4` steps emitted GitHub's Node 20 deprecation annotation, but it was
+not a test or workflow failure; reviewing the action's next major version remains post-milestone CI
+maintenance. This hosted-runner compatibility evidence does not replace the official architecture
 and process-lifetime matrix still listed below.
 
-The active correctness tranche now has a locally verified implementation of bounded exact
+Commit `422e736` contains the correctness tranche's implementation of bounded exact
 reconciliation, revision-cached compact Gregorian rank/select, durable disabled intervals and schema
 v1-to-v2 migration, centralized retry timing, pre-spawn cancellation, replacement quarantine on
-unconfirmed process-group termination, and transactional per-job admission slots. The working-tree
-suite has 113 tests and passes format, all-target check, Clippy `-D warnings`, and workspace tests on
-both Rust 1.94 and current stable. This is local evidence, not a replacement for a published hosted
-run. The broad checklist items remain open until every clause in their larger verification matrices
-is covered.
+unconfirmed process-group termination, and transactional per-job admission slots. Its 113-test suite
+passes format, all-target check, Clippy `-D warnings`, and workspace tests on both Rust 1.94 and
+current stable locally and in the hosted matrix above. The broad checklist items remain open until
+every clause in their larger verification matrices is covered.
 
 ## Remaining milestone gaps
 

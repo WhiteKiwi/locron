@@ -147,8 +147,9 @@ their workflows or release infrastructure.
 
 - [ ] Define CI/CD policy and version/release policy. **Verify:** choose concrete evidence when the
   follow-up delivery plan begins.
-- [ ] Complete GitHub build/test CI for release operations. **Verify:** choose the supported artifact
-  and runner matrix in the follow-up delivery plan.
+- [ ] Complete GitHub build/test CI for release operations and review the next supported major of
+  `actions/checkout` to remove the current Node 20 deprecation annotation. **Verify:** choose the
+  supported artifact, action-version, and runner matrix in the follow-up delivery plan.
 - [ ] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** choose install/upgrade/remove
   checks when packaging work enters scope.
 - [ ] Automate Homebrew tap releases from approved version tags. **Verify:** choose provenance,
