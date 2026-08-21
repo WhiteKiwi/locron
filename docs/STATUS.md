@@ -53,8 +53,12 @@ Local verification completed on 2026-08-21:
 
 The suite includes deterministic core tests, temporary real SQLite tests, real subprocess tests,
 local TCP HTTP fixtures, CLI contract tests, wake-socket daemon execution, durable cancellation,
-redaction, and non-mutating dry-run checks. GitHub Actions is configured for Rust 1.94/latest on
-Ubuntu and macOS, but no remote CI run is claimed by this report.
+redaction, and non-mutating dry-run checks. GitHub Actions
+[run 32483045803](https://github.com/whitekiwi/locron/actions/runs/32483045803) for commit
+`1f7b02e` passed all four hosted jobs: Ubuntu with Rust 1.94, Ubuntu with stable, macOS 14 with Rust
+1.94, and macOS 14 with stable. Every job passed formatting, Clippy with `-D warnings`, and all 57
+tests. This is hosted-runner compatibility evidence; it does not replace the official architecture
+and process-lifetime matrix still listed below.
 
 ## Remaining milestone gaps
 
