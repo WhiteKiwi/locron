@@ -228,6 +228,7 @@ impl Runner {
                     .await;
             }
         };
+        crate::test_crash_boundary("after-spawn").await;
         let pid = child.id().map(|id| Pid::from_raw(id as i32));
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");

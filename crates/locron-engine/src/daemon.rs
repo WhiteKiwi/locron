@@ -184,6 +184,7 @@ impl<S: DaemonStore> Daemon<S> {
             let retry_initial = self.config.pre_spawn_retry_initial;
             let retry_cap = self.config.pre_spawn_retry_cap;
             self.tracker.spawn(async move {
+                crate::test_crash_boundary("before-spawn").await;
                 let mut retry_delay = retry_initial;
                 loop {
                     let decision = tokio::select! {
@@ -227,6 +228,7 @@ impl<S: DaemonStore> Daemon<S> {
                         }
                     }
                 };
+                crate::test_crash_boundary("after-target-exit").await;
                 match outcome {
                     Ok(outcome) => {
                         let completed_at_us = store.completion_instant_us();
