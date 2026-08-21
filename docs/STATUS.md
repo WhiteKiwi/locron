@@ -74,29 +74,34 @@ passes format, all-target check, Clippy `-D warnings`, and workspace tests on bo
 current stable locally and in the hosted matrix above. The broad checklist items remain open until
 every clause in their larger verification matrices is covered.
 
-The current uncommitted acceptance slice adds explicit operator acknowledgement for
+Commit `58467fd` adds explicit operator acknowledgement for
 `termination_unconfirmed` quarantine, atomic durable global-concurrency rechecks at admission,
 table-driven overlap/trigger/capacity and retry/deadline coverage, and a real 1,000-member catch-up
 materialization/admission fixture with compact omission accounting. Its 121-test suite passes the
 same complete local Rust 1.94 and stable commands shown above. It has not yet been reproduced by a
 hosted run.
 
+The current lifecycle fault-boundary slice (2026-08-22) makes admission persistence failure visibly
+degraded without starting a target and adds deterministic injected coverage before admission,
+starting before spawn, running after spawn, and after target outcome before completion commit. A
+real SQLite matrix proves one-time occurrence uniqueness and no unknown retry at every recovery
+boundary. Its 124-test suite passes formatting, Clippy with `-D warnings`, and all workspace targets
+locally on Rust 1.94.0.
+
 ## Remaining milestone gaps
 
 These are required before milestone 1 can be called complete:
 
-1. Complete the remaining deterministic fault points before admission, before spawn, after spawn,
-   and after target exit, including explicit one-time recovery identity coverage at each boundary.
-2. Wire startup output repair/orphan cleanup and automatic daemon maintenance; complete metadata
+1. Wire startup output repair/orphan cleanup and automatic daemon maintenance; complete metadata
    age/count retention in addition to the implemented output byte/age prune path.
-3. Persist resolved executable/audit hashes and add TLS, process-grandchild, disappearing HTTP
+2. Persist resolved executable/audit hashes and add TLS, process-grandchild, disappearing HTTP
    body-file, streaming-timeout, and noisy-output fixtures.
-4. Implement live partial-file follow and the reviewed `locron.stream/v1` terminal stream contract.
+3. Implement live partial-file follow and the reviewed `locron.stream/v1` terminal stream contract.
    Refine human rendering beyond the current readable JSON representation.
-5. Add broader concurrent-writer/busy, disk-failure, retention stress, concurrency 16/64, and
+4. Add broader concurrent-writer/busy, disk-failure, retention stress, concurrency 16/64, and
    cross-process crash-injection tests beyond the deterministic migration/concurrency fixtures now
    present.
-6. Run the official Linux/macOS architecture matrix and produce the 16-criterion completion matrix.
+5. Run the official Linux/macOS architecture matrix and produce the 16-criterion completion matrix.
 
 No HTTP management/viewer, MCP, desktop, package-manager publication, or service-installer code has
 entered this milestone.

@@ -69,7 +69,7 @@ Current acceptance tranche (2026-08-21):
   adapter/store test materializes exactly the newest 1,000 rows, executes/admit-orders them oldest
   first, emits one compact exact omitted-range summary, and duplicate reconciliation is idempotent
   without additional rows or events.
-- [ ] Complete deterministic lifecycle fault-boundary coverage feasible in this tranche. **Verify:**
+- [x] Complete deterministic lifecycle fault-boundary coverage feasible in this tranche. **Verify:**
   injected store/executor tests cover before admission, starting before spawn, running after spawn,
   outcome before completion, and one-time restart uniqueness without sleep-heavy timing or unknown
   retry.

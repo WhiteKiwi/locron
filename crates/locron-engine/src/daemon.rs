@@ -163,11 +163,13 @@ impl<S: DaemonStore> Daemon<S> {
                 admitted: 0,
             });
         }
-        let attempts = self
-            .store
-            .admit(available)
-            .await
-            .map_err(DaemonError::Store)?;
+        let attempts = match self.store.admit(available).await {
+            Ok(attempts) => attempts,
+            Err(error) => {
+                self.store.persistence_degraded(&error).await;
+                return Err(DaemonError::Store(error));
+            }
+        };
         let admitted = attempts.len();
         for mut attempt in attempts {
             let shutdown = self.cancellation.child_token();
@@ -324,6 +326,7 @@ mod tests {
 
     struct ScriptedStore {
         attempt: Mutex<Option<AdmittedAttempt>>,
+        admission_error: Mutex<Option<String>>,
         marks: Mutex<VecDeque<Result<bool, String>>>,
         mark_calls: AtomicUsize,
         completions: AtomicUsize,
@@ -379,6 +382,7 @@ mod tests {
                         cancellation: CancellationToken::new(),
                     },
                 })),
+                admission_error: Mutex::new(None),
                 marks: Mutex::new(marks.into()),
                 mark_calls: AtomicUsize::new(0),
                 completions: AtomicUsize::new(0),
@@ -392,6 +396,11 @@ mod tests {
 
         fn with_completion_results(self, results: Vec<Result<(), String>>) -> Self {
             *self.completion_results.lock().unwrap() = results.into();
+            self
+        }
+
+        fn with_admission_error(self, error: &str) -> Self {
+            *self.admission_error.lock().unwrap() = Some(error.into());
             self
         }
 
@@ -411,6 +420,9 @@ mod tests {
             Ok(0)
         }
         async fn admit(&self, _: usize) -> Result<Vec<AdmittedAttempt>, String> {
+            if let Some(error) = self.admission_error.lock().unwrap().take() {
+                return Err(error);
+            }
             Ok(self.attempt.lock().unwrap().take().into_iter().collect())
         }
         async fn mark_running(&self, _: &AdmittedAttempt) -> Result<bool, String> {
@@ -663,6 +675,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admission_failure_marks_persistence_degraded_without_starting_target() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            ScriptedStore::new(&temp, vec![Ok(true)])
+                .with_admission_error("injected failure before admission"),
+        );
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+
+        let error = daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DaemonError::Store(_)));
+        assert_eq!(store.degradations.load(Ordering::Acquire), 1);
+        assert_eq!(store.mark_calls.load(Ordering::Acquire), 0);
+        assert_eq!(store.completions.load(Ordering::Acquire), 0);
+        assert!(!temp.path().join("side-effect").exists());
+    }
+
+    #[tokio::test]
     async fn transient_failure_then_durable_cancellation_never_spawns() {
         let temp = tempfile::tempdir().unwrap();
         let store = Arc::new(ScriptedStore::new(
@@ -737,6 +775,41 @@ mod tests {
         daemon.tracker.wait().await;
         assert_eq!(store.completions.load(Ordering::Acquire), 2);
         assert_eq!(store.degradations.load(Ordering::Acquire), 1);
+        assert_eq!(
+            std::fs::read(temp.path().join("side-effect")).unwrap(),
+            b"x"
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_after_target_outcome_leaves_completion_uncommitted_without_reexecution() {
+        let temp = tempfile::tempdir().unwrap();
+        let completion_failures = (0..100)
+            .map(|_| Err("injected failure after target outcome".into()))
+            .collect();
+        let store = Arc::new(
+            ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(completion_failures),
+        );
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
+        while store.completions.load(Ordering::Acquire) < 3 {
+            store.complete_notify.notified().await;
+        }
+
+        daemon.cancellation.cancel();
+        daemon.tracker.close();
+        daemon.tracker.wait().await;
+
+        assert!(store.completions.load(Ordering::Acquire) >= 3);
+        assert_eq!(store.successful_completions.load(Ordering::Acquire), 0);
         assert_eq!(
             std::fs::read(temp.path().join("side-effect")).unwrap(),
             b"x"
