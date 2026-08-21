@@ -43,6 +43,23 @@ An attempt and logical output identity are durable before output creation and sp
 
 This adds a small framed-file protocol and filesystem/database recovery work, but avoids SQLite BLOB/WAL amplification, supports efficient live follow, preserves stream order, and returns disk space immediately when output is removed.
 
+Startup maintenance runs after scheduler ownership and stale-lifetime classification but before new
+admission. It repairs every referenced partial artifact to its last valid frame, synchronizes and
+renames that artifact to its final path, and then commits reconciled output metadata. A referenced
+artifact with no safe regular file becomes `missing`. Existing `prune_pending` rows resume file
+removal before their durable completion transition. Verified unreferenced regular files under the
+managed output tree are removed only after a one-hour grace period; symbolic links and unexpected
+filesystem objects are never followed or removed automatically.
+
+The daemon also performs one bounded maintenance batch on startup and each safety reconciliation.
+Output age/byte pruning completes before metadata deletion. Terminal run metadata is selected oldest
+first when it exceeds the 90-day age bound, the fixed 1,000-per-job bound, or the configurable global
+count bound (default 10,000). Active work is excluded. Filesystem deletion and SQLite transitions
+remain separate restartable steps, and one pass considers at most 100 artifacts or runs. Maintenance
+failure is reported as degraded diagnostics but does not authorize in-memory cleanup or discard
+newly due work. The schema-v3 upgrade establishes the frozen 90-day default for databases created by
+the earlier milestone schema, whose placeholder value was unlimited.
+
 ### Accepted: SQLite operation and daemon coordination
 
 Bundle the tested SQLite library and configure each connection with WAL journal mode, `synchronous=FULL`, foreign keys enabled, normal locking mode, a five-second busy timeout, and untrusted schema features disabled. The durability cost is intentional because a pre-spawn run commit lost after power failure could permit duplicate external execution. State directories on network filesystems are unsupported.
