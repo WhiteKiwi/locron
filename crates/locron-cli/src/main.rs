@@ -221,15 +221,43 @@ Navigation:
     after_help = ROOT_HELP
 )]
 struct Cli {
-    #[arg(long, global = true, env = "LOCRON_STATE_DIR")]
+    #[arg(
+        long,
+        global = true,
+        env = "LOCRON_STATE_DIR",
+        value_name = "PATH",
+        help = "Override the discovered state directory"
+    )]
     state_dir: Option<PathBuf>,
-    #[arg(long, global = true, value_enum, default_value = "human")]
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value = "human",
+        help = "Select the output format"
+    )]
     format: Format,
-    #[arg(long, global = true, action = ArgAction::SetTrue, conflicts_with = "format")]
+    #[arg(
+        long,
+        global = true,
+        action = ArgAction::SetTrue,
+        conflicts_with = "format",
+        help = "Alias for --format json"
+    )]
     json: bool,
-    #[arg(short = 'v', long, global = true, action = ArgAction::Count)]
+    #[arg(
+        short = 'v',
+        long,
+        global = true,
+        action = ArgAction::Count,
+        help = "Repeatable diagnostics on stderr: decisions, then timing and storage context"
+    )]
     verbose: u8,
-    #[arg(long, global = true)]
+    #[arg(
+        long,
+        global = true,
+        help = "Developer trace diagnostics on stderr; implies maximum verbosity"
+    )]
     debug: bool,
     #[command(subcommand)]
     command: Command,
@@ -237,7 +265,9 @@ struct Cli {
 
 #[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
 enum Format {
+    /// Human-readable output
     Human,
+    /// Machine-readable locron.cli/v1 JSON envelope
     Json,
 }
 
@@ -249,17 +279,30 @@ enum Command {
     Update(UpdateArgs),
     #[command(about = "List jobs", after_help = LIST_HELP)]
     List {
+        /// Include disabled jobs
         #[arg(long)]
         all: bool,
     },
     #[command(about = "Show a job's current definition", after_help = SHOW_HELP)]
-    Show { name: String },
+    Show {
+        /// Job name or canonical UUID
+        name: String,
+    },
     #[command(about = "Enable a job", after_help = ENABLE_HELP)]
-    Enable { name: String },
+    Enable {
+        /// Job name or canonical UUID
+        name: String,
+    },
     #[command(about = "Disable a job", after_help = DISABLE_HELP)]
-    Disable { name: String },
+    Disable {
+        /// Job name or canonical UUID
+        name: String,
+    },
     #[command(about = "Soft-remove a job", after_help = REMOVE_HELP)]
-    Remove { name: String },
+    Remove {
+        /// Job name or canonical UUID
+        name: String,
+    },
     #[command(
         about = "Preview upcoming schedule occurrences",
         after_help = PREVIEW_HELP
@@ -267,37 +310,50 @@ enum Command {
     Preview(PreviewArgs),
     #[command(about = "Queue a manual run", after_help = RUN_HELP)]
     Run {
+        /// Job name or canonical UUID
         name: String,
+        /// Wait for the run to reach a terminal state, streaming output
         #[arg(long)]
         wait: bool,
+        /// Simulate the admission decision without enqueueing
         #[arg(long)]
         dry_run: bool,
     },
     #[command(about = "Cancel a queued or active run", after_help = CANCEL_HELP)]
     Cancel {
+        /// Run UUID to cancel
         run_id: String,
+        /// Accept the risk that a quarantined target may still run; valid only for termination_unconfirmed runs
         #[arg(long)]
         acknowledge_unconfirmed: bool,
     },
     #[command(about = "List run history", after_help = HISTORY_HELP)]
     History {
+        /// Job name or canonical UUID to restrict history to
         name: Option<String>,
+        /// Maximum number of runs to return
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
     #[command(about = "Read captured run output", after_help = LOGS_HELP)]
     Logs {
+        /// Run UUID whose output to read
         run_id: String,
+        /// Attempt number to read; defaults to 1
         #[arg(long)]
         attempt: Option<u16>,
+        /// Stream output until the attempt finalizes
         #[arg(long)]
         follow: bool,
+        /// Output channel to include
         #[arg(long, value_enum, default_value = "all")]
         channel: LogChannel,
     },
     #[command(about = "Explain durable job or run decisions", after_help = WHY_HELP)]
     Why {
+        /// Job name or canonical UUID to explain
         name: Option<String>,
+        /// Run UUID to explain instead of a job
         #[arg(long)]
         run: Option<String>,
     },
@@ -308,23 +364,30 @@ enum Command {
     },
     #[command(about = "Export settings and job definitions", after_help = EXPORT_HELP)]
     Export {
+        /// Include inline environment values, headers, and bodies in plaintext
         #[arg(long)]
         include_values: bool,
+        /// Confirm the export contains plaintext secrets; requires --include-values
         #[arg(long)]
         acknowledge_plaintext: bool,
+        /// Include run history (rejected: unsupported by locron.export/v1)
         #[arg(long)]
         include_history: bool,
     },
     #[command(about = "Import settings and job definitions", after_help = IMPORT_HELP)]
     Import {
+        /// locron.export/v1 document to import
         path: PathBuf,
+        /// Confirm the document's plaintext values may be imported
         #[arg(long)]
         accept_plaintext_values: bool,
+        /// Plan the import without writing
         #[arg(long)]
         dry_run: bool,
     },
     #[command(about = "Apply configured retention limits", after_help = PRUNE_HELP)]
     Prune {
+        /// Report candidates without deleting
         #[arg(long)]
         dry_run: bool,
     },
@@ -343,17 +406,25 @@ enum Command {
 #[derive(Subcommand, Debug)]
 enum ConfigCommand {
     #[command(about = "Read one or all global settings", after_help = CONFIG_GET_HELP)]
-    Get { key: Option<String> },
+    Get {
+        /// Setting key, or environment.NAME; omit to read all
+        key: Option<String>,
+    },
     #[command(about = "Change a global setting", after_help = CONFIG_SET_HELP)]
     Set {
+        /// Setting key or environment.NAME
         key: String,
+        /// New value
         value: String,
+        /// Validate and report without writing
         #[arg(long)]
         dry_run: bool,
     },
     #[command(about = "Remove a global environment value", after_help = CONFIG_UNSET_HELP)]
     Unset {
+        /// environment.NAME to remove
         key: String,
+        /// Validate and report without writing
         #[arg(long)]
         dry_run: bool,
     },
@@ -365,134 +436,191 @@ enum DaemonCommand {
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum LogChannel {
+    /// stdout, stderr, and HTTP response body
     All,
+    /// Process stdout only
     Stdout,
+    /// Process stderr only
     Stderr,
+    /// HTTP response body only
     Body,
 }
 
 #[derive(Args, Debug, Clone, Default)]
 struct ScheduleArgs {
-    #[arg(long)]
+    /// Five-field cron expression: minute hour day-of-month month day-of-week
+    #[arg(long, value_name = "EXPR")]
     cron: Option<String>,
-    #[arg(long)]
+    /// Fixed interval, such as 30s, 1h, or 2d
+    #[arg(long, value_name = "DURATION")]
     every: Option<String>,
-    #[arg(long)]
+    /// One-time ISO 8601 timestamp with an explicit offset
+    #[arg(long, value_name = "RFC3339")]
     at: Option<String>,
-    #[arg(long)]
+    /// 'local' or an IANA time zone name; valid only with --cron
+    #[arg(long, value_name = "IANA")]
     timezone: Option<String>,
-    #[arg(long)]
+    /// Interval origin; valid only with --every, defaults to creation time
+    #[arg(long, value_name = "RFC3339")]
     anchor: Option<String>,
 }
 
 #[derive(Args, Debug, Clone, Default)]
 #[allow(clippy::struct_excessive_bools)]
 struct TargetArgs {
-    #[arg(long)]
+    /// Shell command string; one target selector of -- COMMAND, --shell, or --http
+    #[arg(long, value_name = "COMMAND")]
     shell: Option<String>,
-    #[arg(long, num_args = 2)]
+    /// HTTP request target; METHOD is one of GET, POST, PUT, PATCH, DELETE, or HEAD
+    #[arg(long, num_args = 2, value_names = ["METHOD", "URL"])]
     http: Option<Vec<String>>,
-    #[arg(long)]
+    /// Working directory; requires a process or shell target
+    #[arg(long, value_name = "PATH")]
     cwd: Option<PathBuf>,
-    #[arg(long = "env", value_parser = parse_key_value)]
+    /// Set an environment variable; repeatable
+    #[arg(long = "env", value_parser = parse_key_value, value_name = "NAME=VALUE")]
     env: Vec<(String, String)>,
-    #[arg(long)]
+    /// Remove an environment variable; update only, repeatable
+    #[arg(long, value_name = "NAME")]
     unset_env: Vec<String>,
+    /// Remove all job environment variables; update only
     #[arg(long)]
     clear_env: bool,
-    #[arg(long)]
+    /// Read environment variables from a file at execution time
+    #[arg(long, value_name = "PATH")]
     env_file: Option<PathBuf>,
+    /// Stop reading the configured environment file; update only
     #[arg(long)]
     no_env_file: bool,
-    #[arg(long)]
+    /// Execution PATH for the target, colon-separated
+    #[arg(long, value_name = "PATH_LIST")]
     path: Option<String>,
+    /// Restore the global execution PATH; update only
     #[arg(long)]
     no_path: bool,
-    #[arg(long)]
+    /// Absolute shell executable for a shell target
+    #[arg(long, value_name = "PATH")]
     shell_executable: Option<PathBuf>,
-    #[arg(long, conflicts_with_all = ["body_file", "json_body", "clear_body"])]
+    /// HTTP request body as inline text
+    #[arg(long, conflicts_with_all = ["body_file", "json_body", "clear_body"], value_name = "TEXT")]
     body: Option<String>,
-    #[arg(long, conflicts_with_all = ["body", "json_body", "clear_body"])]
+    /// HTTP request body read from a file at execution time
+    #[arg(long, conflicts_with_all = ["body", "json_body", "clear_body"], value_name = "PATH")]
     body_file: Option<PathBuf>,
-    #[arg(long, conflicts_with_all = ["body", "body_file", "clear_body"])]
+    /// HTTP request body from one JSON value; sets Content-Type: application/json
+    #[arg(long, conflicts_with_all = ["body", "body_file", "clear_body"], value_name = "JSON")]
     json_body: Option<String>,
+    /// Remove the configured HTTP body; update only
     #[arg(long, conflicts_with_all = ["body", "body_file", "json_body"])]
     clear_body: bool,
-    #[arg(long, value_parser = parse_key_value)]
+    /// Set an HTTP request header from an inline value; repeatable
+    #[arg(long, value_parser = parse_key_value, value_name = "NAME=VALUE")]
     header: Vec<(String, String)>,
-    #[arg(long, value_parser = parse_key_value)]
+    /// Set an HTTP request header from an environment variable; repeatable
+    #[arg(long, value_parser = parse_key_value, value_name = "NAME=ENV_NAME")]
     header_env: Vec<(String, String)>,
-    #[arg(long)]
+    /// Remove an HTTP request header; update only, repeatable
+    #[arg(long, value_name = "NAME")]
     unset_header: Vec<String>,
+    /// Remove all HTTP request headers; update only
     #[arg(long)]
     clear_headers: bool,
-    #[arg(long)]
+    /// Add a success status code or inclusive range such as 200-204; repeatable
+    #[arg(long, value_name = "STATUS")]
     success_status: Vec<String>,
+    /// Restore the default 2xx success statuses; update only
     #[arg(long)]
     clear_success_statuses: bool,
+    /// Follow up to 10 HTTP redirects
     #[arg(long, conflicts_with = "no_follow_redirects")]
     follow_redirects: bool,
+    /// Do not follow HTTP redirects; update only
     #[arg(long, conflicts_with = "follow_redirects")]
     no_follow_redirects: bool,
-    #[arg(last = true)]
+    /// Command and arguments for a direct process target, after '--'
+    #[arg(last = true, value_name = "COMMAND")]
     command: Vec<String>,
 }
 
 #[derive(Args, Debug, Clone, Default)]
 #[allow(clippy::struct_excessive_bools)]
 struct PolicyArgs {
+    /// Overlap policy while a run is active
     #[arg(long, value_enum)]
     overlap: Option<OverlapArg>,
+    /// Missed-run policy after downtime or disablement
     #[arg(long, value_enum)]
     missed_run: Option<MissedArg>,
-    #[arg(long)]
+    /// Skip occurrences older than this lateness limit
+    #[arg(long, value_name = "DURATION")]
     start_deadline: Option<String>,
+    /// Remove the start deadline; update only
     #[arg(long, conflicts_with = "start_deadline")]
     no_start_deadline: bool,
-    #[arg(long)]
+    /// Maximum missed-run catch-up batch size, 1 through 1000; default 100
+    #[arg(long, value_name = "N")]
     catch_up_limit: Option<u16>,
-    #[arg(long)]
+    /// Retries after a known failure, 0 through 10; default 0
+    #[arg(long, value_name = "N")]
     retries: Option<u8>,
+    /// Retry delay schedule
     #[arg(long, value_enum)]
     backoff: Option<BackoffArg>,
-    #[arg(long)]
+    /// Initial retry delay; default 10s
+    #[arg(long, value_name = "DURATION")]
     retry_delay: Option<String>,
-    #[arg(long)]
+    /// Maximum exponential retry delay; default 5m
+    #[arg(long, value_name = "DURATION")]
     retry_cap: Option<String>,
-    #[arg(long, conflicts_with = "no_timeout")]
+    /// Attempt timeout; default 60s
+    #[arg(long, conflicts_with = "no_timeout", value_name = "DURATION")]
     timeout: Option<String>,
+    /// Run attempts without a timeout
     #[arg(long, conflicts_with = "timeout")]
     no_timeout: bool,
+    /// Make timeout failures eligible for retry
     #[arg(long, conflicts_with = "no_retry_timeout")]
     retry_timeout: bool,
+    /// Do not retry timeout failures; update only
     #[arg(long, conflicts_with = "retry_timeout")]
     no_retry_timeout: bool,
-    #[arg(long)]
+    /// Grace period before SIGKILL on timeout, cancel, or replace; default 5s
+    #[arg(long, value_name = "DURATION")]
     termination_grace: Option<String>,
-    #[arg(long)]
+    /// Concurrent attempts allowed for this job; default 1, or 2 with --overlap allow
+    #[arg(long, value_name = "N")]
     per_job_concurrency: Option<u8>,
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum OverlapArg {
+    /// Record the occurrence as skipped_overlap
     Skip,
+    /// Terminate the active run and start the newest occurrence
     Replace,
+    /// Permit concurrent runs up to per-job concurrency
     Allow,
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum MissedArg {
+    /// Do not run missed occurrences (default for cron and interval schedules)
     Skip,
+    /// Run only the latest eligible missed occurrence (default for one-time schedules)
     Latest,
+    /// Run all eligible missed occurrences oldest-first, bounded by --catch-up-limit
     All,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum BackoffArg {
+    /// Constant delay, each retry waits --retry-delay
     Fixed,
+    /// Double the delay per attempt, capped by --retry-cap
     Exponential,
 }
 
 #[derive(Args, Debug)]
 struct AddArgs {
+    /// Unique job name
     name: String,
     #[command(flatten)]
     schedule: ScheduleArgs,
@@ -500,18 +628,23 @@ struct AddArgs {
     target: TargetArgs,
     #[command(flatten)]
     policy: PolicyArgs,
+    /// Free-text description
     #[arg(long)]
     description: Option<String>,
+    /// Attach a tag; repeatable
     #[arg(long)]
     tag: Vec<String>,
+    /// Register the job disabled
     #[arg(long)]
     disabled: bool,
+    /// Show the normalized definition without registering
     #[arg(long)]
     dry_run: bool,
 }
 #[derive(Args, Debug)]
 #[allow(clippy::struct_excessive_bools)]
 struct UpdateArgs {
+    /// Job to update, by name or canonical UUID
     name: String,
     #[command(flatten)]
     schedule: ScheduleArgs,
@@ -519,28 +652,38 @@ struct UpdateArgs {
     target: TargetArgs,
     #[command(flatten)]
     policy: PolicyArgs,
+    /// New job name
     #[arg(long)]
     rename: Option<String>,
+    /// New description
     #[arg(long, conflicts_with = "clear_description")]
     description: Option<String>,
+    /// Remove the description
     #[arg(long, conflicts_with = "description")]
     clear_description: bool,
+    /// Replace the complete tag list; repeatable
     #[arg(long)]
     tag: Vec<String>,
+    /// Remove all tags
     #[arg(long, conflicts_with = "tag")]
     clear_tags: bool,
+    /// Enable the job
     #[arg(long, conflicts_with = "disabled")]
     enabled: bool,
+    /// Disable the job
     #[arg(long, conflicts_with = "enabled")]
     disabled: bool,
+    /// Show the normalized diff without writing a revision
     #[arg(long)]
     dry_run: bool,
 }
 #[derive(Args, Debug)]
 struct PreviewArgs {
+    /// Job name or canonical UUID to preview; omit with a schedule selector
     value: Option<String>,
     #[command(flatten)]
     schedule: ScheduleArgs,
+    /// Number of upcoming occurrences to show
     #[arg(long, default_value_t = 5)]
     count: usize,
 }
@@ -3549,7 +3692,36 @@ fn exit_code(error: &anyhow::Error) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
     use std::sync::atomic::{AtomicI64, AtomicU64};
+
+    #[test]
+    fn every_argument_of_every_command_has_a_description() {
+        assert_command_descriptions(&Cli::command());
+    }
+
+    fn assert_command_descriptions(command: &clap::Command) {
+        for argument in command.get_arguments() {
+            let id = argument.get_id().as_str();
+            if id == "help" || id == "version" {
+                continue;
+            }
+            let help = argument
+                .get_help()
+                .map(|text| text.to_string().trim().to_string())
+                .unwrap_or_default();
+            assert!(
+                !help.is_empty(),
+                "argument {id} of command {} has no help text",
+                command.get_name()
+            );
+        }
+        for subcommand in command.get_subcommands() {
+            if subcommand.get_name() != "help" {
+                assert_command_descriptions(subcommand);
+            }
+        }
+    }
 
     struct FakeClock {
         wall: AtomicI64,
