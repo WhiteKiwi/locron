@@ -196,13 +196,15 @@ their workflows or release infrastructure.
   annotation. **Verify:** `.github/workflows/ci.yml` uses `actions/checkout@v4` across 4 official
   platforms; `.github/workflows/release.yml` implements automated 4-target matrix builds, tar.gz
   packaging with README and dual licenses, SHA-256 checksum generation, and GitHub Release publication.
-- [ ] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** choose install/upgrade/remove
-  checks when packaging work enters scope.
+- [x] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** `Formula/locron.rb` in
+  `whitekiwi/homebrew-tap` defines multi-platform URL and SHA-256 targets for macOS and Linux on arm64
+  and x86_64 with install and test blocks.
 - [ ] Publish apt/deb and yum/rpm-family packages through supported repositories. **Verify:** choose
   distribution/version coverage plus install, upgrade, uninstall, and smoke checks when the separate
   packaging specification begins.
-- [ ] Automate Homebrew tap releases from approved version tags. **Verify:** choose provenance,
-  checksum, rollback, and end-to-end release checks in the follow-up delivery plan.
+- [x] Automate Homebrew tap releases from approved version tags. **Verify:** `.github/workflows/release.yml`
+  automatically computes SHA-256 sums for macOS/Linux archives and updates `Formula/locron.rb` in
+  `whitekiwi/homebrew-tap`.
 - [ ] After milestone 1 and Homebrew delivery are complete, update this repository's README for
   install, upgrade, operation, and troubleshooting, and update `whitekiwi/homebrew-tap`'s README for
   tap/install, supported versions, and release provenance, with reciprocal links. **Verify:** choose
