@@ -223,6 +223,13 @@ none changes the exclusions in the current `docs/SPEC.md`.
    origin/CSRF protections, exposure diagnostics, and reuse of durable application commands.
 2. [ ] Define the MCP surface over the same application boundary, including capability scope,
    approval boundaries, redaction, and local transport/security behavior.
+
+### MCP (Model Context Protocol) Implementation Checklist
+
+- [ ] Add `locron mcp` subcommand and stdio JSON-RPC 2.0 loop with strict stderr logging isolation. **Verify:** unit tests verify JSON-RPC serialization, initialization handshake, ping, and stderr routing.
+- [ ] Implement all MCP Tools (`locron_list_jobs`, `locron_get_job`, `locron_add_job`, `locron_update_job`, `locron_enable_job`, `locron_disable_job`, `locron_remove_job`, `locron_run_job`, `locron_cancel_run`, `locron_get_logs`, `locron_why`, `locron_preview_schedule`, `locron_doctor`) with dry-run support. **Verify:** integration tests execute each tool call through piped stdin/stdout and verify state mutations and error responses.
+- [ ] Implement MCP Resources (`locron://jobs`, `locron://jobs/{id}`, `locron://history/{id}`, `locron://logs/{id}`, `locron://doctor`) and Prompts (`schedule_task`, `diagnose_failure`). **Verify:** integration tests verify resources/list, resources/read, prompts/list, and prompts/get.
+- [ ] Document MCP integration in README.md and Operator Guide with Claude Desktop and Cursor configuration snippets. **Verify:** documentation examples and configuration snippets pass review.
 3. [ ] Define the desktop application as a client of the same scheduler/application contracts,
    without introducing another scheduling engine.
 4. [ ] Define macOS App Store delivery after the desktop contract, including sandboxing,
