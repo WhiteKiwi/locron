@@ -12,6 +12,7 @@ permissions:
 jobs:
   test:
     name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

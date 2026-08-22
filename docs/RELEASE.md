@@ -65,6 +65,7 @@ The repository employs two automated GitHub Actions workflows:
   3. Validate formatting: `cargo fmt --all --check`.
   4. Validate linter: `cargo clippy --workspace --all-targets -- -D warnings`.
   5. Run complete test suite: `cargo test --workspace --all-targets`.
+- **Job timeout**: The `test` job has a 30-minute budget (`timeout-minutes: 30`) so a hung runner or compile step fails fast instead of consuming the GitHub Actions default of 360 minutes.
 
 ### B. Release Automation (`.github/workflows/release.yml`)
 - **Trigger**: Push of git tags matching `v*.*.*`.
@@ -75,6 +76,7 @@ The repository employs two automated GitHub Actions workflows:
   4. **Generate Checksums**: Compute SHA-256 hashes for all generated archives into `SHA256SUMS.txt`.
   5. **Create GitHub Release**: Create a GitHub Release with auto-generated changelog and upload all archives and `SHA256SUMS.txt`.
   6. **Homebrew Tap Dispatch**: Trigger downstream update in `whitekiwi/homebrew-tap` with the new version and macOS archive URLs & SHA-256 hashes.
+- **Job timeouts**: The `build` job has a 45-minute budget and the `publish` job a 10-minute budget (`timeout-minutes`). A hung build (e.g. a stalled runner) cancels the workflow instead of blocking the release indefinitely.
 
 ---
 
