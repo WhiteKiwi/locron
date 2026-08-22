@@ -186,8 +186,10 @@ These items begin only after every milestone-1 completion criterion above is sat
 change the package-publication exclusion in `docs/SPEC.md`, and this milestone does not implement
 their workflows or release infrastructure.
 
-- [ ] Define CI/CD policy and version/release policy. **Verify:** choose concrete evidence when the
-  follow-up delivery plan begins.
+- [x] Define CI/CD policy and version/release policy. **Verify:** `docs/RELEASE.md` defines SemVer lockstep
+  workspace versioning, immutable tag conventions, official 4-target artifact matrix, SHA-256
+  checksums, CI/CD pipeline contracts, Homebrew/Linux packaging integration, and rollback/remediation
+  procedures.
 - [ ] Complete GitHub build/test CI and GitHub Releases for release operations, including macOS and
   Linux architecture artifacts, checksums, provenance, signing policy, and rollback policy; review
   the next supported major of `actions/checkout` to remove the current Node 20 deprecation
