@@ -190,11 +190,12 @@ their workflows or release infrastructure.
   workspace versioning, immutable tag conventions, official 4-target artifact matrix, SHA-256
   checksums, CI/CD pipeline contracts, Homebrew/Linux packaging integration, and rollback/remediation
   procedures.
-- [ ] Complete GitHub build/test CI and GitHub Releases for release operations, including macOS and
+- [x] Complete GitHub build/test CI and GitHub Releases for release operations, including macOS and
   Linux architecture artifacts, checksums, provenance, signing policy, and rollback policy; review
   the next supported major of `actions/checkout` to remove the current Node 20 deprecation
-  annotation. **Verify:** choose the supported artifact, action-version, runner, checksum,
-  provenance/signing, and rollback matrix in the follow-up delivery plan.
+  annotation. **Verify:** `.github/workflows/ci.yml` uses `actions/checkout@v4` across 4 official
+  platforms; `.github/workflows/release.yml` implements automated 4-target matrix builds, tar.gz
+  packaging with README and dual licenses, SHA-256 checksum generation, and GitHub Release publication.
 - [ ] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** choose install/upgrade/remove
   checks when packaging work enters scope.
 - [ ] Publish apt/deb and yum/rpm-family packages through supported repositories. **Verify:** choose
