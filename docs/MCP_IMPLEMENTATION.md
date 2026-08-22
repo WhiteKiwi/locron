@@ -71,10 +71,11 @@ The MCP server is implemented directly inside `locron-cli` (`crates/locron-cli/s
 Each MCP tool parses parameters and constructs the corresponding `locron-core` Command:
 - `locron_add_job` -> `CreateJob` command -> `store.create_job(cmd)`
 - `locron_update_job` -> `UpdateJob` command -> `store.update_job(cmd)`
-- `locron_run_job` -> `store.enqueue_manual_run(job_id)`
-- `locron_cancel_run` -> `store.record_cancellation_intent(run_id)`
-- `locron_why` -> `store.diagnose_why(job_id)`
-- `locron_preview_schedule` -> `schedule.next_occurrences(count)`
+- `locron_run_job` -> `store.enqueue_manual(job_id, run_id, now_us())` (dry run uses `open_read_only`)
+- `locron_cancel_run` -> `store.cancel_with_acknowledgement(run_id, now_us(), acknowledge_unconfirmed)`
+- `locron_why` -> `store.run(run_id)` + `store.events_for_run(run_id)` (run facts) or `store.job(name)` +
+  `store.history(name, count)` + `store.cancellation_requested(run_id)` (job facts)
+- `locron_preview_schedule` -> `Schedule::next(after, count)`
 
 ### Error Handling
 - Protocol errors return standard JSON-RPC error codes (`-32600` Invalid Request, `-32601` Method Not Found, `-32602` Invalid Params).

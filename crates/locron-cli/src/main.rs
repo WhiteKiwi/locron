@@ -1,6 +1,7 @@
 //! `locron` command-line composition root.
 
 mod maintenance;
+mod mcp;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
@@ -205,6 +206,12 @@ Examples:
 
 Navigation:
   Run 'locron daemon --help' for daemon commands or 'locron --help' for all commands.";
+const MCP_HELP: &str = "\
+Examples:
+  locron mcp
+
+Navigation:
+  Run 'locron --help' to list all commands.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -328,6 +335,9 @@ enum Command {
         #[command(subcommand)]
         command: DaemonCommand,
     },
+    /// Serve the Model Context Protocol (MCP) over stdio
+    #[command(about = "Serve the Model Context Protocol (MCP) over stdio", after_help = MCP_HELP)]
+    Mcp,
 }
 
 #[derive(Subcommand, Debug)]
@@ -742,13 +752,14 @@ async fn execute(cli: Cli, format: Format) -> Result<()> {
         Command::Daemon {
             command: DaemonCommand::Run,
         } => daemon(paths).await,
+        Command::Mcp => mcp::run_mcp_server(paths).await,
     }
 }
 
-fn open(paths: &StatePaths) -> Result<Store> {
+pub(crate) fn open(paths: &StatePaths) -> Result<Store> {
     Store::open(paths.clone(), env!("CARGO_PKG_VERSION"), now_us()).map_err(Into::into)
 }
-fn open_read_only(paths: &StatePaths) -> Result<Store> {
+pub(crate) fn open_read_only(paths: &StatePaths) -> Result<Store> {
     if !paths.database.is_file() {
         return Err(anyhow!("state database does not exist"));
     }
@@ -2497,7 +2508,7 @@ fn bind_wake_socket(
     }))
 }
 
-fn send_wake(paths: &StatePaths) {
+pub(crate) fn send_wake(paths: &StatePaths) {
     use std::os::unix::net::UnixDatagram;
     let result = UnixDatagram::unbound().and_then(|socket| {
         socket.connect(&paths.wake_socket)?;
@@ -2944,7 +2955,7 @@ impl DaemonStore for StoreAdapter {
     }
 }
 
-fn engine_target(
+pub(crate) fn engine_target(
     definition: &JobDefinition,
     attempt: &locron_store::AdmitAttempt,
     settings: &SettingsRecord,
@@ -3151,7 +3162,7 @@ fn normalize_path_list(value: &str) -> Result<String> {
         .map_err(|_| anyhow!("normalized PATH is not valid UTF-8"))
 }
 
-fn configured_global_concurrency(paths: &StatePaths) -> Result<u8> {
+pub(crate) fn configured_global_concurrency(paths: &StatePaths) -> Result<u8> {
     if !paths.database.is_file() {
         return Ok(16);
     }
@@ -3159,7 +3170,11 @@ fn configured_global_concurrency(paths: &StatePaths) -> Result<u8> {
     u8::try_from(value).context("configured global concurrency is out of range")
 }
 
-fn validate_metadata(name: &str, description: Option<&str>, tags: &[String]) -> Result<()> {
+pub(crate) fn validate_metadata(
+    name: &str,
+    description: Option<&str>,
+    tags: &[String],
+) -> Result<()> {
     if name.trim().is_empty() || name.contains('\0') {
         return Err(anyhow!("job name must be non-empty and contain no NUL"));
     }
@@ -3175,7 +3190,7 @@ fn validate_metadata(name: &str, description: Option<&str>, tags: &[String]) -> 
     Ok(())
 }
 
-fn environment_warnings(environment: &Environment) -> Vec<&'static str> {
+pub(crate) fn environment_warnings(environment: &Environment) -> Vec<&'static str> {
     let Some(path) = &environment.file else {
         return Vec::new();
     };
@@ -3236,7 +3251,7 @@ fn changed_fields(before: &Value, after: &Value) -> Vec<String> {
     collect("", Some(before), Some(after), &mut output);
     output
 }
-fn now_us() -> i64 {
+pub(crate) fn now_us() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |value| {
@@ -3274,7 +3289,7 @@ impl TimeZoneResolver for SystemTimeZoneResolver {
     }
 }
 
-fn daemon_lock_free(paths: &StatePaths) -> bool {
+pub(crate) fn daemon_lock_free(paths: &StatePaths) -> bool {
     locron_store::DaemonLock::try_prove_free(&paths.daemon_lock).is_ok()
 }
 fn init_tracing(verbose: u8, debug: bool) {
@@ -3313,6 +3328,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Prune { .. } => "prune",
         Command::Doctor => "doctor",
         Command::Daemon { .. } => "daemon",
+        Command::Mcp => "mcp",
     }
 }
 #[derive(Serialize)]
@@ -3324,7 +3340,7 @@ struct Envelope<'a, T> {
     warnings: &'a [&'a str],
 }
 
-fn redacted_job(job: JobRecord) -> Result<Value> {
+pub(crate) fn redacted_job(job: JobRecord) -> Result<Value> {
     let mut value = serde_json::to_value(job)?;
     if let Some(definition) = value.get_mut("definition_json") {
         let source = definition.as_str().unwrap_or("{}");
@@ -3335,7 +3351,7 @@ fn redacted_job(job: JobRecord) -> Result<Value> {
     Ok(value)
 }
 
-fn redacted_run(run: RunRecord) -> Result<Value> {
+pub(crate) fn redacted_run(run: RunRecord) -> Result<Value> {
     let mut value = serde_json::to_value(run)?;
     if let Some(snapshot) = value.get_mut("snapshot_json") {
         let source = snapshot.as_str().unwrap_or("{}");
@@ -3346,7 +3362,7 @@ fn redacted_run(run: RunRecord) -> Result<Value> {
     Ok(value)
 }
 
-fn redacted_observable_run(store: &Store, run: RunRecord) -> Result<Value> {
+pub(crate) fn redacted_observable_run(store: &Store, run: RunRecord) -> Result<Value> {
     let source = run.trigger.clone();
     let finished_at_us = run.finished_at_us;
     let outcome = terminal_run_state(&run.state).then(|| run.state.clone());
@@ -3373,7 +3389,7 @@ fn redacted_observable_run(store: &Store, run: RunRecord) -> Result<Value> {
     Ok(value)
 }
 
-fn terminal_run_state(state: &str) -> bool {
+pub(crate) fn terminal_run_state(state: &str) -> bool {
     matches!(
         state,
         "succeeded"
@@ -3386,7 +3402,7 @@ fn terminal_run_state(state: &str) -> bool {
     )
 }
 
-fn redact_definition(mut definition: Value) -> Value {
+pub(crate) fn redact_definition(mut definition: Value) -> Value {
     if let Some(nested) = definition.get_mut("definition") {
         *nested = redact_definition(nested.take());
         return definition;

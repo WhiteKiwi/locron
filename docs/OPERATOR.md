@@ -149,6 +149,73 @@ idempotent.
 `-v` and `--debug` add redacted stderr diagnostics. They do not change JSON stdout and are not a
 replacement for `why`.
 
+## Model Context Protocol (MCP) server
+
+`locron mcp` serves the Model Context Protocol over stdio for AI assistants. It reuses the same
+application boundary as every other command: `locron-core` validation, `locron-store` transactions,
+and the same redaction rules as CLI output.
+
+Run it directly to smoke-test a session (the process exits on stdin EOF):
+
+```sh
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n' | locron mcp
+```
+
+Transport contract:
+
+- Newline-delimited JSON-RPC 2.0 frames on **stdout only**. Diagnostics and tracing go to stderr;
+  nothing else ever writes to stdout while the server is running.
+- Standard error codes: `-32700` parse error, `-32600` invalid request, `-32601` method not found,
+  `-32602` invalid params.
+- Domain failures (duplicate job name, invalid cron, missing job or run) return tool results with
+  `isError: true` and an actionable message, so the assistant can correct itself.
+- Clean exit on stdin EOF, SIGINT, or SIGTERM.
+
+Surface:
+
+- **Tools** — `locron_list_jobs`, `locron_get_job`, `locron_add_job`, `locron_update_job`,
+  `locron_enable_job`, `locron_disable_job`, `locron_remove_job`, `locron_run_job`,
+  `locron_cancel_run`, `locron_get_logs`, `locron_why`, `locron_preview_schedule`,
+  `locron_doctor`. Every mutating tool accepts `dry_run: true` and reports what would change
+  without persisting anything.
+- **Resources** — `locron://jobs`, `locron://jobs/{id_or_name}`, `locron://history/{run_id}`,
+  `locron://logs/{run_id}`, `locron://doctor`.
+- **Prompts** — `schedule_task` (compose a validated job from a plain-language request) and
+  `diagnose_failure` (explain why a job or run is in its current state).
+
+### Claude Desktop
+
+Edit `claude_desktop_config.json` (Claude → Settings → Developer → Edit Config):
+
+```json
+{
+  "mcpServers": {
+    "locron": {
+      "command": "locron",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Add a server in Settings → MCP, or create `.cursor/mcp.json` in the project:
+
+```json
+{
+  "mcpServers": {
+    "locron": {
+      "command": "locron",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+If the binary is not on the MCP client's PATH, replace `"command"` with the absolute path to the
+`locron` binary (for example `/usr/local/bin/locron` or `$HOME/.cargo/bin/locron`).
+
 ## Output examples
 
 Current human output is readable JSON plus warnings on stderr:

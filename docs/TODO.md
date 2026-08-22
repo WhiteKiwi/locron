@@ -171,6 +171,15 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
 
 ## Follow-up CLI acceptance backlog
 
+- [x] Complete the per-option help surface: every argument of every command renders a concise
+  description, semantic value names (`<EXPR>`, `<DURATION>`, `<METHOD> <URL>`, `<NAME=VALUE>`),
+  possible-value help for every value enum, and update-only markers on update-only flags, without
+  changing parsing behavior or the frozen contract in `docs/CLI.md`.
+  **Verify:** a unit test walks the generated Clap command tree and asserts every non-hidden
+  argument has non-empty help text; `cargo test -p locron-cli` passes, and manual inspection of
+  `locron add -h`, `locron update -h`, and `locron --help` shows usage, examples, and described
+  options.
+
 - [x] Audit and complete the entire CLI help surface without expanding the current scheduler
   semantics tranche. Cover `locron help`, `locron -h`, `locron --help`, and every direct command's
   `<cmd> help` form where Clap supports it, `<cmd> -h`, and `<cmd> --help`. Help must succeed without
@@ -226,10 +235,10 @@ none changes the exclusions in the current `docs/SPEC.md`.
 
 ### MCP (Model Context Protocol) Implementation Checklist
 
-- [ ] Add `locron mcp` subcommand and stdio JSON-RPC 2.0 loop with strict stderr logging isolation. **Verify:** unit tests verify JSON-RPC serialization, initialization handshake, ping, and stderr routing.
-- [ ] Implement all MCP Tools (`locron_list_jobs`, `locron_get_job`, `locron_add_job`, `locron_update_job`, `locron_enable_job`, `locron_disable_job`, `locron_remove_job`, `locron_run_job`, `locron_cancel_run`, `locron_get_logs`, `locron_why`, `locron_preview_schedule`, `locron_doctor`) with dry-run support. **Verify:** integration tests execute each tool call through piped stdin/stdout and verify state mutations and error responses.
-- [ ] Implement MCP Resources (`locron://jobs`, `locron://jobs/{id}`, `locron://history/{id}`, `locron://logs/{id}`, `locron://doctor`) and Prompts (`schedule_task`, `diagnose_failure`). **Verify:** integration tests verify resources/list, resources/read, prompts/list, and prompts/get.
-- [ ] Document MCP integration in README.md and Operator Guide with Claude Desktop and Cursor configuration snippets. **Verify:** documentation examples and configuration snippets pass review.
+- [x] Add `locron mcp` subcommand and stdio JSON-RPC 2.0 loop with strict stderr logging isolation. **Verify:** unit tests verify JSON-RPC serialization, initialization handshake, ping, and stderr routing.
+- [x] Implement all MCP Tools (`locron_list_jobs`, `locron_get_job`, `locron_add_job`, `locron_update_job`, `locron_enable_job`, `locron_disable_job`, `locron_remove_job`, `locron_run_job`, `locron_cancel_run`, `locron_get_logs`, `locron_why`, `locron_preview_schedule`, `locron_doctor`) with dry-run support. **Verify:** integration tests execute each tool call through piped stdin/stdout and verify state mutations and error responses.
+- [x] Implement MCP Resources (`locron://jobs`, `locron://jobs/{id}`, `locron://history/{id}`, `locron://logs/{id}`, `locron://doctor`) and Prompts (`schedule_task`, `diagnose_failure`). **Verify:** integration tests verify resources/list, resources/read, prompts/list, and prompts/get.
+- [x] Document MCP integration in README.md and Operator Guide with Claude Desktop and Cursor configuration snippets. **Verify:** documentation examples and configuration snippets pass review.
 3. [ ] Define the desktop application as a client of the same scheduler/application contracts,
    without introducing another scheduling engine.
 4. [ ] Define macOS App Store delivery after the desktop contract, including sandboxing,

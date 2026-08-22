@@ -153,6 +153,56 @@ locron doctor
 
 ---
 
+## 🤖 MCP Integration
+
+`locron mcp` serves the [Model Context Protocol](https://modelcontextprotocol.io) over stdio, letting AI assistants (Claude Desktop, Cursor, and other MCP clients) inspect and manage the scheduler through the same application boundary as the CLI — the same validation, redaction, and durable transactions.
+
+```sh
+locron mcp
+```
+
+The server speaks newline-delimited JSON-RPC 2.0 on stdout; all diagnostics go to stderr, and it exits cleanly on EOF, SIGINT, or SIGTERM. It exposes:
+
+- **13 tools**: `locron_list_jobs`, `locron_get_job`, `locron_add_job`, `locron_update_job`, `locron_enable_job`, `locron_disable_job`, `locron_remove_job`, `locron_run_job`, `locron_cancel_run`, `locron_get_logs`, `locron_why`, `locron_preview_schedule`, `locron_doctor`. Every mutating tool accepts `"dry_run": true` to preview effects without persisting anything.
+- **5 resources**: `locron://jobs`, `locron://jobs/{id_or_name}`, `locron://history/{run_id}`, `locron://logs/{run_id}`, `locron://doctor`.
+- **2 prompts**: `schedule_task` (turn a plain-language task into a job) and `diagnose_failure` (explain why a job or run is stuck).
+
+Domain validation failures (duplicate names, invalid cron expressions, missing jobs) are returned as tool errors with `isError: true` — not protocol errors — so the assistant can read the reason and act on it.
+
+### Claude Desktop
+
+Add the server to `claude_desktop_config.json` (Claude → Settings → Developer → Edit Config):
+
+```json
+{
+  "mcpServers": {
+    "locron": {
+      "command": "locron",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Add the server in Cursor Settings → MCP, or in `.cursor/mcp.json` for project scope:
+
+```json
+{
+  "mcpServers": {
+    "locron": {
+      "command": "locron",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+If `locron` is not on the MCP client's PATH, use the absolute binary path (for example `/usr/local/bin/locron` or `$HOME/.cargo/bin/locron`).
+
+---
+
 ## 📚 Documentation
 
 For in-depth guides and architectural references:
