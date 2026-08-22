@@ -1,95 +1,175 @@
-# locron
+<p align="center">
+  <img src="assets/banner.jpg" alt="locron banner" width="800">
+</p>
 
-A local-first scheduler for macOS and Linux. locron keeps schedules, durable run identity,
-history, and bounded output in one private per-user state directory instead of translating
-jobs into operating-system cron entries.
+<h1 align="center">locron</h1>
 
-> This repository is an active milestone-1 implementation. The core CLI/daemon path works,
-> but the complete frozen contract in `docs/SPEC.md` is not yet release-ready. See
-> `docs/TODO.md` for verified progress and remaining edge cases.
+<p align="center">
+  <strong>Local-first cron jobs, made simple.</strong>
+</p>
 
-## Build from source
+<p align="center">
+  <a href="https://github.com/WhiteKiwi/locron/actions/workflows/ci.yml"><img src="https://github.com/WhiteKiwi/locron/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/WhiteKiwi/locron/releases"><img src="https://img.shields.io/github/v/release/WhiteKiwi/locron?color=blue" alt="Latest Release"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg" alt="Platform"></a>
+  <a href="#build-from-source"><img src="https://img.shields.io/badge/rust-1.94%2B-orange.svg" alt="Rust Version"></a>
+</p>
 
-Rust 1.94 or newer is required.
+---
+
+`locron` is a local-first job scheduler for **macOS** and **Linux**. It keeps schedules, durable run identities, execution history, and bounded captured output in a private per-user state directory instead of scattering jobs across operating-system crontabs, launchd plists, or systemd units.
+
+---
+
+## ✨ Features
+
+- ⚡ **Local-First & Independent**: Everything runs locally on your machine with zero external service dependencies.
+- 🕒 **Flexible Scheduling**: Standard 5-field cron expressions, fixed intervals (second-level resolution), and one-time executions.
+- 🛡️ **Predictable Policies**: Explicit per-job overlap policies (`skip`, `replace`, `allow`) and missed-run policies (`skip`, `latest`, `all`).
+- 🔍 **First-Class Observability**: Understand *why* any job ran, was skipped, or failed with `locron why` and `locron doctor`.
+- 🌳 **Process Group Supervision**: Supervise child processes with configurable timeouts, SIGTERM/SIGKILL grace periods, and bounded output capture.
+- 💾 **Durable & Crash-Safe**: Powered by bundled SQLite WAL transactions with atomic migrations and restartable recovery.
+- 🌐 **HTTP Target Support**: Trigger webhooks and HTTP endpoints natively with retry handling and header management.
+
+---
+
+## 📦 Installation
+
+### Homebrew (macOS & Linux)
+
+The easiest way to install `locron` on macOS and Linux is via [Homebrew Tap](https://github.com/WhiteKiwi/homebrew-tap):
 
 ```sh
-cargo build --release -p locron-cli
-./target/release/locron --help
+brew tap whitekiwi/tap
+brew install locron
 ```
 
-The v1 workspace deliberately produces one binary. Start its long-lived scheduler with:
+Or in a single command:
+
+```sh
+brew install whitekiwi/tap/locron
+```
+
+### Linux Packages (Debian / Ubuntu / Fedora / RHEL)
+
+Pre-built `.deb` and `.rpm` packages are available on the [GitHub Releases](https://github.com/WhiteKiwi/locron/releases) page:
+
+```sh
+# Debian / Ubuntu
+sudo dpkg -i locron_<version>_amd64.deb   # for x86_64
+sudo dpkg -i locron_<version>_arm64.deb   # for ARM64
+
+# Fedora / RHEL / Rocky Linux
+sudo rpm -i locron-<version>.x86_64.rpm  # for x86_64
+sudo rpm -i locron-<version>.aarch64.rpm # for ARM64
+```
+
+### Pre-built Binary Tarballs
+
+Download the appropriate archive for your platform from [GitHub Releases](https://github.com/WhiteKiwi/locron/releases), unpack it, and move the binary to your `$PATH`:
+
+```sh
+tar -xzf locron-v<version>-<target>.tar.gz
+sudo mv locron /usr/local/bin/
+```
+
+### Build from Source
+
+Requires **Rust 1.94+**:
+
+```sh
+git clone https://github.com/WhiteKiwi/locron.git
+cd locron
+cargo build --release -p locron-cli
+sudo cp target/release/locron /usr/local/bin/
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Start the Scheduler Daemon
+
+Start the long-lived background scheduler process:
 
 ```sh
 locron daemon run
 ```
 
-Packaging and service installation are later milestones. For development, run the daemon
-from a terminal or configure your own process manager to invoke that command.
+> **Tip**: You can use your system's process manager (such as `launchd` on macOS or `systemd --user` on Linux) to keep `locron daemon run` running automatically in the background.
 
-## Quick start
+### 2. Register Scheduled Jobs
 
 ```sh
-# Direct argv execution every 15 minutes.
-locron add repository-fetch --every 15m -- git -C /path/to/repo fetch
+# Direct argv execution every 15 minutes
+locron add fetch-repo --every 15m -- git -C ~/projects/app fetch
 
-# Explicit shell execution at 03:00 in a fixed IANA time zone.
-locron add backup --cron "0 3 * * *" --timezone Asia/Seoul \
-  --shell "./backup.sh"
+# Explicit shell execution at 03:00 every night (IANA timezone supported)
+locron add nightly-backup --cron "0 3 * * *" --timezone Asia/Seoul --shell "./scripts/backup.sh"
 
-# One-time request. The ISO timestamp must carry an offset.
-locron add reminder --at 2026-08-22T09:00:00+09:00 \
-  --shell "printf 'meeting starts now\\n'"
+# Native HTTP health check every 5 minutes
+locron add health-check --every 5m --http GET https://example.com/health
 
+# One-time scheduled execution with explicit offset
+locron add deploy-task --at 2026-09-01T09:00:00+09:00 -- /usr/local/bin/deploy
+```
+
+### 3. Inspect and Manage
+
+```sh
+# List all registered jobs
 locron list
-locron preview backup --count 5
-locron run backup
-locron history backup
-locron why backup
+
+# Preview future execution times before enabling
+locron preview nightly-backup --count 5
+
+# Trigger a manual execution immediately
+locron run nightly-backup
+
+# Stream logs of the latest run
+locron logs nightly-backup --follow
+
+# Inspect execution history
+locron history nightly-backup
+
+# Ask WHY a job is in its current state
+locron why nightly-backup
+
+# Diagnose scheduler daemon and state directory health
 locron doctor
 ```
 
-`run` durably enqueues and returns its run ID. It still succeeds while the daemon is offline
-and warns that the run remains queued. `run --wait` attaches to that durable run; disconnecting
-the client does not request cancellation.
+---
 
-## Safe inspection
+## 🔒 Safety and Inspection
 
-Mutating command families that support `--dry-run` validate and normalize without initializing
-or changing state:
+- **Dry-run Validation**: Validate syntax and schedule policies without mutating state:
+  ```sh
+  locron add test-job --cron "0 12 * * *" --dry-run -- /usr/bin/true
+  ```
+- **Machine Output**: Use `--json` for structured, versioned `locron.cli/v1` machine-readable output.
+- **State Directory**: Default state directory is located at `~/.local/share/locron` (or `$XDG_DATA_HOME/locron`). Override with `--state-dir PATH` or `LOCRON_STATE_DIR`.
 
-```sh
-locron add sample --every 5m --dry-run -- /usr/bin/true
-locron run sample --dry-run
-locron config set global_concurrency 32 --dry-run
-locron prune --dry-run
-```
+---
 
-`why` explains durable job/run facts. Repeat `-v` for operator context or use `--debug` for
-redacted developer traces on stderr. `--json` returns a versioned `locron.cli/v1` envelope on
-stdout, keeping diagnostics separate.
+## 📚 Documentation
 
-## State and safety boundary
+For in-depth guides and architectural references:
 
-Use `--state-dir PATH` or `LOCRON_STATE_DIR` to override the platform default. locron stores a
-bundled SQLite database, a permanent daemon lock, a best-effort wake socket, and framed output
-artifacts there. State directories and files are owner-only and local filesystems are the
-supported boundary.
+- 📖 **[Operator Guide](docs/OPERATOR.md)**: Daily operations, policy configuration, and troubleshooting.
+- 💻 **[CLI Reference](docs/CLI.md)**: Comprehensive command-line reference and options.
+- 🏗️ **[Architecture](docs/ARCHITECTURE.md)**: System architecture, invariants, and durable state model.
+- 📦 **[Release & CI/CD Policy](docs/RELEASE.md)**: Semantic versioning, packaging, and release automation.
+- 📋 **[Milestone 1 Specification](docs/SPEC.md)**: Frozen product goals and completion criteria.
 
-Inline environment values, process arguments, shell commands, and HTTP headers are plaintext
-local configuration. Normal output and diagnostics redact configured values, but a target can
-still print secrets into captured output. locron is not a secret manager.
+---
 
-locron prevents duplicate durable occurrence creation, but cannot promise exactly-once external
-side effects across a machine crash. Targets needing that guarantee should treat `LOCRON_RUN_ID`
-as an idempotency key.
+## 📄 License
 
-## Development verification
+Dual-licensed under either of:
 
-```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
-```
+- **MIT License** ([`LICENSE-MIT`](LICENSE-MIT))
+- **Apache License, Version 2.0** ([`LICENSE-APACHE`](LICENSE-APACHE))
 
-The documents under `docs/` are the source of truth. Start with `docs/SPEC.md`,
-`docs/ARCHITECTURE.md`, `docs/CLI.md`, and `docs/STORAGE.md`.
+at your option.

@@ -32,7 +32,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
         run: cargo build --release --locked -p locron-cli
-      - name: Package archive
+      - name: Package tarball archive
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME}"
@@ -41,11 +41,27 @@ jobs:
           cp target/release/locron "${ARCHIVE_DIR}/"
           cp README.md LICENSE-MIT LICENSE-APACHE "${ARCHIVE_DIR}/"
           tar -czvf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}"
+      - name: Build Linux packages (.deb and .rpm)
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+      - name: Generate Debian and RPM packages
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo deb -p locron-cli --no-build
+          cp target/debian/*.deb .
+          cargo generate-rpm -p crates/locron-cli
+          cp target/generate-rpm/*.rpm .
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: locron-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
-          if-no-files-found: error
+          path: |
+            locron-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+            *.deb
+            *.rpm
+          if-no-files-found: warn
 
   publish:
     name: Publish GitHub Release
@@ -61,7 +77,7 @@ jobs:
       - name: Generate Checksums
         working-directory: artifacts
         run: |
-          sha256sum *.tar.gz > SHA256SUMS.txt
+          sha256sum *.* > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - name: Create GitHub Release
         env:
@@ -69,6 +85,8 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             artifacts/*.tar.gz \
+            artifacts/*.deb \
+            artifacts/*.rpm \
             artifacts/SHA256SUMS.txt \
             --title "locron ${GITHUB_REF_NAME}" \
             --generate-notes

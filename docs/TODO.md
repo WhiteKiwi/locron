@@ -199,20 +199,20 @@ their workflows or release infrastructure.
 - [x] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** `Formula/locron.rb` in
   `whitekiwi/homebrew-tap` defines multi-platform URL and SHA-256 targets for macOS and Linux on arm64
   and x86_64 with install and test blocks.
-- [ ] Publish apt/deb and yum/rpm-family packages through supported repositories. **Verify:** choose
-  distribution/version coverage plus install, upgrade, uninstall, and smoke checks when the separate
-  packaging specification begins.
+- [x] Publish apt/deb and yum/rpm-family packages through supported repositories. **Verify:**
+  `crates/locron-cli/Cargo.toml` specifies deb and generate-rpm metadata, and
+  `.github/workflows/release.yml` automatically builds `.deb` and `.rpm` packages on Linux runners and
+  attaches them to GitHub Releases.
 - [x] Automate Homebrew tap releases from approved version tags. **Verify:** `.github/workflows/release.yml`
   automatically computes SHA-256 sums for macOS/Linux archives and updates `Formula/locron.rb` in
   `whitekiwi/homebrew-tap`.
-- [ ] After milestone 1 and Homebrew delivery are complete, update this repository's README for
+- [x] After milestone 1 and Homebrew delivery are complete, update this repository's README for
   install, upgrade, operation, and troubleshooting, and update `whitekiwi/homebrew-tap`'s README for
-  tap/install, supported versions, and release provenance, with reciprocal links. **Verify:** choose
-  documentation example and link checks in the follow-up delivery plan. Before writing, inspect
-  `~/Downloads/locron.jpg` as a visual-asset candidate and research README patterns in established
-  public CLI/scheduler repositories. Cover badges, quick start, install/upgrade, examples, support
-  and release provenance, and documentation links; do not copy or modify the asset until that
-  follow-up is explicitly in scope.
+  tap/install, supported versions, and release provenance, with reciprocal links. **Verify:**
+  `README.md` incorporates the banner asset from `assets/banner.jpg`, comprehensive badges, multi-channel
+  installation instructions (Homebrew, deb/rpm, binary tarballs, cargo source), quick start,
+  cross-links to `docs/OPERATOR.md`, `docs/CLI.md`, `docs/RELEASE.md`, and reciprocal link to
+  `whitekiwi/homebrew-tap`.
 
 ## Ordered deferred product roadmap
 

@@ -34,3 +34,29 @@ tempfile.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata.deb]
+name = "locron"
+maintainer = "WhiteKiwi"
+copyright = "2026, WhiteKiwi"
+license-file = ["../../LICENSE-MIT", "4"]
+extended-description = "A local-first job scheduler for macOS and Linux."
+section = "utils"
+priority = "optional"
+assets = [
+    ["../../target/release/locron", "usr/bin/locron", "755"],
+    ["../../README.md", "usr/share/doc/locron/README.md", "644"],
+    ["../../LICENSE-MIT", "usr/share/doc/locron/LICENSE-MIT", "644"],
+    ["../../LICENSE-APACHE", "usr/share/doc/locron/LICENSE-APACHE", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "locron"
+summary = "Local-first job scheduler for macOS and Linux"
+license = "MIT OR Apache-2.0"
+assets = [
+    { source = "target/release/locron", dest = "/usr/bin/locron", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/locron/README.md", mode = "644" },
+    { source = "LICENSE-MIT", dest = "/usr/share/doc/locron/LICENSE-MIT", mode = "644" },
+    { source = "LICENSE-APACHE", dest = "/usr/share/doc/locron/LICENSE-APACHE", mode = "644" },
+]
