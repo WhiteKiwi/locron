@@ -7,6 +7,8 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
+use locron_core::CoreError;
+use locron_core::ports::ExecutorPort;
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill, killpg};
 use nix::unistd::Pid;
@@ -18,7 +20,7 @@ use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::io::AsyncReadExt;
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -83,6 +85,15 @@ pub struct AttemptContext {
     pub cancellation: CancellationToken,
 }
 
+/// Owned request passed through the runtime-neutral core executor port.
+#[derive(Clone, Debug)]
+pub struct ExecutionRequest {
+    /// Fully materialized target to execute.
+    pub target: TargetSpec,
+    /// Durable attempt identity, output paths, limits, and cancellation.
+    pub context: AttemptContext,
+}
+
 /// Stable target result classification.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -110,6 +121,8 @@ pub struct ExecutionOutcome {
     pub exit_code: Option<i32>,
     /// HTTP response status when available.
     pub http_status: Option<u16>,
+    /// Final HTTP response content type when available.
+    pub http_content_type: Option<String>,
     /// Operator-facing non-secret reason.
     pub reason: String,
     /// Monotonic elapsed time.
@@ -137,15 +150,41 @@ impl Default for RunnerConfig {
     }
 }
 
+/// Whether a runner failure happened before any external execution or after it
+/// may have begun.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunnerFailureKind {
+    /// Output storage could not be prepared, so no target was started.
+    OutputPreparation,
+    /// Output or execution infrastructure failed after side effects may exist.
+    ExecutionMayHaveStarted,
+}
+
 /// Runner failure before a target outcome can be produced.
 #[derive(Debug, Error)]
 pub enum RunnerError {
-    /// Output artifact could not be prepared or finalized.
-    #[error("output error: {0}")]
-    Output(#[from] io::Error),
+    /// Output artifact could not be prepared before external execution.
+    #[error("output preparation error: {0}")]
+    OutputPreparation(io::Error),
+    /// Output or child infrastructure failed after execution may have begun.
+    #[error("output error after execution may have begun: {0}")]
+    ExecutionInfrastructure(io::Error),
     /// Target configuration is invalid at execution time.
     #[error("configuration error: {0}")]
     Configuration(String),
+}
+
+impl RunnerError {
+    /// Returns the durable failure classification required by the daemon.
+    #[must_use]
+    pub const fn failure_kind(&self) -> RunnerFailureKind {
+        match self {
+            Self::OutputPreparation(_) | Self::Configuration(_) => {
+                RunnerFailureKind::OutputPreparation
+            }
+            Self::ExecutionInfrastructure(_) => RunnerFailureKind::ExecutionMayHaveStarted,
+        }
+    }
 }
 
 /// Executes normalized target snapshots.
@@ -172,7 +211,9 @@ impl Runner {
         target: &TargetSpec,
         context: &AttemptContext,
     ) -> Result<ExecutionOutcome, RunnerError> {
-        let writer = OutputWriter::create(&context.partial_output, context.output_limit).await?;
+        let writer = OutputWriter::create(&context.partial_output, context.output_limit)
+            .await
+            .map_err(RunnerError::OutputPreparation)?;
         let start = Instant::now();
         let mut outcome = match target {
             TargetSpec::Process(spec) => self.run_process(spec, context, writer, start).await?,
@@ -228,6 +269,7 @@ impl Runner {
                     .await;
             }
         };
+        crate::test_crash_boundary("after-spawn").await;
         let pid = child.id().map(|id| Pid::from_raw(id as i32));
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
@@ -254,13 +296,42 @@ impl Runner {
             tokio::select! {
                 biased;
                 status = &mut wait, if result.is_none() => {
-                    result = Some(status.map_err(RunnerError::Output)?);
+                    match status {
+                        Ok(status) => result = Some(status),
+                        Err(error) => {
+                            drop(wait);
+                            stdout_task.abort();
+                            stderr_task.abort();
+                            drop(receiver);
+                            terminate_after_output_failure(
+                                &mut child,
+                                pid,
+                                false,
+                                self.config.termination_grace,
+                            )
+                            .await;
+                            return Err(RunnerError::ExecutionInfrastructure(error));
+                        }
+                    }
                     if termination.is_some() {
                         termination_confirmed = observe_group_absence(pid, &mut termination_errors);
                     }
                 }
                 Some((channel, bytes)) = receiver.recv() => {
-                    writer.write(channel, start.elapsed(), &bytes).await?;
+                    if let Err(error) = writer.write(channel, start.elapsed(), &bytes).await {
+                        drop(wait);
+                        stdout_task.abort();
+                        stderr_task.abort();
+                        drop(receiver);
+                        terminate_after_output_failure(
+                            &mut child,
+                            pid,
+                            result.is_some(),
+                            self.config.termination_grace,
+                        )
+                        .await;
+                        return Err(RunnerError::ExecutionInfrastructure(error));
+                    }
                 }
                 () = context.cancellation.cancelled(), if termination.is_none() => {
                     termination = Some(OutcomeKind::Cancelled);
@@ -302,12 +373,38 @@ impl Runner {
             // Both stream tasks finish when the process closes its pipe ends. Keep
             // draining so a full bounded channel cannot deadlock their completion.
             while let Some((channel, bytes)) = receiver.recv().await {
-                writer.write(channel, start.elapsed(), &bytes).await?;
+                if let Err(error) = writer.write(channel, start.elapsed(), &bytes).await {
+                    drop(wait);
+                    stdout_task.abort();
+                    stderr_task.abort();
+                    drop(receiver);
+                    terminate_after_output_failure(
+                        &mut child,
+                        pid,
+                        result.is_some(),
+                        self.config.termination_grace,
+                    )
+                    .await;
+                    return Err(RunnerError::ExecutionInfrastructure(error));
+                }
             }
             let _ = stdout_task.await;
             let _ = stderr_task.await;
         }
-        let stats = writer.finalize(&context.final_output).await?;
+        drop(wait);
+        let stats = match writer.finalize(&context.final_output).await {
+            Ok(stats) => stats,
+            Err(error) => {
+                terminate_after_output_failure(
+                    &mut child,
+                    pid,
+                    result.is_some(),
+                    self.config.termination_grace,
+                )
+                .await;
+                return Err(RunnerError::ExecutionInfrastructure(error));
+            }
+        };
         let kind = if confirmation_failure {
             OutcomeKind::TerminationUnconfirmed
         } else {
@@ -339,8 +436,9 @@ impl Runner {
             kind,
             exit_code: result.as_ref().and_then(std::process::ExitStatus::code),
             http_status: None,
+            http_content_type: None,
             reason,
-            duration_micros: 0,
+            duration_micros: start.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
             output: stats,
         })
     }
@@ -439,7 +537,8 @@ impl Runner {
         };
         let response = tokio::select! {
             () = context.cancellation.cancelled() => {
-                let stats = writer.finalize(&context.final_output).await?;
+                let stats = writer.finalize(&context.final_output).await
+                    .map_err(RunnerError::ExecutionInfrastructure)?;
                 return Ok(simple_outcome(OutcomeKind::Cancelled, "attempt was cancelled", start, stats));
             }
             result = async {
@@ -453,7 +552,10 @@ impl Runner {
         let response = match response {
             Ok(response) => response,
             Err(HttpRunError::Timeout) => {
-                let stats = writer.finalize(&context.final_output).await?;
+                let stats = writer
+                    .finalize(&context.final_output)
+                    .await
+                    .map_err(RunnerError::ExecutionInfrastructure)?;
                 return Ok(simple_outcome(
                     OutcomeKind::TimedOut,
                     "attempt timed out",
@@ -462,7 +564,10 @@ impl Runner {
                 ));
             }
             Err(HttpRunError::Request(error)) => {
-                let stats = writer.finalize(&context.final_output).await?;
+                let stats = writer
+                    .finalize(&context.final_output)
+                    .await
+                    .map_err(RunnerError::ExecutionInfrastructure)?;
                 return Ok(simple_outcome(
                     OutcomeKind::FailedRetryable,
                     &format!("HTTP transport error: {error}"),
@@ -472,6 +577,11 @@ impl Runner {
             }
         };
         let status = response.status();
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let mut stream = response.bytes_stream();
         loop {
             let next = async {
@@ -486,28 +596,36 @@ impl Runner {
             };
             tokio::select! {
                 () = context.cancellation.cancelled() => {
-                    let stats = writer.finalize(&context.final_output).await?;
-                    return Ok(simple_outcome(OutcomeKind::Cancelled, "attempt was cancelled", start, stats));
+                    let stats = writer.finalize(&context.final_output).await
+                        .map_err(RunnerError::ExecutionInfrastructure)?;
+                    return Ok(http_outcome(OutcomeKind::Cancelled, "attempt was cancelled", start, stats, status, content_type));
                 }
                 item = next => match item {
                     Err(HttpRunError::Timeout) => {
-                        let stats = writer.finalize(&context.final_output).await?;
-                        return Ok(simple_outcome(OutcomeKind::TimedOut, "attempt timed out", start, stats));
+                        let stats = writer.finalize(&context.final_output).await
+                            .map_err(RunnerError::ExecutionInfrastructure)?;
+                        return Ok(http_outcome(OutcomeKind::TimedOut, "attempt timed out", start, stats, status, content_type));
                     }
                     Err(HttpRunError::Request(error)) => {
-                        let stats = writer.finalize(&context.final_output).await?;
-                        return Ok(simple_outcome(OutcomeKind::FailedRetryable, &format!("HTTP body error: {error}"), start, stats));
+                        let stats = writer.finalize(&context.final_output).await
+                            .map_err(RunnerError::ExecutionInfrastructure)?;
+                        return Ok(http_outcome(OutcomeKind::FailedRetryable, &format!("HTTP body error: {error}"), start, stats, status, content_type));
                     }
-                    Ok(Some(Ok(bytes))) => writer.write(Channel::Body, start.elapsed(), &bytes).await?,
+                    Ok(Some(Ok(bytes))) => writer.write(Channel::Body, start.elapsed(), &bytes).await
+                        .map_err(RunnerError::ExecutionInfrastructure)?,
                     Ok(Some(Err(error))) => {
-                        let stats = writer.finalize(&context.final_output).await?;
-                        return Ok(simple_outcome(OutcomeKind::FailedRetryable, &format!("HTTP body error: {error}"), start, stats));
+                        let stats = writer.finalize(&context.final_output).await
+                            .map_err(RunnerError::ExecutionInfrastructure)?;
+                        return Ok(http_outcome(OutcomeKind::FailedRetryable, &format!("HTTP body error: {error}"), start, stats, status, content_type));
                     }
                     Ok(None) => break,
                 }
             }
         }
-        let stats = writer.finalize(&context.final_output).await?;
+        let stats = writer
+            .finalize(&context.final_output)
+            .await
+            .map_err(RunnerError::ExecutionInfrastructure)?;
         let success = status.is_success() || spec.success_statuses.contains(&status.as_u16());
         let kind = if success {
             OutcomeKind::Succeeded
@@ -519,14 +637,25 @@ impl Runner {
         } else {
             OutcomeKind::Failed
         };
-        Ok(ExecutionOutcome {
+        Ok(http_outcome(
             kind,
-            exit_code: None,
-            http_status: Some(status.as_u16()),
-            reason: format!("HTTP response {status}"),
-            duration_micros: 0,
-            output: stats,
-        })
+            &format!("HTTP response {status}"),
+            start,
+            stats,
+            status,
+            content_type,
+        ))
+    }
+}
+
+impl ExecutorPort for Runner {
+    type Request = ExecutionRequest;
+    type Output = ExecutionOutcome;
+
+    async fn execute(&self, request: Self::Request) -> locron_core::Result<Self::Output> {
+        Runner::execute(self, &request.target, &request.context)
+            .await
+            .map_err(|error| CoreError::Execution(error.to_string()))
     }
 }
 
@@ -553,6 +682,76 @@ async fn read_stream<R: tokio::io::AsyncRead + Unpin>(
                 {
                     break;
                 }
+            }
+        }
+    }
+}
+
+async fn terminate_after_output_failure(
+    child: &mut Child,
+    pid: Option<Pid>,
+    leader_reaped: bool,
+    grace: Duration,
+) {
+    let grace = grace.max(Duration::from_millis(1));
+    let mut errors = Vec::new();
+    if leader_reaped && observe_group_absence(pid, &mut errors) {
+        return;
+    }
+    record_signal_result(
+        &mut errors,
+        Signal::SIGTERM,
+        signal_group(pid, Signal::SIGTERM),
+    );
+    let (mut leader_reaped, terminated) =
+        wait_for_group_exit(child, pid, leader_reaped, grace, &mut errors).await;
+    if !terminated {
+        record_signal_result(
+            &mut errors,
+            Signal::SIGKILL,
+            signal_group(pid, Signal::SIGKILL),
+        );
+        (leader_reaped, _) =
+            wait_for_group_exit(child, pid, leader_reaped, grace, &mut errors).await;
+    }
+    if !leader_reaped || !observe_group_absence(pid, &mut errors) {
+        tracing::error!(
+            details = %termination_confirmation_reason(&errors),
+            "failed to confirm process cleanup after output storage failure"
+        );
+    }
+}
+
+async fn wait_for_group_exit(
+    child: &mut Child,
+    pid: Option<Pid>,
+    mut leader_reaped: bool,
+    grace: Duration,
+    errors: &mut Vec<String>,
+) -> (bool, bool) {
+    let deadline = Instant::now() + grace;
+    loop {
+        if leader_reaped && observe_group_absence(pid, errors) {
+            return (true, true);
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return (leader_reaped, false);
+        }
+        let pause = deadline
+            .saturating_duration_since(now)
+            .min(Duration::from_millis(10));
+        if leader_reaped {
+            tokio::time::sleep(pause).await;
+        } else {
+            tokio::select! {
+                result = child.wait() => {
+                    leader_reaped = true;
+                    if let Err(error) = result {
+                        errors.push(format!("leader reap: {error}"));
+                    }
+                }
+                () = tokio::time::sleep(pause) => {}
             }
         }
     }
@@ -604,7 +803,10 @@ async fn finalize_configuration_failure(
     start: Instant,
     reason: &str,
 ) -> Result<ExecutionOutcome, RunnerError> {
-    let stats = writer.finalize(&context.final_output).await?;
+    let stats = writer
+        .finalize(&context.final_output)
+        .await
+        .map_err(RunnerError::OutputPreparation)?;
     Ok(simple_outcome(OutcomeKind::Failed, reason, start, stats))
 }
 
@@ -618,10 +820,25 @@ fn simple_outcome(
         kind,
         exit_code: None,
         http_status: None,
+        http_content_type: None,
         reason: reason.into(),
         duration_micros: start.elapsed().as_micros().min(u128::from(u64::MAX)) as u64,
         output,
     }
+}
+
+fn http_outcome(
+    kind: OutcomeKind,
+    reason: &str,
+    start: Instant,
+    output: OutputStats,
+    status: StatusCode,
+    content_type: Option<String>,
+) -> ExecutionOutcome {
+    let mut outcome = simple_outcome(kind, reason, start, output);
+    outcome.http_status = Some(status.as_u16());
+    outcome.http_content_type = content_type;
+    outcome
 }
 
 fn build_headers(values: &BTreeMap<String, String>) -> Result<HeaderMap, RunnerError> {
@@ -709,7 +926,7 @@ mod tests {
                 .unwrap();
             tokio::io::AsyncWriteExt::write_all(
                 &mut stream,
-                b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/final+json; charset=utf-8\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
             )
             .await
             .unwrap();
@@ -766,6 +983,80 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn core_executor_port_maps_runner_failures_to_execution_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("blocked-parent"), b"not a directory").unwrap();
+        let mut attempt = context(&temp);
+        attempt.partial_output = temp.path().join("blocked-parent/attempt.partial");
+        let request = ExecutionRequest {
+            target: TargetSpec::Process(ProcessSpec {
+                executable: "/usr/bin/true".into(),
+                args: Vec::new(),
+                cwd: temp.path().into(),
+                env: BTreeMap::new(),
+            }),
+            context: attempt,
+        };
+
+        let error = ExecutorPort::execute(&Runner::new(RunnerConfig::default()).unwrap(), request)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, CoreError::Execution(message) if message.starts_with("output preparation error:"))
+        );
+    }
+
+    #[tokio::test]
+    async fn post_spawn_output_failure_terminates_and_reaps_the_process_group() {
+        let temp = tempfile::tempdir().unwrap();
+        let pid_file = temp.path().join("grandchild.pid");
+        let attempt = context(&temp);
+        std::fs::create_dir(&attempt.final_output).unwrap();
+        let spec = ProcessSpec {
+            executable: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                format!(
+                    "(trap '' TERM; while :; do sleep 1; done) </dev/null >/dev/null 2>&1 & echo $! > '{}'",
+                    pid_file.display()
+                ),
+            ],
+            cwd: temp.path().into(),
+            env: BTreeMap::new(),
+        };
+
+        let error = Runner::new(RunnerConfig {
+            termination_grace: Duration::from_millis(40),
+            ..RunnerConfig::default()
+        })
+        .unwrap()
+        .execute(&TargetSpec::Process(spec), &attempt)
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error.failure_kind(),
+            RunnerFailureKind::ExecutionMayHaveStarted
+        );
+        let grandchild = Pid::from_raw(
+            std::fs::read_to_string(pid_file)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap(),
+        );
+        let mut gone = false;
+        for _ in 0..100 {
+            if matches!(kill(grandchild, None), Err(Errno::ESRCH)) {
+                gone = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(gone, "spawned process-group member survived output failure");
+    }
+
     #[test]
     fn injected_signal_results_distinguish_already_gone_from_unconfirmed_failure() {
         let mut errors = Vec::new();
@@ -803,6 +1094,38 @@ mod tests {
                 .iter()
                 .any(|frame| frame.channel == Channel::Stderr && frame.payload == b"bad")
         );
+    }
+
+    #[tokio::test]
+    async fn noisy_process_output_is_drained_and_truncated() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut context = context(&temp);
+        context.output_limit = 4 * 1024;
+        context.timeout = Some(Duration::from_secs(5));
+        let spec = ProcessSpec {
+            executable: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                "i=0; while [ \"$i\" -lt 2048 ]; do printf 0123456789abcdef; printf 0123456789abcdef >&2; i=$((i + 1)); done".into(),
+            ],
+            cwd: temp.path().into(),
+            env: BTreeMap::new(),
+        };
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&TargetSpec::Process(spec), &context)
+            .await
+            .unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+        assert_eq!(outcome.output.retained_bytes, 4 * 1024);
+        assert_eq!(outcome.output.discarded_bytes, 60 * 1024);
+        assert!(outcome.output.truncated);
+        let retained = crate::output::read_frames(temp.path().join("1.log"))
+            .unwrap()
+            .iter()
+            .map(|frame| frame.payload.len())
+            .sum::<usize>();
+        assert_eq!(retained, 4 * 1024);
     }
 
     #[tokio::test]
@@ -869,20 +1192,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn leader_exit_does_not_confirm_a_live_same_group_descendant() {
+    async fn cancellation_kills_a_live_process_grandchild() {
         let temp = tempfile::tempdir().unwrap();
+        let child_script = temp.path().join("child.sh");
+        let grandchild_script = temp.path().join("grandchild.sh");
+        let ready = temp.path().join("grandchild-ready");
+        std::fs::write(
+            &child_script,
+            format!(
+                "trap 'exit 0' TERM\n/bin/sh {} &\nwait\n",
+                grandchild_script.display()
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            &grandchild_script,
+            "trap '' TERM\nprintf ready > grandchild-ready\nsleep 5\n",
+        )
+        .unwrap();
         let mut context = context(&temp);
         context.timeout = None;
         let cancellation = context.cancellation.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(30)).await;
+            for _ in 0..100 {
+                if tokio::fs::try_exists(&ready).await.unwrap() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
             cancellation.cancel();
         });
         let spec = ProcessSpec {
             executable: "/bin/sh".into(),
             args: vec![
                 "-c".into(),
-                "trap 'exit 0' TERM; sh -c 'trap \"\" TERM; sleep 5' & wait".into(),
+                format!(
+                    "trap 'exit 0' TERM; /bin/sh {} & wait",
+                    child_script.display()
+                ),
             ],
             cwd: temp.path().into(),
             env: BTreeMap::new(),
@@ -899,6 +1246,45 @@ mod tests {
         assert_eq!(outcome.kind, OutcomeKind::Cancelled);
         assert!(start.elapsed() >= Duration::from_millis(40));
         assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn materialized_http_body_survives_source_file_disappearing() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let fixture = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_request(&mut stream).await;
+            tokio::io::AsyncWriteExt::write_all(
+                &mut stream,
+                b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+            request
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let body_path = temp.path().join("request.body");
+        std::fs::write(&body_path, b"materialized payload").unwrap();
+        let body = std::fs::read(&body_path).unwrap();
+        std::fs::remove_file(&body_path).unwrap();
+        let target = TargetSpec::Http(HttpSpec {
+            method: "POST".into(),
+            url: format!("http://{address}/body").parse().unwrap(),
+            headers: BTreeMap::new(),
+            body: Some(body),
+            success_statuses: vec![],
+            follow_redirects: false,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context(&temp))
+            .await
+            .unwrap();
+        let request = fixture.await.unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+        assert!(!body_path.exists());
+        assert!(request.ends_with(b"materialized payload"));
     }
 
     #[tokio::test]
@@ -933,10 +1319,143 @@ mod tests {
         fixture.await.unwrap();
         assert_eq!(outcome.kind, OutcomeKind::FailedRetryable);
         assert_eq!(outcome.http_status, Some(500));
+        assert_eq!(outcome.http_content_type, None);
         assert_eq!(
             crate::output::read_frames(temp.path().join("1.log")).unwrap()[0].payload,
             b"oops"
         );
+    }
+
+    #[tokio::test]
+    async fn timeout_while_streaming_finalizes_captured_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let fixture = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let _ = read_request(&mut stream).await;
+            tokio::io::AsyncWriteExt::write_all(
+                &mut stream,
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nhello\r\n",
+            )
+            .await
+            .unwrap();
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let mut context = context(&temp);
+        context.timeout = Some(Duration::from_millis(100));
+        let target = TargetSpec::Http(HttpSpec {
+            method: "GET".into(),
+            url: format!("http://{address}/stream").parse().unwrap(),
+            headers: BTreeMap::new(),
+            body: None,
+            success_statuses: vec![],
+            follow_redirects: false,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context)
+            .await
+            .unwrap();
+        fixture.await.unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::TimedOut);
+        assert_eq!(outcome.http_status, Some(200));
+        assert_eq!(
+            outcome.http_content_type.as_deref(),
+            Some("text/plain; charset=utf-8")
+        );
+        assert!(!temp.path().join("1.partial").exists());
+        let body = crate::output::read_frames(temp.path().join("1.log"))
+            .unwrap()
+            .into_iter()
+            .flat_map(|frame| frame.payload)
+            .collect::<Vec<_>>();
+        assert_eq!(body, b"hello");
+    }
+
+    #[tokio::test]
+    async fn untrusted_local_tls_certificate_is_a_retryable_transport_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let certificate = temp.path().join("certificate.pem");
+        let private_key = temp.path().join("private-key.pem");
+        let generated = std::process::Command::new("openssl")
+            .args([
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                private_key.to_str().unwrap(),
+                "-out",
+                certificate.to_str().unwrap(),
+                "-days",
+                "1",
+                "-subj",
+                "/CN=localhost",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("openssl is required for the local TLS fixture");
+        assert!(generated.success());
+
+        let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = reservation.local_addr().unwrap();
+        drop(reservation);
+        let port = address.port().to_string();
+        let mut server = Command::new("openssl");
+        server
+            .args([
+                "s_server",
+                "-accept",
+                &port,
+                "-cert",
+                certificate.to_str().unwrap(),
+                "-key",
+                private_key.to_str().unwrap(),
+                "-www",
+                "-quiet",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let mut server = server.spawn().unwrap();
+        let mut listening = false;
+        for _ in 0..100 {
+            match tokio::net::TcpStream::connect(address).await {
+                Ok(stream) => {
+                    drop(stream);
+                    listening = true;
+                    break;
+                }
+                Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+            }
+        }
+        assert!(listening, "local TLS fixture did not start");
+
+        let target = TargetSpec::Http(HttpSpec {
+            method: "GET".into(),
+            url: format!("https://localhost:{}/", address.port())
+                .parse()
+                .unwrap(),
+            headers: BTreeMap::new(),
+            body: None,
+            success_statuses: vec![],
+            follow_redirects: false,
+        });
+        let outcome = Runner::new(RunnerConfig::default())
+            .unwrap()
+            .execute(&target, &context(&temp))
+            .await
+            .unwrap();
+        server.start_kill().unwrap();
+        server.wait().await.unwrap();
+        assert_eq!(outcome.kind, OutcomeKind::FailedRetryable);
+        assert_eq!(outcome.http_status, None);
+        assert!(outcome.reason.starts_with("HTTP transport error:"));
     }
 
     #[tokio::test]
@@ -996,6 +1515,10 @@ mod tests {
         for (status, method) in [(301, "POST"), (302, "POST"), (303, "PUT")] {
             let (outcome, request) = follow_redirect(status, method).await;
             assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+            assert_eq!(
+                outcome.http_content_type.as_deref(),
+                Some("application/final+json; charset=utf-8")
+            );
             assert!(request.starts_with("GET /target HTTP/1.1\r\n"), "{request}");
             assert!(!request.ends_with("payload"), "{request}");
             assert!(!request.to_ascii_lowercase().contains("content-type:"));
@@ -1007,6 +1530,10 @@ mod tests {
         for (status, method) in [(307, "POST"), (308, "PATCH")] {
             let (outcome, request) = follow_redirect(status, method).await;
             assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+            assert_eq!(
+                outcome.http_content_type.as_deref(),
+                Some("application/final+json; charset=utf-8")
+            );
             assert!(
                 request.starts_with(&format!("{method} /target HTTP/1.1\r\n")),
                 "{request}"
@@ -1020,6 +1547,10 @@ mod tests {
     async fn see_other_preserves_head() {
         let (outcome, request) = follow_redirect(303, "HEAD").await;
         assert_eq!(outcome.kind, OutcomeKind::Succeeded);
+        assert_eq!(
+            outcome.http_content_type.as_deref(),
+            Some("application/final+json; charset=utf-8")
+        );
         assert!(
             request.starts_with("HEAD /target HTTP/1.1\r\n"),
             "{request}"

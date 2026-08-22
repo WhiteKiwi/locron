@@ -42,7 +42,7 @@ Exact SQL is migration-owned, but the initial schema has these records and keys:
 | job revisions | job UUID + revision number | Immutable normalized definition JSON and creation facts |
 | schedule cursors | job UUID + revision number | Reconciliation boundary, interval anchor, one-time resolution, optional disabled-since boundary |
 | runs | UUIDv7 | Trigger, nominal/request/eligibility times, queue sequence, snapshot, lifecycle and reason |
-| attempts | run UUID + attempt number | Lifetime owner, timing, process/HTTP result, resolved executable and state |
+| attempts | run UUID + attempt number | Lifetime owner, timing, process/HTTP status and content type, resolved executable and state |
 | retry intents | run UUID | Prior attempt, durable not-before time and retry classification |
 | events | increasing integer | Bounded audit and explanation cursor |
 | output artifacts | run UUID + attempt number | Logical key, lifecycle, byte/truncation/discard/prune facts |
@@ -50,6 +50,20 @@ Exact SQL is migration-owned, but the initial schema has these records and keys:
 | admission state | singleton | Last admitted job and next durable queue sequence |
 
 Complex job definitions and immutable run snapshots are canonical versioned JSON validated by `locron-core`. Frequently selected state, identity, ordering, and retention columns remain relational and indexed.
+
+The singleton settings record stores global environment values as one canonical JSON object from
+validated environment names to UTF-8 strings. The empty map is `{}`. Serialization is compact UTF-8
+with object keys in lexical order; duplicate names, reserved `LOCRON_*` names, invalid names, and NUL
+values are rejected before a transaction begins. Readers parse and validate the complete object
+rather than extracting values with ad hoc SQL or string operations. A named config set or unset
+reads, changes, canonicalizes, and writes this complete map under immediate write intent, so a
+concurrent settings writer cannot lose an update.
+
+At execution, the immutable attempt environment is assembled in this order: minimal operating-system
+values, the locron-owned global execution path, global environment values, the runtime job env file,
+job inline values, and reserved run metadata. Later layers replace earlier names. The resulting
+`PATH` is the only search path used for a bare executable; the daemon process environment is never a
+fallback.
 
 ## Required constraints and indexes
 
@@ -72,6 +86,13 @@ Complex job definitions and immutable run snapshots are canonical versioned JSON
 ## Transaction boundaries
 
 Dedicated store operations atomically perform job revision changes, manual snapshot/enqueue, reconciliation cursor plus run materialization, overlap/replacement decisions, admission plus fairness cursor movement, attempt completion plus retry intent, cancellation intent, stale-lifetime recovery, bounded retention selection, and whole-document settings/job import.
+
+For a bare process executable, execution resolves one absolute path from the fully layered attempt
+environment, then commits that path to the attempt before spawn. The same transition rechecks
+cancellation and attempt ownership; only its committed ready result authorizes process creation. A
+resolution failure instead commits the known non-retryable configuration outcome and an empty
+finalized output artifact. Diagnostics may show the requested executable, resolution status, and
+selected absolute path, but redact the search-path contents and every configured environment value.
 
 Cancellation reads the run state after taking immediate write intent. Ordinary cancellation of a
 termination-unconfirmed quarantine returns a conflict and cannot create an inert cancellation
@@ -113,6 +134,12 @@ The daemon locks before migrating. A CLI may migrate an older database only afte
 Migration 2 adds the nullable disabled-since cursor fact. Existing version-1 rows backfill to NULL,
 so upgrade does not invent historical disabled time; a later explicit transition establishes the
 fact. Upgrade verification checks both migration checksums and transactional version movement.
+
+The migration that introduces global environment settings adds a non-null canonical JSON value and
+backfills every existing singleton settings row to `{}`. A newly created database uses the same
+empty-map default. Import normalization also treats an older `locron.export/v1` document with no
+global environment member as `{}`; this backward default adds no inherited daemon values and does
+not weaken plaintext acknowledgement for documents that do contain values.
 
 ## Backup and direct access
 

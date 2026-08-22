@@ -1,6 +1,9 @@
 //! `locron` command-line composition root.
 
+mod maintenance;
+
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as StdError;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -24,7 +27,7 @@ use locron_core::{
 };
 use locron_engine::admission::{RetryClass, decide_retry};
 use locron_engine::daemon::{AdmittedAttempt, DaemonStore};
-use locron_engine::runner::{OutcomeKind, RunnerConfig};
+use locron_engine::runner::{OutcomeKind, RunnerConfig, resolve_executable};
 use locron_engine::{
     AttemptContext, Daemon, DaemonConfig, HttpSpec, OutputWriter, ProcessSpec, Runner, TargetSpec,
 };
@@ -40,11 +43,175 @@ use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
+const ROOT_HELP: &str = "\
+Examples:
+  locron list
+  locron add backup --every 1h -- /usr/bin/backup
+
+Navigation:
+  Run 'locron help <COMMAND>' for detailed command help.";
+const ADD_HELP: &str = "\
+Examples:
+  locron add backup --every 1h -- /usr/bin/backup
+  locron add heartbeat --cron '*/5 * * * *' --http GET https://example.test/health
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const UPDATE_HELP: &str = "\
+Examples:
+  locron update backup --retries 3 --dry-run
+  locron update heartbeat --cron '*/10 * * * *' --timezone UTC
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const LIST_HELP: &str = "\
+Examples:
+  locron list
+  locron list --all
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const SHOW_HELP: &str = "\
+Examples:
+  locron show backup
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const ENABLE_HELP: &str = "\
+Examples:
+  locron enable backup
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const DISABLE_HELP: &str = "\
+Examples:
+  locron disable backup
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const REMOVE_HELP: &str = "\
+Examples:
+  locron remove backup
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const PREVIEW_HELP: &str = "\
+Examples:
+  locron preview backup --count 10
+  locron preview --cron '0 9 * * MON-FRI' --timezone Europe/London
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const RUN_HELP: &str = "\
+Examples:
+  locron run backup
+  locron run backup --wait
+  locron run backup --dry-run
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const CANCEL_HELP: &str = "\
+Examples:
+  locron cancel 018f47a2-4a12-7c35-b9d8-0123456789ab
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const HISTORY_HELP: &str = "\
+Examples:
+  locron history
+  locron history backup --limit 50
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const LOGS_HELP: &str = "\
+Examples:
+  locron logs 018f47a2-4a12-7c35-b9d8-0123456789ab
+  locron logs 018f47a2-4a12-7c35-b9d8-0123456789ab --follow --channel stderr
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const WHY_HELP: &str = "\
+Examples:
+  locron why backup
+  locron why --run 018f47a2-4a12-7c35-b9d8-0123456789ab
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const CONFIG_HELP: &str = "\
+Examples:
+  locron config get
+  locron config set global_concurrency 32 --dry-run
+
+Navigation:
+  Run 'locron help config <COMMAND>' for a config command or 'locron --help' for all commands.";
+const CONFIG_GET_HELP: &str = "\
+Examples:
+  locron config get
+  locron config get global_concurrency
+
+Navigation:
+  Run 'locron config --help' for config commands or 'locron --help' for all commands.";
+const CONFIG_SET_HELP: &str = "\
+Examples:
+  locron config set global_concurrency 32
+  locron config set environment.API_TOKEN value
+  locron config set global_concurrency 32 --dry-run
+
+Navigation:
+  Run 'locron config --help' for config commands or 'locron --help' for all commands.";
+const CONFIG_UNSET_HELP: &str = "\
+Examples:
+  locron config unset environment.API_TOKEN
+  locron config unset environment.API_TOKEN --dry-run
+
+Navigation:
+  Run 'locron config --help' for config commands or 'locron --help' for all commands.";
+const EXPORT_HELP: &str = "\
+Examples:
+  locron export
+  locron export --include-values --acknowledge-plaintext
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const IMPORT_HELP: &str = "\
+Examples:
+  locron import backup.json --dry-run
+  locron import backup.json --accept-plaintext-values
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const PRUNE_HELP: &str = "\
+Examples:
+  locron prune --dry-run
+  locron prune
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const DOCTOR_HELP: &str = "\
+Examples:
+  locron doctor
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const DAEMON_HELP: &str = "\
+Examples:
+  locron daemon run
+
+Navigation:
+  Run 'locron help daemon <COMMAND>' for a daemon command or 'locron --help' for all commands.";
+const DAEMON_RUN_HELP: &str = "\
+Examples:
+  locron daemon run
+
+Navigation:
+  Run 'locron daemon --help' for daemon commands or 'locron --help' for all commands.";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "locron",
     version,
-    about = "A predictable local-first job scheduler"
+    about = "A predictable local-first job scheduler",
+    after_help = ROOT_HELP
 )]
 struct Cli {
     #[arg(long, global = true, env = "LOCRON_STATE_DIR")]
@@ -69,25 +236,29 @@ enum Format {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    #[command(about = "Register a scheduled job", after_help = ADD_HELP)]
     Add(AddArgs),
+    #[command(about = "Change an existing job", after_help = UPDATE_HELP)]
     Update(UpdateArgs),
+    #[command(about = "List jobs", after_help = LIST_HELP)]
     List {
         #[arg(long)]
         all: bool,
     },
-    Show {
-        name: String,
-    },
-    Enable {
-        name: String,
-    },
-    Disable {
-        name: String,
-    },
-    Remove {
-        name: String,
-    },
+    #[command(about = "Show a job's current definition", after_help = SHOW_HELP)]
+    Show { name: String },
+    #[command(about = "Enable a job", after_help = ENABLE_HELP)]
+    Enable { name: String },
+    #[command(about = "Disable a job", after_help = DISABLE_HELP)]
+    Disable { name: String },
+    #[command(about = "Soft-remove a job", after_help = REMOVE_HELP)]
+    Remove { name: String },
+    #[command(
+        about = "Preview upcoming schedule occurrences",
+        after_help = PREVIEW_HELP
+    )]
     Preview(PreviewArgs),
+    #[command(about = "Queue a manual run", after_help = RUN_HELP)]
     Run {
         name: String,
         #[arg(long)]
@@ -95,16 +266,19 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    #[command(about = "Cancel a queued or active run", after_help = CANCEL_HELP)]
     Cancel {
         run_id: String,
         #[arg(long)]
         acknowledge_unconfirmed: bool,
     },
+    #[command(about = "List run history", after_help = HISTORY_HELP)]
     History {
         name: Option<String>,
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    #[command(about = "Read captured run output", after_help = LOGS_HELP)]
     Logs {
         run_id: String,
         #[arg(long)]
@@ -114,15 +288,18 @@ enum Command {
         #[arg(long, value_enum, default_value = "all")]
         channel: LogChannel,
     },
+    #[command(about = "Explain durable job or run decisions", after_help = WHY_HELP)]
     Why {
         name: Option<String>,
         #[arg(long)]
         run: Option<String>,
     },
+    #[command(about = "Inspect or change global settings", after_help = CONFIG_HELP)]
     Config {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    #[command(about = "Export settings and job definitions", after_help = EXPORT_HELP)]
     Export {
         #[arg(long)]
         include_values: bool,
@@ -131,6 +308,7 @@ enum Command {
         #[arg(long)]
         include_history: bool,
     },
+    #[command(about = "Import settings and job definitions", after_help = IMPORT_HELP)]
     Import {
         path: PathBuf,
         #[arg(long)]
@@ -138,11 +316,14 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    #[command(about = "Apply configured retention limits", after_help = PRUNE_HELP)]
     Prune {
         #[arg(long)]
         dry_run: bool,
     },
+    #[command(about = "Report state and daemon diagnostics", after_help = DOCTOR_HELP)]
     Doctor,
+    #[command(about = "Run scheduler service commands", after_help = DAEMON_HELP)]
     Daemon {
         #[command(subcommand)]
         command: DaemonCommand,
@@ -151,18 +332,25 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum ConfigCommand {
-    Get {
-        key: Option<String>,
-    },
+    #[command(about = "Read one or all global settings", after_help = CONFIG_GET_HELP)]
+    Get { key: Option<String> },
+    #[command(about = "Change a global setting", after_help = CONFIG_SET_HELP)]
     Set {
         key: String,
         value: String,
         #[arg(long)]
         dry_run: bool,
     },
+    #[command(about = "Remove a global environment value", after_help = CONFIG_UNSET_HELP)]
+    Unset {
+        key: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 #[derive(Subcommand, Debug)]
 enum DaemonCommand {
+    #[command(about = "Run the scheduler in the foreground", after_help = DAEMON_RUN_HELP)]
     Run,
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -361,6 +549,8 @@ struct ExportDocument {
     values_mode: ValuesMode,
     settings: SettingsRecord,
     jobs: Vec<ExportJob>,
+    #[serde(default)]
+    omitted_values: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -404,16 +594,51 @@ struct ImportPlan {
     now_us: i64,
 }
 
+#[derive(Debug)]
+struct TargetOutcomeError {
+    run_id: String,
+    state: String,
+    reason: Option<String>,
+}
+
+impl std::fmt::Display for TargetOutcomeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "target for run {} finished with {}",
+            self.run_id, self.state
+        )
+    }
+}
+
+impl StdError for TargetOutcomeError {}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
     init_tracing(cli.verbose, cli.debug);
     let format = if cli.json { Format::Json } else { cli.format };
     let command_name = command_name(&cli.command);
+    let streaming = format == Format::Json && command_uses_stream(&cli.command);
     if let Err(error) = execute(cli, format).await {
-        render_error(format, command_name, &error);
+        if streaming {
+            render_stream_error(command_name, &error);
+        } else {
+            render_error(format, command_name, &error);
+        }
         std::process::exit(exit_code(&error));
     }
+}
+
+fn command_uses_stream(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Run {
+            wait: true,
+            dry_run: false,
+            ..
+        } | Command::Logs { follow: true, .. }
+    )
 }
 
 async fn execute(cli: Cli, format: Format) -> Result<()> {
@@ -479,10 +704,11 @@ async fn execute(cli: Cli, format: Format) -> Result<()> {
             Ok(())
         }
         Command::History { name, limit } => {
-            let runs = open(&paths)?
+            let store = open(&paths)?;
+            let runs = store
                 .history(name.as_deref(), limit)?
                 .into_iter()
-                .map(redacted_run)
+                .map(|run| redacted_observable_run(&store, run))
                 .collect::<Result<Vec<_>>>()?;
             render(format, "history", json!(runs), &[]);
             Ok(())
@@ -1137,21 +1363,48 @@ async fn run_job(
     } else {
         vec![]
     };
-    render(
-        format,
-        "run",
-        json!({"run_id":run.id,"state":run.state}),
-        &warnings,
-    );
+    if !wait || format == Format::Human {
+        render(
+            format,
+            "run",
+            json!({"run_id":run.id,"state":run.state}),
+            &warnings,
+        );
+    }
     if wait {
-        wait_run(&store, &run_id, format).await?
+        let run = wait_run(paths, &store, &run_id, format).await?;
+        if format == Format::Json {
+            render_stream_result(
+                "run",
+                true,
+                json!({"run_id":run.id,"state":run.state,"reason":run.reason}),
+                &warnings,
+                None,
+            );
+        }
     }
     Ok(())
 }
 
-async fn wait_run(store: &Store, id: &str, format: Format) -> Result<()> {
+async fn wait_run(
+    paths: &StatePaths,
+    store: &Store,
+    id: &str,
+    format: Format,
+) -> Result<RunRecord> {
+    let mut attempt = 1_u16;
+    let mut emitted = 0_usize;
     loop {
         let run = store.run(id)?;
+        let finalized = emit_available_attempt_output(
+            paths,
+            id,
+            attempt,
+            &mut emitted,
+            LogChannel::All,
+            format,
+            "run",
+        )?;
         if !matches!(
             run.state.as_str(),
             "queued" | "starting" | "running" | "retry_wait"
@@ -1160,9 +1413,20 @@ async fn wait_run(store: &Store, id: &str, format: Format) -> Result<()> {
                 println!("{}: {}", run.id, run.state);
             }
             if run.state != "succeeded" {
-                return Err(anyhow!("target finished with {}", run.state));
+                return Err(TargetOutcomeError {
+                    run_id: run.id,
+                    state: run.state,
+                    reason: run.reason,
+                }
+                .into());
             }
-            return Ok(());
+            return Ok(run);
+        }
+        if finalized {
+            attempt = attempt
+                .checked_add(1)
+                .ok_or_else(|| anyhow!("attempt number exceeds output path range"))?;
+            emitted = 0;
         }
         tokio::time::sleep(Duration::from_millis(200)).await
     }
@@ -1176,37 +1440,140 @@ async fn logs(
     channel: LogChannel,
     format: Format,
 ) -> Result<()> {
-    let path = paths.final_output(run_id, attempt.unwrap_or(1))?;
-    loop {
-        if path.exists() {
-            for frame in locron_engine::read_frames(&path)? {
-                let selected = matches!(channel, LogChannel::All)
-                    || matches!(
-                        (channel, frame.channel),
-                        (LogChannel::Stdout, locron_engine::Channel::Stdout)
-                            | (LogChannel::Stderr, locron_engine::Channel::Stderr)
-                            | (LogChannel::Body, locron_engine::Channel::Body)
+    let attempt = attempt.unwrap_or(1);
+    if follow {
+        let mut emitted = 0;
+        loop {
+            if emit_available_attempt_output(
+                paths,
+                run_id,
+                attempt,
+                &mut emitted,
+                channel,
+                format,
+                "logs",
+            )? {
+                if format == Format::Json {
+                    render_stream_result(
+                        "logs",
+                        true,
+                        json!({"run_id":run_id,"attempt":attempt,"state":"finalized"}),
+                        &[],
+                        None,
                     );
-                if selected {
-                    if format == Format::Human {
-                        print!("{}", String::from_utf8_lossy(&frame.payload))
-                    } else {
-                        render(
-                            format,
-                            "logs",
-                            json!({"channel":format!("{:?}",frame.channel).to_lowercase(),"sequence":frame.sequence,"bytes":base64::engine::general_purpose::STANDARD.encode(&frame.payload),"encoding":"base64"}),
-                            &[],
-                        )
-                    }
+                }
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
+    let path = paths.final_output(run_id, attempt)?;
+    if path.exists() {
+        for frame in locron_engine::read_frames(&path)? {
+            if channel_selected(channel, frame.channel) {
+                if format == Format::Human {
+                    print!("{}", String::from_utf8_lossy(&frame.payload))
+                } else {
+                    render(
+                        format,
+                        "logs",
+                        json!({"channel":format!("{:?}",frame.channel).to_lowercase(),"sequence":frame.sequence,"bytes":base64::engine::general_purpose::STANDARD.encode(&frame.payload),"encoding":"base64"}),
+                        &[],
+                    )
                 }
             }
-            return Ok(());
         }
-        if !follow {
-            return Err(anyhow!("output not found"));
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await
+        return Ok(());
     }
+    Err(anyhow!("output not found"))
+}
+
+fn emit_available_attempt_output(
+    paths: &StatePaths,
+    run_id: &str,
+    attempt: u16,
+    emitted: &mut usize,
+    channel: LogChannel,
+    format: Format,
+    command: &str,
+) -> Result<bool> {
+    let final_path = paths.final_output(run_id, attempt)?;
+    let partial_path = paths.partial_output(run_id, attempt)?;
+    let (frames, finalized) = match locron_engine::read_frames(&final_path) {
+        Ok(frames) => (frames, true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match locron_engine::read_frames(&partial_path) {
+                Ok(frames) => (frames, false),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::UnexpectedEof
+                    ) =>
+                {
+                    (Vec::new(), false)
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Err(error) => return Err(error.into()),
+    };
+
+    if frames.len() < *emitted {
+        return Err(anyhow!(
+            "attempt output regressed from {} to {} frames",
+            *emitted,
+            frames.len()
+        ));
+    }
+    for frame in &frames[*emitted..] {
+        if channel_selected(channel, frame.channel) {
+            emit_output_frame(format, command, run_id, attempt, frame);
+        }
+    }
+    *emitted = frames.len();
+    Ok(finalized)
+}
+
+fn channel_selected(channel: LogChannel, frame_channel: locron_engine::Channel) -> bool {
+    matches!(channel, LogChannel::All)
+        || matches!(
+            (channel, frame_channel),
+            (LogChannel::Stdout, locron_engine::Channel::Stdout)
+                | (LogChannel::Stderr, locron_engine::Channel::Stderr)
+                | (LogChannel::Body, locron_engine::Channel::Body)
+        )
+}
+
+fn emit_output_frame(
+    format: Format,
+    command: &str,
+    run_id: &str,
+    attempt: u16,
+    frame: &locron_engine::Frame,
+) {
+    if format == Format::Human {
+        print!("{}", String::from_utf8_lossy(&frame.payload));
+    } else {
+        println!(
+            "{}",
+            json!({
+                "schema":"locron.stream/v1",
+                "record":"frame",
+                "command":command,
+                "data":{
+                    "run_id":run_id,
+                    "attempt":attempt,
+                    "channel":format!("{:?}",frame.channel).to_lowercase(),
+                    "sequence":frame.sequence,
+                    "elapsed_micros":frame.elapsed_micros,
+                    "bytes":base64::engine::general_purpose::STANDARD.encode(&frame.payload),
+                    "encoding":"base64"
+                }
+            })
+        );
+    }
+    let _ = std::io::Write::flush(&mut std::io::stdout());
 }
 
 fn why(
@@ -1247,10 +1614,11 @@ fn why(
         }
         (None, Some(id)) => {
             let durable_events = store.events_for_run(&id)?;
+            let run = redacted_observable_run(&store, store.run(&id)?)?;
             render(
                 format,
                 "why",
-                json!({"run":redacted_run(store.run(&id)?)?,"events":durable_events,"daemon_running":!daemon_lock_free(paths),"explanation":"terminal reason, immutable snapshot, and audit events are durable facts"}),
+                json!({"run":run,"events":durable_events,"daemon_running":!daemon_lock_free(paths),"explanation":"terminal reason, immutable snapshot, ordered attempts, and audit events are durable facts"}),
                 &[],
             );
             Ok(())
@@ -1263,20 +1631,29 @@ fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<
     match command {
         ConfigCommand::Get { key } => {
             let store = open(paths)?;
-            let settings = serde_json::to_value(store.settings()?)?;
-            let data = match key {
-                Some(key) => {
-                    json!({"key":key,"value":settings.get(&key).ok_or_else(||anyhow!("unknown configuration key"))?})
-                }
-                None => settings,
-            };
-            render(format, "config get", data, &[]);
+            let settings = store.settings()?;
+            render_config_get(format, key.as_deref(), &settings)?;
         }
         ConfigCommand::Set {
             key,
             value,
             dry_run,
         } => {
+            if let Some(name) = environment_config_name(&key)? {
+                validate_environment_value(name, &value)?;
+                let before = config_dry_run_settings(paths, dry_run)?;
+                let action = if before.environment.contains_key(name) {
+                    "replaced"
+                } else {
+                    "created"
+                };
+                if !dry_run {
+                    open(paths)?.set_environment(name, Some(&value), now_us())?;
+                    send_wake(paths);
+                }
+                render_environment_change(format, &key, action, true, dry_run);
+                return Ok(());
+            }
             if dry_run {
                 validate_config_value(&key, &value)?;
                 render(
@@ -1289,11 +1666,167 @@ fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<
                 let store = open(paths)?;
                 let settings = store.set_setting(&key, &value, now_us())?;
                 send_wake(paths);
-                render(format, "config set", json!(settings), &[]);
+                render(
+                    format,
+                    "config set",
+                    redacted_settings_value(&settings)?,
+                    &[],
+                );
             }
+        }
+        ConfigCommand::Unset { key, dry_run } => {
+            let name = environment_config_name(&key)?
+                .ok_or_else(|| anyhow!("only environment.NAME settings can be unset"))?;
+            let before = config_dry_run_settings(paths, dry_run)?;
+            let action = if before.environment.contains_key(name) {
+                "removed"
+            } else {
+                "unchanged"
+            };
+            if !dry_run {
+                open(paths)?.set_environment(name, None, now_us())?;
+                send_wake(paths);
+            }
+            render_environment_change(format, &key, action, false, dry_run);
         }
     }
     Ok(())
+}
+
+fn environment_config_name(key: &str) -> Result<Option<&str>> {
+    let Some(name) = key.strip_prefix("environment.") else {
+        if key == "environment" {
+            return Err(anyhow!("environment requires a named environment.NAME key"));
+        }
+        return Ok(None);
+    };
+    if !is_valid_environment_name(name) || name.starts_with("LOCRON_") {
+        return Err(anyhow!("invalid or reserved environment name {name}"));
+    }
+    Ok(Some(name))
+}
+
+fn validate_environment_value(name: &str, value: &str) -> Result<()> {
+    if value.contains('\0') {
+        return Err(anyhow!("environment value for {name} contains NUL"));
+    }
+    Ok(())
+}
+
+fn config_dry_run_settings(paths: &StatePaths, dry_run: bool) -> Result<SettingsRecord> {
+    if dry_run && !paths.database.is_file() {
+        return Ok(default_settings());
+    }
+    if dry_run {
+        open_read_only(paths)?.settings().map_err(Into::into)
+    } else {
+        open(paths)?.settings().map_err(Into::into)
+    }
+}
+
+fn default_settings() -> SettingsRecord {
+    SettingsRecord {
+        global_concurrency: 16,
+        execution_path: "/usr/local/bin:/usr/bin:/bin".into(),
+        run_retention_count: 10_000,
+        run_retention_age_us: Some(7_776_000_000_000),
+        output_limit_bytes: 268_435_456,
+        per_run_output_limit_bytes: 10_485_760,
+        environment: BTreeMap::new(),
+    }
+}
+
+fn render_config_get(format: Format, key: Option<&str>, settings: &SettingsRecord) -> Result<()> {
+    if let Some(key) = key
+        && let Some(name) = environment_config_name(key)?
+    {
+        let configured = settings.environment.contains_key(name);
+        if format == Format::Human {
+            println!(
+                "{key}: {}",
+                if configured {
+                    "configured (value redacted)"
+                } else {
+                    "not configured"
+                }
+            );
+        } else {
+            render(
+                format,
+                "config get",
+                json!({"key":key,"configured":configured,"value_redacted":true}),
+                &[],
+            );
+        }
+        return Ok(());
+    }
+
+    let mut value = redacted_settings_value(settings)?;
+    let object = value
+        .as_object_mut()
+        .expect("settings serialize as an object");
+    if let Some(key) = key {
+        let value = object
+            .get(key)
+            .ok_or_else(|| anyhow!("unknown configuration key"))?;
+        render(format, "config get", json!({"key":key,"value":value}), &[]);
+    } else if format == Format::Human {
+        for (name, value) in object.iter().filter(|(name, _)| *name != "environment") {
+            println!("{name}={value}");
+        }
+        for name in settings.environment.keys() {
+            println!("environment.{name}=<redacted>");
+        }
+    } else {
+        render(format, "config get", value, &[]);
+    }
+    Ok(())
+}
+
+fn redacted_settings_value(settings: &SettingsRecord) -> Result<Value> {
+    let mut value = serde_json::to_value(settings)?;
+    let environment = settings
+        .environment
+        .keys()
+        .map(|name| {
+            (
+                name.clone(),
+                json!({"configured":true,"value_redacted":true}),
+            )
+        })
+        .collect::<serde_json::Map<_, _>>();
+    value
+        .as_object_mut()
+        .expect("settings serialize as an object")
+        .insert("environment".into(), Value::Object(environment));
+    Ok(value)
+}
+
+fn render_environment_change(
+    format: Format,
+    key: &str,
+    action: &str,
+    configured: bool,
+    dry_run: bool,
+) {
+    if format == Format::Human {
+        if configured {
+            println!("{key}: configured (value redacted)");
+        } else {
+            println!("{key}: unset");
+        }
+    } else {
+        render(
+            format,
+            if configured {
+                "config set"
+            } else {
+                "config unset"
+            },
+            json!({"key":key,"action":action,"configured":configured,"value_redacted":true,"dry_run":dry_run}),
+            &[],
+        );
+    }
 }
 
 fn validate_config_value(key: &str, value: &str) -> Result<()> {
@@ -1347,11 +1880,24 @@ fn export(
         .into_iter()
         .map(|job| export_job(job, values_mode))
         .collect::<Result<Vec<_>>>()?;
+    let mut settings = store.settings()?;
+    let omitted_values = if values_mode == ValuesMode::Redacted {
+        let omitted = settings
+            .environment
+            .keys()
+            .map(|name| format!("settings.environment.{name}"))
+            .collect();
+        settings.environment.clear();
+        omitted
+    } else {
+        Vec::new()
+    };
     let document = ExportDocument {
         schema: "locron.export/v1".into(),
         values_mode,
-        settings: store.settings()?,
+        settings,
         jobs,
+        omitted_values,
     };
     match format {
         Format::Json => render(format, "export", serde_json::to_value(&document)?, &[]),
@@ -1479,10 +2025,11 @@ fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDo
             ));
         }
         ValuesMode::Redacted => {
-            if document
-                .jobs
-                .iter()
-                .any(|job| !job.omitted_values.is_empty())
+            if !document.omitted_values.is_empty()
+                || document
+                    .jobs
+                    .iter()
+                    .any(|job| !job.omitted_values.is_empty())
             {
                 return Err(anyhow!(
                     "redacted export contains omitted values and cannot be imported faithfully"
@@ -1490,10 +2037,11 @@ fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDo
             }
         }
         ValuesMode::Plaintext => {
-            if document
-                .jobs
-                .iter()
-                .any(|job| !job.omitted_values.is_empty())
+            if !document.omitted_values.is_empty()
+                || document
+                    .jobs
+                    .iter()
+                    .any(|job| !job.omitted_values.is_empty())
             {
                 return Err(anyhow!(
                     "plaintext export must not contain omitted_values entries"
@@ -1568,6 +2116,10 @@ fn validate_import_settings_cli(settings: &SettingsRecord) -> Result<()> {
     }
     if settings.execution_path.contains('\0') {
         return Err(anyhow!("import execution_path contains NUL"));
+    }
+    for (name, value) in &settings.environment {
+        environment_config_name(&format!("environment.{name}"))?;
+        validate_environment_value(name, value)?;
     }
     Ok(())
 }
@@ -1768,10 +2320,55 @@ fn import_plan_value(plan: &ImportPlan, dry_run: bool) -> Value {
 
 fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
     let store = open(paths)?;
+    let settings = store.settings()?;
+    let mut resolutions = Vec::new();
+    for job in store.list_jobs(true)? {
+        let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
+        let requested = match &definition.target {
+            Target::Process { executable, .. } => executable.clone(),
+            Target::Shell { shell, .. } => shell.display().to_string(),
+            Target::Http(_) => continue,
+        };
+        let diagnostic_attempt = AdmitAttempt {
+            run_id: Uuid::nil().to_string(),
+            job_id: job.id.clone(),
+            attempt_number: 1,
+            trigger: "diagnostic".into(),
+            nominal_us: None,
+            snapshot_json: String::new(),
+        };
+        match engine_target(&definition, &diagnostic_attempt, &settings) {
+            Ok(TargetSpec::Process(process)) => resolutions.push(json!({
+                "job_id":job.id,
+                "job_name":job.name,
+                "requested_executable":requested,
+                "effective_path":process.env.get("PATH"),
+                "resolved_executable":process.executable,
+                "status":"resolved"
+            })),
+            Ok(TargetSpec::Http(_)) => unreachable!("process target diagnostic returned HTTP"),
+            Err(error) => resolutions.push(json!({
+                "job_id":job.id,
+                "job_name":job.name,
+                "requested_executable":requested,
+                "status":"unresolved",
+                "error":error
+            })),
+        }
+    }
     render(
         format,
         "doctor",
-        json!({"state_dir":paths.root,"database":paths.database,"daemon_running":!daemon_lock_free(paths),"wake_socket":paths.wake_socket.exists(),"checks":store.integrity_check()?}),
+        json!({
+            "state_dir":paths.root,
+            "database":paths.database,
+            "daemon_running":!daemon_lock_free(paths),
+            "wake_socket":paths.wake_socket.exists(),
+            "execution_path":settings.execution_path,
+            "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
+            "process_resolution":resolutions,
+            "checks":store.integrity_check()?
+        }),
         &[],
     );
     Ok(())
@@ -2145,9 +2742,13 @@ impl DaemonStore for StoreAdapter {
         self.first_reconcile.store(false, Ordering::Release);
         Ok(total)
     }
+    async fn maintain(&self) -> Result<(), String> {
+        maintenance::maintain(&self.store, &self.paths, self.now_us())
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
     async fn admit(&self, capacity: usize) -> Result<Vec<AdmittedAttempt>, String> {
         let settings = self.store.settings().map_err(|e| e.to_string())?;
-        let execution_path = settings.execution_path.clone();
         let global_retained = self
             .store
             .retained_output_bytes()
@@ -2162,7 +2763,7 @@ impl DaemonStore for StoreAdapter {
             let prepared = (|| {
                 let definition: JobDefinition =
                     serde_json::from_str(&attempt.snapshot_json).map_err(|e| e.to_string())?;
-                let target = engine_target(&definition, &attempt, &execution_path)?;
+                let target = engine_target(&definition, &attempt, &settings)?;
                 let number = u16::try_from(attempt.attempt_number)
                     .map_err(|_| "attempt number overflow".to_string())?;
                 let run_retained = self
@@ -2211,11 +2812,16 @@ impl DaemonStore for StoreAdapter {
         Ok(runnable)
     }
     async fn mark_running(&self, attempt: &AdmittedAttempt) -> Result<bool, String> {
+        let resolved_executable = match &attempt.target {
+            TargetSpec::Process(process) => Some(Path::new(&process.executable)),
+            TargetSpec::Http(_) => None,
+        };
         self.store
-            .mark_attempt_running(
+            .mark_attempt_running_with_executable(
                 &attempt.run_id,
                 i64::from(attempt.context.attempt),
                 self.now_us(),
+                resolved_executable,
             )
             .map(|decision| matches!(decision, locron_store::StartDecision::Ready))
             .map_err(|error| error.to_string())
@@ -2284,10 +2890,31 @@ impl DaemonStore for StoreAdapter {
                 state: state.into(),
                 exit_code: outcome.exit_code,
                 http_status: outcome.http_status,
+                http_content_type: outcome.http_content_type.clone(),
                 reason: outcome.reason.clone(),
                 retry,
             })
             .map_err(|e| e.to_string())
+    }
+    async fn complete_runner_failure(
+        &self,
+        attempt: &AdmittedAttempt,
+        kind: locron_engine::runner::RunnerFailureKind,
+        reason: &str,
+        completed_at: i64,
+    ) -> Result<(), String> {
+        self.store
+            .complete_runner_failure(
+                &attempt.run_id,
+                i64::from(attempt.context.attempt),
+                completed_at,
+                reason,
+                matches!(
+                    kind,
+                    locron_engine::runner::RunnerFailureKind::ExecutionMayHaveStarted
+                ),
+            )
+            .map_err(|error| error.to_string())
     }
     async fn persistence_degraded(&self, reason: &str) {
         tracing::error!(%reason, "persistence degraded")
@@ -2320,17 +2947,16 @@ impl DaemonStore for StoreAdapter {
 fn engine_target(
     definition: &JobDefinition,
     attempt: &locron_store::AdmitAttempt,
-    execution_path: &str,
+    settings: &SettingsRecord,
 ) -> Result<TargetSpec, String> {
     let mut env = minimal_env();
-    env.insert(
-        "PATH".into(),
-        definition
-            .environment
-            .path
-            .clone()
-            .unwrap_or_else(|| execution_path.to_owned()),
-    );
+    env.insert("PATH".into(), settings.execution_path.clone());
+    for (key, value) in &settings.environment {
+        env.insert(key.clone(), value.clone());
+    }
+    if let Some(path) = &definition.environment.path {
+        env.insert("PATH".into(), path.clone());
+    }
     if let Some(path) = &definition.environment.file {
         let content =
             std::fs::read_to_string(path).map_err(|error| format!("environment file: {error}"))?;
@@ -2365,18 +2991,30 @@ fn engine_target(
         }),
     );
     match &definition.target {
-        Target::Process { executable, args } => Ok(TargetSpec::Process(ProcessSpec {
-            executable: executable.clone(),
-            args: args.clone(),
-            cwd: definition.cwd.clone(),
-            env,
-        })),
-        Target::Shell { command, shell } => Ok(TargetSpec::Process(ProcessSpec {
-            executable: shell.display().to_string(),
-            args: vec!["-c".into(), command.clone()],
-            cwd: definition.cwd.clone(),
-            env,
-        })),
+        Target::Process { executable, args } => {
+            let executable = resolve_attempt_executable(executable, &definition.cwd, &env)?;
+            Ok(TargetSpec::Process(ProcessSpec {
+                executable,
+                args: args.clone(),
+                cwd: definition.cwd.clone(),
+                env,
+            }))
+        }
+        Target::Shell { command, shell } => {
+            let executable = resolve_attempt_executable(
+                shell
+                    .to_str()
+                    .ok_or_else(|| "shell executable path is not valid UTF-8".to_string())?,
+                &definition.cwd,
+                &env,
+            )?;
+            Ok(TargetSpec::Process(ProcessSpec {
+                executable,
+                args: vec!["-c".into(), command.clone()],
+                cwd: definition.cwd.clone(),
+                env,
+            }))
+        }
         Target::Http(http) => {
             let headers = http
                 .headers
@@ -2410,6 +3048,38 @@ fn engine_target(
             }))
         }
     }
+}
+
+fn resolve_attempt_executable(
+    executable: &str,
+    cwd: &Path,
+    env: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    let path = env.get("PATH").map_or("", String::as_str);
+    let absolute_directories = std::env::split_paths(path)
+        .map(|directory| {
+            if directory.is_absolute() {
+                directory
+            } else {
+                cwd.join(directory)
+            }
+        })
+        .collect::<Vec<_>>();
+    let normalized_path = std::env::join_paths(absolute_directories)
+        .map_err(|_| "effective PATH cannot be represented".to_string())?
+        .into_string()
+        .map_err(|_| "effective PATH is not valid UTF-8".to_string())?;
+    let resolved = resolve_executable(executable, cwd, Some(&normalized_path))
+        .ok_or_else(|| format!("executable not found: {executable}"))?;
+    let absolute = if resolved.is_absolute() {
+        resolved
+    } else {
+        cwd.join(resolved)
+    };
+    absolute
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "resolved executable path is not valid UTF-8".to_string())
 }
 fn minimal_env() -> BTreeMap<String, String> {
     [
@@ -2676,6 +3346,46 @@ fn redacted_run(run: RunRecord) -> Result<Value> {
     Ok(value)
 }
 
+fn redacted_observable_run(store: &Store, run: RunRecord) -> Result<Value> {
+    let source = run.trigger.clone();
+    let finished_at_us = run.finished_at_us;
+    let outcome = terminal_run_state(&run.state).then(|| run.state.clone());
+    let attempts = serde_json::to_value(store.attempts_for_run(&run.id)?)?;
+    let actual_started_at_us = attempts.as_array().and_then(|attempts| {
+        attempts
+            .iter()
+            .filter_map(|attempt| attempt["running_at_us"].as_i64())
+            .min()
+    });
+    let duration_us = actual_started_at_us
+        .zip(finished_at_us)
+        .and_then(|(started, finished)| finished.checked_sub(started))
+        .filter(|duration| *duration >= 0);
+    let mut value = redacted_run(run)?;
+    let object = value
+        .as_object_mut()
+        .expect("run records serialize as objects");
+    object.insert("source".into(), json!(source));
+    object.insert("outcome".into(), json!(outcome));
+    object.insert("actual_started_at_us".into(), json!(actual_started_at_us));
+    object.insert("duration_us".into(), json!(duration_us));
+    object.insert("attempts".into(), attempts);
+    Ok(value)
+}
+
+fn terminal_run_state(state: &str) -> bool {
+    matches!(
+        state,
+        "succeeded"
+            | "failed"
+            | "timed_out"
+            | "cancelled"
+            | "skipped_overlap"
+            | "skipped_concurrency"
+            | "interrupted_unknown"
+    )
+}
+
 fn redact_definition(mut definition: Value) -> Value {
     if let Some(nested) = definition.get_mut("definition") {
         *nested = redact_definition(nested.take());
@@ -2747,8 +3457,51 @@ fn render_error(format: Format, command: &str, error: &anyhow::Error) {
         eprintln!("error: {error:#}")
     }
 }
+fn render_stream_result(
+    command: &str,
+    ok: bool,
+    data: Value,
+    warnings: &[&str],
+    error: Option<Value>,
+) {
+    let mut record = json!({
+        "schema":"locron.stream/v1",
+        "record":"result",
+        "terminal":true,
+        "ok":ok,
+        "command":command,
+        "data":null,
+        "warnings":warnings,
+    });
+    record["data"] = data;
+    if let Some(error) = error {
+        record["error"] = error;
+    }
+    println!("{record}");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+}
+fn render_stream_error(command: &str, error: &anyhow::Error) {
+    let data = error
+        .downcast_ref::<TargetOutcomeError>()
+        .map_or(Value::Null, |target| {
+            json!({
+                "run_id":target.run_id,
+                "state":target.state,
+                "reason":target.reason,
+            })
+        });
+    render_stream_result(
+        command,
+        false,
+        data,
+        &[],
+        Some(json!({"code":error_code(error),"message":error.to_string()})),
+    );
+}
 fn error_code(error: &anyhow::Error) -> &'static str {
-    if let Some(store) = error.downcast_ref::<StoreError>() {
+    if error.downcast_ref::<TargetOutcomeError>().is_some() {
+        "target_outcome"
+    } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) => "not_found",
             StoreError::Conflict(_) => "durable_conflict",
@@ -2762,7 +3515,9 @@ fn error_code(error: &anyhow::Error) -> &'static str {
     }
 }
 fn exit_code(error: &anyhow::Error) -> i32 {
-    if let Some(store) = error.downcast_ref::<StoreError>() {
+    if error.downcast_ref::<TargetOutcomeError>().is_some() {
+        1
+    } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) | StoreError::Conflict(_) => 3,
             StoreError::DaemonAlreadyRunning
@@ -2976,6 +3731,7 @@ mod tests {
                     state: "succeeded".into(),
                     exit_code: Some(0),
                     http_status: None,
+                    http_content_type: None,
                     reason: "test completion".into(),
                     retry: None,
                 })
@@ -3299,6 +4055,7 @@ mod tests {
                     kind: OutcomeKind::FailedRetryable,
                     exit_code: Some(7),
                     http_status: None,
+                    http_content_type: None,
                     reason: "known failure".into(),
                     duration_micros: 1,
                     output: locron_engine::OutputStats::default(),
@@ -3352,7 +4109,8 @@ mod tests {
             snapshot_json: String::new(),
         };
 
-        let TargetSpec::Http(http) = engine_target(&definition, &attempt, "/usr/bin").unwrap()
+        let TargetSpec::Http(http) =
+            engine_target(&definition, &attempt, &default_settings()).unwrap()
         else {
             panic!("expected HTTP target");
         };
@@ -3364,7 +4122,7 @@ mod tests {
         let mut missing = definition;
         missing.environment.values.clear();
         assert!(
-            engine_target(&missing, &attempt, "/usr/bin")
+            engine_target(&missing, &attempt, &default_settings())
                 .unwrap_err()
                 .contains("header environment TOKEN is missing")
         );

@@ -1295,6 +1295,123 @@ mod tests {
     }
 
     #[test]
+    fn catch_up_limit_one_keeps_only_the_newest_overdue_occurrence() {
+        let schedule = Schedule::Every {
+            interval: "1s".parse().unwrap(),
+            anchor: Timestamp::UNIX_EPOCH,
+        };
+        let result = schedule
+            .reconcile(
+                Timestamp::UNIX_EPOCH,
+                Timestamp::from_epoch_micros(3_000_000),
+                MissedRunPolicy::All,
+                None,
+                1,
+                &TimeZone::UTC,
+                ElapsedKind::Missed,
+            )
+            .unwrap();
+
+        assert_eq!(
+            result.selected,
+            [SelectedOccurrence {
+                nominal: Timestamp::from_epoch_micros(3_000_000),
+                catch_up: true,
+            }]
+        );
+        assert_eq!(
+            result.omitted,
+            [OmittedRange {
+                kind: OmittedRangeKind::CatchUpLimit,
+                count: 2,
+                first: Timestamp::from_epoch_micros(1_000_000),
+                last: Timestamp::from_epoch_micros(2_000_000),
+            }]
+        );
+    }
+
+    #[test]
+    fn start_deadline_filters_multiple_occurrences_before_missed_run_policy() {
+        let schedule = Schedule::Every {
+            interval: "1s".parse().unwrap(),
+            anchor: Timestamp::UNIX_EPOCH,
+        };
+        let cases: &[(MissedRunPolicy, &[i64], u64, OmittedRangeKind, i64)] = &[
+            (
+                MissedRunPolicy::Skip,
+                &[],
+                4,
+                OmittedRangeKind::MissedRunPolicy,
+                10_000_000,
+            ),
+            (
+                MissedRunPolicy::Latest,
+                &[10_000_000],
+                3,
+                OmittedRangeKind::MissedRunPolicy,
+                9_000_000,
+            ),
+            (
+                MissedRunPolicy::All,
+                &[9_000_000, 10_000_000],
+                2,
+                OmittedRangeKind::CatchUpLimit,
+                8_000_000,
+            ),
+        ];
+
+        for &(policy, selected_micros, policy_omitted_count, omitted_kind, omitted_last) in cases {
+            let result = schedule
+                .reconcile(
+                    Timestamp::UNIX_EPOCH,
+                    Timestamp::from_epoch_micros(10_000_000),
+                    policy,
+                    Some("3s".parse().unwrap()),
+                    2,
+                    &TimeZone::UTC,
+                    ElapsedKind::Missed,
+                )
+                .unwrap();
+
+            assert_eq!(
+                result
+                    .selected
+                    .iter()
+                    .map(|occurrence| occurrence.nominal.epoch_micros())
+                    .collect::<Vec<_>>(),
+                selected_micros,
+                "policy: {policy:?}"
+            );
+            assert_eq!(result.omitted.len(), 2, "policy: {policy:?}");
+            assert_eq!(
+                result.omitted[0],
+                OmittedRange {
+                    kind: OmittedRangeKind::StartDeadline,
+                    count: 6,
+                    first: Timestamp::from_epoch_micros(1_000_000),
+                    last: Timestamp::from_epoch_micros(6_000_000),
+                },
+                "policy: {policy:?}"
+            );
+            assert_eq!(result.omitted[1].kind, omitted_kind, "policy: {policy:?}");
+            assert_eq!(
+                result.omitted[1].count, policy_omitted_count,
+                "policy: {policy:?}"
+            );
+            assert_eq!(
+                result.omitted[1].first,
+                Timestamp::from_epoch_micros(7_000_000),
+                "policy: {policy:?}"
+            );
+            assert_eq!(
+                result.omitted[1].last,
+                Timestamp::from_epoch_micros(omitted_last),
+                "policy: {policy:?}"
+            );
+        }
+    }
+
+    #[test]
     fn deadline_cutoff_is_inclusive_at_one_microsecond() {
         let schedule = Schedule::At {
             at: Timestamp::from_epoch_micros(9),

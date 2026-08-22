@@ -2,6 +2,15 @@ use std::collections::{BTreeMap, VecDeque};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
+use locron_core::command::{
+    AddJob as AddJobCommand, AddJobResult, CancelRun, CancelRunResult, CancellationDecision,
+    Configuration, ConfigurationChange, ManualRun, ManualRunResult, RemoveJob, RemoveJobResult,
+    SetJobEnabled, SetJobEnabledResult, UpdateConfiguration, UpdateJob as UpdateJobCommand,
+    UpdateJobResult,
+};
+use locron_core::lifecycle::RunState;
+use locron_core::ports::PersistencePort;
+use locron_core::{CoreError, DurationMicros, JobId, RevisionNumber};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -12,6 +21,7 @@ use crate::migration::migrate;
 use crate::{DaemonLock, LockMetadata, StatePaths};
 
 type AdmissionRow = (String, String, String, i64, String, Option<i64>);
+const MAINTENANCE_BATCH_LIMIT: usize = 100;
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
@@ -51,6 +61,17 @@ pub enum StoreError {
     NotFound(String),
     #[error("durable conflict: {0}")]
     Conflict(String),
+}
+
+/// Error produced while adapting a core application command to SQLite.
+#[derive(Debug, Error)]
+pub enum StorePortError {
+    #[error(transparent)]
+    Core(#[from] CoreError),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }
 
 #[derive(Clone, Debug)]
@@ -153,6 +174,38 @@ pub struct RunRecord {
     pub finished_at_us: Option<i64>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AttemptOutputRecord {
+    pub state: String,
+    pub retained_payload_bytes: i64,
+    pub physical_bytes: i64,
+    pub discarded_bytes: i64,
+    pub truncated: bool,
+    pub truncated_at_us: Option<i64>,
+    pub finalized_at_us: Option<i64>,
+    pub prune_started_at_us: Option<i64>,
+    pub pruned_at_us: Option<i64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AttemptRecord {
+    pub run_id: String,
+    pub attempt_number: i64,
+    pub started_at_us: i64,
+    pub running_at_us: Option<i64>,
+    pub finished_at_us: Option<i64>,
+    pub duration_us: Option<i64>,
+    pub state: String,
+    pub outcome: Option<String>,
+    pub exit_code: Option<i32>,
+    pub http_status: Option<u16>,
+    pub http_content_type: Option<String>,
+    pub resolved_executable: Option<String>,
+    pub error: Option<String>,
+    pub reason: Option<String>,
+    pub output: Option<AttemptOutputRecord>,
+}
+
 #[derive(Clone, Debug)]
 pub struct AdmitAttempt {
     pub run_id: String,
@@ -195,6 +248,7 @@ pub struct AttemptCompletion {
     pub state: String,
     pub exit_code: Option<i32>,
     pub http_status: Option<u16>,
+    pub http_content_type: Option<String>,
     pub reason: String,
     pub retry: Option<RetryPlan>,
 }
@@ -220,6 +274,21 @@ pub struct RetentionCandidate {
     pub finalized_at_us: i64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OutputRecoveryCandidate {
+    pub run_id: String,
+    pub attempt_number: i64,
+    pub relative_path: String,
+    pub state: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RunRetentionCandidate {
+    pub run_id: String,
+    pub job_id: String,
+    pub finished_at_us: i64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SettingsRecord {
     pub global_concurrency: i64,
@@ -228,6 +297,8 @@ pub struct SettingsRecord {
     pub run_retention_age_us: Option<i64>,
     pub output_limit_bytes: i64,
     pub per_run_output_limit_bytes: i64,
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -526,9 +597,10 @@ impl Store {
                 ImportJob::Verify { .. } => {}
             }
         }
+        let environment_json = serde_json::to_string(&batch.settings.environment)?;
         tx.execute(
-            "UPDATE settings SET global_concurrency=?1,execution_path=?2,run_retention_count=?3,run_retention_age_us=?4,output_limit_bytes=?5,per_run_output_limit_bytes=?6,updated_at_us=?7 WHERE singleton=1",
-            params![batch.settings.global_concurrency,batch.settings.execution_path,batch.settings.run_retention_count,batch.settings.run_retention_age_us,batch.settings.output_limit_bytes,batch.settings.per_run_output_limit_bytes,batch.now_us],
+            "UPDATE settings SET global_concurrency=?1,execution_path=?2,run_retention_count=?3,run_retention_age_us=?4,output_limit_bytes=?5,per_run_output_limit_bytes=?6,updated_at_us=?7,environment_json=?8 WHERE singleton=1",
+            params![batch.settings.global_concurrency,batch.settings.execution_path,batch.settings.run_retention_count,batch.settings.run_retention_age_us,batch.settings.output_limit_bytes,batch.settings.per_run_output_limit_bytes,batch.now_us,environment_json],
         )?;
         event(&tx, batch.now_us, "import_applied", None, None, "{}")?;
         tx.commit()?;
@@ -806,6 +878,84 @@ impl Store {
     pub fn run(&self, id: &str) -> StoreResult<RunRecord> {
         let conn = self.conn()?;
         conn.query_row("SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE id=?1", [id], map_run).optional()?.ok_or_else(|| StoreError::NotFound(id.into()))
+    }
+
+    pub fn attempt_resolved_executable(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+    ) -> StoreResult<Option<String>> {
+        self.conn()?
+            .query_row(
+                "SELECT resolved_executable FROM attempts WHERE run_id=?1 AND attempt_number=?2",
+                params![run_id, attempt_number],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("attempt {run_id}/{attempt_number}")))
+    }
+
+    pub fn attempts_for_run(&self, run_id: &str) -> StoreResult<Vec<AttemptRecord>> {
+        let conn = self.conn()?;
+        let exists = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE id=?1)",
+            [run_id],
+            |row| row.get::<_, bool>(0),
+        )?;
+        if !exists {
+            return Err(StoreError::NotFound(run_id.into()));
+        }
+        let mut statement = conn.prepare(
+            "SELECT a.run_id,a.attempt_number,a.started_at_us,a.running_at_us,a.finished_at_us,\
+                    a.duration_us,a.state,a.result_class,a.exit_code,a.http_status,\
+                    a.http_content_type,a.resolved_executable,a.error_message,\
+                    o.state,o.retained_payload_bytes,o.physical_bytes,o.discarded_bytes,o.truncated,\
+                    o.truncated_at_us,o.finalized_at_us,o.prune_started_at_us,o.pruned_at_us \
+             FROM attempts a \
+             LEFT JOIN output_artifacts o \
+               ON o.run_id=a.run_id AND o.attempt_number=a.attempt_number \
+             WHERE a.run_id=?1 \
+             ORDER BY a.attempt_number",
+        )?;
+        statement
+            .query_map([run_id], |row| {
+                let output_state: Option<String> = row.get(13)?;
+                let output = if let Some(state) = output_state {
+                    Some(AttemptOutputRecord {
+                        state,
+                        retained_payload_bytes: row.get(14)?,
+                        physical_bytes: row.get(15)?,
+                        discarded_bytes: row.get(16)?,
+                        truncated: row.get(17)?,
+                        truncated_at_us: row.get(18)?,
+                        finalized_at_us: row.get(19)?,
+                        prune_started_at_us: row.get(20)?,
+                        pruned_at_us: row.get(21)?,
+                    })
+                } else {
+                    None
+                };
+                let error: Option<String> = row.get(12)?;
+                Ok(AttemptRecord {
+                    run_id: row.get(0)?,
+                    attempt_number: row.get(1)?,
+                    started_at_us: row.get(2)?,
+                    running_at_us: row.get(3)?,
+                    finished_at_us: row.get(4)?,
+                    duration_us: row.get(5)?,
+                    state: row.get(6)?,
+                    outcome: row.get(7)?,
+                    exit_code: row.get(8)?,
+                    http_status: row.get(9)?,
+                    http_content_type: row.get(10)?,
+                    resolved_executable: row.get(11)?,
+                    reason: error.clone(),
+                    error,
+                    output,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
     }
 
     pub fn history(&self, job: Option<&str>, limit: usize) -> StoreResult<Vec<RunRecord>> {
@@ -1093,6 +1243,16 @@ impl Store {
         attempt_number: i64,
         now_us: i64,
     ) -> StoreResult<StartDecision> {
+        self.mark_attempt_running_inner(run_id, attempt_number, now_us, None)
+    }
+
+    fn mark_attempt_running_inner(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+        resolved_executable: Option<&Path>,
+    ) -> StoreResult<StartDecision> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<(String, Option<String>, String)> = tx
@@ -1161,9 +1321,11 @@ impl Store {
             tx.commit()?;
             return Ok(StartDecision::Ready);
         }
+        let resolved_executable =
+            resolved_executable.map(|path| path.to_string_lossy().into_owned());
         let attempt = tx.execute(
-            "UPDATE attempts SET state='running',running_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='starting'",
-            params![run_id, attempt_number, now_us],
+            "UPDATE attempts SET state='running',running_at_us=?3,resolved_executable=?4 WHERE run_id=?1 AND attempt_number=?2 AND state='starting'",
+            params![run_id, attempt_number, now_us, resolved_executable],
         )?;
         let run = tx.execute(
             "UPDATE runs SET state='running' WHERE id=?1 AND state='starting'",
@@ -1240,7 +1402,7 @@ impl Store {
                 "retry intent requires a known failed or timed-out attempt".into(),
             ));
         }
-        let changed = tx.execute("UPDATE attempts SET state=?3,finished_at_us=?4,duration_us=?5,exit_code=?6,http_status=?7,result_class=?3,error_message=?8 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')", params![completion.run_id,completion.attempt_number,completion.state,completion.now_us,completion.duration_us,completion.exit_code,completion.http_status,completion.reason])?;
+        let changed = tx.execute("UPDATE attempts SET state=?3,finished_at_us=?4,duration_us=?5,exit_code=?6,http_status=?7,http_content_type=?8,result_class=?3,error_message=?9 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')", params![completion.run_id,completion.attempt_number,completion.state,completion.now_us,completion.duration_us,completion.exit_code,completion.http_status,completion.http_content_type,completion.reason])?;
         if changed != 1 {
             if completion_already_committed(&tx, completion)? {
                 return Ok(());
@@ -1336,16 +1498,216 @@ impl Store {
         Ok(())
     }
 
+    pub fn complete_runner_failure(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+        reason: &str,
+        execution_may_have_started: bool,
+    ) -> StoreResult<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let state = if execution_may_have_started {
+            "interrupted_unknown"
+        } else {
+            "failed"
+        };
+        let result_class = if execution_may_have_started {
+            "interrupted_unknown"
+        } else {
+            "output_preparation_failed"
+        };
+        let duration_us = if execution_may_have_started {
+            tx.query_row(
+                "SELECT max(0,?3-COALESCE(running_at_us,started_at_us)) FROM attempts WHERE run_id=?1 AND attempt_number=?2",
+                params![run_id, attempt_number, now_us],
+                |row| row.get::<_, i64>(0),
+            )?
+        } else {
+            0
+        };
+        let output_changed = tx.execute(
+            "UPDATE output_artifacts SET state='missing',retained_payload_bytes=0,physical_bytes=0,discarded_bytes=0,truncated=0,truncated_at_us=NULL,finalized_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('pending','active')",
+            params![run_id, attempt_number, now_us],
+        )?;
+        let attempt_changed = tx.execute(
+            "UPDATE attempts SET state=?3,finished_at_us=?4,duration_us=?5,result_class=?6,error_message=?7 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('starting','running')",
+            params![run_id, attempt_number, state, now_us, duration_us, result_class, reason],
+        )?;
+        let run_changed = tx.execute(
+            "UPDATE runs SET state=?2,reason=?3,finished_at_us=?4,replacement_candidate=0 WHERE id=?1 AND state IN ('starting','running')",
+            params![run_id, state, reason, now_us],
+        )?;
+        tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [run_id])?;
+
+        if output_changed == 1 && attempt_changed == 1 && run_changed == 1 {
+            let job_id: String =
+                tx.query_row("SELECT job_id FROM runs WHERE id=?1", [run_id], |row| {
+                    row.get(0)
+                })?;
+            event(
+                &tx,
+                now_us,
+                if execution_may_have_started {
+                    "attempt_infrastructure_interrupted"
+                } else {
+                    "attempt_output_preparation_failed"
+                },
+                Some(&job_id),
+                Some(run_id),
+                &serde_json::to_string(&serde_json::json!({
+                    "retryable": false,
+                    "execution_may_have_started": execution_may_have_started,
+                }))?,
+            )?;
+            tx.commit()?;
+            return Ok(());
+        }
+
+        let already_committed: bool = tx.query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM attempts a
+                JOIN runs r ON r.id=a.run_id
+                JOIN output_artifacts o
+                  ON o.run_id=a.run_id AND o.attempt_number=a.attempt_number
+                WHERE a.run_id=?1 AND a.attempt_number=?2
+                  AND a.state=?3 AND a.finished_at_us=?4 AND a.duration_us=?5
+                  AND a.result_class=?6 AND a.error_message=?7
+                  AND r.state=?3 AND r.reason=?7 AND r.finished_at_us=?4
+                  AND o.state='missing' AND o.finalized_at_us=?4
+                  AND NOT EXISTS (SELECT 1 FROM retry_intents WHERE run_id=?1)
+            )",
+            params![
+                run_id,
+                attempt_number,
+                state,
+                now_us,
+                duration_us,
+                result_class,
+                reason
+            ],
+            |row| row.get(0),
+        )?;
+        if already_committed {
+            tx.commit()?;
+            Ok(())
+        } else {
+            Err(StoreError::Conflict(
+                "runner failure is not applicable to this attempt".into(),
+            ))
+        }
+    }
+
     pub fn finalize_output(&self, output: &OutputRecord, now_us: i64) -> StoreResult<()> {
+        self.reconcile_output_finalized(output, now_us)
+    }
+
+    pub fn referenced_partial_artifacts(
+        &self,
+        limit: usize,
+    ) -> StoreResult<Vec<OutputRecoveryCandidate>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT run_id,attempt_number,relative_path,state FROM output_artifacts WHERE state IN ('pending','active') ORDER BY run_id,attempt_number LIMIT ?1",
+        )?;
+        statement
+            .query_map([maintenance_limit(limit)], |row| {
+                Ok(OutputRecoveryCandidate {
+                    run_id: row.get(0)?,
+                    attempt_number: row.get(1)?,
+                    relative_path: row.get(2)?,
+                    state: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn output_artifact_references(
+        &self,
+        run_id: &str,
+        relative_path: &str,
+    ) -> StoreResult<bool> {
+        self.conn()?
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM output_artifacts
+                    WHERE run_id=?1 AND relative_path=?2
+                    LIMIT 1
+                )",
+                params![run_id, relative_path],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn pending_output_prunes(&self, limit: usize) -> StoreResult<Vec<RetentionCandidate>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT run_id,attempt_number,relative_path,physical_bytes,COALESCE(finalized_at_us,prune_started_at_us,0) FROM output_artifacts WHERE state='prune_pending' ORDER BY prune_started_at_us,run_id,attempt_number LIMIT ?1",
+        )?;
+        statement
+            .query_map([maintenance_limit(limit)], map_retention_candidate)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn reconcile_output_finalized(
+        &self,
+        output: &OutputRecord,
+        now_us: i64,
+    ) -> StoreResult<()> {
         let relative_path = format!("{}/{}.log", output.run_id, output.attempt_number);
-        let changed = self.conn()?.execute(
-            "UPDATE output_artifacts SET relative_path=?3,state='finalized',retained_payload_bytes=?4,physical_bytes=?5,discarded_bytes=?6,truncated=?7,truncated_at_us=CASE WHEN ?7 THEN ?8 ELSE NULL END,finalized_at_us=?8 WHERE run_id=?1 AND attempt_number=?2",
+        let conn = self.conn()?;
+        let changed = conn.execute(
+            "UPDATE output_artifacts SET relative_path=?3,state='finalized',retained_payload_bytes=?4,physical_bytes=?5,discarded_bytes=?6,truncated=?7,truncated_at_us=CASE WHEN ?7 THEN ?8 ELSE NULL END,finalized_at_us=?8 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('pending','active')",
             params![output.run_id,output.attempt_number,relative_path,output.retained_payload_bytes,output.physical_bytes,output.discarded_bytes,output.truncated,now_us],
         )?;
-        if changed != 1 {
-            return Err(StoreError::Conflict("output artifact is missing".into()));
+        if changed == 1 {
+            return Ok(());
         }
-        Ok(())
+        let already_reconciled: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2 AND state='finalized' AND relative_path=?3 AND retained_payload_bytes=?4 AND physical_bytes=?5 AND discarded_bytes=?6 AND truncated=?7 AND finalized_at_us=?8)",
+            params![output.run_id,output.attempt_number,relative_path,output.retained_payload_bytes,output.physical_bytes,output.discarded_bytes,output.truncated,now_us],
+            |row| row.get(0),
+        )?;
+        if already_reconciled {
+            Ok(())
+        } else {
+            Err(StoreError::Conflict(
+                "output artifact is not recoverable for finalization".into(),
+            ))
+        }
+    }
+
+    pub fn reconcile_output_missing(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+    ) -> StoreResult<()> {
+        let conn = self.conn()?;
+        let changed = conn.execute(
+            "UPDATE output_artifacts SET state='missing',retained_payload_bytes=0,physical_bytes=0,discarded_bytes=0,truncated=0,truncated_at_us=NULL,finalized_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('pending','active')",
+            params![run_id, attempt_number, now_us],
+        )?;
+        if changed == 1 {
+            return Ok(());
+        }
+        let already_missing: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2 AND state='missing')",
+            params![run_id, attempt_number],
+            |row| row.get(0),
+        )?;
+        if already_missing {
+            Ok(())
+        } else {
+            Err(StoreError::Conflict(
+                "output artifact is not recoverable as missing".into(),
+            ))
+        }
     }
 
     pub fn integrity_check(&self) -> StoreResult<Vec<String>> {
@@ -1362,11 +1724,96 @@ impl Store {
     }
 
     pub fn settings(&self) -> StoreResult<SettingsRecord> {
-        self.conn()?.query_row(
-            "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes FROM settings WHERE singleton=1",
+        let conn = self.conn()?;
+        let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        let (
+            global_concurrency,
+            execution_path,
+            run_retention_count,
+            run_retention_age_us,
+            output_limit_bytes,
+            per_run_output_limit_bytes,
+            environment_json,
+        ): (i64, String, i64, Option<i64>, i64, i64, String) = if version >= 4 {
+            conn.query_row(
+                "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes,environment_json FROM settings WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?)),
+            )?
+        } else {
+            let values = conn.query_row(
+                "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes FROM settings WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?)),
+            )?;
+            (
+                values.0,
+                values.1,
+                values.2,
+                values.3,
+                values.4,
+                values.5,
+                "{}".into(),
+            )
+        };
+        let environment = parse_environment_json(&environment_json)?;
+        Ok(SettingsRecord {
+            global_concurrency,
+            execution_path,
+            run_retention_count,
+            run_retention_age_us,
+            output_limit_bytes,
+            per_run_output_limit_bytes,
+            environment,
+        })
+    }
+
+    pub fn set_environment(
+        &self,
+        name: &str,
+        value: Option<&str>,
+        now_us: i64,
+    ) -> StoreResult<SettingsRecord> {
+        validate_environment_entry(name, value)?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let source: String = tx.query_row(
+            "SELECT environment_json FROM settings WHERE singleton=1",
             [],
-            |row| Ok(SettingsRecord { global_concurrency:row.get(0)?,execution_path:row.get(1)?,run_retention_count:row.get(2)?,run_retention_age_us:row.get(3)?,output_limit_bytes:row.get(4)?,per_run_output_limit_bytes:row.get(5)? }),
-        ).map_err(Into::into)
+            |row| row.get(0),
+        )?;
+        let mut environment = parse_environment_json(&source)?;
+        match value {
+            Some(value) => {
+                environment.insert(name.to_owned(), value.to_owned());
+            }
+            None => {
+                environment.remove(name);
+            }
+        }
+        let canonical = serde_json::to_string(&environment)?;
+        tx.execute(
+            "UPDATE settings SET environment_json=?1,updated_at_us=?2 WHERE singleton=1",
+            params![canonical, now_us],
+        )?;
+        tx.commit()?;
+        drop(conn);
+        self.settings()
+    }
+
+    pub fn mark_attempt_running_with_executable(
+        &self,
+        run_id: &str,
+        attempt_number: i64,
+        now_us: i64,
+        resolved_executable: Option<&Path>,
+    ) -> StoreResult<StartDecision> {
+        if resolved_executable.is_some_and(|path| !path.is_absolute()) {
+            return Err(StoreError::Conflict(
+                "resolved executable must be absolute".into(),
+            ));
+        }
+        self.mark_attempt_running_inner(run_id, attempt_number, now_us, resolved_executable)
     }
 
     pub fn set_setting(&self, key: &str, value: &str, now_us: i64) -> StoreResult<SettingsRecord> {
@@ -1389,7 +1836,10 @@ impl Store {
                 "execution_path",
                 rusqlite::types::Value::Text(value.to_owned()),
             ),
-            "run_retention_count" | "output_limit_bytes" | "per_run_output_limit_bytes" => {
+            "run_retention_count"
+            | "run_retention_age_us"
+            | "output_limit_bytes"
+            | "per_run_output_limit_bytes" => {
                 let parsed: i64 = value.parse().map_err(|_| {
                     StoreError::Conflict(format!("{key} must be a non-negative integer"))
                 })?;
@@ -1416,15 +1866,7 @@ impl Store {
             "SELECT o.run_id,o.attempt_number,o.relative_path,o.physical_bytes,o.finalized_at_us FROM output_artifacts o JOIN runs r ON r.id=o.run_id WHERE o.state='finalized' AND r.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown') ORDER BY o.finalized_at_us,o.run_id,o.attempt_number LIMIT ?1",
         )?;
         statement
-            .query_map([limit.min(1000) as i64], |row| {
-                Ok(RetentionCandidate {
-                    run_id: row.get(0)?,
-                    attempt_number: row.get(1)?,
-                    relative_path: row.get(2)?,
-                    physical_bytes: row.get(3)?,
-                    finalized_at_us: row.get(4)?,
-                })
-            })?
+            .query_map([maintenance_limit(limit)], map_retention_candidate)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(Into::into)
     }
@@ -1443,6 +1885,164 @@ impl Store {
             [run_id],
             |row| row.get(0),
         ).map_err(Into::into)
+    }
+
+    pub fn run_retention_candidates(
+        &self,
+        now_us: i64,
+        limit: usize,
+    ) -> StoreResult<Vec<RunRetentionCandidate>> {
+        let conn = self.conn()?;
+        let (retention_count, retention_age_us): (i64, Option<i64>) = conn.query_row(
+            "SELECT run_retention_count,run_retention_age_us FROM settings WHERE singleton=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let age_cutoff = retention_age_us.map(|age| now_us.saturating_sub(age));
+        let mut statement = conn.prepare(
+            "WITH terminal AS (
+                 SELECT id,job_id,finished_at_us,
+                        row_number() OVER (PARTITION BY job_id ORDER BY finished_at_us DESC,id DESC) AS per_job_rank,
+                        row_number() OVER (ORDER BY finished_at_us DESC,id DESC) AS global_rank
+                 FROM runs
+                 WHERE state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                   AND finished_at_us IS NOT NULL
+             )
+             SELECT id,job_id,finished_at_us
+             FROM terminal
+             WHERE NOT EXISTS (SELECT 1 FROM run_retention_pending p WHERE p.run_id=terminal.id)
+               AND ((?1 IS NOT NULL AND finished_at_us < ?1) OR per_job_rank > 1000 OR global_rank > ?2)
+             ORDER BY finished_at_us,id
+             LIMIT ?3",
+        )?;
+        statement
+            .query_map(
+                params![age_cutoff, retention_count, maintenance_limit(limit)],
+                map_run_retention_candidate,
+            )?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn mark_run_retention_pending(
+        &self,
+        candidate: &RunRetentionCandidate,
+        now_us: i64,
+    ) -> StoreResult<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (retention_count, retention_age_us): (i64, Option<i64>) = tx.query_row(
+            "SELECT run_retention_count,run_retention_age_us FROM settings WHERE singleton=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let age_cutoff = retention_age_us.map(|age| now_us.saturating_sub(age));
+        let eligible: bool = tx.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM runs candidate
+                 WHERE candidate.id=?1 AND candidate.job_id=?2 AND candidate.finished_at_us=?3
+                   AND candidate.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                   AND (
+                       (?4 IS NOT NULL AND candidate.finished_at_us < ?4)
+                       OR (SELECT count(*) FROM runs newer
+                           WHERE newer.job_id=candidate.job_id
+                             AND newer.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                             AND newer.finished_at_us IS NOT NULL
+                             AND (newer.finished_at_us > candidate.finished_at_us OR (newer.finished_at_us=candidate.finished_at_us AND newer.id > candidate.id))) >= 1000
+                       OR (SELECT count(*) FROM runs newer
+                           WHERE newer.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                             AND newer.finished_at_us IS NOT NULL
+                             AND (newer.finished_at_us > candidate.finished_at_us OR (newer.finished_at_us=candidate.finished_at_us AND newer.id > candidate.id))) >= ?5
+                   )
+             )",
+            params![candidate.run_id,candidate.job_id,candidate.finished_at_us,age_cutoff,retention_count],
+            |row| row.get(0),
+        )?;
+        if !eligible {
+            return Err(StoreError::Conflict(
+                "run is no longer eligible for metadata retention".into(),
+            ));
+        }
+        tx.execute(
+            "INSERT INTO run_retention_pending(run_id,selected_at_us) VALUES(?1,?2) ON CONFLICT(run_id) DO NOTHING",
+            params![candidate.run_id, now_us],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn pending_run_retention(&self, limit: usize) -> StoreResult<Vec<RunRetentionCandidate>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT r.id,r.job_id,r.finished_at_us FROM run_retention_pending p JOIN runs r ON r.id=p.run_id ORDER BY p.selected_at_us,r.finished_at_us,r.id LIMIT ?1",
+        )?;
+        statement
+            .query_map([maintenance_limit(limit)], map_run_retention_candidate)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn finish_run_retention(&self, candidate: &RunRetentionCandidate) -> StoreResult<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let pending: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM run_retention_pending WHERE run_id=?1)",
+            [&candidate.run_id],
+            |row| row.get(0),
+        )?;
+        if !pending {
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM runs WHERE id=?1)",
+                [&candidate.run_id],
+                |row| row.get(0),
+            )?;
+            return if exists {
+                Err(StoreError::Conflict(
+                    "run metadata is not pending retention deletion".into(),
+                ))
+            } else {
+                Ok(())
+            };
+        }
+        let safe: bool = tx.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM runs
+                 WHERE id=?1 AND job_id=?2 AND finished_at_us=?3
+                   AND state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
+                   AND NOT EXISTS (
+                       SELECT 1 FROM output_artifacts
+                       WHERE run_id=?1 AND state NOT IN ('pruned','missing')
+                   )
+             )",
+            params![candidate.run_id, candidate.job_id, candidate.finished_at_us],
+            |row| row.get(0),
+        )?;
+        if !safe {
+            return Err(StoreError::Conflict(
+                "run output must be pruned or missing before metadata deletion".into(),
+            ));
+        }
+        tx.execute(
+            "DELETE FROM retry_intents WHERE run_id=?1",
+            [&candidate.run_id],
+        )?;
+        tx.execute(
+            "DELETE FROM output_artifacts WHERE run_id=?1",
+            [&candidate.run_id],
+        )?;
+        tx.execute("DELETE FROM attempts WHERE run_id=?1", [&candidate.run_id])?;
+        tx.execute(
+            "DELETE FROM run_retention_pending WHERE run_id=?1",
+            [&candidate.run_id],
+        )?;
+        let changed = tx.execute("DELETE FROM runs WHERE id=?1", [&candidate.run_id])?;
+        if changed != 1 {
+            return Err(StoreError::Conflict(
+                "run metadata disappeared during retention deletion".into(),
+            ));
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn mark_output_prune_pending(
@@ -1464,9 +2064,341 @@ impl Store {
         candidate: &RetentionCandidate,
         now_us: i64,
     ) -> StoreResult<()> {
-        self.conn()?.execute("UPDATE output_artifacts SET state='pruned',physical_bytes=0,pruned_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='prune_pending'",params![candidate.run_id,candidate.attempt_number,now_us])?;
-        Ok(())
+        let conn = self.conn()?;
+        let changed=conn.execute("UPDATE output_artifacts SET state='pruned',retained_payload_bytes=0,physical_bytes=0,pruned_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='prune_pending'",params![candidate.run_id,candidate.attempt_number,now_us])?;
+        if changed == 1 {
+            return Ok(());
+        }
+        let already_pruned: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2 AND state='pruned' AND physical_bytes=0)",
+            params![candidate.run_id, candidate.attempt_number],
+            |row| row.get(0),
+        )?;
+        if already_pruned {
+            Ok(())
+        } else {
+            Err(StoreError::Conflict(
+                "output is not pending durable prune completion".into(),
+            ))
+        }
     }
+}
+
+impl PersistencePort<AddJobCommand> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: AddJobCommand) -> Result<AddJobResult, Self::Error> {
+        let settings = configuration_from_record(self.settings()?)?;
+        command
+            .validate(settings.global_concurrency)
+            .map_err(CoreError::from)?;
+        let record = self.create_job(&CreateJob {
+            id: command.id.to_string(),
+            name: command.name,
+            description: command.description,
+            tags_json: serde_json::to_string(&command.tags)?,
+            enabled: command.enabled,
+            definition_json: serde_json::to_string(&command.definition)?,
+            now_us: command.created_at.epoch_micros(),
+            cursor_us: command.cursor_at.epoch_micros(),
+        })?;
+        Ok(AddJobResult {
+            job_id: parse_job_id(&record.id)?,
+            revision: revision_number(record.current_revision)?,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<UpdateJobCommand> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: UpdateJobCommand) -> Result<UpdateJobResult, Self::Error> {
+        let settings = configuration_from_record(self.settings()?)?;
+        command
+            .validate(settings.global_concurrency)
+            .map_err(CoreError::from)?;
+        let record = self.update_job(&UpdateJob {
+            id: command.job_id.to_string(),
+            expected_revision: sequence_i64(command.expected_revision.get(), "revision")?,
+            name: command.name,
+            description: command.description,
+            tags_json: serde_json::to_string(&command.tags)?,
+            enabled: command.enabled,
+            definition_json: serde_json::to_string(&command.definition)?,
+            now_us: command.updated_at.epoch_micros(),
+            cursor_us: command.cursor_at.epoch_micros(),
+        })?;
+        Ok(UpdateJobResult {
+            job_id: parse_job_id(&record.id)?,
+            revision: revision_number(record.current_revision)?,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<SetJobEnabled> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: SetJobEnabled) -> Result<SetJobEnabledResult, Self::Error> {
+        let record = self.set_enabled(
+            &command.job_id.to_string(),
+            command.enabled,
+            command.changed_at.epoch_micros(),
+        )?;
+        Ok(SetJobEnabledResult {
+            job_id: parse_job_id(&record.id)?,
+            revision: revision_number(record.current_revision)?,
+            enabled: record.enabled,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<RemoveJob> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: RemoveJob) -> Result<RemoveJobResult, Self::Error> {
+        self.remove_job(
+            &command.job_id.to_string(),
+            command.removed_at.epoch_micros(),
+        )?;
+        Ok(RemoveJobResult {
+            job_id: command.job_id,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<ManualRun> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: ManualRun) -> Result<ManualRunResult, Self::Error> {
+        let record = self.enqueue_manual(
+            &command.job_id.to_string(),
+            &command.run_id.to_string(),
+            command.requested_at.epoch_micros(),
+        )?;
+        Ok(ManualRunResult {
+            run_id: command.run_id,
+            state: parse_run_state(&record.state)?,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<CancelRun> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: CancelRun) -> Result<CancelRunResult, Self::Error> {
+        let decision = match self.cancel_with_acknowledgement(
+            &command.run_id.to_string(),
+            command.requested_at.epoch_micros(),
+            command.acknowledge_unconfirmed,
+        )? {
+            CancelOutcome::CancelledBeforeExecution => {
+                CancellationDecision::CancelledBeforeExecution
+            }
+            CancelOutcome::CancellationRequested => CancellationDecision::CancellationRequested,
+            CancelOutcome::AcknowledgedUnconfirmed => CancellationDecision::AcknowledgedUnconfirmed,
+        };
+        Ok(CancelRunResult {
+            run_id: command.run_id,
+            decision,
+        })
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+impl PersistencePort<UpdateConfiguration> for Store {
+    type Error = StorePortError;
+
+    fn apply(&self, command: UpdateConfiguration) -> Result<Configuration, Self::Error> {
+        command.change.validate().map_err(CoreError::from)?;
+        let now_us = command.changed_at.epoch_micros();
+        let record = match command.change {
+            ConfigurationChange::GlobalConcurrency(value) => {
+                self.set_setting("global_concurrency", &value.to_string(), now_us)?
+            }
+            ConfigurationChange::ExecutionPath(value) => {
+                self.set_setting("execution_path", &value, now_us)?
+            }
+            ConfigurationChange::RunRetentionCount(value) => self.set_setting(
+                "run_retention_count",
+                &storage_integer(value, "run_retention_count")?,
+                now_us,
+            )?,
+            ConfigurationChange::RunRetentionAge(value) => self.set_setting(
+                "run_retention_age_us",
+                &storage_integer(value.get(), "run_retention_age")?,
+                now_us,
+            )?,
+            ConfigurationChange::OutputLimitBytes(value) => self.set_setting(
+                "output_limit_bytes",
+                &storage_integer(value, "output_limit_bytes")?,
+                now_us,
+            )?,
+            ConfigurationChange::PerRunOutputLimitBytes(value) => self.set_setting(
+                "per_run_output_limit_bytes",
+                &storage_integer(value, "per_run_output_limit_bytes")?,
+                now_us,
+            )?,
+            ConfigurationChange::Environment { name, value } => {
+                self.set_environment(&name, value.as_deref(), now_us)?
+            }
+        };
+        configuration_from_record(record)
+    }
+
+    fn map_error(error: Self::Error) -> CoreError {
+        map_store_port_error(error)
+    }
+}
+
+fn map_store_port_error(error: StorePortError) -> CoreError {
+    match error {
+        StorePortError::Core(error) => error,
+        StorePortError::Store(StoreError::NotFound(value)) => CoreError::NotFound(value),
+        StorePortError::Store(StoreError::Conflict(value)) => CoreError::Conflict(value),
+        StorePortError::Store(StoreError::DaemonAlreadyRunning) => {
+            CoreError::Conflict("another locron daemon owns this state directory".into())
+        }
+        StorePortError::Store(StoreError::Sqlite(error))
+            if matches!(
+                error.sqlite_error_code(),
+                Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+            ) =>
+        {
+            CoreError::Unavailable("SQLite is busy".into())
+        }
+        StorePortError::Store(error) => CoreError::Persistence(error.to_string()),
+        StorePortError::Json(error) => CoreError::Persistence(error.to_string()),
+    }
+}
+
+fn parse_job_id(value: &str) -> Result<JobId, StorePortError> {
+    value
+        .parse::<JobId>()
+        .map_err(CoreError::from)
+        .map_err(Into::into)
+}
+
+fn revision_number(value: i64) -> Result<RevisionNumber, StorePortError> {
+    let value = u64::try_from(value).map_err(|_| {
+        CoreError::Persistence("stored revision is outside the domain range".into())
+    })?;
+    RevisionNumber::new(value)
+        .map_err(CoreError::from)
+        .map_err(Into::into)
+}
+
+fn sequence_i64(value: u64, field: &'static str) -> Result<i64, StorePortError> {
+    i64::try_from(value).map_err(|_| {
+        CoreError::Validation(locron_core::ValidationError::new(
+            field,
+            "out_of_range",
+            "sequence exceeds the durable integer range",
+        ))
+        .into()
+    })
+}
+
+fn storage_integer(value: u64, field: &'static str) -> Result<String, StorePortError> {
+    sequence_i64(value, field).map(|value| value.to_string())
+}
+
+fn parse_run_state(value: &str) -> Result<RunState, StorePortError> {
+    let state = match value {
+        "queued" => RunState::Queued,
+        "starting" => RunState::Starting,
+        "running" => RunState::Running,
+        "retry_wait" => RunState::RetryWait,
+        "succeeded" => RunState::Succeeded,
+        "failed" => RunState::Failed,
+        "timed_out" => RunState::TimedOut,
+        "cancelled" => RunState::Cancelled,
+        "skipped_overlap" => RunState::SkippedOverlap,
+        "skipped_concurrency" => RunState::SkippedConcurrency,
+        "interrupted_unknown" => RunState::InterruptedUnknown,
+        other => {
+            return Err(CoreError::Persistence(format!(
+                "stored run state is outside the domain vocabulary: {other}"
+            ))
+            .into());
+        }
+    };
+    Ok(state)
+}
+
+fn configuration_from_record(record: SettingsRecord) -> Result<Configuration, StorePortError> {
+    let global_concurrency = u8::try_from(record.global_concurrency).map_err(|_| {
+        CoreError::Persistence("stored global concurrency is outside the domain range".into())
+    })?;
+    if !(1..=64).contains(&global_concurrency) {
+        return Err(CoreError::Persistence(
+            "stored global concurrency is outside the domain range".into(),
+        )
+        .into());
+    }
+    let unsigned = |value: i64, field: &str| {
+        u64::try_from(value)
+            .map_err(|_| CoreError::Persistence(format!("stored {field} is negative")))
+    };
+    Ok(Configuration {
+        global_concurrency,
+        execution_path: record.execution_path,
+        run_retention_count: unsigned(record.run_retention_count, "run retention count")?,
+        run_retention_age: record
+            .run_retention_age_us
+            .map(|value| unsigned(value, "run retention age").map(DurationMicros::new))
+            .transpose()?,
+        output_limit_bytes: unsigned(record.output_limit_bytes, "output limit")?,
+        per_run_output_limit_bytes: unsigned(
+            record.per_run_output_limit_bytes,
+            "per-run output limit",
+        )?,
+        environment: record.environment,
+    })
+}
+
+fn maintenance_limit(limit: usize) -> i64 {
+    limit.min(MAINTENANCE_BATCH_LIMIT) as i64
+}
+
+fn map_retention_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RetentionCandidate> {
+    Ok(RetentionCandidate {
+        run_id: row.get(0)?,
+        attempt_number: row.get(1)?,
+        relative_path: row.get(2)?,
+        physical_bytes: row.get(3)?,
+        finalized_at_us: row.get(4)?,
+    })
+}
+
+fn map_run_retention_candidate(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRetentionCandidate> {
+    Ok(RunRetentionCandidate {
+        run_id: row.get(0)?,
+        job_id: row.get(1)?,
+        finished_at_us: row.get(2)?,
+    })
 }
 
 struct SnapshotAdmissionPolicy {
@@ -1516,6 +2448,7 @@ fn completion_already_committed(
         Option<i32>,
         Option<i64>,
         Option<String>,
+        Option<String>,
         String,
         Option<String>,
         i64,
@@ -1523,9 +2456,9 @@ fn completion_already_committed(
     );
     let current: Option<CompletionFacts> = tx
         .query_row(
-            "SELECT a.state,a.finished_at_us,a.duration_us,a.exit_code,a.http_status,a.error_message,r.state,r.reason,r.eligible_at_us,r.finished_at_us FROM attempts a JOIN runs r ON r.id=a.run_id WHERE a.run_id=?1 AND a.attempt_number=?2",
+            "SELECT a.state,a.finished_at_us,a.duration_us,a.exit_code,a.http_status,a.http_content_type,a.error_message,r.state,r.reason,r.eligible_at_us,r.finished_at_us FROM attempts a JOIN runs r ON r.id=a.run_id WHERE a.run_id=?1 AND a.attempt_number=?2",
             params![completion.run_id, completion.attempt_number],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?, row.get(10)?)),
         )
         .optional()?;
     let Some((
@@ -1534,6 +2467,7 @@ fn completion_already_committed(
         duration,
         exit_code,
         http_status,
+        http_content_type,
         error,
         run_state,
         reason,
@@ -1548,6 +2482,7 @@ fn completion_already_committed(
         || duration != Some(completion.duration_us)
         || exit_code != completion.exit_code
         || http_status != completion.http_status.map(i64::from)
+        || http_content_type.as_deref() != completion.http_content_type.as_deref()
         || error.as_deref() != Some(completion.reason.as_str())
         || reason.as_deref() != Some(completion.reason.as_str())
     {
@@ -1759,6 +2694,41 @@ fn validate_import_settings(settings: &SettingsRecord) -> StoreResult<()> {
             "import retention and output limits must be non-negative".into(),
         ));
     }
+    for (name, value) in &settings.environment {
+        validate_environment_entry(name, Some(value))?;
+    }
+    Ok(())
+}
+
+fn parse_environment_json(source: &str) -> StoreResult<BTreeMap<String, String>> {
+    let environment: BTreeMap<String, String> = serde_json::from_str(source)?;
+    for (name, value) in &environment {
+        validate_environment_entry(name, Some(value))?;
+    }
+    if serde_json::to_string(&environment)? != source {
+        return Err(StoreError::Conflict(
+            "global environment is not canonical JSON".into(),
+        ));
+    }
+    Ok(environment)
+}
+
+fn validate_environment_entry(name: &str, value: Option<&str>) -> StoreResult<()> {
+    let mut bytes = name.bytes();
+    let valid_start = bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_');
+    let valid_rest = bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
+    if !valid_start || !valid_rest || name.starts_with("LOCRON_") {
+        return Err(StoreError::Conflict(format!(
+            "invalid or reserved environment name {name}"
+        )));
+    }
+    if value.is_some_and(|value| value.contains('\0')) {
+        return Err(StoreError::Conflict(format!(
+            "environment value for {name} contains NUL"
+        )));
+    }
     Ok(())
 }
 fn map_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRecord> {
@@ -1780,6 +2750,11 @@ fn map_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use locron_core::command::JobDefinition;
+    use locron_core::policy::ExecutionPolicy;
+    use locron_core::schedule::Schedule;
+    use locron_core::target::{Environment, Target};
+    use locron_core::{RunId, Timestamp};
 
     fn store() -> (tempfile::TempDir, Store) {
         let temp = tempfile::tempdir().unwrap();
@@ -1818,6 +2793,34 @@ mod tests {
             .unwrap();
     }
 
+    fn insert_terminal_runs(
+        store: &Store,
+        job_id: &str,
+        first_identity: u128,
+        first_sequence: i64,
+        finished_at_us: &[i64],
+    ) -> Vec<String> {
+        let mut conn = store.conn().unwrap();
+        let tx = conn.transaction().unwrap();
+        let mut identities = Vec::with_capacity(finished_at_us.len());
+        for (offset, finished_at_us) in finished_at_us.iter().copied().enumerate() {
+            let run_id = Uuid::from_u128(first_identity + offset as u128).to_string();
+            tx.execute(
+                "INSERT INTO runs(id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,queue_sequence,snapshot_json,state,reason,finished_at_us) VALUES(?1,?2,1,'manual',NULL,?3,?3,?4,'{}','succeeded','test',?3)",
+                params![run_id, job_id, finished_at_us, first_sequence + offset as i64],
+            )
+            .unwrap();
+            identities.push(run_id);
+        }
+        tx.execute(
+            "UPDATE admission_state SET next_queue_sequence=(SELECT COALESCE(max(queue_sequence),0)+1 FROM runs) WHERE singleton=1",
+            [],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        identities
+    }
+
     fn import_resolution(
         source_id: &str,
         source_name: &str,
@@ -1829,6 +2832,154 @@ mod tests {
             expected_id_destination: destination.map(str::to_owned),
             expected_name_destination: destination.map(str::to_owned),
         }
+    }
+
+    fn application_definition(cwd: &Path) -> JobDefinition {
+        JobDefinition {
+            schedule: Schedule::Every {
+                interval: DurationMicros::SECOND,
+                anchor: Timestamp::UNIX_EPOCH,
+            },
+            target: Target::Process {
+                executable: "/usr/bin/true".into(),
+                args: Vec::new(),
+            },
+            cwd: cwd.into(),
+            environment: Environment::default(),
+            policy: ExecutionPolicy::default(),
+        }
+    }
+
+    #[test]
+    fn core_application_ports_drive_real_sqlite_mutations_with_typed_results() {
+        let (temp, store) = store();
+        let job_id = JobId::new();
+        let added = PersistencePort::apply(
+            &store,
+            AddJobCommand {
+                id: job_id,
+                name: "ported".into(),
+                description: Some("through core".into()),
+                tags: vec!["adapter".into()],
+                enabled: true,
+                definition: application_definition(temp.path()),
+                created_at: Timestamp::from_epoch_micros(10),
+                cursor_at: Timestamp::from_epoch_micros(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(added.job_id, job_id);
+        assert_eq!(added.revision.get(), 1);
+
+        let updated = PersistencePort::apply(
+            &store,
+            UpdateJobCommand {
+                job_id,
+                expected_revision: added.revision,
+                name: "ported-renamed".into(),
+                description: None,
+                tags: vec!["typed".into()],
+                enabled: true,
+                definition: application_definition(temp.path()),
+                updated_at: Timestamp::from_epoch_micros(11),
+                cursor_at: Timestamp::from_epoch_micros(10),
+            },
+        )
+        .unwrap();
+        assert_eq!(updated.revision.get(), 2);
+
+        let disabled = PersistencePort::apply(
+            &store,
+            SetJobEnabled {
+                job_id,
+                enabled: false,
+                changed_at: Timestamp::from_epoch_micros(12),
+            },
+        )
+        .unwrap();
+        assert!(!disabled.enabled);
+        assert_eq!(disabled.revision, updated.revision);
+
+        let run_id = RunId::new();
+        let manual = PersistencePort::apply(
+            &store,
+            ManualRun {
+                run_id,
+                job_id,
+                requested_at: Timestamp::from_epoch_micros(13),
+            },
+        )
+        .unwrap();
+        assert_eq!(manual.run_id, run_id);
+        assert_eq!(manual.state, RunState::Queued);
+
+        let cancelled = PersistencePort::apply(
+            &store,
+            CancelRun {
+                run_id,
+                requested_at: Timestamp::from_epoch_micros(14),
+                acknowledge_unconfirmed: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            cancelled.decision,
+            CancellationDecision::CancelledBeforeExecution
+        );
+
+        let configuration = PersistencePort::apply(
+            &store,
+            UpdateConfiguration {
+                change: ConfigurationChange::Environment {
+                    name: "PORT_TEST".into(),
+                    value: Some("present".into()),
+                },
+                changed_at: Timestamp::from_epoch_micros(15),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            configuration
+                .environment
+                .get("PORT_TEST")
+                .map(String::as_str),
+            Some("present")
+        );
+
+        let removed = PersistencePort::apply(
+            &store,
+            RemoveJob {
+                job_id,
+                removed_at: Timestamp::from_epoch_micros(16),
+            },
+        )
+        .unwrap();
+        assert_eq!(removed.job_id, job_id);
+        assert!(matches!(
+            store.job(&job_id.to_string()),
+            Err(StoreError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn core_application_port_maps_store_conflicts_without_sqlite_leakage() {
+        let (temp, store) = store();
+        let command = AddJobCommand {
+            id: JobId::new(),
+            name: "duplicate".into(),
+            description: None,
+            tags: Vec::new(),
+            enabled: true,
+            definition: application_definition(temp.path()),
+            created_at: Timestamp::from_epoch_micros(10),
+            cursor_at: Timestamp::from_epoch_micros(10),
+        };
+        PersistencePort::apply(&store, command.clone()).unwrap();
+        let duplicate = PersistencePort::apply(&store, command).unwrap_err();
+        let mapped = <Store as PersistencePort<AddJobCommand>>::map_error(duplicate);
+        assert!(
+            matches!(mapped, CoreError::Conflict(message) if message.contains("already exists"))
+        );
     }
 
     #[test]
@@ -2112,6 +3263,7 @@ mod tests {
                 state: "failed".into(),
                 exit_code: Some(1),
                 http_status: None,
+                http_content_type: None,
                 reason: "retryable failure".into(),
                 retry: Some(RetryPlan {
                     not_before_us: 100,
@@ -2447,6 +3599,7 @@ mod tests {
                 state: "cancelled".into(),
                 exit_code: None,
                 http_status: None,
+                http_content_type: None,
                 reason: "replacement termination confirmed".into(),
                 retry: None,
             })
@@ -2544,12 +3697,19 @@ mod tests {
             duration_us: 1,
             state: "succeeded".into(),
             exit_code: Some(0),
-            http_status: None,
+            http_status: Some(200),
+            http_content_type: Some("application/json; charset=utf-8".into()),
             reason: "known result".into(),
             retry: None,
         };
         store.complete_attempt(&completion).unwrap();
         store.complete_attempt(&completion).unwrap();
+        let persisted = store.attempts_for_run(&completion.run_id).unwrap();
+        assert_eq!(persisted[0].http_status, Some(200));
+        assert_eq!(
+            persisted[0].http_content_type.as_deref(),
+            Some("application/json; charset=utf-8")
+        );
         let mut mismatched = completion;
         mismatched.reason = "different result".into();
         assert!(matches!(
@@ -2586,6 +3746,7 @@ mod tests {
                 state: "termination_unconfirmed".into(),
                 exit_code: None,
                 http_status: None,
+                http_content_type: None,
                 reason: "TERM and KILL confirmation deadlines elapsed".into(),
                 retry: None,
             })
@@ -2966,6 +4127,7 @@ mod tests {
                 state: "failed".into(),
                 exit_code: Some(1),
                 http_status: None,
+                http_content_type: None,
                 reason: "known failure".into(),
                 retry: Some(RetryPlan {
                     not_before_us: 100,
@@ -3182,6 +4344,7 @@ mod tests {
                     state: "failed".into(),
                     exit_code: Some(7),
                     http_status: None,
+                    http_content_type: None,
                     reason: "known failure".into(),
                     retry: Some(RetryPlan {
                         not_before_us: 10,
@@ -3259,6 +4422,7 @@ mod tests {
                     state: "succeeded".into(),
                     exit_code: Some(0),
                     http_status: None,
+                    http_content_type: None,
                     reason: "test completion".into(),
                     retry: None,
                 })
@@ -3266,5 +4430,644 @@ mod tests {
         }
         store.set_setting("global_concurrency", "3", 9).unwrap();
         assert_eq!(store.admit(&lifetime, 9, 63).unwrap().attempts.len(), 1);
+    }
+
+    #[test]
+    fn admission_stresses_default_and_maximum_global_concurrency() {
+        for (configured_limit, expected_limit) in [(None, 16), (Some("64"), 64)] {
+            let (_temp, store) = store();
+            if let Some(limit) = configured_limit {
+                store.set_setting("global_concurrency", limit, 2).unwrap();
+            }
+            assert_eq!(store.settings().unwrap().global_concurrency, expected_limit);
+
+            for index in 0..=expected_limit {
+                let job_id = Uuid::from_u128(1_000 + index as u128).to_string();
+                let run_id = Uuid::from_u128(2_000 + index as u128).to_string();
+                let name = format!("stress-{index}");
+                create(&store, &job_id, &name);
+                store.enqueue_manual(&name, &run_id, 3).unwrap();
+            }
+
+            let lifetime = Uuid::from_u128(3_000 + expected_limit as u128).to_string();
+            store.begin_lifetime(&lifetime, 4, "test").unwrap();
+            let admitted = store.admit(&lifetime, 4, 64).unwrap();
+            assert_eq!(admitted.attempts.len(), expected_limit as usize);
+            assert!(store.admit(&lifetime, 4, 64).unwrap().attempts.is_empty());
+
+            let active: i64 = store
+                .conn()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM attempts WHERE state IN ('starting','running')",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(active, expected_limit);
+        }
+    }
+
+    #[test]
+    fn output_retention_candidates_exclude_active_runs_and_preserve_eviction_order() {
+        let (_temp, store) = store();
+        let active_job = Uuid::from_u128(4_001).to_string();
+        let terminal_job = Uuid::from_u128(4_002).to_string();
+        let active_run = Uuid::from_u128(4_003).to_string();
+        let terminal_run = Uuid::from_u128(4_004).to_string();
+        create(&store, &active_job, "active");
+        create(&store, &terminal_job, "terminal");
+        store.enqueue_manual("active", &active_run, 2).unwrap();
+        store.enqueue_manual("terminal", &terminal_run, 3).unwrap();
+        let lifetime = Uuid::from_u128(4_005).to_string();
+        store.begin_lifetime(&lifetime, 4, "test").unwrap();
+        let admitted = store.admit(&lifetime, 4, 2).unwrap();
+        assert_eq!(admitted.attempts.len(), 2);
+
+        store
+            .finalize_output(
+                &OutputRecord {
+                    run_id: active_run.clone(),
+                    attempt_number: 1,
+                    relative_path: String::new(),
+                    state: "finalized".into(),
+                    retained_payload_bytes: 10,
+                    physical_bytes: 12,
+                    discarded_bytes: 0,
+                    truncated: false,
+                },
+                10,
+            )
+            .unwrap();
+        store
+            .finalize_output(
+                &OutputRecord {
+                    run_id: terminal_run.clone(),
+                    attempt_number: 1,
+                    relative_path: String::new(),
+                    state: "finalized".into(),
+                    retained_payload_bytes: 20,
+                    physical_bytes: 24,
+                    discarded_bytes: 0,
+                    truncated: false,
+                },
+                20,
+            )
+            .unwrap();
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: terminal_run.clone(),
+                attempt_number: 1,
+                now_us: 21,
+                duration_us: 17,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                http_content_type: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+
+        let candidates = store.output_retention_candidates(10).unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].run_id, terminal_run);
+
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: active_run.clone(),
+                attempt_number: 1,
+                now_us: 30,
+                duration_us: 26,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                http_content_type: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+        let candidates = store.output_retention_candidates(10).unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.run_id.as_str())
+                .collect::<Vec<_>>(),
+            [active_run.as_str(), terminal_run.as_str()]
+        );
+    }
+
+    #[test]
+    fn run_retention_unions_age_per_job_and_global_bounds_oldest_first() {
+        const DAY_US: i64 = 86_400_000_000;
+        let (_temp, store) = store();
+        let first_job = Uuid::from_u128(6_001).to_string();
+        let second_job = Uuid::from_u128(6_002).to_string();
+        create(&store, &first_job, "first-retention");
+        create(&store, &second_job, "second-retention");
+
+        store
+            .set_setting("run_retention_count", "10000", 2)
+            .unwrap();
+        store
+            .set_setting("run_retention_age_us", &i64::MAX.to_string(), 2)
+            .unwrap();
+        let per_job_runs = insert_terminal_runs(
+            &store,
+            &first_job,
+            10_000,
+            1,
+            &(1..=1_002).collect::<Vec<_>>(),
+        );
+        let per_job = store.run_retention_candidates(2_000, usize::MAX).unwrap();
+        assert_eq!(per_job.len(), 2);
+        assert_eq!(per_job[0].run_id, per_job_runs[0]);
+        assert_eq!(per_job[1].run_id, per_job_runs[1]);
+
+        store.set_setting("run_retention_count", "2", 3).unwrap();
+        let second_job_runs =
+            insert_terminal_runs(&store, &second_job, 20_000, 2_000, &[2_000, 3_000]);
+        let bounded = store.run_retention_candidates(4_000, usize::MAX).unwrap();
+        assert_eq!(bounded.len(), MAINTENANCE_BATCH_LIMIT);
+        assert_eq!(bounded[0].run_id, per_job_runs[0]);
+        assert!(!bounded.iter().any(|item| item.run_id == second_job_runs[1]));
+
+        store
+            .set_setting("run_retention_count", "10000", 4)
+            .unwrap();
+        store
+            .set_setting("run_retention_age_us", &(90 * DAY_US).to_string(), 4)
+            .unwrap();
+        let age_candidates = store
+            .run_retention_candidates(100 * DAY_US, usize::MAX)
+            .unwrap();
+        assert_eq!(age_candidates.len(), MAINTENANCE_BATCH_LIMIT);
+        assert_eq!(age_candidates[0].run_id, per_job_runs[0]);
+        assert!(
+            age_candidates
+                .windows(2)
+                .all(|pair| pair[0].finished_at_us <= pair[1].finished_at_us)
+        );
+    }
+
+    #[test]
+    fn run_retention_global_count_deduplicates_candidates_and_protects_active_runs() {
+        let (_temp, store) = store();
+        let first_job = Uuid::from_u128(7_001).to_string();
+        let second_job = Uuid::from_u128(7_002).to_string();
+        create(&store, &first_job, "global-first");
+        create(&store, &second_job, "global-second");
+        store.set_setting("run_retention_count", "2", 2).unwrap();
+        store
+            .set_setting("run_retention_age_us", &i64::MAX.to_string(), 2)
+            .unwrap();
+        let first = insert_terminal_runs(&store, &first_job, 30_000, 1, &[1, 3]);
+        let second = insert_terminal_runs(&store, &second_job, 40_000, 3, &[2, 4]);
+        let active_run = Uuid::from_u128(7_003).to_string();
+        store
+            .enqueue_manual("global-first", &active_run, 5)
+            .unwrap();
+
+        let candidates = store.run_retention_candidates(6, 100).unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.run_id.as_str())
+                .collect::<Vec<_>>(),
+            [first[0].as_str(), second[0].as_str()]
+        );
+        assert!(!candidates.iter().any(|item| item.run_id == active_run));
+        assert!(matches!(
+            store.mark_run_retention_pending(
+                &RunRetentionCandidate {
+                    run_id: active_run,
+                    job_id: first_job,
+                    finished_at_us: 0,
+                },
+                6,
+            ),
+            Err(StoreError::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn referenced_partial_finalization_and_missing_reconcile_after_reopen() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Store::open(paths.clone(), "test", 1).unwrap();
+        let job = Uuid::from_u128(8_001).to_string();
+        create_with_policy(&store, &job, "recover-output", "allow", 2);
+        let finalized_run = Uuid::from_u128(8_002).to_string();
+        let missing_run = Uuid::from_u128(8_003).to_string();
+        store
+            .enqueue_manual("recover-output", &finalized_run, 2)
+            .unwrap();
+        store
+            .enqueue_manual("recover-output", &missing_run, 3)
+            .unwrap();
+        let lifetime = Uuid::from_u128(8_004).to_string();
+        store.begin_lifetime(&lifetime, 4, "test").unwrap();
+        assert_eq!(store.admit(&lifetime, 4, 2).unwrap().attempts.len(), 2);
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE output_artifacts SET state='active' WHERE run_id=?1",
+                [&missing_run],
+            )
+            .unwrap();
+        drop(store);
+
+        let reopened = Store::open(paths, "test", 5).unwrap();
+        let partials = reopened.referenced_partial_artifacts(usize::MAX).unwrap();
+        assert_eq!(partials.len(), 2);
+        assert!(partials.iter().any(|item| item.run_id == finalized_run));
+        assert!(
+            partials
+                .iter()
+                .any(|item| item.run_id == missing_run && item.state == "active")
+        );
+        let output = OutputRecord {
+            run_id: finalized_run.clone(),
+            attempt_number: 1,
+            relative_path: format!("{finalized_run}/1.partial"),
+            state: "active".into(),
+            retained_payload_bytes: 12,
+            physical_bytes: 20,
+            discarded_bytes: 3,
+            truncated: true,
+        };
+        reopened.reconcile_output_finalized(&output, 6).unwrap();
+        reopened.reconcile_output_finalized(&output, 6).unwrap();
+        reopened
+            .reconcile_output_missing(&missing_run, 1, 7)
+            .unwrap();
+        reopened
+            .reconcile_output_missing(&missing_run, 1, 8)
+            .unwrap();
+        assert!(
+            reopened
+                .referenced_partial_artifacts(100)
+                .unwrap()
+                .is_empty()
+        );
+        let states: Vec<String> = reopened
+            .conn()
+            .unwrap()
+            .prepare("SELECT state FROM output_artifacts ORDER BY run_id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(states, ["finalized", "missing"]);
+    }
+
+    #[test]
+    fn metadata_retention_resumes_and_requires_output_prune_before_delete() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Store::open(paths.clone(), "test", 1).unwrap();
+        let job = Uuid::from_u128(9_001).to_string();
+        let run = Uuid::from_u128(9_002).to_string();
+        create(&store, &job, "metadata-prune");
+        store.enqueue_manual("metadata-prune", &run, 2).unwrap();
+        let lifetime = Uuid::from_u128(9_003).to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        store.admit(&lifetime, 3, 1).unwrap();
+        store
+            .finalize_output(
+                &OutputRecord {
+                    run_id: run.clone(),
+                    attempt_number: 1,
+                    relative_path: String::new(),
+                    state: "finalized".into(),
+                    retained_payload_bytes: 8,
+                    physical_bytes: 16,
+                    discarded_bytes: 0,
+                    truncated: false,
+                },
+                4,
+            )
+            .unwrap();
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: run.clone(),
+                attempt_number: 1,
+                now_us: 5,
+                duration_us: 2,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                http_content_type: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+        store.set_setting("run_retention_count", "0", 6).unwrap();
+        let candidate = store.run_retention_candidates(6, 1).unwrap().remove(0);
+        store.mark_run_retention_pending(&candidate, 6).unwrap();
+        drop(store);
+
+        let reopened = Store::open(paths, "test", 7).unwrap();
+        assert_eq!(
+            reopened.pending_run_retention(100).unwrap(),
+            std::slice::from_ref(&candidate)
+        );
+        assert!(matches!(
+            reopened.finish_run_retention(&candidate),
+            Err(StoreError::Conflict(_))
+        ));
+        let output = reopened.output_retention_candidates(1).unwrap().remove(0);
+        reopened.mark_output_prune_pending(&output, 8).unwrap();
+        assert_eq!(reopened.pending_output_prunes(usize::MAX).unwrap().len(), 1);
+        reopened.finish_output_prune(&output, 9).unwrap();
+        reopened.finish_run_retention(&candidate).unwrap();
+        reopened.finish_run_retention(&candidate).unwrap();
+        assert!(matches!(reopened.run(&run), Err(StoreError::NotFound(_))));
+        assert!(
+            reopened
+                .integrity_check()
+                .unwrap()
+                .iter()
+                .all(|line| { line == "integrity: ok" || line == "foreign_key_violations: 0" })
+        );
+    }
+
+    #[test]
+    fn sqlite_writer_contention_returns_busy_and_recovers_after_release() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let first = Store::open(paths.clone(), "test", 1).unwrap();
+        let second = Store::open(paths, "test", 1).unwrap();
+        second
+            .conn()
+            .unwrap()
+            .busy_timeout(std::time::Duration::ZERO)
+            .unwrap();
+
+        let first_connection = first.conn().unwrap();
+        first_connection.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let error = second
+            .set_setting("global_concurrency", "17", 2)
+            .unwrap_err();
+        let StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, _)) = error else {
+            panic!("expected SQLite busy failure, got {error}");
+        };
+        assert_eq!(code.code, rusqlite::ErrorCode::DatabaseBusy);
+        assert_eq!(second.settings().unwrap().global_concurrency, 16);
+
+        first_connection.execute_batch("ROLLBACK").unwrap();
+        drop(first_connection);
+        assert_eq!(
+            second
+                .set_setting("global_concurrency", "17", 3)
+                .unwrap()
+                .global_concurrency,
+            17
+        );
+    }
+
+    #[test]
+    fn prune_pending_state_survives_reopen_and_known_candidate_can_finish() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Store::open(paths.clone(), "test", 1).unwrap();
+        let job = Uuid::from_u128(5_001).to_string();
+        let run = Uuid::from_u128(5_002).to_string();
+        create(&store, &job, "prune");
+        store.enqueue_manual("prune", &run, 2).unwrap();
+        let lifetime = Uuid::from_u128(5_003).to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        store.admit(&lifetime, 3, 1).unwrap();
+        store
+            .finalize_output(
+                &OutputRecord {
+                    run_id: run.clone(),
+                    attempt_number: 1,
+                    relative_path: String::new(),
+                    state: "finalized".into(),
+                    retained_payload_bytes: 30,
+                    physical_bytes: 32,
+                    discarded_bytes: 0,
+                    truncated: false,
+                },
+                4,
+            )
+            .unwrap();
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: run.clone(),
+                attempt_number: 1,
+                now_us: 5,
+                duration_us: 2,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                http_content_type: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+        let candidate = store.output_retention_candidates(1).unwrap().remove(0);
+        store.mark_output_prune_pending(&candidate, 6).unwrap();
+        assert!(store.output_retention_candidates(1).unwrap().is_empty());
+        assert_eq!(store.retained_run_output_bytes(&run).unwrap(), 30);
+        drop(store);
+
+        let reopened = Store::open(paths, "test", 7).unwrap();
+        let before_finish: (String, i64, Option<i64>) = reopened
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state,physical_bytes,prune_started_at_us FROM output_artifacts WHERE run_id=?1 AND attempt_number=1",
+                [&run],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(before_finish, ("prune_pending".into(), 32, Some(6)));
+
+        reopened.finish_output_prune(&candidate, 8).unwrap();
+        let after_finish: (String, i64, Option<i64>) = reopened
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state,physical_bytes,pruned_at_us FROM output_artifacts WHERE run_id=?1 AND attempt_number=1",
+                [&run],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(after_finish, ("pruned".into(), 0, Some(8)));
+    }
+
+    #[test]
+    fn global_environment_is_validated_and_stored_as_canonical_json() {
+        let (_temp, store) = store();
+
+        store.set_environment("Z_TOKEN", Some("last"), 2).unwrap();
+        store.set_environment("A_TOKEN", Some("first"), 3).unwrap();
+
+        assert_eq!(
+            store.settings().unwrap().environment,
+            BTreeMap::from([
+                ("A_TOKEN".into(), "first".into()),
+                ("Z_TOKEN".into(), "last".into()),
+            ])
+        );
+        let stored: String = store
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT environment_json FROM settings WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, r#"{"A_TOKEN":"first","Z_TOKEN":"last"}"#);
+
+        store.set_environment("A_TOKEN", None, 4).unwrap();
+        assert_eq!(
+            store.settings().unwrap().environment,
+            BTreeMap::from([("Z_TOKEN".into(), "last".into())])
+        );
+        assert!(matches!(
+            store.set_environment("LOCRON_RUN_ID", Some("spoof"), 5),
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store.set_environment("BAD-NAME", Some("value"), 5),
+            Err(StoreError::Conflict(_))
+        ));
+        assert!(matches!(
+            store.set_environment("TOKEN", Some("bad\0value"), 5),
+            Err(StoreError::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn runner_failures_atomically_mark_output_missing_and_never_retry() {
+        for (execution_may_have_started, expected_state, expected_class) in [
+            (false, "failed", "output_preparation_failed"),
+            (true, "interrupted_unknown", "interrupted_unknown"),
+        ] {
+            let (_temp, store) = store();
+            let job = Uuid::now_v7().to_string();
+            let run = Uuid::now_v7().to_string();
+            let lifetime = Uuid::now_v7().to_string();
+            create(&store, &job, "runner-failure");
+            store.enqueue_manual("runner-failure", &run, 2).unwrap();
+            store.begin_lifetime(&lifetime, 3, "test").unwrap();
+            let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+            assert_eq!(
+                store
+                    .mark_attempt_running(&run, attempt.attempt_number, 4)
+                    .unwrap(),
+                StartDecision::Ready
+            );
+
+            store
+                .complete_runner_failure(
+                    &run,
+                    attempt.attempt_number,
+                    10,
+                    "output storage failed",
+                    execution_may_have_started,
+                )
+                .unwrap();
+            store
+                .complete_runner_failure(
+                    &run,
+                    attempt.attempt_number,
+                    10,
+                    "output storage failed",
+                    execution_may_have_started,
+                )
+                .unwrap();
+
+            let facts: (String, String, String, String, i64) = store
+                .conn()
+                .unwrap()
+                .query_row(
+                    "SELECT a.state,a.result_class,r.state,o.state,count(ri.run_id)
+                     FROM attempts a
+                     JOIN runs r ON r.id=a.run_id
+                     JOIN output_artifacts o
+                       ON o.run_id=a.run_id AND o.attempt_number=a.attempt_number
+                     LEFT JOIN retry_intents ri ON ri.run_id=a.run_id
+                     WHERE a.run_id=?1 AND a.attempt_number=?2",
+                    params![run, attempt.attempt_number],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                        ))
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                facts,
+                (
+                    expected_state.into(),
+                    expected_class.into(),
+                    expected_state.into(),
+                    "missing".into(),
+                    0,
+                )
+            );
+            assert!(
+                store
+                    .output_artifact_references(&run, &format!("{run}/1.partial"))
+                    .unwrap()
+            );
+            assert!(
+                !store
+                    .output_artifact_references(&run, &format!("{run}/2.log"))
+                    .unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_executable_is_committed_at_the_cancellable_pre_spawn_boundary() {
+        let (_temp, store) = store();
+        let job = Uuid::from_u128(6_001).to_string();
+        let run = Uuid::from_u128(6_002).to_string();
+        create(&store, &job, "resolved");
+        store.enqueue_manual("resolved", &run, 2).unwrap();
+        let lifetime = Uuid::from_u128(6_003).to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+
+        assert_eq!(
+            store
+                .mark_attempt_running_with_executable(
+                    &run,
+                    attempt.attempt_number,
+                    4,
+                    Some(Path::new("/usr/bin/true")),
+                )
+                .unwrap(),
+            StartDecision::Ready
+        );
+        assert_eq!(
+            store
+                .attempt_resolved_executable(&run, attempt.attempt_number)
+                .unwrap()
+                .as_deref(),
+            Some("/usr/bin/true")
+        );
+
+        assert!(matches!(
+            store.mark_attempt_running_with_executable(
+                &run,
+                attempt.attempt_number,
+                5,
+                Some(Path::new("relative/bin")),
+            ),
+            Err(StoreError::Conflict(_))
+        ));
     }
 }

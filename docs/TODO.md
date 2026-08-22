@@ -30,23 +30,23 @@ If a planned implementation decision changes, update and review `docs/IMPLEMENTA
 
 ## 3. Implement and test the domain core
 
-- [ ] Add stable identifiers, job/revision/schedule/target/policy/run/attempt/event types and application commands/results.
+- [x] Add stable identifiers, job/revision/schedule/target/policy/run/attempt/event types and application commands/results.
 - [x] Add cross-field validation and normalization for exactly one schedule and target, all policy bounds, paths, environment, HTTP configuration, and reserved names.
 - [x] Implement pure cron, interval, and one-time occurrence enumeration with injected clock/timezone inputs.
-- [ ] Implement explicit legal run/attempt transitions and persistence, clock, and executor ports.
-- [ ] Update the applicable planning document first if a discovered edge case requires behavior or structure not represented in the current plan.
+- [x] Implement explicit legal run/attempt transitions and persistence, clock, and executor ports.
+- [x] Update the applicable planning document first if a discovered edge case requires behavior or structure not represented in the current plan.
 
 **Verify:** core unit/property tests cover aliases, cron day OR behavior, interval anchors, schedule revisions, DST gaps/repetitions, clock movement, duration overflow, invalid combinations, and every state transition without SQLite or real-time sleeps.
 
 ## 4. Implement durable SQLite state
 
 - [x] Add versioned migrations for the durable model and invariants in `docs/ARCHITECTURE.md` using the accepted choices from `docs/IMPLEMENTATION.md`.
-- [ ] Implement atomic job revision/cursor mutation, manual run creation, reconciliation materialization, admission, attempt completion/retry, cancellation intent, recovery, and retention operations.
+- [x] Implement atomic job revision/cursor mutation, manual run creation, reconciliation materialization, admission, attempt completion/retry, cancellation intent, recovery, and retention operations.
 - [x] Prove queued/retry-wait cancellation terminalizes atomically while active cancellation remains
   durable intent, with stable not-found/conflict results.
 - [x] Enforce scheduled occurrence uniqueness, ordered attempt uniqueness, foreign keys, soft deletion, and legal persisted states.
 - [x] Add single-scheduler ownership and safe concurrent CLI access.
-- [ ] Implement output metadata and the accepted output-storage consistency protocol.
+- [x] Implement output metadata and the accepted output-storage consistency protocol.
 
 **Verify:** integration tests against temporary real databases pass for clean and upgrade migrations, concurrent writers, rollback injection, duplicate occurrence insertion, cursor/run atomicity, stale lifetime recovery, soft-delete history, busy/disk failure handling, and interrupted output finalization.
 
@@ -76,47 +76,51 @@ Current acceptance tranche (2026-08-21):
 
 Prior correctness tranche whose broad verification clauses remain open (2026-08-21):
 
-- [ ] Replace elapsed calendar scanning with bounded newest-window reconciliation and compact exact
+- [x] Replace elapsed calendar scanning with bounded newest-window reconciliation and compact exact
   range summaries shared by cron, interval, and one-time schedules.
   **Verify:** pure tests cover long sparse ranges, deadline-before-policy ordering, limits 1 and
   1,000, newest selection/oldest execution, DST gap/fold, backward/forward wall moves, local-zone
   replacement, disable/re-enable, explicit recovery versus steady-state boundaries, exact cutoff and
   1-microsecond deadline edges, and duplicate reconciliation without sleeps.
-- [ ] Centralize retry classification/backoff and prove durable `retry_wait` restart behavior and all
+- [x] Centralize retry classification/backoff and prove durable `retry_wait` restart behavior and all
   forbidden retry classes.
   **Verify:** deterministic clock/store tests cover fixed and capped exponential delay, retry count
   exhaustion, timeout opt-in, restart eligibility, cancellation/configuration/replacement/unknown
   exclusion, and deadline interaction.
-- [ ] Make replacement supersession and confirmation fully durable and exercise admission capacity
+- [x] Make replacement supersession and confirmation fully durable and exercise admission capacity
   interactions.
   **Verify:** store/engine tests cover newest-only `skipped_overlap` supersession, queued/retry-wait
   replacement without signal, active cancellation intent, confirmation failure, catch-up isolation,
   and `skip|replace|allow` across scheduled/manual/catch-up and changed capacity.
-- [ ] Add deterministic lifecycle fault boundaries without acting on stale process identities.
+- [x] Add deterministic lifecycle fault boundaries without acting on stale process identities.
   **Verify:** injected faults before spawn, after admission, while running, and after target exit show
   `interrupted_unknown`, no unknown retry, and no duplicate one-time occurrence.
 
-- [ ] Implement the long-lived daemon runtime in `locron-engine`, including lifetime/lock ownership, loop coordination, signals, bounded maintenance, and graceful shutdown.
-- [ ] Reconcile startup, wake, ticks, job revisions, disabled intervals, and wall-clock changes from durable cursors.
+- [x] Implement the long-lived daemon runtime in `locron-engine`, including lifetime/lock ownership, loop coordination, signals, bounded maintenance, and graceful shutdown.
+- [x] Reconcile startup, wake, ticks, job revisions, disabled intervals, and wall-clock changes from durable cursors.
 - [x] Prove due one-time resolution disables atomically, downtime catch-up remains unique, and manual
   submission neither consumes nor disables the schedule.
-- [ ] Apply start deadline and `skip|latest|all`, including newest bounded selection, oldest-first catch-up execution, and bounded summary events.
-- [ ] Apply `skip|replace|allow`, queued/retry-wait active accounting, global default 16/range 1..64, and per-job limits.
-- [ ] Implement known-failure retry classification, fixed/capped-exponential delay, durable retry wait, and no retry for unknown outcomes.
-- [ ] Implement cancellation/replace intents and startup classification as `interrupted_unknown` without stale PID action.
-- [ ] Update `docs/IMPLEMENTATION.md` and `docs/TODO.md` before a milestone approach change; update `docs/ARCHITECTURE.md` first if the durable engine boundary or lifecycle invariant changes.
+- [x] Apply start deadline and `skip|latest|all`, including newest bounded selection, oldest-first catch-up execution, and bounded summary events.
+- [x] Apply `skip|replace|allow`, queued/retry-wait active accounting, global default 16/range 1..64, and per-job limits.
+- [x] Implement known-failure retry classification, fixed/capped-exponential delay, durable retry wait, and no retry for unknown outcomes.
+- [x] Implement cancellation/replace intents and startup classification as `interrupted_unknown` without stale PID action.
+- [x] Update `docs/IMPLEMENTATION.md` and `docs/TODO.md` before a milestone approach change; update `docs/ARCHITECTURE.md` first if the durable engine boundary or lifecycle invariant changes.
 
 **Verify:** deterministic fake-clock/fake-executor suites pass for downtime, sleep, enable/disable, DST, backward/forward clock movement, bounded catch-up, every overlap/concurrency combination, capacity changes, retry/restart, cancellation, replacement confirmation failure, and duplicate-free one-time recovery.
 
 ## 6. Implement target runners and output capture
 
-- [ ] Implement direct argv and explicit-shell execution with normalized CWD and effective PATH resolution.
-- [ ] Build the minimal/layered environment and inject reserved `LOCRON_*` values last.
-- [ ] Create and supervise process groups with timeout, TERM grace, KILL escalation, cancellation, replacement, and graceful daemon shutdown.
-- [ ] Implement HTTP methods, absolute URLs, bodies/files, headers/env headers, success ranges, TLS, redirect policy, timeout, and retry classification.
+- [x] Implement direct argv and explicit-shell execution with normalized CWD and effective PATH resolution.
+- [x] Build the minimal/layered environment and inject reserved `LOCRON_*` values last.
+- [x] Create and supervise process groups with timeout, TERM grace, KILL escalation, cancellation, replacement, and graceful daemon shutdown.
+- [x] Implement HTTP methods, absolute URLs, bodies/files, headers/env headers, success ranges, TLS, redirect policy, timeout, and retry classification.
+- [x] Persist the final HTTP response content type with each attempt and expose it through durable
+  history/diagnostics without retaining other response headers.
+  **Verify:** runner tests cover present, absent, and redirect-final content types; clean/upgrade
+  migration and attempt-history tests prove the value survives restart and machine output.
 - [x] Prove `301`/`302`/`303` redirect method rewriting and `307`/`308` method/body preservation while
   retaining cross-origin sensitive-header stripping.
-- [ ] Stream, follow, truncate, finalize, and prune output under approved limits without blocking target completion.
+- [x] Stream, follow, truncate, finalize, and prune output under approved limits without blocking target completion.
 - [x] Prove a post-admission runtime-file/configuration failure becomes a non-retryable terminal run
   with consistent finalized output rather than an orphaned running attempt.
 
@@ -124,16 +128,16 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
 
 ## 7. Implement the thin CLI composition and commands
 
-- [ ] Implement job CRUD, enable/disable/remove, schedule preview, history/show/logs, and cancellation.
+- [x] Implement job CRUD, enable/disable/remove, schedule preview, history/show/logs, and cancellation.
 - [x] Complete shared add/update normalization for metadata, schedules, every target/environment
   option, policy bounds, current global concurrency, cursor boundaries, dry-run diff, and no-op
   rejection.
 - [x] Complete typed redacted/plaintext export and whole-document atomic import with acknowledgement,
   collision planning, rollback, and fresh-state round trip tests; keep history explicitly deferred.
-- [ ] Implement durable offline manual enqueue, run ID output, wait/follow behavior, and outcome exit mapping.
-- [ ] Implement import/export with explicit env-value acknowledgement, pruning, and diagnostics.
+- [x] Implement durable offline manual enqueue, run ID output, wait/follow behavior, and outcome exit mapping.
+- [x] Implement import/export with explicit env-value acknowledgement, pruning, and diagnostics.
 - [x] Expose `locron daemon run` as a thin composition entrypoint into the daemon runtime owned by `locron-engine`.
-- [ ] Provide equivalent versioned machine-readable results without requiring prose parsing.
+- [x] Provide equivalent versioned machine-readable results without requiring prose parsing.
 - [x] Implement non-mutating dry-run, durable-fact `why`, repeatable verbose context, and redacted debug tracing.
 - [x] Ensure CLI handlers call shared application validation rather than duplicating policy.
 
@@ -141,29 +145,33 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
 
 ## 8. Prove crash, retention, and resource safety
 
-- [ ] Inject daemon death before spawn, after spawn/before running commit, while running, and after target exit/before final commit.
-- [ ] Exercise retention age/count/byte limits and interrupted pruning/finalization.
-- [ ] Stress global concurrency 16 and maximum 64, large elapsed intervals, maximum catch-up 1,000, noisy output, and SQLite contention.
-- [ ] Run process-group and service-lifetime checks on macOS 14+ and Linux kernel 5.14+/glibc 2.34+ for `aarch64` and `x86_64`.
-- [ ] Treat Windows, 32-bit, and musl/Alpine results as deferred/informational rather than v1 release gates.
-- [ ] Update the applicable `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION.md`, and `docs/TODO.md` content before applying any platform-driven design deviation.
+- [x] Inject daemon death before spawn, after the durable running commit and spawn, while running,
+  and after target exit/before final commit.
+- [x] Exercise retention age/count/byte limits and interrupted pruning/finalization.
+- [x] Stress global concurrency 16 and maximum 64, large elapsed intervals, maximum catch-up 1,000, noisy output, and SQLite contention.
+- [x] Run process-group and service-lifetime checks on macOS 14+ and Linux kernel 5.14+/glibc 2.34+
+  for `aarch64` and `x86_64`. **Evidence:** GitHub Actions run
+  [32506527959](https://github.com/WhiteKiwi/locron/actions/runs/32506527959) passed the complete
+  Rust 1.94/stable matrix on all four official platform targets.
+- [x] Treat Windows, 32-bit, and musl/Alpine results as deferred/informational rather than v1 release gates.
+- [x] Update the applicable `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION.md`, and `docs/TODO.md` content before applying any platform-driven design deviation.
 
 **Verify:** fault/stress reports demonstrate durable occurrence identity, correct `interrupted_unknown` classification, no implicit retry or duplicate one-time run, bounded materialization/storage, correct eviction order, no active-run pruning, and documented cross-platform process cleanup guarantees.
 
 ## 9. Complete documentation and milestone acceptance
 
 - [x] Document installation-from-source and operation of the program milestone without claiming package-manager support.
-- [ ] Document schedule, overlap, missed-run, retry, concurrency, timeout/cancellation, crash, retention, plaintext secret boundary, and exactly-once limitations.
-- [ ] Document diagnostics and recovery procedures plus human and machine CLI examples.
-- [ ] Map every frozen completion criterion to automated or cross-platform verification evidence.
-- [ ] Review that deferred viewer/API, MCP, desktop, package publication, and service installation work did not enter milestone 1.
-- [ ] Keep durable future decisions under `docs/decisions/` only when a reviewed ADR is needed; split CLI/storage contracts only after review justifies dedicated documents.
+- [x] Document schedule, overlap, missed-run, retry, concurrency, timeout/cancellation, crash, retention, plaintext secret boundary, and exactly-once limitations.
+- [x] Document diagnostics and recovery procedures plus human and machine CLI examples.
+- [x] Map every frozen completion criterion to automated or cross-platform verification evidence.
+- [x] Review that deferred viewer/API, MCP, desktop, package publication, and service installation work did not enter milestone 1.
+- [x] Keep durable future decisions under `docs/decisions/` only when a reviewed ADR is needed; split CLI/storage contracts only after review justifies dedicated documents.
 
 **Verify:** a completion matrix links all 16 `docs/SPEC.md` criteria to passing evidence on the official macOS/Linux platform matrix; documentation examples execute successfully; architecture and implementation cross-links resolve; repository search and dependency/workspace inspection find no deferred surface implementation or premature empty ADR document.
 
 ## Follow-up CLI acceptance backlog
 
-- [ ] Audit and complete the entire CLI help surface without expanding the current scheduler
+- [x] Audit and complete the entire CLI help surface without expanding the current scheduler
   semantics tranche. Cover `locron help`, `locron -h`, `locron --help`, and every direct command's
   `<cmd> help` form where Clap supports it, `<cmd> -h`, and `<cmd> --help`. Help must succeed without
   otherwise-required arguments, exit zero, show the command's options and useful examples, provide

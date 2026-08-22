@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-This document owns the reviewed milestone-1 command surface, rendering contract, and exit categories. Product behavior remains authoritative in `docs/SPEC.md`; component ownership remains authoritative in `docs/ARCHITECTURE.md`.
+This document owns the reviewed milestone-1 command surface, rendering contract, and exit categories. Product behavior remains authoritative in `docs/SPEC.md`; component ownership remains authoritative in `docs/ARCHITECTURE.md`. Operator procedures and completion evidence live in `docs/OPERATOR.md` and `docs/ACCEPTANCE.md`.
 
 ## Global options
 
@@ -37,6 +37,7 @@ locron why NAME
 locron why --run RUN_ID
 locron config get [KEY]
 locron config set KEY VALUE [--dry-run]
+locron config unset KEY [--dry-run]
 locron export [--include-values --acknowledge-plaintext] [--include-history]
 locron import PATH [--accept-plaintext-values] [--dry-run]
 locron prune [--dry-run]
@@ -54,6 +55,41 @@ records an audit event, terminalizes the run as `interrupted_unknown`, and relea
 admission without signalling any recorded PID/PGID. Using the flag for another state or repeating it
 after completion is a durable conflict. JSON output distinguishes `requested` cancellation from an
 `acknowledged_unconfirmed` resolution.
+
+## Global environment configuration
+
+Named global environment values use the existing configuration key family. The canonical key is
+`environment.NAME`, so an operator manages one value without replacing the complete map:
+
+```text
+locron config set environment.API_TOKEN VALUE [--dry-run]
+locron config unset environment.API_TOKEN [--dry-run]
+locron config get environment.API_TOKEN
+```
+
+`NAME` uses the same case-sensitive environment-name grammar as job `--env`: a leading ASCII letter
+or underscore followed by ASCII letters, digits, or underscores. Names beginning exactly
+`LOCRON_` are reserved and are rejected by get, set, unset, dry-run, and import. Values are UTF-8,
+may be empty, and cannot contain NUL. Supplying `environment` without `.NAME`, an empty name, or an
+unknown configuration key is a validation error.
+
+Global environment values are sensitive plaintext configuration. Human `config get` output lists
+configured names in lexical order as `environment.NAME=<redacted>`; a single-key read reports only
+whether that name is configured. Set output is `environment.NAME: configured (value redacted)` and
+unset output is `environment.NAME: unset`. A missing-name unset succeeds as an unchanged operation.
+No verbosity or debug level prints a current, proposed, imported, or exported value.
+
+Machine output never places a global environment value in `data`, `warnings`, or error details. A
+single get returns `{"key":"environment.NAME","configured":true,"value_redacted":true}`. A set or
+unset returns the same key plus `action` (`created`, `replaced`, `removed`, or `unchanged`), the
+resulting `configured` boolean, `value_redacted: true`, and `dry_run`. An all-settings get returns
+ordinary typed settings plus an `environment` object whose lexically sorted names each map to
+`{"configured":true,"value_redacted":true}`.
+
+Environment set and unset dry-runs use the ordinary read-only config path. They perform full name
+and value validation and report the action that would occur, but do not initialize or migrate state,
+write settings, or wake the daemon. When state does not exist, the documented empty environment
+default is used. The proposed value remains redacted even though no write occurs.
 
 ## Schedule and target syntax
 
@@ -149,7 +185,7 @@ wake notification.
 
 ## Dry run
 
-`--dry-run` is valid for `add`, `update`, `run`, `config set`, `import`, and `prune`.
+`--dry-run` is valid for `add`, `update`, `run`, `config set`, `config unset`, `import`, and `prune`.
 
 - It opens existing state read-only and never initializes or migrates a database.
 - It performs parsing, normalization, cross-field validation, redacted target resolution, and relevant schedule/admission calculation.
@@ -192,15 +228,18 @@ the required single `locron.cli/v1` envelope and places that document in `data`.
 history are not included in this tranche. `--include-history` is rejected explicitly rather than
 claiming an incomplete backup.
 
-Default exports use `values_mode: "redacted"`. Sensitive inline environment values, inline HTTP
-header values, and inline/JSON bodies are removed, never replaced with a literal sentinel, and each
-job carries a sorted `omitted_values` path list. Import rejects a redacted document with any omission
-because faithful creation or update is impossible. A redacted document without omissions remains
-importable.
+Default exports use `values_mode: "redacted"`. Global and job inline environment values, inline HTTP
+header values, and inline/JSON bodies are removed, never replaced with a literal sentinel. The
+document carries a sorted `omitted_values` JSON Pointer list for omitted global settings, including
+paths such as `/settings/environment/API_TOKEN`, and each job carries its sorted omission list.
+Import rejects a redacted document with any global or job omission because faithful creation or
+update is impossible. A redacted document without omissions remains importable.
 
 Plaintext export is deliberately non-interactive and requires both `--include-values` and
 `--acknowledge-plaintext`; either flag alone is invalid. Plaintext import requires
-`--accept-plaintext-values`. This two-sided acknowledgement is required for a faithful round trip.
+`--accept-plaintext-values`. These acknowledgements apply equally to global environment values and
+job values and are required for a faithful round trip. Without them, no command accepts or emits a
+plaintext export containing either kind of value.
 
 Import accepts a bare `locron.export/v1` document, validates and normalizes the entire document
 before opening a write transaction, and then applies settings and jobs atomically. Duplicate source
