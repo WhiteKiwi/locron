@@ -2,6 +2,10 @@ name: Release
 
 on:
   push:
+    # Ignore branch pushes explicitly: a tags-only filter can still leave
+    # zero-job phantom runs on branch pushes.
+    branches-ignore:
+      - '**'
     tags:
       - 'v*.*.*'
 

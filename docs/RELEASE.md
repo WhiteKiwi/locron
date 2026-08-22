@@ -68,7 +68,7 @@ The repository employs two automated GitHub Actions workflows:
 - **Job timeout**: The `test` job has a 30-minute budget (`timeout-minutes: 30`) so a hung runner or compile step fails fast instead of consuming the GitHub Actions default of 360 minutes.
 
 ### B. Release Automation (`.github/workflows/release.yml`)
-- **Trigger**: Push of git tags matching `v*.*.*`.
+- **Trigger**: Push of git tags matching `v*.*.*`. Branch pushes are explicitly ignored (`branches-ignore: '**'`) to prevent zero-job phantom runs from appearing on every branch push.
 - **Workflow Pipeline**:
   1. **Pre-flight & Verification**: Run tests across the release matrix to ensure zero regressions on the tagged commit.
   2. **Build Release Binaries**: Build with `cargo build --release --locked` (leveraging LTO and symbol stripping).
