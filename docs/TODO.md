@@ -566,8 +566,10 @@ and URL import implementation"; evidence in `docs/FINDINGS.md` §15. Confined to
   new lints from this work fixed: `map_unwrap_or`, `fn_params_excessive_bools`, and
   `trivially_copy_pass_by_ref` — the TTY triple became a `TerminalState` value type), and `cargo
   test --workspace` passes 315 tests with 0 failures (locron-cli: 67 unit + 50 contract). The
-  four-target CI matrix runs on push and cannot be exercised from this session; that evidence is
-  recorded by the parent session after publication.
+  four-target CI matrix is green on push after publication: run 32654253503 (head d4febd5, the
+  commit that carried this feature) completed with all nine jobs successful — the 4×2 platform/Rust
+  matrix (linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64 × Rust 1.94.0/stable) plus the
+  installer job — alongside a successful Audit workflow (run 32654253479).
 
 ## Web administration backlog (2026-08-24)
 
