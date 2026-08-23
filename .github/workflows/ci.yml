@@ -41,3 +41,68 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --all-targets
+
+  installer:
+    name: Installer / ubuntu-latest
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Shellcheck install.sh
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck install.sh
+      - name: Refuse unsupported platforms and musl
+        run: |
+          set -eu
+          mkdir -p fakebin
+
+          cat > fakebin/uname <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            -s) echo "Windows" ;;
+            -m) echo "x86_64" ;;
+            *) /usr/bin/uname "$@" ;;
+          esac
+          EOF
+          chmod +x fakebin/uname
+          if PATH="$PWD/fakebin:$PATH" sh install.sh >unsupported-os.log 2>&1; then
+            echo "expected refusal for unsupported OS"; cat unsupported-os.log; exit 1
+          fi
+          grep -q "unsupported operating system 'Windows'" unsupported-os.log
+
+          cat > fakebin/uname <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            -s) echo "Linux" ;;
+            -m) echo "sparc64" ;;
+            *) /usr/bin/uname "$@" ;;
+          esac
+          EOF
+          if PATH="$PWD/fakebin:$PATH" sh install.sh >unsupported-arch.log 2>&1; then
+            echo "expected refusal for unsupported arch"; cat unsupported-arch.log; exit 1
+          fi
+          grep -q "unsupported CPU architecture 'sparc64'" unsupported-arch.log
+
+          cat > fakebin/uname <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            -s) echo "Linux" ;;
+            -m) echo "x86_64" ;;
+            *) /usr/bin/uname "$@" ;;
+          esac
+          EOF
+          cat > fakebin/ldd <<'EOF'
+          #!/bin/sh
+          echo "musl libc (x86_64)"; exit 0
+          EOF
+          chmod +x fakebin/ldd
+          if PATH="$PWD/fakebin:$PATH" sh install.sh >musl.log 2>&1; then
+            echo "expected refusal for musl"; cat musl.log; exit 1
+          fi
+          grep -q "musl-based Linux is not supported" musl.log
+      - name: Install a pinned release on Linux
+        run: |
+          set -eu
+          LOCRON_VERSION=v0.2.0 LOCRON_INSTALL_DIR="$PWD/test-bin/locron" sh install.sh
+          "$PWD/test-bin/locron" -V
