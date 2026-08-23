@@ -1,0 +1,111 @@
+name: Bug report
+description: locron behaves differently than its documentation says it should
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report.
+
+        ⚠️ **Do not report security vulnerabilities here.** Use
+        [private reporting](https://github.com/WhiteKiwi/locron/security/advisories/new) instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true
+        - label: I am on the latest release, or I can still reproduce this on it.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: locron version
+      description: Output of `locron --version`.
+      placeholder: locron 0.2.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon / aarch64)
+        - macOS (Intel / x86_64)
+        - Linux (x86_64)
+        - Linux (aarch64)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - Homebrew tap
+        - Debian/Ubuntu package (.deb)
+        - Fedora/RHEL package (.rpm)
+        - Release tarball
+        - Built from source
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The actual behavior you observed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: If the documentation states the expected behavior, link to it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: |
+        The exact commands, including the job definition if one is involved. Using a scratch
+        state directory (`--state-dir /tmp/locron-repro`) makes this easier for others to run.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: locron doctor output
+      description: Run `locron doctor` and paste the output. Redact anything sensitive.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Run history, captured output, or daemon logs — for example `locron logs <job>`, or the
+        daemon started with `-v`. Redact secrets such as HTTP target headers.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Frequency, timing, timezone or DST relevance, or anything else you noticed.

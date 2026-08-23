@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/WhiteKiwi/locron/security/advisories/new
+    about: Report privately through GitHub Security Advisories. Never open a public issue for this.
+  - name: 💬 Question or usage help
+    url: https://github.com/WhiteKiwi/locron/discussions
+    about: Ask about scheduling policies, configuration, or how to model a job.
+  - name: 📖 Documentation
+    url: https://github.com/WhiteKiwi/locron#-documentation
+    about: Operator guide, CLI reference, architecture notes, and release policy.
