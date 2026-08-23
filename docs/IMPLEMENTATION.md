@@ -573,3 +573,39 @@ The trust boundary is documented, not coded around: `docs/CLI.md` and `docs/OPER
 - **URL import fixture tests:** a local HTTP fixture serves valid documents, redacted documents, malformed JSON, oversized bodies, redirect chains, and 404/500 responses; assertions cover successful atomic import, dry-run non-mutation, category-5 fetch failures, rollback on a late destination conflict, and identical behavior versus the same document as a file.
 - **Platform matrix:** the existing four-target CI runs the new suites; no platform-specific code is introduced (TTY detection and stderr rendering are portable via dialoguer and `std::io::IsTerminal`).
 
+## Shutdown-drain test determinism and CI lint consolidation (2026-08-24)
+
+No product-behavior change — a test-harness script and the CI workflow only — so the frozen `docs/SPEC.md` is not amended. Failure evidence (run IDs, local reproduction) is recorded in `docs/TODO.md` "Shutdown-drain test determinism and CI lint consolidation backlog".
+
+### Accepted: single-member process group makes drain-cancel confirmation event-driven
+
+`daemon::tests::elapsed_shutdown_drain_cancels_runner_before_lifetime_end` failed on two macOS CI legs — run 32644652482 (`macos-aarch64` / Rust 1.94.0) and run 32644735243 (`macos-x86_64` / Rust stable), different platforms each time — with the outcome assertion receiving `TerminationUnconfirmed` instead of `Cancelled`.
+
+Root cause: the test script's `while :; do sleep 1; done` puts a second process (`sleep`) in the run's process group. The runner confirms termination only when the owned leader wait handle has resolved and `kill(-pgid, 0)` reports the whole group absent (runner `wait` branch, `runner.rs:315`; group probe `observe_group_absence`, `runner.rs:767`). When the trapped `sh` exits, its orphaned `sleep` sibling is reaped by launchd/init on its own schedule; until then it remains a zombie that the group-liveness probe counts as alive, so the test's two 20 ms grace deadlines (TERM → KILL → confirm, `runner.rs:351`) can elapse before group absence becomes observable on a loaded macOS runner. The production path is unaffected in practice — its default graces are 5 s + 5 s, which the reap latency cannot plausibly exceed — so the flake is an artifact of the test shrinking the grace to 20 ms.
+
+The fix makes confirmation event-driven rather than budget-driven. Replace the script with a pure-builtin loop (`while :; do :; done`) so the group has exactly one member: when the runner reaps the leader, group absence is true in the same poll, `termination_confirmed` is set without any deadline firing, and the outcome is `Cancelled` regardless of machine load, parallel test contention, or scheduler latency. The test also raises `termination_grace` from 20 ms to 1 s as belt-and-braces, so even a pathological TERM-to-trap delay cannot reach the KILL stage before the trap writes its marker file; the grace then gates only the escalation step, not the asserted outcome. `shutdown_drain` stays at 10 ms: it only decides when the daemon issues cancellation, and the attempt tracker cannot complete before that cancellation, so the drain always elapses. The trap still fires promptly in a builtin loop (the shell checks for pending traps between commands), and the loop burns one CPU core only from `ready` to the trap — tens of milliseconds, confined to one unit test.
+
+Rejected alternatives:
+
+- `serial_test` or `--test-threads=1`: reduces the CPU contention that amplifies the race, but keeps the fixed two-deadline budget against launchd reap latency, so the test would still flake on a loaded runner; the workspace has no other timing-sensitive test needing global serialization.
+- Lengthening the graces alone: same residual race, just rarer — a fixed budget stays load-dependent.
+- Redefining production confirmation as leader-reap-only (dropping the group-absence requirement): changes behavior the frozen documents record (SPEC: "Completion is not reported until termination is confirmed"; IMPLEMENTATION: "Leader exit alone is insufficient because an in-group descendant may still be running") to fix a test artifact. Not accepted.
+- `cargo nextest`: its parallel runner and retry support are marginal here — the engine test binary finishes in under a second — and a retry wrapper would mask rather than remove the race.
+
+### Accepted: dedicated lint job over OS × toolchain, tests over the full platform matrix
+
+`cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings` run in all eight matrix legs of `.github/workflows/ci.yml`. Clippy findings are platform-sensitive only through OS-gated code (this repository's history contains two backlogs where macOS-only or Linux-only dead code failed the opposite OS legs), and the workspace contains no architecture-gated code, so the architecture duplication among the eight clippy compile passes carries no signal.
+
+The workflow gains a `lint` job — matrix `linux-x86_64` and `macos-aarch64` × Rust 1.94.0 and stable, `fail-fast: false` — running fmt and clippy, and the `test` job's eight legs keep only `cargo test --workspace --all-targets`. This preserves exactly the coverage that has caught real bugs here (OS-gated dead code on both OSes, both toolchains' lint sets — formatting and lint rules have drifted between Rust versions before) while halving clippy compile work. rust-cache stays in the lint job so its clippy artifacts warm across runs.
+
+### Edge cases to handle explicitly
+
+- A toolchain update changes rustfmt or clippy output between Rust 1.94 and stable: both toolchains remain in the lint matrix because the CI contract requires clean results on both.
+- macOS-only or Linux-only items that are dead code: still caught, because both operating systems remain in the lint matrix.
+- The busy-loop script's CPU burn: bounded by the test's own cancellation path and confined to one unit test.
+- The `termination_grace` change must not alter what the test proves: it still asserts `Cancelled` via the drain-elapsed → daemon-cancel → TERM-trap path, now with the outcome independent of the deadline values.
+
+### Verification additions
+
+- The changed test passes 100 consecutive local runs plus the macOS CI legs, and the sibling `shutdown_drain_allows_natural_completion_before_lifetime_end` test remains untouched and green.
+- The `lint` job passes on both OS legs and both toolchains; the eight `test` job legs pass with `cargo test` only.

@@ -1191,13 +1191,13 @@ mod tests {
         let term = temp.path().join("term");
         let store = Arc::new(ShutdownStore::process(
             &temp,
-            "trap 'printf term > term; exit 0' TERM; printf ready > ready; while :; do sleep 1; done"
+            "trap 'printf term > term; exit 0' TERM; printf ready > ready; while :; do :; done"
                 .into(),
         ));
         let daemon = Daemon::new(
             Arc::clone(&store),
             Runner::new(crate::runner::RunnerConfig {
-                termination_grace: Duration::from_millis(20),
+                termination_grace: Duration::from_secs(1),
                 ..Default::default()
             })
             .unwrap(),

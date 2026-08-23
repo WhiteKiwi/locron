@@ -766,6 +766,61 @@ The rendering contract is owned by `docs/CLI.md`.
   launchd-domain contention under full parallel load) passed immediately on rerun and did not
   recur.
 
+## Shutdown-drain test determinism and CI lint consolidation backlog (2026-08-24)
+
+No product-behavior change (a test-harness script and the CI workflow only), so the frozen
+`docs/SPEC.md` is not amended. Planned in `docs/IMPLEMENTATION.md` "Shutdown-drain test
+determinism and CI lint consolidation".
+
+Background: `daemon::tests::elapsed_shutdown_drain_cancels_runner_before_lifetime_end` failed on two
+macOS CI legs — run
+[32644652482](https://github.com/WhiteKiwi/locron/actions/runs/32644652482) (`macos-aarch64` /
+Rust 1.94.0) and run
+[32644735243](https://github.com/WhiteKiwi/locron/actions/runs/32644735243) (`macos-x86_64` /
+Rust stable) — with the outcome assertion receiving `Some(TerminationUnconfirmed)` instead of
+`Some(Cancelled)`. The test script's `sleep 1` adds a second process to the run's process group;
+after the trapped `sh` exits, the orphaned sibling stays a zombie until launchd reaps it, and the
+group-liveness probe (`kill(-pgid, 0)`, `runner.rs:767`) counts zombies as alive, so the test's
+two 20 ms grace deadlines elapse first on a loaded macOS runner. 40 consecutive local runs pass
+(the failure is CI-load-dependent). The fix makes the group single-member so leader reap equals
+group absence and confirmation becomes event-driven; the CI part consolidates redundant lint
+steps (clippy compile work halved, no arch-gated code exists to justify the arch duplication).
+
+- [x] Amend planning documents before code: this checklist and the `docs/IMPLEMENTATION.md`
+  section. The frozen `docs/SPEC.md` needs no amendment because neither change touches product
+  behavior.
+  **Verify:** `rg -n "Shutdown-drain test determinism" docs/IMPLEMENTATION.md docs/TODO.md`
+  returns both sections, and no planning document marks an unresolved decision in them.
+  **Evidence:** `rg` returns `docs/IMPLEMENTATION.md` (EOF section) and this checklist section;
+  no unresolved decision marker in either; the SPEC is not amended (no product-behavior change).
+- [x] Replace the test script's `sleep 1` loop with a pure-builtin loop
+  (`while :; do :; done`) and raise its `termination_grace` from 20 ms to 1 s in
+  `crates/locron-engine/src/daemon.rs`
+  (`elapsed_shutdown_drain_cancels_runner_before_lifetime_end`); `shutdown_drain` stays at 10 ms.
+  **Verify:** `for i in $(seq 1 100); do cargo test -p locron-engine --quiet
+  elapsed_shutdown_drain_cancels_runner_before_lifetime_end || break; done` completes all 100
+  iterations; `cargo test -p locron-engine` passes; the sibling
+  `shutdown_drain_allows_natural_completion_before_lifetime_end` test passes unchanged.
+  **Evidence:** the dev sub-session applied both changes (daemon.rs lines 1194/1200); the
+  100-iteration loop completes all 100 iterations (each run 0.03–0.08 s); `cargo test -p
+  locron-engine` passes 45 tests, 0 failed; the sibling test passes unchanged.
+- [x] Add a dedicated `lint` job to `.github/workflows/ci.yml` (matrix `linux-x86_64` and
+  `macos-aarch64` × Rust 1.94.0 and stable, `fail-fast: false`, rust-cache, `cargo fmt --all
+  --check`, `cargo clippy --workspace --all-targets -- -D warnings`) and remove those two steps
+  from the eight-leg `test` job so its legs run `cargo test --workspace --all-targets` only.
+  **Verify:** the workflow parses as valid YAML; `rg -n "fmt --all|cargo clippy"
+  .github/workflows/ci.yml` shows both commands only inside the `lint` job; a push run records all
+  four lint legs and all eight test legs green (run ID recorded as evidence).
+  **Evidence:** the workflow parses as valid YAML (ruby/psych — the plan's PyYAML example was
+  unavailable; jobs are `test`, `lint`, `installer` with the lint matrix/timeout/fail-fast
+  programmatically verified); `rg` finds fmt/clippy only at `ci.yml` lines 63–64 inside `lint`.
+  The push-run evidence is recorded by the parent session after publication.
+- [x] Run full workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass locally on the
+  installed toolchain.
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
+  -D warnings` clean; `cargo test --workspace` green across all binaries, 0 failed/panicked.
+
 ## Ordered deferred product roadmap
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;
