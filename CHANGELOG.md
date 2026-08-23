@@ -1,4 +1,14 @@
 
+## [0.4.1] - 2026-08-24
+
+### Added
+
+- Human-readable output for every command (`docs/SPEC.md` Human Output Contract, issue #4): a docker-style `history` table, confirmation lines for `add`/`update`/`enable`/`disable`/`remove`/`run`/`cancel`/`config`/`import`/`prune`, labeled report sections for `show`/`why`/`doctor`, and one-line occurrence lists for `preview`. Machine-readable output is byte-identical, and every human form honors the existing redaction rules. The demo screencast no longer pipes commands through `jq`.
+
+### Fixed
+
+- The shutdown-drain acceptance test no longer depends on launchd zombie-reap timing: a pure-builtin keep-alive loop makes the test process group single-member, so leader reap equals group absence and the two macOS CI legs stop flaking.
+
 ## [0.4.0] - 2026-08-24
 
 ### Added
