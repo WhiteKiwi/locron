@@ -81,6 +81,23 @@ jobs:
         run: |
           sha256sum *.* > SHA256SUMS.txt
           cat SHA256SUMS.txt
+      - name: Extract Release Notes
+        run: |
+          # Release notes come from the curated section of CHANGELOG.md for the
+          # tagged version (docs/RELEASE.md "Changelog Maintenance" policy). The
+          # checkout is the tagged commit, where the release procedure committed
+          # the generated-and-curated entry.
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="## [${VERSION}]" '
+              index($0, ver) == 1 { in_section = 1; next }
+              in_section && /^## \[/ { exit }
+              in_section { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ -s release-notes.md ]; then
+            echo "release notes: $(wc -l < release-notes.md) lines"
+          else
+            echo "no changelog section for ${GITHUB_REF_NAME}; falling back to generated notes"
+          fi
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -94,7 +111,10 @@ jobs:
               artifacts/SHA256SUMS.txt \
               install.sh \
               --clobber
+            [ -s release-notes.md ] && gh release edit "${GITHUB_REF_NAME}" --notes-file release-notes.md
           else
+            NOTES_ARGS=(--generate-notes)
+            [ -s release-notes.md ] && NOTES_ARGS=(--notes-file release-notes.md)
             gh release create "${GITHUB_REF_NAME}" \
               artifacts/*.tar.gz \
               artifacts/*.deb \
@@ -102,7 +122,7 @@ jobs:
               artifacts/SHA256SUMS.txt \
               install.sh \
               --title "locron ${GITHUB_REF_NAME}" \
-              --generate-notes
+              "${NOTES_ARGS[@]}"
           fi
       - name: Update Homebrew Tap Formula
         # Note: keep this env-based. Referencing a secret directly inside a
