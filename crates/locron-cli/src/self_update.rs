@@ -363,6 +363,11 @@ fn replace_binary(binary: &[u8]) -> Result<()> {
         file.sync_all().map_err(|error| {
             SelfUpdateError::Io(format!("cannot write the replacement binary: {error}"))
         })?;
+        // Close the write handle before the rename: while it stays open the
+        // replacement's inode is writable at the executable path, which on
+        // Linux makes any concurrent exec or write-open of that path fail
+        // with ETXTBSY ("Text file busy") until this process exits.
+        drop(file);
         fs::set_permissions(&temp, mode).map_err(|error| {
             SelfUpdateError::Io(format!(
                 "cannot set the replacement binary permissions: {error}"

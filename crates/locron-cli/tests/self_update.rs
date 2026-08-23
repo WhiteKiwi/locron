@@ -5,6 +5,7 @@
 //! tarballs. Replacement tests run a *copy* of the real binary from a temp
 //! directory so the build artifact itself is never replaced.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -13,7 +14,7 @@ use std::process::Command as StdCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use assert_cmd::Command;
 use flate2::Compression;
@@ -45,21 +46,35 @@ impl Fixture {
         let address = listener.local_addr().unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
+        // The accept loop signals readiness; clients connect only after the
+        // socket is live and being served.
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
         let handle = thread::spawn({
             let requests = Arc::clone(&requests);
             let stop = Arc::clone(&stop);
             move || {
+                let _ = ready_tx.send(());
                 while !stop.load(Ordering::Relaxed) {
                     match listener.accept() {
-                        Ok((mut stream, _)) => serve(&handler, &requests, &mut stream),
-                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                            thread::sleep(Duration::from_millis(10));
+                        Ok((mut stream, _)) => {
+                            // A panicking connection must never kill the
+                            // listener: keep accepting subsequent requests.
+                            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                serve(&handler, &requests, &mut stream);
+                            }));
                         }
-                        Err(_) => break,
+                        // Transient accept errors (e.g. ECONNABORTED under
+                        // parallel load) must not close the listener either:
+                        // dropping it makes later connects fail with
+                        // ECONNREFUSED. Keep serving until `stop` is set.
+                        Err(_) => thread::sleep(Duration::from_millis(10)),
                     }
                 }
             }
         });
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("fixture server must start accepting within 5s");
         Self {
             address,
             requests,
@@ -69,7 +84,10 @@ impl Fixture {
     }
 
     fn requests(&self) -> Vec<String> {
-        self.requests.lock().unwrap().clone()
+        self.requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -84,24 +102,40 @@ impl Drop for Fixture {
 
 fn serve(handler: &Handler, requests: &Mutex<Vec<String>>, stream: &mut TcpStream) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+    // The accepted stream inherits O_NONBLOCK from the listener, so reads and
+    // writes can fail fast with WouldBlock before the client's bytes have
+    // arrived. Poll with a deadline instead of giving up on the first
+    // WouldBlock (which used to close the connection mid-request under load).
+    let deadline = Instant::now() + Duration::from_secs(10);
     let mut buffer = [0_u8; 4096];
     let mut used = 0;
-    while used < buffer.len() {
+    let header_end = loop {
+        if used >= buffer.len() || Instant::now() >= deadline {
+            break None;
+        }
         match stream.read(&mut buffer[used..]) {
-            Ok(0) => break,
+            Ok(0) => break None,
             Ok(count) => {
                 used += count;
                 if buffer[..used]
                     .windows(4)
                     .any(|window| window == b"\r\n\r\n")
                 {
-                    break;
+                    break Some(used);
                 }
             }
-            Err(_) => return,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => break None,
         }
-    }
+    };
+    let Some(used) = header_end else { return };
     let head = String::from_utf8_lossy(&buffer[..used]);
     let path = head
         .lines()
@@ -109,18 +143,44 @@ fn serve(handler: &Handler, requests: &Mutex<Vec<String>>, stream: &mut TcpStrea
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("/")
         .to_owned();
-    requests.lock().unwrap().push(path.clone());
+    requests
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(path.clone());
     let (status, headers, body) = handler(&path);
-    let _ = write!(stream, "HTTP/1.1 {status} {}\r\n", reason_phrase(status));
+    let mut response = format!("HTTP/1.1 {} {}\r\n", status, reason_phrase(status));
     for (name, value) in &headers {
-        let _ = write!(stream, "{name}: {value}\r\n");
+        let _ = write!(response, "{name}: {value}\r\n");
     }
     let _ = write!(
-        stream,
+        response,
         "Content-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
-    let _ = stream.write_all(&body);
+    write_all_polling(stream, response.as_bytes(), deadline);
+    write_all_polling(stream, &body, deadline);
+}
+
+/// Writes `bytes`, retrying WouldBlock/TimedOut until the deadline.
+fn write_all_polling(stream: &mut TcpStream, mut bytes: &[u8], deadline: Instant) {
+    while !bytes.is_empty() {
+        match stream.write(bytes) {
+            Ok(0) => return,
+            Ok(count) => bytes = &bytes[count..],
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                if Instant::now() >= deadline {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => return,
+        }
+    }
 }
 
 fn reason_phrase(status: u16) -> &'static str {
@@ -234,6 +294,18 @@ fn expected_target() -> String {
     }
 }
 
+/// Serializes the suite's tests. Every test forks real child processes
+/// against build artifacts, and cargo runs tests in parallel; CI showed
+/// cross-test interference under that parallelism (ETXTBSY on spawn under
+/// Linux, fixture connection refused under macOS). Each test must call this
+/// first and hold the guard for its whole body.
+fn serialized() -> std::sync::MutexGuard<'static, ()> {
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// A writable copy of the real binary at `dir/fake/locron`, so the build
 /// artifact is never replaced and the package-manager marker path
 /// (`dir/lib/.disable-self-update`) stays per-test.
@@ -262,6 +334,7 @@ fn locron_command(fake: &Path, fixture: &Fixture) -> Command {
 
 #[test]
 fn self_update_installs_the_latest_release() {
+    let _serial = serialized();
     let target = expected_target();
     let fixture = update_fixture(&target, &valid_sums(&target));
     let dir = tempfile::tempdir().unwrap();
@@ -306,6 +379,7 @@ fn self_update_installs_the_latest_release() {
 
 #[test]
 fn human_output_reports_current_and_new_version() {
+    let _serial = serialized();
     let target = expected_target();
     let fixture = update_fixture(&target, &valid_sums(&target));
     let dir = tempfile::tempdir().unwrap();
@@ -326,6 +400,7 @@ fn human_output_reports_current_and_new_version() {
 
 #[test]
 fn self_update_reports_already_up_to_date_without_downloading() {
+    let _serial = serialized();
     let target = expected_target();
     let current = env!("CARGO_PKG_VERSION");
     let latest = latest_document(&format!("v{current}"), &target);
@@ -365,6 +440,7 @@ fn self_update_reports_already_up_to_date_without_downloading() {
 
 #[test]
 fn checksum_mismatch_leaves_the_old_binary_untouched() {
+    let _serial = serialized();
     let target = expected_target();
     let wrong_sums = format!("{}  locron-{NEW_TAG}-{target}.tar.gz\n", "0".repeat(64));
     let fixture = update_fixture(&target, &wrong_sums);
@@ -400,6 +476,7 @@ fn checksum_mismatch_leaves_the_old_binary_untouched() {
 
 #[test]
 fn atomic_replace_keeps_a_running_process_on_the_old_binary() {
+    let _serial = serialized();
     let target = expected_target();
     let fixture = update_fixture(&target, &valid_sums(&target));
     let dir = tempfile::tempdir().unwrap();
@@ -434,6 +511,7 @@ fn atomic_replace_keeps_a_running_process_on_the_old_binary() {
 
 #[test]
 fn marker_file_refusal_directs_to_brew_upgrade() {
+    let _serial = serialized();
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
     let marker_dir = dir.path().join("lib");
@@ -466,6 +544,7 @@ fn marker_file_refusal_directs_to_brew_upgrade() {
 
 #[test]
 fn rate_limited_api_response_maps_to_a_stable_error() {
+    let _serial = serialized();
     let fixture = Fixture::start(Box::new(|path: &str| {
         if path == "/repos/WhiteKiwi/locron/releases/latest" {
             (
@@ -498,6 +577,7 @@ fn rate_limited_api_response_maps_to_a_stable_error() {
 
 #[test]
 fn missing_published_asset_is_a_release_metadata_error() {
+    let _serial = serialized();
     let latest = format!(r#"{{"tag_name":"{NEW_TAG}","assets":[{{"name":"SHA256SUMS.txt"}}]}}"#);
     let fixture = Fixture::start(Box::new(move |path: &str| {
         if path == "/repos/WhiteKiwi/locron/releases/latest" {
@@ -526,6 +606,7 @@ fn missing_published_asset_is_a_release_metadata_error() {
 
 #[test]
 fn malformed_checksum_entry_is_a_release_metadata_error() {
+    let _serial = serialized();
     let target = expected_target();
     let malformed = format!("not-hex  locron-{NEW_TAG}-{target}.tar.gz\n");
     let fixture = update_fixture(&target, &malformed);
