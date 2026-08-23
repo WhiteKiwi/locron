@@ -392,6 +392,19 @@ Authorized by the frozen 2026-08-23 `docs/SPEC.md` amendment (Daemon Service Ins
   `Store::materialize_with_summaries`, whose by-value cursor parameter is public API consumed by
   `locron-cli`.
 
+## README demo screencast backlog (2026-08-23)
+
+- [ ] Generate `assets/screencast.svg` from `assets/screencast.sh` and embed it at the top of the
+  README under the badges. The script records `add → list → preview → run → history → why → doctor`
+  against a throwaway state directory with its own daemon and is verified to run; rendering needs
+  `svg-term` (`npm install -g svg-term-cli`), or a GIF via `vhs`, plus
+  `<p align="center"><img src="assets/screencast.svg" alt="locron demo" width="800"></p>` in
+  `README.md`.
+  **Verify:** the rendered asset plays the full command sequence in a browser or on GitHub; the
+  README image renders on the repository front page; the recording shows no local paths, machine
+  names, or state from the recording host (the script's `--state-dir` isolation and jq filters
+  already prevent this — confirm visually).
+
 ## Ordered deferred product roadmap
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;
