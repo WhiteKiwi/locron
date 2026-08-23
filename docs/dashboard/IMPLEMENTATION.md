@@ -46,15 +46,44 @@ is a durable-responsibility change and is recorded in `docs/ARCHITECTURE.md` (co
 ### Accepted: framework and crate
 
 Use `axum` 0.8.9 (declared MSRV 1.80, below the workspace MSRV 1.94), `tokio-stream` 0.1.19 for
-stream adapters, and `rust-embed` 8.x for bundled static assets. `tower-http` is not added: the
-middleware here (Host/Origin/CSRF/token/Referrer-Policy) is small, explicit, and testable by hand,
-and the assets are embedded rather than served from disk. No other framework, no WebSocket crate,
-and no Node build toolchain enter the repository.
+stream adapters, `rust-embed` 8.12 with only the `mime-guess` feature for bundled static assets,
+`axum-extra` 0.12 with only the `cookie` feature for the `CookieJar`, and `getrandom` 0.4 for the
+token RNG (already transitively present via uuid; adding it as a direct dependency costs zero new
+crates). All MSRVs verified 2026-08-24 in `docs/FINDINGS.md` §17: rust-embed 1.80, axum-extra
+1.80, cookie 0.18 1.56, getrandom 1.85. `tower-http` is not added: the middleware here
+(Host/Origin/CSRF/token/Referrer-Policy) is small, explicit, and testable by hand, and the assets
+are embedded rather than served from disk. No other framework, no WebSocket crate, and no Node
+build toolchain enter the repository.
+
+Static assets are served by one custom handler (`/` plus `/{*path}`) following rust-embed's own
+axum example: `Asset::get`, `Content-Type` from `content.metadata.mimetype()`, body from
+`content.data`, 404 on a miss, and a `Cache-Control: no-cache` response header (or an ETag from
+`metadata.sha256_hash()`) so a republished viewer is picked up immediately.
+
+Cookies use a plain unsigned `CookieJar` (no signing or encryption features — the session value is
+the access token itself, and the `csrf_token` cookie is a double-submit value compared at the
+server, neither needs integrity protection against its own owner). Attributes via the cookie
+builder: `HttpOnly` on the session cookie only, `SameSite::Lax`, `Path=/`, `Max-Age` 90 days via
+the cookie crate's own `time` duration (`cookie::time::Duration::days(90)` — the `std::time`
+type does not compile there), no `Secure` flag on plain-HTTP loopback.
+
+Middleware is a `middleware::from_fn`/`from_fn_with_state` chain — Host allowlist, then Origin
+check on unsafe methods, then token authentication, then CSRF double-submit, then
+`Referrer-Policy` injection — applied with `Router::layer` after all routes and the fallback are
+registered, so every route including static assets passes through it (axum's documented ordering).
 
 Blocking `rusqlite` calls stay behind store interfaces and run on the Tokio blocking pool
 (`tokio::task::spawn_blocking` around store operations), matching the daemon's rule that blocking
-SQLite work never runs on async worker threads. No workspace crate exposes Tokio types as domain
-values.
+SQLite work never runs on async worker threads. The server opens one store connection per request
+through the store's existing open path (WAL mode, five-second busy timeout, standard pragmas — no
+connection-pool crate): SQLite WAL supports any number of readers alongside the daemon's writer,
+and connection-per-request keeps the short-lived CLI-like access model. No workspace crate exposes
+Tokio types as domain values.
+
+Server-side URL import reuses the CLI's `fetch_import_url` bounds verbatim: reqwest with rustls,
+`redirect(Policy::limited(10))`, a 30-second timeout, a streaming 16 MiB cap enforced on the
+accumulated stream (no Content-Length pre-check — it can lie), and userinfo rejection. The
+workspace reqwest features already cover this; no new dependency.
 
 `locron-server` exposes one composition entry (roughly `serve(store, paths, config)`) that builds
 the router and runs it; the CLI owns startup output and exit codes.
