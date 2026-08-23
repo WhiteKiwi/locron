@@ -377,6 +377,13 @@ Authorized by the frozen 2026-08-23 `docs/SPEC.md` amendment (Daemon Service Ins
   **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass; the four-target CI matrix passes after push; at the next real tag, live evidence shows `brew services start locron` starts the daemon and `brew upgrade` leaves the old daemon running until `brew services restart`.
   **Evidence:** locally, `cargo fmt --all --check` (no diffs), `cargo clippy --workspace --all-targets -- -D warnings` (clean), and `cargo test --workspace` (exit 0; 20 test binaries all `ok`, 0 failed/panicked — including the 60 `service.rs` unit tests, 11 `tests/service.rs` contract tests, 4 `tests/install_sh.rs` fixture tests, 9 `tests/self_update.rs` contract tests, and the real-macOS `tests/service_backends.rs` leg) all pass. The four-target CI matrix and live brew evidence at the next real tag are recorded as deferred in the Verify clause.
 
+## Linux service-backend compile backlog (2026-08-23)
+
+The four-target CI matrix has been red on every Linux leg since the daemon service commit: the launchd-only items in `crates/locron-cli/src/service.rs` compile on Linux as dead code (clippy `-D warnings`), the systemd module carries an unused `Path` import and a `map().unwrap_or_else()` lint, and `tests/service_backends.rs` formats `PathBuf`s with `Display` in its Linux-only systemd flow.
+
+- [ ] Gate the launchd-only items so Linux builds compile clean: `LABEL`, `LOG_DIR`, `LOG_FILE`, `escape_xml`, and `render_plist` under `#[cfg(any(target_os = "macos", test))]` (mirroring the existing `render_unit` pattern; the plist unit tests run on every platform), `PLIST_NAME` under `#[cfg(target_os = "macos")]`, the launchd-only `ServiceContext.uid` field under a documented targeted `allow(dead_code)`, the unused `Path` import and the `map().unwrap_or_else()` in the systemd module fixed, and the PathBuf `Display` uses in `tests/service_backends.rs` switched to `.display()`.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy -p locron-cli --all-targets -- -D warnings`, and `cargo test -p locron-cli` pass on macOS; the four-target CI matrix passes on push (run ID recorded as evidence).
+
 ## Workspace lint alignment backlog (2026-08-23)
 
 - [x] Bring `locron-core` and `locron-store` under `[lints] workspace = true` and clear every warning
@@ -405,6 +412,29 @@ Authorized by the frozen 2026-08-23 `docs/SPEC.md` amendment (Daemon Service Ins
   names, or state from the recording host (the script's `--state-dir` isolation and jq filters
   already prevent this — confirm visually).
 
+## Usage measurement backlog (2026-08-23)
+
+Maintainer tooling only — no product-behavior change, so the frozen `docs/SPEC.md` is not amended. Planned in `docs/IMPLEMENTATION.md` "Usage and installation measurement"; evidence in `docs/FINDINGS.md` §13.
+
+- [x] Amend planning documents before code: FINDINGS §13, IMPLEMENTATION section, and this checklist.
+  **Verify:** `rg -n "13\. Usage and Installation Measurement|Usage and installation measurement" docs/FINDINGS.md docs/IMPLEMENTATION.md` returns both sections, and no planning document marks an unresolved decision in them.
+  **Evidence:** both sections exist with no unresolved markers; implementation-day corrections (crates.io `/downloads` 90-day semantics, CI traffic-tolerance) were reconciled into both documents.
+- [x] Add `scripts/usage.sh` per the accepted design (POSIX `sh`, `curl` + `grep`/`sed`/`awk` only, optional `gh`, quoted heredocs, per-section failure degradation, `--json`).
+  **Verify:** `sh -n` passes; shellcheck reports no findings; a live run prints all sections — GitHub totals equal the independently computed sums, brew renders 0, crates.io renders `N/A (not published)`; `--json` parses with `jq` and matches the human numbers; with `gh` authenticated the traffic section prints, and the script still works without it.
+  **Evidence:** `sh -n`/`dash -n` and shellcheck 0.11.0 clean; live run exit 0 with totals matching an independent `jq` computation taken at the same moment (total 32 — v0.3.0 0 / v0.2.0 21 / v0.1.1 8 / v0.1.0 3; stars 1; brew 0/0/0; crates.io `N/A (not published)`; traffic 77/5 views, 187/39 clones); `--json` parses and matches the human numbers; without `gh` on PATH the traffic section degrades to the one-line note and exit stays 0; fixture mocks prove rate-limit, pagination, page-cap, published-crate, and JSON-escaping paths.
+- [x] Add the CI check step to the existing `installer` job in `.github/workflows/ci.yml` (shellcheck on `scripts/usage.sh` plus the live `--json` smoke).
+  **Verify:** the workflow parses as valid YAML; the `installer` job passes on `main` after push (run ID recorded as evidence).
+  **Evidence:** `yaml.safe_load` succeeds on the edited workflow; the `installer`-job step list includes "Shellcheck usage.sh" and "Usage snapshot smoke (live APIs)"; the smoke logic passes positive (traffic-only failure) and negative (rate-limited releases) local runs. The on-`main` run is deferred until push (run ID recorded here).
+- [x] Document the channel in `docs/RELEASE.md` as section 7 "Usage and Installation Measurement": what each number means, its limits (cumulative downloads, opt-out brew analytics, unpublished crates.io, 14-day traffic window), and how to run it.
+  **Verify:** the commands in the section execute as written on a maintainer machine; the section renders as §7 with a stable anchor.
+  **Evidence:** `docs/RELEASE.md` §7 exists with the `---` separator; both documented commands (`sh scripts/usage.sh` and `sh scripts/usage.sh --json`) execute on this machine exactly as written.
+
+Follow-ups (open, not implemented here):
+
+- [ ] A scheduled snapshot job for measurement history becomes a drop-in via `--json`; adopt it only when the daily commit noise is worth the history.
+- [ ] When locron is published to crates.io, the script's crates.io section switches automatically; record the first real numbers in this checklist.
+- [ ] The product-level `locron stats` command (local durable-run aggregation) needs its own SPEC amendment; tracked on the deferred product roadmap.
+
 ## Ordered deferred product roadmap
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;
@@ -428,6 +458,8 @@ none changes the exclusions in the current `docs/SPEC.md`.
 4. [ ] Define macOS App Store delivery after the desktop contract, including sandboxing,
    entitlements, background execution constraints, review requirements, update provenance, and the
    relationship to direct/package-manager installations.
+5. [ ] Define the local usage-statistics command (`locron stats`) aggregating durable run history
+   (requires its own reviewed SPEC).
 
 **Verify:** each phase supplies its own completion criteria, threat/compatibility review, automated
 tests, and delivery evidence in its future SPEC/TODO set before its checkbox can be completed.

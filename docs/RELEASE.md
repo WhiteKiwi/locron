@@ -153,3 +153,31 @@ The repository employs three automated GitHub Actions workflows:
 - **Build Isolation**: Binaries are built entirely in clean GitHub Actions runners using `--locked` Cargo dependencies.
 - **Supply Chain Integrity**: Checksums are computed in the release runner and published alongside binaries.
 - **Permissions**: Release workflow uses least-privilege GitHub tokens (`contents: write` for release creation, minimal repository dispatch permissions).
+
+---
+
+## 7. Usage and Installation Measurement
+
+`scripts/usage.sh` prints one snapshot of locron's public distribution-channel usage. It depends only on `curl` plus standard `grep`/`sed`/`awk` (`jq` is not required to run it), and the GitHub CLI (`gh`) is optional and enables only the traffic section. Run it from the repository root:
+
+```sh
+sh scripts/usage.sh
+```
+
+The snapshot covers:
+
+- **GitHub Releases** — per-release asset download totals and a grand total from the releases API. Counts are cumulative and reset when an asset is deleted and re-uploaded, so they are a floor rather than an exact ledger.
+- **Stars** — the repository's `stargazers_count`.
+- **Homebrew** — install counts for the `whitekiwi/tap/locron` formula over 30, 90, and 365 days. Analytics are anonymous and opt-out, so the counts understate real installs, and a formula with no recorded installs has no entry at all (rendered as 0).
+- **crates.io** — `N/A (not published)` while the crate is unpublished; once published, the sum of the `/api/v1/crates/locron/downloads` series (trailing 90 days).
+- **GitHub traffic** — 14-day views and clones (totals and uniques). This data is owner-only and appears only when `gh` is installed and authenticated (`gh auth login`); otherwise the script prints a one-line note on how to enable it.
+
+When the unauthenticated GitHub REST quota (60 requests/hour) is exhausted, the GitHub sections print the limit message with retry guidance (`GITHUB_TOKEN` or `gh auth login`) instead of raw API errors. A failing section is marked `FAILED` while the remaining sections still print; the exit status is 0 only when every section succeeded.
+
+For automation (e.g. a future scheduled snapshot job), the same snapshot as one flat JSON object:
+
+```sh
+sh scripts/usage.sh --json
+```
+
+Traffic keys are present in the JSON only when `gh` is authenticated; `crates_io` is `null` while the crate is unpublished; a failed section contributes a `<section>_error` string key instead of its numeric keys.

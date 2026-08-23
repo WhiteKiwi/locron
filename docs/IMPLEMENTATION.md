@@ -479,3 +479,34 @@ The release.yml formula template gains a `service` block (`run [opt_bin/"locron"
 - **Release artifact checks:** the formula template contains the `service` block and the release attaches the updated script; a built .deb contains the postinst guidance.
 - **Live evidence items:** `brew services start locron` starts the daemon, and `brew upgrade` leaves the old daemon running until `brew services restart` — recorded at the next release, like the self-update marker check.
 - **Platform matrix:** the existing four-target CI runs the new suites; Windows, 32-bit, and musl results remain informational.
+
+## Usage and installation measurement (maintainer tooling, 2026-08-23)
+
+This section plans maintainer-facing measurement of locron's public distribution channels. It changes no product behavior, so the frozen `docs/SPEC.md` is not amended. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §13.
+
+### Accepted: dependency-free snapshot script
+
+`scripts/usage.sh`, POSIX `sh`, depends only on `curl` and the optional `gh`, and prints one snapshot with these sections:
+
+1. **GitHub Releases** — per-release asset download totals and a grand total from `GET /repos/WhiteKiwi/locron/releases`, paginating with `per_page=100` and following `Link` header pages with a sane page cap. Counts are cumulative and reset on asset re-upload, so the output labels them accordingly.
+2. **Stars** — `stargazers_count` from the repository endpoint.
+3. **Homebrew** — `whitekiwi/tap/locron` install counts for 30, 90, and 365 days from formulae.brew.sh; a missing entry renders as 0; output notes the anonymous/opt-out undercount.
+4. **crates.io** — queries `/api/v1/crates/locron` with the descriptive User-Agent required by the data-access policy; prints `N/A (not published)` while unpublished and switches to the downloads endpoint automatically when the crate exists. The `/downloads` endpoint is a trailing-90-day series, so the published value is labeled as such; all-time totals live on the crate endpoint (recorded in `docs/FINDINGS.md` §13).
+5. **GitHub traffic** — views and clones (14-day totals and uniques) via `gh api`; printed only when `gh` is present and authenticated, otherwise a one-line note explains how to enable it.
+6. **Rate-limit awareness** — when the unauthenticated REST quota is exhausted, the GitHub sections print the limit message with retry guidance (`GITHUB_TOKEN` or `gh auth login`) instead of raw API errors.
+
+`--json` emits the same snapshot as one flat JSON object (traffic keys present only when authenticated) for future automation. A per-section failure marks that section and lets the remaining sections print; the exit code reflects whether any section failed. The script parses JSON with only portable `sh` tooling (`grep`/`sed`/`awk`) — `jq` must not be a runtime requirement. Every heredoc is quoted; the repository incident memory requires it.
+
+### Edge cases to handle explicitly
+
+- Unauthenticated rate limit exhausted: GitHub sections degrade with actionable guidance, and the brew/crates.io sections still print.
+- Tap formula with zero recorded installs: no analytics entry — render 0, never an error.
+- Release list longer than one page: follow the `Link` header with a sane page cap.
+- `gh` installed but unauthenticated or without owner access: traffic section omitted with a note.
+- Network failure mid-run: later sections still print; non-zero exit.
+
+### Verification additions
+
+- **Static checks:** `sh -n` and shellcheck clean; the script contains no bashisms; all heredocs quoted.
+- **CI smoke:** the existing `installer` job in `.github/workflows/ci.yml` gains a step that runs the script in `--json` mode against the live APIs (the authenticated `GITHUB_TOKEN` keeps the REST quota off the 60/hour limit) and asserts the JSON parses and each numeric field is a non-negative integer. The owner-only `/traffic/*` endpoints reject the Actions `GITHUB_TOKEN`, so the step additionally permits an exit confined to `traffic_error` while still failing on any other `*_error` key.
+- **Local live check:** a real run prints all sections with numbers matching independently computed `jq` totals for the same day; the brew section renders 0 and crates.io renders `N/A` until their first real values.
