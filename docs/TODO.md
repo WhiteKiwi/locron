@@ -581,13 +581,63 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   `map_or` rewrite for its newer `map(<f>).unwrap_or(<a>)` lint). Deviation recorded in
   `docs/dashboard/IMPLEMENTATION.md`: `referrer_policy` is the outermost layer so even
   middleware-short-circuited error responses carry the header.
-- [ ] Implement the `/api/v1` route families over the durable application commands with the
+- [x] Implement the `/api/v1` route families over the durable application commands with the
   `locron.api/v1` envelope, the CLI-category-to-HTTP-status mapping, dry-run parity, export
   download/import upload with acknowledgement rules, and blocking-pool store access.
   **Verify:** contract tests against a real server on an ephemeral loopback port and a temporary
   state directory cover token refusal, job CRUD mutating real SQLite, offline manual enqueue,
   export/import round trip, dry-run non-mutation, and the error mapping; redaction parity tests
   compare API payloads with CLI JSON output for the same fixtures.
+  **Evidence:** `crates/locron-server/src/api.rs` was rewritten as the complete `/api/v1` surface
+  (24 routes over the durable application commands, all handlers sharing `ApiError` and the
+  `locron.api/v1` envelope; every response carries `"schema"`): jobs CRUD
+  (create/list/show/update/enable/disable/remove with immutable-revision semantics and the CLI's
+  no-op 409 `durable_conflict`), schedule preview (GET per-job and POST schedule literal, RFC 3339
+  occurrences), manual run (`?wait&dry-run`; dry-run decisions `eligible`/`would_skip_overlap`/
+  `would_replace`/`eligible_subject_to_capacity`; live enqueue returns the durably queued run with
+  the `"daemon is not running; run remains durably queued"` warning when the daemon lock is free),
+  runs history/show/cancel/logs/why (paginated history with the 1000-run cap warning, the CLI's
+  three cancel outcome shapes, framed logs with base64 payloads and 404 `output not found`),
+  settings get/put/delete (full CLI config surface including the `environment.NAME` grammar,
+  reserved-name refusal, and `created`/`replaced`/`removed`/`unchanged` actions), export with
+  `Content-Disposition: attachment` and the both-flags plaintext rule, import (document or
+  `{"url": …}` body with the documented server-side fetch bounds: rustls TLS verification,
+  `Policy::limited(10)` redirects, 30-second timeout, streaming 16 MiB cap, userinfo rejection —
+  fetch failures map to 502 `state_error`), prune (30-day age cut plus retained-byte cap,
+  symlink/non-file refusal), and diagnostics (defaults when no database exists, executable
+  resolution over the `:`-split execution path, integrity checks, daemon/wake-socket facts).
+  `crates/locron-server/src/transfer.rs` implements the `locron.export/v1` document
+  (redacted/plaintext `values_mode`, `omitted_values` dotted paths, selection union with strict
+  no-match validation) and import planning in the CLI's shapes (create/update/no_op actions,
+  settings change detection, dry-run plans with `<non-durable:{id}>` destination ids); the CLI
+  parity rule that a redacted export containing omitted values cannot be imported faithfully is
+  enforced verbatim. Store access runs through `tokio::task::spawn_blocking` helpers
+  (`with_store`/`with_dry_store`/`with_store_for`), and `locron-store` gained `Store::count_runs`
+  for pagination totals. Query flags use the route-table spellings (kebab-case: `?dry-run`,
+  `?include-values`, `?acknowledge-plaintext`, `?accept-plaintext-values`; a body `dry_run`
+  accepts the same string-flag forms, recorded in `docs/dashboard/IMPLEMENTATION.md` §5); the
+  snake_case spelling was caught and corrected by the contract tests. The contract suite
+  (`crates/locron-server/tests/contract.rs`, 13 tests) runs a real server — manually spawned
+  `axum::serve` on a port-0 loopback listener because `serve()` awaits Ctrl-C — against a temp
+  state directory with the token file written directly, and covers every Verify item: token
+  refusal (absent and wrong token), job CRUD on real SQLite (create/list/show/update with
+  revision bumps/no-op 409/enable/disable/preview/why/remove with 404 after), offline manual
+  enqueue with the daemon warning, cancel shapes including the terminal-conflict 409, dry-run
+  non-mutation across create/update/run/prune/settings/import (with no database and against a
+  live one), export/import round trips (redacted refusal on import, plaintext with and without
+  acknowledgement, settings applied and redacted on read, selectors `?jobs=`/`?tag=` with strict
+  no-match 400s), URL import (local fixture, `{"url":…, "extra":…}` rejection, scheme and
+  userinfo rejection, 16 MiB cap, redirect loop capped at 502, connection-refused 502), the
+  error-category matrix (404 `not_found` jobs/runs, 409 `durable_conflict` no-op update and live
+  settings conflicts, 400 `invalid_request` validation, 500 `state_error` for invalid identities),
+  settings surface, history pagination with the cap warning, logs from a manually written
+  `FrameWriter` artifact, diagnostics facts, and redaction parity (no plaintext secret material
+  through any surface; `<redacted>` markers in `definition_json`/`snapshot_json`; settings
+  environment as `{"configured": true, "value_redacted": true}`). `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass
+  on Rust 1.94.0 and latest stable (23 test binaries — the contract suite is the new one — zero
+  failures; the stable clippy leg again required its newer `map(<f>).unwrap_or(<a>)` lint rewrite
+  in `transfer.rs`, done as `map_or`/`is_ok_and` with unchanged behavior).
 - [ ] Implement the SSE run stream (`GET /api/v1/runs/{id}/stream`) over the existing framed-output
   reader with `frame`/`state`/`end` JSON events, session-cookie-only authentication, and keepalive.
   **Verify:** SSE tests receive ordered `frame`/`state` events for a live fixture run and exactly

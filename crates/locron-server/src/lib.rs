@@ -10,18 +10,19 @@
 //! outside the store boundary. Its composition surface is [`Config`], [`bind`], and [`serve`];
 //! the CLI owns startup output, token display, and exit codes.
 
-pub mod api;
+mod api;
 pub mod assets;
 pub mod envelope;
 pub mod middleware;
 pub mod token;
+mod transfer;
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use locron_store::StatePaths;
 use tokio::net::TcpListener;
 
@@ -183,6 +184,31 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/session",
             post(api::session_create).get(api::session_status),
         )
+        .route("/api/v1/jobs", get(api::jobs_list).post(api::jobs_create))
+        .route(
+            "/api/v1/jobs/{id}",
+            get(api::jobs_show).put(api::jobs_update).delete(api::jobs_remove),
+        )
+        .route("/api/v1/jobs/{id}/enable", post(api::jobs_enable))
+        .route("/api/v1/jobs/{id}/disable", post(api::jobs_disable))
+        .route("/api/v1/jobs/{id}/run", post(api::jobs_run))
+        .route("/api/v1/jobs/{id}/preview", get(api::jobs_preview))
+        .route("/api/v1/jobs/{id}/why", get(api::jobs_why))
+        .route("/api/v1/schedule/preview", post(api::schedule_preview))
+        .route("/api/v1/runs", get(api::runs_history))
+        .route("/api/v1/runs/{id}", get(api::runs_show))
+        .route("/api/v1/runs/{id}/cancel", post(api::runs_cancel))
+        .route("/api/v1/runs/{id}/logs", get(api::runs_logs))
+        .route("/api/v1/runs/{id}/why", get(api::runs_why))
+        .route("/api/v1/settings", get(api::settings_get))
+        .route(
+            "/api/v1/settings/{key}",
+            put(api::settings_put).delete(api::settings_delete),
+        )
+        .route("/api/v1/export", get(api::export_document))
+        .route("/api/v1/import", post(api::import_document))
+        .route("/api/v1/prune", post(api::prune))
+        .route("/api/v1/diagnostics", get(api::diagnostics))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::csrf,

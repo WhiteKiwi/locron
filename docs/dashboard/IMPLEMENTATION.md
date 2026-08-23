@@ -213,7 +213,11 @@ dashboard.
   Not mirrored: `daemon run` (process supervision), `service` (registration; the dashboard family
   has its own), `self-update` (binary replacement) — their facts surface through diagnostics, per
   `SPEC.md` §9. Request bodies mirror the CLI's machine-readable field semantics; `dry_run` is
-  supported wherever the CLI supports it. URL import uses the same server-side fetch bounds as the
+  supported wherever the CLI supports it (in query strings the flag parameters are kebab-case —
+  `?dry-run`, `?include-values`, `?acknowledge-plaintext`, `?accept-plaintext-values` — matching
+  the route table; where `dry_run` rides in a request body it accepts the same string-flag forms
+  as query parameters: `"true"`/`"1"`/`""` for true, `"false"`/`"0"` for false, absent for
+  false). URL import uses the same server-side fetch bounds as the
   CLI's URL import: mandatory TLS verification, 16 MiB streaming cap, 10-redirect cap, 30-second
   timeout, and userinfo rejection.
 - Envelope: the versioned `locron.api/v1` envelope — success

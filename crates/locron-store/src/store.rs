@@ -1282,6 +1282,22 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Returns the number of runs, optionally filtered to the job identified
+    /// by name or id. An unknown job reference returns
+    /// [`StoreError::NotFound`], matching [`Store::history`].
+    pub fn count_runs(&self, job: Option<&str>) -> StoreResult<i64> {
+        let job_id = match job {
+            Some(value) => Some(self.job(value)?.id),
+            None => None,
+        };
+        let conn = self.conn()?;
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM runs WHERE (?1 IS NULL OR job_id=?1)",
+            [job_id],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Cancels the run without acknowledging an unconfirmed termination. See
     /// [`Store::cancel_with_acknowledgement`].
     pub fn cancel(&self, id: &str, now_us: i64) -> StoreResult<CancelOutcome> {
@@ -3572,6 +3588,26 @@ mod tests {
             .unwrap();
         assert_eq!(duplicate.duplicates, 1);
         assert_eq!(store.history(Some("once"), 10).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn count_runs_matches_history_resolution() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "counted");
+        insert_terminal_runs(&store, &job, 0x1000, 1, &[10, 20, 30]);
+        assert_eq!(store.count_runs(None).unwrap(), 3);
+        assert_eq!(store.count_runs(Some("counted")).unwrap(), 3);
+        assert_eq!(store.count_runs(Some(&job)).unwrap(), 3);
+        let other = Uuid::now_v7().to_string();
+        create(&store, &other, "other");
+        insert_terminal_runs(&store, &other, 0x2000, 4, &[40]);
+        assert_eq!(store.count_runs(None).unwrap(), 4);
+        assert_eq!(store.count_runs(Some("counted")).unwrap(), 3);
+        assert!(matches!(
+            store.count_runs(Some("missing")),
+            Err(StoreError::NotFound(_))
+        ));
     }
 
     #[test]

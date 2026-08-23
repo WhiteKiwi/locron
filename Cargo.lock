@@ -1210,6 +1210,7 @@ dependencies = [
  "axum-extra",
  "base64 0.23.1",
  "cookie",
+ "futures-util",
  "getrandom 0.4.3",
  "locron-core",
  "locron-store",
