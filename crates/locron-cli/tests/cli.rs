@@ -1,6 +1,6 @@
 //! End-to-end command contract tests.
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -1877,4 +1877,881 @@ fn duplicate_add_and_rename_are_stable_durable_conflicts() {
         .unwrap();
     let alpha: serde_json::Value = serde_json::from_slice(&alpha.stdout).unwrap();
     assert_eq!(alpha["data"]["current_revision"], 1);
+}
+
+// --- Export selection and URL import (2026-08-24) ---
+
+#[test]
+fn export_selectors_union_dedup_and_no_match_rejected() {
+    let state = tempfile::tempdir().unwrap();
+    for (name, tag) in [
+        ("alpha", "nightly"),
+        ("beta", "nightly"),
+        ("gamma", "backup"),
+    ] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args([
+                    "add",
+                    name,
+                    "--every",
+                    "1h",
+                    "--tag",
+                    tag,
+                    "--",
+                    "/usr/bin/true",
+                ])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    // Name/tag union, deduplicated by job identity, store order preserved.
+    let output = locron(&state)
+        .args(["export", "--jobs", "alpha,gamma", "--tag", "nightly"])
+        .output()
+        .unwrap();
+    assert_cmd::assert::Assert::new(output)
+        .success()
+        .stdout(predicate::str::contains("\"schema\": \"locron.export/v1\""));
+    let export = locron(&state)
+        .args(["export", "--jobs", "alpha,gamma", "--tag", "nightly"])
+        .output()
+        .unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&export.stdout).unwrap();
+    let names: Vec<&str> = document["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|job| job["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["alpha", "beta", "gamma"]);
+
+    // JSON mode honors selectors inside the machine envelope.
+    let output = locron(&state)
+        .args(["--json", "export", "--jobs", "alpha,beta"])
+        .output()
+        .unwrap();
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["ok"], true);
+    let names: Vec<&str> = envelope["data"]["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|job| job["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["alpha", "beta"]);
+
+    // No-match is a validation error before any document output (human mode:
+    // nothing on stdout; the error goes to stderr).
+    let output = locron(&state)
+        .args(["export", "--jobs", "ghost"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "no-match must not produce document output"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("matched no job"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // JSON mode reports the same validation failure in the machine envelope.
+    let output = locron(&state)
+        .args(["--json", "export", "--jobs", "ghost,alpha"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["ok"], false);
+    assert_eq!(envelope["error"]["code"], "invalid_request");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("--jobs ghost"),
+        "unexpected: {envelope}"
+    );
+}
+
+#[test]
+fn export_selectors_redaction_parity_with_full_export() {
+    let state = tempfile::tempdir().unwrap();
+    for (name, secret) in [("secret", "hunter2"), ("plain", "")] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args([
+                    "add",
+                    name,
+                    "--every",
+                    "1h",
+                    "--env",
+                    "TOKEN=value",
+                    "--",
+                    "/usr/bin/true",
+                ])
+                .output()
+                .unwrap(),
+        )
+        .success();
+        let _ = secret;
+    }
+    let full = locron(&state).arg("export").output().unwrap();
+    let full: serde_json::Value = serde_json::from_slice(&full.stdout).unwrap();
+    let selected = locron(&state)
+        .args(["export", "--jobs", "secret"])
+        .output()
+        .unwrap();
+    let selected: serde_json::Value = serde_json::from_slice(&selected.stdout).unwrap();
+    assert_eq!(selected["jobs"].as_array().unwrap().len(), 1);
+    let full_secret = full["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|job| job["name"] == "secret")
+        .unwrap();
+    // The selected export's job entry is byte-identical to the full export's
+    // entry for the same job, redaction and omission accounting included.
+    assert_eq!(selected["jobs"][0], *full_secret);
+    assert_eq!(selected["settings"], full["settings"]);
+    assert_eq!(selected["omitted_values"], full["omitted_values"]);
+    let names: Vec<&str> = full["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|job| job["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["plain", "secret"]);
+}
+
+#[test]
+fn export_jobs_round_trip_import_reproduces_exactly_the_selected_jobs() {
+    let source = tempfile::tempdir().unwrap();
+    for (name, schedule) in [("alpha", "1h"), ("beta", "2h"), ("gamma", "30m")] {
+        assert_cmd::assert::Assert::new(
+            locron(&source)
+                .args(["add", name, "--every", schedule, "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    let export = locron(&source)
+        .args(["export", "--jobs", "alpha,beta"])
+        .output()
+        .unwrap();
+    assert_cmd::assert::Assert::new(export).success();
+    let export = locron(&source)
+        .args(["export", "--jobs", "alpha,beta"])
+        .output()
+        .unwrap();
+    let path = source.path().join("subset.json");
+    std::fs::write(&path, &export.stdout).unwrap();
+
+    let destination = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&path)
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("\"created\": 2"));
+    for name in ["alpha", "beta"] {
+        let source_show = locron(&source)
+            .args(["--json", "show", name])
+            .output()
+            .unwrap();
+        let destination_show = locron(&destination)
+            .args(["--json", "show", name])
+            .output()
+            .unwrap();
+        let source_show: serde_json::Value = serde_json::from_slice(&source_show.stdout).unwrap();
+        let destination_show: serde_json::Value =
+            serde_json::from_slice(&destination_show.stdout).unwrap();
+        assert_eq!(
+            destination_show["data"]["definition_json"], source_show["data"]["definition_json"],
+            "{name} definition must survive the round trip"
+        );
+        assert_eq!(
+            destination_show["data"]["enabled"],
+            source_show["data"]["enabled"]
+        );
+    }
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .args(["show", "gamma"])
+            .output()
+            .unwrap(),
+    )
+    .failure()
+    .code(3);
+}
+
+#[test]
+fn export_picker_hook_keeps_stdout_for_the_document_and_stderr_for_the_picker() {
+    let state = tempfile::tempdir().unwrap();
+    for name in ["alpha", "beta", "gamma"] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", name, "--every", "1h", "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    // The hook drives the interactive branch without a PTY; stdout carries
+    // only the export document while the picker prompt renders on stderr.
+    let output = locron(&state)
+        .arg("export")
+        .env("LOCRON_TEST_EXPORT_PICKER", "alpha,gamma")
+        .env_remove("CI")
+        .output()
+        .unwrap();
+    assert_cmd::assert::Assert::new(output)
+        .success()
+        .stderr(predicate::str::contains("Select jobs to export"))
+        .stderr(predicate::str::contains("picked 2 of 3 jobs"));
+    let export = locron(&state)
+        .arg("export")
+        .env("LOCRON_TEST_EXPORT_PICKER", "alpha,gamma")
+        .env_remove("CI")
+        .output()
+        .unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&export.stdout).unwrap();
+    let names: Vec<&str> = document["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|job| job["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["alpha", "gamma"]);
+
+    // JSON mode never instantiates the picker: no stderr, full export.
+    let output = locron(&state)
+        .args(["--json", "export"])
+        .env("LOCRON_TEST_EXPORT_PICKER", "alpha,gamma")
+        .env_remove("CI")
+        .output()
+        .unwrap();
+    assert!(
+        output.stderr.is_empty(),
+        "JSON mode must not render the picker: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["data"]["jobs"].as_array().unwrap().len(), 3);
+
+    // CI wins over the hook: no picker, full export.
+    let output = locron(&state)
+        .arg("export")
+        .env("LOCRON_TEST_EXPORT_PICKER", "alpha,gamma")
+        .env("CI", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.stderr.is_empty(),
+        "CI must suppress the picker: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["jobs"].as_array().unwrap().len(), 3);
+
+    // An empty scripted selection exports settings only.
+    let output = locron(&state)
+        .arg("export")
+        .env("LOCRON_TEST_EXPORT_PICKER", "")
+        .env_remove("CI")
+        .output()
+        .unwrap();
+    assert_cmd::assert::Assert::new(output)
+        .success()
+        .stderr(predicate::str::contains("picked 0 of 3 jobs"));
+    let export = locron(&state)
+        .arg("export")
+        .env("LOCRON_TEST_EXPORT_PICKER", "")
+        .env_remove("CI")
+        .output()
+        .unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&export.stdout).unwrap();
+    assert!(document["jobs"].as_array().unwrap().is_empty());
+
+    // A scripted selection naming no live job is a validation error.
+    let output = locron(&state)
+        .arg("export")
+        .env("LOCRON_TEST_EXPORT_PICKER", "ghost")
+        .env_remove("CI")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("matched no job"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+// --- URL import fixture ---
+
+use std::fmt::Write as _;
+use std::io::Write as IoWrite;
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+type FixtureResponse = (u16, Vec<(String, String)>, Vec<u8>);
+
+/// A tiny one-request-per-connection HTTP fixture for URL import tests.
+struct ImportFixture {
+    address: SocketAddr,
+    requests: Arc<Mutex<Vec<String>>>,
+    stop: Arc<AtomicBool>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl ImportFixture {
+    fn start<F>(handler: F) -> Self
+    where
+        F: Fn(&str) -> FixtureResponse + Send + Sync + 'static,
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let handler = Arc::new(handler);
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
+        let handle = thread::spawn({
+            let requests = Arc::clone(&requests);
+            let stop = Arc::clone(&stop);
+            let handler = Arc::clone(&handler);
+            move || {
+                let _ = ready_tx.send(());
+                while !stop.load(Ordering::Relaxed) {
+                    match listener.accept() {
+                        Ok((mut stream, _)) => {
+                            // A panicking connection must never kill the
+                            // listener: keep accepting subsequent requests.
+                            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                serve_fixture(handler.as_ref(), &requests, &mut stream);
+                            }));
+                        }
+                        // Transient accept errors must not close the listener.
+                        Err(_) => thread::sleep(Duration::from_millis(10)),
+                    }
+                }
+            }
+        });
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("fixture server must start accepting within 5s");
+        Self {
+            address,
+            requests,
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("http://127.0.0.1:{}{}", self.address.port(), path)
+    }
+
+    fn requests(&self) -> Vec<String> {
+        self.requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl Drop for ImportFixture {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+fn serve_fixture(
+    handler: &(dyn Fn(&str) -> FixtureResponse + Send + Sync),
+    requests: &Mutex<Vec<String>>,
+    stream: &mut TcpStream,
+) {
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut buffer = [0_u8; 4096];
+    let mut used = 0;
+    let header_end = loop {
+        if used >= buffer.len() || Instant::now() >= deadline {
+            break None;
+        }
+        match stream.read(&mut buffer[used..]) {
+            Ok(0) => break None,
+            Ok(count) => {
+                used += count;
+                if buffer[..used]
+                    .windows(4)
+                    .any(|window| window == b"\r\n\r\n")
+                {
+                    break Some(used);
+                }
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => break None,
+        }
+    };
+    let Some(used) = header_end else { return };
+    let head = String::from_utf8_lossy(&buffer[..used]);
+    let path = head
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .unwrap_or("/")
+        .to_owned();
+    requests
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(path.clone());
+    let (status, headers, body) = handler(&path);
+    let reason = match status {
+        200 => "OK",
+        302 => "Found",
+        404 => "Not Found",
+        500 => "Internal Server Error",
+        _ => "Unknown",
+    };
+    let mut response = format!("HTTP/1.1 {status} {reason}\r\n");
+    for (name, value) in &headers {
+        let _ = write!(response, "{name}: {value}\r\n");
+    }
+    let _ = write!(
+        response,
+        "Content-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    write_all_polling(stream, response.as_bytes());
+    write_all_polling(stream, &body);
+}
+
+/// Writes `bytes`, retrying WouldBlock/TimedOut until the deadline. The
+/// accepted stream inherits O_NONBLOCK from the listener, so a large body
+/// must be written in chunks rather than one failing `write_all`.
+fn write_all_polling(stream: &mut TcpStream, mut bytes: &[u8]) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !bytes.is_empty() {
+        match stream.write(bytes) {
+            Ok(0) => break,
+            Ok(count) => bytes = &bytes[count..],
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                if Instant::now() >= deadline {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+/// Serves one static response body at every path.
+fn static_handler(status: u16, body: Vec<u8>) -> impl Fn(&str) -> FixtureResponse + Send + Sync {
+    move |_| (status, Vec::new(), body.clone())
+}
+
+fn export_document_bytes(state: &tempfile::TempDir) -> Vec<u8> {
+    locron(state).arg("export").output().unwrap().stdout
+}
+
+#[test]
+fn import_url_matches_file_import_byte_for_byte() {
+    let source = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&source)
+            .args([
+                "add",
+                "alpha",
+                "--every",
+                "1h",
+                "--description",
+                "from-url",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let document = export_document_bytes(&source);
+    let fixture = ImportFixture::start(static_handler(200, document.clone()));
+
+    let from_url = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&from_url)
+            .arg("import")
+            .arg(fixture.url("/doc.json"))
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("\"created\": 1"));
+
+    let from_file = tempfile::tempdir().unwrap();
+    let path = source.path().join("doc.json");
+    std::fs::write(&path, &document).unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&from_file)
+            .arg("import")
+            .arg(&path)
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("\"created\": 1"));
+
+    // Both destinations hold the identical job definition; only the newly
+    // allocated destination identity may differ.
+    for destination in [&from_url, &from_file] {
+        let show = locron(destination)
+            .args(["--json", "show", "alpha"])
+            .output()
+            .unwrap();
+        let show: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+        assert_eq!(show["data"]["description"], "from-url");
+        assert_eq!(
+            show["data"]["definition_json"],
+            show["data"]["definition_json"]
+        );
+    }
+    let url_show = locron(&from_url)
+        .args(["--json", "show", "alpha"])
+        .output()
+        .unwrap();
+    let file_show = locron(&from_file)
+        .args(["--json", "show", "alpha"])
+        .output()
+        .unwrap();
+    let url_show: serde_json::Value = serde_json::from_slice(&url_show.stdout).unwrap();
+    let file_show: serde_json::Value = serde_json::from_slice(&file_show.stdout).unwrap();
+    assert_eq!(
+        url_show["data"]["definition_json"],
+        file_show["data"]["definition_json"]
+    );
+}
+
+#[test]
+fn import_url_dry_run_does_not_mutate() {
+    let source = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&source)
+            .args(["add", "alpha", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let fixture = ImportFixture::start(static_handler(200, export_document_bytes(&source)));
+    let destination = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .args(["import", &fixture.url("/doc.json"), "--dry-run"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("<non-durable").not());
+    assert!(!destination.path().join("state.db").exists());
+    assert_eq!(fixture.requests(), ["/doc.json"]);
+}
+
+#[test]
+fn import_url_rejects_redacted_plaintext_and_malformed_bodies() {
+    let source = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&source)
+            .args([
+                "add",
+                "secret",
+                "--every",
+                "1h",
+                "--env",
+                "TOKEN=value",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+
+    // A redacted document with omissions is rejected exactly like a file.
+    let redacted = ImportFixture::start(static_handler(200, export_document_bytes(&source)));
+    let destination = tempfile::tempdir().unwrap();
+    let output = locron(&destination)
+        .arg("import")
+        .arg(redacted.url("/redacted.json"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("cannot be imported faithfully"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!destination.path().join("state.db").exists());
+
+    // A plaintext document still requires the acknowledgement flag.
+    let plaintext_document = locron(&source)
+        .args(["export", "--include-values", "--acknowledge-plaintext"])
+        .output()
+        .unwrap()
+        .stdout;
+    let plaintext = ImportFixture::start(static_handler(200, plaintext_document));
+    let output = locron(&destination)
+        .arg("import")
+        .arg(plaintext.url("/plaintext.json"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("--accept-plaintext-values"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!destination.path().join("state.db").exists());
+
+    // Malformed bodies are document validation failures, not fetch failures.
+    let malformed = ImportFixture::start(static_handler(200, b"not json".to_vec()));
+    let output = locron(&destination)
+        .arg("import")
+        .arg(malformed.url("/bad.json"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("invalid export document"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!destination.path().join("state.db").exists());
+}
+
+#[test]
+fn import_url_oversized_body_is_a_fetch_failure() {
+    let oversized = vec![b'x'; 16 * 1024 * 1024 + 1];
+    let fixture = ImportFixture::start(static_handler(200, oversized));
+    let destination = tempfile::tempdir().unwrap();
+    let output = locron(&destination)
+        .arg("import")
+        .arg(fixture.url("/huge.json"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("exceeds the 16777216-byte limit"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!destination.path().join("state.db").exists());
+}
+
+#[test]
+fn import_url_redirect_chain_succeeds_and_redirect_loop_fails() {
+    let source = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&source)
+            .args(["add", "alpha", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let document = export_document_bytes(&source);
+    let fixture = ImportFixture::start(move |path| match path {
+        "/start.json" => (
+            302,
+            vec![("Location".into(), "/mid.json".into())],
+            Vec::new(),
+        ),
+        "/mid.json" => (
+            302,
+            vec![("Location".into(), "/end.json".into())],
+            Vec::new(),
+        ),
+        "/end.json" => (200, Vec::new(), document.clone()),
+        "/loop.json" => (
+            302,
+            vec![("Location".into(), "/loop.json".into())],
+            Vec::new(),
+        ),
+        _ => (404, Vec::new(), Vec::new()),
+    });
+    let destination = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(fixture.url("/start.json"))
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("\"created\": 1"));
+    assert_eq!(
+        fixture.requests(),
+        ["/start.json", "/mid.json", "/end.json"],
+        "redirects must be followed in order"
+    );
+
+    let output = locron(&destination)
+        .arg("import")
+        .arg(fixture.url("/loop.json"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("redirected more than 10"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        fixture
+            .requests()
+            .iter()
+            .filter(|path| path.as_str() == "/loop.json")
+            .count()
+            > 10,
+        "redirect loop must actually be followed until the cap"
+    );
+}
+
+#[test]
+fn import_url_http_errors_map_to_category_5() {
+    let fixture = ImportFixture::start(|path| match path {
+        "/missing.json" => (404, Vec::new(), b"not found".to_vec()),
+        "/broken.json" => (500, Vec::new(), b"boom".to_vec()),
+        _ => (200, Vec::new(), b"{}".to_vec()),
+    });
+    for (path, status) in [("/missing.json", "HTTP 404"), ("/broken.json", "HTTP 500")] {
+        let destination = tempfile::tempdir().unwrap();
+        let output = locron(&destination)
+            .arg("import")
+            .arg(fixture.url(path))
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(5),
+            "{path} must map to exit category 5"
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(status),
+            "unexpected stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!destination.path().join("state.db").exists());
+    }
+}
+
+#[test]
+fn import_url_userinfo_and_unsupported_scheme_rejected_without_requests() {
+    let fixture = ImportFixture::start(static_handler(200, b"{}".to_vec()));
+    let destination = tempfile::tempdir().unwrap();
+
+    // Userinfo is rejected at parse time as a validation error, before any
+    // request is attempted.
+    let userinfo_url = fixture
+        .url("/doc.json")
+        .replacen("http://", "http://user:pass@", 1);
+    let output = locron(&destination)
+        .arg("import")
+        .arg(&userinfo_url)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("userinfo"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // A non-HTTP scheme is a fetch-class failure.
+    let output = locron(&destination)
+        .arg("import")
+        .arg("ftp://example.test/doc.json")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("scheme"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        fixture.requests().is_empty(),
+        "rejected URLs must never reach the network: {:?}",
+        fixture.requests()
+    );
+}
+
+#[test]
+fn import_url_rolls_back_on_late_destination_conflict() {
+    let state = tempfile::tempdir().unwrap();
+    for name in ["alpha", "beta"] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", name, "--every", "1h", "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    let export = locron(&state).arg("export").output().unwrap();
+    let mut document: serde_json::Value = serde_json::from_slice(&export.stdout).unwrap();
+    let jobs = document["jobs"].as_array_mut().unwrap();
+    let mut alpha = jobs
+        .iter()
+        .find(|job| job["name"] == "alpha")
+        .unwrap()
+        .clone();
+    alpha["name"] = serde_json::Value::String("beta".into());
+    *jobs = vec![alpha];
+    let fixture = ImportFixture::start(static_handler(200, serde_json::to_vec(&document).unwrap()));
+    let output = locron(&state)
+        .arg("import")
+        .arg(fixture.url("/ambiguous.json"))
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("resolve to different destination jobs"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for name in ["alpha", "beta"] {
+        let show = locron(&state)
+            .args(["--json", "show", name])
+            .output()
+            .unwrap();
+        let show: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+        assert_eq!(
+            show["data"]["current_revision"], 1,
+            "{name} must not be mutated"
+        );
+    }
 }

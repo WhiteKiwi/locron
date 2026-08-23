@@ -8,11 +8,15 @@ mod service;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt::Write as _;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use futures_util::StreamExt;
+use url::Url;
 
 use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
@@ -174,7 +178,15 @@ Navigation:
 const EXPORT_HELP: &str = "\
 Examples:
   locron export
+  locron export --jobs backup,heartbeat
+  locron export --tag nightly
   locron export --include-values --acknowledge-plaintext
+
+In an interactive terminal, bare 'locron export' shows a multi-select of every
+job (all initially selected) on standard error; with a piped or redirected
+standard output, in JSON mode, or with '--jobs'/'--tag', it exports without
+prompting. Selectors are exact-name/exact-tag unions; a selector matching no
+job is rejected before any output.
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -182,6 +194,11 @@ const IMPORT_HELP: &str = "\
 Examples:
   locron import backup.json --dry-run
   locron import backup.json --accept-plaintext-values
+  locron import https://example.test/backup.json --dry-run
+
+Imports a locron.export/v1 document from a local path or an absolute HTTP(S)
+URL. URL imports carry the same trust boundary as installing a script from
+that URL; review first-time imports with --dry-run.
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -405,6 +422,12 @@ enum Command {
     },
     #[command(about = "Export settings and job definitions", after_help = EXPORT_HELP)]
     Export {
+        /// Export exactly these job names (comma-separated; union with --tag)
+        #[arg(long, value_name = "NAME[,NAME...]")]
+        jobs: Option<String>,
+        /// Export exactly these tags (comma-separated; union with --jobs)
+        #[arg(long, value_name = "TAG[,TAG...]")]
+        tag: Option<String>,
         /// Include inline environment values, headers, and bodies in plaintext
         #[arg(long)]
         include_values: bool,
@@ -417,7 +440,7 @@ enum Command {
     },
     #[command(about = "Import settings and job definitions", after_help = IMPORT_HELP)]
     Import {
-        /// locron.export/v1 document to import
+        /// locron.export/v1 document to import (local path or http(s) URL)
         path: PathBuf,
         /// Confirm the document's plaintext values may be imported
         #[arg(long)]
@@ -976,11 +999,15 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         Command::Why { name, run } => why(&paths, name, run, format),
         Command::Config { command } => config(&paths, command, format),
         Command::Export {
+            jobs,
+            tag,
             include_values,
             acknowledge_plaintext,
             include_history,
         } => export(
             &paths,
+            jobs.as_deref(),
+            tag.as_deref(),
             include_values,
             acknowledge_plaintext,
             include_history,
@@ -990,7 +1017,7 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
             path,
             accept_plaintext_values,
             dry_run,
-        } => import(&paths, &path, accept_plaintext_values, dry_run, format),
+        } => import(&paths, &path, accept_plaintext_values, dry_run, format).await,
         Command::Prune { dry_run } => prune(&paths, dry_run, format),
         Command::Doctor => doctor(&paths, format),
         Command::Daemon {
@@ -2127,6 +2154,8 @@ fn validate_config_value(key: &str, value: &str) -> Result<()> {
 }
 fn export(
     paths: &StatePaths,
+    jobs: Option<&str>,
+    tags: Option<&str>,
     include_values: bool,
     acknowledge_plaintext: bool,
     include_history: bool,
@@ -2147,9 +2176,23 @@ fn export(
     } else {
         ValuesMode::Redacted
     };
+    // Interactivity is decided once, before any output: three terminals,
+    // `CI` unset, human format, and no selector.
+    let selectors = ExportSelectors::parse(jobs, tags);
+    let interactive = should_show_picker(
+        export_tty_state(),
+        std::env::var_os("CI").is_some(),
+        format,
+        !selectors.is_empty(),
+    );
     let store = open(paths)?;
-    let jobs = store
-        .list_jobs(true)?
+    let selected = select_export_jobs(
+        store.list_jobs(true)?,
+        &selectors,
+        interactive,
+        picker_for_export().as_ref(),
+    )?;
+    let jobs = selected
         .into_iter()
         .map(|job| export_job(job, values_mode))
         .collect::<Result<Vec<_>>>()?;
@@ -2178,14 +2221,22 @@ fn export(
     }
     Ok(())
 }
-fn import(
+async fn import(
     paths: &StatePaths,
     path: &Path,
     accept: bool,
     dry_run: bool,
     format: Format,
 ) -> Result<()> {
-    let document = parse_import_document(path, accept)?;
+    let document = match import_source(path)? {
+        ImportSource::Path(source) => parse_import_document(&source, accept)?,
+        ImportSource::Url(url) => {
+            let bytes = fetch_import_url(&url)
+                .await
+                .with_context(|| format!("could not fetch import URL {url}"))?;
+            parse_import_bytes(&bytes, accept)?
+        }
+    };
     let now = now_us();
     let store = if dry_run {
         paths
@@ -2248,6 +2299,371 @@ fn import(
     Ok(())
 }
 
+/// The export selection interface: renders a multi-select on stderr and
+/// returns the IDs of the chosen jobs. Standard output is reserved for the
+/// export document in every mode, so the picker must never write to it.
+trait JobPicker {
+    fn pick(&self, jobs: &[JobRecord]) -> Result<Vec<String>>;
+}
+
+/// Real dialoguer `MultiSelect` picker with the term target on stderr, every
+/// item initially selected, and Enter confirming the selection.
+struct DialoguerPicker;
+
+impl JobPicker for DialoguerPicker {
+    fn pick(&self, jobs: &[JobRecord]) -> Result<Vec<String>> {
+        let items: Vec<String> = jobs.iter().map(picker_item_text).collect();
+        let defaults = vec![true; jobs.len()];
+        let chosen = dialoguer::MultiSelect::new()
+            .with_prompt("Select jobs to export")
+            .items(&items)
+            .defaults(&defaults)
+            .interact()
+            .context("export selection failed")?;
+        Ok(chosen
+            .into_iter()
+            .map(|index| jobs[index].id.clone())
+            .collect())
+    }
+}
+
+/// One picker item: the job name plus a human schedule summary.
+fn picker_item_text(job: &JobRecord) -> String {
+    let summary = serde_json::from_str::<JobDefinition>(&job.definition_json).map_or_else(
+        |_| "unknown schedule".to_owned(),
+        |definition| schedule_summary(&definition.schedule),
+    );
+    format!("{} — {}", job.name, summary)
+}
+
+/// Deterministic stand-in for the real picker used by contract tests: the
+/// `LOCRON_TEST_EXPORT_PICKER` hook's comma-separated value is the confirmed
+/// selection. It renders its prompt line on stderr, like the real picker, so
+/// tests can assert the interface never touches stdout. An empty value means
+/// the user deselected everything (a settings-only export).
+struct ScriptedPicker {
+    names: String,
+}
+
+impl JobPicker for ScriptedPicker {
+    fn pick(&self, jobs: &[JobRecord]) -> Result<Vec<String>> {
+        let mut wanted: BTreeSet<&str> = self
+            .names
+            .split(',')
+            .filter(|name| !name.is_empty())
+            .collect();
+        let mut picked = Vec::new();
+        for job in jobs {
+            if wanted.remove(job.name.as_str()) {
+                picked.push(job.id.clone());
+            }
+        }
+        if !wanted.is_empty() {
+            return Err(anyhow!(
+                "picker selection matched no job: {}",
+                wanted.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+        }
+        eprintln!(
+            "Select jobs to export: picked {} of {} jobs",
+            picked.len(),
+            jobs.len()
+        );
+        Ok(picked)
+    }
+}
+
+/// Terminal status of the three standard streams for the interactive export
+/// picker decision.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct TerminalState {
+    stdin: bool,
+    stdout: bool,
+    stderr: bool,
+}
+
+/// Reports whether stdin, stdout, and stderr are all terminals for the
+/// purpose of the interactive export picker. The `LOCRON_TEST_EXPORT_PICKER`
+/// test hook substitutes three terminals so contract tests can drive the
+/// picker branch of the real binary without a PTY; the hook never bypasses
+/// the `CI`, format, or selector terms of the decision.
+fn export_tty_state() -> TerminalState {
+    if std::env::var_os("LOCRON_TEST_EXPORT_PICKER").is_some() {
+        TerminalState {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        }
+    } else {
+        TerminalState {
+            stdin: std::io::stdin().is_terminal(),
+            stdout: std::io::stdout().is_terminal(),
+            stderr: std::io::stderr().is_terminal(),
+        }
+    }
+}
+
+/// The pure interactivity decision for `export`: the selection interface is
+/// shown only when every stream is a terminal, `CI` is unset, the output
+/// format is human, and no `--jobs`/`--tag` selector is present.
+fn should_show_picker(
+    tty: TerminalState,
+    ci_set: bool,
+    format: Format,
+    has_selectors: bool,
+) -> bool {
+    tty.stdin && tty.stdout && tty.stderr && !ci_set && format == Format::Human && !has_selectors
+}
+
+/// Returns the picker implementation for this invocation: the scripted
+/// test-hook picker when `LOCRON_TEST_EXPORT_PICKER` is set, otherwise the
+/// real dialoguer picker.
+fn picker_for_export() -> Box<dyn JobPicker> {
+    if let Ok(script) = std::env::var("LOCRON_TEST_EXPORT_PICKER") {
+        Box::new(ScriptedPicker { names: script })
+    } else {
+        Box::new(DialoguerPicker)
+    }
+}
+
+/// The `--jobs`/`--tag` selection for `export`, split on commas. Values are
+/// exact names and exact tags; an empty set means no explicit selection.
+struct ExportSelectors {
+    names: BTreeSet<String>,
+    tags: BTreeSet<String>,
+}
+
+impl ExportSelectors {
+    fn parse(jobs: Option<&str>, tags: Option<&str>) -> Self {
+        Self {
+            names: jobs
+                .map(|value| value.split(',').map(str::to_owned).collect())
+                .unwrap_or_default(),
+            tags: tags
+                .map(|value| value.split(',').map(str::to_owned).collect())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.tags.is_empty()
+    }
+}
+
+/// Resolves the export subset from one `list_jobs(true)` snapshot. Without
+/// selectors the whole snapshot is exported unless `interactive` shows the
+/// picker, whose selection narrows it. With selectors the result is the
+/// exact-name/exact-tag union deduplicated by job ID, and any selector value
+/// matching no job is a validation error before any output is produced.
+fn select_export_jobs(
+    jobs: Vec<JobRecord>,
+    selectors: &ExportSelectors,
+    interactive: bool,
+    picker: &dyn JobPicker,
+) -> Result<Vec<JobRecord>> {
+    if selectors.is_empty() {
+        if !interactive {
+            return Ok(jobs);
+        }
+        if jobs.is_empty() {
+            // Nothing to select; a settings-only export remains legal.
+            return Ok(jobs);
+        }
+        let picked = picker.pick(&jobs)?;
+        return Ok(jobs
+            .into_iter()
+            .filter(|job| picked.iter().any(|id| id == &job.id))
+            .collect());
+    }
+    let mut selected: Vec<JobRecord> = Vec::new();
+    let mut seen_ids: BTreeSet<String> = BTreeSet::new();
+    // Which selector values have matched at least one job. A tag value must
+    // match every job carrying it, so matching is a containment check and the
+    // matched set only grows.
+    let mut matched_names: BTreeSet<String> = BTreeSet::new();
+    let mut matched_tags: BTreeSet<String> = BTreeSet::new();
+    for job in jobs {
+        let job_tags: Vec<String> = serde_json::from_str(&job.tags_json)?;
+        let name_hit = selectors.names.contains(job.name.as_str());
+        let mut tag_hit = false;
+        for tag in job_tags {
+            if selectors.tags.contains(tag.as_str()) {
+                tag_hit = true;
+                matched_tags.insert(tag);
+            }
+        }
+        if name_hit {
+            matched_names.insert(job.name.clone());
+        }
+        if (name_hit || tag_hit) && seen_ids.insert(job.id.clone()) {
+            selected.push(job);
+        }
+    }
+    let mut missing = Vec::new();
+    missing.extend(
+        selectors
+            .names
+            .iter()
+            .filter(|name| !matched_names.contains(*name))
+            .map(|name| format!("--jobs {name}")),
+    );
+    missing.extend(
+        selectors
+            .tags
+            .iter()
+            .filter(|tag| !matched_tags.contains(*tag))
+            .map(|tag| format!("--tag {tag}")),
+    );
+    if !missing.is_empty() {
+        return Err(anyhow!(
+            "export selection matched no job: {}; selectors are exact-name and exact-tag matches",
+            missing.join(", ")
+        ));
+    }
+    Ok(selected)
+}
+
+/// Maximum import document size, enforced while streaming the body.
+const IMPORT_MAX_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum redirects followed while fetching an import URL.
+const IMPORT_MAX_REDIRECTS: usize = 10;
+/// Total timeout for one import fetch, DNS through final byte.
+const IMPORT_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Where an `import` argument obtains its document: a local file or a URL.
+#[derive(Debug)]
+enum ImportSource {
+    Path(PathBuf),
+    Url(Url),
+}
+
+/// Classifies an import argument as a local path or an HTTP(S) URL. A string
+/// shaped like `scheme://...` is parsed as a URL; anything else (including a
+/// non-UTF-8 path) is treated as a path. Classification is an explicit scheme
+/// check, never a `Path::exists` guess.
+fn import_source(path: &Path) -> Result<ImportSource> {
+    let Some(input) = path.to_str() else {
+        return Ok(ImportSource::Path(path.to_owned()));
+    };
+    if !url_like(input) {
+        return Ok(ImportSource::Path(path.to_owned()));
+    }
+    let url = Url::parse(input).context("invalid import URL")?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(ImportFetchError::UnsupportedScheme {
+            scheme: url.scheme().to_owned(),
+        }
+        .into());
+    }
+    if url.username() != "" || url.password().is_some() {
+        return Err(anyhow!(
+            "import URL must not contain userinfo (username or password): {input}"
+        ));
+    }
+    Ok(ImportSource::Url(url))
+}
+
+/// True when `input` is shaped like an absolute `scheme://...` URL.
+fn url_like(input: &str) -> bool {
+    let Some((scheme, _)) = input.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// Fetches an import document over HTTP(S) with the same reqwest/rustls
+/// client configuration the CLI uses elsewhere: mandatory TLS certificate
+/// verification, a bounded redirect policy, a total timeout, and a 16 MiB
+/// in-memory cap enforced while streaming. The returned bytes feed the same
+/// validation path as a local file.
+async fn fetch_import_url(url: &Url) -> Result<Vec<u8>> {
+    let client = reqwest::Client::builder()
+        .user_agent(format!("locron/{} import", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::limited(IMPORT_MAX_REDIRECTS))
+        .timeout(IMPORT_FETCH_TIMEOUT)
+        .build()
+        .map_err(|error| ImportFetchError::Network(error.to_string()))?;
+    let response = client.get(url.clone()).send().await.map_err(|error| {
+        if error.is_redirect() {
+            ImportFetchError::TooManyRedirects
+        } else if error.is_timeout() {
+            ImportFetchError::TotalTimeout
+        } else {
+            ImportFetchError::Network(error.to_string())
+        }
+    })?;
+    if !response.status().is_success() {
+        return Err(ImportFetchError::HttpStatus {
+            status: response.status().as_u16(),
+        }
+        .into());
+    }
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| ImportFetchError::Network(error.to_string()))?;
+        body.extend_from_slice(&chunk);
+        if body.len() > IMPORT_MAX_BYTES {
+            return Err(ImportFetchError::BodyTooLarge {
+                limit: IMPORT_MAX_BYTES,
+            }
+            .into());
+        }
+    }
+    Ok(body)
+}
+
+/// Failures that occur while obtaining a document from an import URL. Every
+/// variant maps to exit category 5 (unexpected I/O/protocol failure); a URL
+/// with userinfo and document validation failures keep their existing
+/// validation categories.
+#[derive(Debug)]
+enum ImportFetchError {
+    UnsupportedScheme { scheme: String },
+    Network(String),
+    HttpStatus { status: u16 },
+    BodyTooLarge { limit: usize },
+    TooManyRedirects,
+    TotalTimeout,
+}
+
+impl std::fmt::Display for ImportFetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedScheme { scheme } => write!(
+                f,
+                "import URL scheme \"{scheme}\" is not supported; use an absolute http:// or https:// URL"
+            ),
+            Self::Network(detail) => write!(
+                f,
+                "network or TLS failure: {detail}; check the URL and network, then retry"
+            ),
+            Self::HttpStatus { status } => write!(
+                f,
+                "import server returned HTTP {status}; check that the URL serves a locron.export/v1 document, then retry"
+            ),
+            Self::BodyTooLarge { limit } => write!(
+                f,
+                "import document exceeds the {limit}-byte limit; export a smaller document and retry"
+            ),
+            Self::TooManyRedirects => write!(
+                f,
+                "import URL redirected more than {IMPORT_MAX_REDIRECTS} times; use a direct document URL and retry"
+            ),
+            Self::TotalTimeout => write!(
+                f,
+                "import fetch timed out after 30 seconds; check the URL and network, then retry"
+            ),
+        }
+    }
+}
+
+impl StdError for ImportFetchError {}
+
 fn export_job(job: JobRecord, mode: ValuesMode) -> Result<ExportJob> {
     let mut definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
     let mut omitted_values = Vec::new();
@@ -2285,8 +2701,13 @@ fn export_job(job: JobRecord, mode: ValuesMode) -> Result<ExportJob> {
 }
 
 fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDocument> {
+    let bytes = std::fs::read(path).context("cannot read import document")?;
+    parse_import_bytes(&bytes, accept_plaintext)
+}
+
+fn parse_import_bytes(bytes: &[u8], accept_plaintext: bool) -> Result<ExportDocument> {
     let mut document: ExportDocument =
-        serde_json::from_slice(&std::fs::read(path)?).context("invalid export document")?;
+        serde_json::from_slice(bytes).context("invalid export document")?;
     if document.schema != "locron.export/v1" {
         return Err(anyhow!("unsupported export schema: {}", document.schema));
     }
@@ -3779,6 +4200,16 @@ fn render_list_table(jobs: &[Value]) -> Result<()> {
 }
 
 /// Renders the human schedule summary (`cron 'EXPR'`, `every DUR`, or
+/// `at RFC3339`) from a typed schedule.
+fn schedule_summary(schedule: &Schedule) -> String {
+    match schedule {
+        Schedule::Cron { expression, .. } => format!("cron '{expression}'"),
+        Schedule::Every { interval, .. } => format!("every {}", human_duration(interval.get())),
+        Schedule::At { at } => format!("at {at}"),
+    }
+}
+
+/// Renders the human schedule summary (`cron 'EXPR'`, `every DUR`, or
 /// `at RFC3339`) from the redacted definition JSON.
 fn list_schedule_summary(definition: &Value) -> Result<String> {
     let schedule = definition
@@ -3962,6 +4393,15 @@ fn error_code(error: &anyhow::Error) -> &'static str {
             ServiceError::CommandFailed { .. } => "service_command_failed",
             ServiceError::Io(_) => "service_io",
         }
+    } else if let Some(fetch) = error.downcast_ref::<ImportFetchError>() {
+        match fetch {
+            ImportFetchError::UnsupportedScheme { .. } => "import_unsupported_scheme",
+            ImportFetchError::Network(_) => "import_fetch",
+            ImportFetchError::HttpStatus { .. } => "import_http_status",
+            ImportFetchError::BodyTooLarge { .. } => "import_body_too_large",
+            ImportFetchError::TooManyRedirects => "import_too_many_redirects",
+            ImportFetchError::TotalTimeout => "import_timeout",
+        }
     } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) => "not_found",
@@ -3993,6 +4433,15 @@ fn exit_code(error: &anyhow::Error) -> i32 {
             ServiceError::UnsupportedPlatform { .. } => 2,
             ServiceError::ManagedInstall => 3,
             ServiceError::CommandFailed { .. } | ServiceError::Io(_) => 5,
+        }
+    } else if let Some(fetch) = error.downcast_ref::<ImportFetchError>() {
+        match fetch {
+            ImportFetchError::UnsupportedScheme { .. }
+            | ImportFetchError::Network(_)
+            | ImportFetchError::HttpStatus { .. }
+            | ImportFetchError::BodyTooLarge { .. }
+            | ImportFetchError::TooManyRedirects
+            | ImportFetchError::TotalTimeout => 5,
         }
     } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
@@ -4669,5 +5118,277 @@ mod tests {
                 .as_deref()
                 .is_some_and(|path| Path::new(path).is_absolute())
         );
+    }
+
+    // --- Export selection and URL import (2026-08-24) ---
+
+    fn job_record(name: &str, tags: &[&str]) -> JobRecord {
+        JobRecord {
+            id: format!("id-{name}"),
+            name: name.to_owned(),
+            description: None,
+            tags_json: serde_json::to_string(tags).unwrap(),
+            enabled: true,
+            removed_at_us: None,
+            current_revision: 1,
+            definition_json: "{}".into(),
+            cursor_us: 0,
+            updated_at_us: 0,
+            cursor_updated_at_us: 0,
+            disabled_since_us: None,
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingPicker {
+        selected: Vec<String>,
+        calls: std::cell::Cell<usize>,
+    }
+
+    impl CountingPicker {
+        fn picking(selected: &[&str]) -> Self {
+            Self {
+                selected: selected.iter().map(|id| format!("id-{id}")).collect(),
+                calls: std::cell::Cell::new(0),
+            }
+        }
+    }
+
+    impl JobPicker for CountingPicker {
+        fn pick(&self, jobs: &[JobRecord]) -> Result<Vec<String>> {
+            self.calls.set(self.calls.get() + 1);
+            assert!(
+                self.selected.len() <= jobs.len(),
+                "fake picked more jobs than exist"
+            );
+            Ok(self.selected.clone())
+        }
+    }
+
+    #[test]
+    fn export_picker_decision_is_table_tested_across_the_context_matrix() {
+        // (stdin_tty, stdout_tty, stderr_tty, ci_set, format, has_selectors)
+        let cases: &[(bool, bool, bool, bool, Format, bool, bool)] = &[
+            // The single interactive context: three terminals, CI unset,
+            // human format, no selector.
+            (true, true, true, false, Format::Human, false, true),
+            // Each stream alone can suppress the picker.
+            (false, true, true, false, Format::Human, false, false),
+            (true, false, true, false, Format::Human, false, false),
+            (true, true, false, false, Format::Human, false, false),
+            // CI, JSON, and selectors each suppress it.
+            (true, true, true, true, Format::Human, false, false),
+            (true, true, true, false, Format::Json, false, false),
+            (true, true, true, false, Format::Human, true, false),
+            // Combined hostile contexts stay non-interactive.
+            (false, false, false, true, Format::Json, true, false),
+            (true, false, false, true, Format::Human, true, false),
+            (false, true, true, true, Format::Json, false, false),
+        ];
+        for (stdin, stdout, stderr, ci, format, selectors, expected) in cases {
+            let tty = TerminalState {
+                stdin: *stdin,
+                stdout: *stdout,
+                stderr: *stderr,
+            };
+            assert_eq!(
+                should_show_picker(tty, *ci, *format, *selectors),
+                *expected,
+                "decision mismatch for stdin={stdin} stdout={stdout} stderr={stderr} ci={ci} format={format:?} selectors={selectors}"
+            );
+        }
+    }
+
+    #[test]
+    fn export_selector_union_dedup_and_no_match() {
+        let jobs = vec![
+            job_record("alpha", &[]),
+            job_record("beta", &["nightly"]),
+            job_record("gamma", &["nightly", "backup"]),
+            job_record("delta", &["backup"]),
+            job_record("epsilon", &["x"]),
+        ];
+        let selectors = ExportSelectors::parse(Some("alpha,gamma"), Some("nightly"));
+        let picker = CountingPicker::picking(&[]);
+        let selected = select_export_jobs(jobs.clone(), &selectors, true, &picker).unwrap();
+        let names: Vec<&str> = selected.iter().map(|job| job.name.as_str()).collect();
+        // alpha by name; beta and gamma by tag; store order preserved; no dup.
+        assert_eq!(names, ["alpha", "beta", "gamma"]);
+        assert_eq!(
+            picker.calls.get(),
+            0,
+            "selectors must never show the picker"
+        );
+
+        // A single job satisfying several selector values is not duplicated:
+        // gamma carries both --tag values, epsilon matches both --jobs and --tag.
+        // delta is included because "backup" matches every job carrying it.
+        let selectors = ExportSelectors::parse(Some("epsilon,gamma"), Some("x,backup"));
+        let selected = select_export_jobs(jobs.clone(), &selectors, false, &picker).unwrap();
+        let names: Vec<&str> = selected.iter().map(|job| job.name.as_str()).collect();
+        assert_eq!(names, ["gamma", "delta", "epsilon"]);
+
+        // A tag value must match every job carrying it, even when several
+        // jobs share the tag: beta and gamma both carry "nightly".
+        let selectors = ExportSelectors::parse(None, Some("nightly"));
+        let selected = select_export_jobs(jobs.clone(), &selectors, false, &picker).unwrap();
+        let names: Vec<&str> = selected.iter().map(|job| job.name.as_str()).collect();
+        assert_eq!(names, ["beta", "gamma"]);
+    }
+
+    #[test]
+    fn export_selector_no_match_is_a_validation_error_before_output() {
+        let jobs = vec![job_record("alpha", &["nightly"])];
+        let selectors = ExportSelectors::parse(Some("alpha,ghost"), Some("nightly"));
+        let error = select_export_jobs(jobs, &selectors, false, &CountingPicker::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("--jobs ghost"), "unexpected: {error}");
+        assert!(!error.contains("--jobs alpha"), "unexpected: {error}");
+        assert!(!error.contains("--tag nightly"), "unexpected: {error}");
+
+        let jobs = vec![job_record("alpha", &["nightly"])];
+        let selectors = ExportSelectors::parse(None, Some("nightly,ghost"));
+        let error = select_export_jobs(jobs, &selectors, false, &CountingPicker::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("--tag ghost"), "unexpected: {error}");
+
+        // A totally unmatched selection fails even when other jobs exist.
+        let jobs = vec![job_record("alpha", &["nightly"])];
+        let selectors = ExportSelectors::parse(Some("absent"), None);
+        let error = select_export_jobs(jobs, &selectors, false, &CountingPicker::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("matched no job"), "unexpected: {error}");
+    }
+
+    #[test]
+    fn export_fake_picker_drives_selection_without_a_pty() {
+        let jobs = vec![
+            job_record("alpha", &[]),
+            job_record("beta", &[]),
+            job_record("gamma", &[]),
+        ];
+        let picker = CountingPicker::picking(&["alpha", "gamma"]);
+        let selected = select_export_jobs(
+            jobs.clone(),
+            &ExportSelectors::parse(None, None),
+            true,
+            &picker,
+        )
+        .unwrap();
+        let names: Vec<&str> = selected.iter().map(|job| job.name.as_str()).collect();
+        assert_eq!(names, ["alpha", "gamma"]);
+        assert_eq!(picker.calls.get(), 1);
+
+        // An empty confirmed selection yields a settings-only export.
+        let picker = CountingPicker::picking(&[]);
+        let selected = select_export_jobs(
+            jobs.clone(),
+            &ExportSelectors::parse(None, None),
+            true,
+            &picker,
+        )
+        .unwrap();
+        assert!(selected.is_empty());
+        assert_eq!(picker.calls.get(), 1);
+    }
+
+    #[test]
+    fn export_non_interactive_never_instantiates_the_picker() {
+        let jobs = vec![job_record("alpha", &[])];
+        // Non-interactive (pipes, redirection, CI, JSON): full export, no picker.
+        let picker = CountingPicker::picking(&[]);
+        let selected = select_export_jobs(
+            jobs.clone(),
+            &ExportSelectors::parse(None, None),
+            false,
+            &picker,
+        )
+        .unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(picker.calls.get(), 0);
+
+        // JSON mode is decided non-interactive before any picker exists.
+        let tty = TerminalState {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        };
+        let json = should_show_picker(tty, false, Format::Json, false);
+        assert!(!json);
+
+        // Zero registered jobs skip the picker even when interactive.
+        let picker = CountingPicker::picking(&[]);
+        let selected = select_export_jobs(
+            Vec::new(),
+            &ExportSelectors::parse(None, None),
+            true,
+            &picker,
+        )
+        .unwrap();
+        assert!(selected.is_empty());
+        assert_eq!(picker.calls.get(), 0);
+    }
+
+    #[test]
+    fn scripted_picker_resolves_names_and_rejects_unknown_ones() {
+        let jobs = vec![job_record("alpha", &[]), job_record("beta", &[])];
+        let picker = ScriptedPicker {
+            names: "alpha,alpha,beta".into(),
+        };
+        let picked = picker.pick(&jobs).unwrap();
+        let names: Vec<&str> = jobs
+            .iter()
+            .filter(|job| picked.contains(&job.id))
+            .map(|job| job.name.as_str())
+            .collect();
+        assert_eq!(names, ["alpha", "beta"]);
+
+        let picker = ScriptedPicker {
+            names: "alpha,ghost".into(),
+        };
+        let error = picker.pick(&jobs).unwrap_err().to_string();
+        assert!(error.contains("ghost"), "unexpected: {error}");
+
+        // An empty scripted selection means the user deselected everything.
+        let picker = ScriptedPicker {
+            names: String::new(),
+        };
+        assert!(picker.pick(&jobs).unwrap().is_empty());
+    }
+
+    #[test]
+    fn import_source_classifies_paths_and_urls_explicitly() {
+        match import_source(Path::new("backup.json")).unwrap() {
+            ImportSource::Path(path) => assert_eq!(path, Path::new("backup.json")),
+            ImportSource::Url(_) => panic!("relative name classified as URL"),
+        }
+        match import_source(Path::new("/tmp/backup.json")).unwrap() {
+            ImportSource::Path(path) => assert_eq!(path, Path::new("/tmp/backup.json")),
+            ImportSource::Url(_) => panic!("absolute path classified as URL"),
+        }
+        // A colon in a name without `://` is a path, not a scheme.
+        match import_source(Path::new("backup:2024.json")).unwrap() {
+            ImportSource::Path(path) => assert_eq!(path, Path::new("backup:2024.json")),
+            ImportSource::Url(_) => panic!("colon-name classified as URL"),
+        }
+        match import_source(Path::new("https://example.test/doc.json")).unwrap() {
+            ImportSource::Url(url) => {
+                assert_eq!(url.scheme(), "https");
+                assert_eq!(url.host_str(), Some("example.test"));
+            }
+            ImportSource::Path(_) => panic!("https URL classified as path"),
+        }
+        let error = import_source(Path::new("https://user:pass@example.test/doc.json"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("userinfo"), "unexpected: {error}");
+        let error = import_source(Path::new("ftp://example.test/doc.json"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("scheme"), "unexpected: {error}");
+        assert!(import_source(Path::new("https://example.test/")).is_ok());
     }
 }

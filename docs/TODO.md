@@ -486,6 +486,89 @@ Follow-ups (open, not implemented here):
 - [ ] When locron is published to crates.io, the script's crates.io section switches automatically; record the first real numbers in this checklist.
 - [ ] The product-level `locron stats` command (local durable-run aggregation) needs its own SPEC amendment; tracked on the deferred product roadmap.
 
+## Export selection and URL import backlog (2026-08-24)
+
+Specified by the 2026-08-24 amendment to the frozen `docs/SPEC.md` ("Export and Import Semantics",
+plus the In Scope and Out of Scope updates); planned in `docs/IMPLEMENTATION.md` "Export selection
+and URL import implementation"; evidence in `docs/FINDINGS.md` §15. Confined to `locron-cli`;
+`locron-core` and `locron-store` are unchanged.
+
+- [x] Amend planning documents before code: the SPEC amendment, FINDINGS §15, the IMPLEMENTATION
+  section, the `docs/CLI.md` contract, and this checklist.
+  **Verify:** `rg -n "Export and Import Semantics|15\. Export Selection|Export selection and URL import|^## Export and import" docs/SPEC.md docs/FINDINGS.md docs/IMPLEMENTATION.md docs/CLI.md docs/TODO.md` finds all five, no planning document marks an unresolved decision in them, and `docs/CLI.md` renders the updated usage lines.
+  **Evidence:** all five sections present after the parallel dashboard-docs commit (9910bd1); SPEC amendment approved by product review 2026-08-24.
+- [x] Add the export selection filters (`--jobs`/`--tag`) over the existing `list_jobs` → `export_job`
+  path: exact-name/exact-tag union, ID dedup, no-match validation error before any output, valid in
+  human and JSON modes.
+  **Verify:** contract tests cover union and dedup, no-match rejection with exit category 2, JSON mode
+  with selectors, redaction parity between a selected export and a full export of the same jobs, and a
+  round trip (`export --jobs` → `import`) reproducing exactly the selected jobs.
+  **Evidence:** contract tests `export_selectors_union_dedup_and_no_match_rejected`,
+  `export_selectors_redaction_parity_with_full_export`, and
+  `export_jobs_round_trip_import_reproduces_exactly_the_selected_jobs` pass (50 contract tests,
+  cli.rs); unit tests `export_selector_union_dedup_and_no_match` and
+  `export_selector_no_match_is_a_validation_error_before_output` pass (67 unit tests, main.rs).
+  Manual verification of the union exposed a tag-matching bug (remove-once consumed a shared tag
+  value, so `--tag nightly` matched only the first job carrying it); fixed to containment checks
+  with matched sets that only grow, and the unit test now asserts a tag matches every job carrying
+  it (store order, dedup, no-match exit 2 with empty stdout, and JSON-mode selectors all pass).
+- [x] Implement the interactive default: the pure interactivity decision (stdin, stdout, and stderr
+  all terminals, `CI` unset, human format, no selector), the dialoguer 0.12 `MultiSelect` picker
+  (`default-features = false`, term target stderr, all jobs initially selected) behind a selection
+  port, and the non-interactive full-export fallback.
+  **Verify:** the decision function is table-tested across the TTY/CI/format/selector matrix; the
+  fake-port contract tests drive selection without a PTY; a contract test asserts stdout carries only
+  the export document while the picker renders to stderr, and JSON mode never instantiates the picker;
+  a recorded manual run in a real terminal walks the picker (deselect, confirm, Enter-for-all).
+  **Evidence:** `export_picker_decision_is_table_tested_across_the_context_matrix` covers 10
+  contexts including a redirected stderr (dialoguer refuses a non-terminal stderr, so the decision
+  includes it, per `docs/IMPLEMENTATION.md`); contract test
+  `export_picker_hook_keeps_stdout_for_the_document_and_stderr_for_the_picker` asserts document-only
+  stdout and picker-only stderr, plus empty/ghost/`CI`/JSON hook behavior; unit tests
+  `export_fake_picker_drives_selection_without_a_pty` and
+  `export_non_interactive_never_instantiates_the_picker` pass. Manual PTY walk recorded via
+  `script(1)` with keystroke injection against the real dialoguer picker: space-then-Enter exports
+  every item except the first, Enter-for-all exports the complete job set, deselect-all (both `j`
+  and arrow-key variants) yields a settings-only document, and deselecting the second item exports
+  the rest; each walk rendered the prompt and exited 0.
+- [x] Add URL import: explicit `http`/`https` scheme detection, reqwest fetch with mandatory TLS
+  verification, 16 MiB streaming cap, 10-redirect cap, 30-second timeout, userinfo rejection, then the
+  existing parse → validate → plan → one-transaction apply path unchanged.
+  **Verify:** local HTTP fixture tests cover successful atomic import, dry-run non-mutation,
+  redacted-document rejection, malformed/oversized bodies, redirect chains, 404/500 responses with
+  category 5 mapping, rollback on a late destination conflict, and byte-identical behavior versus the
+  same document imported as a file.
+  **Evidence:** nine `import_url_*` contract tests pass against a real one-request-per-connection
+  TCP fixture (byte-for-byte parity with file import, dry-run non-mutation, redacted/plaintext/
+  malformed rejections, oversized body → category 5, redirect success and loop → category 5,
+  404/500 → category 5, userinfo → category 2 and `ftp` → category 5 with zero requests, rollback on
+  late destination ambiguity → category 3). Live walk on this machine: a document exported to a
+  local HTTP server imported via URL with `--dry-run` (no-op report), then for real (no-op), then
+  into a fresh state directory (created the job), and the userinfo form was rejected with exit 2.
+- [x] Document the trust boundary: `docs/OPERATOR.md` (URL import trust and the `--dry-run` review
+  recommendation) and confirm the export/import examples in `docs/CLI.md` execute as written.
+  **Verify:** the documented commands execute as written on a machine with registered jobs; the
+  operator-guide statements match the SPEC's trust-boundary wording.
+  **Evidence:** `docs/OPERATOR.md` "Plaintext and exactly-once boundaries" now states the URL
+  import trust boundary in the SPEC's own wording ("same trust boundary as installing a script
+  obtained from the same source") and recommends `--dry-run` before a first import. Every
+  documented command was executed as written against temp state on this machine: the plaintext
+  export/`--dry-run`/import round trip (no-op report), a selector export, the URL import
+  `--dry-run` and real import against a live HTTP server, and `docs/CLI.md` usage lines
+  (`--jobs NAME[,NAME...]`, `--tag TAG[,TAG...]`, `import PATH|URL`) render identically in the
+  binary's `--help`.
+- [x] Run full workspace verification and record evidence, then mark this backlog complete.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace` pass on Rust 1.94 and latest stable; the four-target CI matrix is green;
+  evidence for every step above is recorded in this section.
+  **Evidence:** on Rust 1.94.0 (the workspace MSRV; the installed toolchain is 1.94.0), `cargo fmt
+  --all --check` is clean, `cargo clippy --workspace --all-targets -- -D warnings` is clean (three
+  new lints from this work fixed: `map_unwrap_or`, `fn_params_excessive_bools`, and
+  `trivially_copy_pass_by_ref` — the TTY triple became a `TerminalState` value type), and `cargo
+  test --workspace` passes 315 tests with 0 failures (locron-cli: 67 unit + 50 contract). The
+  four-target CI matrix runs on push and cannot be exercised from this session; that evidence is
+  recorded by the parent session after publication.
+
 ## Web administration backlog (2026-08-24)
 
 Phase 1 of the ordered deferred product roadmap below. Authorized by the frozen 2026-08-24

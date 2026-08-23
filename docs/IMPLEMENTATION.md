@@ -526,3 +526,50 @@ This section plans maintainer-facing measurement of locron's public distribution
 - **Static checks:** `sh -n` and shellcheck clean; the script contains no bashisms; all heredocs quoted.
 - **CI smoke:** the existing `installer` job in `.github/workflows/ci.yml` gains a step that runs the script in `--json` mode against the live APIs (the authenticated `GITHUB_TOKEN` keeps the REST quota off the 60/hour limit) and asserts the JSON parses and each numeric field is a non-negative integer. The owner-only `/traffic/*` endpoints reject the Actions `GITHUB_TOKEN`, so the step additionally permits an exit confined to `traffic_error` while still failing on any other `*_error` key.
 - **Local live check:** a real run prints all sections with numbers matching independently computed `jq` totals for the same day; the brew section renders 0 and crates.io renders `N/A` until their first real values.
+
+## Export selection and URL import implementation (2026-08-24)
+
+This section plans the 2026-08-24 `docs/SPEC.md` amendment: export job selection (interactive default on a TTY, deterministic filters, non-interactive full export) and import from a URL. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §15. The change is confined to `locron-cli`; `locron-core` and `locron-store` are unchanged, and the frozen dashboard spec's whole-document export download/import upload is unaffected (selection or URL support there would be its own dashboard spec change).
+
+### Accepted: selection as a filter over the existing export path
+
+Selection never reaches the store or domain crates. `locron-cli` resolves the export subset from the same `list_jobs(true)` result the existing `export` function already reads, then hands the filtered list to the existing `export_job` mapping; the document shape, redaction, and omission accounting are untouched.
+
+`--jobs NAME[,NAME...]` and `--tag TAG[,TAG...]` take exact names/tags, combine as a union, and deduplicate by job ID. Any selector value matching no job is a validation error before any output is produced (exit category 2), so a typo can never silently produce a smaller backup. Filters are valid with both human and JSON output and always suppress the picker. A zero-job state skips the picker entirely because there is nothing to select (export of settings only remains legal, as today).
+
+### Accepted: interactive default on a TTY, deterministic everywhere else
+
+Interactivity is decided once per invocation, before any output: stdin, stdout, and stderr must all be terminals (`std::io::IsTerminal`), the `CI` environment variable must be absent, output format must be human, and no `--jobs`/`--tag` selector may be present. Only that combination shows the picker; every other context exports the complete job set exactly as the current CLI does, so scripts, pipes, redirections, CI, and JSON consumers see no behavior change. This is the gh/OpenSpec/diagramkit convention from `docs/FINDINGS.md` §15, and the gh-gist piped-prompt bug is the counterexample this design rules out: non-TTY can never prompt.
+
+stderr joins the decision because the picker renders there: dialoguer's stderr terminal refuses to render on a redirected stderr (`NotConnected`), so a TTY stdin/stdout with a redirected stderr must fall back to the deterministic full export rather than fail the command. This mirrors the both-terminals rule's intent: if the selection interface cannot render, the invocation is non-interactive.
+
+The picker is a dialoguer 0.12 `MultiSelect` (MIT, rust-version 1.66, `default-features = false` — `editor`/`password` are unneeded) with the term target set to stderr, listing jobs by name with each item's schedule summary, every item initially selected, and Enter confirming. Rendering on stderr keeps the "human stdout is the bare export document" contract (`docs/CLI.md`) intact even while a picker is visible; the picker never writes to stdout. The picker interaction is wrapped behind a small selection port so contract tests drive a deterministic fake without a PTY.
+
+For contract tests, a scripted picker substitutes for the TUI without a PTY: when `LOCRON_TEST_EXPORT_PICKER` (test-only hook, documented in the test file) is set to a comma-separated job name list, export treats the invocation as having three terminals, and the selection port returns exactly those job names (rendering its prompt line on stderr) instead of running dialoguer. The `CI`, format, and selector terms of the decision still apply, so the hook cannot make a scripted or JSON export interactive; it only replaces the TUI inside a context that already qualifies.
+
+### Accepted: URL import reuses the whole-document import path
+
+`locron import` accepts an absolute `http://` or `https://` URL in addition to a path. URL detection is an explicit scheme check (an `scheme://`-shaped input is parsed as a URL; anything else is a path — never a `Path::exists` guess). The CLI fetches the body with the existing reqwest/rustls client configuration (mandatory TLS verification), with a 16 MiB in-memory cap enforced while streaming, a 10-redirect cap, and a 30-second total timeout; URLs with a userinfo component are rejected at parse time as a validation error (exit category 2, like any bad argument — the category-5 set below covers what happens after the CLI commits to fetching). The fetched bytes then enter the existing `parse_import_document` → validate → plan → one-transaction apply path byte-for-byte unchanged, so redaction rejection, plaintext acknowledgement, deterministic resolution, dry-run, and rollback are identical for both sources. Fetch failures (DNS, TLS, timeout, cap, redirect excess, non-2xx, non-HTTP scheme) map to exit category 5 with an actionable message and retry guidance; document validation failures keep their existing categories. Import never prompts — `--dry-run` is the preview, and the post-import summary already reports create/update/no-op actions.
+
+The trust boundary is documented, not coded around: `docs/CLI.md` and `docs/OPERATOR.md` state that an export document registers executable schedules and importing from a URL carries the same trust boundary as installing a script from that URL, with `--dry-run` recommended for first-time imports. No signature, pinning, or checksum scheme is added in this amendment; the existing redaction rules remain the value-protection mechanism.
+
+### Edge cases to handle explicitly
+
+- stdout is a TTY but stdin is not (input redirected): no picker — full export, matching the three-terminals rule.
+- stdin and stdout are TTYs but stderr is redirected (`locron export 2>file`): no picker — the interface cannot render on a non-terminal stderr, and dialoguer would fail the command; the invocation falls back to the deterministic full export.
+- `CI` is set while running in a real terminal (wrappers, `script -qec`): no picker — the environment marker wins, per the OpenSpec chain.
+- Picker shown while the daemon edits jobs concurrently: selection resolves against the same `list_jobs` snapshot used for the document; a concurrently deleted job simply exports its last-read definition, and a concurrently created job appears in the next export.
+- `--jobs` with a duplicate name and `--tag` with overlapping matches: union by job ID, one document entry per job.
+- Zero registered jobs: no picker; settings-only export remains valid.
+- URL import of a document with omitted values without `--accept-plaintext-values`: rejected exactly like a file import (existing rule).
+- Fetch succeeds but the body is not valid UTF-8 JSON or exceeds 16 MiB: stable validation/protocol error before any write.
+- URL import while the destination store is busy or migration-locked: existing exit category 4 behavior unchanged.
+- Human mode with a URL: the bare document/plan renders on stdout exactly as for a file; fetch diagnostics and warnings go to stderr.
+
+### Verification additions
+
+- **Selection contract tests:** `--jobs`/`--tag` union and dedup, no-match validation error before output, JSON mode with and without selectors, redaction parity between a selected export and a full export of the same jobs, and round trips (`export --jobs` → `import`) reproducing exactly the selected jobs.
+- **Interactivity tests:** the selection port is driven by a deterministic fake; the interactivity decision is a pure function tested across the TTY/CI/format/selector matrix; contract tests (via the `LOCRON_TEST_EXPORT_PICKER` hook, which drives the picker branch without a PTY) assert stdout carries only the document while the picker prompt renders on stderr, that an empty selection yields a settings-only export, that `CI` still wins over the hook, and that JSON mode never instantiates the picker.
+- **URL import fixture tests:** a local HTTP fixture serves valid documents, redacted documents, malformed JSON, oversized bodies, redirect chains, and 404/500 responses; assertions cover successful atomic import, dry-run non-mutation, category-5 fetch failures, rollback on a late destination conflict, and identical behavior versus the same document as a file.
+- **Platform matrix:** the existing four-target CI runs the new suites; no platform-specific code is introduced (TTY detection and stderr rendering are portable via dialoguer and `std::io::IsTerminal`).
+

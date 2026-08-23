@@ -39,8 +39,8 @@ locron why --run RUN_ID
 locron config get [KEY]
 locron config set KEY VALUE [--dry-run]
 locron config unset KEY [--dry-run]
-locron export [--include-values --acknowledge-plaintext] [--include-history]
-locron import PATH [--accept-plaintext-values] [--dry-run]
+locron export [--jobs NAME[,NAME...]] [--tag TAG[,TAG...]] [--include-values --acknowledge-plaintext] [--include-history]
+locron import PATH|URL [--accept-plaintext-values] [--dry-run]
 locron prune [--dry-run]
 locron doctor
 locron daemon run
@@ -300,6 +300,19 @@ the required single `locron.cli/v1` envelope and places that document in `data`.
 history are not included in this tranche. `--include-history` is rejected explicitly rather than
 claiming an incomplete backup.
 
+Without `--jobs` or `--tag`, export follows the invocation context. In an interactive terminal —
+standard input, standard output, and standard error are all terminals, the `CI` environment
+variable is unset, and the format is human — export shows a selection interface on standard error
+listing every job,
+initially all selected; confirming the initial selection exports the complete job set. In every
+other context (pipe, redirection, no terminal, `CI` set, or JSON mode) export skips the interface
+and exports every job. `--jobs` and `--tag` select by exact job name and exact tag, combine as a
+union, deduplicate by job identity, and never show a selection interface in any context; a selector
+value matching no job is a validation error before any output is produced.
+
+The selection interface never writes to standard output: in every mode standard output carries only
+the export document, so redirection and the single-result machine-readable contract are unchanged.
+
 Default exports use `values_mode: "redacted"`. Global and job inline environment values, inline HTTP
 header values, and inline/JSON bodies are removed, never replaced with a literal sentinel. The
 document carries a sorted `omitted_values` JSON Pointer list for omitted global settings, including
@@ -312,6 +325,15 @@ Plaintext export is deliberately non-interactive and requires both `--include-va
 `--accept-plaintext-values`. These acknowledgements apply equally to global environment values and
 job values and are required for a faithful round trip. Without them, no command accepts or emits a
 plaintext export containing either kind of value.
+
+Import accepts a local path or an absolute HTTP or HTTPS URL; the document is validated and applied
+identically regardless of source. A URL is fetched with mandatory TLS certificate verification, a
+bounded redirect and size limit, and a total timeout; fetch failures map to the unexpected
+I/O/protocol error category with retry guidance, and document validation failures keep their
+existing categories. Import never prompts; dry-run reports the exact actions without writing. An
+export document registers executable schedules: importing from a URL carries the same trust
+boundary as installing a script obtained from that URL, and first-time imports should be reviewed
+with `--dry-run`.
 
 Import accepts a bare `locron.export/v1` document, validates and normalizes the entire document
 before opening a write transaction, and then applies settings and jobs atomically. Duplicate source

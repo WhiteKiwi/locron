@@ -178,6 +178,18 @@ locron import locron-export.json --accept-plaintext-values --dry-run
 locron import locron-export.json --accept-plaintext-values
 ```
 
+Importing a document registers work that may run on this machine, whether it arrives as a file or a
+URL, and carries the same trust boundary as installing a script obtained from the same source: the
+URL's owner can schedule arbitrary processes here. Import fetches over HTTPS with mandatory TLS
+verification and validates the complete document before any write, but no fetch can prove the source
+is trustworthy. Prefer a trusted origin, and review the document with `--dry-run` before a first
+import:
+
+```sh
+locron import https://example.com/locron-export.json --dry-run
+locron import https://example.com/locron-export.json
+```
+
 locron prevents duplicate creation of one durable scheduled occurrence. It cannot promise
 exactly-once effects for arbitrary processes or HTTP endpoints across a crash. Targets requiring
 that property must use `LOCRON_RUN_ID` as an idempotency key and make the external operation

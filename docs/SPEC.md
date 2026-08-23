@@ -7,6 +7,7 @@ Frozen on 2026-08-21 after interactive product review. Changes to this document 
 Amended 2026-08-23: version reporting honors the machine-readable output contract.
 Amended 2026-08-23: installation channels and self-update added; package-manager publication removed from out-of-scope items.
 Amended 2026-08-23: daemon service installation and automatic startup added; operating-system service installation removed from out-of-scope items.
+Amended 2026-08-24: export job selection and URL import added.
 
 ## Goal
 
@@ -62,7 +63,7 @@ The first program milestone is complete when all of the following can be observe
 - Global and per-job concurrency limits.
 - Durable local state, execution history, and bounded log retention.
 - Machine-readable command output for automation.
-- Export and import for backup and migration.
+- Export and import for backup, migration, and command sharing, including selection of a job subset on export and import from a URL.
 - Diagnostics that explain effective paths, environment, scheduler health, and invalid jobs.
 
 ## Out of Scope
@@ -74,6 +75,7 @@ The first program milestone is complete when all of the following can be observe
 - Container orchestration.
 - Natural-language schedule parsing.
 - Built-in secret management.
+- Importing only a selected subset of jobs from an export document.
 - A web viewer or HTTP management API.
 - MCP integration.
 - A desktop application.
@@ -273,6 +275,20 @@ A dedicated explanation command reports why a job is or is not eligible, its nex
 Verbose output adds user-facing decision context without changing command behavior. Debug output emits developer-oriented operational traces to standard error. Neither mode may reveal configured environment values, sensitive headers, body content, or other redacted values. Machine-readable standard output remains a single valid result independent of diagnostic verbosity.
 
 The program reports its own version on request through the standard `-V` and `--version` flags, and version output honors the machine-readable output contract. Version reporting requires no state directory or daemon and succeeds without them.
+
+## Export and Import Semantics
+
+Export produces one typed, versioned document containing global settings and the selected jobs' normalized current definitions. Import applies a complete document atomically under the validation, redaction, plaintext-acknowledgement, resolution, and rollback rules defined for the export and import commands.
+
+A user can export the complete job set or a chosen subset:
+
+- Without an explicit selection, export follows the invocation context. In an interactive terminal, a selection interface lists every job, initially all selected, and lets the user choose which jobs to include. In a non-interactive context — no terminal, output redirected or piped, or an environment that declares the invocation non-interactive — export includes every job without prompting.
+- An explicit selection by job name or tag exports exactly the matching jobs and never prompts, in any context. A selection that matches no job is rejected before any output is produced.
+- The selection interface renders outside standard output. In every mode standard output carries only the export document, so redirection and machine-readable output remain single valid results. Machine-readable output never presents a selection interface and, without an explicit selection, exports the complete job set.
+
+Import accepts a local path or an absolute HTTP or HTTPS URL and treats both identically after the document is obtained. Import never prompts; a dry run reports exactly which jobs and settings an import would create, update, or leave unchanged without changing durable state. HTTPS fetches use mandatory TLS certificate verification.
+
+An export document describes executable schedules. Importing a document registers work that may run on this machine, whether it arrives as a file or a URL, and carries the same trust boundary as installing a script obtained from the same source. The complete document is validated before any write, and no import can partially apply.
 
 ## Retention Semantics
 

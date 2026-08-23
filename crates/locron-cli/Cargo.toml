@@ -15,7 +15,9 @@ anyhow.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 clap.workspace = true
+dialoguer = { version = "0.12", default-features = false }
 flate2.workspace = true
+futures-util.workspace = true
 jiff.workspace = true
 locron-core = { path = "../locron-core" }
 locron-engine = { path = "../locron-engine" }
@@ -29,6 +31,7 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
