@@ -76,17 +76,6 @@ jobs:
       - name: Shellcheck usage.sh
         run: |
           shellcheck scripts/usage.sh
-      - name: Usage snapshot smoke (live APIs)
-        run: |
-          set -eu
-          # GITHUB_TOKEN raises the REST quota, but it lacks the push/admin
-          # access the owner-only /traffic/* endpoints require, so a failure
-          # confined to the traffic section is expected and permitted.
-          sh scripts/usage.sh --json > usage-snapshot.json || code=$?
-          jq -e 'all(.. | numbers; . >= 0 and (. % 1) == 0)' usage-snapshot.json
-          if [ "${code:-0}" -ne 0 ]; then
-            jq -e 'has("traffic_error") and ([keys[] | select(endswith("_error"))] | all(. == "traffic_error"))' usage-snapshot.json
-          fi
       - name: Refuse unsupported platforms and musl
         run: |
           set -eu

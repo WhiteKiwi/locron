@@ -1,0 +1,37 @@
+name: Usage snapshot
+
+# Live third-party API usage snapshot.
+#
+# Deliberately separate from ci.yml: the snapshot depends on live APIs (GitHub
+# REST, formulae.brew.sh, crates.io) that share IP quotas and can flake, so it
+# must not block pushes. It runs weekly on a schedule and on demand; a failing
+# run is a maintainer drift alert, not a push gate.
+
+on:
+  schedule:
+    # 03:00 UTC Monday (weekly).
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  usage:
+    name: Usage snapshot / ubuntu-latest
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Collect usage snapshot (live APIs)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # GITHUB_TOKEN authenticates the GitHub REST section against the
+          # per-repository quota instead of the shared runner-IP 60 req/h
+          # unauthenticated quota. The formulae.brew.sh and crates.io sections
+          # stay unauthenticated; any section failure is a maintainer drift
+          # alert, so there is no traffic-only tolerance.
+          sh scripts/usage.sh --json > usage-snapshot.json
+          jq -e 'all(.. | numbers; . >= 0 and (. % 1) == 0)' usage-snapshot.json
