@@ -392,7 +392,15 @@ The four-target CI matrix has been red on every Linux leg since the daemon servi
 On Linux, `locron self-update` silently skips the post-replace `service install`: after the atomic rename the running process's `/proc/self/exe` resolves to the deleted old inode (`path (deleted)`), so `register_service()`'s `fs::canonicalize(env::current_exe())` fails and returns no warnings. macOS masks the bug (`_NSGetExecutablePath` returns the exec-time path string). CI run 32643088278 (head dc6f50b) caught it: `self_update_installs_the_latest_release` and `atomic_replace_keeps_a_running_process_on_the_old_binary` failed on all four Linux legs with `left: []` on the service-log assertion.
 
 - [ ] Capture the canonical executable path once in `update()` before the atomic replace and thread it through `replace_binary` and `register_service`, so no post-replace path resolution happens (`crates/locron-cli/src/self_update.rs`).
+  **Evidence (2026-08-23):** commit 03375ec applied the pre-replace capture. Run 32643709447 (head 6943747) confirms the fix: the two self_update tests pass on all four Linux legs. This step's verification completes when the full matrix is green on push.
   **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on macOS; the two self_update tests pass on the Linux CI legs (run ID recorded as evidence).
+
+## Fake-manager contract-test backlog (2026-08-23)
+
+`tests/service.rs` asserts the envelope's `service_name` as the hard-coded macOS label `dev.locron.daemon`, but `service_name()` returns the platform-native name (`LABEL` on macOS, `UNIT` = `locron.service` on Linux). CI run 32643709447 (head 6943747) caught it: `install_registers_and_starts_in_write_reload_probe_enable_start_order` and `status_reports_the_manager_state_fields` failed on all four Linux legs with `left: "locron.service"`.
+
+- [ ] Expect the platform-native service name in the two fake-contract assertions (`cfg!`-based, matching the file's existing platform pattern), never a hard-coded label.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on macOS; both tests pass on the Linux CI legs (run ID recorded as evidence).
 
 ## Workspace lint alignment backlog (2026-08-23)
 

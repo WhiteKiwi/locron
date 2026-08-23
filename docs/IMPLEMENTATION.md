@@ -476,7 +476,7 @@ The release.yml formula template gains a `service` block (`run [opt_bin/"locron"
 
 ### Verification additions
 
-- **Fake-port contract tests:** template rendering (canonicalized path, label/unit name, KeepAlive/RunAtLoad, Restart=on-failure/WantedBy, log paths), enable/bootstrap/kill ordering, lock-held deferral, brew-marker refusal, no-session guidance, and machine-output envelopes, all without touching a real service manager.
+- **Fake-port contract tests:** template rendering (canonicalized path, label/unit name, KeepAlive/RunAtLoad, Restart=on-failure/WantedBy, log paths), enable/bootstrap/kill ordering, lock-held deferral, brew-marker refusal, no-session guidance, and machine-output envelopes, all without touching a real service manager. The envelope's `service_name` assertion uses the platform-native name (`dev.locron.daemon` on macOS, `locron.service` on Linux), never a hard-coded label.
 - **Real-backend tests:** on the macOS CI leg, register/restart/unregister against the domain available on CI (`gui` when a GUI session exists, `user/<uid>` otherwise), asserting the plist, loaded state, and graceful SIGTERM restart with a marker process; on the Linux leg, run a real user manager under `dbus-run-session` to cover daemon-reload, enable --now, stop, and disable.
 - **install.sh fixtures:** a default run attempts registration and tolerates the guidance exit; `LOCRON_NO_SERVICE=1` skips it entirely.
 - **Release artifact checks:** the formula template contains the `service` block and the release attaches the updated script; a built .deb contains the postinst guidance.
