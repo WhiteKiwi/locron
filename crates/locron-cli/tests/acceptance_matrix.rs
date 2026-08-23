@@ -14,6 +14,11 @@ use serde_json::Value;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(12);
 const LIVE_UPDATE_TIMEOUT: Duration = Duration::from_secs(40);
+/// The retry-rendering test observes the transient `retry_wait` state and then
+/// crosses a daemon restart. An idle daemon only admits late-enqueued runs at
+/// its 30-second safety reconciliation, so under CPU contention (slow enqueue)
+/// the whole timeline needs a budget above that cycle.
+const RETRY_RENDERING_TIMEOUT: Duration = Duration::from_secs(75);
 
 fn locron(state: &tempfile::TempDir) -> Command {
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("locron"));
@@ -487,7 +492,10 @@ fn run_wait_renders_ordered_retry_output_frames_for_one_durable_run() {
             "--backoff",
             "fixed",
             "--retry-delay",
-            "1s",
+            // Wide window: `retry_wait` is only observable for the retry
+            // delay, and the fork-per-poll state check can miss a short
+            // window under CPU contention.
+            "5s",
             "--shell",
             "printf 'attempt-%s' \"$LOCRON_ATTEMPT\"; [ \"$LOCRON_ATTEMPT\" -gt 1 ]",
         ],
@@ -500,13 +508,21 @@ fn run_wait_renders_ordered_retry_output_frames_for_one_durable_run() {
         .unwrap();
 
     let mut first_daemon = Daemon::start(&state);
-    let waiting = wait_for_run_state(&state, "retry-rendering", "retry_wait", COMMAND_TIMEOUT);
+    let waiting = wait_for_run_state(
+        &state,
+        "retry-rendering",
+        "retry_wait",
+        RETRY_RENDERING_TIMEOUT,
+    );
     let run_id = waiting["id"].as_str().unwrap().to_owned();
     first_daemon.stop();
-    thread::sleep(Duration::from_millis(1_100));
+    // Outlive the 5s retry deadline so the second daemon finds an expired
+    // retry_wait. Starting early is still correct: retry-wait recovery waits
+    // for the deadline durably.
+    thread::sleep(Duration::from_millis(5_100));
     let _second_daemon = Daemon::start(&state);
 
-    let output = wait_for_child(waiter, COMMAND_TIMEOUT);
+    let output = wait_for_child(waiter, RETRY_RENDERING_TIMEOUT);
     assert!(
         output.status.success(),
         "wait failed: stdout={} stderr={}",
@@ -543,7 +559,12 @@ fn run_wait_renders_ordered_retry_output_frames_for_one_durable_run() {
     assert_eq!(terminal["ok"], true);
     assert_eq!(terminal["data"]["run_id"], run_id);
     assert_eq!(
-        wait_for_run_state(&state, "retry-rendering", "succeeded", COMMAND_TIMEOUT)["id"],
+        wait_for_run_state(
+            &state,
+            "retry-rendering",
+            "succeeded",
+            RETRY_RENDERING_TIMEOUT
+        )["id"],
         run_id
     );
 }
