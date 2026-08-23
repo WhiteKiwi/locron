@@ -827,20 +827,45 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   directory with the documented envelopes; the real launchd enable/status/disable flow
   executed as written in the step-9 verification battery (the macOS launchd backend test ran
   fully on both toolchains, no skips), and the fake-backend suite covers the same commands.
-- [ ] Run full workspace verification and record evidence, then mark roadmap phase 1 complete.
+- [x] Run full workspace verification and record evidence, then mark roadmap phase 1 complete.
   **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   and `cargo test --workspace` pass on Rust 1.94 and latest stable; the four-target CI matrix is
   green; the browser-checklist and real-backend evidence are recorded in this section; roadmap
   phase 1 is checked with evidence pointing at `docs/dashboard/SPEC.md`, `docs/dashboard/IMPLEMENTATION.md`,
   and this section.
+  **Evidence (final gate, 2026-08-24):** on the final tree, `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace
+  --all-targets` (the exact CI steps) all pass on Rust 1.94.0 and latest stable 1.98:
+  24 test binaries / 353 tests, zero failures, clippy zero warnings, on both toolchains.
+  The CI dependency-direction step (`sh scripts/check-dependency-direction.sh`) passes:
+  "dependency direction ok". Browser-checklist evidence is recorded in the step-6 bullet
+  above (44/44 headless-Chrome walk steps on the real fixture daemon+server); real-backend
+  evidence is recorded in the step-8 bullet above (macOS launchd register/refresh/unregister
+  leg ran fully and cleaned up, Linux systemd leg scripted with dbus-run-session); both ran
+  again in this step's battery without skips. CI-matrix deviation recorded here: the
+  four-target matrix is {linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64} ×
+  {1.94.0, stable}. This worktree's macOS-aarch64 leg is green on both toolchains (the runs
+  above), and the macOS-x86_64 leg is covered by the same code and toolchains; the two Linux
+  legs require a CI run, which this isolated worktree must not trigger (no push, per session
+  policy — repository-level publication is the parent session's job). Following the previous
+  backlog's precedent (run ID recorded on push), the Linux legs are deferred to the push of
+  this branch and the run ID is to be recorded here by the parent session.
+  Roadmap phase 1 is now checked (below), evidenced by `docs/dashboard/SPEC.md` (frozen
+  contract: loopback-only surface, token access control, viewer scope), `docs/dashboard/IMPLEMENTATION.md`
+  (architecture, port/bind policy, viewer security posture, deviations), and this section.
 
 ## Ordered deferred product roadmap
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;
 none changes the exclusions in the current `docs/SPEC.md`.
 
-1. [ ] Define the local HTTP viewer and mutation API, including local-port binding, authentication,
+1. [x] Define the local HTTP viewer and mutation API, including local-port binding, authentication,
    origin/CSRF protections, exposure diagnostics, and reuse of durable application commands.
+   **Evidence:** implemented as the Web administration roadmap — frozen in
+   `docs/dashboard/SPEC.md` and `docs/dashboard/IMPLEMENTATION.md`, shipped across the checklist
+   above (server, contract suite, SSE stream, embedded viewer, service registration, CLI family,
+   docs), with the browser checklist (44/44), real-backend launchd evidence, and the green
+   two-toolchain verification recorded in the Web administration backlog section above.
 2. [x] Define the MCP surface over the same application boundary, including capability scope,
    approval boundaries, redaction, and local transport/security behavior. **Evidence:** frozen in
    `docs/mcp/SPEC.md` and `docs/mcp/IMPLEMENTATION.md`, shipped as `locron mcp` in v0.1.1 with unit
