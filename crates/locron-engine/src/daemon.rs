@@ -63,6 +63,28 @@ pub struct TickResult {
     pub admitted: usize,
 }
 
+/// Typed completion persistence error distinguishing permanent durable
+/// conflicts from transient persistence failures.
+#[derive(Debug)]
+pub enum CompletionError {
+    /// Transient persistence failure; retrying the identical transition is
+    /// safe and may eventually succeed.
+    Transient(String),
+    /// Permanent durable conflict; retrying cannot change the outcome.
+    Conflict(String),
+}
+
+impl std::fmt::Display for CompletionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transient(message) => write!(f, "transient completion error: {message}"),
+            Self::Conflict(message) => write!(f, "durable completion conflict: {message}"),
+        }
+    }
+}
+
+impl std::error::Error for CompletionError {}
+
 /// Persistence boundary required by the daemon runtime.
 #[async_trait]
 pub trait DaemonStore: Send + Sync + 'static {
@@ -82,21 +104,26 @@ pub trait DaemonStore: Send + Sync + 'static {
     async fn mark_running(&self, attempt: &AdmittedAttempt) -> Result<bool, String>;
     /// Samples the immutable completion instant once after target outcome.
     fn completion_instant_us(&self) -> i64;
-    /// Persists an attempt result and any durable retry intent.
+    /// Persists an attempt result and any durable retry intent. A `Conflict`
+    /// is permanent and must not be retried with the same completion facts.
     async fn complete(
         &self,
         attempt: &AdmittedAttempt,
         outcome: &ExecutionOutcome,
         completed_at_us: i64,
-    ) -> Result<(), String>;
+    ) -> Result<(), CompletionError>;
     /// Persists a runner infrastructure failure without retrying execution.
+    /// A `Conflict` is permanent and must not be retried.
     async fn complete_runner_failure(
         &self,
         attempt: &AdmittedAttempt,
         kind: RunnerFailureKind,
         reason: &str,
         completed_at_us: i64,
-    ) -> Result<(), String>;
+    ) -> Result<(), CompletionError>;
+    /// Duration until the earliest pending admission deadline (queued or
+    /// retry-wait run), or `None` when no run is pending admission.
+    async fn next_admission_delay(&self) -> Result<Option<Duration>, String>;
     /// Reads a durable user or replacement cancellation intent.
     async fn cancellation_requested(&self, run_id: &str) -> Result<bool, String>;
     /// Marks persistence degraded for diagnostics.
@@ -201,6 +228,7 @@ impl<S: DaemonStore> Daemon<S> {
             let runner = self.runner.clone();
             let retry_initial = self.config.pre_spawn_retry_initial;
             let retry_cap = self.config.pre_spawn_retry_cap;
+            let wake = Arc::clone(&self.wake);
             self.tracker.spawn(async move {
                 crate::test_crash_boundary("before-spawn").await;
                 let mut retry_delay = retry_initial;
@@ -217,6 +245,7 @@ impl<S: DaemonStore> Daemon<S> {
                         Ok(true) => break,
                         Ok(false) => {
                             drop(permit);
+                            wake.notify_one();
                             return;
                         }
                         Err(error) => store.persistence_degraded(&error).await,
@@ -265,7 +294,33 @@ impl<S: DaemonStore> Daemon<S> {
                             };
                             match completion {
                                 Ok(()) => break,
-                                Err(error) => store.persistence_degraded(&error).await,
+                                Err(CompletionError::Conflict(error)) => {
+                                    tracing::error!(
+                                        %error,
+                                        "permanent completion conflict; terminalizing attempt as interrupted_unknown"
+                                    );
+                                    let reason = format!(
+                                        "durable completion conflict after target outcome: {error}"
+                                    );
+                                    let fallback = store
+                                        .complete_runner_failure(
+                                            &attempt,
+                                            RunnerFailureKind::ExecutionMayHaveStarted,
+                                            &reason,
+                                            completed_at_us,
+                                        )
+                                        .await;
+                                    if let Err(CompletionError::Conflict(error)) = fallback {
+                                        tracing::error!(
+                                            %error,
+                                            "fallback terminalization after completion conflict also conflicted"
+                                        );
+                                    }
+                                    break;
+                                }
+                                Err(CompletionError::Transient(error)) => {
+                                    store.persistence_degraded(&error).await;
+                                }
                             }
                             tokio::select! {
                                 biased;
@@ -306,7 +361,16 @@ impl<S: DaemonStore> Daemon<S> {
                             };
                             match completion {
                                 Ok(()) => break,
-                                Err(error) => store.persistence_degraded(&error).await,
+                                Err(CompletionError::Conflict(error)) => {
+                                    tracing::error!(
+                                        %error,
+                                        "permanent runner-failure completion conflict; attempt remains terminal"
+                                    );
+                                    break;
+                                }
+                                Err(CompletionError::Transient(error)) => {
+                                    store.persistence_degraded(&error).await;
+                                }
                             }
                             tokio::select! {
                                 biased;
@@ -317,6 +381,7 @@ impl<S: DaemonStore> Daemon<S> {
                         }
                     }
                 }
+                wake.notify_one();
                 drop(permit);
             });
         }
@@ -348,12 +413,20 @@ impl<S: DaemonStore> Daemon<S> {
         let mut first = true;
         loop {
             if !first {
+                let admission_delay = match self.store.next_admission_delay().await {
+                    Ok(Some(delay)) => delay.min(self.config.safety_reconciliation),
+                    Ok(None) => self.config.safety_reconciliation,
+                    Err(error) => {
+                        self.store.persistence_degraded(&error).await;
+                        self.config.safety_reconciliation
+                    }
+                };
                 tokio::select! {
                     biased;
                     () = external_cancel.cancelled() => break,
                     () = &mut shutdown_signal => break,
                     () = self.wake.notified() => {}
-                    () = tokio::time::sleep(self.config.safety_reconciliation) => {}
+                    () = tokio::time::sleep(admission_delay) => {}
                 }
             }
             first = false;
@@ -449,8 +522,9 @@ mod tests {
         completions: AtomicUsize,
         successful_completions: AtomicUsize,
         runner_failure_kinds: Mutex<Vec<RunnerFailureKind>>,
+        terminal_states: Mutex<Vec<&'static str>>,
         degradations: AtomicUsize,
-        completion_results: Mutex<VecDeque<Result<(), String>>>,
+        completion_results: Mutex<VecDeque<Result<(), CompletionError>>>,
         mark_notify: tokio::sync::Notify,
         complete_notify: tokio::sync::Notify,
     }
@@ -565,6 +639,7 @@ mod tests {
                 completions: AtomicUsize::new(0),
                 successful_completions: AtomicUsize::new(0),
                 runner_failure_kinds: Mutex::new(Vec::new()),
+                terminal_states: Mutex::new(Vec::new()),
                 degradations: AtomicUsize::new(0),
                 completion_results: Mutex::new(VecDeque::new()),
                 mark_notify: tokio::sync::Notify::new(),
@@ -572,7 +647,7 @@ mod tests {
             }
         }
 
-        fn with_completion_results(self, results: Vec<Result<(), String>>) -> Self {
+        fn with_completion_results(self, results: Vec<Result<(), CompletionError>>) -> Self {
             *self.completion_results.lock().unwrap() = results.into();
             self
         }
@@ -620,7 +695,7 @@ mod tests {
             _: &AdmittedAttempt,
             _: &ExecutionOutcome,
             _: i64,
-        ) -> Result<(), String> {
+        ) -> Result<(), CompletionError> {
             self.completions.fetch_add(1, Ordering::AcqRel);
             self.complete_notify.notify_one();
             let result = self
@@ -640,8 +715,15 @@ mod tests {
             kind: RunnerFailureKind,
             _: &str,
             _: i64,
-        ) -> Result<(), String> {
+        ) -> Result<(), CompletionError> {
             self.runner_failure_kinds.lock().unwrap().push(kind);
+            // Encode the durable port contract: an output-preparation failure
+            // terminalizes as `failed`, an execution-may-have-started failure
+            // as `interrupted_unknown`.
+            self.terminal_states.lock().unwrap().push(match kind {
+                RunnerFailureKind::OutputPreparation => "failed",
+                RunnerFailureKind::ExecutionMayHaveStarted => "interrupted_unknown",
+            });
             self.completions.fetch_add(1, Ordering::AcqRel);
             self.complete_notify.notify_one();
             let result = self
@@ -654,6 +736,9 @@ mod tests {
                 self.successful_completions.fetch_add(1, Ordering::AcqRel);
             }
             result
+        }
+        async fn next_admission_delay(&self) -> Result<Option<Duration>, String> {
+            Ok(None)
         }
         async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
             Ok(false)
@@ -708,7 +793,7 @@ mod tests {
             _: &AdmittedAttempt,
             _: &ExecutionOutcome,
             _: i64,
-        ) -> Result<(), String> {
+        ) -> Result<(), CompletionError> {
             Ok(())
         }
         async fn complete_runner_failure(
@@ -717,8 +802,11 @@ mod tests {
             _: RunnerFailureKind,
             _: &str,
             _: i64,
-        ) -> Result<(), String> {
+        ) -> Result<(), CompletionError> {
             Ok(())
+        }
+        async fn next_admission_delay(&self) -> Result<Option<Duration>, String> {
+            Ok(None)
         }
         async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
             Ok(false)
@@ -761,7 +849,7 @@ mod tests {
             _: &AdmittedAttempt,
             _: &ExecutionOutcome,
             _: i64,
-        ) -> Result<(), String> {
+        ) -> Result<(), CompletionError> {
             unreachable!("capacity-only store never admits")
         }
         async fn complete_runner_failure(
@@ -770,8 +858,11 @@ mod tests {
             _: RunnerFailureKind,
             _: &str,
             _: i64,
-        ) -> Result<(), String> {
+        ) -> Result<(), CompletionError> {
             unreachable!("capacity-only store never admits")
+        }
+        async fn next_admission_delay(&self) -> Result<Option<Duration>, String> {
+            Ok(None)
         }
         async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
             unreachable!("capacity-only store never admits")
@@ -817,7 +908,7 @@ mod tests {
             _: &AdmittedAttempt,
             outcome: &ExecutionOutcome,
             _: i64,
-        ) -> Result<(), String> {
+        ) -> Result<(), CompletionError> {
             self.events.lock().unwrap().push("complete");
             *self.outcome.lock().unwrap() = Some(outcome.kind.clone());
             Ok(())
@@ -829,9 +920,13 @@ mod tests {
             _: RunnerFailureKind,
             _: &str,
             _: i64,
-        ) -> Result<(), String> {
+        ) -> Result<(), CompletionError> {
             self.events.lock().unwrap().push("runner_failure");
             Ok(())
+        }
+
+        async fn next_admission_delay(&self) -> Result<Option<Duration>, String> {
+            Ok(None)
         }
 
         async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
@@ -842,6 +937,69 @@ mod tests {
 
         async fn end_lifetime(&self) -> Result<(), String> {
             self.events.lock().unwrap().push("end");
+            Ok(())
+        }
+    }
+
+    /// Store whose `next_admission_delay` answers from a scripted queue and
+    /// whose `reconcile` counts event-loop ticks.
+    struct DeadlineStore {
+        ticks: AtomicUsize,
+        delays: Mutex<VecDeque<Duration>>,
+    }
+
+    impl DeadlineStore {
+        fn new(delays: Vec<Duration>) -> Self {
+            Self {
+                ticks: AtomicUsize::new(0),
+                delays: Mutex::new(delays.into()),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl DaemonStore for DeadlineStore {
+        async fn begin_lifetime(&self) -> Result<(), String> {
+            Ok(())
+        }
+        async fn reconcile(&self) -> Result<usize, String> {
+            self.ticks.fetch_add(1, Ordering::AcqRel);
+            Ok(0)
+        }
+        async fn admit(&self, _: usize) -> Result<Vec<AdmittedAttempt>, String> {
+            Ok(Vec::new())
+        }
+        async fn mark_running(&self, _: &AdmittedAttempt) -> Result<bool, String> {
+            unreachable!("deadline-only store never admits")
+        }
+        fn completion_instant_us(&self) -> i64 {
+            0
+        }
+        async fn complete(
+            &self,
+            _: &AdmittedAttempt,
+            _: &ExecutionOutcome,
+            _: i64,
+        ) -> Result<(), CompletionError> {
+            unreachable!("deadline-only store never admits")
+        }
+        async fn complete_runner_failure(
+            &self,
+            _: &AdmittedAttempt,
+            _: RunnerFailureKind,
+            _: &str,
+            _: i64,
+        ) -> Result<(), CompletionError> {
+            unreachable!("deadline-only store never admits")
+        }
+        async fn next_admission_delay(&self) -> Result<Option<Duration>, String> {
+            Ok(self.delays.lock().unwrap().pop_front())
+        }
+        async fn cancellation_requested(&self, _: &str) -> Result<bool, String> {
+            Ok(false)
+        }
+        async fn persistence_degraded(&self, _: &str) {}
+        async fn end_lifetime(&self) -> Result<(), String> {
             Ok(())
         }
     }
@@ -1194,8 +1352,10 @@ mod tests {
     async fn transient_completion_failure_retries_without_reexecuting_target() {
         let temp = tempfile::tempdir().unwrap();
         let store = Arc::new(
-            ScriptedStore::new(&temp, vec![Ok(true)])
-                .with_completion_results(vec![Err("busy after target exit".into()), Ok(())]),
+            ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(vec![
+                Err(CompletionError::Transient("busy after target exit".into())),
+                Ok(()),
+            ]),
         );
         let daemon = Daemon::new(
             Arc::clone(&store),
@@ -1226,8 +1386,10 @@ mod tests {
         let blocked_parent = temp.path().join("blocked-output-parent");
         std::fs::write(&blocked_parent, b"not a directory").unwrap();
         let store = Arc::new(
-            ScriptedStore::new(&temp, vec![Ok(true)])
-                .with_completion_results(vec![Err("busy".into()), Ok(())]),
+            ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(vec![
+                Err(CompletionError::Transient("busy".into())),
+                Ok(()),
+            ]),
         );
         store
             .attempt
@@ -1269,8 +1431,10 @@ mod tests {
     async fn post_spawn_output_failure_is_unknown_and_completion_does_not_reexecute() {
         let temp = tempfile::tempdir().unwrap();
         let store = Arc::new(
-            ScriptedStore::new(&temp, vec![Ok(true)])
-                .with_completion_results(vec![Err("busy".into()), Ok(())]),
+            ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(vec![
+                Err(CompletionError::Transient("busy".into())),
+                Ok(()),
+            ]),
         );
         let final_output = store
             .attempt
@@ -1317,7 +1481,11 @@ mod tests {
     async fn shutdown_after_target_outcome_leaves_completion_uncommitted_without_reexecution() {
         let temp = tempfile::tempdir().unwrap();
         let completion_failures = (0..100)
-            .map(|_| Err("injected failure after target outcome".into()))
+            .map(|_| {
+                Err(CompletionError::Transient(
+                    "injected failure after target outcome".into(),
+                ))
+            })
             .collect();
         let store = Arc::new(
             ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(completion_failures),
@@ -1345,6 +1513,159 @@ mod tests {
         assert_eq!(
             std::fs::read(temp.path().join("side-effect")).unwrap(),
             b"x"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn run_until_ticks_at_earliest_pending_admission_deadline() {
+        let store = Arc::new(DeadlineStore::new(vec![Duration::from_secs(1)]));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            DaemonConfig {
+                safety_reconciliation: Duration::from_secs(30),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let cancel = CancellationToken::new();
+        let cancel_for_task = cancel.clone();
+        let task = tokio::spawn(daemon.run_until(cancel_for_task, std::future::pending()));
+
+        // The first tick runs immediately; the loop then waits for the
+        // 1-second admission deadline rather than the 30-second safety tick.
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(store.ticks.load(Ordering::Acquire), 1);
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(store.ticks.load(Ordering::Acquire), 2);
+
+        // With no pending deadline left, the loop falls back to the safety
+        // reconciliation interval and must not tick before it elapses.
+        tokio::time::advance(Duration::from_secs(10)).await;
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(store.ticks.load(Ordering::Acquire), 2);
+
+        cancel.cancel();
+        task.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn attempt_completion_notifies_the_wake_handle() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(ScriptedStore::new(&temp, vec![Ok(true)]));
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+        let wake = daemon.wake_handle();
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
+
+        let notified = wake.notified();
+        tokio::pin!(notified);
+        tokio::select! {
+            () = &mut notified => {}
+            () = tokio::time::sleep(Duration::from_secs(5)) => {
+                panic!("attempt completion did not notify the wake handle")
+            }
+        }
+        daemon.tracker.close();
+        daemon.tracker.wait().await;
+        assert_eq!(store.successful_completions.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test]
+    async fn permanent_completion_conflict_falls_back_once_and_never_retries() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(vec![
+                Err(CompletionError::Conflict("output already missing".into())),
+                Ok(()),
+            ]),
+        );
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            daemon.tracker.close();
+            daemon.tracker.wait().await;
+        })
+        .await
+        .expect("permanent completion conflict must not retry forever");
+
+        // Exactly one completion attempt plus exactly one terminalization
+        // fallback; no retry loop.
+        assert_eq!(store.completions.load(Ordering::Acquire), 2);
+        assert_eq!(
+            *store.runner_failure_kinds.lock().unwrap(),
+            [RunnerFailureKind::ExecutionMayHaveStarted]
+        );
+        assert_eq!(
+            *store.terminal_states.lock().unwrap(),
+            ["interrupted_unknown"]
+        );
+    }
+
+    #[tokio::test]
+    async fn permanent_runner_failure_conflict_breaks_without_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let blocked_parent = temp.path().join("blocked-output-parent");
+        std::fs::write(&blocked_parent, b"not a directory").unwrap();
+        let store = Arc::new(
+            ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(vec![Err(
+                CompletionError::Conflict("runner failure is not applicable".into()),
+            )]),
+        );
+        store
+            .attempt
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .context
+            .partial_output = blocked_parent.join("1.partial");
+        let daemon = Daemon::new(
+            Arc::clone(&store),
+            Runner::new(Default::default()).unwrap(),
+            retry_test_config(),
+        )
+        .unwrap();
+        daemon
+            .tick(&Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY)))
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            daemon.tracker.close();
+            daemon.tracker.wait().await;
+        })
+        .await
+        .expect("permanent runner-failure conflict must not retry forever");
+
+        assert_eq!(store.completions.load(Ordering::Acquire), 1);
+        assert_eq!(
+            *store.runner_failure_kinds.lock().unwrap(),
+            [RunnerFailureKind::OutputPreparation]
         );
     }
 }

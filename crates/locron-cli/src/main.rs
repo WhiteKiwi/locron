@@ -27,7 +27,7 @@ use locron_core::{
     CoreError, ElapsedKind, JobId, OmittedRangeKind, SchedulerLifetimeId, Timestamp,
 };
 use locron_engine::admission::{RetryClass, decide_retry};
-use locron_engine::daemon::{AdmittedAttempt, DaemonStore};
+use locron_engine::daemon::{AdmittedAttempt, CompletionError, DaemonStore};
 use locron_engine::runner::{OutcomeKind, RunnerConfig, resolve_executable};
 use locron_engine::{
     AttemptContext, Daemon, DaemonConfig, HttpSpec, OutputWriter, ProcessSpec, Runner, TargetSpec,
@@ -2790,6 +2790,15 @@ impl StoreAdapter {
     }
 }
 
+/// Maps a store completion error onto the typed engine completion error:
+/// permanent durable conflicts stay conflicts, everything else is transient.
+fn map_completion_error(error: StoreError) -> CompletionError {
+    match error {
+        StoreError::Conflict(_) => CompletionError::Conflict(error.to_string()),
+        other => CompletionError::Transient(other.to_string()),
+    }
+}
+
 #[async_trait::async_trait]
 impl DaemonStore for StoreAdapter {
     async fn begin_lifetime(&self) -> Result<(), String> {
@@ -3041,10 +3050,13 @@ impl DaemonStore for StoreAdapter {
         attempt: &AdmittedAttempt,
         outcome: &locron_engine::runner::ExecutionOutcome,
         completed_at: i64,
-    ) -> Result<(), String> {
-        let run = self.store.run(&attempt.run_id).map_err(|e| e.to_string())?;
-        let definition: JobDefinition =
-            serde_json::from_str(&run.snapshot_json).map_err(|e| e.to_string())?;
+    ) -> Result<(), CompletionError> {
+        let run = self
+            .store
+            .run(&attempt.run_id)
+            .map_err(|e| CompletionError::Transient(e.to_string()))?;
+        let definition: JobDefinition = serde_json::from_str(&run.snapshot_json)
+            .map_err(|e| CompletionError::Transient(e.to_string()))?;
         let retry_class = match outcome.kind {
             OutcomeKind::Succeeded => RetryClass::Succeeded,
             OutcomeKind::FailedRetryable => RetryClass::KnownFailure,
@@ -3087,7 +3099,7 @@ impl DaemonStore for StoreAdapter {
                 },
                 completed_at,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(map_completion_error)?;
         self.store
             .complete_attempt(&AttemptCompletion {
                 run_id: attempt.run_id.clone(),
@@ -3101,7 +3113,7 @@ impl DaemonStore for StoreAdapter {
                 reason: outcome.reason.clone(),
                 retry,
             })
-            .map_err(|e| e.to_string())
+            .map_err(map_completion_error)
     }
     async fn complete_runner_failure(
         &self,
@@ -3109,7 +3121,7 @@ impl DaemonStore for StoreAdapter {
         kind: locron_engine::runner::RunnerFailureKind,
         reason: &str,
         completed_at: i64,
-    ) -> Result<(), String> {
+    ) -> Result<(), CompletionError> {
         self.store
             .complete_runner_failure(
                 &attempt.run_id,
@@ -3121,7 +3133,17 @@ impl DaemonStore for StoreAdapter {
                     locron_engine::runner::RunnerFailureKind::ExecutionMayHaveStarted
                 ),
             )
-            .map_err(|error| error.to_string())
+            .map_err(map_completion_error)
+    }
+    async fn next_admission_delay(&self) -> Result<Option<Duration>, String> {
+        let earliest = self
+            .store
+            .earliest_pending_eligible_at_us()
+            .map_err(|error| error.to_string())?;
+        Ok(earliest.map(|earliest| {
+            let remaining = earliest.saturating_sub(self.now_us()).max(0);
+            Duration::from_micros(u64::try_from(remaining).unwrap_or(0))
+        }))
     }
     async fn persistence_degraded(&self, reason: &str) {
         tracing::error!(%reason, "persistence degraded")
@@ -4198,7 +4220,10 @@ mod tests {
         let completed_at = adapter.completion_instant_us();
 
         let applied_then_lost = async {
-            adapter.complete(&attempt, &outcome, completed_at).await?;
+            adapter
+                .complete(&attempt, &outcome, completed_at)
+                .await
+                .map_err(|error| error.to_string())?;
             Err::<(), String>("synthetic response loss after commit".into())
         }
         .await;

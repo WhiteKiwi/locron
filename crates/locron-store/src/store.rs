@@ -1237,6 +1237,20 @@ impl Store {
         Ok(Admission { attempts })
     }
 
+    /// Earliest `eligible_at_us` across runs pending admission (queued or
+    /// retry-wait), or `None` when no run is pending. The daemon uses this to
+    /// sleep until the earliest calculated schedule/retry deadline instead of
+    /// the next safety reconciliation boundary.
+    pub fn earliest_pending_eligible_at_us(&self) -> StoreResult<Option<i64>> {
+        let conn = self.conn()?;
+        conn.query_row(
+            "SELECT MIN(eligible_at_us) FROM runs WHERE state IN ('queued','retry_wait')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(Into::into)
+    }
+
     pub fn mark_attempt_running(
         &self,
         run_id: &str,
@@ -1565,6 +1579,10 @@ impl Store {
             return Ok(());
         }
 
+        // Idempotency compares durable terminal identity (attempt/run state,
+        // result class, reason, missing output) only, never timestamps or the
+        // elapsed duration derived from them, so an identical runner failure
+        // recompleted at a different instant is still recognized as committed.
         let already_committed: bool = tx.query_row(
             "SELECT EXISTS(
                 SELECT 1
@@ -1573,21 +1591,12 @@ impl Store {
                 JOIN output_artifacts o
                   ON o.run_id=a.run_id AND o.attempt_number=a.attempt_number
                 WHERE a.run_id=?1 AND a.attempt_number=?2
-                  AND a.state=?3 AND a.finished_at_us=?4 AND a.duration_us=?5
-                  AND a.result_class=?6 AND a.error_message=?7
-                  AND r.state=?3 AND r.reason=?7 AND r.finished_at_us=?4
-                  AND o.state='missing' AND o.finalized_at_us=?4
+                  AND a.state=?3 AND a.result_class=?4 AND a.error_message=?5
+                  AND r.state=?3 AND r.reason=?5
+                  AND o.state='missing'
                   AND NOT EXISTS (SELECT 1 FROM retry_intents WHERE run_id=?1)
             )",
-            params![
-                run_id,
-                attempt_number,
-                state,
-                now_us,
-                duration_us,
-                result_class,
-                reason
-            ],
+            params![run_id, attempt_number, state, result_class, reason],
             |row| row.get(0),
         )?;
         if already_committed {
@@ -1681,9 +1690,13 @@ impl Store {
         if changed == 1 {
             return Ok(());
         }
+        // Idempotency compares durable identity fields (path, byte counts,
+        // truncation) only, never the finalization timestamp, so an identical
+        // completion retried at a different instant is still recognized as
+        // already committed.
         let already_reconciled: bool = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2 AND state='finalized' AND relative_path=?3 AND retained_payload_bytes=?4 AND physical_bytes=?5 AND discarded_bytes=?6 AND truncated=?7 AND finalized_at_us=?8)",
-            params![output.run_id,output.attempt_number,relative_path,output.retained_payload_bytes,output.physical_bytes,output.discarded_bytes,output.truncated,now_us],
+            "SELECT EXISTS(SELECT 1 FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2 AND state='finalized' AND relative_path=?3 AND retained_payload_bytes=?4 AND physical_bytes=?5 AND discarded_bytes=?6 AND truncated=?7)",
+            params![output.run_id,output.attempt_number,relative_path,output.retained_payload_bytes,output.physical_bytes,output.discarded_bytes,output.truncated],
             |row| row.get(0),
         )?;
         if already_reconciled {
@@ -3729,6 +3742,187 @@ mod tests {
             store.complete_attempt(&mismatched),
             Err(StoreError::Conflict(_))
         ));
+    }
+
+    #[test]
+    fn earliest_pending_eligible_at_us_covers_queued_and_retry_wait_runs() {
+        let (_temp, store) = store();
+        create(&store, &Uuid::now_v7().to_string(), "a");
+        create(&store, &Uuid::now_v7().to_string(), "b");
+        create(&store, &Uuid::now_v7().to_string(), "c");
+
+        // Empty: nothing is pending admission.
+        assert_eq!(store.earliest_pending_eligible_at_us().unwrap(), None);
+
+        // Queued-only.
+        let early = Uuid::now_v7().to_string();
+        store.enqueue_manual("a", &early, 100).unwrap();
+        assert_eq!(store.earliest_pending_eligible_at_us().unwrap(), Some(100));
+
+        // Retry-wait-only.
+        let retry = Uuid::now_v7().to_string();
+        store.enqueue_manual("b", &retry, 500).unwrap();
+        store
+            .conn()
+            .unwrap()
+            .execute("UPDATE runs SET state='retry_wait' WHERE id=?1", [&retry])
+            .unwrap();
+        assert_eq!(store.earliest_pending_eligible_at_us().unwrap(), Some(100));
+
+        // Mixed: the earliest pending deadline wins.
+        let earliest = Uuid::now_v7().to_string();
+        store.enqueue_manual("c", &earliest, 50).unwrap();
+        assert_eq!(store.earliest_pending_eligible_at_us().unwrap(), Some(50));
+
+        // Terminal runs are excluded.
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE runs SET state='succeeded',finished_at_us=999 WHERE id=?1",
+                [&early],
+            )
+            .unwrap();
+        assert_eq!(store.earliest_pending_eligible_at_us().unwrap(), Some(50));
+    }
+
+    #[test]
+    fn finalize_output_reconciliation_is_idempotent_across_timestamps() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "finalize-idempotent");
+        let run = Uuid::now_v7().to_string();
+        store
+            .enqueue_manual("finalize-idempotent", &run, 2)
+            .unwrap();
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+        let output = OutputRecord {
+            run_id: run.clone(),
+            attempt_number: attempt.attempt_number,
+            relative_path: String::new(),
+            state: "finalized".into(),
+            retained_payload_bytes: 3,
+            physical_bytes: 3,
+            discarded_bytes: 0,
+            truncated: false,
+        };
+        store.finalize_output(&output, 100).unwrap();
+        // An identical re-finalization at a different instant is a no-op
+        // because identity excludes the finalization timestamp.
+        store.finalize_output(&output, 200).unwrap();
+        let artifact_state: String = store
+            .conn()
+            .unwrap()
+            .query_row(
+                "SELECT state FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2",
+                params![run, attempt.attempt_number],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(artifact_state, "finalized");
+        // A mismatched durable identity still conflicts.
+        let mut mismatched = output;
+        mismatched.retained_payload_bytes = 99;
+        assert!(matches!(
+            store.finalize_output(&mismatched, 300),
+            Err(StoreError::Conflict(_))
+        ));
+    }
+
+    #[test]
+    fn runner_failure_recompletion_is_idempotent_across_timestamps() {
+        for execution_may_have_started in [false, true] {
+            let (_temp, store) = store();
+            let job = Uuid::now_v7().to_string();
+            create(&store, &job, "idempotent-runner-failure");
+            let run = Uuid::now_v7().to_string();
+            store
+                .enqueue_manual("idempotent-runner-failure", &run, 2)
+                .unwrap();
+            let lifetime = Uuid::now_v7().to_string();
+            store.begin_lifetime(&lifetime, 3, "test").unwrap();
+            let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+            assert_eq!(
+                store
+                    .mark_attempt_running(&run, attempt.attempt_number, 4)
+                    .unwrap(),
+                StartDecision::Ready
+            );
+            store
+                .complete_runner_failure(
+                    &run,
+                    attempt.attempt_number,
+                    10,
+                    "output storage failed",
+                    execution_may_have_started,
+                )
+                .unwrap();
+            // An identical recompletion at a different instant is a no-op
+            // because identity excludes timestamps and the duration derived
+            // from them.
+            store
+                .complete_runner_failure(
+                    &run,
+                    attempt.attempt_number,
+                    999,
+                    "output storage failed",
+                    execution_may_have_started,
+                )
+                .unwrap();
+            let state: String = store
+                .conn()
+                .unwrap()
+                .query_row("SELECT state FROM runs WHERE id=?1", [&run], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(
+                state,
+                if execution_may_have_started {
+                    "interrupted_unknown"
+                } else {
+                    "failed"
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn runner_failure_terminalizes_an_attempt_whose_output_was_already_missing() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "already-missing");
+        let run = Uuid::now_v7().to_string();
+        store.enqueue_manual("already-missing", &run, 2).unwrap();
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 3, "test").unwrap();
+        let attempt = store.admit(&lifetime, 3, 1).unwrap().attempts.remove(0);
+        assert_eq!(
+            store
+                .mark_attempt_running(&run, attempt.attempt_number, 4)
+                .unwrap(),
+            StartDecision::Ready
+        );
+        // Startup recovery already reconciled the pending artifact as missing
+        // at a different instant than the eventual completion, so an ordinary
+        // finalize completion would conflict forever. The daemon's
+        // terminalization fallback must instead succeed and reach a terminal
+        // state.
+        store
+            .reconcile_output_missing(&run, attempt.attempt_number, 50)
+            .unwrap();
+        store
+            .complete_runner_failure(
+                &run,
+                attempt.attempt_number,
+                100,
+                "durable completion conflict after target outcome",
+                true,
+            )
+            .unwrap();
+        assert_eq!(store.run(&run).unwrap().state, "interrupted_unknown");
     }
 
     #[test]

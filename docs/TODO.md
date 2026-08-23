@@ -249,6 +249,35 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
   [32613812071](https://github.com/WhiteKiwi/locron/actions/runs/32613812071) concluded `success`
   across the full matrix; the log contains zero `Node.js 20 is deprecated` warnings.
 
+## Daemon robustness backlog (2026-08-23)
+
+- [x] Replace the fixed 30-second event-loop wait with the documented earliest-deadline wait.
+  The loop must read the earliest pending admission deadline (queued or retry-wait run) durably
+  and sleep until that deadline or the 30-second safety reconciliation, whichever is earlier; an
+  attempt completion must notify the loop so a freshly scheduled retry deadline is observed
+  without reconciliation delay. **Verify:** engine tests drive the loop with injected time and
+  prove admission at the deadline rather than at the next 30-second boundary, and that a
+  completion wake is observed after an attempt commits; store tests cover the
+  earliest-deadline query. **Evidence:** engine tests
+  `run_until_ticks_at_earliest_pending_admission_deadline` (paused time: ticks at the 1s
+  admission deadline, not the 30s safety boundary) and
+  `attempt_completion_notifies_the_wake_handle`; store test
+  `earliest_pending_eligible_at_us_covers_queued_and_retry_wait_runs` (empty, queued-only,
+  retry-wait-only, mixed-earliest, terminal-excluded).
+- [x] Distinguish permanent completion conflicts from transient persistence errors in the
+  engine port and stop retrying them. A permanent conflict logs once and terminalizes the
+  attempt as `interrupted_unknown` where the store permits instead of pinning the run in
+  `running`. Completion idempotency checks compare durable identity fields, never the retry
+  timestamp. **Verify:** engine tests prove a conflicting completion does not retry forever
+  and the run reaches a terminal state; store tests cover timestamp-independent idempotent
+  recompletion. **Evidence:** engine tests
+  `permanent_completion_conflict_falls_back_once_and_never_retries` (exactly one fallback
+  `complete_runner_failure(ExecutionMayHaveStarted)`, attempt terminal as
+  `interrupted_unknown`, 5s timeout guard) and `permanent_runner_failure_conflict_breaks_without_retry`;
+  store tests `finalize_output_reconciliation_is_idempotent_across_timestamps`,
+  `runner_failure_recompletion_is_idempotent_across_timestamps`, and
+  `runner_failure_terminalizes_an_attempt_whose_output_was_already_missing`.
+
 ## Post-milestone delivery backlog
 
 These items begin only after every milestone-1 completion criterion above is satisfied. They do not
