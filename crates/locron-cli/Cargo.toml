@@ -15,12 +15,16 @@ anyhow.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 clap.workspace = true
+flate2.workspace = true
 jiff.workspace = true
 locron-core = { path = "../locron-core" }
 locron-engine = { path = "../locron-engine" }
 locron-store = { path = "../locron-store" }
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true

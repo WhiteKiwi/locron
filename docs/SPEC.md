@@ -5,6 +5,8 @@
 Frozen on 2026-08-21 after interactive product review. Changes to this document represent a change in product scope or behavior and must precede implementation changes.
 
 Amended 2026-08-23: version reporting honors the machine-readable output contract.
+Amended 2026-08-23: installation channels and self-update added; package-manager publication removed from out-of-scope items.
+Amended 2026-08-23: daemon service installation and automatic startup added; operating-system service installation removed from out-of-scope items.
 
 ## Goal
 
@@ -75,9 +77,40 @@ The first program milestone is complete when all of the following can be observe
 - A web viewer or HTTP management API.
 - MCP integration.
 - A desktop application.
-- Package-manager publication and operating-system service installation.
+- Operating-system service installation beyond the per-user registration and startup described in Daemon Service Installation, such as system-wide units, multi-user services, or container-supervisor integration.
 
 The excluded delivery surfaces may influence compatibility boundaries, but they are not acceptance criteria for the first program milestone.
+
+## Installation Channels
+
+A user can install a working prebuilt locron on macOS and Linux without Homebrew, without any developer toolchain (no Xcode Command Line Tools, no Rust), and without administrative privileges. This channel exists so that a machine whose package manager or toolchain is unavailable or outdated can still install and update locron cleanly.
+
+- A single shell command retrieves and executes an official installer that selects the correct published release archive for the machine's operating system and CPU architecture.
+- The installer verifies the selected archive against the checksums published with the release before installing anything.
+- The default install location is inside the user's home directory and requires no elevated privileges. An explicit alternative prefix is supported.
+- After installing, the installer tells the user how to run locron, including any path adjustment the default location requires.
+- The installer is repeatable: running the same command again replaces the binary with the latest published release. Installing a pinned version is also supported.
+- The installer reports actionable errors for unsupported platforms, failed downloads, checksum mismatches, and unwritable install locations, and it does not require or modify a package manager.
+- Homebrew remains a supported channel with its own update path. A script-installed and a Homebrew-installed locron may coexist on one machine; each channel updates through itself.
+- A built-in self-update subcommand replaces the running locron with the latest stable release, selected and verified exactly as the installer verifies downloads, and reports the current and new version before replacing.
+- Self-update manages only installations it can confirm are not owned by a package manager. When the running binary is package-manager-managed, self-update refuses with guidance to use that manager's update path.
+- A failed or interrupted update must leave the existing binary installed and working. Update failures and permission problems produce actionable errors.
+- Selecting a pinned version remains an installer function; self-update always moves to the latest stable release.
+
+## Daemon Service Installation
+
+A user can install locron and have the scheduler running without learning how their operating system supervises background services.
+
+- Installing through the script installer registers and starts the daemon automatically, without administrative privileges, so schedules take effect immediately without a manual start step. An installation can explicitly decline service registration.
+- The registration is a built-in locron operation that knows the installed binary's location. Repeating it refreshes or repairs the registration and is safe while a daemon is already running.
+- On macOS the service is a per-user LaunchAgent. On Linux it is a systemd user unit inside the user's login session.
+- The script installer attempts the Linux registration and, when the environment has no systemd user session, completes the installation successfully with explicit guidance for registering and starting the daemon. Linux package installations (deb/rpm) never register automatically and always print that guidance.
+- Homebrew installation ships the service definition so the package manager's own service mechanism can start and supervise the daemon, and installation does not start it automatically. Package-manager-managed services follow the package manager's start, stop, and update behavior.
+- On Linux the daemon stops at logout and starts again at the next login. Work missed while the daemon was unavailable is reconciled under the missed-run policy when it next starts. Keeping the daemon running after logout is documented as an optional operator step, not an installer behavior.
+- Where locron manages the registration itself, a built-in removal operation unregisters the service without removing the binary.
+- The service keeps the locron daemon itself available, restarting it when it stops unexpectedly. It never becomes a job-level scheduling backend.
+- Starting the registered service never creates a second scheduler for one state directory; the existing single-owner guarantee still applies.
+- When an update replaces the binary, a running daemon keeps the old code until it restarts. Where locron manages the registration itself, the update refreshes the registration and restarts the daemon under ordinary graceful-shutdown rules so the new version takes effect.
 
 ## Required Policy Vocabulary
 

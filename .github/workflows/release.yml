@@ -92,6 +92,7 @@ jobs:
               artifacts/*.deb \
               artifacts/*.rpm \
               artifacts/SHA256SUMS.txt \
+              install.sh \
               --clobber
           else
             gh release create "${GITHUB_REF_NAME}" \
@@ -99,6 +100,7 @@ jobs:
               artifacts/*.deb \
               artifacts/*.rpm \
               artifacts/SHA256SUMS.txt \
+              install.sh \
               --title "locron ${GITHUB_REF_NAME}" \
               --generate-notes
           fi
@@ -148,6 +150,11 @@ jobs:
 
             def install
               bin.install "locron"
+              # Mark this install as package-manager-managed so that
+              # `locron self-update` refuses to replace the binary and
+              # directs users to `brew upgrade locron`.
+              lib.mkpath
+              FileUtils.touch lib/".disable-self-update"
             end
 
             test do

@@ -383,3 +383,53 @@ The plan is restricted to this repository. Before an implementation deviation, u
 - **CLI contract tests:** assert human and machine results, IDs, redaction, error categories, offline enqueue, wait disconnect, import/export round trips, invalid option rejection, doctor output, and thin delegation of `locron daemon run` to the engine.
 - **Platform verification:** run process-group, signal, filesystem permission, timezone, service-lifetime, crash, and global concurrency 16/64 tests on macOS 14+ and Linux kernel 5.14+/glibc 2.34+ across `aarch64` and `x86_64`. Windows, 32-bit, and musl/Alpine results are informational only.
 - **Acceptance audit:** map all 16 `docs/SPEC.md` completion criteria to an automated test or a documented official-platform check. Milestone 1 is incomplete while any criterion lacks evidence.
+
+## Installer and self-update implementation (post-milestone delivery, 2026-08-23)
+
+This section plans the installation-channels amendment to `docs/SPEC.md`: the Homebrew-independent one-line installer and the built-in self-update subcommand. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §11.
+
+### Accepted: evergreen install script
+
+Ship one POSIX `sh` script, `install.sh` at the repository root, as the source of truth. The release pipeline attaches it to every GitHub Release, so the canonical one-liner is version-consistent with the artifacts it installs:
+
+```
+curl -fsSL https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh | sh
+```
+
+The script resolves "latest" exclusively through `releases/latest/download/{asset}` redirects and never calls the GitHub REST API, avoiding the 60/hour unauthenticated limit documented in `docs/FINDINGS.md` §11. A pinned install uses `LOCRON_VERSION=vX.Y.Z`, switching the base to `releases/download/vX.Y.Z/`. Supported targets are exactly the four published release targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`. Detection is `uname -s` (Darwin/Linux) and `uname -m` (arm64/aarch64, x86_64); musl detection via `ldd` must refuse with an actionable error because only glibc builds are published. Any other OS or architecture fails with an actionable unsupported-platform error before any download.
+
+The script downloads `SHA256SUMS.txt` from the same release, selects the line for the chosen target, validates the entry as 64 hex characters, and verifies with `shasum -c` (or `sha256sum`) before extracting. Trust rests on HTTPS to the same origin as the artifacts — the same trust model as mise's pinned-version path. Extraction happens in `mktemp -d` with a cleanup trap; the binary is copied to a temp file inside the install directory, made executable, and atomically renamed over the target, correcting the `rm`+`mv` window present in mise.run's own script.
+
+The default install path is `$HOME/.local/bin/locron`, overridden by `LOCRON_INSTALL_DIR` (a full file path; a directory value is an error, as in mise). No root is required and no shell configuration is modified: the script prints per-shell guidance for adding the directory to `PATH` when it is absent, detected from `$SHELL` like mise's `after_finish_help`. Re-running the same command downloads, verifies, and atomically replaces the binary — this is the update path for script-installed users, and no skip-if-exists option is added because re-running is cheap and deterministic. Missing `curl`/`wget`, download failures, checksum mismatches, extraction failures, and unwritable install directories each produce a specific actionable error and a non-zero exit.
+
+### Accepted: self-update subcommand
+
+Add `locron self-update` to the CLI. It updates only to the latest stable release; pinning remains an installer function per the frozen specification.
+
+Version resolution uses `GET https://api.github.com/repos/WhiteKiwi/locron/releases/latest`. This is an explicit user-triggered action, so the unauthenticated rate limit is acceptable; a rate-limit or network failure maps to the CLI's stable error categories with retry guidance, and no file is touched. The subcommand then downloads the matching tarball and the release's `SHA256SUMS.txt`, verifies the tarball hash (adding `sha2`, `tar`, and `flate2` as pure-Rust dependencies of `locron-cli`, plus `reqwest` with rustls/stream/json for the API and asset downloads — reqwest is already a workspace crate, and the `self_update`/`self-replace` crates were rejected as unnecessary surface for one temp-file-plus-rename), and extracts in a temporary directory. The extracted binary is copied to a temp file in the same directory as the running executable and replaced with a single `fs::rename`, which is atomic on both platforms: the running process keeps its old inode, and the next invocation executes the new binary.
+
+Package-manager refusal follows the mise pattern with a marker we control: the tap formula creates `lib/.disable-self-update` under the brew prefix at install time, and `self-update` refuses with a stable error directing the user to `brew upgrade locron` when the marker exists next to the canonicalized current executable. Script-installed and source-installed binaries have no marker and remain updatable. All verification and download failures occur before the rename, so a failed or interrupted update leaves the existing binary installed and working, as the specification requires. Human output reports the current and new version or "already up to date"; machine output uses the standard `locron.cli/v1` envelope with `command: "self-update"`.
+
+Testability uses rustup's override seam: `LOCRON_UPDATE_API_BASE` and `LOCRON_UPDATE_ASSET_BASE` environment variables default to the production hosts and let contract tests point at a local HTTP fixture serving a fake `releases/latest` document, tarballs, and checksums. No automatic update check or auto-update behavior is added in this amendment.
+
+### Accepted: tap formula marker and release pipeline
+
+The formula template embedded in `.github/workflows/release.yml` gains one line that creates the self-update marker inside the prefix (`touch lib/.disable-self-update`), and the pipeline attaches `install.sh` to GitHub Releases so the canonical one-liner exists for every published version. `docs/CLI.md` documents the `self-update` command under the reviewed CLI contract, and the README installation section adds the one-liner plus the per-channel update story (re-run the script, `brew upgrade`, or `self-update`).
+
+### Edge cases to handle explicitly
+
+- A machine has both a brew-installed and a script-installed locron; `PATH` order decides which runs, and each channel updates through itself.
+- The daemon is running during self-update: replacement is atomic and the running daemon keeps the old code until its next restart; the operator documentation states this explicitly.
+- The script or self-update runs on musl Linux, Windows, or an unknown architecture: refuse with the published-platform error, never guess.
+- `LOCRON_INSTALL_DIR` is a directory or an unwritable path; `/tmp` is mounted noexec (mirror rustup's actionable message).
+- A checksum file line for the target is missing or malformed; the tarball is truncated or corrupted mid-download.
+- The GitHub API is rate-limited or unreachable during self-update; the tap formula is installed with an old marker layout.
+- A pinned `LOCRON_VERSION` refers to a release whose checksum asset or tarball does not exist.
+
+### Verification additions
+
+- **Installer static checks:** `sh -n` and shellcheck pass in CI; the script contains no bashisms; a fixture-server test runs it end-to-end on macOS and Linux CI legs against a fake release layout (latest redirect, pinned version, checksum mismatch, unsupported arch, unwritable dir) with `LOCRON_VERSION` and the asset-base override, then executes the installed binary's `-V`.
+- **Installer release check:** a pinned run against the real `v0.1.1` release into a temporary directory installs a working binary on both macOS architectures and Linux.
+- **Self-update contract tests:** local HTTP fixture drives latest resolution, checksum verification, atomic replacement (the pre-update process keeps running while new invocations run the new binary), marker-file refusal with brew guidance, "already up to date", rate-limit error mapping, and JSON envelope output; failure injection proves the old binary is untouched after download/verify errors.
+- **Formula marker:** the tap formula template contains the marker line, and a manual `brew reinstall` followed by `self-update` refusal is recorded as evidence at the next release.
+- **Platform matrix:** the existing four-target CI runs the new suites; Windows, 32-bit, and musl results remain informational.

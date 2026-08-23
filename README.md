@@ -75,6 +75,22 @@ tar -xzf locron-v<version>-<target>.tar.gz
 sudo mv locron /usr/local/bin/
 ```
 
+### Install Script (macOS & Linux)
+
+The one-liner installs the latest release for your platform (aarch64 or x86_64 on macOS and glibc Linux) into `~/.local/bin/locron` after verifying the tarball against the release's `SHA256SUMS.txt`:
+
+```sh
+curl -fsSL https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh | sh
+```
+
+To pin a specific version, set `LOCRON_VERSION` (e.g. `LOCRON_VERSION=v0.2.0`). To install elsewhere, set `LOCRON_INSTALL_DIR` to the full binary path (default `~/.local/bin/locron`). The script never modifies your shell configuration; it prints the `PATH` line to add if the install directory is not already on `$PATH`.
+
+### Updating
+
+- **Homebrew tap**: `brew upgrade locron`.
+- **Install script / tarball installs**: `locron self-update` replaces the binary with the latest stable release after verifying its checksum. A running `locron daemon run` keeps the old code until you restart it.
+- **Debian / RPM packages**: replace the package with the new version.
+
 ### Build from Source
 
 Requires **Rust 1.94+**:
@@ -213,6 +229,19 @@ For in-depth guides and architectural references:
 - 🏗️ **[Architecture](docs/ARCHITECTURE.md)**: System architecture, invariants, and durable state model.
 - 📦 **[Release & CI/CD Policy](docs/RELEASE.md)**: Semantic versioning, packaging, and release automation.
 - 📋 **[Milestone 1 Specification](docs/SPEC.md)**: Frozen product goals and completion criteria.
+- 🤝 **[Contributing Guide](CONTRIBUTING.md)**: Development workflow, local checks, and commit conventions.
+- 📝 **[Changelog](CHANGELOG.md)**: Notable changes in each release.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome. `locron` is developed **documentation-first** — the planning documents change before the code does — so please read **[CONTRIBUTING.md](CONTRIBUTING.md)** before opening a pull request.
+
+- 🐛 **[Report a bug or propose a feature](https://github.com/WhiteKiwi/locron/issues/new/choose)**
+- 🔒 **[Report a security vulnerability privately](https://github.com/WhiteKiwi/locron/security/advisories/new)** — never in a public issue ([`SECURITY.md`](SECURITY.md))
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md) code of conduct.
 
 ---
 
@@ -224,3 +253,7 @@ Dual-licensed under either of:
 - **Apache License, Version 2.0** ([`LICENSE-APACHE`](LICENSE-APACHE))
 
 at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

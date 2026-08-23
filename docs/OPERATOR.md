@@ -22,6 +22,13 @@ locron config get
 locron list --all
 ```
 
+## Updating locron
+
+- **Install script / tarball installs** update with `locron self-update`: it verifies the downloaded archive against the release's `SHA256SUMS.txt` and replaces the binary atomically (one temp file plus rename in the executable's directory), so a failed or interrupted update leaves the old binary working.
+- **Homebrew** installs update with `brew upgrade locron`; the formula marks the install (`lib/.disable-self-update`) so `locron self-update` refuses and points to Homebrew.
+- **Debian / RPM** installs update by replacing the package.
+- A running `locron daemon run` process keeps the old code until it is restarted: self-update replaces the file on disk and never signals running processes. After updating, restart the daemon (and any long-lived `locron` MCP/`run --wait` clients) to run the new version. Durable state is versioned, so downgrades and upgrades across revisions are handled by the store migration path; schedule and history data survive the restart.
+
 ## Schedules
 
 Every job has exactly one schedule. Preview before registration or enablement when timing matters:

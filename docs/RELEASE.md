@@ -50,6 +50,10 @@ locron-v{version}-{target}/
 - Every release MUST generate a single `SHA256SUMS.txt` file containing the SHA-256 hashes of all release archive assets.
 - Verification command: `sha256sum -c SHA256SUMS.txt` (Linux) or `shasum -a 256 -c SHA256SUMS.txt` (macOS).
 
+### Install Script Asset
+- Every release MUST also publish the repository's `install.sh` (the root-level POSIX sh installer) as a release asset. It is fetched at `https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh`, and the release workflow attaches the checked-out `install.sh` to the release.
+- The installer downloads the platform archive through the same static `releases/latest/download/` redirects, verifies it against the release `SHA256SUMS.txt`, and installs it; it supports `LOCRON_VERSION` pinning and `LOCRON_INSTALL_DIR` overrides.
+
 ---
 
 ## 3. CI/CD Workflow Architecture
@@ -75,8 +79,8 @@ The repository employs two automated GitHub Actions workflows:
   2. **Build Release Binaries**: Build with `cargo build --release --locked` (leveraging LTO and symbol stripping).
   3. **Package Archives**: Assemble `.tar.gz` bundles with binary, README, and licenses.
   4. **Generate Checksums**: Compute SHA-256 hashes for all generated archives into `SHA256SUMS.txt`.
-  5. **Create GitHub Release**: Create a GitHub Release with auto-generated changelog and upload all archives and `SHA256SUMS.txt`.
-  6. **Homebrew Tap Dispatch**: Trigger downstream update in `whitekiwi/homebrew-tap` with the new version and macOS archive URLs & SHA-256 hashes.
+  5. **Create GitHub Release**: Create a GitHub Release with auto-generated changelog and upload all archives, `SHA256SUMS.txt`, and `install.sh`.
+  6. **Homebrew Tap Dispatch**: Trigger downstream update in `whitekiwi/homebrew-tap` with the new version and macOS archive URLs & SHA-256 hashes. The generated formula installs `locron` into `bin` and touches `lib/.disable-self-update` so `locron self-update` refuses package-manager-managed installs.
 - **Job timeouts**: The `build` job has a 45-minute budget and the `publish` job a 10-minute budget (`timeout-minutes`). A hung build (e.g. a stalled runner) cancels the workflow instead of blocking the release indefinitely.
 
 ---
@@ -86,6 +90,8 @@ The repository employs two automated GitHub Actions workflows:
 ### 1. GitHub Releases (Direct Download)
 - The primary source of truth for release binaries, release notes, and checksums.
 - Standalone binaries can be downloaded, unpacked, and placed directly in `$PATH`.
+- The `install.sh` asset is the convenience installer for macOS and Linux; it defaults to `~/.local/bin/locron` and verifies the archive against `SHA256SUMS.txt`.
+- Installations from the installer or tarballs update themselves with `locron self-update` (verified, atomic replacement; never for package-manager-managed installs).
 
 ### 2. Homebrew Tap (`whitekiwi/homebrew-tap`)
 - **Repository**: `https://github.com/whitekiwi/homebrew-tap`

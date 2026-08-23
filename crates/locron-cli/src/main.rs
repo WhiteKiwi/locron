@@ -2,6 +2,7 @@
 
 mod maintenance;
 mod mcp;
+mod self_update;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
@@ -38,6 +39,7 @@ use locron_store::{
     ReconciliationSummary, RetryPlan, RunRecord, SettingsRecord, StatePaths, Store, StoreError,
     UpdateJob,
 };
+use self_update::SelfUpdateError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -209,6 +211,16 @@ Navigation:
 const MCP_HELP: &str = "\
 Examples:
   locron mcp
+
+Navigation:
+  Run 'locron --help' to list all commands.";
+const SELF_UPDATE_HELP: &str = "\
+Examples:
+  locron self-update
+
+Replaces the running binary with the latest stable release after verifying its
+checksum against the release's SHA256SUMS.txt. The running process keeps the
+old code until it restarts. Package-manager-managed installs are refused.
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -413,6 +425,8 @@ enum Command {
     /// Serve the Model Context Protocol (MCP) over stdio
     #[command(about = "Serve the Model Context Protocol (MCP) over stdio", after_help = MCP_HELP)]
     Mcp,
+    #[command(about = "Replace this binary with the latest stable release", after_help = SELF_UPDATE_HELP)]
+    SelfUpdate,
 }
 
 #[derive(Subcommand, Debug)]
@@ -949,6 +963,20 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
             command: DaemonCommand::Run,
         } => daemon(paths).await,
         Command::Mcp => mcp::run_mcp_server(paths).await,
+        Command::SelfUpdate => {
+            let outcome = self_update::update().await?;
+            render(
+                format,
+                "self-update",
+                json!({
+                    "current_version": outcome.current_version,
+                    "new_version": outcome.new_version,
+                    "updated": outcome.updated,
+                }),
+                &[],
+            );
+            Ok(())
+        }
     }
 }
 
@@ -3547,6 +3575,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Doctor => "doctor",
         Command::Daemon { .. } => "daemon",
         Command::Mcp => "mcp",
+        Command::SelfUpdate => "self-update",
     }
 }
 #[derive(Serialize)]
@@ -3735,6 +3764,16 @@ fn render_stream_error(command: &str, error: &anyhow::Error) {
 fn error_code(error: &anyhow::Error) -> &'static str {
     if error.downcast_ref::<TargetOutcomeError>().is_some() {
         "target_outcome"
+    } else if let Some(update) = error.downcast_ref::<SelfUpdateError>() {
+        match update {
+            SelfUpdateError::UnsupportedPlatform { .. } => "update_unsupported_platform",
+            SelfUpdateError::ManagedInstall => "update_managed_install",
+            SelfUpdateError::RateLimited => "update_rate_limited",
+            SelfUpdateError::Network(_) => "update_network",
+            SelfUpdateError::ReleaseMetadata(_) => "update_release_metadata",
+            SelfUpdateError::ChecksumMismatch { .. } => "update_checksum_mismatch",
+            SelfUpdateError::Io(_) => "update_io",
+        }
     } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) => "not_found",
@@ -3751,6 +3790,16 @@ fn error_code(error: &anyhow::Error) -> &'static str {
 fn exit_code(error: &anyhow::Error) -> i32 {
     if error.downcast_ref::<TargetOutcomeError>().is_some() {
         1
+    } else if let Some(update) = error.downcast_ref::<SelfUpdateError>() {
+        match update {
+            SelfUpdateError::UnsupportedPlatform { .. } => 2,
+            SelfUpdateError::ManagedInstall => 3,
+            SelfUpdateError::RateLimited
+            | SelfUpdateError::Network(_)
+            | SelfUpdateError::ReleaseMetadata(_)
+            | SelfUpdateError::ChecksumMismatch { .. }
+            | SelfUpdateError::Io(_) => 5,
+        }
     } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) | StoreError::Conflict(_) => 3,

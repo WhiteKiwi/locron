@@ -44,6 +44,7 @@ locron import PATH [--accept-plaintext-values] [--dry-run]
 locron prune [--dry-run]
 locron doctor
 locron daemon run
+locron self-update
 ```
 
 Job references accept an exact live name or canonical UUID. Run references are canonical UUIDs. Human output may abbreviate an ID only in decorative tables; copyable output always includes the full ID.
@@ -194,6 +195,35 @@ wake notification.
 - It does not create, edit, enable, disable, remove, enqueue, cancel, signal, prune, rename output, or make an HTTP request.
 - A run dry-run reports the policy decision that would be made at that instant and clearly states that capacity was not reserved.
 - When required state does not exist, a creation dry-run uses documented defaults; a dry-run referring to existing state reports not found.
+
+## Self-update
+
+`locron self-update` replaces the running binary with the latest stable release.
+
+- It resolves the latest release through the GitHub releases API (`https://api.github.com/repos/WhiteKiwi/locron/releases/latest`, overridable with `LOCRON_UPDATE_API_BASE`), then downloads the target platform's tarball and the release's `SHA256SUMS.txt` from `https://github.com/WhiteKiwi/locron/releases/download/<tag>/` (overridable with `LOCRON_UPDATE_ASSET_BASE`).
+- The tarball is verified against its published SHA-256 before anything is touched; the binary is then replaced with one temp file and an atomic rename in the executable's directory. A failed, cancelled, or interrupted update leaves the existing binary installed and working.
+- When the running version is the latest (or newer), the command exits 0 with `updated: false` and downloads nothing.
+- Self-update is refused with exit 3 and code `update_managed_install` when the package-manager marker (`lib/.disable-self-update` next to the executable) is present; the error directs the user to `brew upgrade locron`.
+- Supported platforms are aarch64 and x86_64 on macOS and glibc Linux; musl Linux and other platforms fail with exit 2 and code `update_unsupported_platform`.
+- The daemon and any running `locron` process keep the old code until they restart; self-update never signals running processes.
+
+Machine output for a success carries `data`:
+
+```json
+{
+  "schema": "locron.cli/v1",
+  "ok": true,
+  "command": "self-update",
+  "data": {
+    "current_version": "0.2.0",
+    "new_version": "0.2.1",
+    "updated": true
+  },
+  "warnings": []
+}
+```
+
+Stable error codes: `update_unsupported_platform` (2), `update_managed_install` (3), `update_rate_limited` (5), `update_network` (5), `update_release_metadata` (5), `update_checksum_mismatch` (5), `update_io` (5).
 
 ## Why and diagnostics
 

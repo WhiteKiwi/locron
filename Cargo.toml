@@ -22,6 +22,7 @@ base64 = "0.22"
 blake3 = "1.8"
 clap = { version = "4.5", features = ["derive", "env"] }
 crc32fast = "1.5"
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 futures-util = "0.3"
 jiff = { version = "0.2", features = ["serde"] }
 nix = { version = "0.31", features = ["process", "signal"] }
@@ -30,6 +31,8 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "s
 rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
+tar = { version = "0.4", default-features = false }
 tempfile = "3.24"
 thiserror = "2.0"
 tokio = { version = "1.49", features = ["rt-multi-thread", "macros", "time", "process", "signal", "net", "sync", "io-util", "fs", "io-std"] }

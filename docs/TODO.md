@@ -313,6 +313,32 @@ their workflows or release infrastructure.
   cross-links to `docs/OPERATOR.md`, `docs/CLI.md`, `docs/RELEASE.md`, and reciprocal link to
   `whitekiwi/homebrew-tap`.
 
+## Installer and self-update backlog (2026-08-23)
+
+Authorized by the frozen 2026-08-23 `docs/SPEC.md` amendment (installation channels and self-update). Planned in `docs/IMPLEMENTATION.md` "Installer and self-update implementation"; evidence in `docs/FINDINGS.md` §11.
+
+- [x] Amend planning documents before code: SPEC (frozen), FINDINGS §11, IMPLEMENTATION section.
+  **Verify:** `rg -n "Installation Channels|11\. One-line Installer|Installer and self-update implementation" docs/SPEC.md docs/FINDINGS.md docs/IMPLEMENTATION.md` returns the amendment, the evidence section, and the implementation section, and no planning document marks an unresolved decision.
+- [x] Add `install.sh` (POSIX `sh`, repository root): target detection, latest/pinned resolution through `releases/latest/download` redirects, `SHA256SUMS.txt` verification, atomic replace into `$HOME/.local/bin` (or `LOCRON_INSTALL_DIR`), PATH guidance, actionable errors.
+  **Verify:** `sh -n install.sh` passes; fixture-driven runs (asset-base override) cover latest, pinned, checksum mismatch, unsupported arch, and unwritable dir with actionable errors and exit 1; a real `LOCRON_VERSION=v0.1.1` run on macOS arm64 installs a working binary, and re-running stays idempotent. shellcheck was unavailable locally — carried in the follow-up below.
+- [x] Smoke the real v0.1.1 release through the script.
+  **Verify:** `LOCRON_VERSION=v0.1.1 LOCRON_INSTALL_DIR=<tmp>/bin/locron sh install.sh` exits 0, prints `Installed locron v0.1.1 to ...`, the binary answers `locron 0.1.1`, and a re-run replaces it idempotently (macOS arm64). The Linux x86_64 leg is carried in the follow-up below.
+- [x] Implement `locron self-update` in `locron-cli` (deps `sha2`, `tar`, `flate2`, plus `reqwest` rustls/stream/json as the TLS client; `LOCRON_UPDATE_API_BASE`/`LOCRON_UPDATE_ASSET_BASE` test seams): latest resolution, checksum verification, atomic self-replace, marker refusal (`lib/.disable-self-update`), human and `locron.cli/v1` output, stable error mapping.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test -p locron-cli` pass; the real-API smoke `locron --json self-update` returns the `locron.cli/v1` envelope with `current_version`/`new_version`/`updated` and exit 0. The reqwest addition is recorded in `docs/IMPLEMENTATION.md`.
+- [x] Self-update contract tests against a local fixture.
+  **Verify:** 9 contract tests green against a local std-TcpListener fixture: latest install (JSON envelope; replaced binary runs), human output, already-up-to-date without asset downloads, checksum-mismatch no-op leaving the old binary untouched, atomic replace while a live child process holds stdin, marker refusal with brew guidance, rate-limit mapping, and missing-asset/malformed-checksum metadata errors.
+- [x] Add the marker line to the formula template in `.github/workflows/release.yml` (`lib.mkpath` + `FileUtils.touch lib/.disable-self-update`) and attach `install.sh` to GitHub Releases (both `gh release create` and `gh release upload` paths).
+  **Verify:** the workflow parses as valid YAML and the template contains the marker creation. The generated-formula and manual `brew reinstall locron && locron self-update` refusal checks are deferred to the next real tag (follow-up below).
+- [x] Update documentation: README one-liner and per-channel update story; `docs/CLI.md` `self-update` contract; `docs/RELEASE.md` channel and asset additions; operator note that a running daemon keeps the old code until restart.
+  **Verify:** all four documents updated; CLI contract tests pass with the new subcommand; the frozen SPEC wording is followed.
+- [x] Run full workspace verification.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass locally. The four-target CI matrix run is deferred until the change is pushed (follow-up below).
+
+### Follow-up (open)
+
+- [ ] Close the remaining verification gaps: run shellcheck (and consider adding it to CI), exercise the musl/unsupported-arch refusal and the Linux install leg in CI, run the four-target CI matrix after push, and at the next real tag verify that the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and that the release carries `install.sh`. Minor cleanup: the HOME-unset guard at the top of `install.sh` is dead code after the default expansion and can be removed.
+  **Verify:** shellcheck clean; Linux fixture leg green; CI matrix green on all four targets; next-tag marker/release evidence recorded in this section.
+
 ## Ordered deferred product roadmap
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;
