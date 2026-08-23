@@ -216,6 +216,23 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
   **Evidence:** the full workspace test suite and clippy pass; the clap help-surface acceptance
   tests pass unchanged.
 
+## Workflow node24 migration backlog (2026-08-23)
+
+- [ ] Record the node24 action migration here and confirm `docs/RELEASE.md` needs no change (its CI
+  section already requires up-to-date action versions). **Verify:** `docs/RELEASE.md` line "Check
+  out repository with up-to-date action versions" covers the change; the superseded milestone-1
+  `actions/checkout@v4` Verify clause above points at this section.
+- [ ] Bump the flagged node20 actions to their node24 majors in `.github/workflows/ci.yml` and
+  `.github/workflows/release.yml`: `actions/checkout@v4`→`@v7`, `actions/upload-artifact@v4`→`@v7`,
+  `actions/download-artifact@v4`→`@v8`. Keep input usage unchanged (`name`/`path`/`merge-multiple`,
+  plain checkout). **Verify:** `rg -n "checkout@v4|upload-artifact@v4|download-artifact@v4"
+  .github` returns nothing; both files parse as YAML; the v7/v8 input names used are present in the
+  published action.yml files.
+- [ ] Push to `main` and confirm the CI matrix passes with no Node 20 deprecation warnings. The
+  tag-only release workflow cannot be dry-run without publishing; its publish path is verified by
+  review and the next real release. **Verify:** the `ci.yml` run on `main` completes green on all 8
+  matrix legs and `gh run view <run> --log | grep "Node.js 20 is deprecated"` returns no matches.
+
 ## Post-milestone delivery backlog
 
 These items begin only after every milestone-1 completion criterion above is satisfied. They do not
@@ -229,8 +246,9 @@ their workflows or release infrastructure.
 - [x] Complete GitHub build/test CI and GitHub Releases for release operations, including macOS and
   Linux architecture artifacts, checksums, provenance, signing policy, and rollback policy; review
   the next supported major of `actions/checkout` to remove the current Node 20 deprecation
-  annotation. **Verify:** `.github/workflows/ci.yml` uses `actions/checkout@v4` across 4 official
-  platforms; `.github/workflows/release.yml` implements automated 4-target matrix builds, tar.gz
+  annotation. **Verify:** `.github/workflows/ci.yml` uses an up-to-date `actions/checkout` major
+  across 4 official platforms (migrated from v4 by the "Workflow node24 migration backlog" below);
+  `.github/workflows/release.yml` implements automated 4-target matrix builds, tar.gz
   packaging with README and dual licenses, SHA-256 checksum generation, and GitHub Release publication.
 - [x] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** `Formula/locron.rb` in
   `whitekiwi/homebrew-tap` defines multi-platform URL and SHA-256 targets for macOS and Linux on arm64
