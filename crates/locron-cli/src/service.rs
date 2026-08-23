@@ -21,13 +21,14 @@ use std::env;
 use std::error::Error as StdError;
 use std::fmt;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::Subcommand;
+use locron_server::{Config, PortPolicy};
 use locron_store::{DaemonLock, StatePaths, StoreError};
 use serde_json::{Value, json};
 
@@ -659,10 +660,40 @@ token value).
 
 Navigation:
   Run 'locron dashboard --help' for dashboard commands or 'locron --help' for all commands.";
+const DASHBOARD_SERVE_HELP: &str = "\
+Examples:
+  locron dashboard
+  locron dashboard --port 9000 --bind 127.0.0.1
 
-/// The `locron dashboard` service-management subcommands.
+Serves the web dashboard in the foreground: binds loopback only, prints the
+access URL, and serves until a signal. The bare 'locron dashboard' form is
+identical. An occupied default port falls back to the next free port when
+stdin is a terminal and fails in service contexts (launchd and systemd run
+the service with /dev/null stdin), where the fixed address must never move;
+an explicit --port is always strict. The --bind option accepts only the
+loopback addresses 127.0.0.1 and ::1; any other value is refused.
+
+Navigation:
+  Run 'locron dashboard --help' for dashboard commands or 'locron --help' for all commands.";
+const DASHBOARD_TOKEN_HELP: &str = "\
+Examples:
+  locron dashboard token
+
+Re-displays the 64-character access token stored in the state directory,
+generating it when absent. This is the only output that shows the token
+value (besides the first-run foreground line); every other surface reports
+only token facts. The token is accepted by the entry-page paste box and the
+Authorization: token header.
+
+Navigation:
+  Run 'locron dashboard --help' for dashboard commands or 'locron --help' for all commands.";
+
+/// The `locron dashboard` subcommands. The bare `locron dashboard` form (no
+/// subcommand) serves in the foreground, identical to [`DashboardCommand::Serve`].
 #[derive(Clone, Copy, Subcommand, Debug)]
 pub(crate) enum DashboardCommand {
+    #[command(about = "Run the dashboard server in the foreground", after_help = DASHBOARD_SERVE_HELP)]
+    Serve,
     #[command(about = "Register and start the dashboard as a per-user service", after_help = DASHBOARD_ENABLE_HELP)]
     Enable {
         /// Regenerate the access token, then refresh and restart the service
@@ -673,6 +704,8 @@ pub(crate) enum DashboardCommand {
     Disable,
     #[command(about = "Report the dashboard service registration state and access facts", after_help = DASHBOARD_STATUS_HELP)]
     Status,
+    #[command(about = "Display the dashboard access token", after_help = DASHBOARD_TOKEN_HELP)]
+    Token,
 }
 
 /// The fixed access URL of the service-mode dashboard.
@@ -779,61 +812,224 @@ fn dashboard_status(
     Ok((outcome, token))
 }
 
-/// Run the requested dashboard subcommand and render its result.
-pub(crate) fn execute_dashboard(
-    state_dir: Option<PathBuf>,
-    command: DashboardCommand,
-    format: Format,
-) -> Result<()> {
-    let port = select_port()?;
-    let ctx = ServiceContext::new(state_dir, Target::Dashboard)?;
-    match command {
-        DashboardCommand::Enable { reset } => {
-            let outcome = dashboard_enable(&ctx, port.as_ref(), reset)?;
-            render_install(format, Target::Dashboard, "dashboard enable", &outcome);
-        }
-        DashboardCommand::Disable => {
-            let (outcome, guidance) = dashboard_disable(&ctx, port.as_ref())?;
-            let mut data = json!({
-                "removed": outcome.removed,
-                "stopped": outcome.stopped,
-                "token_removed": true,
-                "service_name": Target::Dashboard.service_name(),
-            });
-            if let Some(guidance) = guidance {
-                data["guidance"] = json!(guidance);
-                if format == Format::Human {
-                    eprintln!("\n{guidance}");
-                }
-            }
-            render(format, "dashboard disable", data, &[]);
-        }
-        DashboardCommand::Status => {
-            let (outcome, token) = dashboard_status(&ctx, port.as_ref())?;
-            let mut data = json!({
-                "registered": outcome.registered,
-                "loaded": outcome.loaded,
-                "enabled": outcome.enabled,
-                "domain": outcome.domain,
-                "pid": outcome.pid,
-                "executable": outcome.executable,
-                "session_available": outcome.session_available,
-                "service_name": Target::Dashboard.service_name(),
-                "access_url": access_url(),
-                "token": token,
-            });
-            if !outcome.loaded && outcome.registered {
-                data["guidance"] = json!(
-                    "the service is registered but not running; an occupied port at the access URL or a stopped service are the usual causes"
-                );
-                if format == Format::Human {
-                    eprintln!("\n{}", data["guidance"]);
-                }
-            }
-            render(format, "dashboard status", data, &[]);
+/// The port policy for foreground serving: an explicit `--port` is always
+/// strict; without one, an interactive terminal falls back to the next free
+/// port while a service context (launchd and systemd run the service with
+/// /dev/null stdin) keeps the fixed default so the bookmarked address never
+/// moves.
+fn port_policy(explicit_port: Option<u16>, interactive: bool) -> PortPolicy {
+    if explicit_port.is_some() || !interactive {
+        PortPolicy::Fixed
+    } else {
+        PortPolicy::Foreground
+    }
+}
+
+/// Validate the `--bind` values: only the loopback literals `127.0.0.1` and
+/// `::1` are accepted (comma separated), matching the fixed loopback-only
+/// contract; anything else is a stable usage error.
+fn parse_bind(bind: Option<&str>) -> Result<Vec<String>, String> {
+    let Some(bind) = bind else {
+        return Ok(vec!["127.0.0.1".to_owned(), "::1".to_owned()]);
+    };
+    let addresses = bind
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if addresses.is_empty() {
+        return Err("--bind requires at least one loopback address (127.0.0.1, ::1)".to_owned());
+    }
+    for address in &addresses {
+        if !matches!(*address, "127.0.0.1" | "::1") {
+            return Err(format!(
+                "--bind accepts only the loopback addresses 127.0.0.1 and ::1; refused {address}"
+            ));
         }
     }
+    Ok(addresses.into_iter().map(str::to_owned).collect())
+}
+
+/// The state paths for foreground serving, tolerating a missing platform
+/// default only when an explicit state directory was given.
+fn serve_paths(state_dir: Option<PathBuf>) -> Result<StatePaths, ServiceError> {
+    match StatePaths::discover(state_dir.as_deref()) {
+        Ok(paths) => Ok(paths),
+        Err(_) => state_dir
+            .map(StatePaths::new)
+            .ok_or_else(|| ServiceError::Io("cannot determine the state directory".to_owned())),
+    }
+}
+
+/// `locron dashboard` / `locron dashboard serve`: bind loopback, print the
+/// access URL, then serve until a signal.
+async fn foreground_serve(
+    state_dir: Option<PathBuf>,
+    port_arg: Option<u16>,
+    bind_arg: Option<String>,
+    format: Format,
+) -> Result<()> {
+    let paths = serve_paths(state_dir)?;
+    let bind = parse_bind(bind_arg.as_deref()).map_err(|message| anyhow!(message))?;
+    let config = Config {
+        bind,
+        port: port_arg,
+        port_policy: port_policy(port_arg, std::io::stdin().is_terminal()),
+        token_file: locron_server::token::TOKEN_FILE_NAME.into(),
+    };
+    let bound = locron_server::bind(&config)
+        .await
+        .map_err(|error| ServiceError::Io(format!("cannot bind the dashboard server: {error}")))?;
+    let generated = !locron_server::token::token_path(&paths).exists();
+    let token = locron_server::token::ensure(&paths)
+        .map_err(|error| ServiceError::Io(format!("cannot ensure the access token: {error}")))?;
+    let url = format!("http://127.0.0.1:{}/", bound.port);
+    match format {
+        Format::Human => {
+            println!("Dashboard URL: {url}");
+            for warning in &bound.warnings {
+                eprintln!("warning: {warning}");
+            }
+            if generated {
+                println!(
+                    "Access token (newly generated; the entry-page paste box accepts it): {token}"
+                );
+            }
+        }
+        Format::Json => {
+            let mut token_data = token_facts(&paths)?;
+            token_data["generated"] = json!(generated);
+            let warnings = bound
+                .warnings
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            render(
+                format,
+                "dashboard",
+                json!({
+                    "access_url": url,
+                    "token": token_data,
+                }),
+                &warnings,
+            );
+        }
+    }
+    locron_server::serve(bound, paths)
+        .await
+        .map_err(|error| ServiceError::Io(format!("the dashboard server failed: {error}")))?;
     Ok(())
+}
+
+/// `locron dashboard token`: ensure and re-display the access token — the only
+/// output that shows the token value.
+fn dashboard_token(state_dir: Option<PathBuf>, format: Format) -> Result<(), ServiceError> {
+    let ctx = ServiceContext::new(state_dir, Target::Dashboard)?;
+    let paths = dashboard_paths(&ctx)?;
+    let token = locron_server::token::ensure(paths)
+        .map_err(|error| ServiceError::Io(format!("cannot read the access token: {error}")))?;
+    render(
+        format,
+        "dashboard token",
+        json!({
+            "access_url": access_url(),
+            "token": token,
+        }),
+        &[],
+    );
+    Ok(())
+}
+
+/// Dashboard exposure facts for `locron doctor`: token posture and whether a
+/// dashboard service is registered (never the token value).
+pub(crate) fn dashboard_doctor_facts(state_dir: Option<PathBuf>) -> Result<Value, ServiceError> {
+    let ctx = ServiceContext::new(state_dir, Target::Dashboard)?;
+    let paths = dashboard_paths(&ctx)?;
+    let token = token_facts(paths)?;
+    let outcome = status(&ctx, select_port()?.as_ref())?;
+    Ok(json!({
+        "access_url": access_url(),
+        "token": token,
+        "registered": outcome.registered,
+        "loaded": outcome.loaded,
+    }))
+}
+
+/// Run the requested dashboard subcommand and render its result. The bare
+/// `locron dashboard` form (no subcommand) serves in the foreground.
+pub(crate) async fn execute_dashboard(
+    state_dir: Option<PathBuf>,
+    port_arg: Option<u16>,
+    bind_arg: Option<String>,
+    command: Option<DashboardCommand>,
+    format: Format,
+) -> Result<()> {
+    match command {
+        None | Some(DashboardCommand::Serve) => {
+            foreground_serve(state_dir, port_arg, bind_arg, format).await
+        }
+        Some(DashboardCommand::Token) => dashboard_token(state_dir, format).map_err(Into::into),
+        Some(
+            DashboardCommand::Enable { .. } | DashboardCommand::Disable | DashboardCommand::Status,
+        ) => {
+            if port_arg.is_some() || bind_arg.is_some() {
+                return Err(anyhow!(
+                    "the --port and --bind options apply only to foreground serving; \
+                     run 'locron dashboard --port N' without a subcommand"
+                ));
+            }
+            let port = select_port()?;
+            let ctx = ServiceContext::new(state_dir, Target::Dashboard)?;
+            match command {
+                Some(DashboardCommand::Enable { reset }) => {
+                    let outcome = dashboard_enable(&ctx, port.as_ref(), reset)?;
+                    render_install(format, Target::Dashboard, "dashboard enable", &outcome);
+                }
+                Some(DashboardCommand::Disable) => {
+                    let (outcome, guidance) = dashboard_disable(&ctx, port.as_ref())?;
+                    let mut data = json!({
+                        "removed": outcome.removed,
+                        "stopped": outcome.stopped,
+                        "token_removed": true,
+                        "service_name": Target::Dashboard.service_name(),
+                    });
+                    if let Some(guidance) = guidance {
+                        data["guidance"] = json!(guidance);
+                        if format == Format::Human {
+                            eprintln!("\n{guidance}");
+                        }
+                    }
+                    render(format, "dashboard disable", data, &[]);
+                }
+                Some(DashboardCommand::Status) => {
+                    let (outcome, token) = dashboard_status(&ctx, port.as_ref())?;
+                    let mut data = json!({
+                        "registered": outcome.registered,
+                        "loaded": outcome.loaded,
+                        "enabled": outcome.enabled,
+                        "domain": outcome.domain,
+                        "pid": outcome.pid,
+                        "executable": outcome.executable,
+                        "session_available": outcome.session_available,
+                        "service_name": Target::Dashboard.service_name(),
+                        "access_url": access_url(),
+                        "token": token,
+                    });
+                    if !outcome.loaded && outcome.registered {
+                        data["guidance"] = json!(
+                            "the service is registered but not running; an occupied port at the access URL or a stopped service are the usual causes"
+                        );
+                        if format == Format::Human {
+                            eprintln!("\n{}", data["guidance"]);
+                        }
+                    }
+                    render(format, "dashboard status", data, &[]);
+                }
+                _ => unreachable!("matched a service-management dashboard command"),
+            }
+            Ok(())
+        }
+    }
 }
 
 fn render_install(format: Format, target: Target, command: &str, outcome: &InstallOutcome) {

@@ -179,6 +179,28 @@ Implementation notes (step 8):
   canonical IPv6 bracket form); anything else is 403 before routing.
 - If only one loopback family can be bound, the server warns and continues on the other.
 
+Implementation notes (step 9):
+
+- The foreground/service mode distinction for the identical `locron dashboard`
+  and `locron dashboard serve` invocation is decided by process context, because
+  the service manager executes the flagless form and the templates are frozen:
+  when stdin is a terminal the policy is `Foreground` (fallback), and when it is
+  not — launchd and systemd run services with stdin at /dev/null, and scripts
+  pipe it — the policy is `Fixed` (an occupied port makes the server exit with an
+  actionable error, which `dashboard status` reports through `loaded: false` plus
+  guidance). An explicit `--port N` is always `Fixed`. The selection is a pure
+  function so the three cases are unit-tested, and the two behaviors are
+  integration-tested by spawning with a pseudo-terminal (`script`) for the
+  fallback and with null stdin for the fixed behavior.
+- `--port N` and `--bind ADDR` are declared on `locron dashboard` (the bare
+  form, matching the documented `locron dashboard [--port N] [--bind ADDR]`
+  spelling), not on the `serve` subcommand; combined with a service-management
+  subcommand (`enable`/`disable`/`status`) they are refused with a usage error.
+  `--bind` accepts only the loopback literals `127.0.0.1` and `::1` (comma
+  separated); anything else — including `localhost` and `0.0.0.0` — is refused
+  with a stable usage error (exit 2, `invalid_request`). Bind/port runtime
+  failures map to `service_io` (exit 5).
+
 ### Accepted: access token and session
 
 - Token material: 32 random bytes from the OS RNG, hex-encoded (64 characters). Stored owner-only
@@ -358,9 +380,23 @@ Implementation notes (step 8):
   foreground instance may still be running.
 - `locron doctor` gains the exposure facts: token file presence and permission posture, and whether
   a dashboard service is registered. It does not report a server as running; `dashboard status`
-  does.
+  does. The registration fact comes from a read-only probe through the same service-manager port
+  (the `LOCRON_SERVICE_BACKEND=fake` test hook applies, so the fact is deterministic in tests).
 - The help surface gains the new command with per-argument help, covered by the existing
   help-surface acceptance walk.
+
+Implementation notes (step 9):
+
+- `serve` is a subcommand in the same position as `enable`/`disable`/`status`/`token`; omitting the
+  subcommand (bare `locron dashboard`) is the default-serve form, implemented as an optional
+  subcommand. The serve path binds first (so the chosen port is known), prints the access URL
+  (human line `Dashboard URL: http://127.0.0.1:<port>/` plus, on a fresh state directory, the
+  newly generated token; machine envelope with `access_url` and token facts — never the value),
+  then runs the server until signal.
+- `dashboard token` is the explicit value surface: it ensures the token (generating it when the
+  file is missing, matching "generated on first use") and prints the 64-hex value in both human
+  and machine forms — the only output that ever contains the token, besides the first-run
+  foreground line.
 
 ## Change order
 

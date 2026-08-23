@@ -243,15 +243,18 @@ Navigation:
   Run 'locron service <COMMAND>' for a subcommand or 'locron --help' for all commands.";
 const DASHBOARD_HELP: &str = "\
 Examples:
+  locron dashboard
+  locron dashboard --port 9000
   locron dashboard enable
-  locron dashboard status
+  locron dashboard token
 
-Registers, unregisters, or inspects the per-user dashboard service
+Runs the web dashboard in the foreground (bare 'locron dashboard', identical
+to 'dashboard serve'), or manages its per-user service registration
 (dev.locron.dashboard LaunchAgent on macOS, locron-dashboard.service systemd
-user unit on Linux). The dashboard registration is independent of the daemon
-registration and never touches it. Registration never requires administrative
-privileges. Package-manager-managed installs are refused; use the package
-manager's own service commands there.
+user unit on Linux) with enable/disable/status. The dashboard registration is
+independent of the daemon registration and never touches it. Registration
+never requires administrative privileges. Package-manager-managed installs are
+refused; use the package manager's own service commands there.
 
 Navigation:
   Run 'locron dashboard <COMMAND>' for a subcommand or 'locron --help' for all commands.";
@@ -463,11 +466,17 @@ enum Command {
         #[command(subcommand)]
         command: service::ServiceCommand,
     },
-    /// Register, unregister, or inspect the dashboard service
-    #[command(about = "Register, unregister, or inspect the dashboard service", after_help = DASHBOARD_HELP)]
+    /// Run or manage the web dashboard
+    #[command(about = "Run or manage the web dashboard", after_help = DASHBOARD_HELP)]
     Dashboard {
+        /// Port to listen on in foreground mode (default 10824)
+        #[arg(long, value_name = "N")]
+        port: Option<u16>,
+        /// Loopback address(es) to bind in foreground mode (127.0.0.1, ::1)
+        #[arg(long, value_name = "ADDR")]
+        bind: Option<String>,
         #[command(subcommand)]
-        command: service::DashboardCommand,
+        command: Option<service::DashboardCommand>,
     },
 }
 
@@ -915,10 +924,15 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         return service::execute(state_dir, command, format);
     }
     if matches!(command, Command::Dashboard { .. }) {
-        let Command::Dashboard { command } = command else {
+        let Command::Dashboard {
+            port,
+            bind,
+            command,
+        } = command
+        else {
             unreachable!("matched Command::Dashboard")
         };
-        return service::execute_dashboard(state_dir, command, format);
+        return service::execute_dashboard(state_dir, port, bind, command, format).await;
     }
     let paths = StatePaths::discover(state_dir.as_deref())?;
     match command {
@@ -2654,6 +2668,7 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
             "execution_path":settings.execution_path,
             "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
             "process_resolution":resolutions,
+            "dashboard": service::dashboard_doctor_facts(Some(paths.root.clone()))?,
             "checks":store.integrity_check()?
         }),
         &[],

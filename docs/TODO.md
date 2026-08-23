@@ -766,13 +766,44 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   landed in this step so the flows are invokable by the real-backend and self-update tests; the
   remaining `dashboard` arguments (serve alias, bind/port, token, doctor facts) stay in the next
   step.
-- [ ] Wire the `locron dashboard [--port N] [--bind ADDR]` family (`serve` alias, `enable`,
+- [x] Wire the `locron dashboard [--port N] [--bind ADDR]` family (`serve` alias, `enable`,
   `disable`, `status`, `token`) in `locron-cli`, add the doctor exposure facts, and extend the
   help-surface acceptance walk to the new command.
   **Verify:** CLI tests cover the startup URL and token output, non-loopback `--bind` refusal,
   explicit `--port` strictness, foreground fallback, service-mode fixed port reporting,
   `enable --reset` regeneration, doctor facts in human and JSON output, and the help walk covers
   every new argument.
+  **Evidence:** new `crates/locron-cli/tests/dashboard.rs` (10 contract tests) runs green: the
+  foreground serve prints the exact `Dashboard URL: http://127.0.0.1:{port}/` line and the
+  64-hex newly-generated token on a fresh state dir and serves HTTP 200 (token file matches the
+  printed token); the `--json` envelope reports `access_url` and token facts (`present`,
+  `owner_only`, `generated`) and provably never contains the token value; `--bind 0.0.0.0` and
+  `--bind localhost` are refused with exit 2 naming the refused address and the allowed
+  loopback set (`invalid_request` in JSON); an explicitly `--port`ed serve fails hard (exit 5,
+  `service_io`, message names the port) when the port is held on both loopback families; a bare
+  serve with `stdin` non-terminal keeps the default port fixed and fails on an occupied 10824
+  (never silently falls back); with a controlling terminal (`script` PTY) an occupied default
+  port falls back to another port that serves 200; `--port`/`--bind` on service subcommands are
+  refused with exit 2 pointing at the foreground form; `dashboard token` prints the stored
+  token and generates+persists a missing one (64 hex); doctor reports dashboard exposure facts
+  (token `present`/`owner_only` — never a `value` key — plus `registered`/`loaded`/`access_url`)
+  in both human and JSON output against the fake backend. `enable --reset` regeneration was
+  already evidenced in step 8 (`dashboard_enable_is_idempotent_and_reset_regenerates_then_restarts`).
+  The help-surface walk (`complete_command_tree_has_consistent_help_surface` in `tests/cli.rs`,
+  which recurses the whole command tree through `--help`) passes with the new `dashboard`
+  family, asserting Usage/Options/Commands and example coverage for every new argument.
+  Test-infrastructure notes recorded in `docs/dashboard/IMPLEMENTATION.md`: the port-policy
+  decision is TTY-based (`stdin().is_terminal()`, launchd/systemd run with `/dev/null` stdin),
+  `--port`/`--bind` live on the bare form, `--bind` accepts only literal `127.0.0.1`/`::1`,
+  bind validation errors exit 2 and runtime bind failures exit 5. Two real bugs found by this
+  step's tests and fixed: the parallel test race where a transient holder could free one
+  loopback family mid-test (occupied ports are now held on both families for the whole test,
+  retrying on a fresh port), and macOS `script` not delivering SIGHUP to its PTY child (the
+  serve child is now located by its unique `--state-dir` argument and killed by the test's
+  drop-guard, and PTY control-byte prefixes on the startup line are tolerated). Full workspace
+  verification green on Rust 1.94 and stable 1.98: `cargo fmt --all --check` and
+  `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace`
+  24 binaries / 353 tests, zero failures, no skips.
 - [ ] Documentation final pass: `docs/CLI.md` (verified above), `docs/OPERATOR.md` (viewer
   operation, token lifecycle, the shared `loginctl enable-linger` note, what loopback does and
   does not protect), and the README documentation list entry for `docs/dashboard/SPEC.md`.
