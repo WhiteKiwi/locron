@@ -2,10 +2,6 @@ name: Release
 
 on:
   push:
-    # Ignore branch pushes explicitly: a tags-only filter can still leave
-    # zero-job phantom runs on branch pushes.
-    branches-ignore:
-      - '**'
     tags:
       - 'v*.*.*'
 
@@ -107,7 +103,10 @@ jobs:
               --generate-notes
           fi
       - name: Update Homebrew Tap Formula
-        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
+        # Note: keep this env-based. Referencing a secret directly inside a
+        # step `if:` makes GitHub Actions fail workflow evaluation entirely,
+        # producing zero-job phantom runs on every push instead of real runs.
+        if: env.TAP_TOKEN != ''
         env:
           TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: |
