@@ -5,8 +5,9 @@
 This document plans the dashboard surface against the frozen `SPEC.md` (this directory), which is
 phase 1 of the deferred product roadmap in `docs/TODO.md`. The frozen `docs/SPEC.md` is not
 amended: per the roadmap, this phase does not change its exclusions. Research evidence and rejected
-alternatives are recorded in `docs/FINDINGS.md` §14 (including the 2026-08-24 default-port
-verification); this document records the accepted implementation choices and their trade-offs.
+alternatives are recorded in `docs/FINDINGS.md` §14 (security, transport, framework — including the
+2026-08-24 default-port verification) and §16 (UI and API design); this document records the
+accepted implementation choices and their trade-offs, including the 2026-08-24 product decisions.
 
 Durable-structure changes (workspace membership, the redaction boundary) update
 `docs/ARCHITECTURE.md` before code, per the repository workflow.
@@ -116,7 +117,7 @@ dashboard.
 - Transport: `Authorization: token <t>` (the Jupyter scheme) for scripts and automation, and a
   one-time paste at the entry page for browsers. **The token never appears in any URL.** The
   authenticated entry sets a session cookie (value is the token, `HttpOnly`, `SameSite=Lax`,
-  `Path=/`, generous lifetime so re-authentication is rare, no `Secure` flag on plain-HTTP
+  `Path=/`, 90-day lifetime — product decision 2026-08-24 — no `Secure` flag on plain-HTTP
   loopback).
 - Every state-bearing route (API and pages) requires a valid token; without one the server serves
   only the entry page and returns 401 from API routes. The token is never logged, never echoed in
@@ -140,19 +141,45 @@ dashboard.
 
 ### Accepted: API surface
 
-- Base path `/api/v1`. One route family per durable application command family, enumerated from
-  `docs/CLI.md` at implementation time: jobs (list, show, add, update, enable, disable, remove),
-  schedule preview, runs (enqueue, cancel with quarantine acknowledgement, history, logs), why,
-  settings, prune, export, import, and doctor. Request bodies mirror the CLI's machine-readable
-  field semantics; `dry_run` is supported wherever the CLI supports it.
+- Base path `/api/v1`, one route family per durable application command family (`docs/FINDINGS.md`
+  §16 route inventory, accepted 2026-08-24):
+
+  | CLI command | Route |
+  |---|---|
+  | `add` | `POST /api/v1/jobs` |
+  | `update` | `PUT /api/v1/jobs/{name\|uuid}` (immutable-revision semantics) |
+  | `list` | `GET /api/v1/jobs` |
+  | `show` | `GET /api/v1/jobs/{name\|uuid}` |
+  | `enable`/`disable` | `POST /api/v1/jobs/{id}/enable`, `/disable` |
+  | `remove` | `DELETE /api/v1/jobs/{id}` |
+  | `preview` | `POST /api/v1/schedule/preview`, `GET /api/v1/jobs/{id}/preview?count=` |
+  | `run` | `POST /api/v1/jobs/{id}/run?wait&dry-run` |
+  | `cancel` | `POST /api/v1/runs/{id}/cancel` (`acknowledge_unconfirmed` flag) |
+  | `history` | `GET /api/v1/runs?job=&limit=&offset=` |
+  | `logs` | `GET /api/v1/runs/{id}/logs?attempt=&channel=` |
+  | `why` | `GET /api/v1/jobs/{id}/why`, `GET /api/v1/runs/{id}/why` |
+  | `config get\|set\|unset` | `GET /api/v1/settings`, `PUT /api/v1/settings/{key}`, `DELETE /api/v1/settings/{key}` (full CLI config surface, `environment.NAME` grammar and redaction preserved) |
+  | `export` | `GET /api/v1/export?jobs=&tag=&include-values&acknowledge-plaintext` (`Content-Disposition: attachment`) |
+  | `import` | `POST /api/v1/import?accept-plaintext-values&dry-run` — body is the export document, or a JSON object `{"url": "https://…"}` requesting server-side fetch |
+  | `prune` | `POST /api/v1/prune?dry-run` |
+  | `doctor` | `GET /api/v1/diagnostics` |
+
+  Not mirrored: `daemon run` (process supervision), `service` (registration; the dashboard family
+  has its own), `self-update` (binary replacement) — their facts surface through diagnostics, per
+  `SPEC.md` §9. Request bodies mirror the CLI's machine-readable field semantics; `dry_run` is
+  supported wherever the CLI supports it. URL import uses the same server-side fetch bounds as the
+  CLI's URL import: mandatory TLS verification, 16 MiB streaming cap, 10-redirect cap, 30-second
+  timeout, and userinfo rejection.
 - Envelope: the versioned `locron.api/v1` envelope — success
-  `{"ok": true, "data": ..., "warnings": [...]}`, error
-  `{"ok": false, "error": {"code", "category", "message"}}` — where `category` reuses the CLI's
-  stable error categories. HTTP status mapping: usage/validation 422, not-found 404, conflict 409,
-  busy 503, refused/permission 403, internal 500. The exact table is part of the CLI.md contract
-  update.
-- Export is a GET returning the typed export document (`Content-Disposition: attachment`); import
-  is a POST whose body is the export document and honors the same plaintext-acknowledgement rules.
+  `{"schema": "locron.api/v1", "ok": true, "data": ..., "warnings": [...]}`, error
+  `{"ok": false, "error": {"code", "message"}}` — where `code` carries the stable CLI error codes
+  verbatim (Slack `ok`/`error`/`warning` and Telegram `ok`/`result` precedents, `docs/FINDINGS.md`
+  §16). HTTP status mapping (research mapping, product decision 2026-08-24): unauthenticated 401,
+  refused/permission 403, validation 400, not-found 404, conflict/busy 409,
+  daemon-required/state-unavailable 503, internal 500. The exact table is part of the CLI.md
+  contract update.
+- Export selectors mirror the CLI's export selection (`--jobs`/`--tag` union with dedup and
+  no-match validation); the viewer offers the selection as checkboxes, never a TTY picker.
 - Redaction goes through the shared core boundary; parity tests compare API payloads with CLI JSON
   output for the same fixtures.
 
@@ -161,11 +188,13 @@ dashboard.
 - `GET /api/v1/runs/{id}/stream` uses `axum::response::sse` (`text/event-stream`). The endpoint
   authenticates through the session cookie only — EventSource cannot set an Authorization header,
   and the token never appears in a URL.
-- Events are JSON text: `frame` events carry `{channel, seq, elapsed_us, data_b64}` (base64 so
-  arbitrary bytes survive; the viewer renders text channels and marks binary), `state` events carry
-  attempt/run state transitions, and a final `end` event carries the terminal outcome. The stream
-  reads the same framed output the CLI `--follow` uses and respects the same retention bounds;
-  following never cancels the run. A `KeepAlive` ping guards stale connections.
+- Events are typed named JSON events (OpenAI-style naming, `docs/FINDINGS.md` §16): `output`
+  events carry `{channel, seq, elapsed_us, data_b64}` (base64 so arbitrary bytes survive; the
+  viewer renders text channels and marks binary), `attempt` and `run` events carry the respective
+  state transitions, and a final `termination` event carries the terminal outcome (idempotent on
+  EventSource reconnect). The stream reads the same framed output the CLI `--follow` uses and
+  respects the same retention bounds; following never cancels the run. A `KeepAlive` ping guards
+  stale connections.
 - Job-list freshness is ordinary polling from the SPA (the healthchecks model); no push channel is
   added for lists.
 
@@ -173,9 +202,42 @@ dashboard.
 
 - A hand-written single-page viewer (plain HTML/CSS/JS, no framework, no build step, no CDN, no
   external fonts) embedded in the binary via `rust-embed`. No Node toolchain enters CI.
-- Layout follows the conventions observed in `docs/FINDINGS.md` §14 (healthchecks, cronitor,
-  Jenkins, GitHub Actions): a status chip per job in the list, a run timeline in the job/run
-  detail, and a monospace, timestamped, follow/auto-scroll console log for output.
+- **Information architecture** (healthchecks two-level drill-down, `docs/FINDINGS.md` §16): one
+  chrome shell with persistent top navigation (Jobs, Run history, Diagnostics) and hash-routed
+  views — `#/jobs` (landing job list), `#/jobs/:id` (detail: definition, policies, why, recent
+  runs), `#/jobs/new` and `#/jobs/:id/edit` (form with schedule preview and dry-run),
+  `#/runs` (run history), `#/runs/:id` (attempts, events, log viewer), `#/diagnostics` (scheduler
+  health, paths, daemon availability, exposure facts, and the settings editor covering the full
+  `config` command surface with CLI redaction). The header carries a daemon-availability indicator
+  fed by `/api/v1/diagnostics`.
+- **Job list row:** status chip (enabled plus last-outcome color, spinner while a run is active),
+  name with tags, schedule summary (humanized form with the raw expression as secondary text),
+  next occurrence (relative text with the absolute RFC 3339 instant in a `data-*` attribute —
+  dual rendering is the universal convention; machine values stay CLI-equivalent, so `SPEC.md`
+  criterion 3 needs no amendment), last outcome with duration, and row actions (run now, show,
+  enable/disable, remove). Search box and enabled/disabled filter above the table; no pagination.
+- **Run visualization:** one row per run — trigger, nominal time, outcome chip, timing, attempt
+  count — with a horizontal strip of status-colored segments, one per attempt, width proportional
+  to duration, linking into the log viewer (Jenkins Stage View cells, GHA step dots).
+  Skip/supersession/acknowledgement events render as annotation rows with distinct badges
+  (healthchecks event-kind badge set). Pagination is `limit`/`offset` with a `total` count.
+- **Log viewer:** monospace pane with line numbers and click-to-copy permalinks (GHA), per-line
+  timestamps on by default with a toggle (a scheduler's primary axis is time), tail-first open with
+  a "load older" paging control (Jenkins `consoleTailKB` precedent), client-side search, follow
+  mode as pinned auto-scroll over the SSE stream with an explicit "stream ended" notice, and
+  inline truncation/discard markers at the capture point (locron owns the marker data; stronger
+  than healthchecks' silent capture). ANSI bytes are preserved in the API and rendered by a small
+  hand-written ANSI parser bundled in the viewer.
+- **Empty/edge states:** onboarding card with the create action on an empty `#/jobs` ("No jobs
+  yet" + Create job), a distinct "no matching jobs found" filtered-empty state, a persistent
+  daemon-offline banner in the header fed by diagnostics, and redacted values rendered as the
+  CLI's literal `<redacted>`/`value redacted` markers — never a value or a synthesized sentinel.
+- **SPA structure** (no build toolchain): `index.html` shell plus hand-written `router.js` (hash
+  parsing and `hashchange` dispatch), `api.js` (fetch wrapper that adds `X-CSRF-Token` on
+  cookie-authenticated mutations and maps error codes), `views/` (one render function per route),
+  `components.js` (status chips, dual-rendered times, attempt segments, tables), and `sse.js`
+  (EventSource wrapper with reconnecting state). Hash routing survives refresh and bookmarking
+  with zero server fallbacks (MDN `hashchange`).
 - The SPA authenticates via the session cookie, echoes `X-CSRF-Token` from the `csrf_token` cookie
   on every mutation, and uses `EventSource` (cookie-authenticated) for live logs.
 
@@ -248,7 +310,9 @@ dashboard.
 - IPv6-only environments: one loopback family unboundable is a warning, not a failure.
 - A quarantine-termination-unconfirmed run: the cancel route carries the same acknowledgement
   requirement and stable conflicts as the CLI.
-- Export/import through the API: same document validation, acknowledgement, and rollback rules.
+- Export/import through the API: same document validation, acknowledgement, and rollback rules; a
+  URL import uses the same TLS/16 MiB/10-redirect/30-second caps as the CLI and rejects userinfo
+  URLs.
 
 ## Verification strategy
 
@@ -258,13 +322,14 @@ dashboard.
   all responses, entry page only without a token, and no token in any served URL.
 - **API contract tests:** a real server on an ephemeral loopback port over a temporary state
   directory — token refusal, job CRUD round trips mutating real SQLite, offline manual enqueue,
-  export/import round trip with acknowledgement, dry-run non-mutation, error-category mapping, and
-  envelope version strings.
+  export/import round trip with acknowledgement (including the `?jobs=`/`?tag=` selectors and a
+  local-fixture URL import with the TLS/size/redirect/timeout caps), dry-run non-mutation, the
+  error-category mapping matrix per the accepted table, and envelope schema strings.
 - **Redaction parity tests:** API job/run/settings payloads equal the CLI JSON output for the same
   fixtures; no configured secret material appears.
-- **SSE tests:** subscribe, inject frames through the store fixture, receive `frame`/`state`/`end`
-  events in order, terminal event at finalization, no cancellation on disconnect, cookie
-  authentication only.
+- **SSE tests:** subscribe, inject frames through the store fixture, receive ordered
+  `output`/`attempt`/`run`/`termination` events, an idempotent terminal event at finalization, no
+  cancellation on disconnect, cookie authentication only.
 - **Service registration tests:** fake-port tests cover the dashboard target (templates with
   canonicalized path, label/unit names, log paths), enable idempotency and refresh-and-restart,
   `--reset` ordering, disable ordering, brew-marker refusal, and status fields; real-backend tests
