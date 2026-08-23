@@ -107,7 +107,7 @@ jobs:
               --generate-notes
           fi
       - name: Update Homebrew Tap Formula
-        if: env.TAP_TOKEN != ''
+        if: ${{ secrets.TAP_GITHUB_TOKEN != '' }}
         env:
           TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: |
