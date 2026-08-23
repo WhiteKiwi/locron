@@ -458,6 +458,8 @@ install.sh, after its atomic binary replace, runs `<installed> service install` 
 
 self-update runs `service install` on the replaced executable after its own successful atomic replace (the child inherits the environment and its output is captured so the update envelope stays clean): if the daemon was service-managed, this refreshes and restarts it onto the new binary; if no registration existed, it performs a first registration; if the daemon was started manually, the registration is written and the lock check defers the start until the manual daemon stops. Registration is best-effort: a failed post-replace registration becomes a warning in the update envelope (and on stderr in human mode), never an update failure. The brew-managed refusal reuses the existing `lib/.disable-self-update` marker: `service install` and `service uninstall` refuse on a marker-bearing binary with a stable error directing to `brew services`.
 
+The update flow must not re-resolve its own executable path after the replace: on Linux `/proc/self/exe` of a process that renamed its binary over itself resolves to the deleted old inode (`path (deleted)`), so the post-replace `fs::canonicalize(current_exe())` fails and the registration was silently skipped. The flow therefore captures the canonical executable path once before the atomic replace and threads it through `replace_binary` and `register_service` (macOS never showed the bug because `_NSGetExecutablePath` returns the exec-time path string without re-checking the filesystem).
+
 The release.yml formula template gains a `service` block (`run [opt_bin/"locron", "daemon", "run"]`, `keep_alive true`, `run_at_load false`) and a caveats line pointing at `brew services start locron`; installation never starts the service. `brew upgrade` does not restart running services (`docs/FINDINGS.md` §12), so after an upgrade that caveat remains the documented restart path. The deb/rpm postinst prints the same guidance as the no-session Linux path; it never registers anything.
 
 ### Edge cases to handle explicitly
@@ -466,6 +468,7 @@ The release.yml formula template gains a `service` block (`run [opt_bin/"locron"
 - A service-loaded daemon exits because the lock is held elsewhere: launchd/systemd keep retrying at their throttle interval — safe (the engine's single-owner check never executes work twice) but visible in status output.
 - macOS over SSH: `gui` bootstrap failure falls back to `user/<uid>` with a note.
 - The binary is removed or moved after registration: restarts fail until `service install` re-registers; status surfaces the stale path.
+- Linux self-update: the running process's `/proc/self/exe` points at the deleted inode after the replace; any post-replace path resolution must reuse the pre-replace capture.
 - Two concurrent registrations: idempotent writes and enable calls; the last one wins.
 - An update restart lands while jobs run: the engine's graceful-shutdown sequence applies unchanged, and interrupted attempts follow the existing recovery contract.
 - Linux logout while jobs run: the session manager signals the daemon and the same graceful sequence runs.
