@@ -50,6 +50,15 @@ fn calls(log: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The name the service carries in the current platform's manager.
+fn native_service_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "dev.locron.daemon"
+    } else {
+        "locron.service"
+    }
+}
+
 #[test]
 fn install_registers_and_starts_in_write_reload_probe_enable_start_order() {
     let _serial = serialized();
@@ -69,7 +78,7 @@ fn install_registers_and_starts_in_write_reload_probe_enable_start_order() {
     assert_eq!(data["registered"], true);
     assert_eq!(data["restarted"], false);
     assert_eq!(data["deferred"], false);
-    assert_eq!(data["service_name"], "dev.locron.daemon");
+    assert_eq!(data["service_name"], native_service_name());
     assert_eq!(data["domain"], "fake/domain");
     assert_eq!(
         calls(&log),
@@ -213,7 +222,7 @@ fn status_reports_the_manager_state_fields() {
     assert_eq!(data["loaded"], true);
     assert_eq!(data["enabled"], true);
     assert_eq!(data["session_available"], true);
-    assert_eq!(data["service_name"], "dev.locron.daemon");
+    assert_eq!(data["service_name"], native_service_name());
     assert!(data["domain"].is_string());
 }
 
