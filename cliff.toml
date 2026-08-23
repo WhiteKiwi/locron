@@ -1,0 +1,67 @@
+# git-cliff configuration — https://git-cliff.org
+#
+# Generates release notes from commit history in the same Keep a Changelog shape
+# as CHANGELOG.md, so generated entries sit alongside the hand-written backfill
+# without a format break.
+#
+# Usage:
+#   cargo install git-cliff --locked
+#   git cliff --unreleased --prepend CHANGELOG.md   # stage the next release
+#   git cliff --latest                              # print notes for the last tag
+#
+# The repository's existing `{type}: {message}` convention works as-is. Declare a
+# breaking change with `!` after the type — `feat!:` or `fix!:`.
+
+[changelog]
+header = ""
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.breaking %}**Breaking:** {% endif %}\
+{{ commit.message | upper_first }}\
+{% endfor %}
+{% endfor %}\n
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+# Commits that do not match the convention are dropped rather than dumped into a
+# catch-all section. The changelog is a curated user-facing document.
+filter_unconventional = true
+filter_commits = true
+protect_breaking_commits = true
+split_commits = false
+tag_pattern = "v[0-9]*"
+sort_commits = "oldest"
+topo_order = false
+
+# Mapped to Keep a Changelog section names. The `<!-- N -->` prefix only controls
+# ordering and is stripped by the template above.
+#
+# `ci`, `test`, `chore`, and `release` commits are skipped: they are real work but
+# not user-visible change, and the commit history is the record for them.
+commit_parsers = [
+    { message = "^feat", group = "<!-- 0 -->Added" },
+    { message = "^fix", group = "<!-- 1 -->Fixed" },
+    { message = "^perf", group = "<!-- 2 -->Changed" },
+    { message = "^refactor", group = "<!-- 2 -->Changed" },
+    { message = "^revert", group = "<!-- 2 -->Changed" },
+    { message = "^deprecate", group = "<!-- 3 -->Deprecated" },
+    { message = "^remove", group = "<!-- 4 -->Removed" },
+    { message = "^security", group = "<!-- 5 -->Security" },
+    { message = "^docs", group = "<!-- 6 -->Documentation" },
+    { message = "^chore\\(deps\\)", group = "<!-- 7 -->Dependencies" },
+    { message = "^release", skip = true },
+    { message = "^ci", skip = true },
+    { message = "^test", skip = true },
+    { message = "^chore", skip = true },
+    { message = "^build", skip = true },
+]
