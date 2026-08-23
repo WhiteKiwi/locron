@@ -14,7 +14,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
-use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use locron_core::command::JobDefinition;
 use locron_core::policy::{BackoffMode, MissedRunPolicy, OverlapPolicy};
 use locron_core::ports::{Clock, TimeZoneResolver};
@@ -216,9 +216,13 @@ Navigation:
 #[derive(Parser, Debug)]
 #[command(
     name = "locron",
-    version,
     about = "A predictable local-first job scheduler",
-    after_help = ROOT_HELP
+    after_help = ROOT_HELP,
+    disable_version_flag = true,
+    arg_required_else_help = true,
+    // The subcommand is optional so -V/--version can short-circuit, but the
+    // usage keeps clap's required-command spelling.
+    override_usage = "locron [OPTIONS] <COMMAND>"
 )]
 struct Cli {
     #[arg(
@@ -259,8 +263,16 @@ struct Cli {
         help = "Developer trace diagnostics on stderr; implies maximum verbosity"
     )]
     debug: bool,
+    #[arg(
+        short = 'V',
+        long,
+        action = ArgAction::SetTrue,
+        display_order = 1000,
+        help = "Print version"
+    )]
+    version: bool,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
@@ -768,12 +780,27 @@ impl StdError for TargetOutcomeError {}
 
 #[tokio::main]
 async fn main() {
-    let cli = Cli::parse();
-    init_tracing(cli.verbose, cli.debug);
-    let format = if cli.json { Format::Json } else { cli.format };
-    let command_name = command_name(&cli.command);
-    let streaming = format == Format::Json && command_uses_stream(&cli.command);
-    if let Err(error) = execute(cli, format).await {
+    let Cli {
+        state_dir,
+        format,
+        json,
+        verbose,
+        debug,
+        version,
+        command,
+    } = Cli::parse();
+    let format = if json { Format::Json } else { format };
+    if version {
+        print_version(format);
+        return;
+    }
+    let Some(command) = command else {
+        missing_subcommand_error().exit();
+    };
+    init_tracing(verbose, debug);
+    let command_name = command_name(&command);
+    let streaming = format == Format::Json && command_uses_stream(&command);
+    if let Err(error) = execute(state_dir, command, format).await {
         if streaming {
             render_stream_error(command_name, &error);
         } else {
@@ -781,6 +808,32 @@ async fn main() {
         }
         std::process::exit(exit_code(&error));
     }
+}
+
+fn print_version(format: Format) {
+    match format {
+        Format::Human => println!("locron {}", env!("CARGO_PKG_VERSION")),
+        Format::Json => {
+            render(
+                format,
+                "version",
+                json!({"version": env!("CARGO_PKG_VERSION")}),
+                &[],
+            );
+        }
+    }
+}
+
+/// Reproduce clap's native missing-subcommand error for an invocation that
+/// supplied arguments but no subcommand. The subcommand field is optional so
+/// that `-V/--version` can short-circuit before clap requires one; re-parsing
+/// the original arguments with the subcommand requirement restored runs the
+/// same validator that produced the error before the flag was made custom.
+fn missing_subcommand_error() -> clap::Error {
+    Cli::command()
+        .subcommand_required(true)
+        .try_get_matches_from(std::env::args_os())
+        .expect_err("parse with a required subcommand must fail")
 }
 
 fn command_uses_stream(command: &Command) -> bool {
@@ -794,9 +847,9 @@ fn command_uses_stream(command: &Command) -> bool {
     )
 }
 
-async fn execute(cli: Cli, format: Format) -> Result<()> {
-    let paths = StatePaths::discover(cli.state_dir.as_deref())?;
-    match cli.command {
+async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -> Result<()> {
+    let paths = StatePaths::discover(state_dir.as_deref())?;
+    match command {
         Command::Add(args) => add(&paths, args, format),
         Command::Update(args) => update(&paths, &args, format),
         Command::List { all } => {

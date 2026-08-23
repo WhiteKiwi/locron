@@ -189,6 +189,33 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
   supported help spelling automatically so a newly added command or nested command cannot omit help
   coverage.
 
+## Version output backlog (2026-08-23)
+
+- [x] Amend `docs/SPEC.md`, `docs/CLI.md`, and `docs/IMPLEMENTATION.md` for `-V/--version`
+  machine output. **Verify:** `docs/SPEC.md` records the amended version-reporting behavior;
+  `docs/CLI.md` documents the flag, its human output, and its JSON envelope; and
+  `docs/IMPLEMENTATION.md` records the flag-ownership approach and the preserved clap failure
+  surfaces.
+- [x] Implement top-level `-V/--version` handling in `crates/locron-cli` with
+  `disable_version_flag`, an `Option<Command>` subcommand, and the reproduced
+  `arg_required_else_help`/`MissingSubcommand` fallbacks. **Verify:** `cargo build -p
+  locron-cli`, `cargo fmt --check`, and `cargo clippy -p locron-cli` pass; manual runs show
+  `locron -V` and `locron --version` printing `locron <CARGO_PKG_VERSION>` on stdout and exiting 0.
+  **Evidence:** all three pass with no warnings; a byte-level comparison against the v0.1.1
+  baseline shows identical output for bare `locron`, `-v`, `add -V`, `-h`/`--help`, and plain
+  `-V`/`--version`, with exit codes preserved.
+- [x] Add contract tests in `crates/locron-cli/tests/version.rs`. **Verify:** `cargo test -p
+  locron-cli` passes, covering human plain text; `--format json` and `--json` envelopes
+  (`locron.cli/v1`, `ok: true`, `command: "version"`, `data.version == CARGO_PKG_VERSION`, empty
+  warnings); exit code 0; no state-dir access; plus regressions: bare `locron` renders full help to
+  stderr with exit 2, `locron -v` fails with the missing-subcommand error and exit 2, and `locron
+  add -V` fails as an unexpected argument with exit 2.
+  **Evidence:** 114 `locron-cli` tests pass, including the 10 new `version.rs` contract tests.
+- [x] Run the workspace verification. **Verify:** `cargo test --workspace` and `cargo clippy
+  --workspace` pass, and the help-surface acceptance tests still pass with the new flag.
+  **Evidence:** the full workspace test suite and clippy pass; the clap help-surface acceptance
+  tests pass unchanged.
+
 ## Post-milestone delivery backlog
 
 These items begin only after every milestone-1 completion criterion above is satisfied. They do not

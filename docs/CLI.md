@@ -7,11 +7,12 @@ This document owns the reviewed milestone-1 command surface, rendering contract,
 ## Global options
 
 ```text
-locron [--state-dir PATH] [--format human|json] [-v|--verbose...] [--debug] <command>
+locron [-V|--version] [--state-dir PATH] [--format human|json] [-v|--verbose...] [--debug] <command>
 ```
 
 - `--state-dir` overrides state discovery for this invocation.
 - `--format human|json` defaults to `human`; `--json` is an alias for `--format json`.
+- `-V/--version` prints `locron <version>` on stdout and exits 0 without opening the state directory; it honors `--format json` per the machine-output contract. The short `-v` remains the repeatable verbose flag.
 - `-v/--verbose` is repeatable. One level adds decisions and effective values; two levels add timing and storage context intended for operators.
 - `--debug` enables developer trace diagnostics on stderr and implies maximum verbose human context. It never changes JSON stdout.
 - Color is automatic only for a terminal and can be disabled with `NO_COLOR`; machine output never contains color.
@@ -216,7 +217,7 @@ Every command supports one JSON document on stdout:
 }
 ```
 
-Errors use the same envelope with `ok: false` and an `error` object containing a stable lowercase-snake-case `code`, human message, and optional structured details. IDs are lowercase canonical UUID strings. Instants are RFC 3339 UTC with microseconds. Durations are integer microseconds. Arbitrary output bytes are represented with an explicit UTF-8 or base64 encoding tag.
+Errors use the same envelope with `ok: false` and an `error` object containing a stable lowercase-snake-case `code`, human message, and optional structured details. Version output uses the same envelope with `"command":"version"` and `data` `{"version":"0.1.1"}`. IDs are lowercase canonical UUID strings. Instants are RFC 3339 UTC with microseconds. Durations are integer microseconds. Arbitrary output bytes are represented with an explicit UTF-8 or base64 encoding tag.
 
 Progress, verbose context, debug traces, and wait/follow output do not corrupt the JSON result. Streaming JSON uses newline-delimited envelopes with schema `locron.stream/v1`; the final record is a terminal result. Human prose is not a compatibility surface.
 

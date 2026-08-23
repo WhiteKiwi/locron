@@ -4,6 +4,8 @@
 
 Frozen on 2026-08-21 after interactive product review. Changes to this document represent a change in product scope or behavior and must precede implementation changes.
 
+Amended 2026-08-23: version reporting honors the machine-readable output contract.
+
 ## Goal
 
 Build a local-first job scheduler that lets one user register, inspect, run, and manage scheduled work consistently on macOS and Linux.
@@ -236,6 +238,8 @@ Mutating commands and manual execution support a dry-run mode. A dry run perform
 A dedicated explanation command reports why a job is or is not eligible, its next occurrence, applicable missed-run and overlap decisions, current concurrency blockers, daemon availability, and redacted target resolution. The same command can explain a run from its durable snapshot, attempts, events, supersession, and terminal reason. Explanations use durable facts and current calculations rather than requiring debug logging.
 
 Verbose output adds user-facing decision context without changing command behavior. Debug output emits developer-oriented operational traces to standard error. Neither mode may reveal configured environment values, sensitive headers, body content, or other redacted values. Machine-readable standard output remains a single valid result independent of diagnostic verbosity.
+
+The program reports its own version on request through the standard `-V` and `--version` flags, and version output honors the machine-readable output contract. Version reporting requires no state directory or daemon and succeeds without them.
 
 ## Retention Semantics
 
