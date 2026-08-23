@@ -58,13 +58,15 @@ covered in the [Installation Guide](docs/INSTALL.md).
 
 ## Quick start
 
-**1. Start the scheduler daemon.**
+**1. Make sure the daemon is running.**
 
 ```sh
-locron daemon run
+locron service status
 ```
 
-Keep it running with your system's process manager — `launchd` on macOS, `systemd --user` on Linux
+The install script registers the daemon as a login service and starts it for you. Homebrew
+installs never auto-start — run `brew services start locron` once instead. Prefer manual control?
+`locron daemon run` runs it in the foreground
 ([service setup](docs/OPERATOR.md#run-the-daemon-as-a-service)).
 
 **2. Add some jobs.**
