@@ -21,6 +21,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow};
 use reqwest::StatusCode;
 use serde::Deserialize;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
@@ -184,8 +185,11 @@ pub(crate) async fn update() -> Result<UpdateOutcome> {
     replace_binary(&binary, &executable)?;
 
     // The update is complete; registering the new binary as a login service is
-    // best-effort and must never turn a successful update into a failure.
-    let warnings = register_service(&executable);
+    // best-effort and must never turn a successful update into a failure. A
+    // registered dashboard service is refreshed the same way, using the same
+    // pre-replace canonical-path capture.
+    let mut warnings = register_service(&executable);
+    warnings.extend(register_dashboard(&executable));
 
     Ok(UpdateOutcome {
         current_version: current_version.to_owned(),
@@ -217,6 +221,65 @@ fn register_service(executable: &Path) -> Vec<String> {
         return vec![format!(
             "could not register locron as a login service after update (exit {}); \
              run 'locron service install' to retry",
+            output.status.code().unwrap_or(-1)
+        )];
+    }
+    Vec::new()
+}
+
+/// Refresh a registered dashboard service onto the freshly replaced binary.
+///
+/// Only a dashboard the operator enabled is touched: `dashboard status --json`
+/// reports the registration, and the refresh runs `dashboard enable` (the
+/// idempotent register/refresh/start flow) exactly when one exists. The child
+/// inherits this process's environment; its output is captured so the update
+/// envelope stays clean. Failures are returned as warnings, never as errors.
+fn register_dashboard(executable: &Path) -> Vec<String> {
+    let status_output = match Command::new(executable)
+        .args(["dashboard", "status", "--json"])
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => {
+            return vec![format!(
+                "could not run 'locron dashboard status' after update: {error}"
+            )];
+        }
+    };
+    if !status_output.status.success() {
+        return vec![format!(
+            "could not check the dashboard registration after update (exit {}); \
+             run 'locron dashboard status' to retry",
+            status_output.status.code().unwrap_or(-1)
+        )];
+    }
+    let envelope: Value = match serde_json::from_slice(&status_output.stdout) {
+        Ok(envelope) => envelope,
+        Err(error) => {
+            return vec![format!(
+                "could not read 'locron dashboard status' output after update: {error}"
+            )];
+        }
+    };
+    if envelope["data"]["registered"] != true {
+        // The dashboard was never enabled; nothing to refresh.
+        return Vec::new();
+    }
+    let output = match Command::new(executable)
+        .args(["dashboard", "enable"])
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => {
+            return vec![format!(
+                "could not run 'locron dashboard enable' after update: {error}"
+            )];
+        }
+    };
+    if !output.status.success() {
+        return vec![format!(
+            "could not refresh the dashboard service after update (exit {}); \
+             run 'locron dashboard enable' to retry",
             output.status.code().unwrap_or(-1)
         )];
     }

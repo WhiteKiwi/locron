@@ -241,6 +241,20 @@ the package manager's own service commands there (for example
 
 Navigation:
   Run 'locron service <COMMAND>' for a subcommand or 'locron --help' for all commands.";
+const DASHBOARD_HELP: &str = "\
+Examples:
+  locron dashboard enable
+  locron dashboard status
+
+Registers, unregisters, or inspects the per-user dashboard service
+(dev.locron.dashboard LaunchAgent on macOS, locron-dashboard.service systemd
+user unit on Linux). The dashboard registration is independent of the daemon
+registration and never touches it. Registration never requires administrative
+privileges. Package-manager-managed installs are refused; use the package
+manager's own service commands there.
+
+Navigation:
+  Run 'locron dashboard <COMMAND>' for a subcommand or 'locron --help' for all commands.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -448,6 +462,12 @@ enum Command {
     Service {
         #[command(subcommand)]
         command: service::ServiceCommand,
+    },
+    /// Register, unregister, or inspect the dashboard service
+    #[command(about = "Register, unregister, or inspect the dashboard service", after_help = DASHBOARD_HELP)]
+    Dashboard {
+        #[command(subcommand)]
+        command: service::DashboardCommand,
     },
 }
 
@@ -885,12 +905,20 @@ fn command_uses_stream(command: &Command) -> bool {
 
 async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -> Result<()> {
     // Service commands tolerate a missing state directory (the registration
-    // probe treats it as lock-free), so they run before state discovery.
+    // probe treats it as lock-free), so they run before state discovery. The
+    // dashboard service-management commands resolve the state directory
+    // themselves for the access token.
     if matches!(command, Command::Service { .. }) {
         let Command::Service { command } = command else {
             unreachable!("matched Command::Service")
         };
         return service::execute(state_dir, command, format);
+    }
+    if matches!(command, Command::Dashboard { .. }) {
+        let Command::Dashboard { command } = command else {
+            unreachable!("matched Command::Dashboard")
+        };
+        return service::execute_dashboard(state_dir, command, format);
     }
     let paths = StatePaths::discover(state_dir.as_deref())?;
     match command {
@@ -1010,6 +1038,9 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         }
         Command::Service { .. } => {
             unreachable!("service commands run before state discovery")
+        }
+        Command::Dashboard { .. } => {
+            unreachable!("dashboard commands run before state discovery")
         }
     }
 }
@@ -3598,6 +3629,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Mcp => "mcp",
         Command::SelfUpdate => "self-update",
         Command::Service { .. } => "service",
+        Command::Dashboard { .. } => "dashboard",
     }
 }
 #[derive(Serialize)]

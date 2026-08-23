@@ -138,6 +138,30 @@ exists, using the same pre-replace canonical-path capture that the daemon regist
 Linux `/proc/self/exe` deleted-inode lesson applies identically). install.sh never registers the
 dashboard.
 
+Implementation notes (step 8):
+
+- The port generalized as `Target { Daemon, Dashboard }` in `crates/locron-cli/src/service.rs`,
+  carrying the per-target label/unit/plist name, log file, launch arguments, description, and
+  whether the daemon-lock deferral applies (only the daemon defers — the dashboard never probes
+  the daemon lock, verified by the fake-port call log). `ServiceContext` gained the `target`
+  field; both launchd and systemd backends derive everything from it.
+- `dashboard enable` = refuse managed installs (brew marker), then token regenerate/ensure, then
+  `service install` semantics with the verified ordering. `enable --reset` regenerates the token
+  and refresh-restarts a loaded service. `dashboard disable` = uninstall, then token removal, and
+  — when something still listens on the service-mode port — a warning naming the foreground
+  instance the operator must stop (the port is fixed in service mode, so a foreground server and
+  a service cannot coexist; the foreground one must exit before the service can bind). `dashboard
+  status` reports the service state, the access URL, and token facts (`present`/`permissions`,
+  mode bits only — never the token value).
+- The minimal `locron dashboard enable|disable|status` CLI surface landed in step 8 (dispatched
+  before state discovery, so no state directory is required to report status) because the
+  real-backend and self-update tests must be able to invoke the flows; the remaining arguments
+  (serve alias, `--bind`, `--port`, `token`, doctor facts) stay in step 9 per the change order.
+- The self-update refresh probes registration with `dashboard status --json` on the pre-replace
+  canonicalized executable and refreshes with `dashboard enable` only when `data.registered` is
+  true; every failure becomes a warning, so a broken dashboard registration never fails the
+  update itself.
+
 ### Accepted: bind, port, and Host validation
 
 - Bind loopback only. `--bind` accepts only loopback values (`127.0.0.1`, `::1`, or the default

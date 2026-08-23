@@ -708,7 +708,7 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all
   pass on Rust 1.94.0 and latest stable (23 test binaries, 326 tests, zero failures; contract
   suite 17/17 including the new dry-run case).
-- [ ] Implement the dashboard service registration on the existing service-manager port: second
+- [x] Implement the dashboard service registration on the existing service-manager port: second
   registration target (`dev.locron.dashboard` / `locron-dashboard.service`, dashboard log paths,
   `dashboard serve` execution), `enable`/`disable`/`status`/`enable --reset` flows with the daemon
   registration's verified ordering, brew-marker refusal for registration, and the self-update
@@ -719,6 +719,53 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   LaunchAgent, and the Linux leg drives the dashboard unit under `dbus-run-session`; a self-update
   contract test proves the post-replace dashboard refresh happens exactly once and only after a
   successful replace.
+  **Evidence:** `crates/locron-cli/src/service.rs` generalizes the verified service-manager port
+  to a second target: `Target { Daemon, Dashboard }` carries the per-target constants (labels
+  `dev.locron.daemon`/`dev.locron.dashboard`, units `locron.service`/`locron-dashboard.service`,
+  plist names, log files `daemon.log`/`dashboard.log`, launch arguments `daemon run`/`dashboard
+  serve`, descriptions), `ServiceContext` gained the `target` field, and `install()` gates the
+  daemon-lock probe per target (`defers_to_daemon_lock()` — only the daemon defers, so the
+  dashboard never touches the daemon lock). The three dashboard flows share the daemon's verified
+  ordering through the same backends: `dashboard_enable` (brew-marker refusal first, then
+  token regenerate/ensure via `locron_server::token`, then install), `dashboard_disable`
+  (uninstall, then token removal, then — when a foreground dashboard still listens on the port —
+  guidance telling the operator to stop it in its terminal), and `dashboard_status` (service state
+  plus `access_url` and token facts `{present, permissions}` — the value is never emitted).
+  `crates/locron-cli/src/main.rs` wires the minimal `Command::Dashboard { Enable { reset },
+  Disable, Status }` surface dispatched before state discovery; the full serve/token/bind/port
+  family stays in the next step. The self-update post-replace refresh
+  (`crates/locron-cli/src/self_update.rs`, `register_dashboard`) runs `dashboard status --json`
+  on the pre-replace canonicalized executable path, refreshes with `dashboard enable` only when
+  `data.registered == true`, and turns every failure into a warning. Fake-port contract tests
+  (`tests/service.rs`, 7 new) cover: the dashboard plist and unit templates (label, `dashboard
+  serve` args, `dashboard.log`), enable generating the token and registering in the exact
+  verified order (write → reload → probe → enable → start, and no lock probe for the dashboard),
+  enable idempotency plus `--reset` regenerating the token and restarting, disable ordering
+  (stop → wait → unload → remove → reload) with `token_removed`, brew-marker refusal before the
+  token is even generated (exit 3 `service_managed_install`), status fields (service name,
+  `access_url`, token facts — never the value; a world-readable token is reported, a missing one
+  is reported without being generated), and help text for every dashboard subcommand. Unit tests
+  in `service.rs` (8 new) cover the two templates and the three flows, including token reuse
+  without `--reset`. Real-backend tests (`tests/service_backends.rs`): the macOS leg registered a
+  real `dev.locron.dashboard` LaunchAgent (plist written, 64-char token, `dashboard status`
+  reporting `access_url` and `owner_only` token permissions), refreshed it with a repeat `enable`
+  (`restarted: true`), and unregistered it (`disable` → job gone from launchd, plist and token
+  removed) — the leg ran to completion on this machine with no `SKIPPED` guard, and the
+  post-run cleanup leaves zero locron plists, no `dashboard.token`, and both launchd jobs
+  unloaded; the Linux leg extends the `dbus-run-session` script with
+  `d-enable`/`d-status`/`d-refresh`/`d-disable` assertions (dashboard unit active, repeat enable
+  restarts it) plus the direct-session flow — skipped on this macOS machine exactly as the
+  documented Linux-only leg. Self-update contract tests (`tests/self_update.rs`, 2 new): the
+  replace fixture records `dashboard status` then `dashboard enable` — exactly once, and only
+  after a successful replace (checksum mismatch leaves the dashboard untouched); a not-registered
+  dashboard is probed but never enabled. `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets -- -D warnings`, and `cargo test --workspace` all pass on Rust 1.94.0 and latest
+  stable (23 test binaries, 343 tests, zero failures; the 1.94 clippy leg required its newer
+  `verbose_bit_mask` lint rewrite, done as `trailing_zeros()` with unchanged behavior). Deviation
+  recorded in `docs/dashboard/IMPLEMENTATION.md`: the minimal enable/disable/status CLI wiring
+  landed in this step so the flows are invokable by the real-backend and self-update tests; the
+  remaining `dashboard` arguments (serve alias, bind/port, token, doctor facts) stay in the next
+  step.
 - [ ] Wire the `locron dashboard [--port N] [--bind ADDR]` family (`serve` alias, `enable`,
   `disable`, `status`, `token`) in `locron-cli`, add the doctor exposure facts, and extend the
   help-surface acceptance walk to the new command.
