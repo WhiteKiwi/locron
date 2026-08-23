@@ -46,13 +46,23 @@ Newer Homebrew requires `brew trust` for third-party taps.
 
 ### Install script (macOS and Linux)
 
-Installs the latest release into `~/.local/bin/locron` after verifying it against the release's `SHA256SUMS.txt`:
+Installs the latest release into `~/.local/bin/locron` after verifying it against the release's `SHA256SUMS.txt`, then registers the daemon as a per-user service (a LaunchAgent on macOS, a systemd user unit on Linux) so schedules run immediately:
 
 ```sh
 curl -fsSL https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh | sh
 ```
 
-Set `LOCRON_VERSION` to pin a version, or `LOCRON_INSTALL_DIR` to install elsewhere. The script never edits your shell configuration — it prints the `PATH` line to add if one is needed.
+Set `LOCRON_VERSION` to pin a version, `LOCRON_INSTALL_DIR` to install elsewhere, or `LOCRON_NO_SERVICE=1` to skip service registration (registration is best-effort — a failure warns and keeps the install successful; retry with `locron service install`). The script never edits your shell configuration — it prints the `PATH` line to add if one is needed.
+
+### Homebrew-managed service
+
+The Homebrew formula ships a `service` block, so `brew services` supervises the daemon. Installation never starts it automatically:
+
+```sh
+brew services start locron
+```
+
+`brew upgrade` leaves a running service on the old version — run `brew services restart locron` after an upgrade. On Homebrew (and all package-managed installs), `locron service install|uninstall` and `locron self-update` refuse and point at the package manager.
 
 ### Debian, Ubuntu, Fedora, RHEL
 
@@ -62,6 +72,8 @@ Download the package for your architecture from [Releases](https://github.com/Wh
 sudo dpkg -i locron_<version>_amd64.deb    # or _arm64.deb
 sudo rpm -i locron-<version>.x86_64.rpm    # or .aarch64.rpm
 ```
+
+Package installs never register the daemon automatically; the package prints guidance on how to register and start it from a login session.
 
 ### Pre-built binaries
 

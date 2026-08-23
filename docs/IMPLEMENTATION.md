@@ -433,3 +433,49 @@ The formula template embedded in `.github/workflows/release.yml` gains one line 
 - **Self-update contract tests:** local HTTP fixture drives latest resolution, checksum verification, atomic replacement (the pre-update process keeps running while new invocations run the new binary), marker-file refusal with brew guidance, "already up to date", rate-limit error mapping, and JSON envelope output; failure injection proves the old binary is untouched after download/verify errors.
 - **Formula marker:** the tap formula template contains the marker line, and a manual `brew reinstall` followed by `self-update` refusal is recorded as evidence at the next release.
 - **Platform matrix:** the existing four-target CI runs the new suites; Windows, 32-bit, and musl results remain informational.
+
+## Daemon service installation implementation (post-milestone delivery, 2026-08-23)
+
+This section plans the daemon-service amendment to `docs/SPEC.md`: per-user registration and automatic startup of the daemon by the script installer, a Homebrew service definition for `brew services`, and refresh-and-restart behavior on updates. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §12.
+
+### Accepted: binary-owned service registration
+
+`locron-cli` owns a new `locron service install|uninstall|status` family behind a small service-manager port. The port has two real backends — launchd (macOS) and systemd user units (Linux) — and a deterministic fake for tests. `locron-engine` and the store are unchanged: the daemon already performs graceful SIGTERM shutdown, single-owner locking, and stale-attempt classification, which is everything a service manager requires of it. install.sh and self-update call the subcommand rather than shelling out to `launchctl`/`systemctl` themselves, keeping the POSIX script thin and the behavior unit-testable. No new dependencies: the backends run `launchctl`/`systemctl` as child processes.
+
+Templates are embedded constants, not files shipped in archives. The macOS plist carries label `dev.locron.daemon`, `ProgramArguments` `[<current_exe>, "daemon", "run"]`, `KeepAlive` true, `RunAtLoad` true, and `StandardOutPath`/`StandardErrorPath` both at `~/Library/Logs/locron/daemon.log` (created at install; the Homebrew default-log-path convention). The Linux unit is `locron.service` at `~/.config/systemd/user/` with `ExecStart=<current_exe> daemon run`, `Restart=on-failure`, and `WantedBy=default.target`. Registration always uses the canonicalized absolute path of the running binary, so repeating it repairs a registration whose binary moved or was replaced.
+
+### Accepted: macOS registration flow
+
+Install writes the plist user-owned 0644, runs `launchctl enable gui/<uid>/<label>`, and consults `launchctl print` for the label. If the job is already loaded, install refreshes the plist and sends `SIGTERM` with `launchctl kill`; `KeepAlive` then restarts the job on the new binary, and the engine's ordinary graceful-shutdown sequence handles active work. If not loaded, install first checks the state-directory daemon lock with the store's existing lock probe and then bootstraps, so a manual daemon holding the lock is never shadowed by a restart loop. `bootstrap` into the `gui` domain can fail outside a GUI login session (for example over SSH); the backend falls back to the `user/<uid>` domain with an explanatory note, the path Homebrew itself uses. Because the termination semantics of `bootout` are undocumented (open question recorded in `docs/FINDINGS.md` §12), uninstall signals `SIGTERM` first, waits for the signaled process to exit, and runs `bootout` plus plist removal as cleanup; a live macOS test validates this ordering rather than relying on an assumed contract. Two launchd realities shape the uninstall wait: a KeepAlive job never leaves the domain until `bootout`, so the wait watches the process (its pid disappears, or a respawned pid replaces it) instead of the domain; and `launchctl kill`/`bootout` fail with exit 3 ("No process to signal"/already unloaded) whenever the job is between KeepAlive respawns, which is treated as the state the caller wants. Status reports the loaded domain, PID, and binary path from `launchctl print`.
+
+### Accepted: Linux registration flow
+
+The systemd backend first proves a usable user manager: `XDG_RUNTIME_DIR` set and the user bus reachable, probed with `systemctl --user show-environment`. Without one (SSH, containers, cron), `service install` prints the explicit guidance required by the specification and exits zero — installation remains successful. With a manager, install writes the unit, runs `systemctl --user daemon-reload`, then `enable --now`. When the unit is already active the refresh runs `stop` followed by `enable --now` — a bare `enable --now` would never restart a loaded daemon, because `systemctl start` on an already-active unit is a no-op; the `stop` signals SIGTERM and the subsequent start launches the new binary, the same graceful sequence as macOS. Uninstall runs `stop` and `disable`, removes the unit, and reloads. Status reports `is-active` and `is-enabled`. The unit stops with the login session by design; the operator guide documents `loginctl enable-linger` as the optional step for boot persistence (self-lingering requires no administrator authentication per `docs/FINDINGS.md` §12).
+
+### Accepted: installer, self-update, and package integration
+
+install.sh, after its atomic binary replace, runs `<installed> service install` unless `LOCRON_NO_SERVICE=1`, passing its output through. A zero exit with guidance output (no Linux session) leaves the install successful, exactly as the specification requires. Any other non-zero exit from the registration attempt also leaves the installation successful: the script warns and continues, because the binary replacement is the essential install and the registration attempt is best-effort by design (`LOCRON_NO_SERVICE` exists to decline it). The same tolerance is recorded in this backlog's step evidence.
+
+self-update runs `service install` on the replaced executable after its own successful atomic replace (the child inherits the environment and its output is captured so the update envelope stays clean): if the daemon was service-managed, this refreshes and restarts it onto the new binary; if no registration existed, it performs a first registration; if the daemon was started manually, the registration is written and the lock check defers the start until the manual daemon stops. Registration is best-effort: a failed post-replace registration becomes a warning in the update envelope (and on stderr in human mode), never an update failure. The brew-managed refusal reuses the existing `lib/.disable-self-update` marker: `service install` and `service uninstall` refuse on a marker-bearing binary with a stable error directing to `brew services`.
+
+The release.yml formula template gains a `service` block (`run [opt_bin/"locron", "daemon", "run"]`, `keep_alive true`, `run_at_load false`) and a caveats line pointing at `brew services start locron`; installation never starts the service. `brew upgrade` does not restart running services (`docs/FINDINGS.md` §12), so after an upgrade that caveat remains the documented restart path. The deb/rpm postinst prints the same guidance as the no-session Linux path; it never registers anything.
+
+### Edge cases to handle explicitly
+
+- `service install` while a manual `locron daemon run` holds the state lock: write and enable the registration, then report that it will start the daemon after the manual process stops, without bootstrapping.
+- A service-loaded daemon exits because the lock is held elsewhere: launchd/systemd keep retrying at their throttle interval — safe (the engine's single-owner check never executes work twice) but visible in status output.
+- macOS over SSH: `gui` bootstrap failure falls back to `user/<uid>` with a note.
+- The binary is removed or moved after registration: restarts fail until `service install` re-registers; status surfaces the stale path.
+- Two concurrent registrations: idempotent writes and enable calls; the last one wins.
+- An update restart lands while jobs run: the engine's graceful-shutdown sequence applies unchanged, and interrupted attempts follow the existing recovery contract.
+- Linux logout while jobs run: the session manager signals the daemon and the same graceful sequence runs.
+- `service status` on an unsupported platform or without a state directory: a stable diagnostic, with no registration attempted.
+
+### Verification additions
+
+- **Fake-port contract tests:** template rendering (canonicalized path, label/unit name, KeepAlive/RunAtLoad, Restart=on-failure/WantedBy, log paths), enable/bootstrap/kill ordering, lock-held deferral, brew-marker refusal, no-session guidance, and machine-output envelopes, all without touching a real service manager.
+- **Real-backend tests:** on the macOS CI leg, register/restart/unregister against the domain available on CI (`gui` when a GUI session exists, `user/<uid>` otherwise), asserting the plist, loaded state, and graceful SIGTERM restart with a marker process; on the Linux leg, run a real user manager under `dbus-run-session` to cover daemon-reload, enable --now, stop, and disable.
+- **install.sh fixtures:** a default run attempts registration and tolerates the guidance exit; `LOCRON_NO_SERVICE=1` skips it entirely.
+- **Release artifact checks:** the formula template contains the `service` block and the release attaches the updated script; a built .deb contains the postinst guidance.
+- **Live evidence items:** `brew services start locron` starts the daemon, and `brew upgrade` leaves the old daemon running until `brew services restart` — recorded at the next release, like the self-update marker check.
+- **Platform matrix:** the existing four-target CI runs the new suites; Windows, 32-bit, and musl results remain informational.

@@ -157,6 +157,22 @@ jobs:
               FileUtils.touch lib/".disable-self-update"
             end
 
+            service do
+              run [opt_bin/"locron", "daemon", "run"]
+              keep_alive true
+              run_at_load false
+            end
+
+            def caveats
+              <<~EOS
+                Start the locron daemon with:
+                  brew services start locron
+                Installation never starts it automatically, and `brew upgrade`
+                leaves a running service on the old version; run
+                `brew services restart locron` after an upgrade.
+              EOS
+            end
+
             test do
               assert_match "locron", shell_output("#{bin}/locron --version")
             end

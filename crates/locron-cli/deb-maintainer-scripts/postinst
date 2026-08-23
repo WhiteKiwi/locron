@@ -1,0 +1,17 @@
+#!/bin/sh
+# locron deb postinst — a package installation never registers the daemon
+# automatically; print the registration guidance (mirrors the script
+# installer's no-session guidance).
+set -e
+
+cat <<'EOF'
+
+The locron daemon was not registered because locron is installed as a system
+package, and package installations never register a service automatically. To
+register and start the daemon from your next interactive login, run:
+'locron service install'
+To run the scheduler right now, start the daemon in the foreground:
+'locron daemon run'
+EOF
+
+exit 0

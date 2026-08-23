@@ -25,8 +25,17 @@ use sha2::{Digest, Sha256};
 
 const NEW_TAG: &str = "v9.9.9";
 const NEW_VERSION: &str = "9.9.9";
-/// The fixture's replacement binary: a tiny shell script.
-const NEW_BINARY: &[u8] = b"#!/bin/sh\necho fixture-locron 9.9.9\n";
+/// The fixture's replacement binary: a tiny shell script that reports its
+/// version and records a post-replace `service install` invocation in
+/// `$LOCRON_FIXTURE_SERVICE_LOG` when that environment is set.
+const NEW_BINARY: &[u8] = b"#!/bin/sh\n\
+if [ \"${1:-}\" = \"service\" ] && [ \"${2:-}\" = \"install\" ]; then\n\
+    if [ -n \"${LOCRON_FIXTURE_SERVICE_LOG:-}\" ]; then\n\
+        echo \"service install\" >> \"$LOCRON_FIXTURE_SERVICE_LOG\"\n\
+    fi\n\
+    exit 0\n\
+fi\n\
+echo fixture-locron 9.9.9\n";
 
 type Response = (u16, Vec<(String, String)>, Vec<u8>);
 type Handler = Box<dyn Fn(&str) -> Response + Send>;
@@ -317,8 +326,10 @@ fn fake_binary(dir: &Path) -> std::path::PathBuf {
     fake
 }
 
-/// A command running the fake binary against the fixture.
-fn locron_command(fake: &Path, fixture: &Fixture) -> Command {
+/// A command running the fake binary against the fixture. The post-replace
+/// `service install` invocation records itself in `service_log` (a fixture
+/// log path inherited from the update process's environment).
+fn locron_command(fake: &Path, fixture: &Fixture, service_log: &Path) -> Command {
     let mut command = Command::new(fake);
     command
         .env(
@@ -328,8 +339,17 @@ fn locron_command(fake: &Path, fixture: &Fixture) -> Command {
         .env(
             "LOCRON_UPDATE_ASSET_BASE",
             format!("http://{}", fixture.address),
-        );
+        )
+        .env("LOCRON_FIXTURE_SERVICE_LOG", service_log);
     command
+}
+
+/// The recorded post-replace `service install` invocations, or none when the
+/// fixture log was never written.
+fn service_log_entries(path: &Path) -> Vec<String> {
+    fs::read_to_string(path)
+        .map(|text| text.lines().map(str::to_owned).collect())
+        .unwrap_or_default()
 }
 
 #[test]
@@ -339,8 +359,9 @@ fn self_update_installs_the_latest_release() {
     let fixture = update_fixture(&target, &valid_sums(&target));
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
+    let service_log = dir.path().join("service.log");
 
-    locron_command(&fake, &fixture)
+    locron_command(&fake, &fixture, &service_log)
         .args(["--json", "self-update"])
         .assert()
         .success()
@@ -375,6 +396,11 @@ fn self_update_installs_the_latest_release() {
     assert!(requests.contains(&format!(
         "/releases/download/{NEW_TAG}/locron-{NEW_TAG}-{target}.tar.gz"
     )));
+    assert_eq!(
+        service_log_entries(&service_log),
+        ["service install"],
+        "a successful replace must run the post-replace service registration once"
+    );
 }
 
 #[test]
@@ -384,8 +410,9 @@ fn human_output_reports_current_and_new_version() {
     let fixture = update_fixture(&target, &valid_sums(&target));
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
+    let service_log = dir.path().join("service.log");
 
-    locron_command(&fake, &fixture)
+    locron_command(&fake, &fixture, &service_log)
         .arg("self-update")
         .assert()
         .success()
@@ -413,8 +440,9 @@ fn self_update_reports_already_up_to_date_without_downloading() {
     }));
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
+    let service_log = dir.path().join("service.log");
 
-    locron_command(&fake, &fixture)
+    locron_command(&fake, &fixture, &service_log)
         .args(["--json", "self-update"])
         .assert()
         .success()
@@ -436,6 +464,11 @@ fn self_update_reports_already_up_to_date_without_downloading() {
         "already up to date must not download assets"
     );
     assert_ne!(fs::read(&fake).unwrap(), NEW_BINARY);
+    assert_eq!(
+        service_log_entries(&service_log),
+        Vec::<String>::new(),
+        "an update that replaces nothing must not register a service"
+    );
 }
 
 #[test]
@@ -447,8 +480,9 @@ fn checksum_mismatch_leaves_the_old_binary_untouched() {
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
     let before = fs::read(&fake).unwrap();
+    let service_log = dir.path().join("service.log");
 
-    locron_command(&fake, &fixture)
+    locron_command(&fake, &fixture, &service_log)
         .args(["--json", "self-update"])
         .assert()
         .failure()
@@ -472,6 +506,11 @@ fn checksum_mismatch_leaves_the_old_binary_untouched() {
         before,
         "a failed update must leave the old binary untouched"
     );
+    assert_eq!(
+        service_log_entries(&service_log),
+        Vec::<String>::new(),
+        "a failed update must not register a service"
+    );
 }
 
 #[test]
@@ -481,6 +520,7 @@ fn atomic_replace_keeps_a_running_process_on_the_old_binary() {
     let fixture = update_fixture(&target, &valid_sums(&target));
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
+    let service_log = dir.path().join("service.log");
 
     // A process running the old binary (mcp waits on stdin) stays alive across
     // the replacement and keeps its old inode.
@@ -493,7 +533,7 @@ fn atomic_replace_keeps_a_running_process_on_the_old_binary() {
         .spawn()
         .unwrap();
 
-    locron_command(&fake, &fixture)
+    locron_command(&fake, &fixture, &service_log)
         .arg("self-update")
         .assert()
         .success();
@@ -503,6 +543,11 @@ fn atomic_replace_keeps_a_running_process_on_the_old_binary() {
         "the pre-update process must keep running after the replacement"
     );
     assert_eq!(fs::read(&fake).unwrap(), NEW_BINARY);
+    assert_eq!(
+        service_log_entries(&service_log),
+        ["service install"],
+        "the replace must run the post-replace service registration"
+    );
 
     drop(running.stdin.take());
     let status = running.wait().unwrap();
@@ -561,8 +606,9 @@ fn rate_limited_api_response_maps_to_a_stable_error() {
     }));
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
+    let service_log = dir.path().join("service.log");
 
-    locron_command(&fake, &fixture)
+    locron_command(&fake, &fixture, &service_log)
         .args(["--json", "self-update"])
         .assert()
         .failure()
@@ -589,8 +635,9 @@ fn missing_published_asset_is_a_release_metadata_error() {
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
     let before = fs::read(&fake).unwrap();
+    let service_log = dir.path().join("service.log");
 
-    locron_command(&fake, &fixture)
+    locron_command(&fake, &fixture, &service_log)
         .args(["--json", "self-update"])
         .assert()
         .failure()
@@ -612,8 +659,9 @@ fn malformed_checksum_entry_is_a_release_metadata_error() {
     let fixture = update_fixture(&target, &malformed);
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
+    let service_log = dir.path().join("service.log");
 
-    locron_command(&fake, &fixture)
+    locron_command(&fake, &fixture, &service_log)
         .args(["--json", "self-update"])
         .assert()
         .failure()

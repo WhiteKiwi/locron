@@ -17,6 +17,10 @@
 #   LOCRON_UPDATE_ASSET_BASE
 #                         Base URL for release assets; tests point this at a
 #                         local fixture. Defaults to the GitHub release host.
+#   LOCRON_NO_SERVICE     Set to 1 to skip registering the installed binary as a
+#                         login service (launchd/systemd user). Registration is
+#                         best-effort: a failure warns and keeps the install
+#                         successful, and `locron service install` can retry it.
 
 set -eu
 
@@ -24,10 +28,6 @@ LOCRON_VERSION="${LOCRON_VERSION:-}"
 LOCRON_INSTALL_DIR="${LOCRON_INSTALL_DIR:-${HOME:-}/.local/bin/locron}"
 LOCRON_UPDATE_ASSET_BASE="${LOCRON_UPDATE_ASSET_BASE:-https://github.com/WhiteKiwi/locron}"
 
-if [ -z "${HOME:-}" ] && [ -z "${LOCRON_INSTALL_DIR+x}" ]; then
-    echo "error: HOME is not set; set LOCRON_INSTALL_DIR to choose an install location" >&2
-    exit 1
-fi
 if [ -d "$LOCRON_INSTALL_DIR" ]; then
     echo "error: LOCRON_INSTALL_DIR must be a file path, not a directory: $LOCRON_INSTALL_DIR" >&2
     exit 1
@@ -188,6 +188,21 @@ version=${version%"$suffix"}
 
 echo "Installed locron $version to $install_path"
 echo "Run 'locron -V' to confirm the installation." >&2
+
+# --- register as a login service (best-effort) --------------------------------
+# The binary replacement is the essential install; the registration attempt is
+# best-effort by design and `LOCRON_NO_SERVICE=1` declines it. A guidance exit
+# (zero with a no-session note on Linux) passes through; any other failure
+# warns and keeps the installation successful.
+
+if [ -z "${LOCRON_NO_SERVICE:-}" ]; then
+    if "$install_path" service install; then
+        :
+    else
+        status=$?
+        echo "warning: could not register locron as a login service (exit $status); run 'locron service install' to retry" >&2
+    fi
+fi
 
 case ":$PATH:" in
     *":$install_dir:"*) ;;

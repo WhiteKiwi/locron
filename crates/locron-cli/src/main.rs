@@ -3,6 +3,7 @@
 mod maintenance;
 mod mcp;
 mod self_update;
+mod service;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
@@ -42,6 +43,7 @@ use locron_store::{
 use self_update::SelfUpdateError;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use service::ServiceError;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
@@ -224,6 +226,21 @@ old code until it restarts. Package-manager-managed installs are refused.
 
 Navigation:
   Run 'locron --help' to list all commands.";
+const SERVICE_HELP: &str = "\
+Examples:
+  locron service install
+  locron service status
+  locron service uninstall
+
+Registers, unregisters, or inspects the per-user daemon service. On macOS the
+service is a LaunchAgent (dev.locron.daemon) registered with launchctl; on
+Linux it is a systemd user unit (locron.service). Registration never requires
+administrative privileges. Package-manager-managed installs are refused; use
+the package manager's own service commands there (for example
+'brew services start locron').
+
+Navigation:
+  Run 'locron service <COMMAND>' for a subcommand or 'locron --help' for all commands.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -427,6 +444,11 @@ enum Command {
     Mcp,
     #[command(about = "Replace this binary with the latest stable release", after_help = SELF_UPDATE_HELP)]
     SelfUpdate,
+    #[command(about = "Register, unregister, or inspect the daemon service", after_help = SERVICE_HELP)]
+    Service {
+        #[command(subcommand)]
+        command: service::ServiceCommand,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -862,6 +884,14 @@ fn command_uses_stream(command: &Command) -> bool {
 }
 
 async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -> Result<()> {
+    // Service commands tolerate a missing state directory (the registration
+    // probe treats it as lock-free), so they run before state discovery.
+    if matches!(command, Command::Service { .. }) {
+        let Command::Service { command } = command else {
+            unreachable!("matched Command::Service")
+        };
+        return service::execute(state_dir, command, format);
+    }
     let paths = StatePaths::discover(state_dir.as_deref())?;
     match command {
         Command::Add(args) => add(&paths, args, format),
@@ -965,6 +995,7 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         Command::Mcp => mcp::run_mcp_server(paths).await,
         Command::SelfUpdate => {
             let outcome = self_update::update().await?;
+            let warnings: Vec<&str> = outcome.warnings.iter().map(String::as_str).collect();
             render(
                 format,
                 "self-update",
@@ -973,9 +1004,12 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
                     "new_version": outcome.new_version,
                     "updated": outcome.updated,
                 }),
-                &[],
+                &warnings,
             );
             Ok(())
+        }
+        Command::Service { .. } => {
+            unreachable!("service commands run before state discovery")
         }
     }
 }
@@ -3576,6 +3610,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Daemon { .. } => "daemon",
         Command::Mcp => "mcp",
         Command::SelfUpdate => "self-update",
+        Command::Service { .. } => "service",
     }
 }
 #[derive(Serialize)]
@@ -3774,6 +3809,13 @@ fn error_code(error: &anyhow::Error) -> &'static str {
             SelfUpdateError::ChecksumMismatch { .. } => "update_checksum_mismatch",
             SelfUpdateError::Io(_) => "update_io",
         }
+    } else if let Some(service) = error.downcast_ref::<ServiceError>() {
+        match service {
+            ServiceError::UnsupportedPlatform { .. } => "service_unsupported_platform",
+            ServiceError::ManagedInstall => "service_managed_install",
+            ServiceError::CommandFailed { .. } => "service_command_failed",
+            ServiceError::Io(_) => "service_io",
+        }
     } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) => "not_found",
@@ -3799,6 +3841,12 @@ fn exit_code(error: &anyhow::Error) -> i32 {
             | SelfUpdateError::ReleaseMetadata(_)
             | SelfUpdateError::ChecksumMismatch { .. }
             | SelfUpdateError::Io(_) => 5,
+        }
+    } else if let Some(service) = error.downcast_ref::<ServiceError>() {
+        match service {
+            ServiceError::UnsupportedPlatform { .. } => 2,
+            ServiceError::ManagedInstall => 3,
+            ServiceError::CommandFailed { .. } | ServiceError::Io(_) => 5,
         }
     } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {

@@ -44,6 +44,7 @@ locron import PATH [--accept-plaintext-values] [--dry-run]
 locron prune [--dry-run]
 locron doctor
 locron daemon run
+locron service install|uninstall|status
 locron self-update
 ```
 
@@ -224,6 +225,42 @@ Machine output for a success carries `data`:
 ```
 
 Stable error codes: `update_unsupported_platform` (2), `update_managed_install` (3), `update_rate_limited` (5), `update_network` (5), `update_release_metadata` (5), `update_checksum_mismatch` (5), `update_io` (5).
+
+After a successful replace, self-update runs `locron service install` on the replaced executable to refresh an existing service registration onto the new binary or to perform a first registration. This registration is best-effort: a failure produces a warning in the envelope (and on stderr in human mode) while the update stays successful.
+
+## Service installation
+
+`locron service install|uninstall|status` manages the daemon's registration with the platform's per-user service manager, without administrative privileges. The command family exists only on macOS and glibc Linux; any other platform fails with exit 2 and code `service_unsupported_platform`.
+
+- On macOS the registration is a per-user LaunchAgent (`~/Library/LaunchAgents/dev.locron.daemon.plist`) that runs `<executable> daemon run` with `KeepAlive` and `RunAtLoad`, and writes the daemon log to `~/Library/Logs/locron/daemon.log`. The service is bootstrapped into the `gui/<uid>` domain with a `user/<uid>` fallback for sessions without a GUI.
+- On Linux the registration is a systemd user unit (`~/.config/systemd/user/locron.service`) with `Restart=on-failure` and `WantedBy=default.target`, activated through `systemctl --user enable --now`; the daemon stops at logout and starts again at the next login.
+- The registration always records the canonicalized absolute path of the running binary, so repeating an install after an update or a binary move refreshes the registration onto the current binary. A loaded service is signaled with SIGTERM and restarted under the engine's ordinary graceful-shutdown rules; active work completes or retries per the normal policies.
+- When no per-user service manager session is available (SSH, containers, a machine without systemd), `service install` completes successfully with exit 0 and prints explicit guidance for registering and starting the daemon later. `service uninstall` still removes a stale registration.
+- When a manually started daemon holds the state-directory lock, `service install` registers and enables the service but defers the start, with guidance; the service starts when the manual daemon exits. This preserves the single-owner guarantee: a registered service never creates a second scheduler for one state directory.
+- Installations whose binary carries the package-manager marker (`lib/.disable-self-update` next to the executable) refuse `install` and `uninstall` with exit 3 and code `service_managed_install`, directing the user to the package manager's own service mechanism (for Homebrew, `brew services`).
+- `service uninstall` signals SIGTERM, waits for the daemon process to exit, removes the service from the manager, and deletes the registration file. The binary itself is never touched.
+
+Machine output for a successful `service install` carries `data`:
+
+```json
+{
+  "schema": "locron.cli/v1",
+  "ok": true,
+  "command": "service install",
+  "data": {
+    "registered": true,
+    "restarted": false,
+    "deferred": false,
+    "service_name": "dev.locron.daemon",
+    "domain": "gui/501"
+  },
+  "warnings": []
+}
+```
+
+`restarted` is true when an existing loaded service was refreshed onto the current binary; `deferred` is true when the start waits on a manual daemon holding the lock; `domain` names the manager domain (launchd) and is omitted when the manager has no domains (systemd); a no-session install includes `guidance` with the registration instructions. `service uninstall` carries `{"removed": bool, "stopped": bool, "service_name": ...}`; `service status` carries `registered`, `loaded`, `enabled` (bool or null), `domain`, `pid`, `executable`, `session_available`, and `service_name`.
+
+Stable error codes: `service_unsupported_platform` (2), `service_managed_install` (3), `service_command_failed` (5), `service_io` (5).
 
 ## Why and diagnostics
 

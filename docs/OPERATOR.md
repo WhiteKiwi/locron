@@ -22,11 +22,54 @@ locron config get
 locron list --all
 ```
 
+## Run the daemon as a service
+
+`locron service install` registers and starts the daemon with the platform's per-user service
+manager, without administrative privileges:
+
+```sh
+locron service install
+locron service status
+```
+
+- **macOS** installs a per-user LaunchAgent (`dev.locron.daemon`) that keeps the daemon alive
+  (`KeepAlive`), loads it at login (`RunAtLoad`), and writes the daemon log to
+  `~/Library/Logs/locron/daemon.log`.
+- **Linux** installs a systemd user unit (`locron.service`) that restarts the daemon on failure.
+  The daemon runs inside your login session: it stops at logout and starts again at the next
+  login. Work missed while it was stopped is reconciled under each job's missed-run policy when
+  it next starts. To keep the daemon running after logout and across boots, enable lingering for
+  your user (self-lingering needs no administrator authentication):
+
+  ```sh
+  loginctl enable-linger "$USER"
+  ```
+
+- Repeating `locron service install` is safe: it refreshes the registration onto the current
+  binary (important after a binary move) and restarts a loaded service under ordinary
+  graceful-shutdown rules, so active work completes or retries per the normal policies.
+- If a manually started daemon holds the state lock, the service is registered and enabled but
+  its start is deferred until that daemon exits; `service install` reports the deferral. The
+  registered service never creates a second scheduler for one state directory.
+- `locron service uninstall` stops the daemon, unloads the service, and removes the
+  registration file; the binary stays in place.
+- The install script (`install.sh`) registers the service automatically after installing or
+  replacing the binary; set `LOCRON_NO_SERVICE=1` to decline. Registration is best-effort: a
+  failed attempt warns and leaves the installation successful, and `locron service install`
+  retries it.
+
+Package-managed installs never register a service automatically. **Homebrew** ships the formula's
+`service` block so the package manager supervises the daemon: start it with `brew services start
+locron`, and use `brew services restart locron` after an upgrade (an upgrade never restarts a
+running service on its own). **Debian/RPM** installs print the registration guidance during
+installation; on Linux with a systemd user session, `locron service install` still works for a
+manually supervised setup.
+
 ## Updating locron
 
-- **Install script / tarball installs** update with `locron self-update`: it verifies the downloaded archive against the release's `SHA256SUMS.txt` and replaces the binary atomically (one temp file plus rename in the executable's directory), so a failed or interrupted update leaves the old binary working.
-- **Homebrew** installs update with `brew upgrade locron`; the formula marks the install (`lib/.disable-self-update`) so `locron self-update` refuses and points to Homebrew.
-- **Debian / RPM** installs update by replacing the package.
+- **Install script / tarball installs** update with `locron self-update`: it verifies the downloaded archive against the release's `SHA256SUMS.txt` and replaces the binary atomically (one temp file plus rename in the executable's directory), so a failed or interrupted update leaves the old binary working. After the replace it refreshes a service registration and restarts the daemon, so a registered service runs the new version immediately; a manual `locron daemon run` keeps the old code until restarted.
+- **Homebrew** installs update with `brew upgrade locron`; the formula marks the install (`lib/.disable-self-update`) so `locron self-update` refuses and points to Homebrew. A running `brew services` service keeps the old code until `brew services restart locron`.
+- **Debian / RPM** installs update by replacing the package; a service-managed daemon registered with `locron service install` keeps the old code until the registration is refreshed with `locron service install`.
 - A running `locron daemon run` process keeps the old code until it is restarted: self-update replaces the file on disk and never signals running processes. After updating, restart the daemon (and any long-lived `locron` MCP/`run --wait` clients) to run the new version. Durable state is versioned, so downgrades and upgrades across revisions are handled by the store migration path; schedule and history data survive the restart.
 
 ## Schedules

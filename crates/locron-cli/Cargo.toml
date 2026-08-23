@@ -47,6 +47,7 @@ license-file = ["../../LICENSE-MIT", "4"]
 extended-description = "A local-first job scheduler for macOS and Linux."
 section = "utils"
 priority = "optional"
+maintainer-scripts = "deb-maintainer-scripts"
 assets = [
     ["../../target/release/locron", "usr/bin/locron", "755"],
     ["../../README.md", "usr/share/doc/locron/README.md", "644"],
@@ -64,3 +65,4 @@ assets = [
     { source = "LICENSE-MIT", dest = "/usr/share/doc/locron/LICENSE-MIT", mode = "644" },
     { source = "LICENSE-APACHE", dest = "/usr/share/doc/locron/LICENSE-APACHE", mode = "644" },
 ]
+scripts = { postin = "rpm-scripts/postin" }

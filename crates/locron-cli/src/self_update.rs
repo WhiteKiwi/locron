@@ -15,6 +15,7 @@ use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
@@ -37,6 +38,9 @@ pub(crate) struct UpdateOutcome {
     pub current_version: String,
     pub new_version: String,
     pub updated: bool,
+    /// Best-effort post-replace service-registration failures; the update
+    /// itself stays successful.
+    pub warnings: Vec<String>,
 }
 
 /// Stable self-update failure categories.
@@ -142,6 +146,7 @@ pub(crate) async fn update() -> Result<UpdateOutcome> {
             current_version: current_version.to_owned(),
             new_version: new_version.to_owned(),
             updated: false,
+            warnings: Vec::new(),
         });
     }
 
@@ -177,11 +182,47 @@ pub(crate) async fn update() -> Result<UpdateOutcome> {
     let binary = fs::read(binary).context("cannot read the extracted binary")?;
     replace_binary(&binary)?;
 
+    // The update is complete; registering the new binary as a login service is
+    // best-effort and must never turn a successful update into a failure.
+    let warnings = register_service();
+
     Ok(UpdateOutcome {
         current_version: current_version.to_owned(),
         new_version: new_version.to_owned(),
         updated: true,
+        warnings,
     })
+}
+
+/// Register the freshly replaced binary as a login service by running
+/// `service install` on the canonical executable path, which re-reads its own
+/// location and refreshes an existing registration or performs a first
+/// registration. The child inherits this process's environment; its output is
+/// captured so the update envelope stays clean. Failures are returned as
+/// warnings, never as errors.
+fn register_service() -> Vec<String> {
+    let Ok(executable) = canonical_executable() else {
+        return Vec::new();
+    };
+    let output = match Command::new(&executable)
+        .args(["service", "install"])
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => {
+            return vec![format!(
+                "could not run 'locron service install' after update: {error}"
+            )];
+        }
+    };
+    if !output.status.success() {
+        return vec![format!(
+            "could not register locron as a login service after update (exit {}); \
+             run 'locron service install' to retry",
+            output.status.code().unwrap_or(-1)
+        )];
+    }
+    Vec::new()
 }
 
 /// Map the running platform to the published target triple, refusing any
