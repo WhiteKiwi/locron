@@ -479,13 +479,21 @@ Phase 1 of the ordered deferred product roadmap below. Authorized by the frozen 
 in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The frozen
 `docs/SPEC.md` is not amended — the roadmap phases do not change its exclusions.
 
-- [ ] Amend planning documents before code: `docs/ARCHITECTURE.md` first (fifth workspace member
+- [x] Amend planning documents before code: `docs/ARCHITECTURE.md` first (fifth workspace member
   `locron-server` with its dependency row and arrows, the shared redaction boundary moving to
   `locron-core`, and the server-never-owns-daemon boundary note), then add the `locron dashboard`
   contract plus the API error-status mapping to `docs/CLI.md`.
   **Verify:** `rg -n "locron-server|redaction" docs/ARCHITECTURE.md` shows the new member,
   dependency direction, and core redaction responsibility; `docs/CLI.md` documents the
   `locron dashboard` family and the `locron.api/v1` envelope; no planning document marks an
+  unresolved decision.
+  **Evidence:** `docs/ARCHITECTURE.md` gained the `locron-server` row, dependency rule
+  (`locron-server` depends only on `locron-core`/`locron-store`), the core "redaction boundary"
+  responsibility, the server-never-owns-daemon note in the system boundary and runtime topology,
+  and the five-crate diagram; `docs/CLI.md` gained the `locron dashboard` command family, the
+  dashboard contract section (serve/enable/disable/status/token, bind/port rules, token and
+  session lifecycle, CSRF/Origin/Host protections), the `locron.api/v1` envelope, and the
+  CLI-category-to-HTTP-status table; the `rg` checks above pass and no planning document marks an
   unresolved decision.
 - [ ] Add the `locron-server` member to the workspace with axum 0.8.9, tokio-stream 0.1.19, and
   rust-embed (all below MSRV 1.94 per `docs/FINDINGS.md` §14); update the dependency-direction

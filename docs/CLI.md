@@ -45,6 +45,11 @@ locron prune [--dry-run]
 locron doctor
 locron daemon run
 locron service install|uninstall|status
+locron dashboard [--port N] [--bind ADDR]   (alias: dashboard serve)
+locron dashboard enable [--reset]
+locron dashboard disable
+locron dashboard status
+locron dashboard token
 locron self-update
 ```
 
@@ -261,6 +266,80 @@ Machine output for a successful `service install` carries `data`:
 `restarted` is true when an existing loaded service was refreshed onto the current binary; `deferred` is true when the start waits on a manual daemon holding the lock; `domain` names the manager domain (launchd) and is omitted when the manager has no domains (systemd); a no-session install includes `guidance` with the registration instructions. `service uninstall` carries `{"removed": bool, "stopped": bool, "service_name": ...}`; `service status` carries `registered`, `loaded`, `enabled` (bool or null), `domain`, `pid`, `executable`, `session_available`, and `service_name`.
 
 Stable error codes: `service_unsupported_platform` (2), `service_managed_install` (3), `service_command_failed` (5), `service_io` (5).
+
+## Dashboard (web administration)
+
+`locron dashboard` serves the loopback-only web administration surface planned in
+`docs/dashboard/SPEC.md` and `docs/dashboard/IMPLEMENTATION.md`.
+
+- `locron dashboard` (identical to `locron dashboard serve`) runs the server in the foreground:
+  it binds loopback only (`127.0.0.1` and `::1` by default; `--bind` accepts only loopback
+  values and any other value is refused), prints the exact access URL (human form and the
+  `locron.cli/v1` machine envelope per the machine-output contract), and serves until a signal.
+  It does not require the daemon to be running and never takes daemon ownership.
+- The default port is 10824. In foreground mode an occupied default port falls back to the next
+  free port (up to ten successive ports, then an OS-assigned port) and the chosen URL is printed.
+  In service mode the port is fixed: an occupied port makes the server exit and `status` reports
+  the conflict. An explicit `--port N` is always strict and fails with an actionable error when
+  occupied. When only one loopback family can be bound, the server warns and continues on the
+  other.
+- `locron dashboard enable` is the persistent path: it generates the access token when absent,
+  registers a per-user dashboard service (`dev.locron.dashboard` LaunchAgent on macOS,
+  `locron-dashboard.service` systemd user unit on Linux — a second registration target on the
+  same service-manager port as the daemon, never touching the daemon registration), starts it
+  immediately, and arranges automatic start at login. Repeating it refreshes and repairs the
+  registration. `enable --reset` regenerates the token, then refreshes and restarts the service
+  (the server reads the token at startup, so the restart invalidates the old token and any
+  outstanding session cookies). `locron dashboard disable` unregisters the service and removes
+  the token, warning when a foreground instance may still be running; `status` reports the
+  service state, the access URL, and token facts (presence and file-permission posture only —
+  never the token value); `token` re-displays the access token.
+- Registration operations refuse package-manager-managed binaries exactly like `service`
+  (`service_managed_install`, exit 3); foreground serving stays allowed.
+- `locron doctor` additionally reports the dashboard exposure facts: token file presence and
+  permission posture and whether a dashboard service is registered. It does not report the
+  server as running; `dashboard status` does.
+
+The access token is 32 random bytes hex-encoded (64 characters), stored owner-only (0600) in the
+state directory, generated on first use, reused afterwards, and regenerated only by
+`enable --reset` or removing the token file. It never appears in a URL, in logs, in diagnostics,
+or in any response. The server accepts it through an `Authorization: token <t>` header (scripts
+and automation) and through a one-time paste at the entry page, which sets a 90-day `SameSite=Lax`
+session cookie (HttpOnly) and a `csrf_token` double-submit cookie. Every state-bearing page and
+API endpoint requires the token or session cookie; the entry page is the only unauthenticated
+response. State-changing requests are additionally protected against DNS rebinding (Host-header
+allowlist: `localhost`, `127.0.0.1`, `[::1]`, port ignored), cross-origin submission (Origin
+check on unsafe methods), and CSRF (double-submit token required on cookie-authenticated
+mutations; bearer-token requests are exempt). All responses carry `Referrer-Policy: no-referrer`.
+
+### HTTP API envelope and status mapping
+
+Machine-readable API results use the versioned `locron.api/v1` envelope: success is
+`{"schema":"locron.api/v1","ok":true,"data":...,"warnings":[...]}` and error is
+`{"schema":"locron.api/v1","ok":false,"error":{"code":"...","message":"..."}}` (the schema field
+is present in the error shape as well). `code` carries the stable CLI error categories verbatim:
+`invalid_request` (validation), `not_found`, `durable_conflict`, `state_error`, and the service
+categories. Errors map to HTTP statuses as follows:
+
+| HTTP status | CLI category meaning |
+|---|---|
+| 400 | validation (`invalid_request`) |
+| 401 | unauthenticated (no or invalid token/session) |
+| 403 | refused or permission: Host not loopback, Origin mismatch, CSRF mismatch |
+| 404 | `not_found` |
+| 409 | `durable_conflict` (revision mismatch, no-op update, quarantine conflicts, busy) |
+| 503 | daemon-required or state unavailable |
+| 500 | unexpected internal failure (`state_error`) |
+
+Route families map one-to-one onto the durable CLI command families — job
+add/update/list/show/enable/disable/remove, schedule preview, manual run, cancel with
+quarantine acknowledgement, history, logs, why, the full `config` surface (`environment.NAME`
+grammar and redaction preserved), export download with the same acknowledgement rules, import
+upload (including server-side URL import with the same TLS/16 MiB/10-redirect/30-second caps as
+the CLI and userinfo rejection), prune, and diagnostics. Dry-run is supported wherever the CLI
+supports it and never writes or wakes. Redaction goes through the shared core boundary, so API
+payloads carry the same `<redacted>`/`value redacted` markers as the CLI. A mutation is durable
+before the API reports success, and it sends the same best-effort wake hint.
 
 ## Why and diagnostics
 
