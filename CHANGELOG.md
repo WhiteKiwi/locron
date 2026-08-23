@@ -1,3 +1,39 @@
+
+## [Unreleased]
+
+## [0.3.0] - 2026-08-23
+
+### Added
+
+- One-line installer (`install.sh`): downloads and verifies the platform archive against the release
+  `SHA256SUMS.txt`, installs atomically to `~/.local/bin` (override with `LOCRON_INSTALL_DIR`, pin
+  with `LOCRON_VERSION`), and best-effort registers a per-user daemon service
+  (`LOCRON_NO_SERVICE=1` skips it). The script never edits shell configuration.
+- `locron self-update`: checksum-verified, atomic self-replace; refuses package-manager-managed
+  installs.
+- Daemon service lifecycle: `locron service install|uninstall|status` (LaunchAgent on macOS,
+  systemd user unit on Linux), a Homebrew `service` block so `brew services start locron` works,
+  and postinst/postin guidance for `.deb`/`.rpm` packages. Installation never starts the daemon
+  automatically.
+
+### Fixed
+
+- Daemon admission latency is bounded; attempts that conflict permanently stop retrying instead of
+  staying `running` forever.
+- Output recovery no longer treats a live attempt's captured output as orphaned.
+- Self-replace closes the write handle before the rename, so the update cannot fail on a busy file.
+- Installer version parsing handles quoted suffix expansions.
+
+### Documentation
+
+- Added contributor, security, and conduct guides plus issue and pull-request templates.
+- `CHANGELOG.md` is now maintained in Keep a Changelog form, generated with git-cliff from commit
+  types and curated per release; GitHub release notes are published from it.
+- `docs/RELEASE.md` now covers the dependency audit workflow (cargo-deny) and changelog maintenance
+  policy.
+- README restructured to one install line per channel, a quick start, and a consolidated MCP
+  section.
+
 # Changelog
 
 All notable changes to this project are documented in this file.
@@ -70,7 +106,8 @@ Initial release.
 - **Distribution** — Homebrew tap, `.deb` and `.rpm` packages, and pre-built tarballs for macOS and
   Linux on both x86_64 and aarch64.
 
-[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/WhiteKiwi/locron/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/WhiteKiwi/locron/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/WhiteKiwi/locron/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/WhiteKiwi/locron/releases/tag/v0.1.0
