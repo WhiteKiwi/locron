@@ -977,11 +977,18 @@ tolerance (accept an exit confined to `traffic_error`, matching the old `ci.yml`
 restored in `usage.yml`; any other `*_error` key or an invalid snapshot still fails the run as a
 drift alert. `docs/IMPLEMENTATION.md` "Usage snapshot smoke relocation" is amended accordingly.
 
-- [ ] Restore the traffic-only tolerance in `.github/workflows/usage.yml` (mirror the removed
+- [x] Restore the traffic-only tolerance in `.github/workflows/usage.yml` (mirror the removed
   step's `|| code=$?` pattern: the numbers check always runs, and a non-zero script exit is
   accepted only when `has("traffic_error")` and every `*_error` key is `traffic_error`).
   **Verify:** the workflow parses as valid YAML; a manual `workflow_dispatch` run completes
   `success` with the snapshot recorded in its log; the weekly cron path is the same step logic.
+  **Evidence:** commit `eaa6c33` restored the pattern verbatim; the workflow parses (ruby/psych
+  `OK`); `workflow_dispatch` run
+  [32656326863](https://github.com/WhiteKiwi/locron/actions/runs/32656326863) concluded
+  `success` — the first authenticated run with `traffic_error` tolerated, other sections
+  green — and the push CI run
+  [32656321754](https://github.com/WhiteKiwi/locron/actions/runs/32656321754) (head `eaa6c33`)
+  concluded `success`.
 
 ## Ordered deferred product roadmap
 
