@@ -422,6 +422,24 @@ On Linux, `locron self-update` silently skips the post-replace `service install`
   names, or state from the recording host (the script's `--state-dir` isolation and jq filters
   already prevent this — confirm visually).
 
+## README installation restructure (2026-08-23)
+
+No product-behavior change, so the frozen `docs/SPEC.md` is not amended.
+
+- [x] Move the per-channel installation, updating, and uninstalling content out of the README into
+  a new `docs/INSTALL.md`; the README keeps the two most common one-liners (Homebrew, install
+  script) and links the guide from its Installation section and Documentation list. The guide adds
+  uninstall instructions per channel and a verify-the-installation section, fixes the tarball unpack
+  pattern to the real archive layout, and links `docs/OPERATOR.md`/`docs/CLI.md` instead of
+  duplicating service/update semantics. `docs/IMPLEMENTATION.md` notes where the per-channel update
+  story moved.
+  **Verify:** no repository link points at the removed README install anchors; no fact from the old
+  README installation section is missing from `docs/INSTALL.md`; the README Documentation list
+  includes the new guide; the new guide's anchors (`#updating`, `#uninstalling`, `#verify-the-installation`) render.
+  **Evidence:** `rg "README.md#|#installation"` finds no stale anchors; a line-by-line diff review
+  accounts for every sentence of the old section in either the slim README section or the guide; the
+  Documentation list and guide anchors render on GitHub.
+
 ## Usage measurement backlog (2026-08-23)
 
 Maintainer tooling only — no product-behavior change, so the frozen `docs/SPEC.md` is not amended. Planned in `docs/IMPLEMENTATION.md` "Usage and installation measurement"; evidence in `docs/FINDINGS.md` §13.
