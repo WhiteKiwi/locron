@@ -730,8 +730,7 @@ mod launchd {
         Command::new("launchctl")
             .args(args)
             .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+            .is_ok_and(|output| output.status.success())
     }
 
     /// `launchctl kill` and `bootout` fail with exit 3 when the job has no

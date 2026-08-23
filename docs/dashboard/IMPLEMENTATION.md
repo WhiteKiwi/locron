@@ -88,6 +88,15 @@ workspace reqwest features already cover this; no new dependency.
 `locron-server` exposes one composition entry (roughly `serve(store, paths, config)`) that builds
 the router and runs it; the CLI owns startup output and exit codes.
 
+No automated dependency-direction check existed when the plan was written; the step-2 "enforcement
+check" update materialized as `scripts/check-dependency-direction.sh` (a `cargo tree`-based check
+that `locron-server` depends only on `locron-core`/`locron-store` among workspace crates and that
+only `locron-cli` depends on it), wired into the CI test matrix as the "Dependency direction"
+step. The latest-stable clippy additionally introduced the `map(<f>).unwrap_or(false)` lint on
+pre-existing locron-cli code; the three occurrences were rewritten as the equivalent
+`is_ok_and(...)` (behavior unchanged) to keep `clippy --workspace --all-targets -- -D warnings`
+green on both toolchains.
+
 ### Accepted: dashboard service registration
 
 The persistent path reuses the existing service-manager port in `locron-cli` (launchd and

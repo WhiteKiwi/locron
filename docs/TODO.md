@@ -495,13 +495,30 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   session lifecycle, CSRF/Origin/Host protections), the `locron.api/v1` envelope, and the
   CLI-category-to-HTTP-status table; the `rg` checks above pass and no planning document marks an
   unresolved decision.
-- [ ] Add the `locron-server` member to the workspace with axum 0.8.9, tokio-stream 0.1.19, and
+- [x] Add the `locron-server` member to the workspace with axum 0.8.9, tokio-stream 0.1.19, and
   rust-embed (all below MSRV 1.94 per `docs/FINDINGS.md` §14); update the dependency-direction
   enforcement check.
   **Verify:** `cargo build`/`fmt --check`/`clippy -p locron-server` pass on Rust 1.94 and latest
   stable; dependency inspection shows `locron-server` depends only on `locron-core` and
   `locron-store` and nothing depends on it but `locron-cli`; the workspace still produces exactly
   one `locron` binary.
+  **Evidence:** `crates/locron-server` added as the fifth workspace member (library only — no
+  binary target) with the accepted dependencies (axum 0.8.9, tokio-stream 0.1.19, rust-embed 8.12
+  with `mime-guess`, axum-extra 0.12 with `cookie`, getrandom 0.4, plus workspace
+  serde/serde_json/tokio/uuid/base64/reqwest; dev-dep tempfile); `locron-cli` gained the
+  `locron-server` dependency edge, so nothing else depends on it. No automated dependency-direction
+  check existed in the repository, so the step added `scripts/check-dependency-direction.sh`
+  (enforces via `cargo tree` that `locron-server` depends only on `locron-core`/`locron-store`
+  among workspace crates and that only `locron-cli` depends on it) and wired it into the CI test
+  matrix as the "Dependency direction" step. `cargo build`/`cargo fmt --all --check`/`cargo clippy
+  --workspace --all-targets -- -D warnings` and `cargo test --workspace` all pass on Rust 1.94.0
+  and latest stable (22 test binaries, zero failures); `sh scripts/check-dependency-direction.sh`
+  passes; `cargo metadata` reports exactly one binary target (`locron`). `Cargo.lock` gained only
+  additive entries (axum/axum-extra/rust-embed/tokio-stream/hyper/tower/time 0.3.55/sha2 0.11 and
+  their transitive sets). One maintenance fix was required for the latest-stable clippy, which
+  introduced the `map(<f>).unwrap_or(false)` lint on pre-existing code
+  (`crates/locron-cli/src/service.rs`, `crates/locron-cli/tests/service_backends.rs`): rewritten as
+  the equivalent `is_ok_and(...)`; behavior unchanged, tests green on both toolchains.
 - [ ] Move the redaction boundary (`redacted_job`, `redact_definition`,
   `redacted_observable_run`, `redacted_run`, `redacted_settings_value`) from
   `crates/locron-cli/src/main.rs` to `locron-core` with no output change.

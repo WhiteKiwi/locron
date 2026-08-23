@@ -3,6 +3,7 @@ members = [
     "crates/locron-core",
     "crates/locron-store",
     "crates/locron-engine",
+    "crates/locron-server",
     "crates/locron-cli",
 ]
 resolver = "3"

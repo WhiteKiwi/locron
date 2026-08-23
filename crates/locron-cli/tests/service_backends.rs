@@ -61,8 +61,7 @@ fn launchctl_ok(args: &[&str]) -> bool {
     Command::new("launchctl")
         .args(args)
         .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|output| output.status.success())
 }
 
 /// The default-state daemon lock, so a manual daemon's ownership is respected.
@@ -222,8 +221,7 @@ fn macos_launchd_backend_registers_restarts_and_unregisters() {
                         .arg(first_pid.to_string())
                         .stderr(std::process::Stdio::null())
                         .status()
-                        .map(|status| status.success())
-                        .unwrap_or(false)
+                        .is_ok_and(|status| status.success())
             },
             Duration::from_secs(60),
             "the old daemon pid to exit and a new pid to take the state lock",

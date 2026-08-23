@@ -40,6 +40,8 @@ jobs:
           rustc -vV
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Dependency direction
+        run: sh scripts/check-dependency-direction.sh
       - run: cargo test --workspace --all-targets
 
   installer:
