@@ -42,13 +42,14 @@ The easiest way to install `locron` on macOS and Linux is via [Homebrew Tap](htt
 
 ```sh
 brew tap whitekiwi/tap
+brew trust whitekiwi/tap   # newer Homebrew requires trusting third-party taps
 brew install locron
 ```
 
 Or in a single command:
 
 ```sh
-brew install whitekiwi/tap/locron
+brew tap whitekiwi/tap && brew trust whitekiwi/tap && brew install locron
 ```
 
 ### Linux Packages (Debian / Ubuntu / Fedora / RHEL)

@@ -230,8 +230,10 @@ none changes the exclusions in the current `docs/SPEC.md`.
 
 1. [ ] Define the local HTTP viewer and mutation API, including local-port binding, authentication,
    origin/CSRF protections, exposure diagnostics, and reuse of durable application commands.
-2. [ ] Define the MCP surface over the same application boundary, including capability scope,
-   approval boundaries, redaction, and local transport/security behavior.
+2. [x] Define the MCP surface over the same application boundary, including capability scope,
+   approval boundaries, redaction, and local transport/security behavior. **Evidence:** frozen in
+   `docs/MCP_SPEC.md` and `docs/MCP_IMPLEMENTATION.md`, shipped as `locron mcp` in v0.1.1 with unit
+   and integration test coverage.
 
 ### MCP (Model Context Protocol) Implementation Checklist
 
