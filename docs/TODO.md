@@ -584,9 +584,9 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   dependency direction, and core redaction responsibility; `docs/CLI.md` documents the
   `locron dashboard` family and the `locron.api/v1` envelope; no planning document marks an
   unresolved decision.
-- [ ] Add the `locron-server` member to the workspace with axum 0.8.9, tokio-stream 0.1.19, and
-  rust-embed (all below MSRV 1.94 per `docs/FINDINGS.md` §14); update the dependency-direction
-  enforcement check.
+- [ ] Add the `locron-server` member to the workspace with axum 0.8.9, tokio-stream 0.1.19,
+  rust-embed 8.12 (mime-guess only), axum-extra 0.12 (cookie), and getrandom 0.4 (all below MSRV
+  1.94 per `docs/FINDINGS.md` §17); update the dependency-direction enforcement check.
   **Verify:** `cargo build`/`fmt --check`/`clippy -p locron-server` pass on Rust 1.94 and latest
   stable; dependency inspection shows `locron-server` depends only on `locron-core` and
   `locron-store` and nothing depends on it but `locron-cli`; the workspace still produces exactly
