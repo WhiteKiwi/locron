@@ -538,7 +538,7 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   fields, observable-run enrichment, and settings markers. Full workspace: `cargo fmt --all
   --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`
   all pass on Rust 1.94.0 and latest stable.
-- [ ] Implement the middleware stack and token file: loopback-only bind with non-loopback refusal,
+- [x] Implement the middleware stack and token file: loopback-only bind with non-loopback refusal,
   Host allowlist (`localhost`/`127.0.0.1`/`[::1]`, port ignored), Origin check on unsafe methods,
   token acceptance (`Authorization: token` header plus entry-page paste, never a URL), session and
   `csrf_token` cookies (`SameSite=Lax`), double-submit CSRF with bearer exemption,
@@ -547,6 +547,40 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   present/mismatch/absent, CSRF match/mismatch and bearer exemption, token accept/reject, the
   entry-page paste flow, the Referrer-Policy header, that only the entry page is served without a
   token, and that no token ever appears in a served URL.
+  **Evidence:** `crates/locron-server` implements the step surface: `Config`/`PortPolicy`
+  (`Fixed` errors on an occupied port; `Foreground` tries ten successive ports then an OS-assigned
+  one, with per-address warnings), `bind`/`serve` (Ctrl-C graceful shutdown over a broadcast
+  channel, one listener task per bound address), `token.rs` (32-byte OS-RNG token hex-encoded to
+  64 chars, fixed `dashboard.token` name under the state root, atomic 0600 write with
+  symlink-refusal, reuse/regenerate/remove, corrupt-file rejection), and the `middleware.rs`
+  chain: Host allowlist (`localhost`/`127.0.0.1`/`[::1]`, port ignored, case-insensitive, IPv6
+  bracket form — missing or non-loopback Host refused with 403 `refused` before routing), Origin
+  check on unsafe methods (present Origin must be `http://` + allowlisted hostname + bound port;
+  absent Origin allowed; wrong port/scheme/host refused; safe methods unaffected), token
+  authentication (`Authorization: token <t>` strictly, else the session cookie; entry page
+  `GET /` and its one-time paste `POST /api/v1/session` are the only unauthenticated routes, all
+  else 401 `unauthenticated`; a token in a URL query is never authentication), CSRF double-submit
+  (cookie-authenticated unsafe requests must echo the `csrf_token` cookie in `X-CSRF-Token` or an
+  urlencoded `csrf_token` form field buffered up to 1 MiB; bearer requests exempt; mismatch/missing
+  403 `refused`), and `referrer-policy: no-referrer` on every response. `api.rs` implements the
+  paste (constant-time token compare, sets `locron_session` — HttpOnly — and `csrf_token` cookies,
+  90-day Max-Age, `SameSite=Lax`, `Path=/`, no `Secure` on loopback) and the session-status check
+  (re-issues a missing CSRF cookie). `assets.rs` embeds `index.html`/`app.css`/`app.js` via
+  rust-embed with MIME guessing and `Cache-Control: no-cache`; the entry page is the only
+  unauthenticated response. Unit tests (13 in the crate) cover all Verify items, including: the
+  Host allowlist accept/refuse variants, Origin match/mismatch/absent, CSRF match, mismatch,
+  missing, form-field echo (the CSRF check passes; the handler's Json extractor then rejects the
+  non-JSON content type with 415 — never 403), and bearer exemption, token accept/reject
+  (including a truncated token), the entry-page paste flow (session value equals the token, CSRF
+  cookie is 64 hex, wrong paste 401 `unauthenticated`), Referrer-Policy on success,
+  authenticated, and short-circuited error responses, "only the entry page without a token", and
+  "no token in any served URL" (`/?token=secret` serves the entry page without leaking; a token in
+  an API URL is still 401), plus bind-policy and token-file tests. `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass
+  on Rust 1.94.0 and latest stable (22 test binaries, zero failures; the stable leg required one
+  `map_or` rewrite for its newer `map(<f>).unwrap_or(<a>)` lint). Deviation recorded in
+  `docs/dashboard/IMPLEMENTATION.md`: `referrer_policy` is the outermost layer so even
+  middleware-short-circuited error responses carry the header.
 - [ ] Implement the `/api/v1` route families over the durable application commands with the
   `locron.api/v1` envelope, the CLI-category-to-HTTP-status mapping, dry-run parity, export
   download/import upload with acknowledgement rules, and blocking-pool store access.

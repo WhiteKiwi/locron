@@ -1209,6 +1209,7 @@ dependencies = [
  "axum",
  "axum-extra",
  "base64 0.23.1",
+ "cookie",
  "getrandom 0.4.3",
  "locron-core",
  "locron-store",
@@ -1219,6 +1220,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-stream",
+ "tower",
  "uuid",
 ]
 

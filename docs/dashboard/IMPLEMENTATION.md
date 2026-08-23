@@ -72,6 +72,14 @@ check on unsafe methods, then token authentication, then CSRF double-submit, the
 `Referrer-Policy` injection — applied with `Router::layer` after all routes and the fallback are
 registered, so every route including static assets passes through it (axum's documented ordering).
 
+Reconciliation (implementation step 4): `referrer_policy` is applied as the last (outermost)
+layer instead of the innermost, because responses short-circuited by the security middleware
+(the 401/403 envelopes from Host/Origin/auth/CSRF) otherwise bypass it and would leave the
+browser without a Referrer-Policy on exactly the requests a cross-site attacker cares about.
+Execution order is therefore Referrer-Policy, Host, Origin, authenticate, CSRF, handler. The
+Verify clause ("Referrer-Policy header") is exercised on success, authenticated, and
+short-circuited responses.
+
 Blocking `rusqlite` calls stay behind store interfaces and run on the Tokio blocking pool
 (`tokio::task::spawn_blocking` around store operations), matching the daemon's rule that blocking
 SQLite work never runs on async worker threads. The server opens one store connection per request

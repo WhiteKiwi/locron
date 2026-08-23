@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>locron dashboard</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main id="shell">
+  <h1>locron</h1>
+  <section id="paste-panel" hidden>
+    <p>Enter your access token to open the dashboard. The token is sent once in this form and
+    never appears in a URL.</p>
+    <form id="paste-form">
+      <label for="token">Access token</label>
+      <input type="password" id="token" name="token" autocomplete="off" spellcheck="false" required>
+      <button type="submit">Unlock</button>
+    </form>
+    <p id="paste-error" class="error" hidden></p>
+  </section>
+  <section id="app-panel" hidden>
+    <p class="muted">Connected. The viewer loads here.</p>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
