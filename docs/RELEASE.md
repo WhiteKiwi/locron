@@ -52,13 +52,14 @@ locron-v{version}-{target}/
 
 ### Install Script Asset
 - Every release MUST also publish the repository's `install.sh` (the root-level POSIX sh installer) as a release asset. It is fetched at `https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh`, and the release workflow attaches the checked-out `install.sh` to the release.
+- The installer registers the installed binary as a login service (`locron service install`) after the atomic replace unless `LOCRON_NO_SERVICE=1` is set. Registration is best-effort: a failure warns and leaves the installation successful.
 - The installer downloads the platform archive through the same static `releases/latest/download/` redirects, verifies it against the release `SHA256SUMS.txt`, and installs it; it supports `LOCRON_VERSION` pinning and `LOCRON_INSTALL_DIR` overrides.
 
 ---
 
 ## 3. CI/CD Workflow Architecture
 
-The repository employs two automated GitHub Actions workflows:
+The repository employs three automated GitHub Actions workflows:
 
 ### A. Validation CI (`.github/workflows/ci.yml`)
 - **Trigger**: Every push to any branch and pull requests targeting `main`.
@@ -79,9 +80,15 @@ The repository employs two automated GitHub Actions workflows:
   2. **Build Release Binaries**: Build with `cargo build --release --locked` (leveraging LTO and symbol stripping).
   3. **Package Archives**: Assemble `.tar.gz` bundles with binary, README, and licenses.
   4. **Generate Checksums**: Compute SHA-256 hashes for all generated archives into `SHA256SUMS.txt`.
-  5. **Create GitHub Release**: Create a GitHub Release with auto-generated changelog and upload all archives, `SHA256SUMS.txt`, and `install.sh`.
-  6. **Homebrew Tap Dispatch**: Trigger downstream update in `whitekiwi/homebrew-tap` with the new version and macOS archive URLs & SHA-256 hashes. The generated formula installs `locron` into `bin` and touches `lib/.disable-self-update` so `locron self-update` refuses package-manager-managed installs.
+  5. **Create GitHub Release**: Create a GitHub Release and upload all archives, `SHA256SUMS.txt`, and `install.sh`. Release notes come from `CHANGELOG.md` for the tagged version per the [changelog maintenance](#changelog-maintenance) policy — the workflow's `--generate-notes` fallback is a transitional step until the git-cliff step is wired in.
+  6. **Homebrew Tap Dispatch**: Trigger downstream update in `whitekiwi/homebrew-tap` with the new version and macOS archive URLs & SHA-256 hashes. The generated formula installs `locron` into `bin`, touches `lib/.disable-self-update` so `locron self-update` refuses package-manager-managed installs, ships the `service` block (`run [opt_bin/"locron", "daemon", "run"]`, `keep_alive true`, `run_at_load false`) so `brew services` supervises the daemon, and a `caveats` section pointing at `brew services start locron`. Installation never starts the service automatically.
 - **Job timeouts**: The `build` job has a 45-minute budget and the `publish` job a 10-minute budget (`timeout-minutes`). A hung build (e.g. a stalled runner) cancels the workflow instead of blocking the release indefinitely.
+
+### C. Dependency Audit (`.github/workflows/audit.yml`)
+- **Trigger**: Daily on a schedule, and on any push or pull request that touches a `Cargo.toml`, `Cargo.lock`, `deny.toml`, or the audit workflow itself. Manual runs are available via `workflow_dispatch`.
+- **Deliberately separate from `ci.yml`**: A newly published RUSTSEC advisory is not a defect in an unrelated pull request, so it must not turn that pull request red. Only dependency-affecting changes run the audit in PR context.
+- **Checks**: `cargo deny` with two matrix splits — `advisories` and `bans licenses sources` — so a security advisory is distinguishable from a license or duplicate-version finding at a glance in the checks list. Policy lives in `deny.toml`: permissive licenses only, unknown registries and git sources denied, and duplicate versions warned.
+- **Job timeout**: 15 minutes per matrix split.
 
 ---
 
@@ -101,12 +108,14 @@ The repository employs two automated GitHub Actions workflows:
   brew tap whitekiwi/tap
   brew install locron
   ```
+- **Service**: the formula ships a `service` block (`run [opt_bin/"locron", "daemon", "run"]`, `keep_alive true`, `run_at_load false`) and a caveat: start the daemon with `brew services start locron` (installation never starts it), and `brew services restart locron` after an upgrade because `brew upgrade` leaves a running service on the old version. `locron self-update` and `locron service install|uninstall` refuse on the marker-bearing binary, directing users to `brew services`.
 - **Update Automation**:
   Upon a successful GitHub Release, the release workflow calculates the SHA-256 for macOS ARM64 and Intel archives and creates a pull request (or direct commit) updating `Formula/locron.rb` in the tap repository.
 
 ### 3. Linux Packages (Debian/Ubuntu `.deb`, RedHat/Fedora `.rpm`)
 - Package definitions specify `/usr/bin/locron` install target.
 - `.deb` and `.rpm` packages are attached directly to GitHub Releases for distribution.
+- Package installations never register the daemon automatically: the postinst/postin scripts print the registration guidance (how to run `locron service install` from a login session, or `locron daemon run` immediately), mirroring the script installer's no-session guidance.
 
 ---
 
@@ -115,10 +124,18 @@ The repository employs two automated GitHub Actions workflows:
 ### Standard Release Procedure
 1. Ensure all milestone criteria and tests pass.
 2. Update workspace version in `Cargo.toml` and run `cargo check` to update `Cargo.lock`.
-3. Update `CHANGELOG.md` or release notes.
-4. Commit version bump: `git commit -m "release: vX.Y.Z"`.
-5. Create and push annotated tag: `git tag -a vX.Y.Z -m "locron vX.Y.Z" && git push origin vX.Y.Z`.
-6. Monitor GitHub Actions release workflow execution until GitHub Release and Homebrew Tap update complete.
+3. Generate the release changelog: `git cliff --unreleased --prepend CHANGELOG.md` (see [Changelog Maintenance](#changelog-maintenance) below).
+4. Review and curate the generated entry — reword, merge, and drop entries until it reads like a user-facing document.
+5. Commit version bump: `git commit -m "release: vX.Y.Z"` with the workspace version and the curated changelog.
+6. Create and push annotated tag: `git tag -a vX.Y.Z -m "locron vX.Y.Z" && git push origin vX.Y.Z`.
+7. Monitor GitHub Actions release workflow execution until GitHub Release and Homebrew Tap update complete.
+
+### Changelog Maintenance
+
+- **Source of truth**: `CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) with UTC release dates. Release notes for the GitHub Release are generated from the same file, so the changelog and the release notes never diverge.
+- **Generation**: [git-cliff](https://git-cliff.org) renders entries from commit history using [`cliff.toml`](../cliff.toml). The commit convention is the input: `feat:` → Added, `fix:` → Fixed, `perf:`/`refactor:`/`revert:` → Changed, `docs:` → Documentation. `ci:`, `test:`, `chore:`, and `release:` commits are deliberately omitted as not user-visible.
+- **Curation is required**: git-cliff output is a draft. The maintainer curates before the release commit — entries may be reworded, merged, or dropped, but the generated section names and UTC date format stay intact so hand-editing and future regeneration coexist.
+- **Breaking changes**: Declared with `!` after the type (`feat!:` / `fix!:`) or a `BREAKING CHANGE:` footer; during pre-1.0 this bumps the minor version.
 
 ### Remediation & Rollback Policy
 - **Never modify existing release tags or published binary artifacts**.
