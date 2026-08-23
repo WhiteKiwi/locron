@@ -662,13 +662,52 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   ends the stream. `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D
   warnings`, and `cargo test --workspace` all pass on Rust 1.94.0 and latest stable (23 test
   binaries, zero failures).
-- [ ] Implement and embed the hand-written viewer SPA (status chips, run timeline, monospace
+- [x] Implement and embed the hand-written viewer SPA (status chips, run timeline, monospace
   follow console log, CSRF-aware mutations) via rust-embed, with no CDN, no external assets, and no
   Node build step.
   **Verify:** an asset test serves every referenced asset from the binary with correct content
   types; a recorded manual browser checklist opens the access URL, walks the token paste and
   cookie handoff, list/detail/history, job creation with dry-run preview, a live follow, and a
   cancellation, and confirms no redacted value appears in DOM or JSON.
+  **Evidence:** the viewer is hand-written ES modules in `crates/locron-server/assets/` (entry
+  page, `app.js` shell, `api.js` envelope client, `components.js` chips/panels, `router.js`,
+  `sse.js` stream client, `views/jobs.js`/`views/runs.js`/`views/diagnostics.js`, `app.css`),
+  embedded by rust-embed (`assets.rs`) and served from the binary — no CDN, no external assets,
+  no Node build step. Asset tests in `crates/locron-server/src/assets.rs` pass:
+  `every_referenced_asset_is_embedded` proves the entry page references only embedded assets,
+  `referenced_assets_are_served_with_correct_content_types` proves each (`index.html`
+  `text/html`, scripts `text/javascript`, `app.css` `text/css`) serves with the right
+  content type, and `every_embedded_view_script_registers_routes` proves each view IIFE
+  registers its routes at load time. The recorded manual browser checklist is the out-of-repo
+  driver `/tmp/locron-walk/walk.mjs` (real headless Chrome over CDP, fresh profile per run,
+  fixture daemon+server on `/tmp/locron-walk`): **44/44 steps passed**, covering the entry
+  page (paste panel visible, no token and no secret in served HTML), token paste and the
+  HttpOnly `locron_session` cookie handoff plus `csrf_token`, job list with per-row next
+  occurrence and last outcome and no secret in the DOM, job detail with Schedule/Environment
+  cards, redacted env value, expandable redacted definition JSON, and why facts, raw API JSON
+  containing `<redacted>` and never the secret, live follow rendering real output frames on a
+  dedicated slow fixture job with the stream reporting admission, a cancellation reaching the
+  durable terminal state `cancelled` (API-verified), run history with attempt segments and
+  totals, job creation with schedule preview (5 occurrences) and dry-run validation returning
+  `<non-durable>`, save navigation to the new job's detail with the job durably listed, and
+  the edit form showing the "never displayed" secret notice, requiring resolution of redacted
+  env rows, and blocking the dry-run until resolved. Deviations recorded in
+  `docs/dashboard/IMPLEMENTATION.md` §5 (Accepted: viewer security posture and live output
+  stream): the middleware public-assets exemption (GETs outside `/api/` are unauthenticated so
+  the entry page and bundle are reachable before a token exists, while every `/api/v1` route
+  stays 401 without one); the `jobs_create` dry-run discriminator bug — the handler branched
+  on `store.is_none()` (no database file) instead of the `dry_run` flag, so a dry-run against
+  an existing database fell into the live branch and attempted a write on the read-only store
+  (500); fixed to branch on `body.dry_run` with a contract test
+  (`dry_run_never_mutates` dry-run-with-existing-database case); the `OutputWriter` live-flush
+  gap — the writer buffers in a tokio `BufWriter` with no production caller, so the partial
+  output file stayed empty while the process ran and live followers (CLI `logs --follow` and
+  the SSE stream) read nothing; fixed with a 200 ms flush interval in the `run_process` and
+  `run_http` loops; and the missing `chip`/`ACTIVE_STATES` exports in `components.js` that
+  broke the job detail render (fixed by exporting them). `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all
+  pass on Rust 1.94.0 and latest stable (23 test binaries, 326 tests, zero failures; contract
+  suite 17/17 including the new dry-run case).
 - [ ] Implement the dashboard service registration on the existing service-manager port: second
   registration target (`dev.locron.dashboard` / `locron-dashboard.service`, dashboard log paths,
   `dashboard serve` execution), `enable`/`disable`/`status`/`enable --reset` flows with the daemon

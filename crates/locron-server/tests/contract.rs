@@ -436,6 +436,25 @@ async fn dry_run_never_mutates() {
         .await;
     let id = data(&body)["id"].as_str().expect("id").to_owned();
 
+    // Dry-run create against an existing state database: the create path must
+    // branch on the request's dry_run flag, not on whether the database file
+    // exists — an existing database must not fall into the live-create branch.
+    let (status, body) = server
+        .post(
+            "/api/v1/jobs",
+            Some({
+                let mut ghost = create_body("ghost", &definition("/bin/echo", false, false, false));
+                ghost["dry_run"] = json!("1");
+                ghost
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["dry_run"], json!(true));
+    assert_eq!(data(&body)["id"], json!("<non-durable>"));
+    let (_, list) = server.get("/api/v1/jobs").await;
+    assert_eq!(data(&list).as_array().expect("array").len(), 1);
+
     // Run dry-run: CLI shape, no durable run.
     let (status, body) = server
         .post(&format!("/api/v1/jobs/{id}/run?dry-run=1"), None)

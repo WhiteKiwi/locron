@@ -281,6 +281,8 @@ impl Runner {
         let mut timeout = context
             .timeout
             .map(|duration| Box::pin(tokio::time::sleep(duration)));
+        let mut flush_interval = tokio::time::interval(Duration::from_millis(200));
+        flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut result = None;
         let mut termination = None;
         let mut termination_stage = 0_u8;
@@ -319,6 +321,27 @@ impl Runner {
                 }
                 Some((channel, bytes)) = receiver.recv() => {
                     if let Err(error) = writer.write(channel, start.elapsed(), &bytes).await {
+                        drop(wait);
+                        stdout_task.abort();
+                        stderr_task.abort();
+                        drop(receiver);
+                        terminate_after_output_failure(
+                            &mut child,
+                            pid,
+                            result.is_some(),
+                            self.config.termination_grace,
+                        )
+                        .await;
+                        return Err(RunnerError::ExecutionInfrastructure(error));
+                    }
+                }
+                _ = flush_interval.tick() => {
+                    // Live follow clients (CLI `logs --follow`, the SSE stream)
+                    // read the partial file on disk, so buffered frames must
+                    // reach it while the process still runs (recorded at
+                    // implementation step 7). A flush error is an output
+                    // infrastructure failure like a write error.
+                    if let Err(error) = writer.flush().await {
                         drop(wait);
                         stdout_task.abort();
                         stderr_task.abort();
@@ -583,6 +606,8 @@ impl Runner {
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
         let mut stream = response.bytes_stream();
+        let mut flush_interval = tokio::time::interval(Duration::from_millis(200));
+        flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             let next = async {
                 if let Some(timeout) = context.timeout {
@@ -600,6 +625,10 @@ impl Runner {
                         .map_err(RunnerError::ExecutionInfrastructure)?;
                     return Ok(http_outcome(OutcomeKind::Cancelled, "attempt was cancelled", start, stats, status, content_type));
                 }
+                _ = flush_interval.tick() => writer
+                    .flush()
+                    .await
+                    .map_err(RunnerError::ExecutionInfrastructure)?,
                 item = next => match item {
                     Err(HttpRunError::Timeout) => {
                         let stats = writer.finalize(&context.final_output).await

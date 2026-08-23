@@ -9,8 +9,9 @@
 //! inner middleware.
 //!
 //! Authentication outcome (`[`AuthKind`]`) is recorded in request extensions by [`authenticate`]
-//! and read by [`csrf`]. The only unauthenticated access is the entry page itself (`GET /`) and
-//! its one-time token paste (`POST /api/v1/session`); everything else returns 401.
+//! and read by [`csrf`]. The only unauthenticated access is the entry page and the static viewer
+//! bundle it references (GETs outside `/api/`) and the one-time token paste
+//! (`POST /api/v1/session`); every `/api/v1` route returns 401 without a token.
 
 use axum::extract::{Request, State};
 use axum::http::header::{self, HeaderMap, HeaderName};
@@ -157,8 +158,11 @@ fn origin_matches(state: &AppState, origin: &str) -> bool {
     }
 }
 
-/// Token authentication: `Authorization: token <t>` or the session cookie, with the entry page
-/// (`GET /`) and its one-time paste (`POST /api/v1/session`) as the only unauthenticated routes.
+/// Token authentication: `Authorization: token <t>` or the session cookie, with GETs outside
+/// `/api/` (the entry page and the static viewer bundle it references) and the one-time paste
+/// (`POST /api/v1/session`) as the only unauthenticated routes. The bundle must be public because
+/// it loads before any token exists — the paste form is served by `app.js` — and it carries no
+/// data; every `/api/v1` route is token-gated.
 pub async fn authenticate(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let (mut parts, body) = request.into_parts();
     let auth = match parts
@@ -185,7 +189,7 @@ pub async fn authenticate(State(state): State<AppState>, request: Request, next:
             _ => AuthKind::Unauthenticated,
         },
     };
-    let entry_request = parts.method == Method::GET && parts.uri.path() == "/";
+    let entry_request = parts.method == Method::GET && !parts.uri.path().starts_with("/api/");
     let paste_request = parts.method == Method::POST && parts.uri.path() == "/api/v1/session";
     if auth == AuthKind::Unauthenticated && !entry_request && !paste_request {
         return unauthorized(&parts.uri);

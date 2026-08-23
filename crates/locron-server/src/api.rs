@@ -606,7 +606,7 @@ pub(crate) async fn jobs_create(
         validate_metadata(&body.name, body.description.as_deref(), &body.tags)?;
         let definition_json = serde_json::to_string(&body.definition).map_err(StoreError::Json)?;
         let warnings = environment_warnings(&body.definition.environment);
-        if store.is_none() {
+        if body.dry_run {
             let normalized = redact_definition(to_json(&body.definition)?);
             return Ok((
                 json!({

@@ -1,8 +1,10 @@
 //! Bundled static assets for the single-page viewer, served by one rust-embed-backed handler.
 //!
-//! `index.html` is the entry page: the only unauthenticated response. It hosts the one-time token
-//! paste and, once a session cookie exists, the viewer shell. All other assets require a valid
-//! session or bearer token, enforced by the middleware chain.
+//! `index.html` is the entry page: it hosts the one-time token paste and, once a session cookie
+//! exists, the viewer shell. The entry page and every asset it references are public (GETs
+//! outside `/api/` are exempt from token authentication) because the bundle must load before any
+//! token exists — the paste form itself is served by `app.js` — and the bundle carries no data.
+//! Every `/api/v1` route stays token-gated by the middleware chain.
 
 use axum::body::Body;
 use axum::http::{StatusCode, Uri, header};
@@ -51,11 +53,24 @@ fn serve_asset(path: &str) -> Response {
 mod tests {
     use super::*;
 
+    /// Script and stylesheet references the entry page must resolve.
+    const ASSET_REFERENCES: &[(&str, &str)] = &[
+        ("/router.js", "text/javascript"),
+        ("/api.js", "text/javascript"),
+        ("/components.js", "text/javascript"),
+        ("/sse.js", "text/javascript"),
+        ("/views/jobs.js", "text/javascript"),
+        ("/views/runs.js", "text/javascript"),
+        ("/views/diagnostics.js", "text/javascript"),
+        ("/app.js", "text/javascript"),
+        ("/app.css", "text/css"),
+    ];
+
     #[test]
     fn every_referenced_asset_is_embedded() {
         let index = Assets::get("index.html").expect("index.html is embedded");
         let html = String::from_utf8_lossy(&index.data);
-        for reference in ["/app.js", "/app.css"] {
+        for (reference, _) in ASSET_REFERENCES {
             assert!(
                 html.contains(reference),
                 "entry page must reference {reference}"
@@ -68,10 +83,29 @@ mod tests {
     }
 
     #[test]
-    fn content_types_are_guessed() {
-        assert_eq!(
-            Assets::get("index.html").unwrap().metadata.mimetype(),
-            "text/html"
-        );
+    fn referenced_assets_are_served_with_correct_content_types() {
+        for (reference, expected) in ASSET_REFERENCES {
+            let content = Assets::get(reference.trim_start_matches('/'))
+                .expect("reference must resolve to an embedded asset");
+            assert_eq!(
+                content.metadata.mimetype(),
+                *expected,
+                "content type for {reference}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_embedded_view_script_registers_routes() {
+        // The view scripts are plain IIFEs that register routes at load time;
+        // this smoke check ensures the bundles are present and non-empty.
+        for path in ["views/jobs.js", "views/runs.js", "views/diagnostics.js"] {
+            let content = Assets::get(path).expect("view script is embedded");
+            let script = String::from_utf8_lossy(&content.data);
+            assert!(
+                script.contains("Router.register"),
+                "{path} must register routes"
+            );
+        }
     }
 }

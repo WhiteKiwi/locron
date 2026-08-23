@@ -3,15 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
 <title>locron dashboard</title>
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+<header id="topbar" hidden>
+  <div class="brand">locron</div>
+  <nav>
+    <a href="#/jobs">Jobs</a>
+    <a href="#/runs">Run history</a>
+    <a href="#/diagnostics">Diagnostics</a>
+  </nav>
+  <div id="daemon-indicator" class="daemon unknown" title="Scheduler daemon availability">daemon unknown</div>
+</header>
+<div id="daemon-banner" class="banner offline" hidden>scheduler daemon is not running — runs stay durably queued and are not admitted</div>
 <main id="shell">
-  <h1>locron</h1>
   <section id="paste-panel" hidden>
-    <p>Enter your access token to open the dashboard. The token is sent once in this form and
-    never appears in a URL.</p>
+    <h1>locron</h1>
+    <p class="muted">Enter your access token to open the dashboard. The token is sent once in this
+    form and never appears in a URL; it is then held only in the session cookie.</p>
     <form id="paste-form">
       <label for="token">Access token</label>
       <input type="password" id="token" name="token" autocomplete="off" spellcheck="false" required>
@@ -20,9 +31,16 @@
     <p id="paste-error" class="error" hidden></p>
   </section>
   <section id="app-panel" hidden>
-    <p class="muted">Connected. The viewer loads here.</p>
+    <div id="view" aria-live="polite"></div>
   </section>
 </main>
+<script src="/router.js"></script>
+<script src="/api.js"></script>
+<script src="/components.js"></script>
+<script src="/sse.js"></script>
+<script src="/views/jobs.js"></script>
+<script src="/views/runs.js"></script>
+<script src="/views/diagnostics.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -71,6 +71,8 @@ Middleware is a `middleware::from_fn`/`from_fn_with_state` chain — Host allowl
 check on unsafe methods, then token authentication, then CSRF double-submit, then
 `Referrer-Policy` injection — applied with `Router::layer` after all routes and the fallback are
 registered, so every route including static assets passes through it (axum's documented ordering).
+The token-authentication layer exempts GETs whose path is outside `/api/` (the entry page and the
+viewer bundle it references); every `/api/v1` route stays token-gated.
 
 Reconciliation (implementation step 4): `referrer_policy` is applied as the last (outermost)
 layer instead of the innermost, because responses short-circuited by the security middleware
@@ -165,9 +167,16 @@ dashboard.
   authenticated entry sets a session cookie (value is the token, `HttpOnly`, `SameSite=Lax`,
   `Path=/`, 90-day lifetime — product decision 2026-08-24 — no `Secure` flag on plain-HTTP
   loopback).
-- Every state-bearing route (API and pages) requires a valid token; without one the server serves
-  only the entry page and returns 401 from API routes. The token is never logged, never echoed in
-  responses, and never appears in diagnostics (presence and permission facts only).
+- Every `/api/v1` route requires a valid token; without one the server serves only the entry page
+  and its static assets and returns 401 from API routes. The viewer bundle is public exactly
+  because it must load before any token exists: the paste form itself is served by `app.js`, so
+  the assets cannot sit behind the gate they are needed to unlock. The bundle carries no data —
+  redaction is server-side — and the server is loopback-bound, so public static assets add no
+  exposure. Recorded at implementation (step 7): the step-4 contract test asserting `GET /app.js`
+  → 401 was a planning error — it deadlocks the entry page — and the fix (token authentication
+  exempts GETs outside `/api/`) is the behavior this plan records. The token is never logged,
+  never echoed in responses, and never appears in diagnostics (presence and permission facts
+  only).
 - All responses carry `Referrer-Policy: no-referrer`.
 
 ### Accepted: CSRF and Origin protection
@@ -219,7 +228,16 @@ dashboard.
   as query parameters: `"true"`/`"1"`/`""` for true, `"false"`/`"0"` for false, absent for
   false). URL import uses the same server-side fetch bounds as the
   CLI's URL import: mandatory TLS verification, 16 MiB streaming cap, 10-redirect cap, 30-second
-  timeout, and userinfo rejection.
+  timeout, and userinfo rejection. Recorded at implementation (step 7): the dry-run create path
+  in `jobs_create` discriminated on `store.is_none()` — "the state database file does not exist"
+  — instead of the request's `dry_run` flag, so on any server with an existing state database a
+  dry-run `POST /api/v1/jobs` fell into the live-create branch and either failed against the
+  read-only dry-run store ("attempt to write a readonly database") or would have durably created
+  the job. The fix (this plan records it) is to branch on `body.dry_run` explicitly — the same
+  discriminator the update and manual-run dry-run paths already use — and the contract test
+  suite gained a dry-run-with-existing-database case. The manual browser checklist exposed it:
+  the form's dry-run button returned a `state_error` on the walk fixture server, which always
+  has a state database.
 - Envelope: the versioned `locron.api/v1` envelope — success
   `{"schema": "locron.api/v1", "ok": true, "data": ..., "warnings": [...]}`, error
   `{"ok": false, "error": {"code", "message"}}` — where `code` carries the stable CLI error codes
@@ -248,6 +266,14 @@ dashboard.
 - Implementation notes (deviation from the CLI where the CLI's behavior is a terminal error):
   the stream polls the store every 200 ms exactly like `logs --follow` (final artifact first,
   then the in-progress partial; an incomplete tail ends the read at the last complete frame).
+  Recorded at implementation (step 7): the manual browser checklist exposed that live output
+  never reached a follow client for quiet processes — the runner's `OutputWriter` buffers frames
+  in a `tokio::io::BufWriter` and nothing flushed the partial file while a process ran, so
+  `1.partial` stayed empty (0 bytes) until finalization and the 200 ms pollers (CLI `logs
+  --follow`, this stream) read nothing until the run ended. The fix (recorded here) is a 200 ms
+  flush interval in the runner's process and HTTP capture loops that flushes the partial file
+  without renaming, so follow clients see frames within one poll of their production; the
+  buffered-writer design is otherwise unchanged and finalization still renames the partial.
   Frame-count regression replays the file from frame zero instead of aborting with the CLI's
   "attempt output regressed" error — events carry `seq`, so viewers dedupe; and a run that
   disappears mid-stream (durable retention prune) ends the stream rather than polling forever.
@@ -377,7 +403,8 @@ dashboard.
 - **Middleware unit tests:** Host allowlist (case, port, `[::1]` forms, attacker domain, absent
   port), Origin present/mismatch/absent on unsafe methods, double-submit CSRF match/mismatch and
   bearer exemption, token accept/reject paths, entry-page paste flow, `Referrer-Policy` header on
-  all responses, entry page only without a token, and no token in any served URL.
+  all responses, entry page and static assets only without a token (and 401 from every `/api/v1`
+  route), and no token in any served URL.
 - **API contract tests:** a real server on an ephemeral loopback port over a temporary state
   directory — token refusal, job CRUD round trips mutating real SQLite, offline manual enqueue,
   export/import round trip with acknowledgement (including the `?jobs=`/`?tag=` selectors and a

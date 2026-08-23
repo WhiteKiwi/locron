@@ -373,9 +373,17 @@ mod tests {
         );
         assert!(!html.contains(TOKEN), "entry page never contains the token");
 
+        // The viewer bundle is public so the entry page can boot (the paste
+        // form is served by app.js); every /api/v1 route is token-gated.
         for (method, path) in [
             ("GET", "/app.js"),
             ("GET", "/app.css"),
+            ("GET", "/views/jobs.js"),
+        ] {
+            let (status, _, _) = request(method, path, &[], None).await;
+            assert_eq!(status, StatusCode::OK, "{method} {path} must be public");
+        }
+        for (method, path) in [
             ("GET", "/api/v1/session"),
             ("GET", "/api/v1/jobs"),
             ("POST", "/api/v1/jobs"),
@@ -572,7 +580,10 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "authenticated assets load");
-        assert!(String::from_utf8_lossy(&body).contains("sessionStatus"));
+        assert!(
+            String::from_utf8_lossy(&body).contains("Api.hasSession"),
+            "the app shell boots through the session cookie check"
+        );
 
         // Wrong pasted token is rejected (401 from the handler, before any cookie is set).
         let wrong = format!(r#"{{"token":"{}"}}"#, "f".repeat(64));
