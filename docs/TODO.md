@@ -189,6 +189,17 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
   supported help spelling automatically so a newly added command or nested command cannot omit help
   coverage.
 
+- [x] Exclude live-lifetime starting/running attempts from output recovery. A maintenance pass
+  previously selected every `pending`/`active` output artifact, so a just-admitted attempt whose
+  `.partial` file did not exist yet could be reconciled as `missing` before the runner created it,
+  permanently blocking finalization and leaving the run stuck `running`. Recovery now requires the
+  attempt to be terminal or owned by a lifetime other than the live daemon's.
+  **Verify:** a store regression test proves a `pending` artifact owned by the current lifetime is
+  never returned as a recovery candidate while the same artifact owned by a different (dead)
+  lifetime is; `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  and `cargo test --workspace` pass; the `acceptance_matrix` binary passes 12 consecutive runs
+  under CPU load with 0 failures.
+
 ## Version output backlog (2026-08-23)
 
 - [x] Amend `docs/SPEC.md`, `docs/CLI.md`, and `docs/IMPLEMENTATION.md` for `-V/--version`

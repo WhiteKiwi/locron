@@ -1604,16 +1604,29 @@ impl Store {
         self.reconcile_output_finalized(output, now_us)
     }
 
+    /// Lists pending/active output artifacts whose attempts are recovery
+    /// candidates: terminal attempts, or attempts owned by a scheduler
+    /// lifetime other than the live daemon's. An attempt that is `starting` or
+    /// `running` under `lifetime_id` is deliberately excluded because its
+    /// partial file legitimately does not exist yet; maintenance must never
+    /// reconcile it as missing while the live daemon owns it.
     pub fn referenced_partial_artifacts(
         &self,
         limit: usize,
+        lifetime_id: &str,
     ) -> StoreResult<Vec<OutputRecoveryCandidate>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT run_id,attempt_number,relative_path,state FROM output_artifacts WHERE state IN ('pending','active') ORDER BY run_id,attempt_number LIMIT ?1",
+            "SELECT o.run_id,o.attempt_number,o.relative_path,o.state
+             FROM output_artifacts o
+             JOIN attempts a ON a.run_id=o.run_id AND a.attempt_number=o.attempt_number
+             WHERE o.state IN ('pending','active')
+               AND (a.state NOT IN ('starting','running') OR a.lifetime_id <> ?2)
+             ORDER BY o.run_id,o.attempt_number
+             LIMIT ?1",
         )?;
         statement
-            .query_map([maintenance_limit(limit)], |row| {
+            .query_map(params![maintenance_limit(limit), lifetime_id], |row| {
                 Ok(OutputRecoveryCandidate {
                     run_id: row.get(0)?,
                     attempt_number: row.get(1)?,
@@ -4679,7 +4692,15 @@ mod tests {
         drop(store);
 
         let reopened = Store::open(paths, "test", 5).unwrap();
-        let partials = reopened.referenced_partial_artifacts(usize::MAX).unwrap();
+        // A restarted daemon owns a fresh lifetime; stale attempts are no
+        // longer protected and become recovery candidates.
+        let reopened_lifetime = Uuid::from_u128(8_005).to_string();
+        reopened
+            .begin_lifetime(&reopened_lifetime, 5, "test")
+            .unwrap();
+        let partials = reopened
+            .referenced_partial_artifacts(usize::MAX, &reopened_lifetime)
+            .unwrap();
         assert_eq!(partials.len(), 2);
         assert!(partials.iter().any(|item| item.run_id == finalized_run));
         assert!(
@@ -4707,7 +4728,7 @@ mod tests {
             .unwrap();
         assert!(
             reopened
-                .referenced_partial_artifacts(100)
+                .referenced_partial_artifacts(100, &reopened_lifetime)
                 .unwrap()
                 .is_empty()
         );
@@ -4721,6 +4742,71 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(states, ["finalized", "missing"]);
+    }
+
+    #[test]
+    fn recovery_candidates_exclude_live_lifetime_attempts() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temp.path().into());
+        let store = Store::open(paths, "test", 1).unwrap();
+        let job = Uuid::from_u128(8_101).to_string();
+        create_with_policy(&store, &job, "recover-lifetime", "allow", 2);
+        let first_run = Uuid::from_u128(8_102).to_string();
+        let second_run = Uuid::from_u128(8_103).to_string();
+        store
+            .enqueue_manual("recover-lifetime", &first_run, 2)
+            .unwrap();
+        store
+            .enqueue_manual("recover-lifetime", &second_run, 3)
+            .unwrap();
+        let live_lifetime = Uuid::from_u128(8_104).to_string();
+        store.begin_lifetime(&live_lifetime, 4, "test").unwrap();
+        assert_eq!(store.admit(&live_lifetime, 4, 2).unwrap().attempts.len(), 2);
+
+        // Regression: both output rows are 'pending' and their partial files
+        // do not exist yet, but the attempts are 'starting' under the live
+        // lifetime. A maintenance pass must never select them as recovery
+        // candidates; doing so marks them 'missing' and permanently blocks
+        // finalization when the runner completes.
+        assert!(
+            store
+                .referenced_partial_artifacts(10, &live_lifetime)
+                .unwrap()
+                .is_empty(),
+            "pending artifacts owned by the current lifetime must not be recovered"
+        );
+
+        // An attempt that has reached 'running' is equally protected.
+        assert_eq!(
+            store.mark_attempt_running(&first_run, 1, 5).unwrap(),
+            StartDecision::Ready
+        );
+        assert!(
+            store
+                .referenced_partial_artifacts(10, &live_lifetime)
+                .unwrap()
+                .is_empty(),
+            "running artifacts owned by the current lifetime must not be recovered"
+        );
+
+        // The same still-starting/running rows become recovery candidates for
+        // a different lifetime, representing the daemon that replaced the one
+        // that admitted them.
+        let dead_lifetime = Uuid::from_u128(8_105).to_string();
+        let candidates = store
+            .referenced_partial_artifacts(10, &dead_lifetime)
+            .unwrap();
+        assert_eq!(candidates.len(), 2);
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| { candidate.run_id == first_run && candidate.state == "pending" })
+        );
+        assert!(
+            candidates.iter().any(|candidate| {
+                candidate.run_id == second_run && candidate.state == "pending"
+            })
+        );
     }
 
     #[test]

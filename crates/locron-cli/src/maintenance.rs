@@ -74,7 +74,17 @@ impl Pass {
 }
 
 /// Runs one deterministic maintenance pass with a shared 100-action budget.
-pub fn maintain(store: &Store, paths: &StatePaths, now_us: i64) -> Result<MaintenanceReport> {
+///
+/// `lifetime_id` is the live daemon's scheduler lifetime. Output recovery only
+/// considers terminal attempts or attempts owned by another lifetime, so a
+/// just-admitted attempt whose partial file does not exist yet is never
+/// reconciled as missing while the live daemon owns it.
+pub fn maintain(
+    store: &Store,
+    paths: &StatePaths,
+    lifetime_id: &str,
+    now_us: i64,
+) -> Result<MaintenanceReport> {
     if store.paths() != paths {
         bail!("maintenance store and state paths do not match");
     }
@@ -82,7 +92,7 @@ pub fn maintain(store: &Store, paths: &StatePaths, now_us: i64) -> Result<Mainte
 
     let mut pass = Pass::new();
     resume_output_prunes(store, paths, now_us, &mut pass)?;
-    recover_referenced_outputs(store, paths, now_us, &mut pass)?;
+    recover_referenced_outputs(store, paths, lifetime_id, now_us, &mut pass)?;
 
     let pending_runs = store
         .pending_run_retention(MAX_ACTIONS)
@@ -132,11 +142,12 @@ fn resume_output_prunes(
 fn recover_referenced_outputs(
     store: &Store,
     paths: &StatePaths,
+    lifetime_id: &str,
     now_us: i64,
     pass: &mut Pass,
 ) -> Result<()> {
     let candidates = store
-        .referenced_partial_artifacts(pass.remaining())
+        .referenced_partial_artifacts(pass.remaining(), lifetime_id)
         .context("list referenced partial outputs")?;
     for candidate in candidates {
         if !pass.take_action() {
@@ -512,7 +523,7 @@ mod tests {
         (temp, paths, store)
     }
 
-    fn admit_one(store: &Store, run_id: &str) {
+    fn admit_one(store: &Store, run_id: &str) -> String {
         let job_id = uuid::Uuid::from_u128(1).to_string();
         store
             .create_job(&CreateJob {
@@ -530,6 +541,16 @@ mod tests {
         let lifetime = uuid::Uuid::from_u128(2).to_string();
         store.begin_lifetime(&lifetime, 3, "test").unwrap();
         assert_eq!(store.admit(&lifetime, 3, 1).unwrap().attempts.len(), 1);
+        lifetime
+    }
+
+    /// Begins a fresh scheduler lifetime over an existing store, exactly as a
+    /// daemon restart does: any stale attempts from earlier lifetimes become
+    /// terminal before the new lifetime's startup maintenance runs.
+    fn restart_lifetime(store: &Store, now_us: i64) -> String {
+        let restarted = uuid::Uuid::from_u128(21).to_string();
+        store.begin_lifetime(&restarted, now_us, "test").unwrap();
+        restarted
     }
 
     #[test]
@@ -551,7 +572,10 @@ mod tests {
             .write_all(b"incomplete")
             .unwrap();
 
-        let report = maintain(&store, &paths, 10).unwrap();
+        // The daemon owning this attempt dies; the restarted daemon's
+        // maintenance recovers the partial.
+        let restarted = restart_lifetime(&store, 9);
+        let report = maintain(&store, &paths, &restarted, 10).unwrap();
 
         assert_eq!(report.outputs_recovered, 1);
         assert!(!partial.exists());
@@ -559,7 +583,12 @@ mod tests {
         let mut reader = FrameReader::open(&final_path).unwrap();
         assert_eq!(reader.next_frame().unwrap().unwrap().payload, b"hello");
         assert!(reader.next_frame().unwrap().is_none());
-        assert!(store.referenced_partial_artifacts(1).unwrap().is_empty());
+        assert!(
+            store
+                .referenced_partial_artifacts(1, &restarted)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -575,7 +604,8 @@ mod tests {
         writer.sync().unwrap();
         drop(writer);
 
-        let report = maintain(&store, &paths, 10).unwrap();
+        let restarted = restart_lifetime(&store, 9);
+        let report = maintain(&store, &paths, &restarted, 10).unwrap();
 
         assert_eq!(report.outputs_recovered, 1);
         assert!(final_path.is_file());
@@ -583,11 +613,12 @@ mod tests {
         let (_missing_temp, missing_paths, missing_store) = open_store();
         let missing_run = uuid::Uuid::from_u128(7).to_string();
         admit_one(&missing_store, &missing_run);
-        let report = maintain(&missing_store, &missing_paths, 10).unwrap();
+        let missing_restarted = restart_lifetime(&missing_store, 9);
+        let report = maintain(&missing_store, &missing_paths, &missing_restarted, 10).unwrap();
         assert_eq!(report.outputs_missing, 1);
         assert!(
             missing_store
-                .referenced_partial_artifacts(1)
+                .referenced_partial_artifacts(1, &missing_restarted)
                 .unwrap()
                 .is_empty()
         );
@@ -618,7 +649,7 @@ mod tests {
     fn global_output_limit_prunes_terminal_output() {
         let (_temp, paths, store) = open_store();
         let run_id = uuid::Uuid::from_u128(8).to_string();
-        admit_one(&store, &run_id);
+        let lifetime = admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
         fs::create_dir(&directory).unwrap();
         let partial = paths.partial_output(&run_id, 1).unwrap();
@@ -626,11 +657,15 @@ mod tests {
         writer.write(FrameChannel::Stdout, 1, b"payload").unwrap();
         writer.sync().unwrap();
         drop(writer);
-        maintain(&store, &paths, 10).unwrap();
+        // While the attempt is still starting under the live lifetime,
+        // maintenance must not recover (and thereby reconcile) its output.
+        maintain(&store, &paths, &lifetime, 10).unwrap();
         terminalize(&store, &run_id, 11);
         store.set_setting("output_limit_bytes", "0", 13).unwrap();
 
-        let report = maintain(&store, &paths, 14).unwrap();
+        // The attempt is terminal now, so the pass recovers the partial and
+        // then prunes it under the zero-byte limit.
+        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
 
         assert_eq!(report.outputs_pruned, 1);
         assert!(!paths.final_output(&run_id, 1).unwrap().exists());
@@ -641,7 +676,7 @@ mod tests {
     fn resumes_pending_output_prune_before_deleting_run_metadata() {
         let (_temp, paths, store) = open_store();
         let run_id = uuid::Uuid::from_u128(9).to_string();
-        admit_one(&store, &run_id);
+        let lifetime = admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
         fs::create_dir(&directory).unwrap();
         let partial = paths.partial_output(&run_id, 1).unwrap();
@@ -649,13 +684,14 @@ mod tests {
         writer.write(FrameChannel::Body, 1, b"payload").unwrap();
         writer.sync().unwrap();
         drop(writer);
-        maintain(&store, &paths, 10).unwrap();
         terminalize(&store, &run_id, 11);
+        // The terminal attempt's output is now a recovery candidate.
+        maintain(&store, &paths, &lifetime, 12).unwrap();
         let output = store.output_retention_candidates(1).unwrap().remove(0);
         store.mark_output_prune_pending(&output, 13).unwrap();
         store.set_setting("run_retention_count", "0", 13).unwrap();
 
-        let report = maintain(&store, &paths, 14).unwrap();
+        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
 
         assert_eq!(report.outputs_pruned, 1);
         assert_eq!(report.runs_pruned, 1);
@@ -666,7 +702,7 @@ mod tests {
     fn completes_pending_prune_when_the_output_directory_is_already_missing() {
         let (_temp, paths, store) = open_store();
         let run_id = uuid::Uuid::from_u128(10).to_string();
-        admit_one(&store, &run_id);
+        let lifetime = admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
         fs::create_dir(&directory).unwrap();
         let partial = paths.partial_output(&run_id, 1).unwrap();
@@ -674,13 +710,13 @@ mod tests {
         writer.write(FrameChannel::Stdout, 1, b"payload").unwrap();
         writer.sync().unwrap();
         drop(writer);
-        maintain(&store, &paths, 10).unwrap();
         terminalize(&store, &run_id, 11);
+        maintain(&store, &paths, &lifetime, 12).unwrap();
         let output = store.output_retention_candidates(1).unwrap().remove(0);
         store.mark_output_prune_pending(&output, 13).unwrap();
         fs::remove_dir_all(&directory).unwrap();
 
-        let report = maintain(&store, &paths, 14).unwrap();
+        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
 
         assert_eq!(report.outputs_pruned, 1);
         assert!(store.pending_output_prunes(1).unwrap().is_empty());
@@ -697,7 +733,7 @@ mod tests {
         }
         fs::create_dir(directory.join("unexpected")).unwrap();
 
-        let report = maintain(&store, &paths, i64::MAX / 2).unwrap();
+        let report = maintain(&store, &paths, "no-lifetime", i64::MAX / 2).unwrap();
 
         assert_eq!(report.actions, MAX_ACTIONS);
         assert_eq!(report.orphans_removed, MAX_ACTIONS);
@@ -729,7 +765,10 @@ mod tests {
         let orphan = directory.join("2.log");
         fs::write(&orphan, b"unreferenced").unwrap();
 
-        let report = maintain(&store, &paths, i64::MAX / 2).unwrap();
+        // The owning daemon dies; the restarted daemon recovers the
+        // referenced partial and removes the unreferenced 2.log.
+        let restarted = restart_lifetime(&store, 9);
+        let report = maintain(&store, &paths, &restarted, i64::MAX / 2).unwrap();
 
         assert_eq!(report.outputs_recovered, 1);
         assert_eq!(report.orphans_removed, 1);
@@ -751,7 +790,7 @@ mod tests {
         let link = directory.join("1.log");
         symlink(&target, &link).unwrap();
 
-        let report = maintain(&store, &paths, i64::MAX / 2).unwrap();
+        let report = maintain(&store, &paths, "no-lifetime", i64::MAX / 2).unwrap();
 
         assert_eq!(report.orphans_removed, 0);
         assert!(

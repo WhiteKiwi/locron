@@ -123,6 +123,8 @@ Each attempt uses one versioned binary framed stream. The header contains magic 
 
 The attempt and logical output key commit before file creation and target spawn. Active data uses `.partial`; successful close and sync is followed by same-filesystem rename to `.log`, then finalized metadata. Recovery scans a referenced partial file to its last valid frame, removes an incomplete tail, reconciles counts, and preserves the attempt's unknown-outcome classification.
 
+Maintenance recovery (repair, finalization, and missing reconciliation) applies only to terminal attempts or attempts owned by a scheduler lifetime that is not the live daemon's. An output artifact whose attempt is `starting` or `running` under the current lifetime is never selected for recovery: its `.partial` file legitimately does not exist until the runner creates it, so a maintenance pass must not reconcile that row as missing. The daemon performs output recovery with its own lifetime identity, and stale-lifetime classification at startup makes earlier lifetimes' attempts terminal before recovery runs.
+
 The per-run payload allowance is shared across attempts. Physical file bytes determine the global allowance. Writers continue draining after capture stops and record saturating discarded counts. Pruning marks intent durably, removes the file, then commits completion. Missing, pending, pruned, and orphaned states remain distinguishable.
 
 ## Ownership and migration

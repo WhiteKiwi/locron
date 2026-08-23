@@ -2950,7 +2950,7 @@ impl DaemonStore for StoreAdapter {
         Ok(total)
     }
     async fn maintain(&self) -> Result<(), String> {
-        maintenance::maintain(&self.store, &self.paths, self.now_us())
+        maintenance::maintain(&self.store, &self.paths, &self.lifetime, self.now_us())
             .map(|_| ())
             .map_err(|error| error.to_string())
     }
