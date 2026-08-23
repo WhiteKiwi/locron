@@ -55,6 +55,7 @@ fn uid() -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
+#[cfg(target_os = "macos")]
 fn launchctl_ok(args: &[&str]) -> bool {
     Command::new("launchctl")
         .args(args)
@@ -77,6 +78,7 @@ fn default_daemon_lock_held() -> bool {
 }
 
 /// Read the daemon lock diagnostic (pid and lifetime id) of the running daemon.
+#[cfg(target_os = "macos")]
 fn daemon_lock_pid() -> Option<u32> {
     let state_dir = home().join("Library/Application Support/locron");
     let text = fs::read_to_string(state_dir.join("daemon.lock")).ok()?;
@@ -85,6 +87,7 @@ fn daemon_lock_pid() -> Option<u32> {
 }
 
 /// Poll a condition with a deadline, sleeping between attempts.
+#[cfg(target_os = "macos")]
 fn wait_until(mut condition: impl FnMut() -> bool, timeout: Duration, what: &str) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
