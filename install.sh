@@ -1,7 +1,10 @@
 #!/bin/sh
 # locron installer — one-line install and update for macOS and Linux.
 #
-#   curl -fsSL https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh | sh
+#   curl -fsSL https://locron.whitekiwi.link/install.sh | sh
+#
+# (a short URL that 302-redirects here; the canonical one-liner is
+#  https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh)
 #
 # Resolves the latest published release through static `releases/latest/download`
 # redirects (no GitHub API), verifies the selected archive against the release's

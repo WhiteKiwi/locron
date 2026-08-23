@@ -45,8 +45,11 @@ brew tap whitekiwi/tap && brew trust whitekiwi/tap && brew install locron
 **Install script (macOS and Linux):**
 
 ```sh
-curl -fsSL https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh | sh
+curl -fsSL https://locron.whitekiwi.link/install.sh | sh
 ```
+
+(the short URL redirects to the canonical
+`https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh` release asset)
 
 Every channel — packages, tarballs, building from source — plus updating and uninstalling, is
 covered in the [Installation Guide](docs/INSTALL.md).

@@ -338,8 +338,22 @@ Authorized by the frozen 2026-08-23 `docs/SPEC.md` amendment (installation chann
 
 The four-target CI matrix is already green: run [32617992398](https://github.com/WhiteKiwi/locron/actions/runs/32617992398) concluded `success` on commit `4dc570c` after the ETXTBSY and fixture-race fixes (the earlier run 32617079023 failed only on the two platform-specific test-harness legs now fixed).
 
-- [ ] Serve the one-liner under a short custom domain in the mise.run style (e.g. `https://install.locron.dev` → `releases/latest/download/install.sh`) once a domain and hosting are available; the GitHub release URL remains canonical until then.
+- [x] Serve the one-liner under a short custom domain in the mise.run style once a domain and
+  hosting are available; the GitHub release URL remains canonical.
   **Verify:** `curl -fsSL <domain> | sh` installs a working binary; README documents the domain one-liner.
+  **Evidence (2026-08-24):** the domain is `https://locron.whitekiwi.link` — a Route 53 alias to a
+  CloudFront distribution whose viewer-request function 302-redirects `/install.sh` to the canonical
+  `releases/latest/download/install.sh` release asset (other paths redirect to the repository), so
+  the served script is always the version-consistent asset with no release-pipeline change and no
+  hosted-copy drift (consistent with the FINDINGS §11 rejection of release-time script regeneration).
+  AWS layout: Route 53 zone `whitekiwi.link` (Z09774691B33DTQIQA1DK), ACM cert for
+  `locron.whitekiwi.link`, CloudFront distribution `E2SNYXU6Z3ZE4N` with function `locron-redirect`
+  and OAC `E2BUNP08WL3O60` in front of the private dummy S3 origin
+  `locron-cdn-origin-138497848618`. Live run on 2026-08-24:
+  `curl -fsSL https://locron.whitekiwi.link/install.sh | LOCRON_NO_SERVICE=1 LOCRON_INSTALL_DIR=/tmp/locron-domain-test/bin/locron sh`
+  printed `Installed locron v0.3.1` and the installed binary answered `locron 0.3.1` (served from
+  the ICN57-P5 edge); README and `docs/INSTALL.md` document the domain one-liner with the GitHub URL
+  as canonical.
 - [x] Close the installer CI verification gaps: shellcheck, unsupported-platform/musl refusals, and the Linux install leg, via the new `installer` job in `.github/workflows/ci.yml`.
   **Verify:** the `installer` job passes on `main`; the log shows shellcheck clean, the three refusal paths with their exact messages, and the pinned `v0.2.0` install answering `locron -V`.
   **Evidence:** run [32621273837](https://github.com/WhiteKiwi/locron/actions/runs/32621273837) concluded `success` on commit `b12e5c7` (which fixed the SC2295 finding shellcheck 0.9.0 flagged in `install.sh`); the `installer` job and all 8 matrix legs are green.

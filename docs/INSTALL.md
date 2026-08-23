@@ -34,8 +34,12 @@ Installs the latest release into `~/.local/bin/locron` after verifying it agains
 systemd user unit on Linux) so schedules run immediately:
 
 ```sh
-curl -fsSL https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh | sh
+curl -fsSL https://locron.whitekiwi.link/install.sh | sh
 ```
+
+The short URL 302-redirects to the canonical release asset
+`https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh`, so the script served is
+always the one attached to the latest release — the GitHub URL is the canonical one-liner.
 
 Set `LOCRON_VERSION` to pin a version, `LOCRON_INSTALL_DIR` to install elsewhere, or
 `LOCRON_NO_SERVICE=1` to skip service registration (registration is best-effort — a failure warns
