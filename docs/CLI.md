@@ -274,6 +274,43 @@ Stable error codes: `service_unsupported_platform` (2), `service_managed_install
 
 Verbose and debug output never replaces `why`: verbosity explains what the current command is doing, while `why` explains durable scheduler decisions. Diagnostics go to stderr. Secrets and configured values remain redacted at every level.
 
+## Human rendering
+
+Human output renders the same facts as machine output in readable forms; machine output is the compatibility surface. The following contract applies to the human format only.
+
+- `list` — the table documented in Command families (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`).
+- `history` — an aligned table with the header always printed and one row per run, newest first:
+  `TIME | JOB | TRIGGER | STATE | DURATION`. `TIME` is RFC 3339 UTC; `DURATION` renders in the
+  largest whole human unit; the run ID may be abbreviated in the table only.
+- `show NAME` — labeled sections `JOB` (name, id, enabled, tags, revision), `SCHEDULE`,
+  `TARGET`, and `POLICIES` (overlap, missed-run, deadline, retries, timeout, concurrency), one
+  field per line.
+- `add` / `update` — `job added: NAME (ID)` / `job updated: NAME (ID, revision N)` followed by
+  the schedule and target summary lines in the form `list` uses.
+- `enable` / `disable` — `job enabled: NAME` / `job disabled: NAME`.
+- `remove` — `job removed: NAME`.
+- `run` — `run queued: RUN_ID (job NAME)`; `--wait` follows with the streamed output and ends in
+  a terminal outcome line; `--dry-run` prints the admission decision and states that no run was
+  created.
+- `cancel` — `cancellation requested: RUN_ID`, or the acknowledged-unconfirmed resolution line
+  for a quarantined run.
+- `preview` — a first line naming the schedule, then one RFC 3339 occurrence per line.
+- `why NAME` — sections `JOB`, `SCHEDULE`, `ELIGIBILITY`, `POLICIES`, `DAEMON`; `why --run ID` —
+  sections `RUN`, `ATTEMPTS`, and a terminal-reason section. One field per line; unknown facts
+  state `unknown`.
+- `doctor` — one line per check: `ok   …`, `warn …`, or `fail …` carrying the check name and the
+  fact or path it verified.
+- `config get` — `KEY=VALUE` per configured key, sensitive keys redacted as documented.
+  `config set` / `config unset` — `KEY: <action>` lines per the documented environment forms.
+- `import` — `created N, updated N, unchanged N` plus per-job action lines; dry run states the
+  simulation. `prune` — `pruned: N runs, M outputs (X bytes)`; dry run states what would be
+  pruned.
+- `export` — the bare export document (existing). `logs`, `service`, `self-update`, `version`,
+  `daemon run`, and `mcp` keep their existing human forms.
+
+No human form prints an escaped JSON string, nested object, or array, and every form obeys the
+redaction rules at every verbosity level.
+
 ## Machine output
 
 Every command supports one JSON document on stdout:

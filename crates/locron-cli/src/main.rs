@@ -39,10 +39,10 @@ use locron_engine::{
     AttemptContext, Daemon, DaemonConfig, HttpSpec, OutputWriter, ProcessSpec, Runner, TargetSpec,
 };
 use locron_store::{
-    AdmitAttempt, AttemptCompletion, CancelOutcome, CreateJob, CursorUpdate, ImportBatch,
-    ImportJob, ImportResolution, JobRecord, LockMetadata, NewScheduledRun, OutputRecord,
-    ReconciliationSummary, RetryPlan, RunRecord, SettingsRecord, StatePaths, Store, StoreError,
-    UpdateJob,
+    AdmitAttempt, AttemptCompletion, CancelOutcome, CreateJob, CursorUpdate, EventRecord,
+    ImportBatch, ImportJob, ImportResolution, JobRecord, LockMetadata, NewScheduledRun,
+    OutputRecord, ReconciliationSummary, RetryPlan, RunRecord, SettingsRecord, StatePaths, Store,
+    StoreError, UpdateJob,
 };
 use self_update::SelfUpdateError;
 use serde::{Deserialize, Serialize};
@@ -933,21 +933,27 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
             Ok(())
         }
         Command::Show { name } => {
-            render(
-                format,
-                "show",
-                redacted_job(open(&paths)?.job(&name)?)?,
-                &[],
-            );
-            Ok(())
+            let job = open(&paths)?.job(&name)?;
+            let value = redacted_job(job)?;
+            if format == Format::Human {
+                render_show(&value)
+            } else {
+                render(format, "show", value, &[]);
+                Ok(())
+            }
         }
         Command::Enable { name } => toggle(&paths, &name, true, format),
         Command::Disable { name } => toggle(&paths, &name, false, format),
         Command::Remove { name } => {
             open(&paths)?.remove_job(&name, now_us())?;
             send_wake(&paths);
-            render(format, "remove", json!({"name":name,"removed":true}), &[]);
-            Ok(())
+            if format == Format::Human {
+                println!("job removed: {name}");
+                Ok(())
+            } else {
+                render(format, "remove", json!({"name":name,"removed":true}), &[]);
+                Ok(())
+            }
         }
         Command::Preview(args) => preview(&paths, args, format),
         Command::Run {
@@ -966,18 +972,32 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
                 acknowledge_unconfirmed,
             )?;
             send_wake(&paths);
-            let data = match outcome {
-                CancelOutcome::CancelledBeforeExecution => {
-                    json!({"run_id":run_id,"requested":true,"cancelled":true,"before_execution":true})
+            if format == Format::Human {
+                match outcome {
+                    CancelOutcome::CancelledBeforeExecution => {
+                        println!("cancellation requested: {run_id} (cancelled before execution)")
+                    }
+                    CancelOutcome::CancellationRequested => {
+                        println!("cancellation requested: {run_id}")
+                    }
+                    CancelOutcome::AcknowledgedUnconfirmed => println!(
+                        "cancellation acknowledged: {run_id} (termination unconfirmed; run terminalized as interrupted_unknown)"
+                    ),
                 }
-                CancelOutcome::CancellationRequested => {
-                    json!({"run_id":run_id,"requested":true})
-                }
-                CancelOutcome::AcknowledgedUnconfirmed => {
-                    json!({"run_id":run_id,"acknowledged_unconfirmed":true,"state":"interrupted_unknown"})
-                }
-            };
-            render(format, "cancel", data, &[]);
+            } else {
+                let data = match outcome {
+                    CancelOutcome::CancelledBeforeExecution => {
+                        json!({"run_id":run_id,"requested":true,"cancelled":true,"before_execution":true})
+                    }
+                    CancelOutcome::CancellationRequested => {
+                        json!({"run_id":run_id,"requested":true})
+                    }
+                    CancelOutcome::AcknowledgedUnconfirmed => {
+                        json!({"run_id":run_id,"acknowledged_unconfirmed":true,"state":"interrupted_unknown"})
+                    }
+                };
+                render(format, "cancel", data, &[]);
+            }
             Ok(())
         }
         Command::History { name, limit } => {
@@ -987,8 +1007,17 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
                 .into_iter()
                 .map(|run| redacted_observable_run(&store, run))
                 .collect::<Result<Vec<_>>>()?;
-            render(format, "history", json!(runs), &[]);
-            Ok(())
+            if format == Format::Human {
+                let names = store
+                    .list_jobs(true)?
+                    .into_iter()
+                    .map(|job| (job.id, job.name))
+                    .collect::<BTreeMap<_, _>>();
+                render_history_table(&runs, &names)
+            } else {
+                render(format, "history", json!(runs), &[]);
+                Ok(())
+            }
         }
         Command::Logs {
             run_id,
@@ -1069,12 +1098,22 @@ fn add(paths: &StatePaths, args: AddArgs, format: Format) -> Result<()> {
     validate_metadata(&args.name, args.description.as_deref(), &args.tag)?;
     let warnings = environment_warnings(&definition.environment);
     if args.dry_run {
-        render(
-            format,
-            "add",
-            json!({"dry_run":true,"normalized":{"name":args.name,"enabled":!args.disabled,"definition":redact_definition(serde_json::to_value(&definition)?)},"id":"<non-durable>"}),
-            &warnings,
-        );
+        if format == Format::Human {
+            println!("job added: {} (dry run; no changes made)", args.name);
+            render_definition_summary_lines(&redact_definition(serde_json::to_value(
+                &definition,
+            )?))?;
+            for warning in &warnings {
+                eprintln!("warning: {warning}");
+            }
+        } else {
+            render(
+                format,
+                "add",
+                json!({"dry_run":true,"normalized":{"name":args.name,"enabled":!args.disabled,"definition":redact_definition(serde_json::to_value(&definition)?)},"id":"<non-durable>"}),
+                &warnings,
+            );
+        }
         return Ok(());
     }
     let store = open(paths)?;
@@ -1089,7 +1128,21 @@ fn add(paths: &StatePaths, args: AddArgs, format: Format) -> Result<()> {
         cursor_us: now,
     })?;
     send_wake(paths);
-    render(format, "add", redacted_job(record)?, &warnings);
+    if format == Format::Human {
+        println!("job added: {} ({})", record.name, record.id);
+        let value = redacted_job(record)?;
+        let definition: Value = serde_json::from_str(
+            value["definition_json"]
+                .as_str()
+                .context("job record lacks definition_json")?,
+        )?;
+        render_definition_summary_lines(&definition)?;
+        for warning in &warnings {
+            eprintln!("warning: {warning}");
+        }
+    } else {
+        render(format, "add", redacted_job(record)?, &warnings);
+    }
     Ok(())
 }
 
@@ -1155,19 +1208,32 @@ fn update(paths: &StatePaths, args: &UpdateArgs, format: Format) -> Result<()> {
     let changed_fields = changed_fields(&before, &after);
     let warnings = environment_warnings(&definition.environment);
     if args.dry_run {
-        render(
-            format,
-            "update",
-            json!({
-                "dry_run":true,"id":current.id,"revision":current.current_revision+1,
-                "schedule_changed":schedule_changed,
-                "changed_fields":changed_fields,
-                "before":redact_definition(before),
-                "after":redact_definition(after),
-                "cursor_us":if schedule_changed { now } else { current.cursor_us }
-            }),
-            &warnings,
-        );
+        if format == Format::Human {
+            println!("job updated: {} (dry run; no changes made)", current.name);
+            let after = redact_definition(after);
+            render_definition_summary_lines(
+                after
+                    .get("definition")
+                    .context("dry-run after lacks a definition")?,
+            )?;
+            for warning in &warnings {
+                eprintln!("warning: {warning}");
+            }
+        } else {
+            render(
+                format,
+                "update",
+                json!({
+                    "dry_run":true,"id":current.id,"revision":current.current_revision+1,
+                    "schedule_changed":schedule_changed,
+                    "changed_fields":changed_fields,
+                    "before":redact_definition(before),
+                    "after":redact_definition(after),
+                    "cursor_us":if schedule_changed { now } else { current.cursor_us }
+                }),
+                &warnings,
+            );
+        }
         return Ok(());
     }
     let record = store.update_job(&UpdateJob {
@@ -1186,7 +1252,24 @@ fn update(paths: &StatePaths, args: &UpdateArgs, format: Format) -> Result<()> {
         },
     })?;
     send_wake(paths);
-    render(format, "update", redacted_job(record)?, &warnings);
+    if format == Format::Human {
+        println!(
+            "job updated: {} ({}, revision {})",
+            record.name, record.id, record.current_revision
+        );
+        let value = redacted_job(record)?;
+        let definition: Value = serde_json::from_str(
+            value["definition_json"]
+                .as_str()
+                .context("job record lacks definition_json")?,
+        )?;
+        render_definition_summary_lines(&definition)?;
+        for warning in &warnings {
+            eprintln!("warning: {warning}");
+        }
+    } else {
+        render(format, "update", redacted_job(record)?, &warnings);
+    }
     Ok(())
 }
 
@@ -1575,29 +1658,52 @@ fn parse_success_statuses(values: &[String]) -> Result<Vec<u16>> {
 fn toggle(paths: &StatePaths, name: &str, enabled: bool, format: Format) -> Result<()> {
     let record = open(paths)?.set_enabled(name, enabled, now_us())?;
     send_wake(paths);
-    render(
-        format,
-        if enabled { "enable" } else { "disable" },
-        redacted_job(record)?,
-        &[],
-    );
-    Ok(())
+    if format == Format::Human {
+        println!(
+            "job {}: {}",
+            if enabled { "enabled" } else { "disabled" },
+            record.name
+        );
+        Ok(())
+    } else {
+        render(
+            format,
+            if enabled { "enable" } else { "disable" },
+            redacted_job(record)?,
+            &[],
+        );
+        Ok(())
+    }
 }
 
 fn preview(paths: &StatePaths, args: PreviewArgs, format: Format) -> Result<()> {
-    let schedule = if let Some(name) = args.value {
+    let (schedule, summary) = if let Some(name) = args.value {
         let job = open(paths)?.job(&name)?;
-        serde_json::from_str::<JobDefinition>(&job.definition_json)?.schedule
+        let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
+        let value = redacted_job(job)?;
+        let redacted: Value = serde_json::from_str(
+            value["definition_json"]
+                .as_str()
+                .context("job record lacks definition_json")?,
+        )?;
+        (definition.schedule, Some(list_schedule_summary(&redacted)?))
     } else {
-        build_schedule_only(&args.schedule)?
+        let schedule = build_schedule_only(&args.schedule)?;
+        let summary = schedule_summary(&schedule);
+        (schedule, Some(summary))
     };
     let next = schedule.next(Timestamp::from_epoch_micros(now_us()), args.count)?;
-    render(
-        format,
-        "preview",
-        json!({"occurrences":next.iter().map(ToString::to_string).collect::<Vec<_>>()}),
-        &[],
-    );
+    let occurrences = next.iter().map(ToString::to_string).collect::<Vec<_>>();
+    if format == Format::Human {
+        if let Some(summary) = summary {
+            println!("schedule: {summary}");
+        }
+        for occurrence in &occurrences {
+            println!("{occurrence}");
+        }
+    } else {
+        render(format, "preview", json!({"occurrences":occurrences}), &[]);
+    }
     Ok(())
 }
 fn build_schedule_only(args: &ScheduleArgs) -> Result<Schedule> {
@@ -1647,12 +1753,23 @@ async fn run_job(
                 OverlapPolicy::Allow => "eligible_subject_to_capacity",
             }
         };
-        render(
-            format,
-            "run",
-            json!({"dry_run":true,"durable":false,"decision":decision,"capacity_reserved":false}),
-            &[],
-        );
+        if format == Format::Human {
+            let decision_text = match decision {
+                "eligible" => "run eligible",
+                "would_skip_overlap" => "run would skip (overlap policy)",
+                "would_replace" => "run would replace",
+                _ => "run eligible subject to capacity",
+            };
+            println!("{decision_text}: {name}");
+            println!("dry run: no run created");
+        } else {
+            render(
+                format,
+                "run",
+                json!({"dry_run":true,"durable":false,"decision":decision,"capacity_reserved":false}),
+                &[],
+            );
+        }
         return Ok(());
     }
     let run_id = Uuid::now_v7().to_string();
@@ -1664,12 +1781,19 @@ async fn run_job(
         vec![]
     };
     if !wait || format == Format::Human {
-        render(
-            format,
-            "run",
-            json!({"run_id":run.id,"state":run.state}),
-            &warnings,
-        );
+        if format == Format::Human {
+            println!("run queued: {} (job {})", run.id, name);
+            for warning in &warnings {
+                eprintln!("warning: {warning}");
+            }
+        } else {
+            render(
+                format,
+                "run",
+                json!({"run_id":run.id,"state":run.state}),
+                &warnings,
+            );
+        }
     }
     if wait {
         let run = wait_run(paths, &store, &run_id, format).await?;
@@ -1710,7 +1834,7 @@ async fn wait_run(
             "queued" | "starting" | "running" | "retry_wait"
         ) {
             if format == Format::Human {
-                println!("{}: {}", run.id, run.state);
+                println!("run finished: {} ({})", run.id, run.state);
             }
             if run.state != "succeeded" {
                 return Err(TargetOutcomeError {
@@ -1904,23 +2028,40 @@ fn why(
                 .map(redacted_run)
                 .collect::<Result<Vec<_>>>()?;
             let job = redacted_job(job)?;
-            render(
-                format,
-                "why",
-                json!({"job":job,"next_occurrence":next,"active_runs":active,"overlap":definition.policy.overlap,"daemon_running":!daemon_lock_free(paths),"explanation":"facts are read from durable state; unknown execution facts are not inferred"}),
-                &[],
-            );
+            let daemon_running = !daemon_lock_free(paths);
+            if format == Format::Human {
+                render_why_job(
+                    &job,
+                    &definition,
+                    next.as_deref(),
+                    &active,
+                    daemon_running,
+                    configured_global_concurrency(paths)?,
+                )?;
+            } else {
+                render(
+                    format,
+                    "why",
+                    json!({"job":job,"next_occurrence":next,"active_runs":active,"overlap":definition.policy.overlap,"daemon_running":daemon_running,"explanation":"facts are read from durable state; unknown execution facts are not inferred"}),
+                    &[],
+                );
+            }
             Ok(())
         }
         (None, Some(id)) => {
             let durable_events = store.events_for_run(&id)?;
             let run = redacted_observable_run(&store, store.run(&id)?)?;
-            render(
-                format,
-                "why",
-                json!({"run":run,"events":durable_events,"daemon_running":!daemon_lock_free(paths),"explanation":"terminal reason, immutable snapshot, ordered attempts, and audit events are durable facts"}),
-                &[],
-            );
+            let daemon_running = !daemon_lock_free(paths);
+            if format == Format::Human {
+                render_why_run(&run, &durable_events)?;
+            } else {
+                render(
+                    format,
+                    "why",
+                    json!({"run":run,"events":durable_events,"daemon_running":daemon_running,"explanation":"terminal reason, immutable snapshot, ordered attempts, and audit events are durable facts"}),
+                    &[],
+                );
+            }
             Ok(())
         }
         _ => Err(anyhow!("provide a job name or --run RUN_ID")),
@@ -1956,22 +2097,30 @@ fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<
             }
             if dry_run {
                 validate_config_value(&key, &value)?;
-                render(
-                    format,
-                    "config set",
-                    json!({"key":key,"value":value,"dry_run":true}),
-                    &[],
-                );
+                if format == Format::Human {
+                    println!("{key}: would be configured (dry run; no changes made)");
+                } else {
+                    render(
+                        format,
+                        "config set",
+                        json!({"key":key,"value":value,"dry_run":true}),
+                        &[],
+                    );
+                }
             } else {
                 let store = open(paths)?;
                 let settings = store.set_setting(&key, &value, now_us())?;
                 send_wake(paths);
-                render(
-                    format,
-                    "config set",
-                    redacted_settings_value(&settings)?,
-                    &[],
-                );
+                if format == Format::Human {
+                    println!("{key}: configured");
+                } else {
+                    render(
+                        format,
+                        "config set",
+                        redacted_settings_value(&settings)?,
+                        &[],
+                    );
+                }
             }
         }
         ConfigCommand::Unset { key, dry_run } => {
@@ -2069,7 +2218,11 @@ fn render_config_get(format: Format, key: Option<&str>, settings: &SettingsRecor
         let value = object
             .get(key)
             .ok_or_else(|| anyhow!("unknown configuration key"))?;
-        render(format, "config get", json!({"key":key,"value":value}), &[]);
+        if format == Format::Human {
+            println!("{key}={value}");
+        } else {
+            render(format, "config get", json!({"key":key,"value":value}), &[]);
+        }
     } else if format == Format::Human {
         for (name, value) in object.iter().filter(|(name, _)| *name != "environment") {
             println!("{name}={value}");
@@ -2110,10 +2263,15 @@ fn render_environment_change(
     dry_run: bool,
 ) {
     if format == Format::Human {
-        if configured {
-            println!("{key}: configured (value redacted)");
+        let state = if configured {
+            "configured (value redacted)"
         } else {
-            println!("{key}: unset");
+            "unset"
+        };
+        if dry_run {
+            println!("{key}: {state} (dry run; no changes made)");
+        } else {
+            println!("{key}: {state}");
         }
     } else {
         render(
@@ -2248,9 +2406,20 @@ async fn import(
         Some(open(paths)?)
     };
     let plan = plan_import(store.as_ref(), document, now, dry_run)?;
-    let data = import_plan_value(&plan, dry_run);
+    let action_lines = import_action_lines(&plan);
+    let (planned_created, planned_updated, planned_no_op) = import_plan_counts(&plan);
+    let settings_changed = plan.settings_changed;
     if dry_run {
-        render(format, "import", data, &[]);
+        if format == Format::Human {
+            println!(
+                "dry run: would create {planned_created}, update {planned_updated}, unchanged {planned_no_op}; no changes made"
+            );
+            for line in &action_lines {
+                println!("{line}");
+            }
+        } else {
+            render(format, "import", import_plan_value(&plan, dry_run), &[]);
+        }
         return Ok(());
     }
 
@@ -2272,13 +2441,20 @@ async fn import(
             }
         }
     }
-    if no_op == mutations.len() && !plan.settings_changed {
-        render(
-            format,
-            "import",
-            json!({"created":0,"updated":0,"no_op":no_op,"settings_changed":false}),
-            &[],
-        );
+    if no_op == mutations.len() && !settings_changed {
+        if format == Format::Human {
+            println!("created 0, updated 0, unchanged {no_op}");
+            for line in &action_lines {
+                println!("{line}");
+            }
+        } else {
+            render(
+                format,
+                "import",
+                json!({"created":0,"updated":0,"no_op":no_op,"settings_changed":false}),
+                &[],
+            );
+        }
         return Ok(());
     }
     let summary = store
@@ -2290,12 +2466,22 @@ async fn import(
             now_us: plan.now_us,
         })?;
     send_wake(paths);
-    render(
-        format,
-        "import",
-        json!({"created":summary.created,"updated":summary.updated,"no_op":no_op,"settings_changed":plan.settings_changed}),
-        &[],
-    );
+    if format == Format::Human {
+        println!(
+            "created {}, updated {}, unchanged {no_op}",
+            summary.created, summary.updated
+        );
+        for line in &action_lines {
+            println!("{line}");
+        }
+    } else {
+        render(
+            format,
+            "import",
+            json!({"created":summary.created,"updated":summary.updated,"no_op":no_op,"settings_changed":settings_changed}),
+            &[],
+        );
+    }
     Ok(())
 }
 
@@ -3050,32 +3236,40 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
             })),
         }
     }
-    render(
-        format,
-        "doctor",
-        json!({
-            "state_dir":paths.root,
-            "database":paths.database,
-            "daemon_running":!daemon_lock_free(paths),
-            "wake_socket":paths.wake_socket.exists(),
-            "execution_path":settings.execution_path,
-            "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
-            "process_resolution":resolutions,
-            "checks":store.integrity_check()?
-        }),
-        &[],
-    );
+    if format == Format::Human {
+        render_doctor_human(paths, &settings, &resolutions, &store.integrity_check()?);
+    } else {
+        render(
+            format,
+            "doctor",
+            json!({
+                "state_dir":paths.root,
+                "database":paths.database,
+                "daemon_running":!daemon_lock_free(paths),
+                "wake_socket":paths.wake_socket.exists(),
+                "execution_path":settings.execution_path,
+                "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
+                "process_resolution":resolutions,
+                "checks":store.integrity_check()?
+            }),
+            &[],
+        );
+    }
     Ok(())
 }
 
 fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
     if dry_run && !paths.database.is_file() {
-        render(
-            format,
-            "prune",
-            json!({"dry_run":true,"candidate_count":0,"bytes":0}),
-            &[],
-        );
+        if format == Format::Human {
+            println!("dry run: would prune 0 runs, 0 outputs (0 bytes)");
+        } else {
+            render(
+                format,
+                "prune",
+                json!({"dry_run":true,"candidate_count":0,"bytes":0}),
+                &[],
+            );
+        }
         return Ok(());
     }
     let store = if dry_run {
@@ -3110,12 +3304,30 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
             retained = retained.saturating_sub(candidate.physical_bytes);
         }
     }
-    render(
-        format,
-        "prune",
-        json!({"dry_run":dry_run,"candidate_count":candidates.len(),"bytes":candidates.iter().map(|candidate|candidate.physical_bytes).sum::<i64>()}),
-        &[],
-    );
+    let outputs = candidates.len();
+    let runs = candidates
+        .iter()
+        .map(|candidate| candidate.run_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let bytes: i64 = candidates
+        .iter()
+        .map(|candidate| candidate.physical_bytes)
+        .sum();
+    if format == Format::Human {
+        if dry_run {
+            println!("dry run: would prune {runs} runs, {outputs} outputs ({bytes} bytes)");
+        } else {
+            println!("pruned: {runs} runs, {outputs} outputs ({bytes} bytes)");
+        }
+    } else {
+        render(
+            format,
+            "prune",
+            json!({"dry_run":dry_run,"candidate_count":outputs,"bytes":bytes}),
+            &[],
+        );
+    }
     Ok(())
 }
 
@@ -4197,6 +4409,451 @@ fn render_list_table(jobs: &[Value]) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Renders a UTC RFC 3339 instant from epoch microseconds, or `unknown` when
+/// no instant is recorded.
+fn human_instant(epoch_micros: Option<i64>) -> String {
+    match epoch_micros {
+        Some(micros) => Timestamp::from_epoch_micros(micros).to_string(),
+        None => "unknown".into(),
+    }
+}
+
+/// Abbreviates a canonical UUID to its first 8 characters. The run ID may be
+/// abbreviated only in tables; every other human form prints the full ID.
+fn abbreviated_id(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
+/// Renders the aligned `history` table (`TIME | JOB | TRIGGER | STATE |
+/// DURATION`) for human output: the header always prints, rows are newest
+/// first, `TIME` is RFC 3339 UTC of the request instant, `DURATION` renders
+/// in the largest whole human unit from request to finish (`-` for active
+/// runs), and the run ID may be abbreviated only in this table. The job
+/// column prefers the live job name and falls back to the abbreviated job ID
+/// for removed jobs. All values derive from the redacted run records.
+fn render_history_table(runs: &[Value], names: &BTreeMap<String, String>) -> Result<()> {
+    let mut sorted = runs.to_vec();
+    sorted.sort_by(|a, b| {
+        b["requested_at_us"]
+            .as_i64()
+            .cmp(&a["requested_at_us"].as_i64())
+            .then_with(|| b["id"].as_str().cmp(&a["id"].as_str()))
+    });
+    let mut rows: Vec<(String, String, String, String, String)> = Vec::with_capacity(sorted.len());
+    for run in &sorted {
+        let job_id = run["job_id"].as_str().context("run record lacks job_id")?;
+        let job = names
+            .get(job_id)
+            .cloned()
+            .unwrap_or_else(|| abbreviated_id(job_id));
+        let duration = match (
+            run["requested_at_us"].as_i64(),
+            run["finished_at_us"].as_i64(),
+        ) {
+            (Some(requested), Some(finished)) if finished >= requested => {
+                human_duration(u64::try_from(finished - requested).unwrap_or(0))
+            }
+            _ => "-".to_owned(),
+        };
+        rows.push((
+            human_instant(run["requested_at_us"].as_i64()),
+            job,
+            run["trigger"].as_str().unwrap_or("unknown").to_owned(),
+            run["state"].as_str().unwrap_or("unknown").to_owned(),
+            duration,
+        ));
+    }
+    let time_width = "TIME"
+        .len()
+        .max(rows.iter().map(|row| row.0.len()).max().unwrap_or(0));
+    let job_width = "JOB"
+        .len()
+        .max(rows.iter().map(|row| row.1.len()).max().unwrap_or(0));
+    let trigger_width = "TRIGGER"
+        .len()
+        .max(rows.iter().map(|row| row.2.len()).max().unwrap_or(0));
+    let state_width = "STATE"
+        .len()
+        .max(rows.iter().map(|row| row.3.len()).max().unwrap_or(0));
+    println!(
+        "{:<time_width$} | {:<job_width$} | {:<trigger_width$} | {:<state_width$} | DURATION",
+        "TIME", "JOB", "TRIGGER", "STATE"
+    );
+    for (time, job, trigger, state, duration) in &rows {
+        println!(
+            "{time:<time_width$} | {job:<job_width$} | {trigger:<trigger_width$} | {state:<state_width$} | {duration}"
+        );
+    }
+    Ok(())
+}
+
+/// Prints the schedule and target summary lines `add` and `update` follow
+/// their outcome line with, in the same form the `list` table uses, derived
+/// from the redacted definition JSON.
+fn render_definition_summary_lines(definition: &Value) -> Result<()> {
+    println!("schedule: {}", list_schedule_summary(definition)?);
+    println!("target: {}", list_target_summary(definition)?);
+    Ok(())
+}
+
+/// Joins a job's tags as a comma-separated string, or returns an empty string
+/// when the job has no tags.
+fn render_tags(job: &Value) -> String {
+    serde_json::from_str::<Vec<String>>(job["tags_json"].as_str().unwrap_or("[]"))
+        .map(|tags| tags.join(", "))
+        .unwrap_or_default()
+}
+
+/// Renders the human timezone of a cron schedule from the redacted definition
+/// JSON: the IANA name, `local`, or `unknown`.
+fn schedule_timezone_summary(schedule: &Value) -> String {
+    match schedule
+        .get("timezone")
+        .and_then(|timezone| timezone.get("mode"))
+        .and_then(Value::as_str)
+    {
+        Some("local") => "local".to_owned(),
+        Some("iana") => schedule
+            .get("timezone")
+            .and_then(|timezone| timezone.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned(),
+        _ => "unknown".to_owned(),
+    }
+}
+
+/// Prints the `POLICIES` section lines (overlap, missed run, deadline,
+/// retries, timeout, concurrency) from the redacted definition JSON.
+fn render_policy_fields(definition: &Value) -> Result<()> {
+    let policy = definition
+        .get("policy")
+        .context("definition lacks policy")?;
+    println!(
+        "  overlap: {}",
+        policy
+            .get("overlap")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+    );
+    println!(
+        "  missed run: {}",
+        policy
+            .get("missed_run")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+    );
+    println!(
+        "  deadline: {}",
+        match policy.get("start_deadline").and_then(Value::as_u64) {
+            Some(micros) => human_duration(micros),
+            None => "none".to_owned(),
+        }
+    );
+    println!(
+        "  retries: {}",
+        policy.get("retries").and_then(Value::as_u64).unwrap_or(0)
+    );
+    println!(
+        "  timeout: {}",
+        match policy.get("timeout").and_then(Value::as_u64) {
+            Some(micros) => human_duration(micros),
+            None => "none".to_owned(),
+        }
+    );
+    println!(
+        "  concurrency: {}",
+        policy
+            .get("per_job_concurrency")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+    );
+    Ok(())
+}
+
+/// Prints the `SCHEDULE` and `TARGET` labeled sections of `show` from the
+/// redacted definition JSON.
+fn render_definition_sections(definition: &Value) -> Result<()> {
+    let schedule = definition
+        .get("schedule")
+        .context("definition lacks schedule")?;
+    println!("SCHEDULE");
+    println!("  schedule: {}", list_schedule_summary(definition)?);
+    if schedule.get("kind").and_then(Value::as_str) == Some("cron") {
+        println!("  timezone: {}", schedule_timezone_summary(schedule));
+    }
+    println!("TARGET");
+    println!("  target: {}", list_target_summary(definition)?);
+    Ok(())
+}
+
+/// Renders `show` human output: the labeled sections `JOB`, `SCHEDULE`,
+/// `TARGET`, and `POLICIES` with one field per line, derived only from the
+/// redacted job record.
+fn render_show(job: &Value) -> Result<()> {
+    let name = job["name"].as_str().context("job record lacks name")?;
+    let id = job["id"].as_str().context("job record lacks id")?;
+    let enabled = if job["enabled"].as_bool().unwrap_or(false) {
+        "yes"
+    } else {
+        "no"
+    };
+    let tags = render_tags(job);
+    let revision = job["current_revision"].as_i64().unwrap_or(0);
+    println!("JOB");
+    println!("  name: {name}");
+    println!("  id: {id}");
+    println!("  enabled: {enabled}");
+    if !tags.is_empty() {
+        println!("  tags: {tags}");
+    }
+    println!("  revision: {revision}");
+    let definition: Value = serde_json::from_str(
+        job["definition_json"]
+            .as_str()
+            .context("job record lacks definition_json")?,
+    )
+    .context("invalid definition_json in job record")?;
+    render_definition_sections(&definition)?;
+    println!("POLICIES");
+    render_policy_fields(&definition)
+}
+
+/// Renders `why NAME` human output: labeled sections `JOB`, `SCHEDULE`,
+/// `ELIGIBILITY`, `POLICIES`, and `DAEMON` with one field per line. Facts are
+/// read from durable state; unknown facts print `unknown`.
+fn render_why_job(
+    job: &Value,
+    definition: &JobDefinition,
+    next: Option<&str>,
+    active: &[Value],
+    daemon_running: bool,
+    global_concurrency: u8,
+) -> Result<()> {
+    let name = job["name"].as_str().context("job record lacks name")?;
+    let id = job["id"].as_str().context("job record lacks id")?;
+    let enabled = if job["enabled"].as_bool().unwrap_or(false) {
+        "yes"
+    } else {
+        "no"
+    };
+    let tags = render_tags(job);
+    let revision = job["current_revision"].as_i64().unwrap_or(0);
+    println!("JOB");
+    println!("  name: {name}");
+    println!("  id: {id}");
+    println!("  enabled: {enabled}");
+    if !tags.is_empty() {
+        println!("  tags: {tags}");
+    }
+    println!("  revision: {revision}");
+    let cursor = job["cursor_us"].as_i64().filter(|cursor| *cursor > 0);
+    println!("SCHEDULE");
+    println!("  schedule: {}", schedule_summary(&definition.schedule));
+    if let Schedule::Cron { timezone, .. } = &definition.schedule {
+        let timezone = match timezone {
+            ScheduleTimeZone::Local => "local".to_owned(),
+            ScheduleTimeZone::Iana(name) => name.clone(),
+        };
+        println!("  timezone: {timezone}");
+    }
+    println!("  cursor: {}", human_instant(cursor));
+    println!("  next occurrence: {}", next.unwrap_or("none"));
+    let decision = if active.is_empty() {
+        "eligible".to_owned()
+    } else {
+        match definition.policy.overlap {
+            OverlapPolicy::Skip => "would skip (overlap policy)".to_owned(),
+            OverlapPolicy::Replace => "would replace".to_owned(),
+            OverlapPolicy::Allow => "eligible subject to capacity".to_owned(),
+        }
+    };
+    println!("ELIGIBILITY");
+    println!("  active runs: {}", active.len());
+    println!("  decision: {decision}");
+    println!("  global concurrency: {global_concurrency}");
+    println!("POLICIES");
+    let definition_value: Value = serde_json::from_str(
+        job["definition_json"]
+            .as_str()
+            .context("job record lacks definition_json")?,
+    )
+    .context("invalid definition_json in job record")?;
+    render_policy_fields(&definition_value)?;
+    println!("DAEMON");
+    println!(
+        "  daemon running: {}",
+        if daemon_running { "yes" } else { "no" }
+    );
+    Ok(())
+}
+
+/// Renders `why --run RUN_ID` human output: labeled sections `RUN`,
+/// `ATTEMPTS`, `EVENTS`, and `TERMINAL REASON` with one field per line.
+/// Facts are read from the immutable snapshot and the durable event log;
+/// unknown facts print `unknown`.
+fn render_why_run(run: &Value, events: &[EventRecord]) -> Result<()> {
+    let id = run["id"].as_str().context("run record lacks id")?;
+    println!("RUN");
+    println!("  run id: {id}");
+    println!(
+        "  trigger: {}",
+        run["trigger"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "  nominal time: {}",
+        run["nominal_us"]
+            .as_i64()
+            .map_or_else(|| "none".to_owned(), |micros| human_instant(Some(micros)))
+    );
+    println!(
+        "  requested: {}",
+        human_instant(run["requested_at_us"].as_i64())
+    );
+    println!("  state: {}", run["state"].as_str().unwrap_or("unknown"));
+    println!(
+        "  started: {}",
+        human_instant(run["actual_started_at_us"].as_i64())
+    );
+    println!(
+        "  finished: {}",
+        human_instant(run["finished_at_us"].as_i64())
+    );
+    println!(
+        "  duration: {}",
+        run["duration_us"].as_i64().map_or_else(
+            || "unknown".to_owned(),
+            |micros| human_duration(u64::try_from(micros.max(0)).unwrap_or(0))
+        )
+    );
+    println!(
+        "  outcome: {}",
+        run["outcome"].as_str().unwrap_or("unknown")
+    );
+    println!("ATTEMPTS");
+    let attempts = match run["attempts"].as_array() {
+        Some(attempts) => attempts.as_slice(),
+        None => &[],
+    };
+    if attempts.is_empty() {
+        println!("  (none)");
+    }
+    for attempt in attempts {
+        let number = attempt["attempt_number"].as_i64().unwrap_or(0);
+        let state = attempt["state"].as_str().unwrap_or("unknown");
+        let duration = attempt["duration_us"]
+            .as_i64()
+            .map_or_else(String::new, |micros: i64| {
+                format!(
+                    " ({})",
+                    human_duration(u64::try_from(micros.max(0)).unwrap_or(0))
+                )
+            });
+        println!("  attempt {number}: {state}{duration}");
+    }
+    println!("EVENTS");
+    if events.is_empty() {
+        println!("  (none)");
+    }
+    for event in events {
+        println!(
+            "  {} {}",
+            Timestamp::from_epoch_micros(event.occurred_at_us),
+            event.kind
+        );
+    }
+    println!("TERMINAL REASON");
+    match run["reason"].as_str() {
+        Some(reason) if !reason.is_empty() => println!("  reason: {reason}"),
+        _ => println!("  reason: unknown"),
+    }
+    Ok(())
+}
+
+/// Renders `doctor` human output: one line per check with an `ok`, `warn`, or
+/// `fail` level prefix carrying the check name and the fact or path verified.
+fn render_doctor_human(
+    paths: &StatePaths,
+    settings: &SettingsRecord,
+    resolutions: &[Value],
+    checks: &[String],
+) {
+    println!("ok   state dir: {}", paths.root.display());
+    println!("ok   database: {}", paths.database.display());
+    if daemon_lock_free(paths) {
+        println!("warn daemon: not running");
+    } else {
+        println!("ok   daemon: running");
+    }
+    if paths.wake_socket.exists() {
+        println!("ok   wake socket: {}", paths.wake_socket.display());
+    } else {
+        println!(
+            "warn wake socket: missing ({})",
+            paths.wake_socket.display()
+        );
+    }
+    println!("ok   execution path: {}", settings.execution_path);
+    for name in settings.environment.keys() {
+        println!("ok   environment.{name}: configured (value redacted)");
+    }
+    for resolution in resolutions {
+        let job_name = resolution["job_name"].as_str().unwrap_or("unknown");
+        if resolution["status"].as_str() == Some("resolved") {
+            let executable = resolution["resolved_executable"]
+                .as_str()
+                .unwrap_or("unknown");
+            println!("ok   process resolution: {job_name} -> {executable}");
+        } else {
+            let error = resolution["error"].as_str().unwrap_or("unknown error");
+            println!("fail process resolution: {job_name} ({error})");
+        }
+    }
+    for check in checks {
+        match check.split_once(':') {
+            Some(("integrity", " ok")) => println!("ok   integrity: database integrity verified"),
+            Some(("integrity", detail)) => println!("fail integrity:{detail}"),
+            Some(("foreign_key_violations", " 0")) => println!("ok   foreign key violations: 0"),
+            Some(("foreign_key_violations", detail)) => {
+                println!("fail foreign key violations:{detail}")
+            }
+            _ => println!("fail {check}"),
+        }
+    }
+}
+
+/// Counts the planned create/update/no-op actions of an import plan.
+fn import_plan_counts(plan: &ImportPlan) -> (usize, usize, usize) {
+    let mut created = 0;
+    let mut updated = 0;
+    let mut unchanged = 0;
+    for action in &plan.jobs {
+        match action {
+            PlannedImportJob::Create { .. } => created += 1,
+            PlannedImportJob::Update { .. } => updated += 1,
+            PlannedImportJob::NoOp { .. } => unchanged += 1,
+        }
+    }
+    (created, updated, unchanged)
+}
+
+/// One human action line per planned import action: `created: NAME (ID)`,
+/// `updated: NAME (ID)`, or `unchanged: NAME (ID)`.
+fn import_action_lines(plan: &ImportPlan) -> Vec<String> {
+    plan.jobs
+        .iter()
+        .map(|action| match action {
+            PlannedImportJob::Create { job, .. } => {
+                format!("created: {} ({})", job.name, job.id)
+            }
+            PlannedImportJob::Update { job, .. } => {
+                format!("updated: {} ({})", job.name, job.id)
+            }
+            PlannedImportJob::NoOp { job, .. } => format!("unchanged: {} ({})", job.name, job.id),
+        })
+        .collect()
 }
 
 /// Renders the human schedule summary (`cron 'EXPR'`, `every DUR`, or

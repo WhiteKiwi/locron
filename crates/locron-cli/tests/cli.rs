@@ -1180,7 +1180,9 @@ fn plaintext_export_import_round_trips_and_second_import_is_no_op() {
             .unwrap(),
     )
     .success()
-    .stdout(predicate::str::contains("\"created\": 1"));
+    .stdout(predicate::str::contains(
+        "created 1, updated 0, unchanged 0",
+    ));
     let destination_export = locron(&destination)
         .args(["export", "--include-values", "--acknowledge-plaintext"])
         .output()
@@ -1199,7 +1201,9 @@ fn plaintext_export_import_round_trips_and_second_import_is_no_op() {
             .unwrap(),
     )
     .success()
-    .stdout(predicate::str::contains("\"no_op\": 1"));
+    .stdout(predicate::str::contains(
+        "created 0, updated 0, unchanged 1",
+    ));
     let show = locron(&destination)
         .args(["--json", "show", "roundtrip"])
         .output()
@@ -1319,7 +1323,9 @@ fn import_maps_by_live_name_and_reallocates_a_removed_id_collision() {
             .unwrap(),
     )
     .success()
-    .stdout(predicate::str::contains("\"updated\": 1"));
+    .stdout(predicate::str::contains(
+        "created 0, updated 1, unchanged 0",
+    ));
     let mapped = locron(&destination)
         .args(["--json", "show", "mapped"])
         .output()
@@ -1352,7 +1358,9 @@ fn import_maps_by_live_name_and_reallocates_a_removed_id_collision() {
             .unwrap(),
     )
     .success()
-    .stdout(predicate::str::contains("\"created\": 1"));
+    .stdout(predicate::str::contains(
+        "created 1, updated 0, unchanged 0",
+    ));
     let recreated = locron(&collision)
         .args(["--json", "show", "mapped"])
         .output()
@@ -1842,6 +1850,774 @@ fn human_list_never_leaks_configured_values() {
 }
 
 #[test]
+fn human_add_update_enable_disable_remove_print_outcome_lines() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("job added: backup ("))
+    .stdout(predicate::str::contains("schedule: every 1h"))
+    .stdout(predicate::str::contains("target: run /usr/bin/true"));
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["update", "backup", "--every", "2h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("job updated: backup ("))
+    .stdout(predicate::str::contains(", revision 2)"))
+    .stdout(predicate::str::contains("schedule: every 2h"));
+    assert_cmd::assert::Assert::new(locron(&state).args(["disable", "backup"]).output().unwrap())
+        .success()
+        .stdout("job disabled: backup\n");
+    assert_cmd::assert::Assert::new(locron(&state).args(["enable", "backup"]).output().unwrap())
+        .success()
+        .stdout("job enabled: backup\n");
+    assert_cmd::assert::Assert::new(locron(&state).args(["remove", "backup"]).output().unwrap())
+        .success()
+        .stdout("job removed: backup\n");
+
+    // Dry runs print the outcome line and the summaries, write nothing, and
+    // do not initialize state.
+    let dry = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&dry)
+            .args([
+                "add",
+                "dry",
+                "--every",
+                "1h",
+                "--dry-run",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "job added: dry (dry run; no changes made)",
+    ))
+    .stdout(predicate::str::contains("schedule: every 1h"))
+    .stdout(predicate::str::contains("target: run /usr/bin/true"));
+    assert!(!dry.path().join("state.db").exists());
+    assert_cmd::assert::Assert::new(
+        locron(&dry)
+            .args(["add", "dry", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&dry)
+            .args([
+                "update",
+                "dry",
+                "--every",
+                "2h",
+                "--dry-run",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "job updated: dry (dry run; no changes made)",
+    ))
+    .stdout(predicate::str::contains("schedule: every 2h"));
+    let show = locron(&dry)
+        .args(["--json", "show", "dry"])
+        .output()
+        .unwrap();
+    let show: serde_json::Value = serde_json::from_slice(&show.stdout).unwrap();
+    assert_eq!(show["data"]["current_revision"], 1);
+}
+
+#[test]
+fn human_history_prints_the_aligned_table_with_header_always() {
+    let empty = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(locron(&empty).args(["history"]).output().unwrap())
+        .success()
+        .stdout("TIME | JOB | TRIGGER | STATE | DURATION\n");
+
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(locron(&state).args(["run", "backup"]).output().unwrap())
+        .success();
+    let json = locron(&state).args(["--json", "history"]).output().unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let run_id = json["data"][0]["id"].as_str().unwrap().to_owned();
+    let history = locron(&state).args(["history"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&history.stdout);
+    let header = stdout.lines().next().expect("header must always print");
+    for column in ["TIME", "JOB", "TRIGGER", "STATE", "DURATION"] {
+        assert!(
+            header.contains(column),
+            "header must carry {column}:\n{stdout}"
+        );
+    }
+    assert!(
+        header.ends_with("| DURATION"),
+        "header must end with DURATION:\n{stdout}"
+    );
+    let row = stdout.lines().nth(1).expect("row missing");
+    for token in ["backup", "manual", "queued", "-"] {
+        assert!(row.contains(token), "row missing {token}:\n{stdout}");
+    }
+    assert!(
+        stdout.contains("Z | "),
+        "TIME must be RFC 3339 UTC:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains(&run_id),
+        "full run ID must not appear in the table:\n{stdout}"
+    );
+    assert_eq!(
+        json["data"][0]["id"].as_str().unwrap(),
+        run_id,
+        "the JSON surface must keep the full run ID"
+    );
+
+    // A removed job's rows fall back to the abbreviated job ID.
+    assert_cmd::assert::Assert::new(locron(&state).args(["remove", "backup"]).output().unwrap())
+        .success();
+    let history = locron(&state).args(["history"]).output().unwrap();
+    let after = String::from_utf8_lossy(&history.stdout);
+    assert!(
+        !after.contains("| backup |"),
+        "removed job name must not appear in history:\n{after}"
+    );
+    let row = after.lines().nth(1).expect("row must survive removal");
+    assert!(
+        row.contains("manual") && row.contains("queued"),
+        "row must survive removal:\n{after}"
+    );
+}
+
+#[test]
+fn human_run_prints_the_dry_run_decision_and_queued_lines() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "backup",
+                "--every",
+                "1h",
+                "--overlap",
+                "skip",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["run", "backup", "--dry-run"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("run eligible: backup\ndry run: no run created\n");
+    let json = locron(&state)
+        .args(["--json", "run", "backup", "--dry-run"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(json["data"]["decision"], "eligible");
+    assert_eq!(json["data"]["dry_run"], true);
+
+    // The queued run counts as active, so a later dry run reports the
+    // overlap-skip admission decision.
+    assert_cmd::assert::Assert::new(locron(&state).args(["run", "backup"]).output().unwrap())
+        .success();
+    let dry_run = locron(&state)
+        .args(["run", "backup", "--dry-run"])
+        .output()
+        .unwrap();
+    let dry = String::from_utf8_lossy(&dry_run.stdout);
+    assert!(
+        dry.contains("run would skip (overlap policy): backup\ndry run: no run created\n"),
+        "overlap-skip decision missing:\n{dry}"
+    );
+    let run_output = locron(&state).args(["run", "backup"]).output().unwrap();
+    let queued = String::from_utf8_lossy(&run_output.stdout);
+    assert!(
+        queued.starts_with("run queued: "),
+        "queued line missing:\n{queued}"
+    );
+    assert!(
+        queued.contains("(job backup)\n"),
+        "queued line must name the job:\n{queued}"
+    );
+}
+
+#[test]
+fn human_cancel_prints_the_resolution_line() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    assert_cmd::assert::Assert::new(locron(&state).args(["run", "backup"]).output().unwrap())
+        .success();
+    let json = locron(&state).args(["--json", "history"]).output().unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let run_id = json["data"][0]["id"].as_str().unwrap().to_owned();
+    assert_cmd::assert::Assert::new(locron(&state).args(["cancel", &run_id]).output().unwrap())
+        .success()
+        .stdout(predicate::str::contains("cancellation requested: "))
+        .stdout(predicate::str::contains("(cancelled before execution)"));
+    // Cancelling the same run again is a durable conflict.
+    let json = locron(&state)
+        .args(["--json", "cancel", &run_id])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], "durable_conflict");
+    // The JSON surface of a fresh cancellation keeps the stable envelope.
+    assert_cmd::assert::Assert::new(locron(&state).args(["run", "backup"]).output().unwrap())
+        .success();
+    let json = locron(&state).args(["--json", "history"]).output().unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let second = json["data"][0]["id"].as_str().unwrap().to_owned();
+    let json = locron(&state)
+        .args(["--json", "cancel", &second])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(json["data"]["requested"], true);
+    assert_eq!(json["data"]["cancelled"], true);
+    assert_eq!(json["data"]["before_execution"], true);
+}
+
+#[test]
+fn human_show_prints_labeled_sections() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "web",
+                "--cron",
+                "0 9 * * *",
+                "--timezone",
+                "UTC",
+                "--tag",
+                "daily",
+                "--tag",
+                "ops",
+                "--shell",
+                "printf ok",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let show = locron(&state).args(["show", "web"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&show.stdout);
+    for expected in [
+        "JOB\n  name: web\n",
+        "  id: ",
+        "  enabled: yes\n",
+        "  tags: ",
+        "  revision: 1\n",
+        "SCHEDULE\n  schedule: cron '0 9 * * *'\n  timezone: UTC\n",
+        "TARGET\n  target: shell printf ok\n",
+        "POLICIES\n  overlap: skip\n",
+        "  missed run: skip\n",
+        "  deadline: none\n",
+        "  retries: 0\n",
+        "  timeout: 1m\n",
+        "  concurrency: 1\n",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "show omitted {expected:?}:\n{stdout}"
+        );
+    }
+    assert!(stdout.contains("daily") && stdout.contains("ops"));
+}
+
+#[test]
+fn human_show_why_and_list_never_leak_configured_values() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "web",
+                "--every",
+                "1m",
+                "--env",
+                "TOKEN=show-secret",
+                "--header",
+                "X-Auth=show-header",
+                "--body",
+                "show-body",
+                "--http",
+                "POST",
+                "https://example.com/hook",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("show-secret").not())
+    .stdout(predicate::str::contains("show-header").not())
+    .stdout(predicate::str::contains("show-body").not());
+    for arguments in [
+        vec!["show", "web"],
+        vec!["why", "web"],
+        vec!["list"],
+        vec!["preview", "web"],
+    ] {
+        let output = locron(&state).args(&arguments).output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            !stdout.contains("show-secret"),
+            "{arguments:?} leaked the environment value:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("show-header"),
+            "{arguments:?} leaked a header value:\n{stdout}"
+        );
+        assert!(
+            !stdout.contains("show-body"),
+            "{arguments:?} leaked the body:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn human_preview_prints_the_schedule_line_then_occurrences() {
+    let state = tempfile::tempdir().unwrap();
+    let output = locron(&state)
+        .args(["preview", "--cron", "0 9 * * *", "--count", "2"])
+        .output()
+        .unwrap();
+    assert_cmd::assert::Assert::new(output).success();
+    let preview = locron(&state)
+        .args(["preview", "--cron", "0 9 * * *", "--count", "2"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&preview.stdout);
+    assert!(
+        stdout.starts_with("schedule: cron '0 9 * * *'\n"),
+        "preview must name the schedule first:\n{stdout}"
+    );
+    let occurrences: Vec<&str> = stdout.lines().skip(1).collect();
+    assert_eq!(occurrences.len(), 2, "expected two occurrences:\n{stdout}");
+    for occurrence in occurrences {
+        assert!(
+            occurrence.ends_with('Z') && occurrence.contains('T'),
+            "occurrence must be RFC 3339 UTC: {occurrence:?}"
+        );
+    }
+}
+
+#[test]
+fn human_why_job_prints_labeled_sections() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let why = locron(&state).args(["why", "backup"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&why.stdout);
+    for expected in [
+        "JOB\n  name: backup\n",
+        "  id: ",
+        "  enabled: yes\n",
+        "  revision: 1\n",
+        "SCHEDULE\n  schedule: every 1h\n",
+        "  cursor: ",
+        "  next occurrence: ",
+        "ELIGIBILITY\n  active runs: 0\n",
+        "  decision: eligible\n",
+        "  global concurrency: 16\n",
+        "POLICIES\n  overlap: skip\n",
+        "DAEMON\n  daemon running: no\n",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "why omitted {expected:?}:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn human_run_wait_streams_and_prints_the_terminal_outcome_line() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let mut daemon = start_daemon(&state);
+    let output = locron(&state)
+        .args(["run", "backup", "--wait"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "run --wait failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with("run queued: "),
+        "queued line missing:\n{stdout}"
+    );
+    assert!(
+        stdout
+            .lines()
+            .any(|line| line.starts_with("run finished: ") && line.ends_with(" (succeeded)")),
+        "terminal outcome line missing:\n{stdout}"
+    );
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+}
+
+#[test]
+fn human_why_run_prints_immutable_run_facts() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let mut daemon = start_daemon(&state);
+    let output = locron(&state)
+        .args(["run", "backup", "--wait"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let run_id = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("run finished: "))
+        .and_then(|line| line.split_whitespace().next())
+        .expect("terminal outcome line missing")
+        .to_owned();
+    let why = locron(&state)
+        .args(["why", "--run", &run_id])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&why.stdout);
+    for expected in [
+        "RUN\n  run id: ",
+        "  trigger: manual\n",
+        "  nominal time: none\n",
+        "  state: succeeded\n",
+        "  outcome: succeeded\n",
+        "ATTEMPTS\n  attempt 1: succeeded",
+        "EVENTS\n",
+        "TERMINAL REASON\n",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "why --run omitted {expected:?}:\n{stdout}"
+        );
+    }
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+}
+
+#[test]
+fn human_doctor_prints_one_level_line_per_check() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let doctor = locron(&state).args(["doctor"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&doctor.stdout);
+    for expected in [
+        "ok   state dir: ",
+        "ok   database: ",
+        "warn daemon: not running\n",
+        "ok   execution path: ",
+        "ok   process resolution: backup -> ",
+        "ok   integrity: database integrity verified\n",
+        "ok   foreign key violations: 0\n",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "doctor omitted {expected:?}:\n{stdout}"
+        );
+    }
+    for line in stdout.lines() {
+        assert!(
+            line.starts_with("ok   ") || line.starts_with("warn ") || line.starts_with("fail "),
+            "doctor line lacks a level prefix: {line:?}"
+        );
+    }
+}
+
+#[test]
+fn human_config_forms_print_key_value_and_action_lines() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "get", "global_concurrency"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("global_concurrency=16\n");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "set", "global_concurrency", "8"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("global_concurrency: configured\n");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "set", "global_concurrency", "16", "--dry-run"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("global_concurrency: would be configured (dry run; no changes made)\n");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "set", "environment.API_TOKEN", "secret-value"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("environment.API_TOKEN: configured (value redacted)\n");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "get", "environment.API_TOKEN"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("environment.API_TOKEN: configured (value redacted)\n");
+    // get-all prints one KEY=VALUE line per configured key with environment
+    // values redacted.
+    let all = locron(&state).args(["config", "get"]).output().unwrap();
+    let all = String::from_utf8_lossy(&all.stdout);
+    assert!(all.contains("global_concurrency=8\n"), "{all}");
+    assert!(!all.contains("secret-value"), "value leaked: {all}");
+    assert!(all.contains("environment.API_TOKEN=<redacted>\n"), "{all}");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "set", "environment.LATER", "x", "--dry-run"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("environment.LATER: configured (value redacted) (dry run; no changes made)\n");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "get", "environment.LATER"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("environment.LATER: not configured\n");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "unset", "environment.API_TOKEN", "--dry-run"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("environment.API_TOKEN: unset (dry run; no changes made)\n");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["config", "unset", "environment.API_TOKEN"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("environment.API_TOKEN: unset\n");
+    // The JSON surface keeps the stable envelope.
+    let json = locron(&state)
+        .args(["--json", "config", "get", "global_concurrency"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(json["data"]["value"], 8);
+}
+
+#[test]
+fn human_import_prints_counts_then_action_lines() {
+    let source = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&source)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let export = locron(&source).args(["export"]).output().unwrap();
+    let path = source.path().join("backup.json");
+    std::fs::write(&path, &export.stdout).unwrap();
+
+    let destination = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&path)
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "created 1, updated 0, unchanged 0\n",
+    ))
+    .stdout(predicate::str::contains("created: backup ("));
+    assert_cmd::assert::Assert::new(
+        locron(&destination)
+            .arg("import")
+            .arg(&path)
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "created 0, updated 0, unchanged 1\n",
+    ))
+    .stdout(predicate::str::contains("unchanged: backup ("));
+
+    let dry = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&dry)
+            .arg("import")
+            .arg(&path)
+            .arg("--dry-run")
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "dry run: would create 1, update 0, unchanged 0; no changes made\n",
+    ))
+    .stdout(predicate::str::contains("created: backup ("));
+    assert!(!dry.path().join("state.db").exists());
+}
+
+#[test]
+fn human_prune_prints_the_pruned_counts() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(locron(&state).args(["prune"]).output().unwrap())
+        .success()
+        .stdout("pruned: 0 runs, 0 outputs (0 bytes)\n");
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["prune", "--dry-run"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("dry run: would prune 0 runs, 0 outputs (0 bytes)\n");
+    let empty = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&empty)
+            .args(["prune", "--dry-run"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("dry run: would prune 0 runs, 0 outputs (0 bytes)\n");
+    assert!(!empty.path().join("state.db").exists());
+}
+
+#[test]
+fn human_forms_leave_the_json_envelope_untouched() {
+    let state = tempfile::tempdir().unwrap();
+    let json = locron(&state)
+        .args([
+            "--json",
+            "add",
+            "backup",
+            "--every",
+            "1h",
+            "--",
+            "/usr/bin/true",
+        ])
+        .output()
+        .unwrap();
+    let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(envelope["schema"], "locron.cli/v1");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "add");
+    assert_eq!(envelope["data"]["name"], "backup");
+    let job_id = envelope["data"]["id"].as_str().unwrap().to_owned();
+    let json = locron(&state)
+        .args(["--json", "show", "backup"])
+        .output()
+        .unwrap();
+    let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(envelope["command"], "show");
+    assert_eq!(envelope["data"]["id"], job_id);
+    let json = locron(&state)
+        .args(["--json", "run", "backup", "--dry-run"])
+        .output()
+        .unwrap();
+    let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(envelope["command"], "run");
+    assert_eq!(envelope["data"]["decision"], "eligible");
+    let json = locron(&state)
+        .args(["--json", "preview", "--cron", "0 9 * * *", "--count", "1"])
+        .output()
+        .unwrap();
+    let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(envelope["command"], "preview");
+    assert_eq!(envelope["data"]["occurrences"].as_array().unwrap().len(), 1);
+    let json = locron(&state)
+        .args(["--json", "why", "backup"])
+        .output()
+        .unwrap();
+    let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(envelope["command"], "why");
+    assert!(envelope["data"]["job"]["id"].is_string());
+    assert!(envelope["data"]["next_occurrence"].is_string());
+    let json = locron(&state).args(["--json", "doctor"]).output().unwrap();
+    let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(envelope["command"], "doctor");
+    assert!(envelope["data"]["checks"].is_array());
+    let json = locron(&state).args(["--json", "history"]).output().unwrap();
+    let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(envelope["command"], "history");
+    assert!(envelope["data"].is_array());
+}
+
+#[test]
 fn duplicate_add_and_rename_are_stable_durable_conflicts() {
     let state = tempfile::tempdir().unwrap();
     for name in ["alpha", "beta"] {
@@ -2060,7 +2836,9 @@ fn export_jobs_round_trip_import_reproduces_exactly_the_selected_jobs() {
             .unwrap(),
     )
     .success()
-    .stdout(predicate::str::contains("\"created\": 2"));
+    .stdout(predicate::str::contains(
+        "created 2, updated 0, unchanged 0",
+    ));
     for name in ["alpha", "beta"] {
         let source_show = locron(&source)
             .args(["--json", "show", name])
@@ -2411,7 +3189,9 @@ fn import_url_matches_file_import_byte_for_byte() {
             .unwrap(),
     )
     .success()
-    .stdout(predicate::str::contains("\"created\": 1"));
+    .stdout(predicate::str::contains(
+        "created 1, updated 0, unchanged 0",
+    ));
 
     let from_file = tempfile::tempdir().unwrap();
     let path = source.path().join("doc.json");
@@ -2424,7 +3204,9 @@ fn import_url_matches_file_import_byte_for_byte() {
             .unwrap(),
     )
     .success()
-    .stdout(predicate::str::contains("\"created\": 1"));
+    .stdout(predicate::str::contains(
+        "created 1, updated 0, unchanged 0",
+    ));
 
     // Both destinations hold the identical job definition; only the newly
     // allocated destination identity may differ.
@@ -2610,7 +3392,9 @@ fn import_url_redirect_chain_succeeds_and_redirect_loop_fails() {
             .unwrap(),
     )
     .success()
-    .stdout(predicate::str::contains("\"created\": 1"));
+    .stdout(predicate::str::contains(
+        "created 1, updated 0, unchanged 0",
+    ));
     assert_eq!(
         fixture.requests(),
         ["/start.json", "/mid.json", "/end.json"],

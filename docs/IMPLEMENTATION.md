@@ -341,6 +341,24 @@ Implementation deviations from the plan above, all confined to `locron-cli`:
 
 `locron daemon run` loads configuration, constructs `locron-store` behind core ports, constructs `locron-engine`, and enters its daemon runtime. Signal loops, locks, reconciliation, runners, maintenance, and graceful shutdown remain inside the engine.
 
+## Human rendering implementation (2026-08-24)
+
+Implements the frozen human-output-contract amendment (issue #4). Each command's `Format::Human` branch calls a dedicated renderer instead of the shared pretty-JSON fallback; the `Format::Json` path and the `render` envelope are untouched, so machine output is byte-identical. Renderers consume only the redacted records the JSON path already uses, so redaction parity holds by construction.
+
+Shared helpers live beside the existing list renderer: column alignment and human durations reuse `render_list_table` and `human_duration`; schedule and target summaries reuse `list_schedule_summary` and `list_target_summary`; run-state and trigger names render from the existing state vocabulary. No new dependency is added — every form is hand-rolled `println!` composition. `doctor` keeps its existing check evaluation and only changes presentation. `why` reuses its explanation facts and flattens them into labeled sections. `logs`, `run --wait` streams, `export`, `service`, `self-update`, `version`, and `mcp` are already conformant and are not changed.
+
+Contract tests pin every command's human form for empty and populated states, dry-run wording, table-only ID abbreviation, and redaction, mirroring the existing help-surface walk so a new command cannot omit its human form silently. The README demo screencast (`assets/screencast.sh`) dropped its `jq` pipes as part of this change; the recording itself is regenerated separately.
+
+Implementation deviations, all confined to `locron-cli` and confined to human branches:
+
+- The plan text above claims `run --wait` streams are "already conformant and are not changed". In fact the human wait stream is part of this work: after the queued line it now prints the terminal outcome line `run finished: {id} ({state})`, per the `docs/CLI.md` contract. The streamed progress lines themselves are unchanged.
+- `why --run` also prints an EVENTS section (`  {RFC3339} {kind}` per durable event) beyond the contract's RUN/ATTEMPTS/terminal-reason sections. The events are already loaded to produce the terminal-reason text, so this costs no extra record access and the contract does not forbid it.
+- The `why --run` RUN section omits a job-name line: the job is soft-deleted in the general case, so a name would require a best-effort extra lookup with an ambiguous fallback. The run id, trigger, and timestamps identify the run without it.
+- The `history` table has no run-id column — the contract's "run ID may abbreviate in table only" permission is unused. When the job has been soft-deleted, the JOB column falls back to the abbreviated job id (first 8 hex characters) instead of the missing name.
+- Dry-run wording choices: `{key}: would be configured (dry run; no changes made)` for `config set`, `dry run: would create N, update N, unchanged N; no changes made` for `import`, `dry run: would prune {runs} runs, {outputs} outputs ({bytes} bytes)` for `prune`, and `{decision}: {name}` plus `dry run: no run created` for `run --dry-run`.
+- `prune` reports "N runs" as the count of distinct run ids: prune rows are per-attempt, and a run with several attempts is counted once.
+- `import` no-op action lines print the import plan's pre-existing job name and id for the no-op entry (a no-op plan entry does not carry a resolved record id).
+
 ## Edge cases to handle explicitly
 
 - Two daemon commands start against one state directory.

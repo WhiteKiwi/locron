@@ -8,6 +8,7 @@ Amended 2026-08-23: version reporting honors the machine-readable output contrac
 Amended 2026-08-23: installation channels and self-update added; package-manager publication removed from out-of-scope items.
 Amended 2026-08-23: daemon service installation and automatic startup added; operating-system service installation removed from out-of-scope items.
 Amended 2026-08-24: export job selection and URL import added.
+Amended 2026-08-24: human output contract added — human mode renders readable per-command forms instead of machine JSON (issue #4).
 
 ## Goal
 
@@ -275,6 +276,19 @@ A dedicated explanation command reports why a job is or is not eligible, its nex
 Verbose output adds user-facing decision context without changing command behavior. Debug output emits developer-oriented operational traces to standard error. Neither mode may reveal configured environment values, sensitive headers, body content, or other redacted values. Machine-readable standard output remains a single valid result independent of diagnostic verbosity.
 
 The program reports its own version on request through the standard `-V` and `--version` flags, and version output honors the machine-readable output contract. Version reporting requires no state directory or daemon and succeeds without them.
+
+## Human Output Contract
+
+Machine-readable output is the compatibility surface; human output renders the same facts for reading in a terminal. With the human format selected, every command renders one of the following forms, never a machine serialization:
+
+- **Table** — `list` (one row per live job) and `history` (one row per run) render an aligned table with a header line and one left-aligned row per record in the command's documented order. The header prints even when no record exists. Identifiers may be abbreviated inside the table only; copyable output always carries the full identity.
+- **Confirmation lines** — commands that change state (`add`, `update`, `enable`, `disable`, `remove`, `run`, `cancel`, `config set`, `config unset`, `import`, `prune`) print one or more short lines naming the affected identity, the action taken, and the resulting facts that matter, such as the new run identity or the affected counts. A dry run states explicitly that nothing changed.
+- **Report** — `show`, `why`, and `doctor` render labeled sections: one field per line, grouped under short section headers, so an explanation reads top to bottom. Unknown facts are stated as unknown rather than inferred.
+- **Value list** — `preview` prints a context line naming the schedule followed by one occurrence per line.
+- **Bare document** — `export` keeps the existing bare export document, suitable for redirection.
+- **Streams** — `logs`, `run --wait`, and the daemon keep their streamed output forms.
+
+All human forms honor the existing redaction rules: no configured environment value, sensitive header, body content, or other redacted value appears in any rendering, at any verbosity. Human output for these commands never presents escaped JSON strings, nested objects, or arrays — those are machine forms. Verbose and debug context go to standard error and never change the facts standard output carries.
 
 ## Export and Import Semantics
 

@@ -27,17 +27,8 @@ LOCRON_BIN="${LOCRON_BIN:-locron}"
 STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/locron-demo.XXXXXX")"
 DAEMON_PID=""
 
-# The CLI's `--format human` mode currently emits machine JSON for most
-# commands, so the demo filters it down to the readable facts. If jq is
-# missing, fall back to the raw output rather than failing the recording.
-JQ_FILTER="${JQ_FILTER:-}"
-if [ -z "${JQ_FILTER}" ]; then
-    if command -v jq >/dev/null 2>&1; then
-        JQ_FILTER="jq -r"
-    else
-        JQ_FILTER="cat"
-    fi
-fi
+# The CLI's human output is readable by default (issue #4), so the demo runs
+# the commands as-is. `--format json` remains available for machine output.
 
 cleanup() {
     [ -n "${DAEMON_PID}" ] && kill "${DAEMON_PID}" 2>/dev/null || true
@@ -74,16 +65,16 @@ clear
 DAEMON_PID=$!
 sleep 1
 
-enter "locron --format json add fetch-repo --every 15m -- git -C ~/projects/app fetch | $JQ_FILTER '\"added \\(.data.name)\"'"
-enter "locron --format json add nightly-backup --cron '0 3 * * *' --timezone Asia/Seoul --shell './scripts/backup.sh' | $JQ_FILTER '\"added \\(.data.name)\"'"
-enter "locron --format json add health-check --every 5m --http GET https://example.com/health | $JQ_FILTER '\"added \\(.data.name)\"'"
-enter "locron --format json add demo-job --every 1h -- /bin/echo demo done | $JQ_FILTER '\"added \\(.data.name)\"'"
-enter "locron list | $JQ_FILTER '.[] | \"\\(.name)  enabled=\\(.enabled)\"'"
-enter "locron preview nightly-backup --count 3 | $JQ_FILTER '.occurrences[]'"
-enter "locron --format json run demo-job | $JQ_FILTER '\"\\(.data.state)\"'"
+enter "locron add fetch-repo --every 15m -- git -C ~/projects/app fetch"
+enter "locron add nightly-backup --cron '0 3 * * *' --timezone Asia/Seoul --shell './scripts/backup.sh'"
+enter "locron add health-check --every 5m --http GET https://example.com/health"
+enter "locron add demo-job --every 1h -- /bin/echo demo done"
+enter "locron list"
+enter "locron preview nightly-backup --count 3"
+enter "locron run demo-job"
 sleep 2
-enter "locron history demo-job | $JQ_FILTER '.[] | \"\\(.state)\"'"
-enter "locron why nightly-backup | $JQ_FILTER '.explanation'"
-enter "locron doctor | $JQ_FILTER '.checks[]'"
+enter "locron history demo-job"
+enter "locron why nightly-backup"
+enter "locron doctor"
 
 sleep 2

@@ -825,6 +825,100 @@ steps (clippy compile work halved, no arch-gated code exists to justify the arch
   **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
   -D warnings` clean; `cargo test --workspace` green across all binaries, 0 failed/panicked.
 
+## Human output backlog (2026-08-24)
+
+Authorized by the frozen 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract, issue #4).
+Planned in `docs/IMPLEMENTATION.md` "Human rendering implementation"; the rendering contract is in
+`docs/CLI.md` "Human rendering".
+
+- [x] Amend planning documents before code: SPEC amendment, CLI.md contract, IMPLEMENTATION
+  section, this checklist.
+  **Verify:** `rg -n "Human Output Contract|Human rendering|Human rendering implementation"
+  docs/SPEC.md docs/CLI.md docs/IMPLEMENTATION.md` returns all three, and no planning document
+  marks an unresolved decision in the new content.
+  **Evidence:** `rg` returns `docs/SPEC.md` line 280 (amendment section + status note),
+  `docs/CLI.md` line 277 (per-command contract), and `docs/IMPLEMENTATION.md` line 344
+  (implementation approach); no unresolved marker in the new content.
+- [x] Implement the table and confirmation-line renderers: `history` table, `add`/`update`,
+  `enable`/`disable`, `remove`, `run` (queued/wait/dry-run), `cancel`, `config get|set|unset`,
+  `import`, `prune` — each human branch replaced by its documented form; the JSON path stays
+  byte-identical.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy -p locron-cli --all-targets -- -D
+  warnings`, and `cargo test -p locron-cli` pass; manual scratch-state runs show the documented
+  forms for each command, and each `--json` output is unchanged.
+  **Evidence:** `cargo fmt --all --check` is clean; `cargo clippy -p locron-cli --all-targets --
+  -D warnings` is clean; `cargo test -p locron-cli` passes 198 tests (67 unit in main.rs, 65
+  contract in cli.rs). Manual scratch-state runs (`target/debug/locron --state-dir /tmp/...`)
+  show the documented forms: `job added: NAME (UUID)` plus `schedule:`/`target:` lines;
+  `job updated: NAME (UUID, revision 2)` plus summary lines; `job enabled:`/`job disabled:`;
+  `job removed:`; `run queued: UUID (job NAME)` (with `warning: daemon is not running; run
+  remains durably queued` on stderr when no daemon) then `run finished: UUID (STATE)` on
+  `--wait`; dry-run decisions (`run would skip (overlap policy): NAME` etc.) followed by
+  `dry run: no run created`; `cancellation requested: UUID (cancelled before execution)` and a
+  second cancel returning exit 3 `durable conflict`; `global_concurrency=16` for `config get`;
+  `KEY: configured` / `KEY: would be configured (dry run; no changes made)` / `KEY: unset` for
+  set/unset; `created N, updated N, unchanged N` plus per-job action lines for import; `pruned:
+  N runs, N outputs (N bytes)` (and `dry run: would prune ...`). Every command re-run with
+  `--format json` produced byte-identical machine output.
+- [x] Implement the report and value-list renderers: `show` sections, `preview` occurrence list,
+  `why` job and run modes, `doctor` ok/warn/fail lines.
+  **Verify:** the same battery plus manual checks of `why --run` on a terminal run and a
+  `fail`-marked doctor check.
+  **Evidence:** same clean battery as the previous step. Manual `why --run` against a terminal
+  run made through a real daemon prints RUN (`run id`, `trigger: manual`, `nominal time: none`,
+  `requested`, `state: succeeded`, `started`, `finished`, `duration`, `outcome`), ATTEMPTS
+  (`attempt 1: succeeded (Nus)`), EVENTS (`{RFC3339} manual_enqueued`), and TERMINAL REASON
+  (`reason: process exited successfully`). A `fail`-marked doctor check was produced manually by
+  registering a job with a nonexistent executable: `fail process resolution: broken (executable
+  not found: /nonexistent/bin/nope)`; the same scratch run also showed `warn daemon: not
+  running` and `warn wake socket: missing` variants. `show` renders JOB/SCHEDULE/TARGET/
+  POLICIES sections, `preview` prints `schedule: ...` then one RFC 3339 occurrence per line,
+  and `doctor` renders every check with an `ok   `/`warn `/`fail ` prefix.
+- [x] Add contract tests in `crates/locron-cli/tests/cli.rs` for every command's human form:
+  empty and populated states, dry-run wording, redaction (no configured value in any human
+  output), table-only ID abbreviation, and unchanged JSON assertions.
+  **Verify:** the new tests pass, and the existing help-surface walk
+  (`complete_command_tree_has_consistent_help_surface`) passes unchanged.
+  **Evidence:** 15 new contract tests pass (cli.rs now 65, up from 50):
+  `human_add_update_enable_disable_remove_print_outcome_lines`,
+  `human_history_prints_the_aligned_table_with_header_always`,
+  `human_run_prints_the_dry_run_decision_and_queued_lines`,
+  `human_cancel_prints_the_resolution_line`, `human_show_prints_labeled_sections`,
+  `human_show_why_and_list_never_leak_configured_values`,
+  `human_preview_prints_the_schedule_line_then_occurrences`,
+  `human_why_job_prints_labeled_sections`, `human_run_wait_streams_and_prints_the_terminal_outcome_line`,
+  `human_why_run_prints_immutable_run_facts`, `human_doctor_prints_one_level_line_per_check`,
+  `human_config_forms_print_key_value_and_action_lines`,
+  `human_import_prints_counts_then_action_lines`, `human_prune_prints_the_pruned_counts`, and
+  `human_forms_leave_the_json_envelope_untouched`. The help-surface walk
+  (`complete_command_tree_has_consistent_help_surface`) passes unchanged. Redaction: the
+  never-leak contract tests assert no configured value in any human output (add/show/why/list/
+  preview/doctor), the JSON-envelope test asserts schema/command/data stability, and manual
+  re-checks of `show`, `why`, `list`, and `--json show` on a state with configured environment
+  values reported 0 leaks.
+- [x] Check `README.md`, `docs/OPERATOR.md`, and `assets/screencast.sh` for JSON-wall sample
+  output or `jq` pipes the human forms make obsolete; update the docs and note the screencast
+  regeneration.
+  **Verify:** `rg` finds no stale sample, and the screencast note is recorded.
+  **Evidence:** `rg -n "locron (add|list|preview|why|doctor|history|show)" README.md
+  docs/OPERATOR.md` returns only command listings with inline comments — no JSON-wall output
+  samples; `assets/screencast.sh` no longer contains `jq` (all ten demo commands now run in
+  plain human mode; the now-obsolete `--format json ... | jq` pipelines and the JQ_FILTER
+  fallback machinery were removed, and `bash -n` passes). The screencast recording
+  (`assets/screencast.svg`) is not regenerated in this session — regeneration requires
+  svg-term-cli/Node and belongs with the release publication.
+- [x] Run workspace verification, then close issue #4 with the fixing commit reference.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  and `cargo test --workspace` pass; `gh issue view 4` shows CLOSED with a reference to the
+  fixing commit.
+  **Evidence:** `cargo fmt --all --check` is clean; `cargo clippy --workspace --all-targets --
+  -D warnings` is clean; `cargo test --workspace` passes 330 tests across 20 suites with 0
+  failures (locron-cli: 67 unit + 65 contract + 66 across its other 12 test suites; the +15
+  contract tests over the export backlog's 315 total match this work). Closing issue #4 with
+  the fixing commit reference is the parent session's publication step (this development
+  sub-session does not run git/gh commands); the closing commit is the one that carries these
+  changes.
+
 ## Usage snapshot smoke relocation backlog (2026-08-24)
 
 No product-behavior change (CI placement only), so the frozen `docs/SPEC.md` is not amended.
