@@ -180,11 +180,12 @@ pub(crate) async fn update() -> Result<UpdateOutcome> {
     extract_archive(&tarball, temp_dir.path())?;
     let binary = locate_binary(temp_dir.path())?;
     let binary = fs::read(binary).context("cannot read the extracted binary")?;
-    replace_binary(&binary)?;
+    let executable = canonical_executable()?;
+    replace_binary(&binary, &executable)?;
 
     // The update is complete; registering the new binary as a login service is
     // best-effort and must never turn a successful update into a failure.
-    let warnings = register_service();
+    let warnings = register_service(&executable);
 
     Ok(UpdateOutcome {
         current_version: current_version.to_owned(),
@@ -195,16 +196,13 @@ pub(crate) async fn update() -> Result<UpdateOutcome> {
 }
 
 /// Register the freshly replaced binary as a login service by running
-/// `service install` on the canonical executable path, which re-reads its own
-/// location and refreshes an existing registration or performs a first
+/// `service install` on the pre-captured executable path, which re-reads its
+/// own location and refreshes an existing registration or performs a first
 /// registration. The child inherits this process's environment; its output is
 /// captured so the update envelope stays clean. Failures are returned as
 /// warnings, never as errors.
-fn register_service() -> Vec<String> {
-    let Ok(executable) = canonical_executable() else {
-        return Vec::new();
-    };
-    let output = match Command::new(&executable)
+fn register_service(executable: &Path) -> Vec<String> {
+    let output = match Command::new(executable)
         .args(["service", "install"])
         .output()
     {
@@ -382,12 +380,11 @@ fn locate_binary(root: &Path) -> Result<PathBuf> {
 /// Write the new binary to a temp file next to the running executable and
 /// atomically rename it over the executable. The running process keeps its old
 /// inode; the next invocation runs the new binary.
-fn replace_binary(binary: &[u8]) -> Result<()> {
-    let executable = canonical_executable()?;
+fn replace_binary(binary: &[u8], executable: &Path) -> Result<()> {
     let directory = executable
         .parent()
         .ok_or_else(|| anyhow!("cannot determine the executable directory"))?;
-    let mode = fs::metadata(&executable)
+    let mode = fs::metadata(executable)
         .map_err(|error| SelfUpdateError::Io(format!("cannot read the current binary: {error}")))?
         .permissions();
     let temp = create_temp_in(directory)?;
@@ -414,7 +411,7 @@ fn replace_binary(binary: &[u8]) -> Result<()> {
                 "cannot set the replacement binary permissions: {error}"
             ))
         })?;
-        fs::rename(&temp, &executable).map_err(|error| {
+        fs::rename(&temp, executable).map_err(|error| {
             SelfUpdateError::Io(format!("cannot replace {}: {error}", executable.display()))
         })?;
         Ok(())
