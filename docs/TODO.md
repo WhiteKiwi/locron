@@ -519,11 +519,25 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   introduced the `map(<f>).unwrap_or(false)` lint on pre-existing code
   (`crates/locron-cli/src/service.rs`, `crates/locron-cli/tests/service_backends.rs`): rewritten as
   the equivalent `is_ok_and(...)`; behavior unchanged, tests green on both toolchains.
-- [ ] Move the redaction boundary (`redacted_job`, `redact_definition`,
+- [x] Move the redaction boundary (`redacted_job`, `redact_definition`,
   `redacted_observable_run`, `redacted_run`, `redacted_settings_value`) from
   `crates/locron-cli/src/main.rs` to `locron-core` with no output change.
   **Verify:** the existing CLI contract and redaction tests pass unchanged;
   `cargo clippy --workspace --all-targets -- -D warnings` stays clean.
+  **Evidence:** `locron-core` gained `src/redact.rs` (the shared redaction boundary over serialized
+  documents, as `docs/ARCHITECTURE.md` step 1 assigned to the core): `redact_definition`,
+  `terminal_run_state`, `redacted_job_document`, `redacted_run_document`,
+  `redacted_observable_run_document` (enrichment takes the run and attempts documents; the store
+  fetch stays in the CLI adapter), and `redacted_settings_document`. The five CLI entry points
+  (`redacted_job`, `redacted_run`, `redacted_observable_run`, `redacted_settings_value` and the
+  re-exported `redact_definition`/`terminal_run_state`) remain in `crates/locron-cli/src/main.rs`
+  as thin serialization adapters, so all call sites in `main.rs` and `mcp.rs` are unchanged; the
+  move is byte-for-byte behavior-preserving (verified by the unchanged CLI contract, redaction,
+  export, and MCP tests). The core module ships its own unit tests covering the environment/header/
+  body redaction shapes, terminal-state recognition, the `definition_json`/`snapshot_json` string
+  fields, observable-run enrichment, and settings markers. Full workspace: `cargo fmt --all
+  --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`
+  all pass on Rust 1.94.0 and latest stable.
 - [ ] Implement the middleware stack and token file: loopback-only bind with non-loopback refusal,
   Host allowlist (`localhost`/`127.0.0.1`/`[::1]`, port ignored), Origin check on unsafe methods,
   token acceptance (`Authorization: token` header plus entry-page paste, never a URL), session and

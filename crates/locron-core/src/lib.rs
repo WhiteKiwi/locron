@@ -11,6 +11,7 @@ pub mod id;
 pub mod lifecycle;
 pub mod policy;
 pub mod ports;
+pub mod redact;
 pub mod schedule;
 pub mod target;
 pub mod time;

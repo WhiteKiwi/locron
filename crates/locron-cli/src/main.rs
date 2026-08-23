@@ -2053,22 +2053,9 @@ fn render_config_get(format: Format, key: Option<&str>, settings: &SettingsRecor
 }
 
 fn redacted_settings_value(settings: &SettingsRecord) -> Result<Value> {
-    let mut value = serde_json::to_value(settings)?;
-    let environment = settings
-        .environment
-        .keys()
-        .map(|name| {
-            (
-                name.clone(),
-                json!({"configured":true,"value_redacted":true}),
-            )
-        })
-        .collect::<serde_json::Map<_, _>>();
-    value
-        .as_object_mut()
-        .expect("settings serialize as an object")
-        .insert("environment".into(), Value::Object(environment));
-    Ok(value)
+    Ok(locron_core::redact::redacted_settings_document(
+        serde_json::to_value(settings)?,
+    ))
 }
 
 fn render_environment_change(
@@ -3622,104 +3609,33 @@ struct Envelope<'a, T> {
     warnings: &'a [&'a str],
 }
 
+/// Redacts a job record through the shared core boundary.
 pub(crate) fn redacted_job(job: JobRecord) -> Result<Value> {
-    let mut value = serde_json::to_value(job)?;
-    if let Some(definition) = value.get_mut("definition_json") {
-        let source = definition.as_str().unwrap_or("{}");
-        *definition = Value::String(serde_json::to_string(&redact_definition(
-            serde_json::from_str(source)?,
-        ))?);
-    }
-    Ok(value)
+    Ok(locron_core::redact::redacted_job_document(
+        serde_json::to_value(job)?,
+    )?)
 }
 
+/// Redacts a run record through the shared core boundary.
 pub(crate) fn redacted_run(run: RunRecord) -> Result<Value> {
-    let mut value = serde_json::to_value(run)?;
-    if let Some(snapshot) = value.get_mut("snapshot_json") {
-        let source = snapshot.as_str().unwrap_or("{}");
-        *snapshot = Value::String(serde_json::to_string(&redact_definition(
-            serde_json::from_str(source)?,
-        ))?);
-    }
-    Ok(value)
+    Ok(locron_core::redact::redacted_run_document(
+        serde_json::to_value(run)?,
+    )?)
 }
 
+/// Redacts and enriches a run record through the shared core boundary.
+///
+/// Attempts are fetched through the store here (the core boundary takes documents only) and passed
+/// in serialized.
 pub(crate) fn redacted_observable_run(store: &Store, run: RunRecord) -> Result<Value> {
-    let source = run.trigger.clone();
-    let finished_at_us = run.finished_at_us;
-    let outcome = terminal_run_state(&run.state).then(|| run.state.clone());
     let attempts = serde_json::to_value(store.attempts_for_run(&run.id)?)?;
-    let actual_started_at_us = attempts.as_array().and_then(|attempts| {
-        attempts
-            .iter()
-            .filter_map(|attempt| attempt["running_at_us"].as_i64())
-            .min()
-    });
-    let duration_us = actual_started_at_us
-        .zip(finished_at_us)
-        .and_then(|(started, finished)| finished.checked_sub(started))
-        .filter(|duration| *duration >= 0);
-    let mut value = redacted_run(run)?;
-    let object = value
-        .as_object_mut()
-        .expect("run records serialize as objects");
-    object.insert("source".into(), json!(source));
-    object.insert("outcome".into(), json!(outcome));
-    object.insert("actual_started_at_us".into(), json!(actual_started_at_us));
-    object.insert("duration_us".into(), json!(duration_us));
-    object.insert("attempts".into(), attempts);
-    Ok(value)
+    Ok(locron_core::redact::redacted_observable_run_document(
+        serde_json::to_value(run)?,
+        attempts,
+    )?)
 }
 
-pub(crate) fn terminal_run_state(state: &str) -> bool {
-    matches!(
-        state,
-        "succeeded"
-            | "failed"
-            | "timed_out"
-            | "cancelled"
-            | "skipped_overlap"
-            | "skipped_concurrency"
-            | "interrupted_unknown"
-    )
-}
-
-pub(crate) fn redact_definition(mut definition: Value) -> Value {
-    if let Some(nested) = definition.get_mut("definition") {
-        *nested = redact_definition(nested.take());
-        return definition;
-    }
-    if let Some(values) = definition
-        .get_mut("environment")
-        .and_then(|environment| environment.get_mut("values"))
-        .and_then(Value::as_object_mut)
-    {
-        for value in values.values_mut() {
-            *value = Value::String("<redacted>".into());
-        }
-    }
-    if let Some(headers) = definition
-        .get_mut("target")
-        .and_then(|target| target.get_mut("headers"))
-        .and_then(Value::as_object_mut)
-    {
-        for value in headers.values_mut() {
-            if value.get("source").and_then(Value::as_str) == Some("inline")
-                && let Some(inline) = value.get_mut("value")
-            {
-                *inline = Value::String("<redacted>".into());
-            }
-        }
-    }
-    if let Some(body) = definition
-        .get_mut("target")
-        .and_then(|target| target.get_mut("body"))
-        && !body.is_null()
-    {
-        *body = Value::String("<redacted>".into());
-    }
-    definition
-}
+pub(crate) use locron_core::redact::{redact_definition, terminal_run_state};
 
 fn render(format: Format, command: &str, data: Value, warnings: &[&str]) {
     match format {
