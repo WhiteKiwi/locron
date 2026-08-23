@@ -1,0 +1,73 @@
+# cargo-deny configuration — https://embarkstudios.github.io/cargo-deny/
+#
+# Checked by .github/workflows/audit.yml: on a daily schedule, and on any pull
+# request that touches a manifest, the lockfile, or this file.
+#
+# Run locally with:
+#   cargo install cargo-deny --locked
+#   cargo deny check
+
+[graph]
+# Only the platforms locron actually ships. Advisories and license checks for
+# Windows-only or wasm-only dependency branches are noise for this project.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+all-features = true
+
+[advisories]
+version = 2
+# Deny everything by default. Add an entry here only with a comment explaining
+# why the advisory does not apply to locron, and remove it once a fix is out.
+ignore = []
+
+[licenses]
+version = 2
+# locron is MIT OR Apache-2.0. Only permissive licenses that are compatible with
+# redistributing a static binary are allowed. A copyleft dependency should be a
+# deliberate decision, not a silent transitive addition.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.93
+# The allow-list is intentionally broader than what the current graph uses, so a
+# routine dependency bump does not fail the audit over a permissive license that
+# was simply not present before. Do not warn about the unused entries.
+unused-allowed-license = "allow"
+
+[bans]
+multiple-versions = "warn"
+# The workspace crates depend on each other by path with no version requirement.
+# cargo-deny reports that as a wildcard, and its `allow-wildcard-paths` escape
+# hatch only applies to crates marked `publish = false`. These crates are not
+# published to crates.io today but are not marked as unpublishable either, so
+# the check would only ever produce false positives here.
+#
+# To re-enable it: add `publish = false` to every workspace crate, then set
+# `wildcards = "deny"` with `allow-wildcard-paths = true`. External wildcard
+# requirements are not a live risk in the meantime — every third-party version
+# is pinned centrally in `[workspace.dependencies]`.
+wildcards = "allow"
+# Nothing is banned outright yet. Add entries here when a dependency is
+# explicitly unwanted, for example a duplicate TLS or async runtime stack.
+deny = []
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

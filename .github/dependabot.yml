@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+    groups:
+      # One pull request for routine patch/minor bumps keeps review cost flat.
+      # Major bumps stay separate so each gets its own read.
+      cargo-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        update-types:
+          - minor
+          - patch

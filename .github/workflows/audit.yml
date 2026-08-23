@@ -1,0 +1,54 @@
+name: Audit
+
+# Dependency security and license auditing.
+#
+# This is deliberately separate from ci.yml. A newly published RUSTSEC advisory
+# is not a defect in an unrelated pull request, so it must not turn that pull
+# request red. Instead the audit runs on a schedule, and on changes that can
+# actually affect the dependency graph.
+
+on:
+  schedule:
+    # 06:17 UTC daily. Off the hour so it does not queue with every other
+    # project scheduled at :00.
+    - cron: "17 6 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - ".github/workflows/audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    name: cargo-deny / ${{ matrix.check }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Split so a license or duplicate-version finding is distinguishable
+        # from a security advisory at a glance in the checks list.
+        check:
+          - advisories
+          - bans licenses sources
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: Record versions
+        run: cargo deny --version
+      - run: cargo deny --all-features check ${{ matrix.check }}
