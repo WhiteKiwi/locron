@@ -16,6 +16,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 
 use assert_cmd::cargo::cargo_bin;
