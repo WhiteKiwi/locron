@@ -638,10 +638,30 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   on Rust 1.94.0 and latest stable (23 test binaries — the contract suite is the new one — zero
   failures; the stable clippy leg again required its newer `map(<f>).unwrap_or(<a>)` lint rewrite
   in `transfer.rs`, done as `map_or`/`is_ok_and` with unchanged behavior).
-- [ ] Implement the SSE run stream (`GET /api/v1/runs/{id}/stream`) over the existing framed-output
+- [x] Implement the SSE run stream (`GET /api/v1/runs/{id}/stream`) over the existing framed-output
   reader with `frame`/`state`/`end` JSON events, session-cookie-only authentication, and keepalive.
   **Verify:** SSE tests receive ordered `frame`/`state` events for a live fixture run and exactly
   one terminal `end` event at finalization; disconnecting the stream never cancels the run.
+  **Evidence:** four contract tests added to `crates/locron-server/tests/contract.rs`
+  (`sse_stream_live_run_events`, `sse_stream_reconnect_idempotent`,
+  `sse_stream_rejects_unknown_run`, `sse_stream_disconnect_never_cancels`), all passing, contract
+  suite now 17/17. The live-run test authenticates through the session cookie alone (entry-page
+  token paste, `locron_session` cookie — EventSource cannot send an Authorization header),
+  asserts `text/event-stream`, and drives a real fixture run through the store's public
+  `begin_lifetime`/`admit`/`mark_attempt_running`/`complete_attempt` APIs: ordered `run`
+  transitions (queued, starting, running, succeeded), `attempt` transitions (1 starting, 1
+  running, 1 succeeded), `output` events `{channel, seq, elapsed_us, data_b64}` for the partial
+  file while live (stdout seq 0 / stderr seq 1, base64 payloads), exactly one `termination`
+  event as the last event, and the server closing the connection right after it. Reconnect on a
+  terminal run re-sends the same catch-up (`run`/`output`/`termination`) identically on two
+  consecutive connections; invalid UUID → 400 `invalid_request`, unknown run → 404 `not_found`
+  with the raw run reference; dropping the connection mid-stream leaves the run durably queued
+  and still cancellable. Deviations recorded in `docs/dashboard/IMPLEMENTATION.md` §5 (Accepted:
+  live output stream): frame-count regression replays from frame zero instead of the CLI's
+  hard "attempt output regressed" error (clients dedupe by `seq`), and a run pruned mid-stream
+  ends the stream. `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D
+  warnings`, and `cargo test --workspace` all pass on Rust 1.94.0 and latest stable (23 test
+  binaries, zero failures).
 - [ ] Implement and embed the hand-written viewer SPA (status chips, run timeline, monospace
   follow console log, CSRF-aware mutations) via rust-embed, with no CDN, no external assets, and no
   Node build step.

@@ -199,6 +199,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/runs/{id}", get(api::runs_show))
         .route("/api/v1/runs/{id}/cancel", post(api::runs_cancel))
         .route("/api/v1/runs/{id}/logs", get(api::runs_logs))
+        .route("/api/v1/runs/{id}/stream", get(api::runs_stream))
         .route("/api/v1/runs/{id}/why", get(api::runs_why))
         .route("/api/v1/settings", get(api::settings_get))
         .route(

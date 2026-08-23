@@ -9,8 +9,10 @@
 //! redaction parity are asserted throughout.
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use axum::Router;
+use futures_util::StreamExt;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -1389,4 +1391,406 @@ async fn redaction_parity() {
         json!({"configured": true, "value_redacted": true})
     );
     assert!(!body_text(&settings).contains("hunter2"));
+}
+
+// ---------------------------------------------------------------------------
+// SSE run stream (step 6)
+// ---------------------------------------------------------------------------
+
+/// One parsed SSE event block: the `event:` name and the JSON `data` payload.
+#[derive(Debug)]
+struct SseEvent {
+    name: String,
+    data: Value,
+}
+
+/// Parses one SSE block (`event:`/`data:` lines); comment blocks (keepalive
+/// pings) are ignored.
+fn parse_sse_block(block: &str) -> Option<SseEvent> {
+    let mut name = None;
+    let mut data = None;
+    for line in block.lines() {
+        if let Some(value) = line.strip_prefix("event:") {
+            name = Some(value.trim().to_owned());
+        } else if let Some(value) = line.strip_prefix("data:") {
+            data = Some(serde_json::from_str(value.trim()).expect("event data"));
+        }
+    }
+    match (name, data) {
+        (Some(name), Some(data)) => Some(SseEvent { name, data }),
+        _ => None,
+    }
+}
+
+/// Reads the response body as SSE events until the server closes the stream,
+/// or until `stop_after` events have been parsed (`None` reads to the end).
+/// Dropping the returned reader's in-flight chunk stream closes the
+/// connection, which is how a client disconnects mid-stream.
+async fn read_sse(
+    response: reqwest::Response,
+    stop_after: Option<usize>,
+    limit: Duration,
+) -> Vec<SseEvent> {
+    let mut events = Vec::new();
+    let mut buffer = String::new();
+    let mut chunks = response.bytes_stream();
+    loop {
+        if stop_after.is_some_and(|wanted| events.len() >= wanted) {
+            break;
+        }
+        let chunk = tokio::time::timeout(limit, chunks.next()).await;
+        let Ok(Some(chunk)) = chunk else { break };
+        let chunk = chunk.expect("stream chunk");
+        buffer.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(offset) = buffer.find("\n\n") {
+            let block = buffer[..offset].to_owned();
+            buffer = buffer[offset + 2..].to_owned();
+            if let Some(event) = parse_sse_block(&block) {
+                events.push(event);
+            }
+            if stop_after.is_some_and(|wanted| events.len() >= wanted) {
+                break;
+            }
+        }
+    }
+    events
+}
+
+/// Whether `wanted` appears as a (not necessarily contiguous) subsequence of
+/// the event names.
+fn contains_subsequence(events: &[SseEvent], wanted: &[&str]) -> bool {
+    let mut cursor = 0;
+    for event in events {
+        if cursor < wanted.len() && event.name == wanted[cursor] {
+            cursor += 1;
+        }
+    }
+    cursor == wanted.len()
+}
+
+fn event_names(events: &[SseEvent]) -> Vec<&str> {
+    events.iter().map(|event| event.name.as_str()).collect()
+}
+
+/// The session cookie the entry-page token paste sets. EventSource cannot
+/// send an Authorization header, so the stream authenticates by cookie.
+async fn session_cookie_for(server: &TestServer) -> String {
+    let response = server
+        .client
+        .post(format!("{}/api/v1/session", server.base))
+        .json(&json!({"token": server.token}))
+        .send()
+        .await
+        .expect("session request");
+    let mut session = None;
+    for cookie in response.headers().get_all(reqwest::header::SET_COOKIE) {
+        let raw = cookie.to_str().expect("cookie header");
+        if let Some(value) = raw
+            .split(';')
+            .next()
+            .and_then(|pair| pair.strip_prefix("locron_session="))
+        {
+            session = Some(value.to_owned());
+        }
+    }
+    session.expect("session cookie set")
+}
+
+/// Wall-clock microseconds, as the durable API timestamps use.
+fn test_now_us() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock precedes the epoch")
+        .as_micros()
+        .try_into()
+        .expect("micros fit i64")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sse_stream_live_run_events() {
+    let server = spawn_server();
+    let (_, body) = server
+        .post(
+            "/api/v1/jobs",
+            Some(create_body(
+                "alpha",
+                &definition("/bin/echo", false, false, false),
+            )),
+        )
+        .await;
+    let id = data(&body)["id"].as_str().expect("id").to_owned();
+    let (_, body) = server.post(&format!("/api/v1/jobs/{id}/run"), None).await;
+    let run_id = data(&body)["run_id"].as_str().expect("run_id").to_owned();
+
+    // The stream authenticates through the session cookie alone.
+    let session = session_cookie_for(&server).await;
+    let response = server
+        .client
+        .get(format!("{}/api/v1/runs/{run_id}/stream", server.base))
+        .header(reqwest::header::COOKIE, format!("locron_session={session}"))
+        .send()
+        .await
+        .expect("stream request");
+    assert_eq!(
+        response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .expect("content type"),
+        "text/event-stream"
+    );
+
+    // Let the first poll observe the durably queued run, then drive the
+    // lifecycle through the store's public admission and completion APIs (no
+    // daemon runs in tests), pausing between stages so the 200 ms stream
+    // poll observes each transition.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let store = locron_store::Store::open(
+        server.paths.clone(),
+        env!("CARGO_PKG_VERSION"),
+        test_now_us(),
+    )
+    .expect("test store");
+    let lifetime = uuid::Uuid::now_v7().to_string();
+    store
+        .begin_lifetime(&lifetime, test_now_us(), env!("CARGO_PKG_VERSION"))
+        .expect("lifetime");
+    let admission = store.admit(&lifetime, test_now_us(), 64).expect("admit");
+    assert_eq!(admission.attempts.len(), 1);
+    assert_eq!(admission.attempts[0].run_id, run_id);
+    assert_eq!(admission.attempts[0].attempt_number, 1);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+
+    // Live frames arrive from the in-progress partial artifact.
+    let output_dir = server.paths.outputs.join(&run_id);
+    std::fs::create_dir_all(&output_dir).expect("output dir");
+    let mut writer = FrameWriter::create(&output_dir.join("1.partial")).expect("partial create");
+    writer
+        .write(FrameChannel::Stdout, 100, b"hello")
+        .expect("stdout frame");
+    writer
+        .write(FrameChannel::Stderr, 250, b"oops")
+        .expect("stderr frame");
+    drop(writer);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+
+    store
+        .mark_attempt_running(&run_id, 1, test_now_us())
+        .expect("mark running");
+    tokio::time::sleep(Duration::from_millis(600)).await;
+
+    store
+        .complete_attempt(&locron_store::AttemptCompletion {
+            run_id: run_id.clone(),
+            attempt_number: 1,
+            now_us: test_now_us(),
+            duration_us: 1_000,
+            state: "succeeded".to_owned(),
+            exit_code: Some(0),
+            http_status: None,
+            http_content_type: None,
+            reason: "completed by fixture".to_owned(),
+            retry: None,
+        })
+        .expect("complete attempt");
+
+    // The stream ends after the single terminal event.
+    let events = read_sse(response, None, Duration::from_secs(10)).await;
+    assert!(
+        contains_subsequence(
+            &events,
+            &[
+                "run",
+                "run",
+                "attempt",
+                "output",
+                "output",
+                "run",
+                "attempt",
+                "run",
+                "attempt",
+                "termination",
+            ],
+        ),
+        "event order: {:?}",
+        event_names(&events)
+    );
+
+    // Connect catch-up: the durable state as of opening the stream.
+    assert_eq!(events[0].name, "run");
+    assert_eq!(events[0].data["state"], json!("queued"));
+    assert!(events[0].data.get("reason").is_some(), "{events:?}");
+
+    // Run transitions in order: queued, starting, running, succeeded.
+    let run_states: Vec<&str> = events
+        .iter()
+        .filter(|event| event.name == "run")
+        .map(|event| event.data["state"].as_str().expect("state"))
+        .collect();
+    assert_eq!(run_states, ["queued", "starting", "running", "succeeded"]);
+
+    // Attempt transitions: attempt 1 starting, then running.
+    let attempts: Vec<Value> = events
+        .iter()
+        .filter(|event| event.name == "attempt")
+        .map(|event| json!([event.data["attempt"].as_i64(), event.data["state"].as_str()]))
+        .collect();
+    assert_eq!(
+        Value::Array(attempts),
+        json!([[1, "starting"], [1, "running"], [1, "succeeded"]])
+    );
+
+    // Output frames: ordered seqs with the CLI's payloads, base64-encoded.
+    let outputs: Vec<&Value> = events
+        .iter()
+        .filter(|event| event.name == "output")
+        .map(|event| &event.data)
+        .collect();
+    assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs[0]["channel"], json!("stdout"));
+    assert_eq!(outputs[0]["seq"], json!(0));
+    assert_eq!(outputs[0]["elapsed_us"], json!(100));
+    assert_eq!(outputs[0]["data_b64"], json!("aGVsbG8="));
+    assert_eq!(outputs[1]["channel"], json!("stderr"));
+    assert_eq!(outputs[1]["seq"], json!(1));
+    assert_eq!(outputs[1]["data_b64"], json!("b29wcw=="));
+
+    // Exactly one terminal event, and it is the last one: the server closes
+    // the stream right after finalization.
+    let terminations: Vec<&SseEvent> = events
+        .iter()
+        .filter(|event| event.name == "termination")
+        .collect();
+    assert_eq!(terminations.len(), 1, "events: {:?}", event_names(&events));
+    assert_eq!(events.last().expect("last").name, "termination");
+    assert_eq!(terminations[0].data["state"], json!("succeeded"));
+    assert_eq!(
+        terminations[0].data["reason"],
+        json!("completed by fixture")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sse_stream_reconnect_idempotent() {
+    let server = spawn_server();
+    let (_, body) = server
+        .post(
+            "/api/v1/jobs",
+            Some(create_body(
+                "alpha",
+                &definition("/bin/echo", false, false, false),
+            )),
+        )
+        .await;
+    let id = data(&body)["id"].as_str().expect("id").to_owned();
+    let (_, body) = server.post(&format!("/api/v1/jobs/{id}/run"), None).await;
+    let run_id = data(&body)["run_id"].as_str().expect("run_id").to_owned();
+
+    // Terminal fixture: a finalized output artifact and an immediate cancel.
+    let output_dir = server.paths.outputs.join(&run_id);
+    std::fs::create_dir_all(&output_dir).expect("output dir");
+    let mut writer = FrameWriter::create(&output_dir.join("1.log")).expect("create");
+    writer
+        .write(FrameChannel::Stdout, 42, b"final")
+        .expect("frame");
+    drop(writer);
+    let (status, body) = server
+        .post(&format!("/api/v1/runs/{run_id}/cancel"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["cancelled"], json!(true));
+
+    // Each connect is idempotent: the catch-up run event, the retained
+    // frames, and exactly one terminal event.
+    for _ in 0..2 {
+        let response = server
+            .client
+            .get(format!("{}/api/v1/runs/{run_id}/stream", server.base))
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("token {}", server.token),
+            )
+            .send()
+            .await
+            .expect("stream request");
+        let events = read_sse(response, None, Duration::from_secs(5)).await;
+        assert_eq!(
+            event_names(&events),
+            ["run", "output", "termination"],
+            "events: {events:?}"
+        );
+        assert_eq!(events[0].data["state"], json!("cancelled"));
+        assert_eq!(events[1].data["seq"], json!(0));
+        assert_eq!(events[1].data["data_b64"], json!("ZmluYWw="));
+        assert_eq!(events[2].data["state"], json!("cancelled"));
+        assert_eq!(
+            events[2].data["reason"],
+            json!("cancelled by user before execution")
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sse_stream_rejects_unknown_run() {
+    let server = spawn_server();
+    let (status, body) = server.get("/api/v1/runs/not-a-uuid/stream").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(error(&body, "invalid_request"), "invalid run UUID");
+
+    let (status, body) = server
+        .get("/api/v1/runs/00000000-0000-0000-0000-000000000000/stream")
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    // The CLI's category message is the raw run reference.
+    assert_eq!(
+        error(&body, "not_found"),
+        "00000000-0000-0000-0000-000000000000"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sse_stream_disconnect_never_cancels() {
+    let server = spawn_server();
+    let (_, body) = server
+        .post(
+            "/api/v1/jobs",
+            Some(create_body(
+                "alpha",
+                &definition("/bin/echo", false, false, false),
+            )),
+        )
+        .await;
+    let id = data(&body)["id"].as_str().expect("id").to_owned();
+    let (_, body) = server.post(&format!("/api/v1/jobs/{id}/run"), None).await;
+    let run_id = data(&body)["run_id"].as_str().expect("run_id").to_owned();
+
+    let response = server
+        .client
+        .get(format!("{}/api/v1/runs/{run_id}/stream", server.base))
+        .header(
+            reqwest::header::COOKIE,
+            format!("locron_session={}", session_cookie_for(&server).await),
+        )
+        .send()
+        .await
+        .expect("stream request");
+
+    // The client receives the connect catch-up, then goes away mid-stream:
+    // dropping the chunk reader closes the connection.
+    let events = read_sse(response, Some(1), Duration::from_secs(5)).await;
+    assert_eq!(events.len(), 1, "events: {events:?}");
+    assert_eq!(events[0].name, "run");
+    assert_eq!(events[0].data["state"], json!("queued"));
+
+    // Several stream polls pass with the connection gone. The run must
+    // remain durably queued and still cancellable: following a run never
+    // cancels it, and disconnecting does not either.
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let (status, body) = server.get(&format!("/api/v1/runs/{run_id}")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["state"], json!("queued"));
+    let (status, body) = server
+        .post(&format!("/api/v1/runs/{run_id}/cancel"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["cancelled"], json!(true), "{body}");
 }

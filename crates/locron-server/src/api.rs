@@ -16,10 +16,12 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum_extra::extract::cookie::{CookieJar, SameSite};
 use base64::Engine;
 use cookie::Cookie;
+use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -1101,6 +1103,205 @@ pub(crate) async fn runs_cancel(
     })
     .await;
     respond(result, &[])
+}
+
+/// `GET /api/v1/runs/{id}/stream`: a `text/event-stream` of the run's
+/// observable progress — `run` and `attempt` state transitions, `output`
+/// frames from the same framed files the CLI `logs --follow` reads (final
+/// artifact first, then the in-progress partial, at the CLI's 200 ms poll
+/// interval), and exactly one `termination` event when the run reaches a
+/// terminal state. A `KeepAlive` ping guards stale connections; following
+/// never cancels the run. The named JSON events follow
+/// `docs/dashboard/IMPLEMENTATION.md` §5 ("live output stream") and are
+/// idempotent on EventSource reconnect: a reconnecting client is re-sent the
+/// current run/attempt states, all frames from the start, and a single
+/// terminal event.
+pub(crate) async fn runs_stream(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+    if uuid::Uuid::parse_str(&id).is_err() {
+        return envelope::error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid run UUID",
+        );
+    }
+    let known_id = id.clone();
+    let known = with_store(&state, move |store| Ok(store.run(&known_id).map(|_| ())?)).await;
+    if let Err(error) = known {
+        return error.into_response();
+    }
+
+    let progress = StreamProgress {
+        run_id: id,
+        frames: 0,
+        run_state: None,
+        attempt_states: Vec::new(),
+        finished: false,
+    };
+    let stream = futures_util::stream::unfold(progress, move |mut progress| {
+        let state = state.clone();
+        async move {
+            if progress.finished {
+                return None;
+            }
+            loop {
+                // One poll: read the run, its attempts, and the framed output
+                // (final artifact first, then the partial, exactly like the
+                // CLI's `logs --follow`), and emit everything new.
+                let run_id = progress.run_id.clone();
+                let polled = with_store(&state, move |store| {
+                    let run = store.run(&run_id)?;
+                    let attempts = store.attempts_for_run(&run.id)?;
+                    let frames = read_followed_frames(store.paths(), &run.id)?;
+                    Ok::<_, ApiError>((run, attempts, frames))
+                })
+                .await;
+                let (run, attempts, frames) = match polled {
+                    Err(ApiError::Store(StoreError::NotFound(_))) => return None,
+                    Err(_) => {
+                        // A transient store error does not end the stream:
+                        // the run may still progress, so poll again next tick.
+                        tokio::time::sleep(Duration::from_millis(200)).await;
+                        continue;
+                    }
+                    Ok(polled) => polled,
+                };
+
+                let mut events = Vec::new();
+                if progress.run_state.as_deref() != Some(run.state.as_str()) {
+                    progress.run_state = Some(run.state.clone());
+                    events.push(named_event(
+                        "run",
+                        &json!({"state": run.state, "reason": run.reason}),
+                    ));
+                }
+                for attempt in &attempts {
+                    let seen = progress.attempt_states.iter().any(|(number, state)| {
+                        *number == attempt.attempt_number && state == &attempt.state
+                    });
+                    if !seen {
+                        progress
+                            .attempt_states
+                            .push((attempt.attempt_number, attempt.state.clone()));
+                        events.push(named_event(
+                            "attempt",
+                            &json!({"attempt": attempt.attempt_number, "state": attempt.state}),
+                        ));
+                    }
+                }
+                if frames.len() < progress.frames {
+                    // The output file regressed (truncated or recreated):
+                    // replay it from the start rather than erroring, and let
+                    // clients dedupe by `seq` (deviation from the CLI's hard
+                    // error, recorded in docs/dashboard/IMPLEMENTATION.md).
+                    progress.frames = 0;
+                }
+                for frame in &frames[progress.frames..] {
+                    events.push(named_event(
+                        "output",
+                        &json!({
+                            "channel": format!("{:?}", frame.channel).to_lowercase(),
+                            "seq": frame.sequence,
+                            "elapsed_us": frame.elapsed_us,
+                            "data_b64": base64::engine::general_purpose::STANDARD
+                                .encode(&frame.payload),
+                        }),
+                    ));
+                }
+                progress.frames = frames.len();
+
+                if terminal_run_state(&run.state) {
+                    events.push(named_event(
+                        "termination",
+                        &json!({"state": run.state, "reason": run.reason}),
+                    ));
+                    progress.finished = true;
+                    return Some((events, progress));
+                }
+                if events.is_empty() {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                return Some((events, progress));
+            }
+        }
+    })
+    .flat_map(futures_util::stream::iter)
+    .map(Ok::<Event, std::convert::Infallible>);
+
+    Sse::new(stream)
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
+        .into_response()
+}
+
+/// One named JSON SSE event in the OpenAI-style `event:`/`data:` framing.
+fn named_event(name: &str, payload: &Value) -> Event {
+    Event::default()
+        .event(name)
+        .data(serde_json::to_string(payload).expect("event payload"))
+}
+
+/// The frames the CLI `logs --follow` reads for attempt one: the finalized
+/// artifact when present, otherwise the in-progress partial. An in-progress
+/// file that ends mid-write yields the complete frames only, mirroring the
+/// CLI's `read_frames`; a missing pair yields no frames.
+fn read_followed_frames(
+    paths: &StatePaths,
+    run_id: &str,
+) -> Result<Vec<locron_store::Frame>, ApiError> {
+    let final_path = paths.final_output(run_id, 1)?;
+    let partial_path = paths.partial_output(run_id, 1)?;
+    match FrameReader::open(&final_path) {
+        Ok(mut reader) => read_available_frames(&mut reader),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match FrameReader::open(&partial_path) {
+                Ok(mut reader) => read_available_frames(&mut reader),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::UnexpectedEof
+                    ) =>
+                {
+                    Ok(Vec::new())
+                }
+                Err(error) => Err(StoreError::Io(error).into()),
+            }
+        }
+        Err(error) => Err(StoreError::Io(error).into()),
+    }
+}
+
+/// Reads complete frames, stopping at the first incomplete or invalid one
+/// (a truncated tail mid-write) rather than failing the stream.
+fn read_available_frames(reader: &mut FrameReader) -> Result<Vec<locron_store::Frame>, ApiError> {
+    let mut frames = Vec::new();
+    loop {
+        match reader.next_frame() {
+            Ok(Some(frame)) => frames.push(frame),
+            Ok(None) => return Ok(frames),
+            // A truncated tail or a corrupted frame ends the read at the last
+            // complete frame, exactly like the CLI's `read_frames`.
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::InvalidData
+                ) =>
+            {
+                return Ok(frames);
+            }
+            Err(error) => return Err(StoreError::Io(error).into()),
+        }
+    }
+}
+
+/// Per-connection progress for the run stream: which frames, run states, and
+/// attempt states have already been emitted.
+struct StreamProgress {
+    run_id: String,
+    frames: usize,
+    run_state: Option<String>,
+    attempt_states: Vec<(i64, String)>,
+    finished: bool,
 }
 
 /// `GET /api/v1/runs/{id}/logs?attempt=&channel=`: the framed output of one

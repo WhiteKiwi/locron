@@ -245,6 +245,14 @@ dashboard.
   EventSource reconnect). The stream reads the same framed output the CLI `--follow` uses and
   respects the same retention bounds; following never cancels the run. A `KeepAlive` ping guards
   stale connections.
+- Implementation notes (deviation from the CLI where the CLI's behavior is a terminal error):
+  the stream polls the store every 200 ms exactly like `logs --follow` (final artifact first,
+  then the in-progress partial; an incomplete tail ends the read at the last complete frame).
+  Frame-count regression replays the file from frame zero instead of aborting with the CLI's
+  "attempt output regressed" error — events carry `seq`, so viewers dedupe; and a run that
+  disappears mid-stream (durable retention prune) ends the stream rather than polling forever.
+  The first poll emits the current `run` state as the connect catch-up; the server closes the
+  connection immediately after the single `termination` event.
 - Job-list freshness is ordinary polling from the SPA (the healthchecks model); no push channel is
   added for lists.
 
