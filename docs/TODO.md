@@ -804,10 +804,29 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   verification green on Rust 1.94 and stable 1.98: `cargo fmt --all --check` and
   `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --workspace`
   24 binaries / 353 tests, zero failures, no skips.
-- [ ] Documentation final pass: `docs/CLI.md` (verified above), `docs/OPERATOR.md` (viewer
+- [x] Documentation final pass: `docs/CLI.md` (verified above), `docs/OPERATOR.md` (viewer
   operation, token lifecycle, the shared `loginctl enable-linger` note, what loopback does and
   does not protect), and the README documentation list entry for `docs/dashboard/SPEC.md`.
   **Verify:** documented commands execute as written; all new cross-links resolve.
+  **Evidence:** `docs/CLI.md` already carried the full dashboard contract (command family,
+  bind/port rules, token and envelope contracts, doctor facts) from step 8 and needed no
+  further change. `docs/OPERATOR.md` gained a "Web dashboard" section before the MCP section:
+  viewer operation (foreground vs service, fallback vs fixed port, `--bind` loopback literals,
+  what `status`/`disable` report), an "Access token" subsection (64-hex generation, owner-only
+  file, paste-box/Authorization usage, `token`/`--reset`/`disable` lifecycle, regeneration on
+  removal), the shared Linux `loginctl enable-linger "$USER"` note applied to the dashboard
+  service exactly as the daemon section does, and a "What loopback does and does not protect"
+  subsection (refused non-loopback binds, no reachability from other machines, loopback being
+  no process boundary — token plus Host/Origin and anti-CSRF checks are the authorization).
+  The README documentation list gained the Web Dashboard Specification entry linking
+  `docs/dashboard/SPEC.md`. Cross-links resolve: README and OPERATOR link the SPEC; CLI.md
+  links SPEC and IMPLEMENTATION; both `docs/dashboard/*.md` are tracked. Documented commands
+  execute as written: `dashboard status --json`, `dashboard token --json` (generated and
+  persisted the 64-hex token), and `doctor --json` (dashboard facts block with
+  `access_url`/`token` posture/`registered`/`loaded`) all ran against a temporary state
+  directory with the documented envelopes; the real launchd enable/status/disable flow
+  executed as written in the step-9 verification battery (the macOS launchd backend test ran
+  fully on both toolchains, no skips), and the fake-backend suite covers the same commands.
 - [ ] Run full workspace verification and record evidence, then mark roadmap phase 1 complete.
   **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   and `cargo test --workspace` pass on Rust 1.94 and latest stable; the four-target CI matrix is

@@ -132,6 +132,7 @@ If `locron` is not on the client's `PATH`, use an absolute path. See [`docs/mcp/
 - **[CLI Reference](docs/CLI.md)** — every command, option, and output contract.
 - **[Architecture](docs/ARCHITECTURE.md)** — system design, invariants, and the durable state model.
 - **[MCP Specification](docs/mcp/SPEC.md)** — tools, resources, and prompts in full.
+- **[Web Dashboard Specification](docs/dashboard/SPEC.md)** — the loopback-only viewer and management API.
 - **[Release Policy](docs/RELEASE.md)** — versioning, packaging, and release automation.
 - **[Changelog](CHANGELOG.md)** — notable changes in each release.
 
