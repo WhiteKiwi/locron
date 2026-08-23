@@ -218,20 +218,25 @@ Prior correctness tranche whose broad verification clauses remain open (2026-08-
 
 ## Workflow node24 migration backlog (2026-08-23)
 
-- [ ] Record the node24 action migration here and confirm `docs/RELEASE.md` needs no change (its CI
+- [x] Record the node24 action migration here and confirm `docs/RELEASE.md` needs no change (its CI
   section already requires up-to-date action versions). **Verify:** `docs/RELEASE.md` line "Check
   out repository with up-to-date action versions" covers the change; the superseded milestone-1
   `actions/checkout@v4` Verify clause above points at this section.
-- [ ] Bump the flagged node20 actions to their node24 majors in `.github/workflows/ci.yml` and
+- [x] Bump the flagged node20 actions to their node24 majors in `.github/workflows/ci.yml` and
   `.github/workflows/release.yml`: `actions/checkout@v4`→`@v7`, `actions/upload-artifact@v4`→`@v7`,
   `actions/download-artifact@v4`→`@v8`. Keep input usage unchanged (`name`/`path`/`merge-multiple`,
   plain checkout). **Verify:** `rg -n "checkout@v4|upload-artifact@v4|download-artifact@v4"
   .github` returns nothing; both files parse as YAML; the v7/v8 input names used are present in the
   published action.yml files.
-- [ ] Push to `main` and confirm the CI matrix passes with no Node 20 deprecation warnings. The
+  **Evidence:** commit `07d6a79` changed exactly five version strings; both files parse as YAML;
+  no v4 references remain.
+- [x] Push to `main` and confirm the CI matrix passes with no Node 20 deprecation warnings. The
   tag-only release workflow cannot be dry-run without publishing; its publish path is verified by
   review and the next real release. **Verify:** the `ci.yml` run on `main` completes green on all 8
   matrix legs and `gh run view <run> --log | grep "Node.js 20 is deprecated"` returns no matches.
+  **Evidence:** run
+  [32613812071](https://github.com/WhiteKiwi/locron/actions/runs/32613812071) concluded `success`
+  across the full matrix; the log contains zero `Node.js 20 is deprecated` warnings.
 
 ## Post-milestone delivery backlog
 
