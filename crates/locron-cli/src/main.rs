@@ -318,7 +318,7 @@ enum Command {
     Add(AddArgs),
     #[command(about = "Change an existing job", after_help = UPDATE_HELP)]
     Update(UpdateArgs),
-    #[command(about = "List jobs", after_help = LIST_HELP)]
+    #[command(about = "List jobs", visible_alias = "ls", after_help = LIST_HELP)]
     List {
         /// Include disabled jobs
         #[arg(long)]
@@ -339,7 +339,7 @@ enum Command {
         /// Job name or canonical UUID
         name: String,
     },
-    #[command(about = "Soft-remove a job", after_help = REMOVE_HELP)]
+    #[command(about = "Soft-remove a job", visible_alias = "rm", after_help = REMOVE_HELP)]
     Remove {
         /// Job name or canonical UUID
         name: String,
@@ -902,7 +902,11 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
                 .into_iter()
                 .map(redacted_job)
                 .collect::<Result<Vec<_>>>()?;
-            render(format, "list", json!(jobs), &[]);
+            if format == Format::Human {
+                render_list_table(&jobs)?;
+            } else {
+                render(format, "list", json!(jobs), &[]);
+            }
             Ok(())
         }
         Command::Show { name } => {
@@ -3719,6 +3723,148 @@ pub(crate) fn redact_definition(mut definition: Value) -> Value {
         *body = Value::String("<redacted>".into());
     }
     definition
+}
+
+/// Renders the docker-style aligned `list` table for human output: a header
+/// line (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned
+/// row per job in the store's name order, with each column padded to the
+/// maximum width and columns separated by a single space. The header prints
+/// even when no job exists. The header and every value are derived only from
+/// the redacted job records (the summaries parse the redacted
+/// `definition_json` as JSON values, so no configured environment value,
+/// header value, or body can appear).
+fn render_list_table(jobs: &[Value]) -> Result<()> {
+    let mut rows: Vec<(String, String, String, &str)> = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        let name = job["name"].as_str().context("job record lacks name")?;
+        let enabled = if job["enabled"].as_bool().unwrap_or(false) {
+            "yes"
+        } else {
+            "no"
+        };
+        let definition: Value = serde_json::from_str(
+            job["definition_json"]
+                .as_str()
+                .context("job record lacks definition_json")?,
+        )
+        .context("invalid definition_json in job record")?;
+        rows.push((
+            name.to_owned(),
+            list_schedule_summary(&definition)?,
+            list_target_summary(&definition)?,
+            enabled,
+        ));
+    }
+    // Each column is padded to the maximum cell width (header included); the
+    // last column is not padded so rows never carry trailing whitespace.
+    let name_width = "NAME"
+        .len()
+        .max(rows.iter().map(|row| row.0.len()).max().unwrap_or(0));
+    let schedule_width = "SCHEDULE"
+        .len()
+        .max(rows.iter().map(|row| row.1.len()).max().unwrap_or(0));
+    let target_width = "TARGET"
+        .len()
+        .max(rows.iter().map(|row| row.2.len()).max().unwrap_or(0));
+    println!(
+        "{:<name_width$} {:<schedule_width$} {:<target_width$} ENABLED",
+        "NAME", "SCHEDULE", "TARGET"
+    );
+    for (name, schedule, target, enabled) in &rows {
+        println!(
+            "{name:<name_width$} {schedule:<schedule_width$} {target:<target_width$} {enabled}"
+        );
+    }
+    Ok(())
+}
+
+/// Renders the human schedule summary (`cron 'EXPR'`, `every DUR`, or
+/// `at RFC3339`) from the redacted definition JSON.
+fn list_schedule_summary(definition: &Value) -> Result<String> {
+    let schedule = definition
+        .get("schedule")
+        .context("definition lacks schedule")?;
+    Ok(match schedule.get("kind").and_then(Value::as_str) {
+        Some("cron") => format!(
+            "cron '{}'",
+            schedule
+                .get("expression")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        ),
+        Some("every") => format!(
+            "every {}",
+            human_duration(
+                schedule
+                    .get("interval")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+            )
+        ),
+        Some("at") => {
+            let at = schedule
+                .get("at")
+                .and_then(Value::as_i64)
+                .context("at schedule lacks its instant")?;
+            format!("at {}", Timestamp::from_epoch_micros(at))
+        }
+        _ => return Err(anyhow!("unknown schedule kind in definition")),
+    })
+}
+
+/// Renders the human target summary (`run EXE [ARGS...]`, `shell CMD`, or
+/// `http METHOD URL`) from the redacted definition JSON.
+fn list_target_summary(definition: &Value) -> Result<String> {
+    let target = definition
+        .get("target")
+        .context("definition lacks target")?;
+    Ok(match target.get("kind").and_then(Value::as_str) {
+        Some("process") => {
+            let executable = target
+                .get("executable")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let mut summary = format!("run {executable}");
+            if let Some(args) = target.get("args").and_then(Value::as_array) {
+                for arg in args.iter().filter_map(Value::as_str) {
+                    summary.push(' ');
+                    summary.push_str(arg);
+                }
+            }
+            summary
+        }
+        Some("shell") => format!(
+            "shell {}",
+            target.get("command").and_then(Value::as_str).unwrap_or("")
+        ),
+        Some("http") => format!(
+            "http {} {}",
+            target.get("method").and_then(Value::as_str).unwrap_or(""),
+            target.get("url").and_then(Value::as_str).unwrap_or("")
+        ),
+        _ => return Err(anyhow!("unknown target kind in definition")),
+    })
+}
+
+/// Renders a duration in the CLI's input grammar: the largest whole unit
+/// (`s`, `m`, `h`, or `d`) that divides the value, or the raw microsecond
+/// count as a defensive fallback for sub-second values (which the input
+/// grammar can never produce).
+fn human_duration(micros: u64) -> String {
+    const US_PER_SECOND: u64 = 1_000_000;
+    if !micros.is_multiple_of(US_PER_SECOND) {
+        return format!("{micros}us");
+    }
+    let seconds = micros / US_PER_SECOND;
+    if seconds.is_multiple_of(86_400) {
+        format!("{}d", seconds / 86_400)
+    } else if seconds.is_multiple_of(3_600) {
+        format!("{}h", seconds / 3_600)
+    } else if seconds.is_multiple_of(60) {
+        format!("{}m", seconds / 60)
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 fn render(format: Format, command: &str, data: Value, warnings: &[&str]) {

@@ -24,11 +24,11 @@ The first binary exposes these top-level commands:
 ```text
 locron add NAME <schedule> <target> [policy options]
 locron update NAME [job changes]
-locron list [--all]
+locron list|ls [--all]
 locron show NAME
 locron enable NAME
 locron disable NAME
-locron remove NAME
+locron remove|rm NAME
 locron preview <schedule-or-name> [--count N]
 locron run NAME [--wait] [--dry-run]
 locron cancel RUN_ID [--acknowledge-unconfirmed]
@@ -47,6 +47,10 @@ locron daemon run
 locron service install|uninstall|status
 locron self-update
 ```
+
+A visible alias is accepted for `list` (`ls`) and `remove` (`rm`). An alias is the same command in every respect: it accepts the identical options and arguments and renders identical human and machine output. The `command` field of the `locron.cli/v1` envelope always reports the canonical name (`list`, `remove`), and usage and help render the canonical name with the alias shown for discovery. Aliases are a keyboard convenience; they do not add a semantic surface.
+
+Human `list` output is a docker-style aligned table on stdout: a header line (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned row per live job, sorted by name. `--all` includes disabled jobs, and their `ENABLED` value distinguishes them. The header prints even when no job exists, matching `docker ps` with zero containers. Schedule summaries render as `cron 'EXPR'`, `every DUR`, or `at RFC3339`; target summaries as `run EXE [ARGS...]`, `shell CMD`, or `http METHOD URL`; enabled state as `yes` or `no`. Machine output is unchanged.
 
 Job references accept an exact live name or canonical UUID. Run references are canonical UUIDs. Human output may abbreviate an ID only in decorative tables; copyable output always includes the full ID.
 

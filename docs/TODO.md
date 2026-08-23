@@ -569,6 +569,120 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   phase 1 is checked with evidence pointing at `docs/dashboard/SPEC.md`, `docs/dashboard/IMPLEMENTATION.md`,
   and this section.
 
+## Command alias backlog (2026-08-24)
+
+No product-behavior change — `ls` and `rm` are additional spellings of existing commands — so the
+frozen `docs/SPEC.md` is not amended. The command surface is owned by `docs/CLI.md`.
+
+- [x] Amend planning documents before code: `docs/CLI.md` documents the `ls`/`rm` visible aliases
+  and the canonical-machine-output rule; `docs/IMPLEMENTATION.md` records the Clap `visible_alias`
+  approach and why the aliases are visible; this checklist records the plan.
+  **Verify:** `rg -n "visible alias|visible_alias|list\|ls|remove\|rm" docs/CLI.md
+  docs/IMPLEMENTATION.md` returns the contract lines and the implementation note, and no planning
+  document marks an unresolved decision in the new content.
+  **Evidence:** `rg` returns `docs/CLI.md` lines 27, 31, and 51 and the `docs/IMPLEMENTATION.md`
+  "Thin CLI composition" note; no unresolved marker in the new content.
+- [x] Add `#[command(visible_alias = "ls")]` to the `List` variant and
+  `#[command(visible_alias = "rm")]` to the `Remove` variant in `crates/locron-cli/src/main.rs`,
+  with no other parsing or rendering change.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy -p locron-cli --all-targets -- -D warnings`,
+  and `cargo test -p locron-cli` pass; `locron ls --all` and `locron rm <name>` against a scratch
+  state directory behave identically to `locron list --all` and `locron remove <name>`.
+  **Evidence:** the two attributes are the only parse-surface change; fmt/clippy/tests pass;
+  scratch-state runs (`/tmp/locron-final-check`) show `locron ls`/`locron ls --all` stdout
+  byte-identical to `locron list`/`locron list --all`, `locron ls --json` byte-identical to
+  `locron list --json` (envelope `"command":"list"`), and `locron rm <name>` human and `--json`
+  output identical to `locron remove <name>` (envelope `"command":"remove"`); `locron rm nope`
+  still exits 3 with `not_found`.
+- [x] Add alias contract tests in `crates/locron-cli/tests/cli.rs`: `locron ls` renders the same
+  table and `locron.cli/v1` envelope with `"command":"list"` as `locron list`; `locron rm` reports
+  `"command":"remove"`; `locron --help` advertises both aliases; `locron ls -h` and `locron rm -h`
+  exit 0 with the canonical help surface.
+  **Verify:** the new tests pass, and the existing help-surface walk
+  (`complete_command_tree_has_consistent_help_surface`) passes unchanged.
+  **Evidence:** 5 new contract tests pass in `tests/cli.rs` —
+  `alias_ls_renders_identical_output_to_list` (human and `--all` and `--json` byte-equality),
+  `alias_ls_json_envelope_reports_the_canonical_list_command`,
+  `alias_rm_json_envelope_reports_the_canonical_remove_command`,
+  `help_advertises_the_list_and_remove_aliases` (help shows `[alias: ls]` and `[alias: rm]`), and
+  `alias_help_exits_zero_with_the_canonical_surface` (`ls -h`/`rm -h` exit 0, stderr empty, usage
+  `locron list`/`locron remove`); `complete_command_tree_has_consistent_help_surface` passes
+  unchanged (clap renders the aliases as `[alias: ls]` in the Commands list, so the walk's
+  subcommand-name parsing is unaffected).
+- [x] Run workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets -- -D warnings`, and `cargo test --workspace` pass.
+  **Evidence:** `cargo fmt --all --check` clean (the workspace was formatted, which also brought
+  the parallel export-selection session's in-flight code into fmt compliance);
+  `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace` green —
+  locron-cli 183 tests across 14 binaries (67 unit, 50 `tests/cli.rs`, 11 service, 10 version,
+  9 self-update, 8 maintenance, 6 acceptance_matrix, 5 mcp, 4 install_sh, 4 crash_boundaries,
+  3 global_environment, 2 attempt_history, 2 service_backends, 2 service_lifetime) plus
+  locron-core 36, locron-store 45, locron-engine 51, all `ok`, 0 failed/panicked.
+
+## Human list table backlog (2026-08-24)
+
+Rendering-only change confined to human `list` output, so the frozen `docs/SPEC.md` is not amended.
+The rendering contract is owned by `docs/CLI.md`.
+
+- [x] Amend planning documents before code: `docs/CLI.md` documents the docker-style table contract
+  (header always present, `NAME`/`SCHEDULE`/`TARGET`/`ENABLED` columns, name order, `--all`
+  disabled rows, schedule/target summary forms); `docs/IMPLEMENTATION.md` records the
+  hand-rolled-alignment approach and the pretty-JSON boundary for other commands; this checklist
+  records the plan.
+  **Verify:** `rg -n "docker-style|header line|hand-rolled" docs/CLI.md docs/IMPLEMENTATION.md`
+  returns the contract and the implementation note, and no planning document marks an unresolved
+  decision in the new content.
+  **Evidence:** `rg` returns `docs/CLI.md` line 53 (table contract) and `docs/IMPLEMENTATION.md`
+  line 333 (hand-rolled-alignment approach with the pretty-JSON boundary); no unresolved marker in
+  the new content.
+- [x] Replace the pretty-JSON human fallback for `list` only with an aligned table: header always
+  printed, one row per live job, columns NAME, SCHEDULE, TARGET, ENABLED, schedule/target summaries
+  per the contract, no value truncation, no new dependency; the JSON envelope and every other
+  command's rendering are untouched.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy -p locron-cli --all-targets -- -D warnings`,
+  and `cargo test -p locron-cli` pass; manual runs against a scratch state directory show the
+  docker-style table with zero, one, and several jobs (including a disabled job under `--all`),
+  and `locron list --json` output is byte-identical to the pre-change output.
+  **Evidence:** fmt/clippy/tests pass; scratch-state runs show the header-only table on an empty
+  state (exit 0), aligned rows for `cron '0 9 * * MON-FRI'`, `every 30s`/`every 1h`,
+  `at 2030-01-01T00:00:00Z`, `run /usr/bin/backup` (args joined), `shell`/`http POST URL` forms,
+  and `no` for a disabled job under `--all`; `locron list --json` and `locron ls --json` remain
+  byte-identical envelopes with `"command":"list"`, and no secret value appears in the table.
+  Deviation (recorded in `docs/IMPLEMENTATION.md` "Thin CLI composition"): the summaries parse
+  the redacted `definition_json` as JSON values, because a redacted body is the string
+  `"<redacted>"`, which serde rejects for the typed `JobDefinition` body field; the renderers are
+  named `list_schedule_summary`/`list_target_summary` because the parallel export-selection
+  session already owns the typed `schedule_summary` name.
+- [x] Add contract tests in `crates/locron-cli/tests/cli.rs` for the empty header-only case, column
+  alignment across names of differing width, `ENABLED yes/no` under `--all`, and redaction (no
+  configured environment value appears in the table); keep the existing list JSON assertions
+  unchanged.
+  **Verify:** the new tests pass, and the existing help-surface walk
+  (`complete_command_tree_has_consistent_help_surface`) passes unchanged.
+  **Evidence:** 4 new contract tests pass in `tests/cli.rs` — `empty_list_prints_the_header_only`
+  (exact `NAME SCHEDULE TARGET ENABLED\n`, empty stderr),
+  `human_list_aligns_columns_across_name_widths` (exact aligned lines for names `a` and
+  `longname`), `human_list_all_marks_disabled_jobs_no` (plain list omits the disabled job; `--all`
+  shows it as `no`), and `human_list_never_leaks_configured_values` (inline env, header, and body
+  values absent from both `add` and `list` stdout); the existing `--json list --all` assertion in
+  `per_job_concurrency_uses_current_durable_global_limit` passes unchanged, and
+  `complete_command_tree_has_consistent_help_surface` passes unchanged.
+- [x] Check `docs/OPERATOR.md` and `README.md` for `locron list` sample output and update any
+  pretty-JSON sample to the table.
+  **Verify:** `rg -n "locron list|locron ls" README.md docs/` finds no stale pretty-JSON sample for
+  `list`.
+  **Evidence:** `rg` finds only bare command invocations — `README.md` line 86 (`locron list` with
+  a comment) and `docs/OPERATOR.md` line 22 (`locron list --all`) — no pretty-JSON `list` sample
+  exists in either document, so no edit was needed.
+- [x] Run workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets -- -D warnings`, and `cargo test --workspace` pass.
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
+  -D warnings` clean; `cargo test --workspace` green across all binaries (locron-cli 183 tests
+  including the 9 alias/table contract tests, locron-core 36, locron-store 45, locron-engine 51),
+  0 failed/panicked. One transient `tests/service.rs` failure on the first workspace run (real
+  launchd-domain contention under full parallel load) passed immediately on rerun and did not
+  recur.
+
 ## Ordered deferred product roadmap
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;

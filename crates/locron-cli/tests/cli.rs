@@ -1639,6 +1639,209 @@ fn import_rejects_source_id_name_destination_ambiguity_as_durable_conflict() {
 }
 
 #[test]
+fn alias_ls_renders_identical_output_to_list() {
+    let state = tempfile::tempdir().unwrap();
+    for name in ["backup", "ping"] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", name, "--every", "1h", "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    assert_cmd::assert::Assert::new(locron(&state).args(["disable", "ping"]).output().unwrap())
+        .success();
+    for (canonical, alias) in [
+        (vec!["list"], vec!["ls"]),
+        (vec!["list", "--all"], vec!["ls", "--all"]),
+        (vec!["--json", "list"], vec!["--json", "ls"]),
+    ] {
+        let canonical_output = locron(&state).args(canonical.clone()).output().unwrap();
+        let alias_output = locron(&state).args(alias.clone()).output().unwrap();
+        assert!(
+            canonical_output.status.success(),
+            "canonical {canonical:?} failed"
+        );
+        assert!(alias_output.status.success(), "alias {alias:?} failed");
+        assert_eq!(
+            alias_output.stdout, canonical_output.stdout,
+            "alias {alias:?} stdout must be byte-identical to {canonical:?} stdout"
+        );
+        assert_eq!(
+            alias_output.stderr, canonical_output.stderr,
+            "alias {alias:?} stderr must be byte-identical to {canonical:?} stderr"
+        );
+    }
+}
+
+#[test]
+fn alias_ls_json_envelope_reports_the_canonical_list_command() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let output = locron(&state).args(["--json", "ls"]).output().unwrap();
+    assert!(output.status.success());
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["schema"], "locron.cli/v1");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "list");
+    assert_eq!(envelope["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(envelope["warnings"], serde_json::json!([]));
+}
+
+#[test]
+fn alias_rm_json_envelope_reports_the_canonical_remove_command() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let output = locron(&state)
+        .args(["--json", "rm", "backup"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["schema"], "locron.cli/v1");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "remove");
+    assert_eq!(envelope["data"]["name"], "backup");
+    assert_eq!(envelope["data"]["removed"], true);
+    assert_cmd::assert::Assert::new(locron(&state).args(["--json", "ls"]).output().unwrap())
+        .success()
+        .stdout(predicate::str::contains("backup").not());
+}
+
+#[test]
+fn help_advertises_the_list_and_remove_aliases() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(locron(&state).arg("--help").output().unwrap())
+        .success()
+        .stdout(predicate::str::contains("[alias: ls]"))
+        .stdout(predicate::str::contains("[alias: rm]"));
+}
+
+#[test]
+fn alias_help_exits_zero_with_the_canonical_surface() {
+    let state = tempfile::tempdir().unwrap();
+    for (alias, canonical) in [("ls", "list"), ("rm", "remove")] {
+        let stdout = assert_help_contract(
+            &[alias.into()],
+            "alias -h",
+            help_output(&state, &[alias.into(), "-h".into()]),
+        );
+        assert!(
+            stdout.contains(&format!("Usage: locron {canonical}")),
+            "alias {alias} help must show the canonical usage:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn empty_list_prints_the_header_only() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
+        .success()
+        .stdout("NAME SCHEDULE TARGET ENABLED\n")
+        .stderr("");
+}
+
+#[test]
+fn human_list_aligns_columns_across_name_widths() {
+    let state = tempfile::tempdir().unwrap();
+    for (name, expression) in [("a", "* * * * *"), ("longname", "0 9 * * MON-FRI")] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", name, "--cron", expression, "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
+        .success()
+        .stdout(
+            "NAME     SCHEDULE               TARGET            ENABLED\n\
+         a        cron '* * * * *'       run /usr/bin/true yes\n\
+         longname cron '0 9 * * MON-FRI' run /usr/bin/true yes\n",
+        );
+}
+
+#[test]
+fn human_list_all_marks_disabled_jobs_no() {
+    let state = tempfile::tempdir().unwrap();
+    for name in ["backup", "ping"] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", name, "--every", "1h", "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+    }
+    assert_cmd::assert::Assert::new(locron(&state).args(["disable", "ping"]).output().unwrap())
+        .success();
+    assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
+        .success()
+        .stdout(
+            "NAME   SCHEDULE TARGET            ENABLED\nbackup every 1h run /usr/bin/true yes\n",
+        );
+    assert_cmd::assert::Assert::new(locron(&state).args(["list", "--all"]).output().unwrap())
+        .success()
+        .stdout(
+            "NAME   SCHEDULE TARGET            ENABLED\n\
+         backup every 1h run /usr/bin/true yes\n\
+         ping   every 1h run /usr/bin/true no\n",
+        );
+}
+
+#[test]
+fn human_list_never_leaks_configured_values() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "web",
+                "--every",
+                "1m",
+                "--env",
+                "TOKEN=should-not-leak",
+                "--header",
+                "X-Auth=secret-header",
+                "--body",
+                "secret-body",
+                "--http",
+                "POST",
+                "https://example.com/hook",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains("should-not-leak").not())
+    .stdout(predicate::str::contains("secret-header").not())
+    .stdout(predicate::str::contains("secret-body").not());
+    assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
+        .success()
+        .stdout(predicate::str::contains(
+            "http POST https://example.com/hook",
+        ))
+        .stdout(predicate::str::contains("should-not-leak").not())
+        .stdout(predicate::str::contains("secret-header").not())
+        .stdout(predicate::str::contains("secret-body").not());
+}
+
+#[test]
 fn duplicate_add_and_rename_are_stable_durable_conflicts() {
     let state = tempfile::tempdir().unwrap();
     for name in ["alpha", "beta"] {
