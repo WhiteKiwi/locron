@@ -1,0 +1,287 @@
+# locron Dashboard Implementation Plan
+
+## Status and authority
+
+This document plans the dashboard surface against the frozen `SPEC.md` (this directory), which is
+phase 1 of the deferred product roadmap in `docs/TODO.md`. The frozen `docs/SPEC.md` is not
+amended: per the roadmap, this phase does not change its exclusions. Research evidence and rejected
+alternatives are recorded in `docs/FINDINGS.md` §14 (including the 2026-08-24 default-port
+verification); this document records the accepted implementation choices and their trade-offs.
+
+Durable-structure changes (workspace membership, the redaction boundary) update
+`docs/ARCHITECTURE.md` before code, per the repository workflow.
+
+## Architecture and approach
+
+The surface is a new workspace library crate, `locron-server`, composed by `locron-cli` through the
+`locron dashboard` command family:
+
+- `locron-server` depends on `locron-core` and `locron-store` only. It never depends on
+  `locron-cli` and never talks to SQLite tables directly — every read and mutation goes through the
+  durable application commands, exactly like the CLI and MCP surfaces.
+- `locron-cli` remains the composition root: it owns argument parsing, human/machine rendering,
+  state-path discovery, the service registration through the existing service-manager port, and the
+  `locron dashboard` wiring that constructs the store and starts the server. The server is a
+  library; the distributable binary remains the single `locron`.
+- `locron-engine` is untouched. The server does not take daemon ownership, does not run scheduling,
+  and sends only the same best-effort wake hint the CLI sends after a durable mutation.
+
+This mirrors the architecture doc's own forward reference ("Future viewer/API, MCP, and desktop
+crates are added only when those milestones begin") and keeps the engine's daemon runtime free of
+any HTTP surface.
+
+### Redaction boundary move
+
+The central redaction helpers (`redacted_job`, `redact_definition`, `redacted_observable_run`,
+`redacted_run`, `redacted_settings_value`) currently live in `locron-cli/src/main.rs`. A server
+crate cannot depend on the CLI, and the desktop surface later needs the same boundary, so the
+redaction functions move to `locron-core` as the shared redaction boundary. The CLI keeps its
+rendering and calls the core boundary; its contract tests stay green without output changes. This
+is a durable-responsibility change and is recorded in `docs/ARCHITECTURE.md` (core gains
+"redaction boundary" responsibility) before the move.
+
+## Accepted implementation decisions
+
+### Accepted: framework and crate
+
+Use `axum` 0.8.9 (declared MSRV 1.80, below the workspace MSRV 1.94), `tokio-stream` 0.1.19 for
+stream adapters, and `rust-embed` 8.x for bundled static assets. `tower-http` is not added: the
+middleware here (Host/Origin/CSRF/token/Referrer-Policy) is small, explicit, and testable by hand,
+and the assets are embedded rather than served from disk. No other framework, no WebSocket crate,
+and no Node build toolchain enter the repository.
+
+Blocking `rusqlite` calls stay behind store interfaces and run on the Tokio blocking pool
+(`tokio::task::spawn_blocking` around store operations), matching the daemon's rule that blocking
+SQLite work never runs on async worker threads. No workspace crate exposes Tokio types as domain
+values.
+
+`locron-server` exposes one composition entry (roughly `serve(store, paths, config)`) that builds
+the router and runs it; the CLI owns startup output and exit codes.
+
+### Accepted: dashboard service registration
+
+The persistent path reuses the existing service-manager port in `locron-cli` (launchd and
+systemd-user backends plus the deterministic fake, built for `locron service`), adding a second
+registration target for the dashboard:
+
+- macOS: LaunchAgent label `dev.locron.dashboard`, `ProgramArguments`
+  `[<current_exe>, "dashboard", "serve"]`, `KeepAlive` true, `RunAtLoad` true,
+  `StandardOutPath`/`StandardErrorPath` at `~/Library/Logs/locron/dashboard.log` (the daemon's
+  log convention, one file per service).
+- Linux: systemd user unit `locron-dashboard.service` at `~/.config/systemd/user/` with
+  `ExecStart=<current_exe> dashboard serve`, `Restart=on-failure`, `WantedBy=default.target`.
+
+`locron dashboard serve` is the non-interactive server entry the service executes; the bare
+`locron dashboard` behaves identically. The enable/disable flows reuse the daemon registration's
+verified behavior: enable-and-bootstrap ordering, refresh-and-restart of an already-loaded job,
+lock-unrelated deferral does not apply (the dashboard holds no daemon lock; a port conflict is
+handled as below), brew-marker refusal for registration operations (foreground serving stays
+allowed), and uninstall's signal-then-bootout ordering. The two registrations are independent:
+`locron service` never touches the dashboard unit and vice versa.
+
+`locron dashboard enable` = ensure token, then register/refresh/start the service; `disable` =
+unregister, then remove the token; `status` = service state plus the access URL and token facts;
+`enable --reset` = regenerate the token, then refresh-and-restart the service (the server reads the
+token at startup, so the restart picks up the new token and invalidates the old one).
+
+self-update, after a successful atomic replace, refreshes the dashboard registration when one
+exists, using the same pre-replace canonical-path capture that the daemon registration uses (the
+Linux `/proc/self/exe` deleted-inode lesson applies identically). install.sh never registers the
+dashboard.
+
+### Accepted: bind, port, and Host validation
+
+- Bind loopback only. `--bind` accepts only loopback values (`127.0.0.1`, `::1`, or the default
+  `127.0.0.1,::1`); any other value is refused at startup with the stable usage error — there is
+  no code path that binds a non-loopback interface.
+- Default port **10824**, verified unassigned in the IANA service-names registry on 2026-08-24;
+  the earlier candidate 45123 was rejected because one documented hostile endpoint used it
+  (evidence in `docs/FINDINGS.md` §14). Foreground mode: occupied default port falls back to the
+  next free port (up to ten successive ports, then an OS-assigned port) and the chosen URL is
+  printed. Service mode: the port is fixed — an occupied port makes the server exit and `status`
+  reports it — so the bookmarked address never silently moves. An explicit `--port N` is always
+  strict and fails with an actionable error when occupied (the Vite `strictPort` convention).
+- Host-header validation compares the hostname only and ignores the port, because the port can be
+  the fallback value. Accepted hosts are `localhost`, `127.0.0.1`, and `[::1]` (case-insensitive,
+  canonical IPv6 bracket form); anything else is 403 before routing.
+- If only one loopback family can be bound, the server warns and continues on the other.
+
+### Accepted: access token and session
+
+- Token material: 32 random bytes from the OS RNG, hex-encoded (64 characters). Stored owner-only
+  (0600) at a fixed name under the state directory; generated on first use (foreground or
+  `enable`), reused afterwards, regenerated by `enable --reset`, and removed by `disable`. The
+  server reads the token at startup; a running server is unaffected by a later file change, which
+  is why `enable --reset` restarts the service.
+- Transport: `Authorization: token <t>` (the Jupyter scheme) for scripts and automation, and a
+  one-time paste at the entry page for browsers. **The token never appears in any URL.** The
+  authenticated entry sets a session cookie (value is the token, `HttpOnly`, `SameSite=Lax`,
+  `Path=/`, generous lifetime so re-authentication is rare, no `Secure` flag on plain-HTTP
+  loopback).
+- Every state-bearing route (API and pages) requires a valid token; without one the server serves
+  only the entry page and returns 401 from API routes. The token is never logged, never echoed in
+  responses, and never appears in diagnostics (presence and permission facts only).
+- All responses carry `Referrer-Policy: no-referrer`.
+
+### Accepted: CSRF and Origin protection
+
+- Host allowlist (above) is the DNS-rebinding defense; it applies to every request, including
+  requests without an Origin header.
+- On unsafe methods (POST, PUT, PATCH, DELETE), a present Origin header must equal the server
+  origin (`http://<host>:<port>` of the bound loopback address); mismatch is 403. An absent Origin
+  is allowed (same-origin navigations, curl, EventSource).
+- Double-submit CSRF: the first authenticated visit also sets a `csrf_token` cookie (random 32-byte
+  hex, not `HttpOnly`, `SameSite=Lax`). A cookie-authenticated unsafe request must echo that value
+  in an `X-CSRF-Token` header or form field; mismatch is 403. Requests authenticated solely by the
+  bearer token in the Authorization header skip the CSRF check, because a cross-site page cannot
+  attach that header — the Jenkins API-token crumb exemption, cited in `docs/FINDINGS.md` §14. The
+  entry-page token paste is likewise safe without a CSRF token: a cross-site attacker cannot know
+  the token, and with one account login-CSRF is meaningless.
+
+### Accepted: API surface
+
+- Base path `/api/v1`. One route family per durable application command family, enumerated from
+  `docs/CLI.md` at implementation time: jobs (list, show, add, update, enable, disable, remove),
+  schedule preview, runs (enqueue, cancel with quarantine acknowledgement, history, logs), why,
+  settings, prune, export, import, and doctor. Request bodies mirror the CLI's machine-readable
+  field semantics; `dry_run` is supported wherever the CLI supports it.
+- Envelope: the versioned `locron.api/v1` envelope — success
+  `{"ok": true, "data": ..., "warnings": [...]}`, error
+  `{"ok": false, "error": {"code", "category", "message"}}` — where `category` reuses the CLI's
+  stable error categories. HTTP status mapping: usage/validation 422, not-found 404, conflict 409,
+  busy 503, refused/permission 403, internal 500. The exact table is part of the CLI.md contract
+  update.
+- Export is a GET returning the typed export document (`Content-Disposition: attachment`); import
+  is a POST whose body is the export document and honors the same plaintext-acknowledgement rules.
+- Redaction goes through the shared core boundary; parity tests compare API payloads with CLI JSON
+  output for the same fixtures.
+
+### Accepted: live output stream
+
+- `GET /api/v1/runs/{id}/stream` uses `axum::response::sse` (`text/event-stream`). The endpoint
+  authenticates through the session cookie only — EventSource cannot set an Authorization header,
+  and the token never appears in a URL.
+- Events are JSON text: `frame` events carry `{channel, seq, elapsed_us, data_b64}` (base64 so
+  arbitrary bytes survive; the viewer renders text channels and marks binary), `state` events carry
+  attempt/run state transitions, and a final `end` event carries the terminal outcome. The stream
+  reads the same framed output the CLI `--follow` uses and respects the same retention bounds;
+  following never cancels the run. A `KeepAlive` ping guards stale connections.
+- Job-list freshness is ordinary polling from the SPA (the healthchecks model); no push channel is
+  added for lists.
+
+### Accepted: viewer
+
+- A hand-written single-page viewer (plain HTML/CSS/JS, no framework, no build step, no CDN, no
+  external fonts) embedded in the binary via `rust-embed`. No Node toolchain enters CI.
+- Layout follows the conventions observed in `docs/FINDINGS.md` §14 (healthchecks, cronitor,
+  Jenkins, GitHub Actions): a status chip per job in the list, a run timeline in the job/run
+  detail, and a monospace, timestamped, follow/auto-scroll console log for output.
+- The SPA authenticates via the session cookie, echoes `X-CSRF-Token` from the `csrf_token` cookie
+  on every mutation, and uses `EventSource` (cookie-authenticated) for live logs.
+
+### Accepted: CLI composition and diagnostics
+
+- Command family: `locron dashboard` (foreground; identical to `dashboard serve`),
+  `enable [--reset]`, `disable`, `status`, `token`. Startup prints the access URL once — human
+  form and the machine-readable envelope per `docs/CLI.md` — then serves until signal. Exit codes
+  reuse the stable categories for state-dir, bind, and port failures; `disable` warns when a
+  foreground instance may still be running.
+- `locron doctor` gains the exposure facts: token file presence and permission posture, and whether
+  a dashboard service is registered. It does not report a server as running; `dashboard status`
+  does.
+- The help surface gains the new command with per-argument help, covered by the existing
+  help-surface acceptance walk.
+
+## Change order
+
+1. Amend planning documents: `docs/ARCHITECTURE.md` first (fifth workspace member with its
+   dependency row and arrows, the core redaction-boundary responsibility, and the
+   server-never-owns-daemon boundary note), then update `docs/CLI.md` with the `locron dashboard`
+   contract and the error-mapping table, and add this checklist to `docs/TODO.md` (`SPEC.md`
+   and `docs/FINDINGS.md` §14 are already frozen/recorded).
+2. Add the `locron-server` member to the workspace with the accepted dependencies; update the
+   dependency-direction enforcement check; confirm one `locron` binary and no new binary.
+3. Move the redaction boundary from `locron-cli` to `locron-core` with no output change; CLI
+   contract tests must pass unchanged.
+4. Implement the middleware stack and token file: loopback bind/refusal, Host allowlist, Origin
+   check, token acceptance (`Authorization` header plus entry-page paste), session and CSRF
+   cookies, `Referrer-Policy`, and the entry page.
+5. Implement the `/api/v1` route families over the durable application commands with the
+   `locron.api/v1` envelope, the error mapping, and blocking-pool store access.
+6. Implement the SSE run stream over the existing framed-output reader.
+7. Implement and embed the viewer SPA.
+8. Implement the dashboard service registration on the existing service-manager port (second
+   registration target, enable/disable/status/`--reset` flows, brew-marker refusal for
+   registration, dashboard log paths) and the self-update refresh of a registered dashboard.
+9. Wire the `locron dashboard` command family and the doctor exposure facts; extend the
+   help-surface acceptance test.
+10. Documentation final pass: `docs/CLI.md`, `docs/OPERATOR.md` (viewer operation, token lifecycle,
+    the `loginctl enable-linger` note shared with the daemon, what loopback does and does not
+    protect), README documentation list entry for `docs/dashboard/SPEC.md`.
+11. Full verification and evidence recording in `docs/TODO.md`, including the four-target CI
+    matrix.
+
+## Edge cases to handle explicitly
+
+- Default port occupied: foreground falls back and prints the chosen port; service mode exits and
+  `status` reports the conflict; explicit `--port` fails with an actionable error (no silent
+  fallback on explicit intent).
+- Token file missing at startup (fresh state dir, deleted file, or `disable`): regenerate and print
+  it (foreground) or generate silently at service start (service mode; the owning user reads it
+  via `dashboard token`).
+- Attacker domain resolving to loopback (DNS rebinding): Host allowlist 403s before routing.
+- Another loopback origin attempting a cookie-authenticated POST: Origin mismatch or missing
+  `X-CSRF-Token` stops it; bearer-token requests need no CSRF token.
+- Browser navigation after the session cookie expires or is cleared: entry page with a one-time
+  paste (`dashboard token` re-displays the value).
+- The daemon is offline: reads work, mutations commit durably, enqueue succeeds, doctor explains.
+- `enable --reset` invalidates outstanding session cookies and the old token; the service restart
+  applies it.
+- `enable` while the service is already registered: refresh-and-restart idempotently (the
+  `service install` semantics).
+- `disable` while a foreground instance is running: unregister and remove the token, warn that the
+  foreground process must be stopped by the user.
+- self-update with a registered dashboard: refresh the registration using the pre-replace
+  canonical path capture; a failed refresh is a warning, never an update failure.
+- brew-managed binaries: registration operations refuse with brew guidance; foreground serving
+  stays allowed.
+- IPv6-only environments: one loopback family unboundable is a warning, not a failure.
+- A quarantine-termination-unconfirmed run: the cancel route carries the same acknowledgement
+  requirement and stable conflicts as the CLI.
+- Export/import through the API: same document validation, acknowledgement, and rollback rules.
+
+## Verification strategy
+
+- **Middleware unit tests:** Host allowlist (case, port, `[::1]` forms, attacker domain, absent
+  port), Origin present/mismatch/absent on unsafe methods, double-submit CSRF match/mismatch and
+  bearer exemption, token accept/reject paths, entry-page paste flow, `Referrer-Policy` header on
+  all responses, entry page only without a token, and no token in any served URL.
+- **API contract tests:** a real server on an ephemeral loopback port over a temporary state
+  directory — token refusal, job CRUD round trips mutating real SQLite, offline manual enqueue,
+  export/import round trip with acknowledgement, dry-run non-mutation, error-category mapping, and
+  envelope version strings.
+- **Redaction parity tests:** API job/run/settings payloads equal the CLI JSON output for the same
+  fixtures; no configured secret material appears.
+- **SSE tests:** subscribe, inject frames through the store fixture, receive `frame`/`state`/`end`
+  events in order, terminal event at finalization, no cancellation on disconnect, cookie
+  authentication only.
+- **Service registration tests:** fake-port tests cover the dashboard target (templates with
+  canonicalized path, label/unit names, log paths), enable idempotency and refresh-and-restart,
+  `--reset` ordering, disable ordering, brew-marker refusal, and status fields; real-backend tests
+  on the macOS leg register, restart, and unregister the dashboard LaunchAgent in the available
+  domain, and the Linux leg drives the dashboard unit under `dbus-run-session`; a self-update
+  contract test proves the post-replace dashboard refresh happens exactly once and only after a
+  successful replace.
+- **CLI tests:** `locron dashboard` startup URL and token output, `--bind` refusal, explicit-port
+  strictness, foreground fallback, doctor exposure facts, and the help-surface acceptance walk
+  covering every new argument.
+- **Workspace verification:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
+  -- -D warnings`, `cargo test --workspace` on Rust 1.94 and latest stable; dependency-direction
+  inspection finds no forbidden edge; only the `locron` binary exists.
+- **Platform matrix:** the existing four-target CI runs the new suites.
+- **Manual browser checklist (recorded as evidence):** enable the service, open the access URL,
+  paste the token, verify the cookie handoff, render list/detail/history, create a job with
+  dry-run preview, follow a live run, cancel it, and confirm redacted values never appear in the
+  DOM or JSON.
+- **Port evidence:** the 10824 IANA-unassigned verification and the 45123 rejection are already
+  recorded in `docs/FINDINGS.md` §14; no further check is needed.

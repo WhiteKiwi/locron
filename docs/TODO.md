@@ -472,6 +472,89 @@ Follow-ups (open, not implemented here):
 - [ ] When locron is published to crates.io, the script's crates.io section switches automatically; record the first real numbers in this checklist.
 - [ ] The product-level `locron stats` command (local durable-run aggregation) needs its own SPEC amendment; tracked on the deferred product roadmap.
 
+## Web administration backlog (2026-08-24)
+
+Phase 1 of the ordered deferred product roadmap below. Authorized by the frozen 2026-08-24
+`docs/dashboard/SPEC.md` (interactive product review); planned in `docs/dashboard/IMPLEMENTATION.md`; evidence
+in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The frozen
+`docs/SPEC.md` is not amended — the roadmap phases do not change its exclusions.
+
+- [ ] Amend planning documents before code: `docs/ARCHITECTURE.md` first (fifth workspace member
+  `locron-server` with its dependency row and arrows, the shared redaction boundary moving to
+  `locron-core`, and the server-never-owns-daemon boundary note), then add the `locron dashboard`
+  contract plus the API error-status mapping to `docs/CLI.md`.
+  **Verify:** `rg -n "locron-server|redaction" docs/ARCHITECTURE.md` shows the new member,
+  dependency direction, and core redaction responsibility; `docs/CLI.md` documents the
+  `locron dashboard` family and the `locron.api/v1` envelope; no planning document marks an
+  unresolved decision.
+- [ ] Add the `locron-server` member to the workspace with axum 0.8.9, tokio-stream 0.1.19, and
+  rust-embed (all below MSRV 1.94 per `docs/FINDINGS.md` §14); update the dependency-direction
+  enforcement check.
+  **Verify:** `cargo build`/`fmt --check`/`clippy -p locron-server` pass on Rust 1.94 and latest
+  stable; dependency inspection shows `locron-server` depends only on `locron-core` and
+  `locron-store` and nothing depends on it but `locron-cli`; the workspace still produces exactly
+  one `locron` binary.
+- [ ] Move the redaction boundary (`redacted_job`, `redact_definition`,
+  `redacted_observable_run`, `redacted_run`, `redacted_settings_value`) from
+  `crates/locron-cli/src/main.rs` to `locron-core` with no output change.
+  **Verify:** the existing CLI contract and redaction tests pass unchanged;
+  `cargo clippy --workspace --all-targets -- -D warnings` stays clean.
+- [ ] Implement the middleware stack and token file: loopback-only bind with non-loopback refusal,
+  Host allowlist (`localhost`/`127.0.0.1`/`[::1]`, port ignored), Origin check on unsafe methods,
+  token acceptance (`Authorization: token` header plus entry-page paste, never a URL), session and
+  `csrf_token` cookies (`SameSite=Lax`), double-submit CSRF with bearer exemption,
+  `Referrer-Policy: no-referrer`, owner-only token file, and the unauthenticated entry page.
+  **Verify:** middleware unit tests cover the Host allowlist variants, Origin
+  present/mismatch/absent, CSRF match/mismatch and bearer exemption, token accept/reject, the
+  entry-page paste flow, the Referrer-Policy header, that only the entry page is served without a
+  token, and that no token ever appears in a served URL.
+- [ ] Implement the `/api/v1` route families over the durable application commands with the
+  `locron.api/v1` envelope, the CLI-category-to-HTTP-status mapping, dry-run parity, export
+  download/import upload with acknowledgement rules, and blocking-pool store access.
+  **Verify:** contract tests against a real server on an ephemeral loopback port and a temporary
+  state directory cover token refusal, job CRUD mutating real SQLite, offline manual enqueue,
+  export/import round trip, dry-run non-mutation, and the error mapping; redaction parity tests
+  compare API payloads with CLI JSON output for the same fixtures.
+- [ ] Implement the SSE run stream (`GET /api/v1/runs/{id}/stream`) over the existing framed-output
+  reader with `frame`/`state`/`end` JSON events, session-cookie-only authentication, and keepalive.
+  **Verify:** SSE tests receive ordered `frame`/`state` events for a live fixture run and exactly
+  one terminal `end` event at finalization; disconnecting the stream never cancels the run.
+- [ ] Implement and embed the hand-written viewer SPA (status chips, run timeline, monospace
+  follow console log, CSRF-aware mutations) via rust-embed, with no CDN, no external assets, and no
+  Node build step.
+  **Verify:** an asset test serves every referenced asset from the binary with correct content
+  types; a recorded manual browser checklist opens the access URL, walks the token paste and
+  cookie handoff, list/detail/history, job creation with dry-run preview, a live follow, and a
+  cancellation, and confirms no redacted value appears in DOM or JSON.
+- [ ] Implement the dashboard service registration on the existing service-manager port: second
+  registration target (`dev.locron.dashboard` / `locron-dashboard.service`, dashboard log paths,
+  `dashboard serve` execution), `enable`/`disable`/`status`/`enable --reset` flows with the daemon
+  registration's verified ordering, brew-marker refusal for registration, and the self-update
+  post-replace refresh using the pre-replace canonical-path capture.
+  **Verify:** fake-port tests cover the dashboard templates, enable idempotency and
+  refresh-and-restart, `--reset` ordering, disable ordering, brew-marker refusal, and status
+  fields; real-backend tests on the macOS leg register, restart, and unregister the dashboard
+  LaunchAgent, and the Linux leg drives the dashboard unit under `dbus-run-session`; a self-update
+  contract test proves the post-replace dashboard refresh happens exactly once and only after a
+  successful replace.
+- [ ] Wire the `locron dashboard [--port N] [--bind ADDR]` family (`serve` alias, `enable`,
+  `disable`, `status`, `token`) in `locron-cli`, add the doctor exposure facts, and extend the
+  help-surface acceptance walk to the new command.
+  **Verify:** CLI tests cover the startup URL and token output, non-loopback `--bind` refusal,
+  explicit `--port` strictness, foreground fallback, service-mode fixed port reporting,
+  `enable --reset` regeneration, doctor facts in human and JSON output, and the help walk covers
+  every new argument.
+- [ ] Documentation final pass: `docs/CLI.md` (verified above), `docs/OPERATOR.md` (viewer
+  operation, token lifecycle, the shared `loginctl enable-linger` note, what loopback does and
+  does not protect), and the README documentation list entry for `docs/dashboard/SPEC.md`.
+  **Verify:** documented commands execute as written; all new cross-links resolve.
+- [ ] Run full workspace verification and record evidence, then mark roadmap phase 1 complete.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  and `cargo test --workspace` pass on Rust 1.94 and latest stable; the four-target CI matrix is
+  green; the browser-checklist and real-backend evidence are recorded in this section; roadmap
+  phase 1 is checked with evidence pointing at `docs/dashboard/SPEC.md`, `docs/dashboard/IMPLEMENTATION.md`,
+  and this section.
+
 ## Ordered deferred product roadmap
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;
@@ -481,7 +564,7 @@ none changes the exclusions in the current `docs/SPEC.md`.
    origin/CSRF protections, exposure diagnostics, and reuse of durable application commands.
 2. [x] Define the MCP surface over the same application boundary, including capability scope,
    approval boundaries, redaction, and local transport/security behavior. **Evidence:** frozen in
-   `docs/MCP_SPEC.md` and `docs/MCP_IMPLEMENTATION.md`, shipped as `locron mcp` in v0.1.1 with unit
+   `docs/mcp/SPEC.md` and `docs/mcp/IMPLEMENTATION.md`, shipped as `locron mcp` in v0.1.1 with unit
    and integration test coverage.
 
 ### MCP (Model Context Protocol) Implementation Checklist

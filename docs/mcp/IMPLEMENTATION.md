@@ -2,7 +2,7 @@
 
 ## Architecture and Approach
 
-This document describes the implementation architecture for `locron mcp` based on the frozen requirements in `docs/MCP_SPEC.md`.
+This document describes the implementation architecture for `locron mcp` based on the frozen requirements in `SPEC.md` (this directory).
 
 ---
 

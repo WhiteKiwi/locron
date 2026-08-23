@@ -121,7 +121,7 @@ Register it with any MCP client using the same entry — `claude_desktop_config.
 }
 ```
 
-If `locron` is not on the client's `PATH`, use an absolute path. See [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) for the full tool, resource, and prompt reference.
+If `locron` is not on the client's `PATH`, use an absolute path. See [`docs/mcp/SPEC.md`](docs/mcp/SPEC.md) for the full tool, resource, and prompt reference.
 
 ---
 
@@ -131,7 +131,7 @@ If `locron` is not on the client's `PATH`, use an absolute path. See [`docs/MCP_
 - **[Operator Guide](docs/OPERATOR.md)** — daily operations, policy configuration, and troubleshooting.
 - **[CLI Reference](docs/CLI.md)** — every command, option, and output contract.
 - **[Architecture](docs/ARCHITECTURE.md)** — system design, invariants, and the durable state model.
-- **[MCP Specification](docs/MCP_SPEC.md)** — tools, resources, and prompts in full.
+- **[MCP Specification](docs/mcp/SPEC.md)** — tools, resources, and prompts in full.
 - **[Release Policy](docs/RELEASE.md)** — versioning, packaging, and release automation.
 - **[Changelog](CHANGELOG.md)** — notable changes in each release.
 
