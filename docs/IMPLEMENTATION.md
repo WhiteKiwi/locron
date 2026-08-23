@@ -609,3 +609,27 @@ The workflow gains a `lint` job — matrix `linux-x86_64` and `macos-aarch64` ×
 
 - The changed test passes 100 consecutive local runs plus the macOS CI legs, and the sibling `shutdown_drain_allows_natural_completion_before_lifetime_end` test remains untouched and green.
 - The `lint` job passes on both OS legs and both toolchains; the eight `test` job legs pass with `cargo test` only.
+
+## Usage snapshot smoke relocation (2026-08-24)
+
+No product-behavior change — CI placement only — so the frozen `docs/SPEC.md` is not amended. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §18.
+
+### Accepted: scheduled smoke workflow, hermetic push CI
+
+CI run 32654895285 failed in `Installer / ubuntu-latest` at the "Usage snapshot smoke (live APIs)" step: `scripts/usage.sh --json` exited non-zero with a non-`traffic_error` key. The step never passed `GITHUB_TOKEN` through `env:`, so the script's GitHub REST calls ran unauthenticated against the shared-IP 60/hour quota even though the script supports the token (`usage.sh` line 80). The step's tolerance predicate (`has("traffic_error") and [all *_error keys == "traffic_error"]`) then rejected the failure, as designed.
+
+New `.github/workflows/usage.yml`: `on: schedule: [cron: '0 3 * * 1']` (weekly, Monday 03:00 UTC) plus `workflow_dispatch`; one `usage` job on ubuntu-latest: checkout, run `sh scripts/usage.sh --json` with `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and `permissions: contents: read`, then assert the JSON parses and every numeric field is a non-negative integer. The traffic-only tolerance is not carried over — a failing scheduled run is a maintainer drift alert, not a gate, and the script's own degradation already explains each failed section. No artifacts are published; the run log is the record.
+
+`ci.yml`'s installer job loses the live-smoke step; the hermetic steps stay: shellcheck on `install.sh` and `scripts/usage.sh`, the fake-`uname`/`ldd` refusal tests, and the pinned `v0.2.0` install smoke (release-asset download through the CDN-backed redirect — no REST quota consumption — consistently green across the matrix runs, e.g. 32644269125 and 32654818613).
+
+### Edge cases to handle explicitly
+
+- Scheduled workflows run only on the default branch and auto-disable after 60 days of repository inactivity — acceptable for a maintainer measurement tool; `workflow_dispatch` covers manual runs.
+- `gh` is not authenticated in the scheduled run: the traffic section prints its note and the script still exits 0 when every other section succeeds (existing script behavior, unchanged).
+- formulae.brew.sh and crates.io have their own limits and are not authenticated: their sections can still fail a scheduled run — that is the drift alert working as intended, never a push gate.
+
+### Verification additions
+
+- `ci.yml` parses and the installer job's step list no longer includes the live smoke; `rg -n "usage.sh --json" .github/workflows` shows the smoke only inside `usage.yml`.
+- The scheduled workflow cannot fire from a push (GitHub schedules run on the default branch with real cron timing); a manual `workflow_dispatch` run is recorded as evidence at first trigger.
+- The next push CI run is green; run ID recorded in `docs/TODO.md`.

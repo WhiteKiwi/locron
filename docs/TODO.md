@@ -816,12 +816,59 @@ steps (clippy compile work halved, no arch-gated code exists to justify the arch
   **Evidence:** the workflow parses as valid YAML (ruby/psych — the plan's PyYAML example was
   unavailable; jobs are `test`, `lint`, `installer` with the lint matrix/timeout/fail-fast
   programmatically verified); `rg` finds fmt/clippy only at `ci.yml` lines 63–64 inside `lint`.
-  The push-run evidence is recorded by the parent session after publication.
+  Push run [32654818613](https://github.com/WhiteKiwi/locron/actions/runs/32654818613) (head
+  `e9f693c`) concluded `success` — the first run of the new `lint` job (4 legs) alongside the
+  eight-leg test matrix and the installer job.
 - [x] Run full workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
   --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass locally on the
   installed toolchain.
   **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
   -D warnings` clean; `cargo test --workspace` green across all binaries, 0 failed/panicked.
+
+## Usage snapshot smoke relocation backlog (2026-08-24)
+
+No product-behavior change (CI placement only), so the frozen `docs/SPEC.md` is not amended.
+Planned in `docs/IMPLEMENTATION.md` "Usage snapshot smoke relocation"; evidence in
+`docs/FINDINGS.md` §18.
+
+Background: CI run
+[32654895285](https://github.com/WhiteKiwi/locron/actions/runs/32654895285) failed in the
+`Installer / ubuntu-latest` job's "Usage snapshot smoke (live APIs)" step: the step never passed
+`GITHUB_TOKEN` to the script, so the GitHub REST calls ran unauthenticated against the shared-IP
+60/hour quota and the traffic-only tolerance predicate rejected the failure. The convention
+(FINDINGS §18: Google SWE book, Fowler, freenet-core's identical failure) is that blocking push
+CI must be hermetic and live third-party checks belong on a schedule — this backlog applies it.
+
+- [x] Amend planning documents before code: FINDINGS §18, the IMPLEMENTATION section, and this
+  checklist.
+  **Verify:** `rg -n "18\. Live External API|Usage snapshot smoke relocation" docs/FINDINGS.md
+  docs/IMPLEMENTATION.md docs/TODO.md` returns all three sections, and no planning document marks
+  an unresolved decision in them.
+  **Evidence:** `rg` returns `docs/FINDINGS.md` §18, the `docs/IMPLEMENTATION.md` EOF section,
+  and this checklist section; no unresolved decision marker in them; the SPEC is not amended (no
+  product-behavior change).
+- [x] Add `.github/workflows/usage.yml` (weekly `schedule:` cron plus `workflow_dispatch`, one
+  ubuntu-latest job, `env: GITHUB_TOKEN` with `permissions: contents: read`, JSON-shape assertion
+  without the traffic-only tolerance) and remove the live-smoke step from the `ci.yml` installer
+  job, keeping the hermetic shellcheck steps, the fake-`uname`/`ldd` refusals, and the pinned
+  `v0.2.0` install smoke.
+  **Verify:** both workflows parse as valid YAML; `rg -n "usage.sh --json" .github/workflows`
+  shows the smoke only inside `usage.yml`; the next push CI run is green (run ID recorded as
+  evidence); a manual `workflow_dispatch` run of the new workflow completes and records its
+  snapshot in the run log.
+  **Evidence:** the dev sub-session added `usage.yml` (39 lines; `on:` schedule cron `0 3 * * 1`
+  + `workflow_dispatch`, `permissions: contents: read`, one `usage` job with the `GITHUB_TOKEN`
+  env and the JSON-shape assertion) and removed only the 11-line live-smoke step from `ci.yml`
+  (installer job now shellcheck → fake-uname refusals → pinned install). Both files parse with
+  ruby/psych (`OK`, `OK`); `rg` finds the smoke only at `usage.yml:36` and no "Usage snapshot
+  smoke" in `ci.yml`. The push-run ID and the first `workflow_dispatch` evidence are recorded by
+  the parent session after publication.
+- [x] Run workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass (the change
+  touches only workflows, so this guards against accidental drift).
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
+  -D warnings` clean; `cargo test --workspace` green (51 engine unit tests + all doc-tests, 0
+  failed); `sh -n scripts/usage.sh` passes.
 
 ## Ordered deferred product roadmap
 
