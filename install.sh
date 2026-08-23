@@ -184,7 +184,7 @@ fi
 suffix="-$target.tar.gz"
 version=$tarball
 version=${version#locron-}
-version=${version%$suffix}
+version=${version%"$suffix"}
 
 echo "Installed locron $version to $install_path"
 echo "Run 'locron -V' to confirm the installation." >&2
