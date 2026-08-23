@@ -955,14 +955,35 @@ CI must be hermetic and live third-party checks belong on a schedule — this ba
   env and the JSON-shape assertion) and removed only the 11-line live-smoke step from `ci.yml`
   (installer job now shellcheck → fake-uname refusals → pinned install). Both files parse with
   ruby/psych (`OK`, `OK`); `rg` finds the smoke only at `usage.yml:36` and no "Usage snapshot
-  smoke" in `ci.yml`. The push-run ID and the first `workflow_dispatch` evidence are recorded by
-  the parent session after publication.
+  smoke" in `ci.yml`. Push run
+  [32655930565](https://github.com/WhiteKiwi/locron/actions/runs/32655930565) (head `f03d631`)
+  concluded `success` — the first push run without the live smoke. The first
+  `workflow_dispatch` run (32655962445) failed on the tolerance interaction recorded in the
+  follow-up step below.
 - [x] Run workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
   --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass (the change
   touches only workflows, so this guards against accidental drift).
   **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
   -D warnings` clean; `cargo test --workspace` green (51 engine unit tests + all doc-tests, 0
   failed); `sh -n scripts/usage.sh` passes.
+
+### Follow-up: restore the traffic-only tolerance in the scheduled smoke
+
+The first `workflow_dispatch` run (32655962445) failed: passing `GITHUB_TOKEN` also authenticates
+the preinstalled `gh`, and the owner-only `/traffic/*` endpoints then fail by design, producing
+`traffic_error` — the exact failure the removed step's tolerance existed for, and one the plan
+draft missed. `traffic_error` is the *expected* state of an authenticated scheduled run, so the
+tolerance (accept an exit confined to `traffic_error`, matching the old `ci.yml` step) must be
+restored in `usage.yml`; any other `*_error` key or an invalid snapshot still fails the run as a
+drift alert. `docs/IMPLEMENTATION.md` "Usage snapshot smoke relocation" is amended accordingly.
+
+- [ ] Restore the traffic-only tolerance in `.github/workflows/usage.yml` (mirror the removed
+  step's `|| code=$?` pattern: the numbers check always runs, and a non-zero script exit is
+  accepted only when `has("traffic_error")` and every `*_error` key is `traffic_error`).
+  **Verify:** the workflow parses as valid YAML; a manual `workflow_dispatch` run completes
+  `success` with the snapshot recorded in its log; the weekly cron path is the same step logic.
+
+## Ordered deferred product roadmap
 
 ## Ordered deferred product roadmap
 
