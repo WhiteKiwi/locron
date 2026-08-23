@@ -28,16 +28,21 @@ use serde_json::{Value, json};
 
 use crate::{Format, render};
 
-/// launchd label of the registered daemon.
+/// launchd label of the registered daemon (kept on all test builds so the
+/// plist template tests run everywhere).
+#[cfg(any(target_os = "macos", test))]
 pub(crate) const LABEL: &str = "dev.locron.daemon";
 /// Name of the systemd user unit.
 #[cfg(target_os = "linux")]
 const UNIT: &str = "locron.service";
 /// Plist file name inside `~/Library/LaunchAgents`.
+#[cfg(target_os = "macos")]
 const PLIST_NAME: &str = "dev.locron.daemon.plist";
 /// Log directory inside the home directory (the Homebrew default-log-path convention).
+#[cfg(any(target_os = "macos", test))]
 const LOG_DIR: &str = "Library/Logs/locron";
 /// Log file written by the service.
+#[cfg(any(target_os = "macos", test))]
 const LOG_FILE: &str = "daemon.log";
 /// How long uninstall waits for a signaled daemon to leave the manager.
 const UNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
@@ -187,6 +192,9 @@ pub(crate) fn service_name() -> &'static str {
 struct ServiceContext {
     executable: PathBuf,
     home: PathBuf,
+    /// Launchd addresses the service as `gui/<uid>/<label>`; the systemd user
+    /// manager has no per-domain user id, so the field is dead on Linux.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     uid: u32,
     paths: Option<StatePaths>,
 }
@@ -583,7 +591,9 @@ fn write_private(path: &Path, content: &[u8]) -> Result<(), ServiceError> {
     Ok(())
 }
 
-/// XML-escape a value for embedding in the plist.
+/// XML-escape a value for embedding in the plist (kept on all test builds so
+/// the plist template tests run everywhere).
+#[cfg(any(target_os = "macos", test))]
 fn escape_xml(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -599,7 +609,9 @@ fn escape_xml(text: &str) -> String {
     escaped
 }
 
-/// Render the LaunchAgent plist for the canonicalized binary.
+/// Render the LaunchAgent plist for the canonicalized binary (kept on all
+/// test builds so the plist template tests run everywhere).
+#[cfg(any(target_os = "macos", test))]
 fn render_plist(executable: &Path, home: &Path) -> String {
     let executable = escape_xml(&executable.display().to_string());
     let log = escape_xml(&home.join(LOG_DIR).join(LOG_FILE).display().to_string());
@@ -869,7 +881,7 @@ mod launchd {
 mod systemd {
     use std::env;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::process::{Command, Output};
 
     use super::{
@@ -884,8 +896,7 @@ mod systemd {
     fn unit_dir(ctx: &ServiceContext) -> PathBuf {
         let config = env::var_os("XDG_CONFIG_HOME")
             .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| ctx.home.join(".config"));
+            .map_or_else(|| ctx.home.join(".config"), PathBuf::from);
         config.join("systemd").join("user")
     }
 

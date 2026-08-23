@@ -304,7 +304,9 @@ done
 "{binary}" service status --json > status.json
 "{binary}" service install --json > refresh.json
 "{binary}" service uninstall --json > uninstall.json
-"#
+"#,
+            runtime_dir = runtime_dir.display(),
+            binary = binary.display(),
         );
         let output = Command::new("dbus-run-session")
             .args(["--", "sh", "-c", &script])
