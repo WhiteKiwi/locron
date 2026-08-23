@@ -1,5 +1,18 @@
 
-## [Unreleased]
+## [0.4.0] - 2026-08-24
+
+### Added
+
+- Export selection: `locron export --jobs`/`--tag` exports an exact subset, and a bare export in an
+  interactive terminal shows a job multi-select picker (all jobs initially selected) while standard
+  output still carries only the export document. Non-interactive contexts — pipes, redirection,
+  `CI`, JSON mode — export everything as before.
+- URL import: `locron import https://…` fetches and applies an export document with mandatory TLS
+  verification, bounded redirect/size/timeout limits, and the same validation, dry-run, and
+  atomicity as a file import. Importing a document registers executable schedules, with the same
+  trust boundary as installing a script from that URL.
+- `ls`/`rm` visible aliases for `list`/`remove`, and a docker-style aligned human `list` table
+  (NAME, SCHEDULE, TARGET, ENABLED). Machine output is unchanged.
 
 ## [0.3.1] - 2026-08-23
 
