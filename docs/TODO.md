@@ -377,6 +377,21 @@ Authorized by the frozen 2026-08-23 `docs/SPEC.md` amendment (Daemon Service Ins
   **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass; the four-target CI matrix passes after push; at the next real tag, live evidence shows `brew services start locron` starts the daemon and `brew upgrade` leaves the old daemon running until `brew services restart`.
   **Evidence:** locally, `cargo fmt --all --check` (no diffs), `cargo clippy --workspace --all-targets -- -D warnings` (clean), and `cargo test --workspace` (exit 0; 20 test binaries all `ok`, 0 failed/panicked — including the 60 `service.rs` unit tests, 11 `tests/service.rs` contract tests, 4 `tests/install_sh.rs` fixture tests, 9 `tests/self_update.rs` contract tests, and the real-macOS `tests/service_backends.rs` leg) all pass. The four-target CI matrix and live brew evidence at the next real tag are recorded as deferred in the Verify clause.
 
+## Workspace lint alignment backlog (2026-08-23)
+
+- [x] Bring `locron-core` and `locron-store` under `[lints] workspace = true` and clear every warning
+  that enables: document all public items in both crates, fix the four `cast_sign_loss` sites in the
+  store admission test with `try_from`, replace the infallible `try_into().expect` conversions in
+  `FrameReader::next_frame` with documented `unwrap_or_default`, and add `#[must_use]` to
+  `DaemonLock::file` and `StatePaths::new`.
+  **Verify:** `cargo clippy --workspace --all-targets -- -D warnings` reports zero warnings (465 before
+  the pass — 244 missing struct-field docs, 75 missing variant docs, 69 missing method docs, and the
+  rest structs, functions, consts, and type aliases, plus 9 non-doc lints); `cargo fmt --all --check`
+  and `cargo test --workspace --all-targets` pass (287 tests across 16 binaries); no `unsafe` was
+  introduced; the only `#[allow]` added is a scoped `clippy::needless_pass_by_value` on
+  `Store::materialize_with_summaries`, whose by-value cursor parameter is public API consumed by
+  `locron-cli`.
+
 ## Ordered deferred product roadmap
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;

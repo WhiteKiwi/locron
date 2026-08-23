@@ -2,7 +2,9 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::{StoreError, StoreResult};
 
+/// SQLite `application_id` marker identifying a locron database.
 pub const APPLICATION_ID: i32 = 0x4c4f_4352; // "LOCR"
+/// Highest schema `user_version` this binary knows how to migrate to.
 pub const LATEST_SCHEMA_VERSION: i64 = 5;
 const INITIAL_MIGRATION_NAME: &str = "initial durable state";
 const DISABLED_CURSOR_MIGRATION_NAME: &str = "record disabled cursor intervals";

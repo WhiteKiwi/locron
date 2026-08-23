@@ -44,17 +44,29 @@ pub enum BackoffMode {
 /// Complete normalized execution policy.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionPolicy {
+    /// Behavior when a new occurrence conflicts with active same-job work.
     pub overlap: OverlapPolicy,
+    /// Behavior for occurrences that elapsed without reconciliation.
     pub missed_run: MissedRunPolicy,
+    /// Maximum age an occurrence may reach before it is omitted as expired.
     pub start_deadline: Option<DurationMicros>,
+    /// Maximum number of newest eligible occurrences materialized for a missed range.
     pub catch_up_limit: u16,
+    /// Maximum retries after a failed attempt.
     pub retries: u8,
+    /// Base delay before the first retry.
     pub retry_delay: DurationMicros,
+    /// Maximum delay any retry may reach.
     pub retry_cap: DurationMicros,
+    /// Delay progression mode between retries.
     pub backoff: BackoffMode,
+    /// Whether a timed-out attempt is eligible for retry.
     pub retry_timeout: bool,
+    /// Per-attempt execution timeout; `None` disables the timeout.
     pub timeout: Option<DurationMicros>,
+    /// Grace period before a hard kill on timeout, cancel, or replace.
     pub termination_grace: DurationMicros,
+    /// Maximum concurrent attempts allowed for one job.
     pub per_job_concurrency: u8,
 }
 

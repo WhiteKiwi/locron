@@ -18,6 +18,7 @@ where
     /// Adapter-native error retained until the application boundary maps it.
     type Error: std::error::Error + Send + Sync + 'static;
 
+    /// Applies the command to durable state and returns its typed result.
     fn apply(&self, command: C) -> std::result::Result<C::Result, Self::Error>;
 
     /// Converts adapter details into the stable application error vocabulary.
@@ -44,9 +45,12 @@ pub trait TimeZoneResolver: Send + Sync {
 /// Engine adapters choose their request and output values. The returned
 /// future is a standard-library value and may be driven by any executor.
 pub trait ExecutorPort: Send + Sync {
+    /// Adapter-chosen request value describing one target execution.
     type Request: Send;
+    /// Adapter-chosen result value produced by one target execution.
     type Output: Send;
 
+    /// Executes one request and resolves with its result.
     fn execute(&self, request: Self::Request) -> impl Future<Output = Result<Self::Output>> + Send;
 }
 

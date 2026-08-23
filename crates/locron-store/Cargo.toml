@@ -18,5 +18,5 @@ uuid.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 
-[lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true

@@ -30,23 +30,31 @@ pub enum OmittedRangeKind {
 /// One compact, exact explanation for a contiguous omitted occurrence range.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OmittedRange {
+    /// Reason the occurrences were omitted.
     pub kind: OmittedRangeKind,
+    /// Number of contiguous occurrences omitted.
     pub count: u64,
+    /// Nominal instant of the first omitted occurrence.
     pub first: Timestamp,
+    /// Nominal instant of the last omitted occurrence.
     pub last: Timestamp,
 }
 
 /// One selected occurrence and whether it is catch-up work.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SelectedOccurrence {
+    /// Nominal instant of the occurrence.
     pub nominal: Timestamp,
+    /// Whether the occurrence is catch-up work for an elapsed range.
     pub catch_up: bool,
 }
 
 /// Pure result of reconciling one durable cursor interval.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ScheduleReconciliation {
+    /// Occurrences selected for materialization, in nominal order.
     pub selected: Vec<SelectedOccurrence>,
+    /// Ranges of occurrences omitted and why.
     pub omitted: Vec<OmittedRange>,
 }
 
@@ -65,23 +73,32 @@ pub enum ElapsedKind {
 pub enum Schedule {
     /// Five-field calendar schedule.
     Cron {
+        /// Cron expression in the standard five-field syntax.
         expression: String,
+        /// Calendar timezone the expression is evaluated in.
         timezone: ScheduleTimeZone,
     },
     /// Whole-second fixed interval from a durable anchor.
     Every {
+        /// Interval between consecutive occurrences.
         interval: DurationMicros,
+        /// Durable anchor instant occurrences align to.
         anchor: Timestamp,
     },
     /// One-time absolute instant.
-    At { at: Timestamp },
+    At {
+        /// The single occurrence instant.
+        at: Timestamp,
+    },
 }
 
 /// Calendar timezone selection.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "mode", content = "name", rename_all = "snake_case")]
 pub enum ScheduleTimeZone {
+    /// The process-local system timezone.
     Local,
+    /// A named IANA timezone.
     Iana(String),
 }
 

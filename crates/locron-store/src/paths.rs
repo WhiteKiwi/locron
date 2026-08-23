@@ -8,15 +8,22 @@ use crate::StoreError;
 /// All files owned by one locron scheduler instance.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StatePaths {
+    /// State directory root containing all managed files.
     pub root: PathBuf,
+    /// SQLite database file.
     pub database: PathBuf,
+    /// Daemon exclusive-lock file.
     pub daemon_lock: PathBuf,
+    /// Socket used to wake a running daemon.
     pub wake_socket: PathBuf,
+    /// Directory holding run output artifacts.
     pub outputs: PathBuf,
+    /// Directory for temporary files.
     pub temporary: PathBuf,
 }
 
 impl StatePaths {
+    /// Resolves the state root from the override, `LOCRON_STATE_DIR`, or the platform default.
     pub fn discover(override_dir: Option<&Path>) -> Result<Self, StoreError> {
         let root = if let Some(path) = override_dir {
             path.to_path_buf()
@@ -28,6 +35,8 @@ impl StatePaths {
         Ok(Self::new(root))
     }
 
+    /// Builds the full state layout under one root directory.
+    #[must_use]
     pub fn new(root: PathBuf) -> Self {
         Self {
             database: root.join("state.db"),
@@ -47,11 +56,13 @@ impl StatePaths {
         Ok(())
     }
 
+    /// Returns the per-run output directory, validating the run identity first.
     pub fn output_directory(&self, run_id: &str) -> Result<PathBuf, StoreError> {
         validate_uuid(run_id)?;
         Ok(self.outputs.join(run_id))
     }
 
+    /// Returns the in-progress output path for an attempt, rejecting attempt zero.
     pub fn partial_output(&self, run_id: &str, attempt: u16) -> Result<PathBuf, StoreError> {
         if attempt == 0 {
             return Err(StoreError::InvalidIdentity(
@@ -63,6 +74,7 @@ impl StatePaths {
             .join(format!("{attempt}.partial")))
     }
 
+    /// Returns the finalized output path for an attempt, rejecting attempt zero.
     pub fn final_output(&self, run_id: &str, attempt: u16) -> Result<PathBuf, StoreError> {
         if attempt == 0 {
             return Err(StoreError::InvalidIdentity(

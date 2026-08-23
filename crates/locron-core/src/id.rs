@@ -1,3 +1,5 @@
+//! Typed UUID and positive-sequence identities.
+
 use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
@@ -6,7 +8,8 @@ use uuid::Uuid;
 use crate::ValidationError;
 
 macro_rules! uuid_id {
-    ($name:ident, $field:literal) => {
+    ($name:ident, $field:literal, $description:literal) => {
+        #[doc = $description]
         #[derive(
             Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize,
         )]
@@ -20,11 +23,13 @@ macro_rules! uuid_id {
                 Self(Uuid::now_v7())
             }
 
+            /// Wraps an existing UUID without canonical-form validation.
             #[must_use]
             pub const fn from_uuid(value: Uuid) -> Self {
                 Self(value)
             }
 
+            /// Returns the wrapped UUID value.
             #[must_use]
             pub const fn as_uuid(self) -> Uuid {
                 self.0
@@ -63,9 +68,17 @@ macro_rules! uuid_id {
     };
 }
 
-uuid_id!(JobId, "job_id");
-uuid_id!(RunId, "run_id");
-uuid_id!(SchedulerLifetimeId, "scheduler_lifetime_id");
+uuid_id!(JobId, "job_id", "A globally unique identity for a job.");
+uuid_id!(
+    RunId,
+    "run_id",
+    "A globally unique identity for a single run."
+);
+uuid_id!(
+    SchedulerLifetimeId,
+    "scheduler_lifetime_id",
+    "A globally unique identity for one scheduler lifetime."
+);
 
 macro_rules! positive_number {
     ($name:ident, $field:literal, $description:literal) => {
@@ -89,6 +102,7 @@ macro_rules! positive_number {
                 Ok(Self(value))
             }
 
+            /// Returns the underlying positive durable sequence value.
             #[must_use]
             pub const fn get(self) -> u64 {
                 self.0

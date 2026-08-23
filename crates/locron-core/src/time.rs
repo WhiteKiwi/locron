@@ -1,3 +1,5 @@
+//! Wall-clock timestamps and non-negative duration values.
+
 use std::{fmt, str::FromStr, time::Duration};
 
 use jiff::Timestamp as JiffTimestamp;
@@ -11,23 +13,28 @@ use crate::ValidationError;
 pub struct Timestamp(i64);
 
 impl Timestamp {
+    /// The Unix epoch instant.
     pub const UNIX_EPOCH: Self = Self(0);
 
+    /// Wraps a value already expressed as signed Unix epoch microseconds.
     #[must_use]
     pub const fn from_epoch_micros(value: i64) -> Self {
         Self(value)
     }
 
+    /// Returns the signed Unix epoch microseconds value.
     #[must_use]
     pub const fn epoch_micros(self) -> i64 {
         self.0
     }
 
+    /// Adds a duration, returning `None` on overflow of the underlying value.
     pub fn checked_add(self, duration: DurationMicros) -> Option<Self> {
         let micros = i64::try_from(duration.0).ok()?;
         self.0.checked_add(micros).map(Self)
     }
 
+    /// Subtracts a duration, returning `None` on underflow of the underlying value.
     pub fn checked_sub(self, duration: DurationMicros) -> Option<Self> {
         let micros = i64::try_from(duration.0).ok()?;
         self.0.checked_sub(micros).map(Self)
@@ -89,20 +96,26 @@ fn has_explicit_offset(value: &str) -> bool {
 pub struct DurationMicros(u64);
 
 impl DurationMicros {
+    /// Zero duration.
     pub const ZERO: Self = Self(0);
+    /// One second.
     pub const SECOND: Self = Self(1_000_000);
+    /// One minute.
     pub const MINUTE: Self = Self(60_000_000);
 
+    /// Wraps a value already expressed in microseconds.
     #[must_use]
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
 
+    /// Returns the underlying microseconds value.
     #[must_use]
     pub const fn get(self) -> u64 {
         self.0
     }
 
+    /// Multiplies by a scalar, saturating at the representable maximum.
     #[must_use]
     pub fn saturating_mul(self, rhs: u64) -> Self {
         Self(self.0.saturating_mul(rhs))

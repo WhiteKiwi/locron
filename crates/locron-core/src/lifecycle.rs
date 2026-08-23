@@ -8,20 +8,32 @@ use crate::CoreError;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunState {
+    /// Admitted to the durable queue but not yet started.
     Queued,
+    /// Spawning or initializing its first attempt.
     Starting,
+    /// Actively executing one attempt.
     Running,
+    /// Waiting out the configured retry delay before the next attempt.
     RetryWait,
+    /// A terminal attempt succeeded.
     Succeeded,
+    /// A terminal attempt failed and no retry was scheduled.
     Failed,
+    /// A terminal attempt exceeded its timeout.
     TimedOut,
+    /// Cancellation was requested and accepted.
     Cancelled,
+    /// Superseded or discarded due to an overlap conflict.
     SkippedOverlap,
+    /// Not admitted because the per-job concurrency limit was reached.
     SkippedConcurrency,
+    /// Termination could not be confirmed after an interruption.
     InterruptedUnknown,
 }
 
 impl RunState {
+    /// Returns whether the state is terminal and no further transition is legal.
     #[must_use]
     pub const fn is_terminal(self) -> bool {
         matches!(
@@ -71,12 +83,19 @@ impl RunState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttemptState {
+    /// Spawned but not yet confirmed running.
     Starting,
+    /// Actively executing the target.
     Running,
+    /// The target completed successfully.
     Succeeded,
+    /// The target failed.
     Failed,
+    /// The target exceeded its timeout.
     TimedOut,
+    /// Cancellation was accepted.
     Cancelled,
+    /// Termination could not be confirmed after an interruption.
     InterruptedUnknown,
 }
 

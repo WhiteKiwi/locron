@@ -23,42 +23,70 @@ use crate::{DaemonLock, LockMetadata, StatePaths};
 type AdmissionRow = (String, String, String, i64, String, Option<i64>);
 const MAINTENANCE_BATCH_LIMIT: usize = 100;
 
+/// Result type returned by store operations, carrying a [`StoreError`] on failure.
 pub type StoreResult<T> = Result<T, StoreError>;
 
+/// Errors produced by store operations.
 #[derive(Debug, Error)]
 pub enum StoreError {
+    /// Filesystem or OS-level I/O failure.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// SQLite driver failure, including busy and locked conditions.
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
+    /// Failure to serialize or deserialize JSON stored in the database.
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    /// Another locron daemon owns this state directory.
     #[error("another locron daemon owns this state directory")]
     DaemonAlreadyRunning,
+    /// The state directory is held by a daemon that must restart to apply a
+    /// pending database migration.
     #[error("database migration requires the running daemon to restart")]
     MigrationRequiresDaemonRestart,
+    /// The database schema is newer than the schema this binary supports.
     #[error("database schema {found} is newer than supported schema {supported}")]
-    SchemaTooNew { found: i64, supported: i64 },
+    SchemaTooNew {
+        /// Schema version recorded in the database.
+        found: i64,
+        /// Highest schema version this binary supports.
+        supported: i64,
+    },
+    /// The database application id does not identify locron state.
     #[error("database application id {0:#x} does not identify locron state")]
     NotLocronDatabase(i32),
+    /// A recorded migration checksum does not match the migration this binary
+    /// ships with.
     #[error("migration {version} checksum mismatch: expected {expected}, found {found}")]
     MigrationChecksumMismatch {
+        /// Migration version whose checksum mismatched.
         version: i64,
+        /// Checksum this binary computed for the migration.
         expected: String,
+        /// Checksum recorded in the database.
         found: String,
     },
+    /// A migration record is missing for the given version.
     #[error("migration record {0} is missing")]
     MissingMigration(i64),
+    /// Migration raced another concurrent initializer.
     #[error("migration raced another initializer")]
     MigrationConflict,
+    /// The state directory cannot be discovered (no platform default).
     #[error("state directory cannot be discovered")]
     StateDirectoryUnavailable,
+    /// A managed path is unsafe (symlink or unexpected file type).
     #[error("unsafe managed path: {0}")]
     UnsafePath(std::path::PathBuf),
+    /// An identity (for example a UUID) is invalid.
     #[error("invalid identity: {0}")]
     InvalidIdentity(String),
+    /// The referenced entity does not exist.
     #[error("not found: {0}")]
     NotFound(String),
+    /// A durable conflict: optimistic revision mismatch, identity collision,
+    /// or state that is no longer applicable.
     #[error("durable conflict: {0}")]
     Conflict(String),
 }
@@ -66,282 +94,511 @@ pub enum StoreError {
 /// Error produced while adapting a core application command to SQLite.
 #[derive(Debug, Error)]
 pub enum StorePortError {
+    /// A core application command validation error.
     #[error(transparent)]
     Core(#[from] CoreError),
+    /// A store-level failure.
     #[error(transparent)]
     Store(#[from] StoreError),
+    /// A JSON serialization failure.
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }
 
+/// Input for creating a new job at revision 1.
 #[derive(Clone, Debug)]
 pub struct CreateJob {
+    /// Canonical lowercase UUID of the new job.
     pub id: String,
+    /// Live job name, unique among non-removed jobs.
     pub name: String,
+    /// Optional human-readable description.
     pub description: Option<String>,
+    /// Job tags serialized as a JSON array.
     pub tags_json: String,
+    /// Whether the job starts enabled.
     pub enabled: bool,
+    /// Job definition (schedule, target, policy) serialized as JSON.
     pub definition_json: String,
+    /// Wall-clock time in microseconds recorded as the creation timestamp.
     pub now_us: i64,
+    /// Initial schedule cursor in microseconds.
     pub cursor_us: i64,
 }
 
+/// Input for replacing a job's fields, bumping its revision.
 #[derive(Clone, Debug)]
 pub struct UpdateJob {
+    /// Canonical lowercase UUID of the job to update.
     pub id: String,
+    /// Revision the job must currently hold; a mismatch returns
+    /// [`StoreError::Conflict`].
     pub expected_revision: i64,
+    /// Live job name, unique among non-removed jobs.
     pub name: String,
+    /// Optional human-readable description.
     pub description: Option<String>,
+    /// Job tags serialized as a JSON array.
     pub tags_json: String,
+    /// Whether the job is enabled after the update.
     pub enabled: bool,
+    /// Job definition (schedule, target, policy) serialized as JSON.
     pub definition_json: String,
+    /// Wall-clock time in microseconds recorded as the update timestamp.
     pub now_us: i64,
+    /// New schedule cursor in microseconds.
     pub cursor_us: i64,
 }
 
+/// A full snapshot of one job at its current revision.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JobRecord {
+    /// Canonical UUID of the job.
     pub id: String,
+    /// Live name of the job.
     pub name: String,
+    /// Optional human-readable description.
     pub description: Option<String>,
+    /// Job tags serialized as a JSON array.
     pub tags_json: String,
+    /// Whether the job is currently enabled.
     pub enabled: bool,
+    /// Wall-clock time in microseconds when the job was soft-deleted, or
+    /// `None` while the job is live.
     pub removed_at_us: Option<i64>,
+    /// Revision of the current definition, incremented on every update.
     pub current_revision: i64,
+    /// Definition of the current revision, serialized as JSON.
     pub definition_json: String,
+    /// Schedule cursor of the current revision in microseconds.
     pub cursor_us: i64,
+    /// Wall-clock time in microseconds of the last job-row update.
     pub updated_at_us: i64,
+    /// Wall-clock time in microseconds when the current cursor row was
+    /// written.
     pub cursor_updated_at_us: i64,
+    /// Wall-clock time in microseconds when the job entered its current
+    /// disabled period; `None` while enabled or after a cursor update.
     pub disabled_since_us: Option<i64>,
 }
 
+/// Input for materializing one scheduled run occurrence.
 #[derive(Clone, Debug)]
 pub struct NewScheduledRun {
+    /// Canonical UUID of the new run.
     pub id: String,
+    /// UUID of the job the run belongs to.
     pub job_id: String,
+    /// Job revision whose definition snapshot produced this run.
     pub revision: i64,
+    /// Trigger kind: `scheduled` or `catch_up`.
     pub trigger: String,
+    /// Nominal schedule time in microseconds.
     pub nominal_us: i64,
+    /// Wall-clock time in microseconds when the run was requested.
     pub requested_at_us: i64,
+    /// Wall-clock time in microseconds before which the run must not be
+    /// admitted.
     pub eligible_at_us: i64,
+    /// Job definition snapshot at this revision, serialized as JSON; the
+    /// admission policy is read from it.
     pub snapshot_json: String,
 }
 
+/// Input for advancing a job's schedule cursor atomically with materializing
+/// its runs.
 #[derive(Clone, Debug)]
 pub struct CursorUpdate {
+    /// Job revision the cursor update applies to; must match the current
+    /// revision.
     pub expected_revision: i64,
+    /// Cursor value the update is based on; a mismatch returns
+    /// [`StoreError::Conflict`].
     pub expected_cursor_us: i64,
+    /// New cursor value in microseconds.
     pub new_cursor_us: i64,
+    /// When `true`, the job's one-time schedule is resolved and the job is
+    /// disabled atomically with the cursor update.
     pub resolve_one_time: bool,
 }
 
+/// Counts produced by one materialization pass.
 #[derive(Clone, Debug, Default)]
 pub struct MaterializedRun {
+    /// Number of runs newly inserted.
     pub inserted: usize,
+    /// Number of runs already present that were ignored.
     pub duplicates: usize,
 }
 
+/// A compact event recorded for a reconciliation range, atomically with the
+/// cursor that caused it.
 #[derive(Clone, Debug)]
 pub struct ReconciliationSummary {
+    /// Event kind recorded for the range (for example
+    /// `missed_start_deadline`).
     pub kind: String,
+    /// Number of occurrences reconciled in the range; must be positive.
     pub count: u64,
+    /// First nominal schedule time in microseconds of the range.
     pub first_nominal_us: i64,
+    /// Last nominal schedule time in microseconds of the range; must be at
+    /// least `first_nominal_us`.
     pub last_nominal_us: i64,
 }
 
+/// One row of the append-only event log.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EventRecord {
+    /// Monotonic event row id.
     pub id: i64,
+    /// Wall-clock time in microseconds when the event occurred.
     pub occurred_at_us: i64,
+    /// Event kind (for example `job_added`, `run_cancelled`).
     pub kind: String,
+    /// Job the event concerns, when any.
     pub job_id: Option<String>,
+    /// Run the event concerns, when any.
     pub run_id: Option<String>,
+    /// Event-specific details serialized as JSON.
     pub details_json: String,
 }
 
+/// A full snapshot of one run.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunRecord {
+    /// Canonical UUID of the run.
     pub id: String,
+    /// UUID of the job the run belongs to.
     pub job_id: String,
+    /// Job revision whose snapshot produced the run.
     pub revision: i64,
+    /// Trigger kind: `manual`, `scheduled`, or `catch_up`.
     pub trigger: String,
+    /// Nominal schedule time in microseconds; `None` for manual runs.
     pub nominal_us: Option<i64>,
+    /// Wall-clock time in microseconds when the run was requested.
     pub requested_at_us: i64,
+    /// Wall-clock time in microseconds before which the run must not be
+    /// admitted.
     pub eligible_at_us: i64,
+    /// Run state: `queued`, `starting`, `running`, `retry_wait`, or a terminal
+    /// state (`succeeded`, `failed`, `timed_out`, `cancelled`,
+    /// `skipped_overlap`, `skipped_concurrency`, `interrupted_unknown`).
     pub state: String,
+    /// Human-readable reason for the state, when set.
     pub reason: Option<String>,
+    /// Job definition snapshot at this revision, serialized as JSON.
     pub snapshot_json: String,
+    /// Wall-clock time in microseconds when the run reached a terminal state;
+    /// `None` while the run is active.
     pub finished_at_us: Option<i64>,
 }
 
+/// The output artifact row of one attempt.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AttemptOutputRecord {
+    /// Artifact state: `pending`, `active`, `finalized`, `missing`,
+    /// `prune_pending`, or `pruned`.
     pub state: String,
+    /// Payload bytes retained after truncation.
     pub retained_payload_bytes: i64,
+    /// Bytes physically written to disk.
     pub physical_bytes: i64,
+    /// Bytes discarded by truncation.
     pub discarded_bytes: i64,
+    /// Whether the output exceeded its limit and was truncated.
     pub truncated: bool,
+    /// Wall-clock time in microseconds when truncation occurred.
     pub truncated_at_us: Option<i64>,
+    /// Wall-clock time in microseconds when the artifact was finalized.
     pub finalized_at_us: Option<i64>,
+    /// Wall-clock time in microseconds when pruning of the artifact started.
     pub prune_started_at_us: Option<i64>,
+    /// Wall-clock time in microseconds when the artifact was pruned.
     pub pruned_at_us: Option<i64>,
 }
 
+/// A full snapshot of one attempt, with its output artifact when present.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AttemptRecord {
+    /// UUID of the run the attempt belongs to.
     pub run_id: String,
+    /// One-based attempt number within the run.
     pub attempt_number: i64,
+    /// Wall-clock time in microseconds when the attempt was admitted.
     pub started_at_us: i64,
+    /// Wall-clock time in microseconds when the attempt began executing;
+    /// `None` until spawn.
     pub running_at_us: Option<i64>,
+    /// Wall-clock time in microseconds when the attempt finished; `None`
+    /// while active.
     pub finished_at_us: Option<i64>,
+    /// Elapsed duration of the attempt in microseconds; `None` while active.
     pub duration_us: Option<i64>,
+    /// Attempt state: `starting`, `running`, or a terminal state (`succeeded`,
+    /// `failed`, `timed_out`, `cancelled`, `interrupted_unknown`).
     pub state: String,
+    /// Result class recorded at completion (for example `succeeded`,
+    /// `termination_unconfirmed`, `output_preparation_failed`).
     pub outcome: Option<String>,
+    /// Process exit code, when the target exited.
     pub exit_code: Option<i32>,
+    /// HTTP status code, when the target is an HTTP request.
     pub http_status: Option<u16>,
+    /// Content type of the final HTTP response, when applicable.
     pub http_content_type: Option<String>,
+    /// Absolute path of the executable the attempt was spawned with, once
+    /// resolved.
     pub resolved_executable: Option<String>,
+    /// Error message recorded at completion.
     pub error: Option<String>,
+    /// Human-readable reason for the attempt state.
     pub reason: Option<String>,
+    /// Output artifact of this attempt, when one exists.
     pub output: Option<AttemptOutputRecord>,
 }
 
+/// One attempt admitted by [`Store::admit`].
 #[derive(Clone, Debug)]
 pub struct AdmitAttempt {
+    /// UUID of the run being admitted.
     pub run_id: String,
+    /// UUID of the job the run belongs to.
     pub job_id: String,
+    /// Attempt number assigned by admission (one past the run's highest).
     pub attempt_number: i64,
+    /// Run trigger kind.
     pub trigger: String,
+    /// Nominal schedule time in microseconds; `None` for manual runs.
     pub nominal_us: Option<i64>,
+    /// Job definition snapshot serialized as JSON, needed to launch the
+    /// attempt.
     pub snapshot_json: String,
 }
+/// The attempts admitted by one [`Store::admit`] pass.
 #[derive(Clone, Debug, Default)]
 pub struct Admission {
+    /// Admitted attempts, in admission order.
     pub attempts: Vec<AdmitAttempt>,
 }
 
+/// Outcome of advancing an admitted attempt past the pre-spawn boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartDecision {
+    /// The attempt may spawn; the run advanced to `running`.
     Ready,
+    /// The run was cancelled or superseded before spawn; the attempt is
+    /// durably terminal.
     CancelledBeforeSpawn,
 }
 
+/// Outcome of cancelling a run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CancelOutcome {
+    /// The run was queued or retry-waiting and is now cancelled.
     CancelledBeforeExecution,
+    /// The run was starting or running; a durable cancellation request was
+    /// recorded for the runner.
     CancellationRequested,
+    /// A termination-unconfirmed quarantine was acknowledged by an operator;
+    /// the run is durably `interrupted_unknown`.
     AcknowledgedUnconfirmed,
 }
 
+/// Retry plan attached to a failed or timed-out attempt completion.
 #[derive(Clone, Debug)]
 pub struct RetryPlan {
+    /// Earliest wall-clock time in microseconds at which the retry may be
+    /// admitted.
     pub not_before_us: i64,
+    /// Retry classification recorded with the retry intent (for example
+    /// `process_exit`, `known_failure`).
     pub classification: String,
 }
 
+/// Input for durably recording the outcome of one attempt.
 #[derive(Clone, Debug)]
 pub struct AttemptCompletion {
+    /// UUID of the run the attempt belongs to.
     pub run_id: String,
+    /// Attempt number completing.
     pub attempt_number: i64,
+    /// Wall-clock time in microseconds of the completion; also the recorded
+    /// finished timestamp.
     pub now_us: i64,
+    /// Elapsed duration of the attempt in microseconds.
     pub duration_us: i64,
+    /// Terminal state to record (`succeeded`, `failed`, `timed_out`,
+    /// `cancelled`, `termination_unconfirmed`).
     pub state: String,
+    /// Process exit code, when available.
     pub exit_code: Option<i32>,
+    /// HTTP status code, when the target is an HTTP request.
     pub http_status: Option<u16>,
+    /// Content type of the final HTTP response, when applicable.
     pub http_content_type: Option<String>,
+    /// Human-readable reason for the outcome.
     pub reason: String,
+    /// Retry plan when the attempt is retryable; `None` for a terminal
+    /// no-retry outcome.
     pub retry: Option<RetryPlan>,
 }
 
+/// Output artifact facts reported by a completed run.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OutputRecord {
+    /// UUID of the run the output belongs to.
     pub run_id: String,
+    /// Attempt number the output belongs to.
     pub attempt_number: i64,
+    /// Artifact path relative to the outputs directory.
     pub relative_path: String,
+    /// Artifact state as observed by the runner; the store records the
+    /// durable state itself.
     pub state: String,
+    /// Payload bytes retained after truncation.
     pub retained_payload_bytes: i64,
+    /// Bytes physically written to disk.
     pub physical_bytes: i64,
+    /// Bytes discarded by truncation.
     pub discarded_bytes: i64,
+    /// Whether the output exceeded its limit and was truncated.
     pub truncated: bool,
 }
 
+/// A finalized output artifact selected for pruning.
 #[derive(Clone, Debug)]
 pub struct RetentionCandidate {
+    /// UUID of the run the artifact belongs to.
     pub run_id: String,
+    /// Attempt number the artifact belongs to.
     pub attempt_number: i64,
+    /// Artifact path relative to the outputs directory.
     pub relative_path: String,
+    /// Bytes the artifact occupies on disk.
     pub physical_bytes: i64,
+    /// Wall-clock time in microseconds when the artifact was finalized (or
+    /// when its prune started, for re-listed pending prunes).
     pub finalized_at_us: i64,
 }
 
+/// A pending or active output artifact whose attempt is a recovery candidate
+/// (terminal, or owned by a scheduler lifetime other than the live daemon's).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OutputRecoveryCandidate {
+    /// UUID of the run the artifact belongs to.
     pub run_id: String,
+    /// Attempt number the artifact belongs to.
     pub attempt_number: i64,
+    /// Artifact path relative to the outputs directory.
     pub relative_path: String,
+    /// Artifact state observed (`pending` or `active`).
     pub state: String,
 }
 
+/// A terminal run whose metadata is eligible for retention deletion.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunRetentionCandidate {
+    /// UUID of the run.
     pub run_id: String,
+    /// UUID of the job the run belongs to.
     pub job_id: String,
+    /// Wall-clock time in microseconds when the run finished.
     pub finished_at_us: i64,
 }
 
+/// The global settings singleton.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SettingsRecord {
+    /// Maximum number of attempts admitted at once, from 1 through 64.
     pub global_concurrency: i64,
+    /// Directory in which scheduled processes are executed.
     pub execution_path: String,
+    /// Maximum number of terminal runs kept globally; older runs become
+    /// retention candidates.
     pub run_retention_count: i64,
+    /// Maximum age in microseconds of terminal runs before they become
+    /// retention candidates; `None` disables age-based retention.
     pub run_retention_age_us: Option<i64>,
+    /// Global cap on retained output bytes across all finalized artifacts.
     pub output_limit_bytes: i64,
+    /// Cap on retained payload bytes per run.
     pub per_run_output_limit_bytes: i64,
+    /// Global environment variables exported to every scheduled process.
     #[serde(default)]
     pub environment: BTreeMap<String, String>,
 }
 
+/// The identity facts of one job row.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JobIdentity {
+    /// Canonical UUID of the job.
     pub id: String,
+    /// Name of the job.
     pub name: String,
+    /// Whether the job has been soft-deleted.
     pub removed: bool,
 }
 
+/// The expected mapping of one job between the exporting database and this
+/// one.
 #[derive(Clone, Debug)]
 pub struct ImportResolution {
+    /// Identity of the job in the exporting database.
     pub source_id: String,
+    /// Name of the job in the exporting database.
     pub source_name: String,
+    /// Job UUID the source id is expected to map to locally, when known.
     pub expected_id_destination: Option<String>,
+    /// Job UUID the source name is expected to map to locally, when known.
     pub expected_name_destination: Option<String>,
 }
 
+/// One job operation of an import batch.
 #[derive(Clone, Debug)]
 pub enum ImportJob {
+    /// Create a new job locally.
     Create {
+        /// Job to create.
         job: CreateJob,
+        /// Expected source-to-destination mapping.
         resolution: ImportResolution,
     },
+    /// Update an existing local job with the exported revision.
     Update {
+        /// Job fields to apply.
         job: UpdateJob,
+        /// Expected source-to-destination mapping.
         resolution: ImportResolution,
     },
+    /// Verify the destination still matches the exported revision; no changes
+    /// are written.
     Verify {
+        /// Job fields the destination must still match.
         job: UpdateJob,
+        /// Expected source-to-destination mapping.
         resolution: ImportResolution,
     },
 }
 
+/// One atomic import of settings and jobs.
 #[derive(Clone, Debug)]
 pub struct ImportBatch {
+    /// Global settings to apply with the import.
     pub settings: SettingsRecord,
+    /// Jobs to create, update, or verify, in order.
     pub jobs: Vec<ImportJob>,
+    /// Wall-clock time in microseconds used for all timestamps of the import.
     pub now_us: i64,
 }
 
+/// Counts produced by one import.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ImportSummary {
+    /// Jobs created by the import.
     pub created: usize,
+    /// Jobs updated by the import.
     pub updated: usize,
 }
 
@@ -352,6 +609,10 @@ pub struct Store {
 }
 
 impl Store {
+    /// Opens the store at `paths`, creating the state layout and running any
+    /// pending schema migrations for `binary_version`, and returns a store
+    /// backed by a configured WAL connection. The daemon lock is acquired
+    /// separately via [`Store::acquire_daemon_lock`].
     pub fn open(paths: StatePaths, binary_version: &str, now_us: i64) -> StoreResult<Self> {
         paths.ensure()?;
         let mut connection = Connection::open(&paths.database)?;
@@ -363,6 +624,9 @@ impl Store {
         })
     }
 
+    /// Opens an existing `state.db` file read-only from `path`, without
+    /// running migrations or touching the daemon lock. The store's state
+    /// paths are derived from the database file's parent directory.
     pub fn open_read_only(path: &Path) -> StoreResult<Self> {
         let paths = StatePaths::new(path.parent().unwrap_or(Path::new(".")).to_path_buf());
         let connection =
@@ -374,6 +638,7 @@ impl Store {
         })
     }
 
+    /// Returns the state paths this store was opened with.
     #[must_use]
     pub fn paths(&self) -> &StatePaths {
         &self.paths
@@ -384,10 +649,16 @@ impl Store {
             .map_err(|_| StoreError::Conflict("store mutex poisoned".into()))
     }
 
+    /// Acquires the daemon lock for this state directory, writing `metadata`
+    /// as the lock diagnostic. Returns [`StoreError::DaemonAlreadyRunning`]
+    /// when another daemon holds the lock.
     pub fn acquire_daemon_lock(&self, metadata: &LockMetadata) -> StoreResult<DaemonLock> {
         DaemonLock::acquire(&self.paths.daemon_lock, metadata)
     }
 
+    /// Creates a job at revision 1 in one immediate transaction and returns
+    /// its record. The id must be a canonical lowercase UUID; an existing id
+    /// or live name returns [`StoreError::Conflict`].
     pub fn create_job(&self, job: &CreateJob) -> StoreResult<JobRecord> {
         crate::paths::validate_uuid(&job.id)?;
         let mut conn = self.conn()?;
@@ -417,6 +688,10 @@ impl Store {
         self.job(&job.id)
     }
 
+    /// Applies a full job update in one immediate transaction, bumping the
+    /// revision by one. `expected_revision` must match the job's current
+    /// revision or [`StoreError::Conflict`] is returned; an unknown reference
+    /// returns [`StoreError::NotFound`].
     pub fn update_job(&self, job: &UpdateJob) -> StoreResult<JobRecord> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -465,6 +740,8 @@ impl Store {
         self.job(&job.id)
     }
 
+    /// Returns the live job matching `reference` by id or name, or
+    /// [`StoreError::NotFound`] when no live job matches.
     pub fn job(&self, reference: &str) -> StoreResult<JobRecord> {
         let conn = self.conn()?;
         conn.query_row(
@@ -473,6 +750,8 @@ impl Store {
         ).optional()?.ok_or_else(|| StoreError::NotFound(reference.into()))
     }
 
+    /// Lists live jobs ordered by name: always the enabled jobs, plus
+    /// disabled ones only when `all` is true.
     pub fn list_jobs(&self, all: bool) -> StoreResult<Vec<JobRecord>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare("SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE j.removed_at_us IS NULL AND (?1 OR j.enabled=1) ORDER BY j.name COLLATE BINARY")?;
@@ -482,6 +761,8 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Lists the id, name, and removed flag of every job row (removed ones
+    /// included), ordered by id.
     pub fn job_identities(&self) -> StoreResult<Vec<JobIdentity>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
@@ -607,6 +888,9 @@ impl Store {
         Ok(summary)
     }
 
+    /// Sets the enabled flag of the job identified by `reference`, recording
+    /// the durable disabled-since transition, and returns the updated record.
+    /// An unknown reference returns [`StoreError::NotFound`].
     pub fn set_enabled(
         &self,
         reference: &str,
@@ -645,6 +929,9 @@ impl Store {
         self.job(&job_id)
     }
 
+    /// Soft-deletes the job identified by `reference`: it is disabled and
+    /// stamped with `removed_at_us`, after which its id and name no longer
+    /// resolve via [`Store::job`].
     pub fn remove_job(&self, reference: &str, now_us: i64) -> StoreResult<()> {
         let job = self.job(reference)?;
         let conn = self.conn()?;
@@ -655,6 +942,10 @@ impl Store {
         Ok(())
     }
 
+    /// Queues a manual run for the job identified by `reference`, applying
+    /// the job's overlap policy against active same-job work (possibly
+    /// skipping the run or superseding its predecessors), and returns the run
+    /// record. The run id must be a canonical lowercase UUID.
     pub fn enqueue_manual(
         &self,
         reference: &str,
@@ -724,6 +1015,9 @@ impl Store {
         self.run(run_id)
     }
 
+    /// Materializes `runs` for the job while advancing its schedule cursor,
+    /// without reconciliation summaries. See
+    /// [`Store::materialize_with_summaries`].
     pub fn materialize(
         &self,
         job_id: &str,
@@ -734,6 +1028,13 @@ impl Store {
         self.materialize_with_summaries(job_id, cursor, runs, &[], now_us)
     }
 
+    /// Advances the schedule cursor of `job_id` in one immediate transaction
+    /// and inserts `runs`, applying each run's snapshot overlap policy and
+    /// counting duplicates that already exist. A cursor or revision mismatch
+    /// returns [`StoreError::Conflict`]; `summaries` are recorded as events
+    /// atomically with the cursor, and `resolve_one_time` disables the job.
+    // cursor is consumed by value at call sites in locron-cli; signature is public API
+    #[allow(clippy::needless_pass_by_value)]
     pub fn materialize_with_summaries(
         &self,
         job_id: &str,
@@ -835,6 +1136,7 @@ impl Store {
         Ok(result)
     }
 
+    /// Returns all events recorded for the job, in insertion order.
     pub fn events_for_job(&self, job_id: &str) -> StoreResult<Vec<EventRecord>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
@@ -855,6 +1157,7 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Returns all events recorded for the run, in insertion order.
     pub fn events_for_run(&self, run_id: &str) -> StoreResult<Vec<EventRecord>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
@@ -875,11 +1178,14 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Returns the run with the given id, or [`StoreError::NotFound`].
     pub fn run(&self, id: &str) -> StoreResult<RunRecord> {
         let conn = self.conn()?;
         conn.query_row("SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE id=?1", [id], map_run).optional()?.ok_or_else(|| StoreError::NotFound(id.into()))
     }
 
+    /// Returns the resolved executable recorded for the attempt, if any.
+    /// Returns [`StoreError::NotFound`] when the attempt does not exist.
     pub fn attempt_resolved_executable(
         &self,
         run_id: &str,
@@ -895,6 +1201,9 @@ impl Store {
             .ok_or_else(|| StoreError::NotFound(format!("attempt {run_id}/{attempt_number}")))
     }
 
+    /// Returns all attempts of the run in attempt-number order, each with its
+    /// output artifact when one exists. Returns [`StoreError::NotFound`] when
+    /// the run does not exist.
     pub fn attempts_for_run(&self, run_id: &str) -> StoreResult<Vec<AttemptRecord>> {
         let conn = self.conn()?;
         let exists = conn.query_row(
@@ -958,6 +1267,8 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Returns recent runs, newest first, optionally filtered to the job
+    /// identified by name or id, up to `limit` (capped at 1000).
     pub fn history(&self, job: Option<&str>, limit: usize) -> StoreResult<Vec<RunRecord>> {
         let job_id = match job {
             Some(value) => Some(self.job(value)?.id),
@@ -971,10 +1282,19 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Cancels the run without acknowledging an unconfirmed termination. See
+    /// [`Store::cancel_with_acknowledgement`].
     pub fn cancel(&self, id: &str, now_us: i64) -> StoreResult<CancelOutcome> {
         self.cancel_with_acknowledgement(id, now_us, false)
     }
 
+    /// Cancels the run in one immediate transaction: queued and retry-wait
+    /// runs become `cancelled` immediately, starting and running runs get a
+    /// durable cancellation request for the runner, and terminal runs return
+    /// [`StoreError::Conflict`]. With `acknowledge_unconfirmed`, a
+    /// termination-unconfirmed quarantine is released and recorded as
+    /// `interrupted_unknown`; runs not in that quarantine return
+    /// [`StoreError::Conflict`].
     pub fn cancel_with_acknowledgement(
         &self,
         id: &str,
@@ -1071,6 +1391,8 @@ impl Store {
         Ok(outcome)
     }
 
+    /// Returns whether a durable cancellation request has been recorded for
+    /// the run.
     pub fn cancellation_requested(&self, id: &str) -> StoreResult<bool> {
         let requested: Option<Option<i64>> = self
             .conn()?
@@ -1083,6 +1405,11 @@ impl Store {
         Ok(requested.flatten().is_some())
     }
 
+    /// Begins a new scheduler lifetime in one immediate transaction:
+    /// attempts still starting or running under a previous lifetime are
+    /// terminalized as `interrupted_unknown`, their retry intents are
+    /// cleared, stale lifetime rows are closed, and this lifetime is
+    /// inserted. Returns the number of attempts recovered.
     pub fn begin_lifetime(
         &self,
         id: &str,
@@ -1103,11 +1430,21 @@ impl Store {
         Ok(stale)
     }
 
+    /// Records a clean end for the given scheduler lifetime, stamping
+    /// `ended_at_us` and `exit_class='clean'`. A lifetime that is not open is
+    /// left untouched.
     pub fn end_lifetime(&self, id: &str, now_us: i64) -> StoreResult<()> {
         self.conn()?.execute("UPDATE scheduler_lifetimes SET ended_at_us=?2,heartbeat_at_us=?2,exit_class='clean' WHERE id=?1 AND ended_at_us IS NULL", params![id,now_us])?;
         Ok(())
     }
 
+    /// Admits up to `hard_guard_available` queued and retry-wait runs that
+    /// are eligible at `now_us`, in one immediate transaction, respecting the
+    /// configured global concurrency and each job's per-job overlap policy
+    /// with round-robin job fairness, and returns the admitted attempts.
+    /// Returns an empty `Admission` when nothing is eligible or capacity is
+    /// exhausted. The run rows advance to `starting` and pending output
+    /// artifacts are created for the admitted attempts.
     pub fn admit(
         &self,
         lifetime_id: &str,
@@ -1251,6 +1588,13 @@ impl Store {
         .map_err(Into::into)
     }
 
+    /// Advances an admitted attempt from `starting` to `running` after a
+    /// successful spawn, unless the run was cancelled or superseded before
+    /// spawn, in which case the attempt is durably terminal and
+    /// [`StartDecision::CancelledBeforeSpawn`] is returned. Re-marking an
+    /// already-running attempt returns [`StartDecision::Ready`] without
+    /// changes; a run that is no longer at the pre-spawn boundary returns
+    /// [`StoreError::Conflict`].
     pub fn mark_attempt_running(
         &self,
         run_id: &str,
@@ -1354,6 +1698,12 @@ impl Store {
         Ok(StartDecision::Ready)
     }
 
+    /// Durably records the outcome of an attempt in one immediate
+    /// transaction, moving the run to its terminal state or to `retry_wait`
+    /// per the retry plan. A `termination_unconfirmed` state quarantines the
+    /// run and fails any replacement candidates. An identical re-completion
+    /// is idempotent; a completion that does not match the durable state
+    /// returns [`StoreError::Conflict`].
     pub fn complete_attempt(&self, completion: &AttemptCompletion) -> StoreResult<()> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -1450,6 +1800,11 @@ impl Store {
         Ok(())
     }
 
+    /// Records a non-retryable failure that happened before execution, in one
+    /// immediate transaction: the output artifact is finalized (when `output`
+    /// is supplied and its identity matches the attempt) or marked missing,
+    /// and the attempt and run are terminalized as `failed`. A state that is
+    /// no longer applicable returns [`StoreError::Conflict`].
     pub fn complete_pre_execution_failure(
         &self,
         run_id: &str,
@@ -1512,6 +1867,12 @@ impl Store {
         Ok(())
     }
 
+    /// Records a runner-side infrastructure failure in one immediate
+    /// transaction: the output artifact is marked missing and the attempt and
+    /// run become `interrupted_unknown` (with a duration computed from the
+    /// start) when `execution_may_have_started`, or `failed` with result
+    /// class `output_preparation_failed` otherwise. Identical durable facts
+    /// are idempotent; other states return [`StoreError::Conflict`].
     pub fn complete_runner_failure(
         &self,
         run_id: &str,
@@ -1609,6 +1970,8 @@ impl Store {
         }
     }
 
+    /// Finalizes the output artifact of an attempt from a completed run. See
+    /// [`Store::reconcile_output_finalized`].
     pub fn finalize_output(&self, output: &OutputRecord, now_us: i64) -> StoreResult<()> {
         self.reconcile_output_finalized(output, now_us)
     }
@@ -1647,6 +2010,8 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Returns whether any output artifact row exists for the given run id
+    /// and path relative to the outputs directory.
     pub fn output_artifact_references(
         &self,
         run_id: &str,
@@ -1665,6 +2030,8 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Lists artifacts awaiting durable prune completion, oldest prune start
+    /// first, up to `limit` (capped at the maintenance batch limit).
     pub fn pending_output_prunes(&self, limit: usize) -> StoreResult<Vec<RetentionCandidate>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
@@ -1676,6 +2043,11 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Finalizes the output artifact of an attempt, renaming it to the
+    /// conventional `{run_id}/{attempt}.log` path and recording byte counts
+    /// and truncation. Finalizing an identical durable artifact again is a
+    /// no-op; an artifact that cannot be recovered for finalization returns
+    /// [`StoreError::Conflict`].
     pub fn reconcile_output_finalized(
         &self,
         output: &OutputRecord,
@@ -1708,6 +2080,9 @@ impl Store {
         }
     }
 
+    /// Marks the output artifact of an attempt missing, zeroing its byte
+    /// counts. An artifact already missing is a no-op; an artifact that
+    /// cannot be recovered as missing returns [`StoreError::Conflict`].
     pub fn reconcile_output_missing(
         &self,
         run_id: &str,
@@ -1736,6 +2111,8 @@ impl Store {
         }
     }
 
+    /// Runs `PRAGMA integrity_check` and a foreign-key violation scan,
+    /// returning one summary line per check.
     pub fn integrity_check(&self) -> StoreResult<Vec<String>> {
         let conn = self.conn()?;
         let integrity: String = conn.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
@@ -1749,6 +2126,8 @@ impl Store {
         ])
     }
 
+    /// Returns the current global settings record, reading columns that
+    /// predate schema version 4 with their defaults.
     pub fn settings(&self) -> StoreResult<SettingsRecord> {
         let conn = self.conn()?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -1794,6 +2173,11 @@ impl Store {
         })
     }
 
+    /// Sets (or removes, when `value` is `None`) one global environment
+    /// variable in an immediate transaction, storing the map as canonical
+    /// JSON, and returns the updated settings. Invalid or reserved names,
+    /// NUL bytes in values, and non-canonical maps return
+    /// [`StoreError::Conflict`].
     pub fn set_environment(
         &self,
         name: &str,
@@ -1827,6 +2211,9 @@ impl Store {
         self.settings()
     }
 
+    /// Like [`Store::mark_attempt_running`], additionally committing the
+    /// resolved executable path at the pre-spawn boundary. The path must be
+    /// absolute, or [`StoreError::Conflict`] is returned.
     pub fn mark_attempt_running_with_executable(
         &self,
         run_id: &str,
@@ -1842,6 +2229,11 @@ impl Store {
         self.mark_attempt_running_inner(run_id, attempt_number, now_us, resolved_executable)
     }
 
+    /// Sets a single configuration key from its string form, validating the
+    /// value (`global_concurrency` from 1 through 64, other integers
+    /// non-negative), and returns the updated settings. Unknown keys return
+    /// [`StoreError::NotFound`]; invalid values return
+    /// [`StoreError::Conflict`].
     pub fn set_setting(&self, key: &str, value: &str, now_us: i64) -> StoreResult<SettingsRecord> {
         let (column, normalized) = match key {
             "global_concurrency" => {
@@ -1883,6 +2275,9 @@ impl Store {
         self.settings()
     }
 
+    /// Lists the finalized output artifacts of terminal runs that are
+    /// eligible for pruning, oldest finalization first, up to `limit` (capped
+    /// at the maintenance batch limit).
     pub fn output_retention_candidates(
         &self,
         limit: usize,
@@ -1897,6 +2292,7 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Returns the total physical bytes of all finalized output artifacts.
     pub fn retained_output_bytes(&self) -> StoreResult<i64> {
         self.conn()?.query_row(
             "SELECT COALESCE(sum(physical_bytes),0) FROM output_artifacts WHERE state='finalized'",
@@ -1905,6 +2301,8 @@ impl Store {
         ).map_err(Into::into)
     }
 
+    /// Returns the retained payload bytes of one run's active, finalized,
+    /// and prune-pending output artifacts.
     pub fn retained_run_output_bytes(&self, run_id: &str) -> StoreResult<i64> {
         self.conn()?.query_row(
             "SELECT COALESCE(sum(retained_payload_bytes),0) FROM output_artifacts WHERE run_id=?1 AND state IN ('active','finalized','prune_pending')",
@@ -1913,6 +2311,11 @@ impl Store {
         ).map_err(Into::into)
     }
 
+    /// Lists terminal runs eligible for metadata retention deletion: older
+    /// than the configured retention age, or beyond the per-job (1000) or
+    /// global retention count. Oldest first, up to `limit` (capped at the
+    /// maintenance batch limit), excluding runs already reserved for
+    /// deletion.
     pub fn run_retention_candidates(
         &self,
         now_us: i64,
@@ -1950,6 +2353,10 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Reserves a retention candidate for metadata deletion, rechecking its
+    /// eligibility (terminal state, age or rank bounds) inside the immediate
+    /// transaction. A candidate that is no longer eligible returns
+    /// [`StoreError::Conflict`].
     pub fn mark_run_retention_pending(
         &self,
         candidate: &RunRetentionCandidate,
@@ -1997,6 +2404,8 @@ impl Store {
         Ok(())
     }
 
+    /// Lists runs reserved for metadata deletion, oldest selection first, up
+    /// to `limit` (capped at the maintenance batch limit).
     pub fn pending_run_retention(&self, limit: usize) -> StoreResult<Vec<RunRetentionCandidate>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
@@ -2008,6 +2417,11 @@ impl Store {
             .map_err(Into::into)
     }
 
+    /// Deletes the metadata of a pending retention candidate in one immediate
+    /// transaction, after verifying the run is still terminal with matching
+    /// identity and that all of its output artifacts are pruned or missing.
+    /// Deleting an already-deleted run is a no-op; other inapplicable states
+    /// return [`StoreError::Conflict`].
     pub fn finish_run_retention(&self, candidate: &RunRetentionCandidate) -> StoreResult<()> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -2071,6 +2485,9 @@ impl Store {
         Ok(())
     }
 
+    /// Marks a finalized output artifact `prune_pending` with the current
+    /// time. An artifact that is no longer finalized returns
+    /// [`StoreError::Conflict`].
     pub fn mark_output_prune_pending(
         &self,
         candidate: &RetentionCandidate,
@@ -2085,6 +2502,9 @@ impl Store {
         Ok(())
     }
 
+    /// Durably records an output artifact as pruned with zero bytes.
+    /// Pruning an already-pruned artifact is a no-op; an artifact not pending
+    /// prune completion returns [`StoreError::Conflict`].
     pub fn finish_output_prune(
         &self,
         candidate: &RetentionCandidate,
@@ -4649,17 +5069,21 @@ mod tests {
             assert_eq!(store.settings().unwrap().global_concurrency, expected_limit);
 
             for index in 0..=expected_limit {
-                let job_id = Uuid::from_u128(1_000 + index as u128).to_string();
-                let run_id = Uuid::from_u128(2_000 + index as u128).to_string();
+                let job_id = Uuid::from_u128(1_000 + u128::try_from(index).unwrap()).to_string();
+                let run_id = Uuid::from_u128(2_000 + u128::try_from(index).unwrap()).to_string();
                 let name = format!("stress-{index}");
                 create(&store, &job_id, &name);
                 store.enqueue_manual(&name, &run_id, 3).unwrap();
             }
 
-            let lifetime = Uuid::from_u128(3_000 + expected_limit as u128).to_string();
+            let lifetime =
+                Uuid::from_u128(3_000 + u128::try_from(expected_limit).unwrap()).to_string();
             store.begin_lifetime(&lifetime, 4, "test").unwrap();
             let admitted = store.admit(&lifetime, 4, 64).unwrap();
-            assert_eq!(admitted.attempts.len(), expected_limit as usize);
+            assert_eq!(
+                admitted.attempts.len(),
+                usize::try_from(expected_limit).unwrap()
+            );
             assert!(store.admit(&lifetime, 4, 64).unwrap().attempts.is_empty());
 
             let active: i64 = store

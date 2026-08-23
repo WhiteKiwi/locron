@@ -13,11 +13,18 @@ use crate::ValidationError;
 pub enum Target {
     /// Direct executable with preserved argument boundaries.
     Process {
+        /// Executable path or bare command name.
         executable: String,
+        /// Arguments passed verbatim to the executable.
         args: Vec<String>,
     },
     /// Explicit command interpreted by the selected shell.
-    Shell { command: String, shell: PathBuf },
+    Shell {
+        /// Command text interpreted by the shell.
+        command: String,
+        /// Absolute path of the shell executable.
+        shell: PathBuf,
+    },
     /// Absolute HTTP request.
     Http(HttpTarget),
 }
@@ -25,12 +32,19 @@ pub enum Target {
 /// HTTP request target.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HttpTarget {
+    /// HTTP method used for the request.
     pub method: HttpMethod,
+    /// Absolute HTTP or HTTPS request URL.
     pub url: String,
+    /// Request headers by name and their value source.
     pub headers: BTreeMap<String, HttpHeaderSource>,
+    /// Inline request body bytes.
     pub body: Option<Vec<u8>>,
+    /// Path of a file whose contents become the request body.
     pub body_file: Option<PathBuf>,
+    /// Status codes the request is considered successful with.
     pub success_statuses: Vec<u16>,
+    /// Whether redirect responses are followed.
     pub follow_redirects: bool,
 }
 
@@ -48,15 +62,22 @@ pub enum HttpHeaderSource {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum HttpMethod {
+    /// HTTP GET request.
     Get,
+    /// HTTP POST request.
     Post,
+    /// HTTP PUT request.
     Put,
+    /// HTTP PATCH request.
     Patch,
+    /// HTTP DELETE request.
     Delete,
+    /// HTTP HEAD request.
     Head,
 }
 
 impl HttpMethod {
+    /// Returns the uppercase HTTP method name.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -73,8 +94,11 @@ impl HttpMethod {
 /// Environment sources referenced by a job.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Environment {
+    /// Optional file whose contents are loaded as environment values.
     pub file: Option<PathBuf>,
+    /// Inline environment values by name.
     pub values: BTreeMap<String, String>,
+    /// Optional execution PATH override.
     pub path: Option<String>,
 }
 
