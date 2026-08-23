@@ -1,6 +1,22 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-23
+
+### Fixed
+
+- Linux: `locron self-update` no longer skips the post-update service registration. The update flow
+  captured the running executable through `/proc/self/exe`, which resolves to the deleted inode
+  after an atomic self-replace, so the daemon service silently stayed on the old binary; the flow
+  now captures the executable path before the replace and re-registers the service onto the new
+  version.
+
+### Added
+
+- Maintainer tooling: `scripts/usage.sh` prints a distribution-channel usage snapshot (GitHub
+  release downloads, stars, Homebrew installs, crates.io downloads, and owner-only traffic) in
+  human or flat-JSON form.
+
 ## [0.3.0] - 2026-08-23
 
 ### Added
