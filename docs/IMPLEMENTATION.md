@@ -21,6 +21,24 @@ Implement from the inside out: deterministic domain behavior, transactional stor
 
 This layering costs some domain/store mapping and trait design up front. It is justified by deterministic testing and by future viewer, MCP, and desktop surfaces needing the same behavior without depending on CLI parsing or SQLite layout.
 
+## README product narrative (2026-08-24)
+
+The README leads with **“Cron that explains itself.”** and earns that claim with shipped,
+inspectable behavior. Its first screen moves from cron's silent-failure problem to locron's durable
+history and explanations, then shows a short CLI path using the real `add`, `preview`, and `why`
+syntax and current human-rendered output. Run-specific follow-up uses `history` and `why --run`;
+captured output remains separate because the queued-run confirmation or `history --format json`
+must supply the canonical run ID required by `locron logs <RUN_ID>`.
+
+The capability story follows the specification's accepted order: explainability (`why`, `history`,
+`logs`, `preview`, `doctor`), reliability (explicit missed-run and overlap policies, durable
+occurrence identity, recovery), then agent integration (`--format json`, dry-run mutations, and
+MCP over the same application boundary). SQLite, WAL, migrations, and process-group details appear
+only as supporting evidence. Installation and service-start guidance stays unchanged in substance,
+and all examples must be checked against the shipped help and isolated scratch-state output. The
+README does not advertise `locron explain`, richer decision traces, or direct machine sleep
+telemetry.
+
 ## Accepted implementation decisions
 
 ### Accepted: identifiers and timestamps

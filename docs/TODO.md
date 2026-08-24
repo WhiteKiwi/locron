@@ -5,6 +5,49 @@ This checklist tracks implementation of the frozen `docs/SPEC.md` within the dur
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## README product positioning refresh (2026-08-24)
+
+Authorized by the 2026-08-24 `docs/SPEC.md` Product Positioning amendment and planned in
+`docs/IMPLEMENTATION.md` “README product narrative”. This is documentation-only work; it does not
+add planned diagnostics or scheduler telemetry.
+
+- [x] Review and accept the README narrative before editing the README: lead with explainability,
+  then reliability, then agent integration; preserve installation and service-operation facts.
+  **Verify:** `rg -n "README product narrative|Cron that explains itself" docs/IMPLEMENTATION.md`
+  finds the accepted section, including explicit exclusions for `locron explain`, richer decision
+  traces, and direct machine sleep telemetry.
+  **Evidence:** the accepted section records the narrative order, the actual log lookup contract,
+  the unchanged installation/service substance, and all three exclusions.
+- [x] Rewrite the README opening and demonstration using only shipped CLI syntax and actual human
+  output; keep captured logs tied to a canonical run ID rather than a job name.
+  **Verify:** run the documented commands against an isolated state directory and compare the
+  displayed output with the README; compare every command invocation with `locron <command>
+  --help`; `rg -n "locron logs [A-Za-z]" README.md` finds no job-name logs example.
+  **Evidence:** an isolated daemon/state run reproduced the documented `add`, two-occurrence
+  `preview`, and the clearly labeled selected fields from `why backup` exactly (only IDs/timestamps
+  vary); the same run verified `run --wait`, `history`, `history --format json`, `logs RUN_ID`,
+  `why --run RUN_ID`, and `doctor`. Help review confirms each invocation; the job-name logs search
+  returns no match.
+- [x] Reorder the remaining capability sections as explainability, real-world reliability, and
+  agent integration, without losing accurate installation, service, documentation, contributing,
+  security, or license guidance.
+  **Verify:** a heading scan shows that order; focused diff review confirms the retained guidance;
+  searches find no shipped claim for `locron explain`, machine sleep state, or detailed decision
+  traces.
+  **Evidence:** the heading scan is `A 10-second tour` → `Explainability first` → `Reliability for
+  machines that stop and restart` → `Agent-friendly by design`; installation and daemon startup,
+  all seven documentation links, contributing/security, and dual-license guidance remain. The
+  README states that downtime explanations use durable schedule cursors and reconciliation facts,
+  rather than inferred sleep telemetry, and the excluded-claim search returns no match.
+- [x] Run documentation checks and record the evidence.
+  **Verify:** all relative Markdown links in `README.md` resolve; fenced command/config snippets
+  parse where a local parser is available; `git diff --check` passes; a final rendered-text review
+  finds no malformed Markdown.
+  **Evidence:** a local UTF-8-aware link/fragment check reports every relative README link
+  resolved; all eight `sh` fences pass `sh -n`; the MCP JSON fence parses with Ruby JSON; the banner
+  asset exists; `git diff --check` is clean. No Markdown linter is installed, so headings, balanced
+  fences, lists, and inline HTML were reviewed directly.
+
 ## README demo screencast backlog (2026-08-23)
 
 - [ ] Generate `assets/screencast.svg` from `assets/screencast.sh` and embed it at the top of the
