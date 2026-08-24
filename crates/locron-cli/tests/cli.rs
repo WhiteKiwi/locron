@@ -1785,6 +1785,75 @@ fn human_list_aligns_columns_across_name_widths() {
 }
 
 #[test]
+fn piped_human_list_prints_full_targets_byte_identically() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "backup",
+                "--every",
+                "1h",
+                "--shell",
+                "echo run-a-very-long-backup-job-with-a-silly-name",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    // assert_cmd pipes stdout, so the terminal size lookup fails and the
+    // long target prints in full — byte-identical to the pre-truncation
+    // table.
+    assert_cmd::assert::Assert::new(locron(&state).args(["ls"]).output().unwrap())
+        .success()
+        .stdout(
+            "NAME   SCHEDULE TARGET                                                  ENABLED\n\
+         backup every 1h shell echo run-a-very-long-backup-job-with-a-silly-name yes\n",
+        )
+        .stderr("");
+}
+
+#[test]
+fn list_help_advertises_no_trunc_for_list_and_its_alias() {
+    let state = tempfile::tempdir().unwrap();
+    for path in ["list", "ls"] {
+        let arguments = [path.to_owned(), "--help".to_owned()];
+        let stdout = assert_help_contract(&arguments, "list help", help_output(&state, &arguments));
+        assert!(
+            stdout.contains("--no-trunc"),
+            "list help must advertise --no-trunc:\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn list_no_trunc_is_accepted_with_json_and_ignored() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let plain = locron(&state)
+        .args(["ls", "--format", "json"])
+        .output()
+        .unwrap();
+    let flagged = locron(&state)
+        .args(["ls", "--no-trunc", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(plain.status.success());
+    assert!(flagged.status.success());
+    assert_eq!(
+        flagged.stdout, plain.stdout,
+        "--no-trunc must not change machine output"
+    );
+    assert_eq!(flagged.stderr, plain.stderr);
+}
+
+#[test]
 fn human_list_all_marks_disabled_jobs_no() {
     let state = tempfile::tempdir().unwrap();
     for name in ["backup", "ping"] {

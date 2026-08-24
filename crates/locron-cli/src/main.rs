@@ -50,6 +50,7 @@ use serde_json::{Value, json};
 use service::ServiceError;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use uuid::Uuid;
 
 const ROOT_HELP: &str = "\
@@ -77,6 +78,7 @@ const LIST_HELP: &str = "\
 Examples:
   locron list
   locron list --all
+  locron list --no-trunc
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -340,6 +342,9 @@ enum Command {
         /// Include disabled jobs
         #[arg(long)]
         all: bool,
+        /// Print full TARGET values instead of fitting the terminal width
+        #[arg(long)]
+        no_trunc: bool,
     },
     #[command(about = "Show a job's current definition", after_help = SHOW_HELP)]
     Show {
@@ -919,14 +924,25 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
     match command {
         Command::Add(args) => add(&paths, args, format),
         Command::Update(args) => update(&paths, &args, format),
-        Command::List { all } => {
+        Command::List { all, no_trunc } => {
             let jobs = open(&paths)?
                 .list_jobs(all)?
                 .into_iter()
                 .map(redacted_job)
                 .collect::<Result<Vec<_>>>()?;
             if format == Format::Human {
-                render_list_table(&jobs)?;
+                // The TIOCGWINSZ size lookup is both the width source and the
+                // TTY gate: it fails on a pipe or redirect, so piped output
+                // always prints full values. `--no-trunc` restores full values
+                // on a terminal. The width is sampled once per invocation;
+                // size_checked returns (rows, cols), so the second element is
+                // the column count.
+                let width = if no_trunc {
+                    None
+                } else {
+                    console::Term::stdout().size_checked().map(|(_, cols)| cols)
+                };
+                render_list_table(&jobs, width)?;
             } else {
                 render(format, "list", json!(jobs), &[]);
             }
@@ -4358,15 +4374,54 @@ pub(crate) fn redact_definition(mut definition: Value) -> Value {
     definition
 }
 
-/// Renders the docker-style aligned `list` table for human output: a header
-/// line (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned
-/// row per job in the store's name order, with each column padded to the
-/// maximum width and columns separated by a single space. The header prints
-/// even when no job exists. The header and every value are derived only from
-/// the redacted job records (the summaries parse the redacted
-/// `definition_json` as JSON values, so no configured environment value,
-/// header value, or body can appear).
-fn render_list_table(jobs: &[Value]) -> Result<()> {
+/// Truncates `text` to at most `max_width` display columns, appending the `…`
+/// marker (one display column) only when the value actually shrinks; a value
+/// that fits is returned unchanged. Column fitting follows character display
+/// width (East Asian wide characters count as two columns), never byte or
+/// character count. A width too small to hold the marker returns the text
+/// unchanged rather than producing an unreadable cell.
+fn truncate_display(text: &str, max_width: usize) -> String {
+    if text.width() <= max_width || max_width < 1 {
+        return text.to_owned();
+    }
+    let mut truncated = String::new();
+    let mut used = 0;
+    for ch in text.chars() {
+        let ch_width = ch.width().unwrap_or(0);
+        if used + ch_width > max_width - 1 {
+            break;
+        }
+        truncated.push(ch);
+        used += ch_width;
+    }
+    truncated.push('…');
+    truncated
+}
+
+/// Renders the docker-style aligned `list` table for human output.
+fn render_list_table(jobs: &[Value], width: Option<u16>) -> Result<()> {
+    print!("{}", list_table(jobs, width)?);
+    Ok(())
+}
+
+/// Builds the docker-style aligned `list` table text: a header line (`NAME`,
+/// `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned row per job
+/// in the store's name order, with each column padded to the maximum width
+/// and columns separated by a single space. The header prints even when no
+/// job exists. The header and every value are derived only from the redacted
+/// job records (the summaries parse the redacted `definition_json` as JSON
+/// values, so no configured environment value, header value, or body can
+/// appear).
+///
+/// When `width` is `Some(terminal width)` and the natural table width
+/// (`name_width + 1 + schedule_width + 1 + target_width + 1 + 7` for the
+/// unpadded `ENABLED` column) exceeds it, only the `TARGET` column — the
+/// table's final data column — shrinks to the remaining width, marking cut
+/// values with a trailing `…`. `NAME`, `SCHEDULE`, the header, and `ENABLED`
+/// never truncate; a remaining width below one display column prints the
+/// table untruncated (rows wrap as before). A `None` width prints the
+/// full-value table.
+fn list_table(jobs: &[Value], width: Option<u16>) -> Result<String> {
     let mut rows: Vec<(String, String, String, &str)> = Vec::with_capacity(jobs.len());
     for job in jobs {
         let name = job["name"].as_str().context("job record lacks name")?;
@@ -4399,16 +4454,37 @@ fn render_list_table(jobs: &[Value]) -> Result<()> {
     let target_width = "TARGET"
         .len()
         .max(rows.iter().map(|row| row.2.len()).max().unwrap_or(0));
-    println!(
-        "{:<name_width$} {:<schedule_width$} {:<target_width$} ENABLED",
+    // Fitting is a separate step from padding: when the natural table width
+    // (name + 1 + schedule + 1 + target + 1 + 7) exceeds the terminal width,
+    // only TARGET absorbs the deficit, leaving it the remaining display
+    // columns after NAME, SCHEDULE, the unpadded ENABLED label, and every
+    // inter-column space. A budget below one column falls back to the
+    // untruncated table, which wraps exactly as it always has.
+    let target_budget = width.and_then(|w| {
+        let natural = name_width + 1 + schedule_width + 1 + target_width + 1 + 7;
+        let budget = (w as usize).saturating_sub(name_width + 1 + schedule_width + 1 + 1 + 7);
+        (natural > w as usize && budget >= 1).then_some(budget)
+    });
+    let target_column = target_budget.unwrap_or(target_width);
+    let mut table = String::new();
+    writeln!(
+        table,
+        "{:<name_width$} {:<schedule_width$} {:<target_column$} ENABLED",
         "NAME", "SCHEDULE", "TARGET"
-    );
+    )
+    .unwrap();
     for (name, schedule, target, enabled) in &rows {
-        println!(
-            "{name:<name_width$} {schedule:<schedule_width$} {target:<target_width$} {enabled}"
-        );
+        let rendered_target = match target_budget {
+            Some(budget) => truncate_display(target, budget),
+            None => target.clone(),
+        };
+        writeln!(
+            table,
+            "{name:<name_width$} {schedule:<schedule_width$} {rendered_target:<target_column$} {enabled}"
+        )
+        .unwrap();
     }
-    Ok(())
+    Ok(table)
 }
 
 /// Renders a UTC RFC 3339 instant from epoch microseconds, or `unknown` when
@@ -6047,5 +6123,124 @@ mod tests {
             .to_string();
         assert!(error.contains("scheme"), "unexpected: {error}");
         assert!(import_source(Path::new("https://example.test/")).is_ok());
+    }
+
+    fn list_job_record(name: &str, enabled: bool, shell_command: &str) -> Value {
+        json!({
+            "name": name,
+            "enabled": enabled,
+            "definition_json": serde_json::to_string(&json!({
+                "schedule": {"kind": "every", "interval": 3_600_000_000u64},
+                "target": {"kind": "shell", "command": shell_command}
+            }))
+            .unwrap(),
+        })
+    }
+
+    #[test]
+    fn truncate_display_ascii_fitting_no_fit_and_boundaries() {
+        // Fits: returned unchanged, no marker, at and above the exact width.
+        assert_eq!(truncate_display("hello", 10), "hello");
+        assert_eq!(truncate_display("hello", 5), "hello");
+        // No-fit: truncated to max_width - 1 text columns plus the marker.
+        assert_eq!(truncate_display("hello", 4), "hel…");
+        assert_eq!(truncate_display("hello", 3), "he…");
+        assert_eq!(truncate_display("hello", 2), "h…");
+        // Minimum widths: one column holds only the marker; zero cannot hold
+        // the marker, so the text is returned unchanged.
+        assert_eq!(truncate_display("hello", 1), "…");
+        assert_eq!(truncate_display("hello", 0), "hello");
+        assert_eq!(truncate_display("", 0), "");
+    }
+
+    #[test]
+    fn truncate_display_uses_display_width_for_cjk_and_emoji() {
+        // Width-2 CJK characters count as two columns.
+        assert_eq!(truncate_display("한글", 4), "한글");
+        assert_eq!(truncate_display("한글", 3), "한…");
+        assert_eq!(truncate_display("한글", 2), "…");
+        // Emoji also occupy two columns.
+        assert_eq!(truncate_display("😀", 2), "😀");
+        assert_eq!(truncate_display("😀", 1), "…");
+        assert_eq!(truncate_display("😀😀", 3), "😀…");
+        // Mixed ASCII and wide characters fit by total display width; a wide
+        // character that cannot fit the remaining budget ends the cut.
+        assert_eq!(truncate_display("a한b", 4), "a한b");
+        assert_eq!(truncate_display("a한b", 3), "a…");
+    }
+
+    #[test]
+    fn truncate_display_appends_the_marker_only_when_truncating() {
+        // An exact fit is not a truncation.
+        assert_eq!(
+            truncate_display("run /usr/bin/true", 17),
+            "run /usr/bin/true"
+        );
+        // One column over the width truncates and marks the cut.
+        assert_eq!(
+            truncate_display("run /usr/bin/true", 16),
+            "run /usr/bin/tr…"
+        );
+        // A comfortably fitting value is byte-identical.
+        assert_eq!(truncate_display("short", 80), "short");
+    }
+
+    #[test]
+    fn list_table_with_injected_widths_truncates_only_the_target_column() {
+        let jobs = vec![
+            list_job_record("a", true, "git push origin main"),
+            list_job_record("b", true, "run-a-very-long-backup-job-with-a-silly-name"),
+        ];
+        // name_width = max(4, 1, 1) = 4; schedule_width = max(8, 8, 8) = 8;
+        // target_width = max(6, 26, 50) = 50; the natural table width is
+        // 4 + 1 + 8 + 1 + 50 + 1 + 7 = 72.
+        let full = format!(
+            "{:<4} {:<8} {:<50} ENABLED\n\
+             {:<4} {:<8} {:<50} yes\n\
+             {:<4} {:<8} {:<50} yes\n",
+            "NAME",
+            "SCHEDULE",
+            "TARGET",
+            "a",
+            "every 1h",
+            "shell git push origin main",
+            "b",
+            "every 1h",
+            "shell run-a-very-long-backup-job-with-a-silly-name",
+        );
+        // No width: full values, byte-identical to the pre-change table.
+        assert_eq!(list_table(&jobs, None).unwrap(), full);
+        // A width that fits the natural table width: unchanged.
+        assert_eq!(list_table(&jobs, Some(80)).unwrap(), full);
+        assert_eq!(list_table(&jobs, Some(72)).unwrap(), full);
+        // A width that cannot even hold NAME + SCHEDULE + ENABLED alone: the
+        // documented fallback prints the untruncated table (rows wrap).
+        assert_eq!(list_table(&jobs, Some(20)).unwrap(), full);
+    }
+
+    #[test]
+    fn list_table_truncates_the_target_column_to_the_remaining_width() {
+        let jobs = vec![
+            list_job_record("a", true, "git push origin main"),
+            list_job_record("b", true, "run-a-very-long-backup-job-with-a-silly-name"),
+        ];
+        // At width 40 the fixed prefix (4 + 1 + 8 + 1) and the trailing
+        // " ENABLED" (1 + 7) leave 40 - 22 = 18 columns for TARGET; every
+        // target value shrinks to 17 text columns plus the marker.
+        let expected = format!(
+            "{:<4} {:<8} {:<18} ENABLED\n\
+             {:<4} {:<8} {:<18} yes\n\
+             {:<4} {:<8} {:<18} yes\n",
+            "NAME",
+            "SCHEDULE",
+            "TARGET",
+            "a",
+            "every 1h",
+            "shell git push or…",
+            "b",
+            "every 1h",
+            "shell run-a-very-…",
+        );
+        assert_eq!(list_table(&jobs, Some(40)).unwrap(), expected);
     }
 }

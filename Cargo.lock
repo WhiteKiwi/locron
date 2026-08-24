@@ -1035,6 +1035,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "clap",
+ "console",
  "dialoguer",
  "flate2",
  "futures-util",
@@ -1053,6 +1054,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "unicode-width",
  "url",
  "uuid",
 ]
