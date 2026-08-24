@@ -10,6 +10,7 @@ Amended 2026-08-23: daemon service installation and automatic startup added; ope
 Amended 2026-08-24: export job selection and URL import added.
 Amended 2026-08-24: human output contract added — human mode renders readable per-command forms instead of machine JSON (issue #4).
 Amended 2026-08-24: the human table form fits the terminal width on a terminal; full values remain available through the detail report, machine output, and a no-truncation rendering flag.
+Amended 2026-08-24: documentation-facing product positioning prioritizes explainability, real-world scheduling semantics, and safe automation surfaces.
 
 ## Goal
 
@@ -18,6 +19,19 @@ Build a local-first job scheduler that lets one user register, inspect, run, and
 The product should retain the simplicity of cron while making execution behavior observable and explicit. A user should be able to understand what was scheduled, when it was expected to run, whether it actually ran, and why it did not run without consulting operating-system-specific scheduler files or logs.
 
 locron owns scheduling and execution semantics itself. It is not a management wrapper that translates individual jobs into cron, launchd, or systemd schedules. Operating-system service managers may keep locron available, but they do not become job-level scheduling backends.
+
+## Product Positioning
+
+The primary product message is **“Cron that explains itself.”** locron is an observable local scheduler, not merely a friendlier syntax for operating-system cron. Its leading user benefit is that a person can inspect the scheduler's durable facts and understand why work ran, did not run, or is not currently eligible.
+
+Product documentation presents capabilities in this order:
+
+1. Explainability: preview, history, captured output, job and run explanations, and health diagnostics.
+2. Real-world reliability: explicit missed-run and overlap policies, durable occurrence identity, bounded catch-up, and restart or crash recovery.
+3. Safe automation: machine-readable output, non-mutating dry runs, and optional agent-facing surfaces that reuse the same validation and durable application semantics.
+4. Implementation evidence: local storage, transactions, process supervision, and similar internals support the reliability claim but do not lead the product story.
+
+Documentation examples must reflect commands and human output that exist in the current release. They must not imply that locron directly observes machine sleep state when it only has durable schedule cursors, daemon lifetime facts, and reconciliation events, and they must not present planned diagnostic commands or richer decision traces as shipped features.
 
 ## Product Principles
 
