@@ -1,4 +1,13 @@
 
+## [0.7.0] - 2026-08-24
+
+### Added
+
+- One-time jobs can opt into automatic cleanup with `locron add --at ... --delete-after-run`.
+  Once the scheduled run reaches a final outcome, locron soft-removes the job definition while
+  retaining its run history and captured output under the normal retention policy. History labels
+  removed jobs explicitly and remains queryable by their retained identity.
+
 ## [0.6.0] - 2026-08-24
 
 ### Added
