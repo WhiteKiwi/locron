@@ -743,6 +743,37 @@ New `.github/workflows/usage.yml`: `on: schedule: [cron: '0 3 * * 1']` (weekly, 
 - The scheduled workflow cannot fire from a push (GitHub schedules run on the default branch with real cron timing); a manual `workflow_dispatch` run is recorded as evidence at first trigger.
 - The next push CI run is green; run ID recorded in `docs/TODO.md`.
 
+## Process-group cancellation confirmation on macOS (2026-08-25)
+
+No product-scope change: cancellation still reports `Cancelled` only after the owned leader has
+been reaped and its process group has received termination. The frozen `docs/SPEC.md` is unchanged.
+
+The macOS x86_64 stable CI failure in [job 97478078694](https://github.com/WhiteKiwi/locron/actions/runs/32741897719/job/97478078694)
+was a deterministic gap in the runner's confirmation rule, exposed intermittently by process
+reaping latency. The cancellation test creates a TERM-ignoring grandchild. After SIGKILL succeeds,
+that child can remain a zombie in the original process group until launchd reaps it. POSIX
+`kill(-pgid, 0)` reports that zombie as present, even though SIGKILL has made further execution
+impossible. The runner therefore incorrectly emitted `TerminationUnconfirmed` after its second
+grace deadline.
+
+The runner will retain group-absence probing before escalation: a TERM outcome remains confirmed
+only after both the direct child is reaped and the process group is absent. Once SIGKILL was either
+delivered successfully or found the group already absent (`ESRCH`), and the direct child is reaped,
+the runner will classify the cancellation or timeout as confirmed without waiting for an
+unreapable-by-locron zombie to disappear. Any SIGKILL error other than `ESRCH`, or a missing direct
+child reap, remains `TerminationUnconfirmed`.
+
+This is stronger than increasing a timeout: it removes a host-controlled zombie-reaping race while
+retaining the safety boundary for a live descendant that did not receive SIGKILL.
+
+### Verification additions
+
+- Unit-test the SIGKILL delivery predicate for success, `ESRCH`, and a permission error.
+- Run the live grandchild-cancellation regression repeatedly on macOS where available, then run
+  the complete workspace test and lint battery.
+- Confirm the next macOS x86_64 stable CI run reports the cancellation test as passed without a
+  job retry.
+
 ## Terminal-width list table truncation (2026-08-24)
 
 This section plans the 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract: Table width). Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §19. The change is confined to `locron-cli`; `locron-core`, `locron-store`, and `locron-engine` are unchanged.

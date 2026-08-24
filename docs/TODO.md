@@ -660,6 +660,24 @@ whitespace left by the removed substitution.
 
 ## Carried open items from archived backlogs
 
+## Process-group cancellation confirmation on macOS (2026-08-25)
+
+Authorized by `docs/IMPLEMENTATION.md` "Process-group cancellation confirmation on macOS". This
+is a runner correctness and CI-reliability change; it does not amend the frozen product scope.
+
+- [x] Treat a successful SIGKILL delivery (or `ESRCH`) plus direct-child reaping as confirmed
+  process-group termination, without waiting for an orphan zombie to leave the process group.
+  **Verify:** focused runner tests cover successful, already-absent, and failed SIGKILL delivery;
+  the TERM-only path still requires group absence; `cancellation_kills_a_live_process_grandchild`
+  passes repeatedly.
+  **Evidence:** `sigkill_delivery_accepts_an_absent_group_but_not_permission_failure` covers all
+  three signal results; `cancellation_kills_a_live_process_grandchild` passed 50 consecutive runs
+  on macOS, including the TERM-to-KILL escalation through a live TERM-ignoring grandchild.
+- [ ] Run the full local quality gate and publish the CI reliability fix.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  and `cargo test --workspace --all-targets` pass; the pushed macOS x86_64 stable CI job passes
+  without a retry; record the run URL and result here.
+
 - [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.
   **Verify:** next-tag marker/release evidence recorded in this section.
 
