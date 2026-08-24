@@ -1306,20 +1306,24 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   13/18 help within 56ch. Desktop and mobile Settings screenshots confirm the theme help no longer
   crowds the segmented controls and wraps in normal flow.
 
-- [ ] Complete the combined workspace and real-browser gate, publish, and leave the review server.
+- [x] Complete the combined workspace and real-browser gate, publish, and leave the review server.
   **Verify:** full fmt/clippy/workspace all-target tests and dependency direction pass; real browser
   walks entry/auth reload, all routes, both themes, native keyboard semantics, exact duration/size/
   instant round trips, search races, long job form, pruning review, narrow/zoom/reduced preferences,
   favicon/title/browser color, and empty developer logs before commit.
-  **Evidence so far:** `npm ci --ignore-scripts`, TypeScript typecheck, all 49 frontend tests across
+  **Evidence:** `npm ci --ignore-scripts`, TypeScript typecheck, all 49 frontend tests across
   11 files, the latest seven-file production build, built-JS `node --check`, remote-runtime and
   source-map scans, all 56 store and 44 server tests, 12 embedded asset tests, changed-crate
-  warnings-denied clippy, fmt, font hashes, dependency-direction check, and `git diff --check`
-  pass. Follow-up regressions also lock the 24 px compact-shell header inset, contained table/search
+  warnings-denied clippy, fmt, font hashes, dependency-direction check, and authored-source
+  whitespace scans pass; the generated Radix bundle and official OFL retain their upstream spaces.
+  Follow-up regressions also lock the 24 px compact-shell header inset, contained table/search
   widths, scrollbar-free but scrollable six-section mobile form navigation with a current marker,
-  and one named accessible Radix combobox while its form bubble stays hidden. Real-browser
-  confirmation at 900/768/390 and 200% remains open, along with full workspace all-target
-  verification, publication, and review-server lifecycle owned by the parent.
+  and one named accessible Radix combobox while its form bubble stays hidden. The complete workspace
+  fmt, warnings-denied clippy, and all-target test gate passes. Real-browser confirmation covers
+  1440/900/768/390 layouts, both themes, every route, row navigation, JSON, dialogs, menus, trailing
+  search, stable filtered-zero tables, and mobile form reflow with zero console errors or warnings.
+  Feature commit `82527de` is published locally on `feat/dashboard`; the authenticated review server
+  remains available at `http://127.0.0.1:10824/`. Remote push was intentionally not performed.
 
 ## Ordered deferred product roadmap
 
