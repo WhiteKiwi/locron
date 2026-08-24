@@ -10,10 +10,12 @@ target.
 ## Homebrew (macOS and Linux)
 
 ```sh
-brew tap whitekiwi/tap && brew trust whitekiwi/tap && brew install locron
+brew install whitekiwi/tap/locron
 ```
 
-Newer Homebrew requires `brew trust` for third-party taps.
+Homebrew 6 requires trust for third-party taps. Installing by fully-qualified name auto-taps the
+repository and records trust for this formula alone — no separate `brew tap` or `brew trust`
+step, and nothing else in the tap is trusted.
 
 The Homebrew formula ships a `service` block, so `brew services` supervises the daemon.
 Installation never starts it automatically:

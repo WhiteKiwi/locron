@@ -50,7 +50,7 @@ command before it executes, so nothing happens behind your back.
 **Homebrew (macOS and Linux):**
 
 ```sh
-brew tap whitekiwi/tap && brew trust whitekiwi/tap && brew install locron
+brew install whitekiwi/tap/locron
 ```
 
 **Install script (macOS and Linux):**
