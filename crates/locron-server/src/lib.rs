@@ -359,6 +359,15 @@ mod tests {
         format!(r#"{{"token":"{TOKEN}"}}"#)
     }
 
+    fn built_asset(html: &str, marker: &str) -> String {
+        let start = html.find(marker).expect("built asset marker") + marker.len();
+        let rest = &html[start..];
+        format!(
+            "/assets/{}",
+            rest.split('"').next().expect("built asset path")
+        )
+    }
+
     async fn authenticated_paste() -> (String, String) {
         let (_, headers, _) = request(
             "POST",
@@ -381,17 +390,23 @@ mod tests {
         assert_eq!(headers["content-type"], "text/html");
         let html = String::from_utf8_lossy(&body);
         assert!(
-            html.contains("paste-form"),
-            "entry page hosts the paste form"
+            html.contains("id=\"root\""),
+            "entry page hosts the React root"
+        );
+        assert!(
+            html.contains("locron.theme"),
+            "entry page applies theme before paint"
         );
         assert!(!html.contains(TOKEN), "entry page never contains the token");
 
         // The viewer bundle is public so the entry page can boot (the paste
         // form is served by app.js); every /api/v1 route is token-gated.
+        let script = built_asset(&html, "src=\"/assets/");
+        let stylesheet = built_asset(&html, "href=\"/assets/");
         for (method, path) in [
-            ("GET", "/app.js"),
-            ("GET", "/app.css"),
-            ("GET", "/views/jobs.js"),
+            ("GET", script.as_str()),
+            ("GET", stylesheet.as_str()),
+            ("GET", "/favicon.svg"),
         ] {
             let (status, _, _) = request(method, path, &[], None).await;
             assert_eq!(status, StatusCode::OK, "{method} {path} must be public");
@@ -585,16 +600,14 @@ mod tests {
         assert_eq!(csrf.len(), 64);
 
         let cookie_header = format!("locron_session={session}; csrf_token={csrf}");
-        let (status, _, body) = request(
-            "GET",
-            "/app.js",
-            &[("cookie", cookie_header.as_str())],
-            None,
-        )
-        .await;
+        let (_, _, index) = request("GET", "/", &[], None).await;
+        let index = String::from_utf8_lossy(&index);
+        let script = built_asset(&index, "src=\"/assets/");
+        let (status, _, body) =
+            request("GET", &script, &[("cookie", cookie_header.as_str())], None).await;
         assert_eq!(status, StatusCode::OK, "authenticated assets load");
         assert!(
-            String::from_utf8_lossy(&body).contains("data.authenticated === true"),
+            String::from_utf8_lossy(&body).contains("authenticated"),
             "the app shell boots from the authenticated session response"
         );
 

@@ -44,11 +44,10 @@ use crate::middleware::{CSRF_COOKIE, SESSION_COOKIE, constant_time_eq};
 use crate::token;
 use crate::transfer::{self, ApiTransferError};
 
-/// The history endpoint caps the store's window at this many runs and warns
-/// when the requested window exceeds it.
-const HISTORY_CAP: usize = 1000;
 /// Default history limit when `limit` is absent.
 const DEFAULT_HISTORY_LIMIT: usize = 20;
+/// Largest run-history page accepted by the API.
+const MAX_HISTORY_PAGE: usize = 100;
 /// Default schedule preview count when `count` is absent.
 const DEFAULT_PREVIEW_COUNT: usize = 5;
 /// The daemon lock probe used by the run endpoint to warn when a run would
@@ -346,6 +345,7 @@ fn default_history_limit() -> usize {
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct HistoryQuery {
     job: Option<String>,
+    q: Option<String>,
     #[serde(default = "default_history_limit")]
     limit: usize,
     #[serde(default)]
@@ -1016,22 +1016,47 @@ pub(crate) async fn jobs_why(
 // Runs
 // ---------------------------------------------------------------------------
 
-/// `GET /api/v1/runs?job=&limit=&offset=`: paginated observable run history.
-/// The store window is capped at 1000 runs; a truncation warning is emitted
-/// when the requested window exceeds it (recorded in IMPLEMENTATION.md §5).
+/// `GET /api/v1/runs?q=&job=&limit=&offset=`: paginated observable run history.
 pub(crate) async fn runs_history(
     State(state): State<AppState>,
     Query(query): Query<HistoryQuery>,
 ) -> Response {
+    if query.job.is_some() && query.q.is_some() {
+        return envelope::error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "q and job are mutually exclusive",
+        );
+    }
+    if query.limit == 0 || query.limit > MAX_HISTORY_PAGE {
+        return envelope::error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "limit must be from 1 through 100",
+        );
+    }
     let result = with_store(&state, move |store| {
-        let total = store.count_runs(query.job.as_deref())?;
-        let fetched = store.history(
-            query.job.as_deref(),
-            (query.limit + query.offset).min(HISTORY_CAP),
-        )?;
+        let (total, fetched) = if let Some(job) = query.job.as_deref() {
+            let total = usize::try_from(store.count_runs(Some(job))?).map_err(|_| {
+                StoreError::Conflict("run history total is outside supported range".into())
+            })?;
+            let runs = store
+                .history(Some(job), query.limit.saturating_add(query.offset))?
+                .into_iter()
+                .skip(query.offset)
+                .take(query.limit)
+                .collect();
+            (total, runs)
+        } else {
+            let page = store.search_history(
+                query.q.as_deref().unwrap_or(""),
+                query.limit,
+                query.offset,
+            )?;
+            (page.total, page.runs)
+        };
         let runs = fetched
             .into_iter()
-            .skip(query.offset)
             .map(|run| {
                 let attempts = serde_json::to_value(&store.attempts_for_run(&run.id)?)
                     .map_err(StoreError::Json)?;
@@ -1042,22 +1067,15 @@ pub(crate) async fn runs_history(
                 .map_err(StoreError::Json)
             })
             .collect::<Result<Vec<_>, StoreError>>()?;
-        Ok((
-            json!({
-                "runs": runs,
-                "total": total,
-                "limit": query.limit,
-                "offset": query.offset,
-            }),
-            if query.limit + query.offset > HISTORY_CAP {
-                vec!["history is capped at 1000 runs".to_owned()]
-            } else {
-                Vec::new()
-            },
-        ))
+        Ok(json!({
+            "runs": runs,
+            "total": total,
+            "limit": query.limit,
+            "offset": query.offset,
+        }))
     })
     .await;
-    respond_pair(result)
+    respond(result, &[])
 }
 
 /// `GET /api/v1/runs/{id}`: one observable run with its ordered attempts.
@@ -1583,7 +1601,13 @@ fn validate_config_value(key: &str, value: &str) -> Result<(), ApiError> {
             }
         }
         "execution_path" => {}
-        "run_retention_count" | "output_limit_bytes" | "per_run_output_limit_bytes" => {
+        "run_retention_count"
+        | "run_retention_age_us"
+        | "output_limit_bytes"
+        | "per_run_output_limit_bytes" => {
+            if key == "run_retention_age_us" && value == "none" {
+                return Ok(());
+            }
             let parsed = parse_i64(key)?;
             if parsed < 0 {
                 return Err(ApiError::Message(

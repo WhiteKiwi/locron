@@ -1065,6 +1065,262 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
 - [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.
   **Verify:** next-tag marker/release evidence recorded in this section.
 
+## Dashboard peer-theme, IA, and input hardening backlog (2026-08-25)
+
+- [x] Establish the Vite + React + strict TypeScript frontend, pinned npm toolchain, reusable
+  component boundaries, deterministic committed dist, and Node-free Cargo/package contract while
+  preserving the current dashboard as a route-by-route behavior reference.
+  **Verify:** `npm ci`, strict typecheck, unit/component tests, two clean byte-identical builds,
+  dist drift/no-remote/source-map scans, `cargo package --list`, and packaged Node-free serve smoke
+  pass before Rust switches its embed root.
+  **Evidence:** exact Node/npm and registry package versions plus `package-lock.json` are committed;
+  `npm ci`, strict `tsc --noEmit`, and 49 Vitest tests pass. Two consecutive clean Vite builds
+  produce the same seven-file OpenSSL SHA-256 tree, the production JS passes `node --check`, and
+  the seven Rust asset tests follow the built index while rejecting remote runtime fetches and
+  source maps. `cargo package --list` contains the complete dist and no node_modules. The existing
+  path-only internal-crate manifest intentionally cannot be verified as a standalone published
+  server crate (IMPLEMENTATION records the boundary); a clean locked release
+  `cargo install --path crates/locron-cli` completed without invoking npm and the installed binary
+  reports `locron 0.7.0`. That installed binary served its embedded entry at the private smoke URL
+  `http://127.0.0.1:12877/`; curl verified the prepaint bootstrap, hashed JS reference, and React
+  root, then the temporary foreground process was stopped. The final production dist is rebuilt,
+  byte-identical across clean builds, and served by the running review daemon without Node.
+- [x] Restore the authored light/dark glass-shell foundation, vendored Geist provenance, prepaint
+  theme persistence, synchronized entry/Settings controls, and the supplied-reference visual
+  direction in the component source.
+  **Verify:** both documented token schemes match rendered CSS; fonts, MIME types, hashes, license,
+  local references, reduced preferences, light/dark prepaint, and no-flash behavior pass automated
+  and browser checks.
+  **Evidence:** deterministic asset tests verify both DESIGN/CSS token schemes, prepaint
+  ordering and all three stored preferences, local font references/MIME/license/hashes, solid
+  fallback plus glass enhancement, and reduced-motion/reduced-transparency rules. Real-browser
+  light/dark/System switching and reload inspection show no incorrect-theme flash.
+- [x] Ship the Locron browser identity: original small-size SVG favicon, resolved-theme browser
+  color, safe route-aware document titles, and stable fallback title.
+  **Verify:** asset tests cover icon MIME/reference and title mapping; browser inspection verifies
+  favicon/title/theme-color across entry, all routes, both themes, refresh, and unknown hashes with
+  no secret or mutable operator data in title/history.
+  **Evidence:** asset tests verify the embedded original SVG reference/MIME, prepaint and
+  runtime theme-color handling, stable route-first title mapping, generic detail/form titles, and
+  fallback title. Browser inspection confirms route titles, favicon, and theme-color stay free of
+  secrets and mutable operator values.
+- [x] Add complete full-history run search and nullable retention-age API support.
+  **Verify:** store and server tests cover ordering, totals beyond 1000, Unicode/literal matching,
+  removed/renamed jobs, pagination, query conflicts/redaction/limits, and finite/no-limit/zero
+  retention dry-run/live behavior.
+  **Evidence:** all 56 locron-store tests and all 20 server contract tests pass. Focused fixtures
+  cover the one-transaction full-history search before/after row 20 and beyond 1000, stable tied
+  pages/totals, Unicode case folding, partial IDs, literal `%`/`_`, removed rows, current renamed
+  job names, zero matches, exact-job/q conflict and page limits; settings cover finite, zero, and
+  nullable `none` dry-run/live retention age.
+- [x] Port entry, Jobs, Run history, Diagnostics, Settings, JobForm, and RunDetail/SSE to typed route
+  components without losing auth, redaction, mutation, UTF-8 body, or reconnect behavior.
+  **Verify:** component tests and route parity fixtures cover every prior asset contract, exact API
+  payloads, effect cleanup, secret unions, focus preservation, error/loading/empty states, and SSE
+  reconnect dedupe before legacy assets are removed.
+  **Evidence:** the React shell is split into App plus Jobs, JobForm, Runs/RunDetail, Diagnostics,
+  and Settings route modules; the production embed points only at Vite dist and legacy HTML/JS/view
+  assets are removed. The 23 frontend tests, seven asset tests, 19 server unit tests, and 20 server
+  contracts cover HttpOnly-session bootstrap, exact HTTP UTF-8 byte payloads (including empty
+  success statuses), redacted secret replacement guards, static/live output, attempt+sequence SSE
+  dedupe and cleanup, read-only diagnostics, mutations, and route loading/error/empty semantics.
+- [x] Resolve the complete editable-control inventory with Field semantics, sectioned navigation,
+  native semantic choices plus authored fixed-value Selects, progressive disclosure, exact durations
+  and byte sizes, local datetime/timezone previews, repeatable PATH rows, explained text grammars,
+  human messages, and first-error focus.
+  **Verify:** tests cover suffix paste/exact round trip/overflow/zero/null for time and size;
+  schedule/retry/concurrency/missed/body dependencies; invalid tags/status/env/path/instant cases;
+  review-then-apply pruning; labelled filters; retained values and focused inline recovery.
+  **Evidence:** exact BigInt domain tests cover duration/byte suffixes, compact round trips,
+  overflow, exponent/composite/sub-unit rejection, zero, nullable UI paths, and valid/invalid
+  instants. Payload and component tests cover native schedule/target/policy choices, progressive
+  concurrency/catch-up/retry/body fields, retained hidden concurrency/body values, invalid
+  tag/status/argument/environment/PATH/body combinations, UTF-8 bytes, redacted unions, validation
+  summary and first-error focus. A Settings component test proves pruning dry-run review with human
+  old→new byte values precedes explicit live apply; PATH rows and all filters have visible labels.
+  Browser QA confirms field-specific `Off` duration semantics, suffix normalization, repeatable
+  per-job PATH rows, the six-section mobile form navigator, and visible Settings review recovery.
+- [x] Complete the full-history 250 ms trailing search UX with clear/refresh/Enter immediacy,
+  abort/generation guards, stable focus/table state, settled result announcements, and retry.
+  **Verify:** fake-timer/component tests cover `ni` and `back` matching `nightly-backup`, pagination,
+  literal `%`/`_`, Unicode, clear/Enter, slow stale success/error, abort, failure retry, and one
+  settled accessible status per current query.
+  **Evidence:** fake-timer component tests verify the 249/250 ms boundary, Enter flush, immediate
+  pagination and clear with focus retention, query encoding for `ni`, `back`, `%`, `_`, and Korean,
+  AbortSignal cancellation, generation/query guarding against slow stale success/error, retry UI,
+  and one atomic current status. The store/server fixtures independently prove `ni` and `back`
+  literal matching against `nightly-backup` across the complete durable history.
+
+### Modern operator-cockpit visual overhaul
+
+- [x] Replace the old luminous/card-heavy visual contract with the exact flat peer-theme system in
+  `DESIGN.md`: near-solid canvas, opaque workbench, passive and control borders, sparse amber brand
+  focus, separate warning status, compact type/spacing/radius/elevation/motion scales, and defined
+  interaction states.
+  **Verify:** an automated token/provenance scan matches both documented palettes and component
+  scales; contrast calculations, local-font hashes, reduced-motion/transparency fallbacks, and
+  absence of ambient gradient/glow, nested glass, remote assets, and unapproved shadow pass.
+  **Evidence:** `DESIGN.md`, source CSS, and all eight embedded asset tests agree on both exact
+  palettes, status pairs, scale/breakpoint contracts, reduced preferences, approved popup/dialog
+  shadows, and rejected ambient effects. Official font/license SHA-256 checks and local-only asset
+  scans pass.
+- [x] Add the adaptive application shell: 224 px desktop rail, 64 px compact rail, and labelled
+  mobile top/bottom navigation with route header, persistent location, daemon health, and one clear
+  primary action area.
+  **Verify:** component tests assert landmarks, accessible names/current-route state, health text,
+  and all four routes at desktop/compact/mobile variants; browser QA at 1440, 900, 390, and 200%
+  zoom shows no body overflow, inaccessible destination, or obscured route content.
+  **Evidence:** the shared shell component exposes two labelled navigation landmarks, four
+  destinations, `aria-current`, named daemon status, route header, skip link, and 224/64/56 px CSS
+  compositions; its component/static contracts pass. Browser review at 1440, 900, 768, and 390 px
+  confirms the desktop, compact, and mobile compositions have no body overflow or obscured route
+  content.
+- [x] Introduce Locron-owned Select, DropdownMenu, Dialog, and Tooltip wrappers over individually
+  pinned Radix primitives plus direct named Lucide icons; keep native input/radio/checkbox semantics
+  and reject full UI-kit styling.
+  **Verify:** package/lock/asset scans prove exact pins, tree-shaken local production output, and no
+  network dependency; component and keyboard tests cover labels, open/selected/highlighted/invalid/
+  disabled states, arrows/typeahead, Enter/Space/Escape, outside pointer, viewport collision,
+  background inertness, route-close, and logical trigger focus restoration.
+  **Evidence:** package/lock and `npm ls` confirm exact Select 2.3.7, DropdownMenu 2.1.24,
+  Dialog 1.1.23, Tooltip 1.2.16, and Lucide 1.34.0 pins. Portal, named trigger, safe initial dialog
+  focus, Escape, inertness, and static semantics pass component/asset tests. jsdom has no layout and
+  drops portal-unmount focus to `body`; the real-browser walk confirms viewport-safe menus, safe
+  dialog focus, Escape dismissal, and authored Select behavior.
+- [x] Rebuild Jobs and Run history around one responsive data component: wrapping labelled toolbar,
+  live result state, dense comparison table, status text, stable row-menu action, and semantic mobile
+  object rows below the table breakpoint.
+  **Verify:** desktop and narrow component fixtures expose identical facts and actions without
+  hidden/hover-only controls; long names/IDs/schedules wrap, filters keep focus and announcements,
+  menus remain inside the viewport, and neither mobile nor 200% zoom needs horizontal page scroll.
+  **Evidence:** Jobs' long-name fixture asserts duplicate core facts, statuses, and named
+  actions across the desktop table and semantic mobile object row; Run history's search/debounce/
+  stale/pagination tests and shared responsive source contracts pass. Browser reflow at desktop,
+  compact, and 390 px confirms the table/object-row switch and contained controls.
+- [x] Recompose Job detail, Run detail, Diagnostics, JobForm, and Settings using flat divided
+  sections, bounded measures, sticky section/action navigation, progressive disclosure, authored
+  controls, and short accessible confirmation/review dialogs.
+  **Verify:** route tests cover all existing payloads plus dirty/saving/review/error states and
+  focus recovery; real-browser QA walks every section, native date-time treatment, exact duration/
+  byte controls, PATH rows, destructive actions, output console, and Settings pruning review in
+  both themes and at narrow widths.
+  **Evidence:** route source now uses flat divided sections, bounded 720+176 form layout,
+  native authored date-time, Radix selects, exact duration/byte inputs, PATH rows, Review section,
+  sticky actions, and remove/cancel/settings-review dialogs. Existing JobForm, duration, Settings,
+  Runs/SSE, and payload tests pass; the browser walk covers every route, the long mobile form,
+  JSON/output surfaces, action menus, confirmation dialog, and Settings in both themes.
+- [x] Rebuild the committed production assets and complete visual/accessibility regression review.
+  **Verify:** strict typecheck, frontend tests, two clean byte-identical builds, dist drift and
+  no-remote/source-map scans, Rust asset tests, keyboard-only traversal, loading/empty/error/dialog/
+  menu/tooltip states, reduced preferences, and empty browser developer logs all pass before the
+  modern-overhaul checklist is marked complete.
+  **Evidence:** strict typecheck and all 49 frontend tests pass; two clean builds produced the same
+  seven-file SHA-256 tree (`app-BpLdryFX.js`, `index-4OzfQWh6.css`); every built JS passes
+  `node --check`; source-map/runtime-remote scans, all Rust asset tests, workspace warnings-denied
+  clippy, 56 store tests, 44 server tests, font hashes, fmt, and `git diff --check` pass. The
+  representative real-browser walk is clean at all shell breakpoints with zero errors or warnings.
+
+### Finish-quality refinement
+
+- [x] Add the dependency-free exact-source JSON lexer and viewer to every job/run/audit structured
+  payload with syntax roles, line structure, language/copy/wrap toolbar, invalid state, and bounded
+  progressive disclosure for content above 200 lines or 64 KiB.
+  **Verify:** pure and component tests cover exact CRLF/Unicode/escape/duplicate-key/exponent copy,
+  invalid JSON, literal markup safety, empty values, wrap persistence, accessible continuous text,
+  80-line preview/full expansion, both themes, narrow viewport, and 200% zoom.
+  **Evidence:** seven deterministic lexer/viewer tests pass for exact CRLF, Unicode, escape,
+  duplicate-key and exponent preservation, invalid and empty sources, literal-markup safety,
+  continuous `<code>` text, exact full-source copy, persisted wrap, 80-full-line expansion, and the
+  64 KiB threshold. The source/embedded-asset contract confirms all job, run snapshot, and audit
+  JSON surfaces use the dependency-free viewer. Browser review confirms syntax roles, wrap/copy,
+  progressive disclosure, and readable narrow rendering in both themes.
+- [x] Retune the entire typography system to the exact Geist application roles and Korean-safe
+  fallback/tracking rules, including navigation, controls, forms, tables, metadata, numbers, and
+  code; remove coarse weights and document-like global spacing.
+  **Verify:** CSS/token tests match every role metric, font provenance and local loading remain
+  intact, Korean/Latin/mixed/long fixtures render without clipping or synthetic faces, tabular
+  values align, and browser screenshots show the same hierarchy in both themes.
+  **Evidence:** source and embedded-asset contracts pass for the documented application
+  roles, Korean-safe fallback/tracking, optical sizing, kerning, disabled synthesis, tabular
+  numerals, and disabled mono ligatures. Both official WOFF2 hashes and the unmodified OFL hash
+  match the pinned provenance. Desktop and mobile screenshots confirm the same compact hierarchy
+  without mixed-script clipping.
+- [x] Remove duplicate labelled-navigation tooltips and apply the semantic hover/pressed/selected/
+  focus ramp to navigation, buttons, rows, and menus; reserve tooltips for icon-only controls.
+  **Verify:** component and browser tests show no Tooltip/title for labelled 224 px or mobile nav,
+  a named dismissible Tooltip for 64 px/icon-only controls, visible independent focus, no hover
+  lift/shadow, and no essential copy available only through hover.
+  **Evidence:** component and asset tests pass for plain labelled desktop/mobile navigation,
+  named Tooltip triggers only in the compact 64 px rail, current-route semantics, and the flat
+  no-hover-shadow contract. Real pointer/focus review confirms labelled navigation does not produce
+  duplicate hover copy and compact icon navigation retains the named tooltip.
+- [x] Apply restrained glass only to overlapping sticky chrome and transient menu/tooltip layers,
+  using the documented alpha/blur/saturation/hairline/shadow values and opaque fallbacks while
+  keeping rails, workbenches, data, forms, JSON, notices, and dialogs opaque.
+  **Verify:** CSS/asset tests reject gradients, broad glow, stacked material, glass content, and
+  blur beyond 16 px; real-browser checks cover supported and fallback rendering, reduced
+  transparency, increased contrast, forced colors, both themes, scroll-behind, and dialog smoke.
+  **Evidence:** CSS/asset contracts pass for the exact light/dark sticky and transient alpha,
+  14/16 px blur and saturation values, opaque default fallback, solid content/dialogs, and the
+  reduced-transparency, increased-contrast, forced-colors, and explicit solid hooks. Gradient,
+  broad-glow, text-shadow, and row-shadow rejection passes. Both-theme browser review confirms the
+  glass remains limited to overlapping/transient layers and dialogs/content remain opaque.
+- [x] Make every Job and Run desktop/mobile row a pointer-selectable detail surface while retaining
+  exactly one descriptive native anchor and an isolated named action menu.
+  **Verify:** tests cover ordinary surface click, text selection, prevented/modified/non-primary
+  events, real-anchor middle/Cmd/Ctrl/context behavior, interactive descendants, menu open/select,
+  Tab/Enter, accessible full run/job names, and flat hover/focus/pressed/current states.
+  **Evidence:** four pure row-event tests and the Jobs responsive integration test pass for
+  ordinary surface dispatch to the native link, selection, prevented/modified/non-primary guards,
+  interactive descendants and menu isolation, descriptive anchors, and no synthetic row role or
+  tab stop. Real browser review confirms ordinary surface navigation and isolated row-menu actions.
+- [x] Audit the complete light/dark palette against the documented perceptual role ramp and status
+  pairs, eliminating local/ad-hoc color and whole-component disabled opacity.
+  **Verify:** source scans find only semantic component aliases; automated ratios meet 4.5:1 text
+  and 3:1 boundary/state targets; screenshot review covers canvas/surface/raised/hover/pressed/
+  selected, disabled, focus, brand amber, and all labelled statuses without hue-only meaning.
+  **Evidence:** the embedded asset/server suite matches the documented light/dark semantic
+  tokens, calculates all normal text/status pairs at or above 4.5:1 and control/focus boundaries at
+  or above 3:1, rejects whole-component disabled opacity and local visual effects, and preserves
+  labelled status treatment. Complete light/dark screenshots cover surfaces, interaction states,
+  brand focus, disabled controls, and labelled statuses.
+
+- [x] Preserve Jobs and Run history toolbar/table/header context for successful zero results and
+  render distinct semantic filtered-zero and first-use body rows with appropriate recovery actions.
+  **Verify:** component tests cover desktop `colSpan`, narrow equivalent, polite single count status,
+  no duplicate live region, no pager, filtered Clear filters with search focus/restored results, and
+  initial Create/View job actions; browser review confirms stable 160 px empty body in both themes.
+  **Evidence:** Jobs and Run history component tests pass for successful first-use and
+  filtered zero, five-/six-column span, retained headers, the non-article mobile equivalent, one
+  described count status, absent zero pager, enabled clear with restored search focus/count, route-
+  appropriate creation/navigation, and distinct loading/request-error branches. The asset contract
+  fixes the 160/112/24 px desktop and 96/24x16 px narrow geometry. Desktop Jobs/Runs and 390 px Jobs
+  browser review confirm retained headers/context, the first body-row empty state, and no pager.
+- [x] Apply explicit label-to-control, grouped-control-to-help, help/error, field, and section spacing
+  so theme and other explanatory copy never collides with the control above it.
+  **Verify:** CSS/component contracts assert 8/8/4/20/40 px roles, group `aria-describedby`, normal
+  flow, wrap behavior, and 56ch theme help; desktop/mobile screenshots confirm visual separation.
+  **Evidence:** component tests pass for the ThemeControl fieldset's single described radio
+  group and normal-flow help after all three options. The source/asset contract fixes label-control
+  8 px, segmented-control-help 8 px, help/error 4 px, next field 20 px, section 40 px, and muted
+  13/18 help within 56ch. Desktop and mobile Settings screenshots confirm the theme help no longer
+  crowds the segmented controls and wraps in normal flow.
+
+- [ ] Complete the combined workspace and real-browser gate, publish, and leave the review server.
+  **Verify:** full fmt/clippy/workspace all-target tests and dependency direction pass; real browser
+  walks entry/auth reload, all routes, both themes, native keyboard semantics, exact duration/size/
+  instant round trips, search races, long job form, pruning review, narrow/zoom/reduced preferences,
+  favicon/title/browser color, and empty developer logs before commit.
+  **Evidence so far:** `npm ci --ignore-scripts`, TypeScript typecheck, all 49 frontend tests across
+  11 files, the latest seven-file production build, built-JS `node --check`, remote-runtime and
+  source-map scans, all 56 store and 44 server tests, 12 embedded asset tests, changed-crate
+  warnings-denied clippy, fmt, font hashes, dependency-direction check, and `git diff --check`
+  pass. Follow-up regressions also lock the 24 px compact-shell header inset, contained table/search
+  widths, scrollbar-free but scrollable six-section mobile form navigation with a current marker,
+  and one named accessible Radix combobox while its form bubble stays hidden. Real-browser
+  confirmation at 900/768/390 and 200% remains open, along with full workspace all-target
+  verification, publication, and review-server lifecycle owned by the parent.
+
 ## Ordered deferred product roadmap
 
 

@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 use locron_server::{AppState, router};
-use locron_store::{FrameChannel, FrameWriter, StatePaths};
+use locron_store::{FrameChannel, FrameWriter, StatePaths, Store};
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -498,6 +498,79 @@ async fn offline_manual_enqueue_and_cancel() {
         error(&body, "durable_conflict"),
         format!("run {run_id} is already terminal (cancelled)")
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn run_history_literal_search_is_complete_paginated_and_validated() {
+    let server = spawn_server();
+    let (_, body) = server
+        .post(
+            "/api/v1/jobs",
+            Some(create_body(
+                "Nightly-backup-백업%_One",
+                &definition("/bin/echo", false, false, true),
+            )),
+        )
+        .await;
+    let job_id = data(&body)["id"].as_str().unwrap().to_owned();
+    let store = Store::open(server.paths.clone(), "contract", 2).unwrap();
+    let mut run_ids = Vec::new();
+    for now in 1..=1_005 {
+        let run_id = uuid::Uuid::now_v7().to_string();
+        store.enqueue_manual(&job_id, &run_id, now).unwrap();
+        run_ids.push(run_id);
+    }
+
+    let (status, body) = server.get("/api/v1/runs?q=BACK&limit=20&offset=20").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["total"], json!(1_005));
+    assert_eq!(data(&body)["runs"].as_array().unwrap().len(), 20);
+    assert!(!body_text(&body).contains("body-secret"));
+
+    let (_, unicode) = server.get("/api/v1/runs?q=백업&limit=1").await;
+    assert_eq!(data(&unicode)["total"], json!(1_005));
+    let (_, literal) = server.get("/api/v1/runs?q=%25_&limit=1").await;
+    assert_eq!(data(&literal)["total"], json!(1_005));
+    let suffix = &run_ids[500][run_ids[500].len() - 6..];
+    let (_, partial) = server
+        .get(&format!("/api/v1/runs?q={suffix}&limit=100"))
+        .await;
+    assert!(
+        data(&partial)["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|run| run["id"] == run_ids[500])
+    );
+
+    let (status, conflict) = server
+        .get(&format!("/api/v1/runs?q=night&job={job_id}"))
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        error(&conflict, "invalid_request"),
+        "q and job are mutually exclusive"
+    );
+    let (status, invalid) = server.get("/api/v1/runs?limit=101").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        error(&invalid, "invalid_request"),
+        "limit must be from 1 through 100"
+    );
+
+    let (_, _) = server
+        .put(
+            &format!("/api/v1/jobs/{job_id}"),
+            Some(json!({"name": "Renamed current"})),
+        )
+        .await;
+    let (_, old) = server.get("/api/v1/runs?q=nightly&limit=1").await;
+    assert_eq!(data(&old)["total"], json!(0));
+    let (_, current) = server.get("/api/v1/runs?q=RENAMED&limit=1").await;
+    assert_eq!(data(&current)["total"], json!(1_005));
+    let (_, _) = server.delete(&format!("/api/v1/jobs/{job_id}")).await;
+    let (_, removed) = server.get("/api/v1/runs?q=renamed&limit=1").await;
+    assert_eq!(data(&removed)["total"], json!(1_005));
 }
 
 // ---------------------------------------------------------------------------
@@ -1186,6 +1259,40 @@ async fn settings_surface() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(data(&body)["run_retention_count"], json!(7));
+    let (status, body) = server
+        .put(
+            "/api/v1/settings/run_retention_age_us",
+            Some(json!({"value": "3600000000", "dry_run": "1"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["dry_run"], json!(true));
+    let (status, body) = server
+        .put(
+            "/api/v1/settings/run_retention_age_us",
+            Some(json!({"value": "3600000000"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        data(&body)["run_retention_age_us"],
+        json!(3_600_000_000_i64)
+    );
+    let (status, body) = server
+        .put(
+            "/api/v1/settings/run_retention_age_us",
+            Some(json!({"value": "none", "dry_run": "1"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = server
+        .put(
+            "/api/v1/settings/run_retention_age_us",
+            Some(json!({"value": "none"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["run_retention_age_us"], Value::Null);
 
     // Environment values: created then replaced, redacted on read.
     let (status, body) = server
@@ -1251,7 +1358,7 @@ async fn settings_surface() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test(flavor = "multi_thread")]
-async fn history_pagination_and_cap_warning() {
+async fn history_pagination_and_bounded_page_validation() {
     let server = spawn_server();
     for name in ["a", "b", "c"] {
         let (_, body) = server
@@ -1291,10 +1398,13 @@ async fn history_pagination_and_cap_warning() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(data(&body)["total"], json!(1));
 
-    // Window beyond the cap warns.
+    // Pages are bounded; complete totals no longer depend on a 1000-row window.
     let (status, body) = server.get("/api/v1/runs?limit=1000&offset=100").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["warnings"], json!(["history is capped at 1000 runs"]));
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(
+        error(&body, "invalid_request"),
+        "limit must be from 1 through 100"
+    );
 }
 
 // ---------------------------------------------------------------------------

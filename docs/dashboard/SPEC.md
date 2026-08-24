@@ -252,3 +252,125 @@ daemon.
 
 None after `docs/FINDINGS.md` §14; implementation choices and their trade-offs are recorded in
 `IMPLEMENTATION.md`.
+
+## 12. Peer themes, information architecture, and input amendment (2026-08-25)
+
+17. The bundled dashboard offers authored light and dark schemes plus a persistent `system`
+    preference. Theme selection is applied before first paint, remains browser-local, follows OS
+    changes only in system mode, and is available on both the entry surface and Settings page.
+    Restrained translucent chrome may frame navigation and transient controls, while tables,
+    forms, notices, destructive content, and logs remain opaque workbench surfaces.
+18. Authenticated navigation is Jobs, Run history, Diagnostics, and Settings. Settings owns
+    Appearance, Execution, Retention & output, and Environment editing; Diagnostics is read-only
+    health, path, exposure, process-resolution, and integrity evidence.
+19. Schedule, target, timezone, overlap, missed-run, and retry-backoff choices use native radio
+    controls with fieldset/legend semantics. Durations use an exact reusable decimal magnitude and
+    native s/m/h/d unit selector, round-trip microseconds without floating-point loss, and reject
+    exponent, composite, sub-microsecond, overflowing, or unsafe JSON-number values.
+20. Run history supports complete Unicode-case-insensitive literal substring search across run ID
+    and the durable job row's current name. Filtering precedes total and pagination over the full
+    history in stable newest-first order. The UI debounces typing, cancels obsolete requests, and
+    never lets stale responses replace the current query.
+21. Every editable dashboard surface uses operator-facing concepts instead of storage encodings.
+    Data sizes use readable binary units, instants use local date/time with an explicit timezone
+    and preview, numeric limits expose their valid range and consequence, and structured text
+    inputs explain their grammar with examples. Raw bytes, epoch microseconds, path separators,
+    and similar internal representations are hidden from the primary workflow and appear only as
+    clearly labelled advanced details when they remain operationally necessary. Related controls
+    reveal only when relevant, defaults and disabled states are explicit, and validation identifies
+    the affected field, preserves entered values, and focuses a useful recovery target. The visual
+    treatment follows Locron's own cream/charcoal/yellow identity while adopting the supplied
+    references' restrained surfaces, generous spacing, strong typography, and quiet information
+    density rather than copying their branding.
+22. Browser chrome is part of the Locron identity: the dashboard has a distinctive small-size
+    favicon, theme-aware browser color, and concise route-aware document titles that identify both
+    Locron and the current task without exposing secrets or mutable operator data.
+23. The expanded dashboard is maintained as type-checked, reusable UI components rather than
+    page-sized string templates and ad-hoc DOM mutation. Production remains self-contained,
+    deterministic, and free of runtime CDN or network dependencies, and installing or running the
+    published Locron binary does not require a JavaScript toolchain. Frontend source and the exact
+    embedded production assets are both reviewable and verified against drift.
+
+## 13. Modern operator-cockpit amendment (2026-08-25)
+
+24. The authenticated application uses a persistent desktop navigation rail and a compact mobile
+    navigation treatment so product identity, current location, primary actions, and daemon health
+    remain immediately legible. Each route has one restrained header and one dominant workbench;
+    ornamental hero areas, ambient gradients, broad glow, and a card around every value are not part
+    of the operational interface.
+25. Light and dark themes express the same hierarchy through semantic tokens: a quiet near-solid
+    canvas, opaque working surfaces, crisp dividers, strong foreground contrast, and sparse amber
+    brand focus. Blur or translucency is limited to transient menus and compact navigation chrome,
+    has an opaque fallback, and never reduces the legibility of data, forms, warnings, or logs.
+26. Every interactive control belongs to one Locron component family. Selects, overflow menus,
+    dialogs, tooltips, segmented choices, buttons, text fields, date-time fields, and disclosure
+    controls have authored visuals and complete hover, pressed, open, focus-visible, invalid,
+    disabled, loading, and reduced-motion states. No control appears as an unintentional browser
+    default. Complex popup behavior uses accessible, keyboard-complete primitives rather than an
+    ad-hoc imitation, while native form semantics remain the underlying contract where useful.
+27. Jobs and run history prioritize comparison and action: compact toolbars, labelled live filters,
+    dense rows, stable column alignment, tabular numerals, status labels that do not rely on color,
+    useful empty/loading/error states, and an overflow-safe action menu. Narrow screens replace the
+    table composition with an equally complete scan-friendly layout without horizontal page
+    overflow or hidden core actions.
+28. Create and edit flows use a calm one-column reading order within a bounded measure, grouped by
+    visible section headings and supported by section navigation on wide screens. Dependencies are
+    progressively disclosed, advanced wire values recede, validation stays next to the affected
+    field, and save/review actions remain discoverable during long forms. Settings uses the same
+    hierarchy, with browser-local appearance clearly separated from durable scheduler policy and
+    destructive or pruning consequences reviewed before application.
+29. Typography, spacing, iconography, radius, border, elevation, and motion follow a small explicit
+    scale documented in the Locron guide. Operational copy uses locally bundled Geist with system
+    and Korean fallbacks, icons use one coherent outline language with accessible labels, and motion
+    is brief and state-explanatory rather than decorative. Long names, schedules, IDs, paths, and
+    translated copy remain readable at 200% zoom and narrow widths.
+30. The finished experience is visually reviewed in both themes at desktop and mobile widths across
+    entry, Jobs, Run history, job creation, Settings, Diagnostics, menus, dialogs, validation,
+    loading, empty, and error states. It must feel like an original Locron operations product: the
+    supplied portfolio informs typographic confidence and sparse amber emphasis, DeepSeek informs
+    quiet space and flat surfaces, and Grafana informs information density and operational clarity;
+    none is copied as a skin.
+
+## 14. Finish-quality amendment (2026-08-25)
+
+31. Structured JSON is presented as an operational code viewer rather than an undifferentiated text
+    block. It preserves valid text exactly, supports readable syntax roles, line structure, copying,
+    wrapping or bounded scrolling, and progressive disclosure for long payloads without requiring a
+    network editor or making color the only distinction.
+32. Typography is tuned as an application system rather than browser-document defaults. Body,
+    navigation, labels, data, metadata, and monospace content each have a deliberate size, line
+    height, weight, and tracking; mixed Korean and Latin copy remains balanced, dense information is
+    readable, and controls align optically without loose legacy-web spacing.
+33. Hover and focus feedback never repeats information already visible. In particular, labelled
+    navigation items do not show duplicate tooltips; tooltips are reserved for genuinely icon-only
+    supplemental controls. Menus, rows, buttons, and navigation use quiet surface, border, icon, and
+    active-marker changes with distinct focus-visible behavior.
+34. A restrained glass treatment may identify genuinely layered chrome and transient surfaces in
+    both themes through controlled translucency, subtle saturation, a hairline highlight, and a soft
+    localized shadow. Main workbenches, tables, forms, code content, notices, and dense reading
+    surfaces remain opaque. Every glass surface has an authored solid fallback and respects reduced
+    transparency and contrast requirements.
+35. Final visual review compares the result against current public AI-product interface guidance and
+    the supplied design-skill references for hierarchy, typography, spatial rhythm, interaction
+    states, code presentation, motion, and accessibility. Reference techniques are recorded with
+    evidence, but no generic AI gradient, excessive glow, ornamental animation, or copied brand skin
+    replaces Locron's calm charcoal, cream, and amber identity.
+36. A Job or Run row is itself a clear detail-navigation target rather than requiring precise clicks
+    on only the title or shortened ID. Pointer users can activate the quiet row surface, keyboard and
+    assistive-technology users receive one descriptive primary link, and embedded command menus
+    remain separate controls that never trigger navigation. Hover, focus-within, pressed, and current
+    states communicate selectability without turning each row into a floating card.
+37. Color is authored as a complete perceptual system, not a collection of isolated swatches. Both
+    themes define distinguishable canvas, workbench, raised, hover, selected, and control-boundary
+    levels; amber chroma is restrained outside small brand moments; semantic statuses remain mutually
+    distinguishable; and text, icons, focus, borders, and disabled states meet their applicable
+    contrast targets. The guide records role, pairing, dark-theme adaptation, and misuse for every
+    token so later components do not invent local colors.
+38. Explanatory copy that follows a control group has deliberate separation from the final control;
+    it never visually collides with segmented theme choices, radio cards, toolbars, or action rows.
+    The shared spacing contract distinguishes label-to-control, control-to-help, and section gaps.
+39. Filtered empty results preserve their operational context. Jobs and Run history keep the toolbar,
+    table frame, column headers, and stable surrounding layout, then render one semantic full-width
+    body row that explains the zero result and offers a small clear-filter recovery action. A truly
+    empty dataset uses the same stable table structure but different copy and a route-appropriate
+    primary next action; it is not confused with a loading or request-error state.
