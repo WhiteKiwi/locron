@@ -574,6 +574,47 @@ time, so the URL must carry the literal version for Homebrew to scan (FINDINGS �
   Future bumps generate audit-clean formulas from the fixed template; the v0.5.0 tap formula was
   fixed directly and needs no re-release.
 
+## Homebrew formula literal-rendering release fix (2026-08-24)
+
+Authorized by the frozen 2026-08-24 `docs/SPEC.md` Homebrew-publication amendment and planned in
+`docs/IMPLEMENTATION.md` “Accepted: literal Homebrew formula rendering”. Release v0.6.0 itself
+succeeded, but the generated tap commit `b9d1d0c` lost every backtick-delimited command because the
+formula body was an unquoted shell heredoc; tap test-bot run 32718394313 also found trailing
+whitespace left by the removed substitution.
+
+- [x] Replace the executable heredoc with a literal checked-in formula template and a validated
+  token renderer, then make the release workflow call that renderer.
+  **Verify:** the workflow parses as YAML; shellcheck passes the renderer; a fixture render contains
+  the supplied version and four checksums, retains every literal backtick command, leaves no token,
+  and has no trailing whitespace.
+  **Evidence:** `packaging/homebrew/locron.rb.in` contains the literal Ruby body and five explicit
+  token kinds; `scripts/render-homebrew-formula.sh` validates a SemVer release and four lowercase
+  SHA-256 values, replaces exactly the expected token counts, and the release workflow invokes it
+  after calculating the four checksums. Ruby/Psych parses `release.yml`; shell syntax, shellcheck,
+  the fixed-value render, token search, and trailing-whitespace check all pass.
+- [x] Add the deterministic renderer regression to push CI.
+  **Verify:** the regression fails against the v0.6.0 backtick-stripped formula shape, passes against
+  the checked-in template/renderer, both shell scripts pass shellcheck, and the CI workflow parses.
+  **Evidence:** `scripts/test-render-homebrew-formula.sh` first verifies the intact rendered formula,
+  then proves the same check rejects a fixture with all four backtick expressions removed; it also
+  rejects malformed version/checksum inputs. The CI installer job shellchecks both scripts and runs
+  the regression. Ruby/Psych and actionlint accept both edited workflows.
+- [x] Repair `WhiteKiwi/homebrew-tap` v0.6.0 directly from the current URLs/checksums and the intact
+  v0.5.0 guidance, then publish it on tap `main`.
+  **Verify:** inspect staged/unstaged changes before commit; `ruby -c`, trailing-whitespace checks,
+  Homebrew readall/style/audit where locally available, and the pushed tap `brew test-bot` run all
+  succeed; record the tap commit and run ID.
+  **Evidence:** tap commit `06ae05f` (`fix: restore locron formula guidance`) changes only the four
+  damaged documentation lines, retains the v0.6.0 URLs/checksums from `b9d1d0c`, and is byte-for-byte
+  identical to a v0.6.0 render from the new source template. `ruby -c`, `brew style`, whitespace,
+  diff, staged/unstaged, and renderer-comparison checks pass. Tap test-bot run
+  [32719051536](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/32719051536) concluded
+  `success` on both its Ubuntu and macOS jobs.
+- [ ] Verify and publish the locron release-tooling fix.
+  **Verify:** formatting, workflow YAML/action lint, shell syntax/shellcheck, deterministic rendering,
+  and relevant workspace checks pass; inspect staged/unstaged changes, commit with the repository
+  message format, push the branch, open a PR, and record the commit, PR URL, and CI run result.
+
 ## Carried open items from archived backlogs
 
 - [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.
