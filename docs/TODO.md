@@ -388,10 +388,19 @@ width). Planned in `docs/IMPLEMENTATION.md` "Terminal-width list table truncatio
   --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass.
   **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
   -D warnings` clean; `cargo test --workspace` 338 passed, 0 failed across all crates.
-- [ ] Parent session: publish v0.5.0 — version bump, curated git-cliff changelog, commit, annotated
+- [x] Parent session: publish v0.5.0 — version bump, curated git-cliff changelog, commit, annotated
   tag `v0.5.0`, push; monitor the release workflow per `docs/RELEASE.md`.
   **Verify:** the release workflow run is green (run ID recorded here), the GitHub Release is
   created with the curated notes, and the Homebrew tap update is dispatched.
+  **Evidence:** release workflow run
+  [32684370852](https://github.com/WhiteKiwi/locron/actions/runs/32684370852) concluded `success`
+  (tag `v0.5.0`); GitHub Release
+  [v0.5.0](https://github.com/WhiteKiwi/locron/releases/tag/v0.5.0) published with the curated
+  changelog notes and all ten assets (four target tarballs, two `.deb`, two `.rpm`, `install.sh`,
+  `SHA256SUMS.txt`); the tap formula updated by direct commit `85382afe` `bump(locron): 0.5.0`
+  (the workflow commits to the tap rather than opening a PR). The changelog entry was hand-curated
+  in Keep-a-Changelog format — git-cliff is not installed on the maintainer machine — which the
+  release-notes extraction and future regeneration coexist with per `docs/RELEASE.md`.
 
 Follow-ups (open, not implemented here):
 
