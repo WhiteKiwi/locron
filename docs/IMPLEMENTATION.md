@@ -651,3 +651,34 @@ New `.github/workflows/usage.yml`: `on: schedule: [cron: '0 3 * * 1']` (weekly, 
 - `ci.yml` parses and the installer job's step list no longer includes the live smoke; `rg -n "usage.sh --json" .github/workflows` shows the smoke only inside `usage.yml`.
 - The scheduled workflow cannot fire from a push (GitHub schedules run on the default branch with real cron timing); a manual `workflow_dispatch` run is recorded as evidence at first trigger.
 - The next push CI run is green; run ID recorded in `docs/TODO.md`.
+
+## Terminal-width list table truncation (2026-08-24)
+
+This section plans the 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract: Table width). Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §19. The change is confined to `locron-cli`; `locron-core`, `locron-store`, and `locron-engine` are unchanged.
+
+### Accepted: TTY-only truncation of the table's final column
+
+Width resolution is `console::Term::stdout().size_checked()` — the `TIOCGWINSZ` ioctl that docker and kubectl use. `console` 0.16 is already in the `locron-cli` dependency graph through dialoguer 0.12 (verified with `cargo tree -p locron-cli -i console`: console 0.16.4 → dialoguer 0.12.0 → locron-cli), so declaring it as a direct dependency with `default-features = false` adds zero lockfile entries. A failed size lookup — stdout redirected, piped, or otherwise not a terminal — means no truncation, so the one mechanism is both the width source and the TTY gate. The width is sampled once per invocation; a mid-print window resize is not chased (docker and kubectl behave the same).
+
+Display width uses `unicode-width` 0.2, already locked transitively, declared directly on `locron-cli`. The pure helper `truncate_display(&str, max_width) -> String` walks characters, sums display width, and appends the `…` marker (display width 1) only when the value actually shrinks; a value that fits is returned unchanged.
+
+`render_list_table` gains a `width: Option<u16>` parameter, resolved once in the `list` dispatch arm for human format only. Column padding is unchanged; fitting is a separate step: the natural table width is `name_width + 1 + schedule_width + 1 + target_width + 1 + 7` (the final `ENABLED` column is unpadded), and when it exceeds the terminal width only `TARGET` — the table's final data column — absorbs the deficit. Earlier columns never truncate: `NAME` is the key for every other command, schedule summaries are inherently short, and truncating a middle column would misalign every column after it. When the deficit leaves less than one display column for `TARGET` (a pathological terminal width), no truncation occurs and the table wraps exactly as it does today — documented, not silently cut data.
+
+`--no-trunc` is a clap boolean on `List`. It is a rendering flag, not a data flag: it restores full `TARGET` values on a terminal and is accepted with no effect in machine mode, whose envelope stays byte-identical either way. `show` is unchanged — it already prints the complete definition. The `history` table is unchanged in this amendment; applying the same rule there is a deferred follow-up when a long `TRIGGER` value demonstrates the need.
+
+Testability needs no PTY: `truncate_display` and `render_list_table` are pure functions whose width is an injected parameter, so unit tests call them directly with widths of 40, 80, and `None`. Contract tests keep asserting piped `list` output — assert_cmd pipes stdout, the size lookup fails, and the output must be byte-identical to today's full-value table; the help-surface walk covers the new flag.
+
+### Edge cases to handle explicitly
+
+- A terminal narrower than `NAME + SCHEDULE + ENABLED` alone: no truncation, rows wrap as today.
+- CJK or emoji in a target: fitting uses display width, never byte or character count; a truncation may split a grapheme cluster (acceptable in a summary table — the full value lives in `show`).
+- `--no-trunc` with piped stdout: a no-op, because pipes already print full values.
+- `--no-trunc` with `--format json`: accepted and ignored; the envelope is unchanged.
+- An empty job list: header only, unchanged.
+- Window resized after invocation start: the sampled width stands for the invocation.
+
+### Verification additions
+
+- **Unit tests:** `truncate_display` — ASCII fit/no-fit and exact-boundary cases, width-2 CJK, emoji, ellipsis appended only when truncation occurs, and zero/minimum widths; `render_list_table` with injected widths covering the truncating, fitting, and too-narrow fallback paths.
+- **Contract tests:** piped human `ls` with a long target is byte-identical to the pre-change table; `--no-trunc` appears in `locron ls --help` and is accepted; `ls --no-trunc --format json` output is identical to `ls --format json`.
+- **Workspace battery:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on the installed toolchain; the four-target CI matrix stays green.

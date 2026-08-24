@@ -346,6 +346,38 @@ drift alert. `docs/IMPLEMENTATION.md` "Usage snapshot smoke relocation" is amend
   [32656321754](https://github.com/WhiteKiwi/locron/actions/runs/32656321754) (head `eaa6c33`)
   concluded `success`.
 
+## Terminal-width list table truncation backlog (2026-08-24)
+
+Authorized by the frozen 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract: Table
+width). Planned in `docs/IMPLEMENTATION.md` "Terminal-width list table truncation"; evidence in
+`docs/FINDINGS.md` §19.
+
+- [ ] Amend planning documents before code: the SPEC amendment and status note, the `docs/CLI.md`
+  list contract, the IMPLEMENTATION section, FINDINGS §19, and this checklist.
+  **Verify:** `rg -n "Table width|no-trunc|Terminal-width list table" docs/SPEC.md docs/CLI.md
+  docs/IMPLEMENTATION.md docs/FINDINGS.md` returns all four, and no planning document marks an
+  unresolved decision in the new content.
+- [ ] Implement width resolution (`console::Term::stdout().size_checked()`), `truncate_display`
+  (unicode-width), the `width` parameter on `render_list_table`, and the `--no-trunc` flag.
+  **Verify:** the new unit tests pass (`truncate_display` ASCII/CJK/emoji/boundary cases;
+  `render_list_table` with injected widths); `cargo fmt --all --check`, `cargo clippy -p
+  locron-cli --all-targets -- -D warnings`, and `cargo test -p locron-cli` pass.
+- [ ] Add contract tests: piped `ls` byte-identical with a long target, `--no-trunc` in the help
+  walk, `--no-trunc --format json` identical to JSON without the flag.
+  **Verify:** the new tests pass, and the existing help-surface walk
+  (`complete_command_tree_has_consistent_help_surface`) passes unchanged.
+- [ ] Run full workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass.
+- [ ] Parent session: publish v0.5.0 — version bump, curated git-cliff changelog, commit, annotated
+  tag `v0.5.0`, push; monitor the release workflow per `docs/RELEASE.md`.
+  **Verify:** the release workflow run is green (run ID recorded here), the GitHub Release is
+  created with the curated notes, and the Homebrew tap update is dispatched.
+
+Follow-ups (open, not implemented here):
+
+- [ ] Apply the same terminal-width rule to the `history` table when a long `TRIGGER` value
+  demonstrates the need.
+
 ## Carried open items from archived backlogs
 
 - [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.

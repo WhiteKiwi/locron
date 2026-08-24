@@ -9,6 +9,7 @@ Amended 2026-08-23: installation channels and self-update added; package-manager
 Amended 2026-08-23: daemon service installation and automatic startup added; operating-system service installation removed from out-of-scope items.
 Amended 2026-08-24: export job selection and URL import added.
 Amended 2026-08-24: human output contract added — human mode renders readable per-command forms instead of machine JSON (issue #4).
+Amended 2026-08-24: the human table form fits the terminal width on a terminal; full values remain available through the detail report, machine output, and a no-truncation rendering flag.
 
 ## Goal
 
@@ -282,6 +283,7 @@ The program reports its own version on request through the standard `-V` and `--
 Machine-readable output is the compatibility surface; human output renders the same facts for reading in a terminal. With the human format selected, every command renders one of the following forms, never a machine serialization:
 
 - **Table** — `list` (one row per live job) and `history` (one row per run) render an aligned table with a header line and one left-aligned row per record in the command's documented order. The header prints even when no record exists. Identifiers may be abbreviated inside the table only; copyable output always carries the full identity.
+- **Table width** — on a terminal, when a table would exceed the terminal width, the table truncates the last data column whose values are unbounded in length, marks the truncation with a trailing ellipsis, and keeps every other column intact. When standard output is redirected or piped, no truncation occurs and every value prints in full, so scripts and automation always receive complete values. A rendering flag restores full-width table values on a terminal, and the dedicated detail report for a job always presents the complete definition. Column fitting uses character display width, never byte length. This contract changes the human `list` table only; machine-readable output is unaffected.
 - **Confirmation lines** — commands that change state (`add`, `update`, `enable`, `disable`, `remove`, `run`, `cancel`, `config set`, `config unset`, `import`, `prune`) print one or more short lines naming the affected identity, the action taken, and the resulting facts that matter, such as the new run identity or the affected counts. A dry run states explicitly that nothing changed.
 - **Report** — `show`, `why`, and `doctor` render labeled sections: one field per line, grouped under short section headers, so an explanation reads top to bottom. Unknown facts are stated as unknown rather than inferred.
 - **Value list** — `preview` prints a context line naming the schedule followed by one occurrence per line.

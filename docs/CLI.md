@@ -24,7 +24,7 @@ The first binary exposes these top-level commands:
 ```text
 locron add NAME <schedule> <target> [policy options]
 locron update NAME [job changes]
-locron list|ls [--all]
+locron list|ls [--all] [--no-trunc]
 locron show NAME
 locron enable NAME
 locron disable NAME
@@ -50,7 +50,7 @@ locron self-update
 
 A visible alias is accepted for `list` (`ls`) and `remove` (`rm`). An alias is the same command in every respect: it accepts the identical options and arguments and renders identical human and machine output. The `command` field of the `locron.cli/v1` envelope always reports the canonical name (`list`, `remove`), and usage and help render the canonical name with the alias shown for discovery. Aliases are a keyboard convenience; they do not add a semantic surface.
 
-Human `list` output is a docker-style aligned table on stdout: a header line (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned row per live job, sorted by name. `--all` includes disabled jobs, and their `ENABLED` value distinguishes them. The header prints even when no job exists, matching `docker ps` with zero containers. Schedule summaries render as `cron 'EXPR'`, `every DUR`, or `at RFC3339`; target summaries as `run EXE [ARGS...]`, `shell CMD`, or `http METHOD URL`; enabled state as `yes` or `no`. Machine output is unchanged.
+Human `list` output is a docker-style aligned table on stdout: a header line (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned row per live job, sorted by name. `--all` includes disabled jobs, and their `ENABLED` value distinguishes them. The header prints even when no job exists, matching `docker ps` with zero containers. Schedule summaries render as `cron 'EXPR'`, `every DUR`, or `at RFC3339`; target summaries as `run EXE [ARGS...]`, `shell CMD`, or `http METHOD URL`; enabled state as `yes` or `no`. When standard output is a terminal and the table would exceed the terminal width, the `TARGET` column — the table's final data column — is truncated to fit and marked with a trailing `…`; `NAME` and `SCHEDULE` always print in full. Truncation follows character display width (East Asian wide characters count as two columns). When standard output is redirected or piped, values print in full as before. `--no-trunc` prints full `TARGET` values on a terminal; the flag is accepted with machine output and has no effect there. Machine output is unchanged.
 
 Job references accept an exact live name or canonical UUID. Run references are canonical UUIDs. Human output may abbreviate an ID only in decorative tables; copyable output always includes the full ID.
 
