@@ -422,23 +422,42 @@ dropped the `version` line while keeping `#{version}` placeholders, and `brew re
 rejected the formula with `version (nil)` — the placeholders interpolate to nil at class-body
 time, so the URL must carry the literal version for Homebrew to scan (FINDINGS §20).
 
-- [ ] Amend planning documents before code: FINDINGS §20, the IMPLEMENTATION deviation note, and
+- [x] Amend planning documents before code: FINDINGS §20, the IMPLEMENTATION deviation note, and
   this checklist.
   **Verify:** `rg -n "20\. Homebrew Formula|No need for FileUtils|redundant with version|version
   \(nil\)" docs/FINDINGS.md docs/IMPLEMENTATION.md docs/TODO.md` returns all three.
-- [ ] Fix the `release.yml` formula template: render the literal `${VERSION}` into the four URL
+  **Evidence:** `rg` returns `docs/FINDINGS.md` §20 (both offenses, the `version (nil)`
+  correction, and the accepted resolution), the `docs/IMPLEMENTATION.md` deviation note, and this
+  checklist section; no unresolved decision marker in the new content; the SPEC is not amended
+  (no product-behavior change).
+- [x] Fix the `release.yml` formula template: render the literal `${VERSION}` into the four URL
   strings, drop the explicit `version "${VERSION}"` line, and write
   `touch lib/".disable-self-update"` without the `FileUtils.` prefix.
   **Verify:** the workflow parses as valid YAML; `rg -n 'FileUtils|version "|#\{version\}' 
   .github/workflows/release.yml` finds neither offense inside the template heredoc (the
   `VERSION=` assignment remains); the locron CI run after push is green (run ID recorded as
   evidence).
-- [ ] Apply the identical fix to the tap's `Formula/locron.rb` and push it.
+  **Evidence:** the workflow parses (ruby/psych `OK`); `rg` finds no `FileUtils`, `version "`, or
+  `#{version}` in the template; rendering the heredoc with `VERSION=0.5.0` and the tap's real
+  SHA256 values produces a formula byte-identical (modulo indentation) to the fixed tap
+  `Formula/locron.rb`. Commits `7ec8d78` (drop version line, `touch`) and `0d7d449` (literal URL
+  interpolation); CI runs 32685535659 and 32685866396 both `success`.
+- [x] Apply the identical fix to the tap's `Formula/locron.rb` and push it.
   **Verify:** the tap's `brew test-bot` run on the fix commit is green (run ID recorded as
   evidence).
-- [ ] Parent session: record evidence here, commit the locron-side changes, push.
+  **Evidence:** commits `5e9c6a8` and `faf5ac2` on the tap; the first attempt's `brew readall`
+  rejection (`version (nil)`, run 32685506683) drove the literal-URL correction recorded in
+  FINDINGS §20; test-bot run
+  [32685847372](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/32685847372) on `faf5ac2`
+  concluded `success` — the first green run after five consecutive failures.
+- [x] Parent session: record evidence here, commit the locron-side changes, push.
   **Verify:** the locron CI run on the push is green (run ID recorded as evidence); `gh run list
   -R whitekiwi/homebrew-tap` shows the fix run `success`.
+  **Evidence:** locron CI run
+  [32685866396](https://github.com/WhiteKiwi/locron/actions/runs/32685866396) on `0d7d449`
+  concluded `success`; `gh run list -R whitekiwi/homebrew-tap` shows run 32685847372 `success`.
+  Future bumps generate audit-clean formulas from the fixed template; the v0.5.0 tap formula was
+  fixed directly and needs no re-release.
 
 ## Carried open items from archived backlogs
 
