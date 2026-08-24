@@ -5,6 +5,19 @@ This checklist tracks implementation of the frozen `docs/SPEC.md` within the dur
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## README Agent Skill link follow-up (2026-08-24)
+
+Documentation link only: the frozen product behavior and accepted implementation are unchanged, so
+`docs/SPEC.md` and `docs/IMPLEMENTATION.md` need no amendment.
+
+- [x] Limit the change to one Agent-friendly README reference to `WhiteKiwi/skills`, without
+  duplicating that repository's installation commands or platform guidance.
+- [x] Add the link and verify Markdown and the destination.
+  **Verify:** the README contains the requested link once, all relative links resolve, the external
+  destination responds successfully, and `git diff --check` passes.
+  **Evidence:** `rg` finds one README link; the local link/fragment check passes; the destination
+  returns HTTP 200 after redirects; `git diff --check` is clean.
+
 ## Consolidated job explanation backlog (2026-08-24)
 
 Authorized by the frozen 2026-08-24 `docs/SPEC.md` consolidated-explanation amendment, contracted

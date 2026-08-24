@@ -150,6 +150,9 @@ Desktop, or `.cursor/mcp.json` / Cursor Settings → MCP for Cursor:
 If `locron` is not on the client's `PATH`, use an absolute path. See the
 [MCP Specification](docs/mcp/SPEC.md) for the full tool, resource, and prompt reference.
 
+For a guided, dry-run-first agent workflow, see the
+[locron Agent Skill](https://github.com/WhiteKiwi/skills).
+
 ## Installation
 
 **Homebrew (macOS and Linux):**
