@@ -12,6 +12,7 @@ Amended 2026-08-24: human output contract added — human mode renders readable 
 Amended 2026-08-24: the human table form fits the terminal width on a terminal; full values remain available through the detail report, machine output, and a no-truncation rendering flag.
 Amended 2026-08-24: documentation-facing product positioning prioritizes explainability, real-world scheduling semantics, and safe automation surfaces.
 Amended 2026-08-24: a consolidated job explanation reports current scheduling facts, the latest run, and the latest anomalous run.
+Amended 2026-08-24: automated Homebrew publication preserves formula guidance literally and produces a style-clean formula.
 
 ## Goal
 
@@ -112,6 +113,7 @@ A user can install a working prebuilt locron on macOS and Linux without Homebrew
 - The installer is repeatable: running the same command again replaces the binary with the latest published release. Installing a pinned version is also supported.
 - The installer reports actionable errors for unsupported platforms, failed downloads, checksum mismatches, and unwritable install locations, and it does not require or modify a package manager.
 - Homebrew remains a supported channel with its own update path. A script-installed and a Homebrew-installed locron may coexist on one machine; each channel updates through itself.
+- Automated Homebrew publication must preserve the formula's package-manager marker guidance and service-upgrade caveats exactly as authored, without interpreting documentation text as shell commands, and the generated formula must pass the tap's syntax and style checks.
 - A built-in self-update subcommand replaces the running locron with the latest stable release, selected and verified exactly as the installer verifies downloads, and reports the current and new version before replacing.
 - Self-update manages only installations it can confirm are not owned by a package manager. When the running binary is package-manager-managed, self-update refuses with guidance to use that manager's update path.
 - A failed or interrupted update must leave the existing binary installed and working. Update failures and permission problems produce actionable errors.
