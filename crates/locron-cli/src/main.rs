@@ -148,6 +148,13 @@ Examples:
 
 Navigation:
   Run 'locron --help' to list all commands.";
+const EXPLAIN_HELP: &str = "\
+Examples:
+  locron explain backup
+  locron explain 018f47a2-4a12-7c35-b9d8-0123456789ab
+
+Navigation:
+  Run 'locron --help' to list all commands.";
 const CONFIG_HELP: &str = "\
 Examples:
   locron config get
@@ -419,6 +426,14 @@ enum Command {
         /// Run UUID to explain instead of a job
         #[arg(long)]
         run: Option<String>,
+    },
+    #[command(
+        about = "Summarize a job's schedule, current status, and notable runs",
+        after_help = EXPLAIN_HELP
+    )]
+    Explain {
+        /// Live job name or canonical UUID to summarize
+        name: String,
     },
     #[command(about = "Inspect or change global settings", after_help = CONFIG_HELP)]
     Config {
@@ -1042,6 +1057,7 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
             channel,
         } => logs(&paths, &run_id, attempt, follow, channel, format).await,
         Command::Why { name, run } => why(&paths, name, run, format),
+        Command::Explain { name } => explain(&paths, &name, format),
         Command::Config { command } => config(&paths, command, format),
         Command::Export {
             jobs,
@@ -2016,6 +2032,63 @@ fn emit_output_frame(
     let _ = std::io::Write::flush(&mut std::io::stdout());
 }
 
+struct CurrentJobExplanation {
+    job: Value,
+    definition: JobDefinition,
+    next_occurrence: Option<String>,
+    runs: Vec<RunRecord>,
+    daemon_running: bool,
+    global_concurrency: u8,
+}
+
+fn current_job_explanation(
+    paths: &StatePaths,
+    store: &Store,
+    reference: &str,
+    now_us: i64,
+) -> Result<CurrentJobExplanation> {
+    let job = store.job(reference)?;
+    let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
+    let next_occurrence = definition
+        .schedule
+        .next(Timestamp::from_epoch_micros(now_us), 1)?
+        .first()
+        .map(ToString::to_string);
+    let runs = store.history(Some(&job.id), 1_000)?;
+    Ok(CurrentJobExplanation {
+        job: redacted_job(job)?,
+        definition,
+        next_occurrence,
+        runs,
+        daemon_running: !daemon_lock_free(paths),
+        global_concurrency: configured_global_concurrency(paths)?,
+    })
+}
+
+fn active_run_state(state: &str) -> bool {
+    matches!(state, "queued" | "starting" | "running" | "retry_wait")
+}
+
+fn schedule_eligibility(enabled: bool) -> &'static str {
+    if enabled {
+        "subject_to_admission"
+    } else {
+        "disabled"
+    }
+}
+
+fn overlap_decision(active_runs: usize, overlap: OverlapPolicy) -> &'static str {
+    if active_runs == 0 {
+        "no_active_run"
+    } else {
+        match overlap {
+            OverlapPolicy::Skip => "would_skip_overlap",
+            OverlapPolicy::Replace => "would_replace",
+            OverlapPolicy::Allow => "eligible_subject_to_capacity",
+        }
+    }
+}
+
 fn why(
     paths: &StatePaths,
     name: Option<String>,
@@ -2025,40 +2098,29 @@ fn why(
     let store = open(paths)?;
     match (name, run) {
         (Some(name), None) => {
-            let job = store.job(&name)?;
-            let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
-            let next = definition
-                .schedule
-                .next(Timestamp::from_epoch_micros(now_us()), 1)?
-                .first()
-                .map(ToString::to_string);
-            let active = store
-                .history(Some(&name), 100)?
-                .into_iter()
-                .filter(|run| {
-                    matches!(
-                        run.state.as_str(),
-                        "queued" | "starting" | "running" | "retry_wait"
-                    )
-                })
+            let facts = current_job_explanation(paths, &store, &name, now_us())?;
+            let active = facts
+                .runs
+                .iter()
+                .take(100)
+                .filter(|run| active_run_state(&run.state))
+                .cloned()
                 .map(redacted_run)
                 .collect::<Result<Vec<_>>>()?;
-            let job = redacted_job(job)?;
-            let daemon_running = !daemon_lock_free(paths);
             if format == Format::Human {
                 render_why_job(
-                    &job,
-                    &definition,
-                    next.as_deref(),
+                    &facts.job,
+                    &facts.definition,
+                    facts.next_occurrence.as_deref(),
                     &active,
-                    daemon_running,
-                    configured_global_concurrency(paths)?,
+                    facts.daemon_running,
+                    facts.global_concurrency,
                 )?;
             } else {
                 render(
                     format,
                     "why",
-                    json!({"job":job,"next_occurrence":next,"active_runs":active,"overlap":definition.policy.overlap,"daemon_running":daemon_running,"explanation":"facts are read from durable state; unknown execution facts are not inferred"}),
+                    json!({"job":facts.job,"next_occurrence":facts.next_occurrence,"active_runs":active,"overlap":facts.definition.policy.overlap,"daemon_running":facts.daemon_running,"explanation":"facts are read from durable state; unknown execution facts are not inferred"}),
                     &[],
                 );
             }
@@ -2082,6 +2144,85 @@ fn why(
         }
         _ => Err(anyhow!("provide a job name or --run RUN_ID")),
     }
+}
+
+fn explain(paths: &StatePaths, name: &str, format: Format) -> Result<()> {
+    let store = open(paths)?;
+    let facts = current_job_explanation(paths, &store, name, now_us())?;
+    let report = explain_report(&store, &facts)?;
+    if format == Format::Human {
+        render_explain(&report)
+    } else {
+        render(format, "explain", report, &[]);
+        Ok(())
+    }
+}
+
+fn explain_report(store: &Store, facts: &CurrentJobExplanation) -> Result<Value> {
+    let enabled = facts.job["enabled"].as_bool().unwrap_or(false);
+    let active_runs = facts
+        .runs
+        .iter()
+        .filter(|run| active_run_state(&run.state))
+        .count();
+    let job_id = facts.job["id"].as_str().context("job record lacks id")?;
+    let (latest_run, latest_anomaly) = store.latest_and_anomalous_runs(job_id)?;
+    let latest_run = latest_run
+        .map(|run| explain_run_summary(store, run))
+        .transpose()?;
+    let latest_anomaly = latest_anomaly
+        .map(|run| explain_run_summary(store, run))
+        .transpose()?;
+    let timezone = match &facts.definition.schedule {
+        Schedule::Cron { timezone, .. } => Some(match timezone {
+            ScheduleTimeZone::Local => "local".to_owned(),
+            ScheduleTimeZone::Iana(name) => name.clone(),
+        }),
+        Schedule::Every { .. } | Schedule::At { .. } => None,
+    };
+    Ok(json!({
+        "job": {
+            "name": facts.job["name"],
+            "id": facts.job["id"],
+            "enabled": enabled,
+            "revision": facts.job["current_revision"],
+        },
+        "schedule": {
+            "summary": schedule_summary(&facts.definition.schedule),
+            "timezone": timezone,
+            "next_occurrence": if enabled { facts.next_occurrence.clone() } else { None },
+        },
+        "current_status": {
+            "eligibility": schedule_eligibility(enabled),
+            "overlap_decision": overlap_decision(active_runs, facts.definition.policy.overlap),
+            "active_runs": active_runs,
+            "global_concurrency_limit": facts.global_concurrency,
+            "daemon_available": facts.daemon_running,
+        },
+        "latest_run": latest_run,
+        "latest_anomaly": latest_anomaly,
+    }))
+}
+
+fn explain_run_summary(store: &Store, run: RunRecord) -> Result<Value> {
+    let run = redacted_observable_run(store, run)?;
+    Ok(json!({
+        "id": run["id"],
+        "trigger": run["trigger"],
+        "nominal_time": explain_instant(run["nominal_us"].as_i64()),
+        "requested_at": explain_instant(run["requested_at_us"].as_i64()),
+        "state": run["state"],
+        "started_at": explain_instant(run["actual_started_at_us"].as_i64()),
+        "finished_at": explain_instant(run["finished_at_us"].as_i64()),
+        "duration_micros": run["duration_us"],
+        "reason": run["reason"],
+    }))
+}
+
+fn explain_instant(micros: Option<i64>) -> Value {
+    micros.map_or(Value::Null, |micros| {
+        Value::String(Timestamp::from_epoch_micros(micros).to_string())
+    })
 }
 
 fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<()> {
@@ -4255,6 +4396,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::History { .. } => "history",
         Command::Logs { .. } => "logs",
         Command::Why { .. } => "why",
+        Command::Explain { .. } => "explain",
         Command::Config { .. } => "config",
         Command::Export { .. } => "export",
         Command::Import { .. } => "import",
@@ -4738,12 +4880,12 @@ fn render_why_job(
     println!("  cursor: {}", human_instant(cursor));
     println!("  next occurrence: {}", next.unwrap_or("none"));
     let decision = if active.is_empty() {
-        "eligible".to_owned()
+        "eligible"
     } else {
         match definition.policy.overlap {
-            OverlapPolicy::Skip => "would skip (overlap policy)".to_owned(),
-            OverlapPolicy::Replace => "would replace".to_owned(),
-            OverlapPolicy::Allow => "eligible subject to capacity".to_owned(),
+            OverlapPolicy::Skip => "would skip (overlap policy)",
+            OverlapPolicy::Replace => "would replace",
+            OverlapPolicy::Allow => "eligible subject to capacity",
         }
     };
     println!("ELIGIBILITY");
@@ -4764,6 +4906,117 @@ fn render_why_job(
         if daemon_running { "yes" } else { "no" }
     );
     Ok(())
+}
+
+/// Renders the consolidated `explain NAME_OR_ID` report. The report is the
+/// same redacted value used by machine output, keeping both forms in parity.
+fn render_explain(report: &Value) -> Result<()> {
+    let job = report["job"]
+        .as_object()
+        .context("explain report lacks job facts")?;
+    println!("JOB");
+    println!(
+        "  name: {}",
+        job["name"].as_str().context("job facts lack name")?
+    );
+    println!("  id: {}", job["id"].as_str().context("job facts lack id")?);
+    println!(
+        "  enabled: {}",
+        if job["enabled"].as_bool().unwrap_or(false) {
+            "yes"
+        } else {
+            "no"
+        }
+    );
+    println!("  revision: {}", job["revision"].as_i64().unwrap_or(0));
+
+    let schedule = report["schedule"]
+        .as_object()
+        .context("explain report lacks schedule facts")?;
+    println!("SCHEDULE");
+    println!(
+        "  schedule: {}",
+        schedule["summary"].as_str().unwrap_or("none")
+    );
+    println!(
+        "  timezone: {}",
+        schedule["timezone"].as_str().unwrap_or("none")
+    );
+    println!(
+        "  next occurrence: {}",
+        schedule["next_occurrence"].as_str().unwrap_or("none")
+    );
+
+    let status = report["current_status"]
+        .as_object()
+        .context("explain report lacks current status")?;
+    println!("CURRENT STATUS");
+    let eligibility = match status["eligibility"].as_str().unwrap_or("unknown") {
+        "subject_to_admission" => "subject to admission",
+        other => other,
+    };
+    let overlap_decision = match status["overlap_decision"].as_str().unwrap_or("unknown") {
+        "no_active_run" => "no active run",
+        "would_skip_overlap" => "would skip (overlap policy)",
+        "would_replace" => "would replace",
+        "eligible_subject_to_capacity" => "eligible subject to capacity",
+        other => other,
+    };
+    println!("  eligibility: {eligibility}");
+    println!("  overlap decision: {overlap_decision}");
+    println!(
+        "  active runs: {}",
+        status["active_runs"].as_u64().unwrap_or(0)
+    );
+    println!(
+        "  global concurrency limit: {}",
+        status["global_concurrency_limit"].as_u64().unwrap_or(0)
+    );
+    println!(
+        "  daemon available: {}",
+        if status["daemon_available"].as_bool().unwrap_or(false) {
+            "yes"
+        } else {
+            "no"
+        }
+    );
+    render_explain_run("LATEST RUN", &report["latest_run"]);
+    render_explain_run("LATEST ANOMALY", &report["latest_anomaly"]);
+    Ok(())
+}
+
+fn render_explain_run(section: &str, run: &Value) {
+    println!("{section}");
+    if run.is_null() {
+        println!("  none");
+        return;
+    }
+    println!("  run id: {}", run["id"].as_str().unwrap_or("none"));
+    println!("  trigger: {}", run["trigger"].as_str().unwrap_or("none"));
+    println!(
+        "  nominal time: {}",
+        run["nominal_time"].as_str().unwrap_or("none")
+    );
+    println!(
+        "  requested: {}",
+        run["requested_at"].as_str().unwrap_or("none")
+    );
+    println!("  state: {}", run["state"].as_str().unwrap_or("none"));
+    println!(
+        "  started: {}",
+        run["started_at"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "  finished: {}",
+        run["finished_at"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "  duration: {}",
+        run["duration_micros"]
+            .as_u64()
+            .map_or_else(|| "unknown".to_owned(), human_duration)
+    );
+    println!("  reason: {}", run["reason"].as_str().unwrap_or("unknown"));
 }
 
 /// Renders `why --run RUN_ID` human output: labeled sections `RUN`,
@@ -6242,5 +6495,21 @@ mod tests {
             "shell run-a-very-…",
         );
         assert_eq!(list_table(&jobs, Some(40)).unwrap(), expected);
+    }
+
+    #[test]
+    fn consolidated_explanation_separates_eligibility_from_overlap() {
+        assert_eq!(schedule_eligibility(false), "disabled");
+        assert_eq!(schedule_eligibility(true), "subject_to_admission");
+        assert_eq!(overlap_decision(0, OverlapPolicy::Skip), "no_active_run");
+        assert_eq!(
+            overlap_decision(1, OverlapPolicy::Skip),
+            "would_skip_overlap"
+        );
+        assert_eq!(overlap_decision(1, OverlapPolicy::Replace), "would_replace");
+        assert_eq!(
+            overlap_decision(1, OverlapPolicy::Allow),
+            "eligible_subject_to_capacity"
+        );
     }
 }

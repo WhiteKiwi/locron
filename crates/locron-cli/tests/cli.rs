@@ -17,6 +17,20 @@ fn locron(state: &tempfile::TempDir) -> Command {
     command
 }
 
+fn invoke_json(state: &tempfile::TempDir, arguments: &[&str]) -> serde_json::Value {
+    let output = locron(state)
+        .arg("--json")
+        .args(arguments)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "JSON command {arguments:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
 fn timestamp_after(duration: Duration) -> String {
     let micros = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2335,6 +2349,232 @@ fn human_why_job_prints_labeled_sections() {
             "why omitted {expected:?}:\n{stdout}"
         );
     }
+}
+
+#[test]
+fn explain_no_history_is_explicit_redacted_and_human_json_equivalent() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args([
+                "add",
+                "quiet",
+                "--every",
+                "1h",
+                "--disabled",
+                "--env",
+                "TOKEN=explain-secret-value",
+                "--",
+                "/usr/bin/true",
+            ])
+            .output()
+            .unwrap(),
+    )
+    .success();
+
+    let json = invoke_json(&state, &["explain", "quiet"]);
+    assert_eq!(json["schema"], "locron.cli/v1");
+    assert_eq!(json["command"], "explain");
+    assert_eq!(json["data"]["job"]["name"], "quiet");
+    assert_eq!(json["data"]["job"]["enabled"], false);
+    assert_eq!(json["data"]["schedule"]["summary"], "every 1h");
+    assert_eq!(
+        json["data"]["schedule"]["next_occurrence"],
+        serde_json::Value::Null
+    );
+    assert_eq!(json["data"]["current_status"]["eligibility"], "disabled");
+    assert_eq!(
+        json["data"]["current_status"]["overlap_decision"],
+        "no_active_run"
+    );
+    assert_eq!(json["data"]["current_status"]["active_runs"], 0);
+    assert_eq!(json["data"]["latest_run"], serde_json::Value::Null);
+    assert_eq!(json["data"]["latest_anomaly"], serde_json::Value::Null);
+    assert!(!json.to_string().contains("explain-secret-value"));
+
+    let id = json["data"]["job"]["id"].as_str().unwrap();
+    let human = locron(&state).args(["explain", id]).output().unwrap();
+    assert_cmd::assert::Assert::new(human.clone()).success();
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    for expected in [
+        "JOB\n  name: quiet\n",
+        &format!("  id: {id}\n"),
+        "  enabled: no\n",
+        "SCHEDULE\n  schedule: every 1h\n",
+        "  timezone: none\n",
+        "  next occurrence: none\n",
+        "CURRENT STATUS\n  eligibility: disabled\n",
+        "  overlap decision: no active run\n",
+        "  active runs: 0\n",
+        "  global concurrency limit: 16\n",
+        "  daemon available: no\n",
+        "LATEST RUN\n  none\n",
+        "LATEST ANOMALY\n  none\n",
+    ] {
+        assert!(
+            stdout.contains(expected),
+            "explain omitted {expected:?}:\n{stdout}"
+        );
+    }
+    assert!(!stdout.contains("explain-secret-value"));
+
+    let why = locron(&state).args(["why", "quiet"]).output().unwrap();
+    let why = String::from_utf8(why.stdout).unwrap();
+    assert!(
+        !why.contains("next occurrence: none"),
+        "explain must not change the existing disabled-job why calculation:\n{why}"
+    );
+    assert!(
+        why.contains("  decision: eligible\n"),
+        "explain must not change the existing disabled-job why decision:\n{why}"
+    );
+
+    let help = locron(&state).args(["explain", "--help"]).output().unwrap();
+    let help = String::from_utf8(help.stdout).unwrap();
+    assert!(help.contains("locron explain backup"));
+    assert!(help.contains("locron explain 018f47a2-4a12-7c35-b9d8-0123456789ab"));
+}
+
+#[test]
+fn explain_distinguishes_success_only_history_from_an_active_latest_run() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "work", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let mut daemon = start_daemon(&state);
+    let submitted = invoke_json(&state, &["run", "work"]);
+    let succeeded_id = submitted["data"]["run_id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        wait_for_run_state(&state, "work", "succeeded"),
+        succeeded_id
+    );
+
+    let success_only = invoke_json(&state, &["explain", "work"]);
+    assert_eq!(success_only["data"]["latest_run"]["id"], succeeded_id);
+    assert_eq!(success_only["data"]["latest_run"]["state"], "succeeded");
+    assert!(success_only["data"]["latest_run"]["requested_at"].is_string());
+    assert!(success_only["data"]["latest_run"]["started_at"].is_string());
+    assert!(success_only["data"]["latest_run"]["finished_at"].is_string());
+    assert!(success_only["data"]["latest_run"]["duration_micros"].is_number());
+    assert_eq!(
+        success_only["data"]["latest_anomaly"],
+        serde_json::Value::Null
+    );
+
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+    let queued = invoke_json(&state, &["run", "work"]);
+    let queued_id = queued["data"]["run_id"].as_str().unwrap();
+    let active = invoke_json(&state, &["explain", "work"]);
+    assert_eq!(active["data"]["latest_run"]["id"], queued_id);
+    assert_eq!(active["data"]["latest_run"]["state"], "queued");
+    assert_eq!(
+        active["data"]["latest_run"]["started_at"],
+        serde_json::Value::Null
+    );
+    assert_eq!(active["data"]["current_status"]["active_runs"], 1);
+    assert_eq!(
+        active["data"]["current_status"]["eligibility"],
+        "subject_to_admission"
+    );
+    assert_eq!(
+        active["data"]["current_status"]["overlap_decision"],
+        "would_skip_overlap"
+    );
+    assert_eq!(active["data"]["latest_anomaly"], serde_json::Value::Null);
+    let human = locron(&state).args(["explain", "work"]).output().unwrap();
+    let human = String::from_utf8(human.stdout).unwrap();
+    assert!(human.contains("  eligibility: subject to admission\n"));
+    assert!(human.contains("  overlap decision: would skip (overlap policy)\n"));
+    assert!(human.contains("  nominal time: none\n"));
+    assert!(human.contains("  started: unknown\n"));
+    assert!(human.contains("  finished: unknown\n"));
+    assert!(human.contains("  duration: unknown\n"));
+    assert!(human.contains("  reason: unknown\n"));
+}
+
+#[test]
+fn explain_allows_latest_run_and_anomaly_to_match_then_retains_an_older_anomaly() {
+    let state = tempfile::tempdir().unwrap();
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["add", "mixed", "--every", "1h", "--", "/usr/bin/true"])
+            .output()
+            .unwrap(),
+    )
+    .success();
+    let queued = invoke_json(&state, &["run", "mixed"]);
+    let cancelled_id = queued["data"]["run_id"].as_str().unwrap().to_owned();
+    invoke_json(&state, &["cancel", &cancelled_id]);
+
+    let same = invoke_json(&state, &["explain", "mixed"]);
+    assert_eq!(same["data"]["latest_run"]["id"], cancelled_id);
+    assert_eq!(same["data"]["latest_anomaly"]["id"], cancelled_id);
+    assert_eq!(same["data"]["latest_anomaly"]["state"], "cancelled");
+    assert!(same["data"]["latest_anomaly"]["reason"].is_string());
+
+    let mut daemon = start_daemon(&state);
+    let submitted = invoke_json(&state, &["run", "mixed"]);
+    let succeeded_id = submitted["data"]["run_id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        wait_for_run_state(&state, "mixed", "succeeded"),
+        succeeded_id
+    );
+    let older = invoke_json(&state, &["explain", "mixed"]);
+    assert_eq!(older["data"]["latest_run"]["id"], succeeded_id);
+    assert_eq!(older["data"]["latest_run"]["state"], "succeeded");
+    assert_eq!(older["data"]["latest_anomaly"]["id"], cancelled_id);
+    assert_eq!(older["data"]["latest_anomaly"]["state"], "cancelled");
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+}
+
+#[test]
+fn explain_respects_removed_job_history_and_reused_name_identity() {
+    let state = tempfile::tempdir().unwrap();
+    let first = invoke_json(
+        &state,
+        &["add", "reused", "--every", "1h", "--", "/usr/bin/true"],
+    );
+    let first_job_id = first["data"]["id"].as_str().unwrap().to_owned();
+    let queued = invoke_json(&state, &["run", "reused"]);
+    let old_run_id = queued["data"]["run_id"].as_str().unwrap().to_owned();
+    invoke_json(&state, &["remove", "reused"]);
+
+    for reference in ["reused", first_job_id.as_str()] {
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["explain", reference])
+                .output()
+                .unwrap(),
+        )
+        .failure()
+        .code(3);
+    }
+    assert_cmd::assert::Assert::new(
+        locron(&state)
+            .args(["why", "--run", &old_run_id])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout(predicate::str::contains(&old_run_id));
+
+    let replacement = invoke_json(
+        &state,
+        &["add", "reused", "--every", "2h", "--", "/usr/bin/true"],
+    );
+    let replacement_id = replacement["data"]["id"].as_str().unwrap();
+    assert_ne!(replacement_id, first_job_id);
+    let explained = invoke_json(&state, &["explain", "reused"]);
+    assert_eq!(explained["data"]["job"]["id"], replacement_id);
+    assert_eq!(explained["data"]["schedule"]["summary"], "every 2h");
+    assert_eq!(explained["data"]["latest_run"], serde_json::Value::Null);
+    assert_eq!(explained["data"]["latest_anomaly"], serde_json::Value::Null);
 }
 
 #[test]
