@@ -149,20 +149,20 @@ jobs:
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/WhiteKiwi/locron/releases/download/v#{version}/locron-v#{version}-aarch64-apple-darwin.tar.gz"
+                url "https://github.com/WhiteKiwi/locron/releases/download/v${VERSION}/locron-v${VERSION}-aarch64-apple-darwin.tar.gz"
                 sha256 "${ARM64_MACOS_SHA}"
               else
-                url "https://github.com/WhiteKiwi/locron/releases/download/v#{version}/locron-v#{version}-x86_64-apple-darwin.tar.gz"
+                url "https://github.com/WhiteKiwi/locron/releases/download/v${VERSION}/locron-v${VERSION}-x86_64-apple-darwin.tar.gz"
                 sha256 "${X86_MACOS_SHA}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/WhiteKiwi/locron/releases/download/v#{version}/locron-v#{version}-aarch64-unknown-linux-gnu.tar.gz"
+                url "https://github.com/WhiteKiwi/locron/releases/download/v${VERSION}/locron-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
                 sha256 "${ARM64_LINUX_SHA}"
               else
-                url "https://github.com/WhiteKiwi/locron/releases/download/v#{version}/locron-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+                url "https://github.com/WhiteKiwi/locron/releases/download/v${VERSION}/locron-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
                 sha256 "${X86_LINUX_SHA}"
               end
             end
@@ -170,8 +170,8 @@ jobs:
             def install
               bin.install "locron"
               # Mark this install as package-manager-managed so that
-              # \`locron self-update\` refuses to replace the binary and
-              # directs users to \`brew upgrade locron\`.
+              # `locron self-update` refuses to replace the binary and
+              # directs users to `brew upgrade locron`.
               lib.mkpath
               touch lib/".disable-self-update"
             end
@@ -186,9 +186,9 @@ jobs:
               <<~EOS
                 Start the locron daemon with:
                   brew services start locron
-                Installation never starts it automatically, and \`brew upgrade\`
+                Installation never starts it automatically, and `brew upgrade`
                 leaves a running service on the old version; run
-                \`brew services restart locron\` after an upgrade.
+                `brew services restart locron` after an upgrade.
               EOS
             end
 

@@ -417,15 +417,19 @@ Background: the tap's `brew test-bot` failed on five consecutive bumps (0.4.0 th
 0.5.0 run is 32684723747) with two offenses — `FormulaAudit/Miscellaneous: No need for FileUtils.
 before touch` (`formula.rb:33`) and `Stable: version 0.5.0 is redundant with version scanned from
 URL`. Both originate in the formula template embedded in `.github/workflows/release.yml`, so every
-future bump reproduces them until the template is fixed.
+future bump reproduces them until the template is fixed. A first fix attempt (run 32685506683)
+dropped the `version` line while keeping `#{version}` placeholders, and `brew readall` then
+rejected the formula with `version (nil)` — the placeholders interpolate to nil at class-body
+time, so the URL must carry the literal version for Homebrew to scan (FINDINGS §20).
 
 - [ ] Amend planning documents before code: FINDINGS §20, the IMPLEMENTATION deviation note, and
   this checklist.
-  **Verify:** `rg -n "20\. Homebrew Formula|No need for FileUtils|redundant with version"
-  docs/FINDINGS.md docs/IMPLEMENTATION.md docs/TODO.md` returns all three.
-- [ ] Fix the `release.yml` formula template: drop the explicit `version "${VERSION}"` line and
-  write `touch lib/".disable-self-update"` without the `FileUtils.` prefix.
-  **Verify:** the workflow parses as valid YAML; `rg -n 'FileUtils|version "' 
+  **Verify:** `rg -n "20\. Homebrew Formula|No need for FileUtils|redundant with version|version
+  \(nil\)" docs/FINDINGS.md docs/IMPLEMENTATION.md docs/TODO.md` returns all three.
+- [ ] Fix the `release.yml` formula template: render the literal `${VERSION}` into the four URL
+  strings, drop the explicit `version "${VERSION}"` line, and write
+  `touch lib/".disable-self-update"` without the `FileUtils.` prefix.
+  **Verify:** the workflow parses as valid YAML; `rg -n 'FileUtils|version "|#\{version\}' 
   .github/workflows/release.yml` finds neither offense inside the template heredoc (the
   `VERSION=` assignment remains); the locron CI run after push is green (run ID recorded as
   evidence).
