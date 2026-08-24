@@ -213,6 +213,7 @@ State lives in `~/.local/share/locron` (or `$XDG_DATA_HOME/locron`) and can be o
 
 ## Documentation
 
+- **[Brand Guide](DESIGN.md)** — Locron's voice, visual system, components, motion, and accessibility rules.
 - **[Installation Guide](docs/INSTALL.md)** — install channels, updates, and uninstalling.
 - **[Operator Guide](docs/OPERATOR.md)** — daily operations, policies, and troubleshooting.
 - **[CLI Reference](docs/CLI.md)** — every command, option, and output contract.

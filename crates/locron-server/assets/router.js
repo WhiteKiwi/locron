@@ -39,12 +39,19 @@ const Router = (() => {
   function dispatch() {
     const view = document.getElementById("view");
     const path = currentPath();
+    for (const link of document.querySelectorAll("#topbar nav a[data-nav]")) {
+      const root = link.dataset.nav;
+      const current = path === root || path.startsWith(`${root}/`);
+      if (current) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    }
     const match = Router.match(path);
     if (!match) {
       view.innerHTML = Components.emptyState("Unknown route", `"${path}" is not a dashboard view.`);
       return;
     }
     match.render(view, match.params);
+    document.getElementById("main-content").focus({ preventScroll: true });
   }
 
   function start() {

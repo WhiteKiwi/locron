@@ -50,11 +50,6 @@ const Api = (() => {
     return { data: payload, warnings: [] };
   }
 
-  /// Whether the session cookie is present (the entry gate for the app).
-  function hasSession() {
-    return cookie("locron_session") !== null;
-  }
-
   function get(path) {
     return request("GET", path);
   }
@@ -71,5 +66,5 @@ const Api = (() => {
     return request("DELETE", path);
   }
 
-  return { get, post, put, del, hasSession, ApiError };
+  return { get, post, put, del, ApiError };
 })();

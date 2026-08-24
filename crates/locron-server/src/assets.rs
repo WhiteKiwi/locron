@@ -80,6 +80,10 @@ mod tests {
                 "{reference} must be embedded"
             );
         }
+        assert!(html.contains("class=\"skip-link\""));
+        assert!(html.contains("<main id=\"main-content\""));
+        assert!(html.contains("<nav aria-label=\"Dashboard\""));
+        assert!(!html.contains("http://") && !html.contains("https://"));
     }
 
     #[test]
@@ -105,6 +109,97 @@ mod tests {
             assert!(
                 script.contains("Router.register"),
                 "{path} must register routes"
+            );
+        }
+    }
+
+    #[test]
+    fn viewer_bootstrap_and_http_form_follow_the_wire_contract() {
+        let app = Assets::get("app.js").expect("app script");
+        let app = String::from_utf8_lossy(&app.data);
+        assert!(app.contains("data.authenticated === true"));
+        assert!(!app.contains("Api.hasSession"));
+
+        let api = Assets::get("api.js").expect("api script");
+        let api = String::from_utf8_lossy(&api.data);
+        assert!(
+            !api.contains("locron_session"),
+            "HttpOnly session is never read by JS"
+        );
+
+        let jobs = Assets::get("views/jobs.js").expect("jobs view");
+        let jobs = String::from_utf8_lossy(&jobs.data);
+        assert!(jobs.contains("new TextEncoder().encode(bodyInput.value)"));
+        assert!(!jobs.contains("<option>OPTIONS</option>"));
+        assert!(jobs.contains(r#"const action = job.enabled ? "disable" : "enable";"#));
+        assert!(jobs.contains(
+            ".map((entry) => entry.trim())\n        .filter(Boolean)\n        .map(Number)"
+        ));
+        assert!(
+            !jobs.contains("Number(entry.trim())"),
+            "empty success-status entries must be removed before numeric conversion"
+        );
+
+        let stream = Assets::get("sse.js").expect("SSE client");
+        let stream = String::from_utf8_lossy(&stream.data);
+        assert!(stream.contains("`${data.attempt_number}:${data.seq}`"));
+        assert!(stream.contains("seenOutput.has(key)"));
+    }
+
+    #[test]
+    fn viewer_accessibility_and_brand_semantics_stay_scoped() {
+        let html = Assets::get("index.html").expect("entry page");
+        let html = String::from_utf8_lossy(&html.data);
+        assert!(html.contains(r#"<div id="view"></div>"#));
+        assert!(!html.contains(r#"id="view" aria-live"#));
+
+        let css = Assets::get("app.css").expect("stylesheet");
+        let css = String::from_utf8_lossy(&css.data);
+        assert!(!css.contains(".page-head h1::before"));
+        assert!(!css.contains(r#"content: "Local operations""#));
+        assert!(css.contains(r#"input[type="checkbox"], input[type="radio"]"#));
+        assert!(css.contains("width: 1.125rem; height: 1.125rem; min-height: 1.125rem"));
+        assert_eq!(
+            css.matches("color: var(--color-caution);").count(),
+            2,
+            "only warning and notice text use the caution semantic"
+        );
+    }
+
+    #[test]
+    fn documented_palette_matches_the_css_token_layer() {
+        let guide = include_str!("../../../DESIGN.md");
+        let css = Assets::get("app.css").expect("stylesheet");
+        let css = String::from_utf8_lossy(&css.data);
+        for (token, value) in [
+            ("--color-canvas", "#F6F0E3"),
+            ("--color-surface", "#FFFCF6"),
+            ("--color-raised", "#FFFFFF"),
+            ("--color-ink", "#24231F"),
+            ("--color-graphite", "#5F5B52"),
+            ("--color-border", "#D8D0C1"),
+            ("--color-accent", "#F5C842"),
+            ("--color-link", "#355B88"),
+            ("--color-success", "#246B45"),
+            ("--color-success-soft", "#E7F2EA"),
+            ("--color-danger", "#A83B35"),
+            ("--color-danger-soft", "#F8E8E5"),
+            ("--color-running", "#285D8F"),
+            ("--color-running-soft", "#E7EFF7"),
+            ("--color-caution", "#875B12"),
+            ("--color-caution-soft", "#F6EEDC"),
+            ("--color-unknown", "#665F54"),
+            ("--color-unknown-soft", "#EFEBE3"),
+            ("--color-console", "#171713"),
+            ("--color-console-ink", "#F4F0E7"),
+        ] {
+            assert!(
+                guide.contains(&format!("`{token}` | `{value}`")),
+                "brand guide token {token} must carry {value}"
+            );
+            assert!(
+                css.contains(&format!("{token}: {value};")),
+                "CSS token {token} must carry {value}"
             );
         }
     }

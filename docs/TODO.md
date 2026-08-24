@@ -560,6 +560,88 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   contract: loopback-only surface, token access control, viewer scope), `docs/dashboard/IMPLEMENTATION.md`
   (architecture, port/bind policy, viewer security posture, deviations), and this section.
 
+## Dashboard brand refresh and integration hardening backlog (2026-08-24)
+
+Authorized by the 2026-08-24 brand amendment in `docs/dashboard/SPEC.md`, researched in
+`docs/FINDINGS.md` §22, and planned in `docs/dashboard/IMPLEMENTATION.md` “Brand refresh and
+behavior-correction change order.” The work preserves the dashboard's local-only architecture and
+adds no frontend runtime or network dependency.
+
+- [x] Integrate current `origin/main`, resolve the feature-branch conflicts, and complete the
+  brand-refresh planning set before implementation.
+  **Verify:** the branch contains `origin/main` as an ancestor; the merge tree passes format,
+  clippy, dependency-direction, and dashboard CLI regression checks; `SPEC.md` contains the brand
+  amendment, `FINDINGS.md` §22 records primary-source research and unavailable references, and the
+  accepted implementation/change-order sections exist with no unresolved product question.
+  **Evidence:** merge commit `28b58a9` integrates `origin/main` at `f414ee7`; conflict resolutions
+  preserve dashboard and upstream behavior. `cargo fmt --all --check`, `cargo clippy --workspace
+  --all-targets -- -D warnings`, `bash scripts/check-dependency-direction.sh`, and the corrected
+  dashboard doctor regression pass. Planning documents now contain the named sections and no open
+  product question.
+- [x] Add the repository-root Locron `DESIGN.md` as the durable brand guideline and link it from
+  README: promise and attributes, voice/tone, wordmark and Roki, semantic palette with contrast,
+  typography, icon/illustration, layout tokens, components/states, motion, accessibility,
+  responsive behavior, and do/don't examples.
+  **Verify:** every accepted guide topic appears; palette role names and values match the dashboard
+  CSS tokens; documented foreground/background pairs meet the chosen contrast threshold; README's
+  relative link resolves; `git diff --check` passes.
+  **Evidence:** `DESIGN.md` defines every named guide area. Its 20 palette roles are guarded
+  byte-for-byte by `assets::tests::documented_palette_matches_the_css_token_layer`; documented
+  normal-text pairs are at least 5.14:1 (ink/surface is 15.36:1). README links the guide and `git
+  diff --check` passes.
+- [x] Redesign the entry page and all authenticated dashboard views using the guide: branded shell,
+  clear navigation/current state, cream/charcoal/yellow identity, restrained operational surfaces,
+  cohesive tables/forms/chips/notices/console, sparse expressive details, and responsive,
+  keyboard, focus, reduced-motion, empty/error/loading states without adding a runtime dependency.
+  **Verify:** embedded-asset tests pass and every referenced asset is local; all JavaScript parses;
+  real-browser inspection covers entry, Jobs list/detail/form, Run history/detail/live console, and
+  Diagnostics at desktop and narrow widths, keyboard navigation, 200% zoom, reduced motion, long
+  values, current-page semantics, status labels, and visible focus with no clipped core action.
+  **Evidence:** all 18 embedded asset/server tests and `node --check` for every dashboard script
+  pass, and every referenced asset is local. The in-app browser walk covered the branded entry,
+  authenticated-cookie reload, Jobs list/detail/form, Run history/detail/live console, and
+  Diagnostics at a 1440x900 desktop viewport, a 720x450 CSS viewport as the 200%-zoom equivalent,
+  and a 390x844 narrow viewport. It confirmed checkbox and action labels, heading names,
+  current-page and status semantics, a narrow table reachable without body overflow, and a UTF-8
+  HTTP dry-run; browser development logs were `[]`. Static/automated inspection confirms semantic
+  landmarks and labels plus `:focus-visible` and `prefers-reduced-motion` CSS rules. This evidence
+  does not claim that a complete keyboard tab traversal was performed.
+- [x] Correct the integration review defects: `HttpOnly` session reload, HTTP inline-body byte
+  encoding and method inventory, service-mode/state-directory registration, actual-bound-address
+  startup URL, SSE attempt schema and replay deduplication, and malformed self-update status
+  handling.
+  **Verify:** focused Rust/JS regressions prove a valid cookie session survives reload; create,
+  update, and dry-run preserve non-ASCII HTTP body bytes and reject unsupported methods; macOS and
+  Linux service templates carry the selected state directory and explicit service mode; redirected
+  bare serving still uses foreground fallback; IPv6-only binding reports `[::1]`; SSE reconnect
+  renders each attempt/sequence once; malformed status JSON warns and never enables a service.
+  **Evidence:** asset/session regressions prove bootstrap trusts `data.authenticated` and never
+  reads the `HttpOnly` cookie. The shared `TextEncoder` form path and API contract test preserve
+  non-ASCII bytes across create/update/dry-run while excluding/refusing `OPTIONS`. Dashboard CLI
+  and template tests prove hidden fixed service mode, redirected foreground fallback, selected
+  state-directory preservation (including self-update), and truthful `[::1]` output. SSE tests
+  cover `attempt_number`, reconnect replay, and separate attempt-1/seq-0 and attempt-2/seq-0 keys;
+  the client deduplicates on both fields. Self-update tests cover true, false, missing, and
+  non-boolean registration values. Focused results: server lib 18/18, SSE 5/5, dashboard CLI
+  11/11, service 18/18, self-update 12/12, and the HTTP byte regression; every JS file passes
+  `node --check`. Browser QA also found that an optional empty Success statuses field was converted
+  through `Number("")` to invalid status `0`; the form now removes empty or whitespace-only tokens
+  before numeric conversion, and an asset regression prevents the unsafe conversion order.
+- [x] Run the complete final gate, reconcile implementation discoveries into these documents before
+  any corresponding code change, record evidence, and leave an isolated fixture dashboard running
+  for product review.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace --all-targets`, and `bash scripts/check-dependency-direction.sh` pass;
+  browser console has no unexpected errors through the representative walk; the final working tree
+  contains only scoped files; the reported local URL returns the branded entry/dashboard and stays
+  available after handoff.
+  **Evidence:** `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D
+  warnings` pass. `cargo test --workspace --all-targets` passes 418 tests with 0 failures. The
+  dependency-direction script passes with Cargo loaded into `PATH`; every dashboard JavaScript file
+  passes `node --check`, and `git diff --check` passes. The representative browser walk produced
+  empty development logs (`[]`). The fixture at `http://127.0.0.1:10824/` returns the authenticated
+  branded dashboard, and both its daemon and dashboard server are running for review.
+
 ## Shutdown-drain test determinism and CI lint consolidation backlog (2026-08-24)
 
 No product-behavior change (a test-harness script and the CI workflow only), so the frozen

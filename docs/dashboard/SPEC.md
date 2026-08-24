@@ -2,7 +2,8 @@
 
 ## Status
 
-Frozen on 2026-08-24 after interactive product review. This document defines the
+Frozen on 2026-08-24 after interactive product review and amended on 2026-08-24 to define the
+Locron brand experience. This document defines the
 web-administration surface listed as phase 1 of the deferred product roadmap in `docs/TODO.md`.
 Per that roadmap, it does not change the exclusions in the frozen `docs/SPEC.md`. Implementation
 choices and their trade-offs are recorded in `IMPLEMENTATION.md` (this directory); research evidence in
@@ -30,6 +31,8 @@ daemon.
    explicitly enables it or runs it in the foreground.
 4. Keep the runtime lightweight and self-contained within the single `locron` binary, supervised
    separately from the scheduler daemon.
+5. Make the dashboard feel unmistakably Locron: calm, local-first, warm, and precise, with the
+   approachable character of the project artwork and the clarity expected of an operational tool.
 
 ### Observable Completion Criteria
 
@@ -64,6 +67,17 @@ daemon.
    the command-line diagnostics.
 9. Machine-readable API results use a versioned JSON envelope, and API errors map to the stable CLI
    error categories.
+10. A documented Locron brand system defines the product promise, voice, wordmark use, color,
+    typography, iconography and illustration, layout, components, motion, accessibility, and clear
+    examples of correct and incorrect use.
+11. The entry and authenticated dashboard surfaces consistently apply that system while preserving
+    dense, scan-friendly presentation of status, upcoming work, anomalies, and available actions.
+12. The dashboard remains usable with a keyboard and assistive technology, maintains readable
+    contrast, respects reduced-motion preferences, and adapts from narrow mobile-sized viewports to
+    large desktop displays without hiding core operations.
+13. Returning users can reload or revisit the dashboard through their established local session,
+    and every printed or reported access URL corresponds to an address the current server actually
+    bound.
 
 ---
 
@@ -103,7 +117,8 @@ daemon.
 - `locron dashboard enable` is the persistent path: it generates the access token when absent,
   registers a per-user service (separate from the daemon's registration), starts it immediately,
   and arranges automatic start at login. Repeating it refreshes and repairs the registration.
-  Installers and updates never register the dashboard on their own.
+  The registration preserves the selected state directory. Installers and updates never register
+  the dashboard on their own.
 - The daemon registration command family remains daemon-only; the dashboard family manages only
   the dashboard registration. The two registrations never touch each other.
 - The dashboard service is a process separate from the scheduler daemon. It reads the same durable
@@ -146,7 +161,29 @@ daemon.
 
 ---
 
-## 5. Viewer Surface
+## 5. Brand and Visual Experience
+
+- The brand promise is dependable local automation without infrastructure ceremony. Its tone is
+  capable, direct, reassuring, and lightly playful; operational truth is never obscured by
+  personality or decoration.
+- The visual language takes its cues from the project artwork: warm paper-like neutrals, strong
+  charcoal structure, a restrained sunny-yellow accent, rounded utilitarian forms, and occasional
+  hand-drawn character details. It must remain an original Locron system rather than imitating any
+  reference brand.
+- The primary hierarchy answers four questions quickly: what is running, what happens next, what
+  needs attention, and what action is safe to take. Secondary detail is progressively disclosed.
+- Motion explains state changes and navigation, stays brief, never delays an operation, and is
+  removed or simplified when the user requests reduced motion.
+- Light surfaces are the primary application environment. Output and terminal-like content may use
+  a focused dark surface when it improves legibility, while retaining the shared brand accents and
+  accessible contrast.
+- A reusable brand guide is the source of truth for future product and documentation surfaces. It
+  includes practical examples and guardrails so new work can remain consistent without copying the
+  dashboard layout.
+
+---
+
+## 6. Viewer Surface
 
 - Job list: name, schedule summary, enabled state, next occurrence, and last outcome.
 - Job detail: full definition and policies, recent runs, and why explanation. Create/edit forms
@@ -161,7 +198,7 @@ daemon.
 
 ---
 
-## 6. Mutation API Surface
+## 7. Mutation API Surface
 
 - REST endpoints map one-to-one onto durable application commands: job
   create/update/enable/disable/remove, schedule preview, manual run (enqueue and wait),
@@ -176,7 +213,7 @@ daemon.
 
 ---
 
-## 7. Live Updates
+## 8. Live Updates
 
 - An SSE endpoint streams captured output for one run as it is written, as JSON text frames
   preserving stream order, plus run/attempt state transitions and a final termination event.
@@ -188,7 +225,7 @@ daemon.
 
 ---
 
-## 8. Daemon Interaction
+## 9. Daemon Interaction
 
 - Every mutation reuses the durable application commands: commit to SQLite first, then send the
   same best-effort wake hint the CLI sends. The wake socket is never treated as an API.
@@ -199,7 +236,7 @@ daemon.
 
 ---
 
-## 9. Exposure Diagnostics
+## 10. Exposure Diagnostics
 
 - Startup prints the exact access URL; the status command reports service state, the access URL,
   and token facts.
@@ -211,7 +248,7 @@ daemon.
 
 ---
 
-## 10. Open Questions
+## 11. Open Questions
 
 None after `docs/FINDINGS.md` §14; implementation choices and their trade-offs are recorded in
 `IMPLEMENTATION.md`.

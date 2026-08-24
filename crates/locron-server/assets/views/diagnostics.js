@@ -34,7 +34,7 @@ const DiagnosticsView = (() => {
         </tr>`;
       })
       .join("");
-    return `<div class="page-head"><h1>Diagnostics</h1></div>
+    return `<div class="page-head"><div><h1>Diagnostics</h1><p class="page-intro">Scheduler health, effective paths, and local operating settings.</p></div></div>
       <section class="card">
         <h2>Health</h2>
         <dl class="facts">

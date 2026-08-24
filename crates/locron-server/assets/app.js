@@ -69,17 +69,20 @@ const App = (() => {
 
   async function boot() {
     // The session status call issues the CSRF cookie when it is missing;
-    // the session cookie (set by the paste) is what unlocks the app.
+    // a successful authenticated response is the source of truth. The
+    // locron_session cookie is HttpOnly and intentionally invisible here.
+    bindPaste();
+    let authenticated = false;
     try {
-      await Api.get("/api/v1/session");
+      const { data } = await Api.get("/api/v1/session");
+      authenticated = data && data.authenticated === true;
     } catch {
       // Server unreachable: the paste panel stays up and reports errors.
     }
-    if (Api.hasSession()) {
+    if (authenticated) {
       showApp();
     } else {
       showPaste();
-      bindPaste();
     }
   }
 

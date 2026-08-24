@@ -654,3 +654,130 @@ The first fix attempt (run 32685506683) dropped the `version` line while keeping
 **Trust is persistent item-level state, so short names keep working after the one-liner.** Verified against the local Homebrew 6.0.18 source: `cmd/install.rb` calls `Homebrew::Trust.trust_fully_qualified_items!` during install, and `trust.rb` writes the entries to `~/.homebrew/trust.json` (falling back to `$XDG_CONFIG_HOME/trust.json`) under a store lock. Subsequent short-name operations — `brew upgrade locron`, `brew services start locron`, `brew uninstall locron` — therefore resolve the formula from the tap without a trust prompt. Source: `/opt/homebrew/Library/Homebrew/cmd/install.rb` and `/opt/homebrew/Library/Homebrew/trust.rb` (Homebrew 6.0.18, 2026-08-24)
 
 **Accepted resolution**: the README and install guide replace `brew tap whitekiwi/tap && brew trust whitekiwi/tap && brew install locron` with the one-liner `brew install whitekiwi/tap/locron`. locron is a CLI formula, so no `--cask` flag; the trust explanation moves into the install guide, and the whole-tap trust previously granted by `brew trust whitekiwi/tap` is replaced by formula-only trust, matching the official recommendation.
+
+## 22. Locron Brand and Dashboard Visual Direction (2026-08-24)
+
+### Source verification
+
+The user-supplied references were checked against their official site or repository rather than
+treated as a single prescriptive style. They divide into technique libraries, inspiration
+galleries, and repeatable design-system workflows:
+
+| Reference | Verification and useful evidence |
+|---|---|
+| CloudAI-X/threejs-skills | The public repository exists and covers Three.js fundamentals, geometry, materials, lighting, animation, shaders, post-processing, interaction, and performance. It is useful when a product needs a real 3D scene, but supplies no evidence that an operations dashboard benefits from one. Source: https://github.com/CloudAI-X/threejs-skills |
+| greensock/gsap-skills | GreenSock's official repository exists and covers core tweens, timelines, ScrollTrigger, framework lifecycle cleanup, and performance. It supports deliberate choreography when native CSS is insufficient; it is not itself a reason to add animation or a runtime dependency. Source: https://github.com/greensock/gsap-skills |
+| LottieFiles/motion-design-skill | The official repository exists. Its workflow chooses purpose, properties, timing, easing, emotional intent, and brand personality before implementation, and includes accessibility/performance adaptation and state-feedback patterns. Source: https://github.com/LottieFiles/motion-design-skill |
+| AThevon/genjutsu | The public repository exists. Its `paint` workflow establishes a visual and interaction thesis, persists a design system, then audits motion, accessibility, responsive behavior, color consistency, and performance. Its `cast` workflow similarly audits reduced motion and interaction performance after focused motion work. Source: https://github.com/AThevon/genjutsu |
+| Design Spells | The official gallery exists and categorizes small interface details by device, interaction, motion, animation, 404, skeuomorphism, and other themes. Its value is selective delight at a meaningful moment, not wholesale adoption of every showcased effect. Source: https://www.designspells.com/ |
+| recent.design | The official site exists and is a daily curation spanning interface, branding, product, typography, motion, illustration, 3D, editorial, print, and packaging. It is a broad mood-board source, not a product or accessibility standard. Source: https://recent.design/ |
+| wwit | `wwit.design` exists as What Was IT and organizes Korean product references by industry, user-flow pattern, and component type, including onboarding, loading, success, lists, settings, inputs, tabs, popups, and charts. That taxonomy is useful for comparing one Locron flow at a time rather than copying an entire app. Source: https://wwit.design/ |
+| film.ai | The supplied domain currently resolves to a domain-sale page, not a searchable film-frame reference. It is unavailable as a current design source and no prior design is inferred from archived or secondary descriptions. Source: https://film.ai/ |
+| post.design | The official URL responded but exposed no verifiable page content in this research session. Search results conflate a current social-post curation description with the older Post.Design/Tangle platform, so neither is used as evidence for Locron. Source checked: https://post.design/ |
+| MengTo/Skills | Meng To's public repository exists. Its stated philosophy is to treat prompts as versioned assets, prefer specifications and references over vague direction, iterate by changing a small number of variables, and include defaults, pitfalls, demos, and acceptance checks. Its design-first workflow structures direction as goal, format, layout, type, color, and constraints. Source: https://github.com/MengTo/Skills |
+| Vercel `DESIGN.md` | No first-party `DESIGN.md` file was found in the official Vercel repositories checked; community reconstructions must not be presented as Vercel-authored. The first-party substitutes are the Geist design system and Vercel Web Interface Guidelines, which document accessible color, typography, icons, grid, interaction, focus, hit targets, borders, radii, and layered elevation. Sources: https://vercel.com/geist/stack, https://vercel.com/design/guidelines |
+| nextlevelbuilder/ui-ux-pro-max-skill | The public repository exists. The strongest transferable parts are persistent master rules with page-level overrides, product-specific anti-patterns, resilient text wrapping, status meaning beyond color alone, visible focus, correct semantics after interrupted motion, and reduced-motion support. The large catalog of fashionable styles is reference data, not a mandate to mix styles. Source: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill |
+
+Two established brand guides add what the technique repositories do not. GitHub's official Brand
+Toolkit treats logo, typography, color, illustration, mascots, accessibility, and distinct
+marketing/product systems as one identity; it also asks whether a moment is expressive or
+functional before choosing the treatment. That is a direct precedent for keeping Roki and the
+hand-drawn language while making the authenticated dashboard denser and quieter. Sources:
+https://brand.github.com/, https://brand.github.com/guides/getting-started.
+
+Mailchimp's public content guide separates stable voice from situation-dependent tone, prioritizes
+clarity over entertainment, and reserves humor for moments where it will not obstruct the user's
+work. This is the useful model for a friendly mascot-bearing developer product: onboarding may be
+warm, while a failed, interrupted, or destructive state must be direct and calm. Sources:
+https://styleguide.mailchimp.com/voice-and-tone/,
+https://styleguide.mailchimp.com/tldr/.
+
+### Existing Locron identity
+
+The repository's `assets/banner.jpg` is already a stronger source of truth than a trend gallery.
+It establishes:
+
+- a warm cream canvas, near-black rounded display lettering, graphite secondary text, restrained
+  gray surfaces, and sunny yellow as the recognitional accent;
+- Roki as a small friendly robot with yellow eyes and antenna, accompanied by hand-drawn marks,
+  a sleepy cat, books, a laptop, and handwritten encouragement;
+- a product promise that is local, easy to manage, private, secure, and built for developers; and
+- a friendly, optimistic tone that remains simple rather than loud.
+
+The banner is expressive marketing art. Its motifs should enter the product as controlled accents,
+not make every table, form, status, or log pane look hand-drawn. GitHub's expressive-versus-
+functional distinction supports this split.
+
+### Recommendation: Locron brand system
+
+Define the brand promise as **calm local control that explains itself**. Four attributes should
+govern every choice: **warm, precise, capable, and reassuring**. The warm and reassuring half comes
+from the cream/yellow/Roki banner; precise and capable come from durable run facts, local ownership,
+and the existing “Cron that explains itself” positioning.
+
+- **Voice.** Plainspoken, concise, developer-to-developer, and specific about what happened, why,
+  and what to do next. Use active verbs and sentence case. Friendly microcopy belongs in entry,
+  onboarding, success, and empty states. Errors, security, cancellation, interrupted outcomes, and
+  destructive confirmations use neutral factual language with no joke or mascot dialogue.
+- **Logo and character.** Preserve the `Locron` name as the primary identifier and Roki as a
+  supporting character, never as a replacement for the wordmark. Keep clear space around either,
+  do not distort or recolor Roki arbitrarily, and use the character at high-empathy moments such as
+  login, first-job onboarding, and a truly empty dashboard. Avoid repeating Roki in dense lists or
+  placing playful art beside dangerous actions.
+- **Color roles.** Warm cream is the application canvas, light neutral is the working surface,
+  charcoal is primary ink and strong action, graphite is secondary text, and sunny yellow is the
+  brand accent/focus highlight. Success, warning, failure, running, and unknown outcomes retain
+  separate accessible semantic colors plus text/icon labels. Yellow must not mean both “Locron” and
+  “warning,” and no status may rely on color alone.
+- **Typography.** Use a rounded, confident display treatment only for the Locron identity and
+  occasional empty-state headline. Use the system sans-serif stack for operational reading and a
+  system monospace stack for schedules, IDs, timestamps, commands, and logs. Maintain a small,
+  explicit scale and tabular numerals where values must compare vertically; do not add an external
+  font or CDN to the bundled local dashboard.
+- **Shape and illustration.** Favor soft but disciplined radii, crisp charcoal or neutral borders,
+  minimal layered shadow, and small hand-drawn yellow strokes as signatures. Icons use one coherent
+  outline weight. Cream paper texture, doodles, cat/books, and Roki are occasional editorial
+  elements, not repeated card decoration.
+- **Layout.** Use a stable grid and spacing scale, large calm outer margins, and compact internal
+  data rhythm. The first visual scan of any dashboard view should answer: current state, next
+  occurrence, latest anomaly, then available action. One filled primary action per decision area is
+  enough; secondary and destructive actions recede until needed.
+- **Components and state.** Treat jobs, runs, diagnostics, forms, status chips, notices, empty
+  states, destructive confirmations, and the log console as a documented family with the same
+  type, spacing, radii, focus, hover, disabled, loading, error, and empty-state rules. Long names,
+  IDs, URLs, tags, and translated copy must wrap or expose their full value without clipping.
+- **Motion personality.** Use “snappy-gentle” motion for feedback and hierarchy: short hover/press,
+  route/state transition, disclosure, and fresh-data acknowledgement. Prefer opacity and transform,
+  let the final semantic state remain correct when interrupted, and honor `prefers-reduced-motion`.
+  Do not add ambient loops, scroll spectacle, cursor trails, parallax, 3D, or bouncing failure
+  states to an operational dashboard. The current plain HTML/CSS/JavaScript viewer can express the
+  required motion without GSAP, Lottie, or Three.js.
+- **Accessibility and responsive behavior.** Preserve visible focus, full keyboard operation,
+  useful landmarks and labels, 44 px touch targets where the interface becomes touch-oriented,
+  16 px mobile input text, sufficient text/status contrast, and a layout that works under narrow
+  widths, zoom, text scaling, and reduced motion. Decorative handwriting and yellow accents never
+  carry essential information.
+
+The durable brand guide should record the promise and attributes; voice/tone; wordmark and Roki
+usage; palette roles and tested contrast pairs; type scale; icon/illustration rules; grid, spacing,
+radii, border, and elevation tokens; component states; motion rules; accessibility; and concrete
+do/don't examples. A small rendered specimen of real dashboard components is more useful than a
+palette page alone, matching Meng To's preference for references plus acceptance checks and
+Genjutsu's preview-and-audit approach.
+
+### Dashboard application and rejected excess
+
+The dashboard should therefore feel like the banner grew into an operations tool: a cream shell,
+charcoal hierarchy, quiet neutral work surfaces, one yellow recognitional accent, and sparse Roki or
+hand-drawn moments around onboarding. Data tables, forms, diagnostics, and logs remain restrained
+and highly legible. The dark log console is the intentional technical counter-surface, linked back
+to the brand through typography, focus, and a small yellow live indicator rather than decorative
+effects.
+
+Reject the following despite their presence in inspiration catalogs: generic purple/pink “AI”
+gradients, glassmorphism over dense data, neumorphism with weak boundaries, decorative 3D/WebGL,
+cinematic scroll narratives, continuous ambient animation, heavy blur, excessive shadows, a card
+around every value, rainbow status palettes, yellow-as-warning ambiguity, and copying Vercel or any
+gallery example as a visual identity. The goal is an original Locron system derived from its own
+banner and product promise, using external references only as decision frameworks and quality
+checks.

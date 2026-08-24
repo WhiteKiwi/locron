@@ -17,7 +17,7 @@ const RunsView = (() => {
   async function renderHistory(view) {
     let offset = 0;
     view.innerHTML = `<div class="page-head">
-      <h1>Run history</h1>
+      <div><h1>Run history</h1><p class="page-intro">Every requested run, attempt, outcome, and duration in durable order.</p></div>
       <div class="actions">
         <input id="runs-job" type="search" placeholder="filter by job name or id">
         <button id="runs-refresh" type="button">Refresh</button>
@@ -184,7 +184,7 @@ const RunsView = (() => {
 
     const snapshot = parseSnapshot(run);
     return `<div class="page-head">
-        <h1>Run ${esc(run.id.slice(0, 8))}</h1>
+        <div><h1>Run ${esc(run.id.slice(0, 8))}</h1><p class="page-intro">Immutable timing, attempts, output, and recorded explanations.</p></div>
         <div class="actions">
           <button id="run-cancel" type="button" class="button danger">Cancel run</button>
           <button id="run-refresh" type="button" class="button">Refresh</button>

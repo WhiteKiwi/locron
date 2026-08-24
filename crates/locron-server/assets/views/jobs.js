@@ -37,7 +37,7 @@ const JobsView = (() => {
 
   async function renderList(view) {
     view.innerHTML = `<div class="page-head">
-      <h1>Jobs</h1>
+      <div><h1>Jobs</h1><p class="page-intro">Schedules, next occurrences, and the latest durable outcome.</p></div>
       <div class="actions">
         <input id="jobs-search" type="search" placeholder="search name, tag, description…">
         <select id="jobs-filter">
@@ -136,10 +136,10 @@ const JobsView = (() => {
   }
 
   function listActions(job) {
-    const enabled = job.enabled ? "disabled" : "enabled";
+    const action = job.enabled ? "disable" : "enable";
     return `<div class="row-actions">
       <button type="button" class="link" data-action="run">run now</button>
-      <button type="button" class="link" data-action="toggle">${enabled}</button>
+      <button type="button" class="link" data-action="toggle">${action}</button>
       <a href="#/jobs/${encodeURIComponent(job.name)}/edit">edit</a>
       <button type="button" class="link danger" data-action="remove">remove</button>
     </div>`;
@@ -266,7 +266,7 @@ const JobsView = (() => {
         </section>`
       : "";
     return `<div class="page-head">
-        <h1>${esc(job.name)}</h1>
+        <div><h1>${esc(job.name)}</h1><p class="page-intro">Definition, policy, and the facts behind its current state.</p></div>
         <div class="actions">
           <button id="job-run" type="button" class="button">Run now</button>
           <a class="button" href="#/jobs/${encodeURIComponent(job.name)}/edit">Edit</a>
@@ -495,7 +495,7 @@ const JobsView = (() => {
 
   function formHtml(editing, base) {
     const title = editing ? `Edit job ${esc(base)}` : "New job";
-    return `<div class="page-head"><h1>${title}</h1></div>
+    return `<div class="page-head"><div><h1>${title}</h1><p class="page-intro">Validate the schedule and target before saving durable work.</p></div></div>
       <form id="job-form" autocomplete="off">
         ${editing ? secretNotice(base) : ""}
         <section class="card">
@@ -557,7 +557,7 @@ const JobsView = (() => {
             <label>Method
               <select id="jf-http-method">
                 <option>GET</option><option>POST</option><option>PUT</option>
-                <option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+                <option>PATCH</option><option>DELETE</option><option>HEAD</option>
               </select>
             </label>
             <label>URL *<input id="jf-http-url" type="text" placeholder="https://example.com/hook" spellcheck="false"></label>
@@ -680,7 +680,7 @@ const JobsView = (() => {
           q("jf-http-body").dataset.redacted = "1";
           q("jf-http-body").placeholder = "body is redacted — empty keeps nothing; re-enter to replace";
         } else {
-          q("jf-http-body").value = body;
+          q("jf-http-body").value = decodeInlineBody(body);
         }
       }
       q("jf-http-body-file").value = target.body_file || "";
@@ -1018,11 +1018,16 @@ const JobsView = (() => {
       const url = text("jf-http-url");
       if (!url) errors.push("URL is required");
       target.method = (text("jf-http-method") || "GET").toUpperCase();
+      if (!["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"].includes(target.method)) {
+        errors.push(`unsupported HTTP method: ${target.method}`);
+      }
       target.url = url;
       target.success_statuses = text("jf-http-statuses")
         .split(",")
-        .map((entry) => Number(entry.trim()))
-        .filter((entry) => Number.isFinite(entry));
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map(Number)
+        .filter(Number.isFinite);
       target.follow_redirects = q("jf-http-redirects").checked;
       target.headers = {};
       const bodyInput = q("jf-http-body");
@@ -1032,7 +1037,7 @@ const JobsView = (() => {
           "the HTTP body is redacted and was not re-entered; re-enter it or clear the body with the file field only",
         );
       } else if (bodyInput.value !== "") {
-        target.body = bodyInput.value;
+        target.body = Array.from(new TextEncoder().encode(bodyInput.value));
       } else {
         target.body = null;
       }
@@ -1098,6 +1103,11 @@ const JobsView = (() => {
       },
     };
     return { payload, errors };
+  }
+
+  function decodeInlineBody(body) {
+    if (!Array.isArray(body)) return String(body);
+    return new TextDecoder("utf-8", { fatal: false }).decode(Uint8Array.from(body));
   }
 
   /// Shared row collection for environment values and headers. `kind` selects

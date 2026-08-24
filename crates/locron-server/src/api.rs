@@ -1132,7 +1132,7 @@ pub(crate) async fn runs_stream(State(state): State<AppState>, Path(id): Path<St
 
     let progress = StreamProgress {
         run_id: id,
-        frames: 0,
+        frame_counts: Vec::new(),
         run_state: None,
         attempt_states: Vec::new(),
         finished: false,
@@ -1151,7 +1151,22 @@ pub(crate) async fn runs_stream(State(state): State<AppState>, Path(id): Path<St
                 let polled = with_store(&state, move |store| {
                     let run = store.run(&run_id)?;
                     let attempts = store.attempts_for_run(&run.id)?;
-                    let frames = read_followed_frames(store.paths(), &run.id)?;
+                    let frames = attempts
+                        .iter()
+                        .map(|attempt| {
+                            let number = u16::try_from(attempt.attempt_number).map_err(|_| {
+                                ApiError::Message(
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    "state_error",
+                                    "attempt number is outside path range".to_owned(),
+                                )
+                            })?;
+                            Ok((
+                                attempt.attempt_number,
+                                read_followed_frames(store.paths(), &run.id, number)?,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, ApiError>>()?;
                     Ok::<_, ApiError>((run, attempts, frames))
                 })
                 .await;
@@ -1184,30 +1199,45 @@ pub(crate) async fn runs_stream(State(state): State<AppState>, Path(id): Path<St
                             .push((attempt.attempt_number, attempt.state.clone()));
                         events.push(named_event(
                             "attempt",
-                            &json!({"attempt": attempt.attempt_number, "state": attempt.state}),
+                            &json!({"attempt_number": attempt.attempt_number, "state": attempt.state}),
                         ));
                     }
                 }
-                if frames.len() < progress.frames {
-                    // The output file regressed (truncated or recreated):
-                    // replay it from the start rather than erroring, and let
-                    // clients dedupe by `seq` (deviation from the CLI's hard
-                    // error, recorded in docs/dashboard/IMPLEMENTATION.md).
-                    progress.frames = 0;
+                for (attempt_number, attempt_frames) in frames {
+                    let seen = progress
+                        .frame_counts
+                        .iter_mut()
+                        .find(|(number, _)| *number == attempt_number);
+                    let start = if let Some((_, count)) = seen {
+                        if attempt_frames.len() < *count {
+                            *count = 0;
+                        }
+                        *count
+                    } else {
+                        progress.frame_counts.push((attempt_number, 0));
+                        0
+                    };
+                    for frame in &attempt_frames[start..] {
+                        events.push(named_event(
+                            "output",
+                            &json!({
+                                "attempt_number": attempt_number,
+                                "channel": format!("{:?}", frame.channel).to_lowercase(),
+                                "seq": frame.sequence,
+                                "elapsed_us": frame.elapsed_us,
+                                "data_b64": base64::engine::general_purpose::STANDARD
+                                    .encode(&frame.payload),
+                            }),
+                        ));
+                    }
+                    if let Some((_, count)) = progress
+                        .frame_counts
+                        .iter_mut()
+                        .find(|(number, _)| *number == attempt_number)
+                    {
+                        *count = attempt_frames.len();
+                    }
                 }
-                for frame in &frames[progress.frames..] {
-                    events.push(named_event(
-                        "output",
-                        &json!({
-                            "channel": format!("{:?}", frame.channel).to_lowercase(),
-                            "seq": frame.sequence,
-                            "elapsed_us": frame.elapsed_us,
-                            "data_b64": base64::engine::general_purpose::STANDARD
-                                .encode(&frame.payload),
-                        }),
-                    ));
-                }
-                progress.frames = frames.len();
 
                 if terminal_run_state(&run.state) {
                     events.push(named_event(
@@ -1248,9 +1278,10 @@ fn named_event(name: &str, payload: &Value) -> Event {
 fn read_followed_frames(
     paths: &StatePaths,
     run_id: &str,
+    attempt_number: u16,
 ) -> Result<Vec<locron_store::Frame>, ApiError> {
-    let final_path = paths.final_output(run_id, 1)?;
-    let partial_path = paths.partial_output(run_id, 1)?;
+    let final_path = paths.final_output(run_id, attempt_number)?;
+    let partial_path = paths.partial_output(run_id, attempt_number)?;
     match FrameReader::open(&final_path) {
         Ok(mut reader) => read_available_frames(&mut reader),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -1298,7 +1329,7 @@ fn read_available_frames(reader: &mut FrameReader) -> Result<Vec<locron_store::F
 /// attempt states have already been emitted.
 struct StreamProgress {
     run_id: String,
-    frames: usize,
+    frame_counts: Vec<(i64, usize)>,
     run_state: Option<String>,
     attempt_states: Vec<(i64, String)>,
     finished: bool,

@@ -367,9 +367,8 @@ fn explicit_port_is_strict_when_occupied() {
 
 #[test]
 fn service_mode_keeps_the_default_port_fixed_when_occupied() {
-    // launchd and systemd run the service with /dev/null stdin, so a serve
-    // without a controlling terminal must keep the fixed default port: an
-    // occupied 10824 is an error, never a silent fallback.
+    // Only the hidden marker carried by launchd/systemd registration selects
+    // the fixed policy: an occupied 10824 is an error, never a silent fallback.
     let _fixed = hold_fixed(DEFAULT_PORT);
     let dir = tempfile::tempdir().unwrap();
     let mut command = locron();
@@ -377,7 +376,7 @@ fn service_mode_keeps_the_default_port_fixed_when_occupied() {
         .stdin(Stdio::null())
         .arg("--state-dir")
         .arg(dir.path());
-    command.args(["dashboard", "--json"]);
+    command.args(["dashboard", "serve", "--service-mode", "--json"]);
     let output = run_with_timeout(&mut command, Duration::from_secs(10));
     assert_eq!(
         output.status.code(),
@@ -395,11 +394,44 @@ fn service_mode_keeps_the_default_port_fixed_when_occupied() {
     );
 }
 
+#[test]
+fn redirected_bare_serve_still_uses_foreground_fallback() {
+    let _fixed = hold_fixed(DEFAULT_PORT);
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = locron()
+        .stdin(Stdio::null())
+        .arg("--state-dir")
+        .arg(dir.path())
+        .arg("dashboard")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (receiver, reader) = line_reader(child.stdout.take().unwrap());
+    let guard = ServeGuard {
+        child,
+        state_dir: None,
+    };
+    let line = next_line(&receiver, "the redirected fallback URL");
+    let port = line
+        .strip_prefix("Dashboard URL: http://127.0.0.1:")
+        .and_then(|rest| rest.strip_suffix('/'))
+        .and_then(|port| port.parse::<u16>().ok())
+        .unwrap_or_else(|| panic!("unexpected startup line: {line:?}"));
+    assert_ne!(
+        port, DEFAULT_PORT,
+        "redirected foreground serve must fall back"
+    );
+    assert_eq!(http_status(port), Some(200));
+    drop(guard);
+    let _ = reader.join();
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn foreground_serve_falls_back_when_the_default_port_is_occupied() {
-    // The fallback policy applies only with a controlling terminal; `script`
-    // provides a real PTY. The child dies with SIGHUP when the PTY closes.
+    // A real PTY is another foreground context. The child dies with SIGHUP
+    // when the PTY closes.
     if Command::new("script").arg("-V").output().is_err() {
         eprintln!("SKIPPED: `script` is unavailable in this environment");
         return;

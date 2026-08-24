@@ -31,7 +31,7 @@ async fn main() -> io::Result<()> {
     let bound = bind(&config).await?;
     let access_token = token::ensure(&paths)?;
     let mut stdout = io::stdout().lock();
-    writeln!(stdout, "access url: http://127.0.0.1:{}", bound.port)?;
+    writeln!(stdout, "access url: http://{}", bound.address)?;
     writeln!(stdout, "access token: {access_token}")?;
     for warning in &bound.warnings {
         writeln!(stdout, "warning: {warning}")?;

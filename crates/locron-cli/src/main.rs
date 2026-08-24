@@ -1128,7 +1128,7 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         } => daemon(paths).await,
         Command::Mcp => mcp::run_mcp_server(paths).await,
         Command::SelfUpdate => {
-            let outcome = self_update::update().await?;
+            let outcome = self_update::update(&paths.root).await?;
             let warnings: Vec<&str> = outcome.warnings.iter().map(String::as_str).collect();
             render(
                 format,

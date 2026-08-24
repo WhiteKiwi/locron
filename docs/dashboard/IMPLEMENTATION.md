@@ -8,6 +8,7 @@ amended: per the roadmap, this phase does not change its exclusions. Research ev
 alternatives are recorded in `docs/FINDINGS.md` §14 (security, transport, framework — including the
 2026-08-24 default-port verification) and §16 (UI and API design); this document records the
 accepted implementation choices and their trade-offs, including the 2026-08-24 product decisions.
+The 2026-08-24 brand-system amendment is supported by `docs/FINDINGS.md` §22.
 
 Durable-structure changes (workspace membership, the redaction boundary) update
 `docs/ARCHITECTURE.md` before code, per the repository workflow.
@@ -114,14 +115,17 @@ systemd-user backends plus the deterministic fake, built for `locron service`), 
 registration target for the dashboard:
 
 - macOS: LaunchAgent label `dev.locron.dashboard`, `ProgramArguments`
-  `[<current_exe>, "dashboard", "serve"]`, `KeepAlive` true, `RunAtLoad` true,
+  `[<current_exe>, "--state-dir", <selected_state_dir>, "dashboard", "serve",
+  "--service-mode"]`, `KeepAlive` true, `RunAtLoad` true,
   `StandardOutPath`/`StandardErrorPath` at `~/Library/Logs/locron/dashboard.log` (the daemon's
   log convention, one file per service).
 - Linux: systemd user unit `locron-dashboard.service` at `~/.config/systemd/user/` with
-  `ExecStart=<current_exe> dashboard serve`, `Restart=on-failure`, `WantedBy=default.target`.
+  `ExecStart=<current_exe> --state-dir <selected_state_dir> dashboard serve --service-mode`,
+  `Restart=on-failure`, `WantedBy=default.target`.
 
-`locron dashboard serve` is the non-interactive server entry the service executes; the bare
-`locron dashboard` behaves identically. The enable/disable flows reuse the daemon registration's
+`locron dashboard serve` is a user-facing foreground entry identical to bare `locron dashboard`.
+Only service templates carry the hidden `--service-mode` marker that selects fixed-port behavior;
+redirected stdin does not change a user invocation's semantics. The enable/disable flows reuse the daemon registration's
 verified behavior: enable-and-bootstrap ordering, refresh-and-restart of an already-loaded job,
 lock-unrelated deferral does not apply (the dashboard holds no daemon lock; a port conflict is
 handled as below), brew-marker refusal for registration operations (foreground serving stays
@@ -181,17 +185,12 @@ Implementation notes (step 8):
 
 Implementation notes (step 9):
 
-- The foreground/service mode distinction for the identical `locron dashboard`
-  and `locron dashboard serve` invocation is decided by process context, because
-  the service manager executes the flagless form and the templates are frozen:
-  when stdin is a terminal the policy is `Foreground` (fallback), and when it is
-  not — launchd and systemd run services with stdin at /dev/null, and scripts
-  pipe it — the policy is `Fixed` (an occupied port makes the server exit with an
-  actionable error, which `dashboard status` reports through `loaded: false` plus
-  guidance). An explicit `--port N` is always `Fixed`. The selection is a pure
-  function so the three cases are unit-tested, and the two behaviors are
-  integration-tested by spawning with a pseudo-terminal (`script`) for the
-  fallback and with null stdin for the fixed behavior.
+- The foreground/service mode distinction is explicit: bare `locron dashboard` and a user-invoked
+  `locron dashboard serve` use `Foreground` fallback regardless of stdin, while the hidden marker
+  written only into launchd/systemd registration selects `Fixed` (an occupied port makes the
+  server exit with an actionable error, which `dashboard status` reports through `loaded: false`
+  plus guidance). An explicit `--port N` is always `Fixed`. Unit and integration tests cover the
+  hidden service marker, a redirected bare invocation, and ordinary terminal foreground use.
 - `--port N` and `--bind ADDR` are declared on `locron dashboard` (the bare
   form, matching the documented `locron dashboard [--port N] [--bind ADDR]`
   spelling), not on the `serve` subcommand; combined with a service-management
@@ -371,6 +370,66 @@ Implementation notes (step 9):
 - The SPA authenticates via the session cookie, echoes `X-CSRF-Token` from the `csrf_token` cookie
   on every mutation, and uses `EventSource` (cookie-authenticated) for live logs.
 
+### Accepted: Locron brand system and dashboard refresh
+
+The durable visual contract is a repository-root `DESIGN.md`, following the useful part of the
+agent-readable design-guide pattern without claiming compatibility with an unverified Vercel file.
+It records the brand promise, attributes, voice and tone, Locron wordmark and Roki usage, semantic
+palette, typography, illustration and icon rules, layout tokens, component states, motion,
+accessibility, responsive behavior, and concrete do/don't examples. README links it alongside the
+dashboard specification. The guide lets future surfaces make original layouts while preserving the
+same identity; it does not encode the current dashboard DOM as the brand.
+
+The visual thesis is **calm local control that explains itself**. The dashboard uses a warm cream
+canvas, quiet light work surfaces, charcoal hierarchy, graphite secondary text, and sunny yellow
+only as the recognitional accent and focus signature. Operational states retain separate accessible
+colors plus text or icon labels; yellow never doubles as warning. Rounded forms, crisp borders,
+minimal layered elevation, and a small hand-drawn spark carry the README banner into the product.
+Roki remains a sparse high-empathy character for entry or truly empty states rather than recurring
+table decoration. The log console stays a deliberate dark technical counter-surface.
+
+The viewer remains bundled plain HTML/CSS/JavaScript with system font stacks and no network, CDN,
+font, Node build, 3D, GSAP, or Lottie dependency. A single CSS-token layer maps the documented
+color, spacing, type, radius, border, elevation, and motion roles to every existing view. Light is
+the primary application appearance rather than an automatic unrelated dark theme. Simple CSS
+opacity/transform transitions provide short, snappy-gentle feedback and are disabled or flattened
+under `prefers-reduced-motion`.
+
+The shell becomes a deliberate product frame: a compact Locron identity and local-scheduler
+context, clear Jobs / Run history / Diagnostics navigation, a persistent daemon state, generous
+outer breathing room, and dense internal data rhythm. Page heads explain the view and keep one
+filled primary action per decision area. Tables, facts, forms, notices, chips, empty states, run
+segments, and the console share focus, hover, active, loading, disabled, error, and wrapping rules.
+At narrow widths navigation and actions wrap, tables remain reachable without clipping content,
+inputs stay touch-readable, and primary operations remain available. A skip link, meaningful
+landmarks, visible `:focus-visible`, current-page semantics, non-color state labels, and reduced
+motion are part of the implementation rather than a later audit.
+
+The entry page is the most expressive surface: it pairs the wordmark and privacy/local-first
+promise with the token form, but keeps the token flow direct and security copy factual.
+Authenticated views are quieter. Error, destructive, cancelled, quarantined, and interrupted
+states never use mascot jokes or celebratory motion.
+
+The refresh also closes behavior gaps found while reviewing the integrated branch:
+
+- Session bootstrap trusts a successful authenticated session-status response, not JavaScript
+  visibility of the `HttpOnly` session cookie. A reload with a valid session stays in the app; a
+  401 returns to the token entry.
+- Inline HTTP job bodies are serialized with the API's byte-array semantics, and the form offers
+  only methods the domain accepts. Create, edit, and dry-run share the same conversion.
+- Dashboard service templates preserve the selected state directory and carry an explicit hidden
+  service-mode argument. Bare `dashboard` and user-invoked `dashboard serve` are foreground even
+  with redirected stdin; registered service mode alone uses the fixed-port policy.
+- A bound server exposes the actual successful loopback address, so startup output uses
+  `127.0.0.1` when IPv4 is bound and `[::1]` when only IPv6 is bound instead of fabricating an IPv4
+  URL.
+- SSE attempt events use the viewer's documented `attempt_number` field. Output events also carry
+  the attempt number; the viewer deduplicates replayed output by attempt and sequence while
+  preserving genuinely new frames after EventSource reconnects.
+- Self-update treats a malformed successful dashboard-status envelope as a warning. It refreshes
+  only when `data.registered` is explicitly boolean `true`; an explicit `false` remains the sole
+  no-op result.
+
 ### Accepted: CLI composition and diagnostics
 
 - Command family: `locron dashboard` (foreground; identical to `dashboard serve`),
@@ -390,7 +449,7 @@ Implementation notes (step 9):
 - `serve` is a subcommand in the same position as `enable`/`disable`/`status`/`token`; omitting the
   subcommand (bare `locron dashboard`) is the default-serve form, implemented as an optional
   subcommand. The serve path binds first (so the chosen port is known), prints the access URL
-  (human line `Dashboard URL: http://127.0.0.1:<port>/` plus, on a fresh state directory, the
+  (human line `Dashboard URL: http://<actual-bound-loopback>:<port>/` plus, on a fresh state directory, the
   newly generated token; machine envelope with `access_url` and token facts — never the value),
   then runs the server until signal.
 - `dashboard token` is the explicit value surface: it ensures the token (generating it when the
@@ -427,6 +486,21 @@ Implementation notes (step 9):
 11. Full verification and evidence recording in `docs/TODO.md`, including the four-target CI
     matrix.
 
+## Brand refresh and behavior-correction change order (2026-08-24)
+
+1. Add the durable `DESIGN.md` guide and README link, using the verified research and existing
+   banner as the source of truth.
+2. Apply the visual system to the shared dashboard shell and every existing viewer component,
+   including entry, empty, error, responsive, keyboard, and reduced-motion states; add no runtime
+   dependency.
+3. Correct session reload, HTTP body/method, SSE schema/deduplication, actual bound URL, service
+   state-directory/mode, and self-update envelope behavior with focused regression coverage.
+4. Run formatting, lint, dependency direction, workspace tests, JavaScript syntax checks, and the
+   existing real fixture walk.
+5. Inspect the rendered entry and authenticated Jobs / Run history / Diagnostics surfaces at
+   desktop and narrow widths in a real browser, fix visible or interactive regressions, then leave
+   the fixture development server running for product review.
+
 ## Edge cases to handle explicitly
 
 - Default port occupied: foreground falls back and prints the chosen port; service mode exits and
@@ -440,6 +514,8 @@ Implementation notes (step 9):
   `X-CSRF-Token` stops it; bearer-token requests need no CSRF token.
 - Browser navigation after the session cookie expires or is cleared: entry page with a one-time
   paste (`dashboard token` re-displays the value).
+- Browser reload while the `HttpOnly` session cookie is valid: session status authenticates the
+  app without exposing or reading that cookie from JavaScript.
 - The daemon is offline: reads work, mutations commit durably, enqueue succeeds, doctor explains.
 - `enable --reset` invalidates outstanding session cookies and the old token; the service restart
   applies it.
@@ -452,6 +528,10 @@ Implementation notes (step 9):
 - brew-managed binaries: registration operations refuse with brew guidance; foreground serving
   stays allowed.
 - IPv6-only environments: one loopback family unboundable is a warning, not a failure.
+- EventSource reconnect after one or more output frames: replayed attempt/sequence pairs do not
+  duplicate console lines, while later attempts whose sequence restarts at zero still render.
+- Dashboard registration under an explicit state directory: the registered process and later
+  refresh use that directory rather than the default state root.
 - A quarantine-termination-unconfirmed run: the cancel route carries the same acknowledgement
   requirement and stable conflicts as the CLI.
 - Export/import through the API: same document validation, acknowledgement, and rollback rules; a
@@ -495,3 +575,12 @@ Implementation notes (step 9):
   DOM or JSON.
 - **Port evidence:** the 10824 IANA-unassigned verification and the 45123 rejection are already
   recorded in `docs/FINDINGS.md` §14; no further check is needed.
+- **Brand and accessibility checks:** `DESIGN.md` contains every accepted guide section and its
+  documented tokens agree with the CSS token layer; browser inspection covers visible focus,
+  current navigation, semantic state labels, long-content wrapping, keyboard paths, 200% zoom,
+  reduced motion, and representative desktop and narrow viewports.
+- **Refresh regressions:** browser reload remains authenticated through the `HttpOnly` session;
+  HTTP create/edit/dry-run accepts non-ASCII inline bodies as bytes and refuses unsupported
+  methods; SSE reconnect deduplicates attempt/sequence pairs; service templates retain state
+  directory and explicit service mode; IPv6-only binding prints an IPv6 URL; malformed self-update
+  status output produces a warning and no registration mutation.

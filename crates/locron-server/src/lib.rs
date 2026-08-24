@@ -80,6 +80,8 @@ pub struct AppState {
 pub struct BoundServer {
     /// The actually-bound port (after any fallback).
     pub port: u16,
+    /// One address that was actually bound, used for truthful startup output.
+    pub address: SocketAddr,
     /// Startup warnings (for example, one loopback family could not be bound).
     pub warnings: Vec<String>,
     listeners: Vec<TcpListener>,
@@ -108,9 +110,10 @@ pub async fn bind(config: &Config) -> io::Result<BoundServer> {
     let mut warnings = Vec::new();
     match config.port_policy {
         PortPolicy::Fixed => {
-            let (port, listeners) = bind_all(&addresses, preferred, &mut warnings).await?;
+            let (address, listeners) = bind_all(&addresses, preferred, &mut warnings).await?;
             Ok(BoundServer {
-                port,
+                port: address.port(),
+                address,
                 warnings,
                 listeners,
             })
@@ -119,21 +122,23 @@ pub async fn bind(config: &Config) -> io::Result<BoundServer> {
             let mut last_error = None;
             for port in preferred..preferred + 10 {
                 match bind_all(&addresses, port, &mut warnings).await {
-                    Ok(bound) => {
+                    Ok((address, listeners)) => {
                         return Ok(BoundServer {
-                            port: bound.0,
+                            port: address.port(),
+                            address,
                             warnings,
-                            listeners: bound.1,
+                            listeners,
                         });
                     }
                     Err(error) => last_error = Some(error),
                 }
             }
-            let (port, listeners) = bind_all(&addresses, 0, &mut warnings)
+            let (address, listeners) = bind_all(&addresses, 0, &mut warnings)
                 .await
                 .map_err(|error| last_error.unwrap_or(error))?;
             Ok(BoundServer {
-                port,
+                port: address.port(),
+                address,
                 warnings,
                 listeners,
             })
@@ -145,29 +150,37 @@ async fn bind_all(
     addresses: &[IpAddr],
     port: u16,
     warnings: &mut Vec<String>,
-) -> io::Result<(u16, Vec<TcpListener>)> {
+) -> io::Result<(SocketAddr, Vec<TcpListener>)> {
     let mut listeners = Vec::new();
     let mut failures = Vec::new();
     for address in addresses {
-        match TcpListener::bind(SocketAddr::new(*address, port)).await {
+        let candidate_port = if port == 0 {
+            listeners
+                .first()
+                .and_then(|listener: &TcpListener| listener.local_addr().ok())
+                .map_or(0, |local| local.port())
+        } else {
+            port
+        };
+        match TcpListener::bind(SocketAddr::new(*address, candidate_port)).await {
             Ok(listener) => listeners.push(listener),
-            Err(error) => failures.push((*address, error)),
+            Err(error) => failures.push((*address, candidate_port, error)),
         }
     }
     if listeners.is_empty() {
-        let (address, error) = failures
+        let (address, failed_port, error) = failures
             .into_iter()
             .next()
             .expect("at least one bind address was provided");
         return Err(io::Error::new(
             error.kind(),
-            format!("could not bind {address}:{port}: {error}"),
+            format!("could not bind {address}:{failed_port}: {error}"),
         ));
     }
-    for (address, error) in failures {
-        warnings.push(format!("could not bind {address}:{port}: {error}"));
+    for (address, failed_port, error) in failures {
+        warnings.push(format!("could not bind {address}:{failed_port}: {error}"));
     }
-    let bound = listeners[0].local_addr().map_or(port, |local| local.port());
+    let bound = listeners[0].local_addr()?;
     Ok((bound, listeners))
 }
 
@@ -581,8 +594,8 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK, "authenticated assets load");
         assert!(
-            String::from_utf8_lossy(&body).contains("Api.hasSession"),
-            "the app shell boots through the session cookie check"
+            String::from_utf8_lossy(&body).contains("data.authenticated === true"),
+            "the app shell boots from the authenticated session response"
         );
 
         // Wrong pasted token is rejected (401 from the handler, before any cookie is set).
@@ -719,5 +732,46 @@ mod tests {
         let bound = bind(&config).await.expect("bind");
         assert_eq!(bound.warnings.len(), 0);
         assert!(bound.port > 0);
+        assert_eq!(bound.address.port(), bound.port);
+        assert!(
+            bound.listeners.iter().all(|listener| {
+                listener
+                    .local_addr()
+                    .is_ok_and(|address| address.port() == bound.port)
+            }),
+            "all loopback listeners share the reported OS-assigned port"
+        );
+    }
+
+    #[tokio::test]
+    async fn bound_address_reports_ipv6_when_ipv4_is_unavailable() {
+        let held = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = held.local_addr().unwrap().port();
+        if std::net::TcpListener::bind((std::net::Ipv6Addr::LOCALHOST, port)).is_err() {
+            eprintln!("SKIPPED: IPv6 loopback is unavailable");
+            return;
+        }
+        let config = Config {
+            port: Some(port),
+            port_policy: PortPolicy::Fixed,
+            ..Config::default()
+        };
+        let bound = bind(&config).await.expect("IPv6 fallback bind");
+        assert_eq!(
+            bound.address,
+            SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, port))
+        );
+        assert_eq!(
+            format!("http://{}/", bound.address),
+            format!("http://[::1]:{port}/")
+        );
+        assert!(
+            bound
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("127.0.0.1")),
+            "the failed IPv4 bind remains visible: {:?}",
+            bound.warnings
+        );
     }
 }

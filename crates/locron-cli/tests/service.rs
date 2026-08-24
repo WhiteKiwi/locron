@@ -85,6 +85,8 @@ fn install_registers_and_starts_in_write_reload_probe_enable_start_order() {
         "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
     );
     let output = fake_command(&state, &log)
+        .arg("--state-dir")
+        .arg(tmp.path().join("locron-state"))
         .arg("service")
         .arg("install")
         .arg("--json")

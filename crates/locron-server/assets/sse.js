@@ -11,6 +11,7 @@ const RunStream = (() => {
     const listeners = {};
     for (const name of EVENT_NAMES) listeners[name] = [];
     let ended = false;
+    const seenOutput = new Set();
 
     for (const name of EVENT_NAMES) {
       source.addEventListener(name, (event) => {
@@ -19,6 +20,11 @@ const RunStream = (() => {
           data = JSON.parse(event.data);
         } catch {
           return;
+        }
+        if (name === "output") {
+          const key = `${data.attempt_number}:${data.seq}`;
+          if (seenOutput.has(key)) return;
+          seenOutput.add(key);
         }
         for (const listener of listeners[name]) listener(data);
         if (name === "termination") {

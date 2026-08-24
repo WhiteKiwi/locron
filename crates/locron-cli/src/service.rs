@@ -21,7 +21,7 @@ use std::env;
 use std::error::Error as StdError;
 use std::fmt;
 use std::fs::{self, OpenOptions};
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -131,14 +131,6 @@ impl Target {
         match self {
             Target::Daemon => DAEMON_LOG_FILE,
             Target::Dashboard => DASHBOARD_LOG_FILE,
-        }
-    }
-
-    /// The arguments the service executes the binary with.
-    fn arguments(self) -> &'static [&'static str] {
-        match self {
-            Target::Daemon => &["daemon", "run"],
-            Target::Dashboard => &["dashboard", "serve"],
         }
     }
 
@@ -668,8 +660,8 @@ Examples:
 Serves the web dashboard in the foreground: binds loopback only, prints the
 access URL, and serves until a signal. The bare 'locron dashboard' form is
 identical. An occupied default port falls back to the next free port when
-stdin is a terminal and fails in service contexts (launchd and systemd run
-the service with /dev/null stdin), where the fixed address must never move;
+run by the user and fails in the explicitly marked registered-service mode,
+where the fixed address must never move;
 an explicit --port is always strict. The --bind option accepts only the
 loopback addresses 127.0.0.1 and ::1; any other value is refused.
 
@@ -693,7 +685,11 @@ Navigation:
 #[derive(Clone, Copy, Subcommand, Debug)]
 pub(crate) enum DashboardCommand {
     #[command(about = "Run the dashboard server in the foreground", after_help = DASHBOARD_SERVE_HELP)]
-    Serve,
+    Serve {
+        /// Internal marker used only by the registered per-user service
+        #[arg(long, hide = true)]
+        service_mode: bool,
+    },
     #[command(about = "Register and start the dashboard as a per-user service", after_help = DASHBOARD_ENABLE_HELP)]
     Enable {
         /// Regenerate the access token, then refresh and restart the service
@@ -813,12 +809,11 @@ fn dashboard_status(
 }
 
 /// The port policy for foreground serving: an explicit `--port` is always
-/// strict; without one, an interactive terminal falls back to the next free
-/// port while a service context (launchd and systemd run the service with
-/// /dev/null stdin) keeps the fixed default so the bookmarked address never
-/// moves.
-fn port_policy(explicit_port: Option<u16>, interactive: bool) -> PortPolicy {
-    if explicit_port.is_some() || !interactive {
+/// strict; without one, a user invocation falls back to the next free port
+/// while the explicit registered-service mode keeps the fixed default so the
+/// bookmarked address never moves.
+fn port_policy(explicit_port: Option<u16>, service_mode: bool) -> PortPolicy {
+    if explicit_port.is_some() || service_mode {
         PortPolicy::Fixed
     } else {
         PortPolicy::Foreground
@@ -867,6 +862,7 @@ async fn foreground_serve(
     state_dir: Option<PathBuf>,
     port_arg: Option<u16>,
     bind_arg: Option<String>,
+    service_mode: bool,
     format: Format,
 ) -> Result<()> {
     let paths = serve_paths(state_dir)?;
@@ -874,7 +870,7 @@ async fn foreground_serve(
     let config = Config {
         bind,
         port: port_arg,
-        port_policy: port_policy(port_arg, std::io::stdin().is_terminal()),
+        port_policy: port_policy(port_arg, service_mode),
         token_file: locron_server::token::TOKEN_FILE_NAME.into(),
     };
     let bound = locron_server::bind(&config)
@@ -883,7 +879,7 @@ async fn foreground_serve(
     let generated = !locron_server::token::token_path(&paths).exists();
     let token = locron_server::token::ensure(&paths)
         .map_err(|error| ServiceError::Io(format!("cannot ensure the access token: {error}")))?;
-    let url = format!("http://127.0.0.1:{}/", bound.port);
+    let url = format!("http://{}/", bound.address);
     match format {
         Format::Human => {
             println!("Dashboard URL: {url}");
@@ -965,8 +961,9 @@ pub(crate) async fn execute_dashboard(
     format: Format,
 ) -> Result<()> {
     match command {
-        None | Some(DashboardCommand::Serve) => {
-            foreground_serve(state_dir, port_arg, bind_arg, format).await
+        None => foreground_serve(state_dir, port_arg, bind_arg, false, format).await,
+        Some(DashboardCommand::Serve { service_mode }) => {
+            foreground_serve(state_dir, port_arg, bind_arg, service_mode, format).await
         }
         Some(DashboardCommand::Token) => dashboard_token(state_dir, format).map_err(Into::into),
         Some(
@@ -1121,18 +1118,26 @@ fn escape_xml(text: &str) -> String {
 /// Render the LaunchAgent plist for the canonicalized binary and target (kept
 /// on all test builds so the plist template tests run everywhere).
 #[cfg(any(target_os = "macos", test))]
-fn render_plist(target: Target, executable: &Path, home: &Path) -> String {
-    let label = target.service_name();
-    let arguments = target.arguments();
-    let executable = escape_xml(&executable.display().to_string());
+fn render_plist(ctx: &ServiceContext) -> Result<String, ServiceError> {
+    let label = ctx.target.service_name();
+    let executable = escape_xml(&ctx.executable.display().to_string());
     let log = escape_xml(
-        &home
+        &ctx.home
             .join(LOG_DIR)
-            .join(target.log_file())
+            .join(ctx.target.log_file())
             .display()
             .to_string(),
     );
-    format!(
+    let arguments = match ctx.target {
+        Target::Daemon => "    <string>daemon</string>\n    <string>run</string>".to_owned(),
+        Target::Dashboard => {
+            let state_dir = escape_xml(&dashboard_paths(ctx)?.root.display().to_string());
+            format!(
+                "    <string>--state-dir</string>\n    <string>{state_dir}</string>\n    <string>dashboard</string>\n    <string>serve</string>\n    <string>--service-mode</string>"
+            )
+        }
+    };
+    Ok(format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -1142,8 +1147,7 @@ fn render_plist(target: Target, executable: &Path, home: &Path) -> String {
   <key>ProgramArguments</key>
   <array>
     <string>{executable}</string>
-    <string>{argument0}</string>
-    <string>{argument1}</string>
+{arguments}
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -1156,9 +1160,7 @@ fn render_plist(target: Target, executable: &Path, home: &Path) -> String {
 </dict>
 </plist>
 "#,
-        argument0 = arguments[0],
-        argument1 = arguments[1],
-    )
+    ))
 }
 
 /// Escape a path for use inside a double-quoted systemd `ExecStart` argument:
@@ -1181,27 +1183,31 @@ fn escape_systemd_path(path: &str) -> String {
 
 /// Render the systemd user unit for the canonicalized binary and target.
 #[cfg(any(target_os = "linux", test))]
-fn render_unit(target: Target, executable: &Path) -> String {
-    let arguments = target.arguments();
-    let executable = escape_systemd_path(&executable.display().to_string());
-    format!(
+fn render_unit(ctx: &ServiceContext) -> Result<String, ServiceError> {
+    let executable = escape_systemd_path(&ctx.executable.display().to_string());
+    let arguments = match ctx.target {
+        Target::Daemon => "daemon run".to_owned(),
+        Target::Dashboard => {
+            let state_dir = escape_systemd_path(&dashboard_paths(ctx)?.root.display().to_string());
+            format!("--state-dir \"{state_dir}\" dashboard serve --service-mode")
+        }
+    };
+    Ok(format!(
         r#"# Managed by 'locron service install' / 'locron dashboard enable'; remove with
 # 'locron service uninstall' / 'locron dashboard disable'.
 [Unit]
 Description={description}
 
 [Service]
-ExecStart="{executable}" {argument0} {argument1}
+ExecStart="{executable}" {arguments}
 Restart=on-failure
 RestartSec=1
 
 [Install]
 WantedBy=default.target
 "#,
-        description = target.description(),
-        argument0 = arguments[0],
-        argument1 = arguments[1],
-    )
+        description = ctx.target.description(),
+    ))
 }
 
 #[cfg(target_os = "macos")]
@@ -1304,7 +1310,7 @@ mod launchd {
                     log_directory.display()
                 ))
             })?;
-            let plist = render_plist(ctx.target, &ctx.executable, &ctx.home);
+            let plist = render_plist(ctx)?;
             write_private(&plist_path(ctx), plist.as_bytes())
         }
 
@@ -1476,7 +1482,7 @@ mod systemd {
             fs::create_dir_all(&directory).map_err(|error| {
                 ServiceError::Io(format!("cannot create {}: {error}", directory.display()))
             })?;
-            let unit = render_unit(ctx.target, &ctx.executable);
+            let unit = render_unit(ctx)?;
             write_private(&unit_path(ctx), unit.as_bytes())
         }
 
@@ -1789,7 +1795,8 @@ mod tests {
     fn plist_template_renders_required_keys_and_paths() {
         let executable = Path::new("/opt/locron/bin/locron");
         let home = Path::new("/Users/tester");
-        let plist = render_plist(Target::Daemon, executable, home);
+        let ctx = ctx_with_target(home, executable, Target::Daemon);
+        let plist = render_plist(&ctx).unwrap();
         assert!(plist.contains("<string>dev.locron.daemon</string>"));
         assert!(plist.contains("<string>/opt/locron/bin/locron</string>"));
         assert!(plist.contains("<string>daemon</string>"));
@@ -1809,11 +1816,15 @@ mod tests {
     fn dashboard_plist_template_uses_dashboard_label_args_and_log() {
         let executable = Path::new("/opt/locron/bin/locron");
         let home = Path::new("/Users/tester");
-        let plist = render_plist(Target::Dashboard, executable, home);
+        let ctx = ctx_with_target(home, executable, Target::Dashboard);
+        let plist = render_plist(&ctx).unwrap();
         assert!(plist.contains("<string>dev.locron.dashboard</string>"));
         assert!(plist.contains("<string>/opt/locron/bin/locron</string>"));
         assert!(plist.contains("<string>dashboard</string>"));
         assert!(plist.contains("<string>serve</string>"));
+        assert!(plist.contains("<string>--service-mode</string>"));
+        assert!(plist.contains("<string>--state-dir</string>"));
+        assert!(plist.contains("<string>/Users/tester/state</string>"));
         assert!(!plist.contains("dev.locron.daemon"));
         assert!(!plist.contains("<string>daemon</string>\n    <string>run</string>"));
         let log = format!(
@@ -1827,7 +1838,8 @@ mod tests {
     fn plist_template_xml_escapes_special_paths() {
         let executable = Path::new("/tmp/a&b <c>/locron");
         let home = Path::new("/Users/te'ster");
-        let plist = render_plist(Target::Daemon, executable, home);
+        let ctx = ctx_with_target(home, executable, Target::Daemon);
+        let plist = render_plist(&ctx).unwrap();
         assert!(plist.contains("/tmp/a&amp;b &lt;c&gt;/locron"));
         assert!(plist.contains("te&apos;ster"));
         assert!(!plist.contains("/tmp/a&b"));
@@ -1836,7 +1848,12 @@ mod tests {
 
     #[test]
     fn unit_template_renders_required_keys_and_paths() {
-        let unit = render_unit(Target::Daemon, Path::new("/opt/locron/bin/locron"));
+        let ctx = ctx_with_target(
+            Path::new("/home/tester"),
+            Path::new("/opt/locron/bin/locron"),
+            Target::Daemon,
+        );
+        let unit = render_unit(&ctx).unwrap();
         assert!(unit.contains("[Unit]"));
         assert!(unit.contains("[Service]"));
         assert!(unit.contains("[Install]"));
@@ -1848,16 +1865,28 @@ mod tests {
 
     #[test]
     fn dashboard_unit_template_uses_dashboard_description_and_args() {
-        let unit = render_unit(Target::Dashboard, Path::new("/opt/locron/bin/locron"));
+        let ctx = ctx_with_target(
+            Path::new("/home/tester"),
+            Path::new("/opt/locron/bin/locron"),
+            Target::Dashboard,
+        );
+        let unit = render_unit(&ctx).unwrap();
         assert!(unit.contains("Description=locron web dashboard"));
-        assert!(unit.contains("ExecStart=\"/opt/locron/bin/locron\" dashboard serve"));
+        assert!(unit.contains(
+            "ExecStart=\"/opt/locron/bin/locron\" --state-dir \"/home/tester/state\" dashboard serve --service-mode"
+        ));
         assert!(!unit.contains("daemon run"));
         assert!(!unit.contains("locron scheduler daemon"));
     }
 
     #[test]
     fn unit_template_escapes_systemd_specials() {
-        let unit = render_unit(Target::Daemon, Path::new("/tmp/a\"b $c/locron"));
+        let ctx = ctx_with_target(
+            Path::new("/home/tester"),
+            Path::new("/tmp/a\"b $c/locron"),
+            Target::Daemon,
+        );
+        let unit = render_unit(&ctx).unwrap();
         assert!(unit.contains("ExecStart=\"/tmp/a\\\"b \\$c/locron\" daemon run"));
     }
 

@@ -125,7 +125,7 @@ struct ReleaseAsset {
 }
 
 /// Resolve the latest release and replace the running binary when it is newer.
-pub(crate) async fn update() -> Result<UpdateOutcome> {
+pub(crate) async fn update(state_dir: &Path) -> Result<UpdateOutcome> {
     let current_version = env!("CARGO_PKG_VERSION");
     let target = detect_target()?;
     refuse_managed_install()?;
@@ -189,7 +189,7 @@ pub(crate) async fn update() -> Result<UpdateOutcome> {
     // registered dashboard service is refreshed the same way, using the same
     // pre-replace canonical-path capture.
     let mut warnings = register_service(&executable);
-    warnings.extend(register_dashboard(&executable));
+    warnings.extend(register_dashboard(&executable, state_dir));
 
     Ok(UpdateOutcome {
         current_version: current_version.to_owned(),
@@ -234,9 +234,11 @@ fn register_service(executable: &Path) -> Vec<String> {
 /// idempotent register/refresh/start flow) exactly when one exists. The child
 /// inherits this process's environment; its output is captured so the update
 /// envelope stays clean. Failures are returned as warnings, never as errors.
-fn register_dashboard(executable: &Path) -> Vec<String> {
+fn register_dashboard(executable: &Path, state_dir: &Path) -> Vec<String> {
     let status_output = match Command::new(executable)
-        .args(["dashboard", "status", "--json"])
+        .args(["dashboard", "status", "--state-dir"])
+        .arg(state_dir)
+        .arg("--json")
         .output()
     {
         Ok(output) => output,
@@ -261,12 +263,25 @@ fn register_dashboard(executable: &Path) -> Vec<String> {
             )];
         }
     };
-    if envelope["data"]["registered"] != true {
-        // The dashboard was never enabled; nothing to refresh.
-        return Vec::new();
+    match envelope
+        .pointer("/data/registered")
+        .and_then(Value::as_bool)
+    {
+        Some(true) => {}
+        Some(false) => {
+            // The dashboard was never enabled; nothing to refresh.
+            return Vec::new();
+        }
+        None => {
+            return vec![
+                "could not read 'locron dashboard status' after update: data.registered must be a boolean; the dashboard service was not changed"
+                    .to_owned(),
+            ];
+        }
     }
     let output = match Command::new(executable)
-        .args(["dashboard", "enable"])
+        .args(["dashboard", "enable", "--state-dir"])
+        .arg(state_dir)
         .output()
     {
         Ok(output) => output,

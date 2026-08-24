@@ -182,6 +182,21 @@ fn create_body(name: &str, definition: &Value) -> Value {
     json!({"name": name, "description": "contract fixture", "tags": [], "enabled": true, "definition": definition})
 }
 
+fn http_definition(method: &str, body: &[u8]) -> Value {
+    let mut definition = definition("/bin/echo", false, false, false);
+    definition["target"] = json!({
+        "kind": "http",
+        "method": method,
+        "url": "https://example.test/hook",
+        "headers": {},
+        "body": body,
+        "body_file": null,
+        "success_statuses": [200],
+        "follow_redirects": true
+    });
+    definition
+}
+
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
@@ -332,6 +347,86 @@ async fn job_crud_round_trip() {
     let (status, body) = server.get("/api/v1/jobs/beta").await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     assert_eq!(error(&body, "not_found"), "beta");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_body_bytes_round_trip_through_create_update_and_dry_run() {
+    let server = spawn_server();
+    let first = "안녕 Locron".as_bytes();
+    let (status, body) = server
+        .post(
+            "/api/v1/jobs",
+            Some(create_body("webhook", &http_definition("POST", first))),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let id = data(&body)["id"].as_str().expect("id").to_owned();
+    let document = server
+        .export_document("?include-values=1&acknowledge-plaintext=1")
+        .await;
+    assert_eq!(
+        document["jobs"][0]["definition"]["target"]["body"],
+        json!(first)
+    );
+
+    let second = "수정된 본문".as_bytes();
+    let (status, body) = server
+        .put(
+            &format!("/api/v1/jobs/{id}"),
+            Some(json!({"definition": http_definition("PATCH", second)})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let document = server
+        .export_document("?include-values=1&acknowledge-plaintext=1")
+        .await;
+    assert_eq!(
+        document["jobs"][0]["definition"]["target"]["body"],
+        json!(second)
+    );
+
+    let dry_run = "저장하지 않음".as_bytes();
+    let (status, body) = server
+        .put(
+            &format!("/api/v1/jobs/{id}"),
+            Some(json!({
+                "definition": http_definition("PUT", dry_run),
+                "dry_run": "1"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["dry_run"], json!(true));
+    let document = server
+        .export_document("?include-values=1&acknowledge-plaintext=1")
+        .await;
+    assert_eq!(
+        document["jobs"][0]["definition"]["target"]["body"],
+        json!(second)
+    );
+
+    let response = server
+        .client
+        .post(format!("{}/api/v1/jobs", server.base))
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("token {}", server.token),
+        )
+        .json(&create_body(
+            "unsupported",
+            &http_definition("OPTIONS", b"body"),
+        ))
+        .send()
+        .await
+        .expect("unsupported method request");
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        response
+            .text()
+            .await
+            .expect("error text")
+            .contains("unknown variant `OPTIONS`")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1651,7 +1746,12 @@ async fn sse_stream_live_run_events() {
     let attempts: Vec<Value> = events
         .iter()
         .filter(|event| event.name == "attempt")
-        .map(|event| json!([event.data["attempt"].as_i64(), event.data["state"].as_str()]))
+        .map(|event| {
+            json!([
+                event.data["attempt_number"].as_i64(),
+                event.data["state"].as_str()
+            ])
+        })
         .collect();
     assert_eq!(
         Value::Array(attempts),
@@ -1665,6 +1765,7 @@ async fn sse_stream_live_run_events() {
         .map(|event| &event.data)
         .collect();
     assert_eq!(outputs.len(), 2);
+    assert_eq!(outputs[0]["attempt_number"], json!(1));
     assert_eq!(outputs[0]["channel"], json!("stdout"));
     assert_eq!(outputs[0]["seq"], json!(0));
     assert_eq!(outputs[0]["elapsed_us"], json!(100));
@@ -1704,7 +1805,22 @@ async fn sse_stream_reconnect_idempotent() {
     let (_, body) = server.post(&format!("/api/v1/jobs/{id}/run"), None).await;
     let run_id = data(&body)["run_id"].as_str().expect("run_id").to_owned();
 
-    // Terminal fixture: a finalized output artifact and an immediate cancel.
+    // Terminal fixture: one admitted and successfully completed attempt with
+    // a finalized output artifact.
+    let store = locron_store::Store::open(
+        server.paths.clone(),
+        env!("CARGO_PKG_VERSION"),
+        test_now_us(),
+    )
+    .expect("test store");
+    let lifetime = uuid::Uuid::now_v7().to_string();
+    store
+        .begin_lifetime(&lifetime, test_now_us(), env!("CARGO_PKG_VERSION"))
+        .expect("lifetime");
+    let admission = store
+        .admit(&lifetime, test_now_us(), 64)
+        .expect("admission");
+    assert_eq!(admission.attempts[0].attempt_number, 1);
     let output_dir = server.paths.outputs.join(&run_id);
     std::fs::create_dir_all(&output_dir).expect("output dir");
     let mut writer = FrameWriter::create(&output_dir.join("1.log")).expect("create");
@@ -1712,11 +1828,20 @@ async fn sse_stream_reconnect_idempotent() {
         .write(FrameChannel::Stdout, 42, b"final")
         .expect("frame");
     drop(writer);
-    let (status, body) = server
-        .post(&format!("/api/v1/runs/{run_id}/cancel"), None)
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(data(&body)["cancelled"], json!(true));
+    store
+        .complete_attempt(&locron_store::AttemptCompletion {
+            run_id: run_id.clone(),
+            attempt_number: 1,
+            now_us: test_now_us(),
+            duration_us: 42,
+            state: "succeeded".to_owned(),
+            exit_code: Some(0),
+            http_status: None,
+            http_content_type: None,
+            reason: "completed by fixture".to_owned(),
+            retry: None,
+        })
+        .expect("complete attempt");
 
     // Each connect is idempotent: the catch-up run event, the retained
     // frames, and exactly one terminal event.
@@ -1734,18 +1859,117 @@ async fn sse_stream_reconnect_idempotent() {
         let events = read_sse(response, None, Duration::from_secs(5)).await;
         assert_eq!(
             event_names(&events),
-            ["run", "output", "termination"],
+            ["run", "attempt", "output", "termination"],
             "events: {events:?}"
         );
-        assert_eq!(events[0].data["state"], json!("cancelled"));
-        assert_eq!(events[1].data["seq"], json!(0));
-        assert_eq!(events[1].data["data_b64"], json!("ZmluYWw="));
-        assert_eq!(events[2].data["state"], json!("cancelled"));
-        assert_eq!(
-            events[2].data["reason"],
-            json!("cancelled by user before execution")
-        );
+        assert_eq!(events[0].data["state"], json!("succeeded"));
+        assert_eq!(events[1].data["attempt_number"], json!(1));
+        assert_eq!(events[2].data["seq"], json!(0));
+        assert_eq!(events[2].data["attempt_number"], json!(1));
+        assert_eq!(events[2].data["data_b64"], json!("ZmluYWw="));
+        assert_eq!(events[3].data["state"], json!("succeeded"));
+        assert_eq!(events[3].data["reason"], json!("completed by fixture"));
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sse_output_keys_sequence_by_attempt() {
+    let server = spawn_server();
+    let (_, body) = server
+        .post(
+            "/api/v1/jobs",
+            Some(create_body(
+                "retrying",
+                &definition("/bin/echo", false, false, false),
+            )),
+        )
+        .await;
+    let id = data(&body)["id"].as_str().expect("id").to_owned();
+    let (_, body) = server.post(&format!("/api/v1/jobs/{id}/run"), None).await;
+    let run_id = data(&body)["run_id"].as_str().expect("run_id").to_owned();
+    let store = locron_store::Store::open(
+        server.paths.clone(),
+        env!("CARGO_PKG_VERSION"),
+        test_now_us(),
+    )
+    .expect("test store");
+    let lifetime = uuid::Uuid::now_v7().to_string();
+    let now = test_now_us();
+    store
+        .begin_lifetime(&lifetime, now, env!("CARGO_PKG_VERSION"))
+        .expect("lifetime");
+    let first = store.admit(&lifetime, now, 64).expect("first admission");
+    assert_eq!(first.attempts[0].attempt_number, 1);
+    let output_dir = server.paths.outputs.join(&run_id);
+    std::fs::create_dir_all(&output_dir).expect("output dir");
+    let mut first_output = FrameWriter::create(&output_dir.join("1.log")).expect("first output");
+    first_output
+        .write(FrameChannel::Stdout, 10, b"first")
+        .expect("first frame");
+    drop(first_output);
+    store
+        .complete_attempt(&locron_store::AttemptCompletion {
+            run_id: run_id.clone(),
+            attempt_number: 1,
+            now_us: now + 1,
+            duration_us: 1,
+            state: "failed".to_owned(),
+            exit_code: Some(1),
+            http_status: None,
+            http_content_type: None,
+            reason: "retry fixture".to_owned(),
+            retry: Some(locron_store::RetryPlan {
+                not_before_us: now + 2,
+                classification: "process_exit".to_owned(),
+            }),
+        })
+        .expect("retry completion");
+    let second = store
+        .admit(&lifetime, now + 2, 64)
+        .expect("second admission");
+    assert_eq!(second.attempts[0].attempt_number, 2);
+    let mut second_output = FrameWriter::create(&output_dir.join("2.log")).expect("second output");
+    second_output
+        .write(FrameChannel::Stdout, 20, b"second")
+        .expect("second frame");
+    drop(second_output);
+    store
+        .complete_attempt(&locron_store::AttemptCompletion {
+            run_id: run_id.clone(),
+            attempt_number: 2,
+            now_us: now + 3,
+            duration_us: 1,
+            state: "succeeded".to_owned(),
+            exit_code: Some(0),
+            http_status: None,
+            http_content_type: None,
+            reason: "retry succeeded".to_owned(),
+            retry: None,
+        })
+        .expect("terminal completion");
+
+    let response = server
+        .client
+        .get(format!("{}/api/v1/runs/{run_id}/stream", server.base))
+        .header(
+            reqwest::header::AUTHORIZATION,
+            format!("token {}", server.token),
+        )
+        .send()
+        .await
+        .expect("stream request");
+    let events = read_sse(response, None, Duration::from_secs(5)).await;
+    let output_keys = events
+        .iter()
+        .filter(|event| event.name == "output")
+        .map(|event| {
+            json!([
+                event.data["attempt_number"].as_i64(),
+                event.data["seq"].as_u64()
+            ])
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(output_keys, [json!([1, 0]), json!([2, 0])]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
