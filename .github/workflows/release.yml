@@ -79,7 +79,7 @@ jobs:
       - name: Generate Checksums
         working-directory: artifacts
         run: |
-          sha256sum *.* > SHA256SUMS.txt
+          sha256sum ./*.* > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - name: Extract Release Notes
         run: |
@@ -133,71 +133,21 @@ jobs:
           TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          ARM64_MACOS_SHA=$(sha256sum artifacts/locron-${GITHUB_REF_NAME}-aarch64-apple-darwin.tar.gz | awk '{print $1}')
-          X86_MACOS_SHA=$(sha256sum artifacts/locron-${GITHUB_REF_NAME}-x86_64-apple-darwin.tar.gz | awk '{print $1}')
-          ARM64_LINUX_SHA=$(sha256sum artifacts/locron-${GITHUB_REF_NAME}-aarch64-unknown-linux-gnu.tar.gz | awk '{print $1}')
-          X86_LINUX_SHA=$(sha256sum artifacts/locron-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz | awk '{print $1}')
+          ARM64_MACOS_SHA=$(sha256sum "artifacts/locron-${GITHUB_REF_NAME}-aarch64-apple-darwin.tar.gz" | awk '{print $1}')
+          X86_MACOS_SHA=$(sha256sum "artifacts/locron-${GITHUB_REF_NAME}-x86_64-apple-darwin.tar.gz" | awk '{print $1}')
+          ARM64_LINUX_SHA=$(sha256sum "artifacts/locron-${GITHUB_REF_NAME}-aarch64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
+          X86_LINUX_SHA=$(sha256sum "artifacts/locron-${GITHUB_REF_NAME}-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')
 
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/WhiteKiwi/homebrew-tap.git" tap-repo
           cd tap-repo
 
-          cat <<EOF > Formula/locron.rb
-          class Locron < Formula
-            desc "Local-first job scheduler for macOS and Linux"
-            homepage "https://github.com/WhiteKiwi/locron"
-            version "${VERSION}"
-            license any_of: ["MIT", "Apache-2.0"]
-
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/WhiteKiwi/locron/releases/download/v#{version}/locron-v#{version}-aarch64-apple-darwin.tar.gz"
-                sha256 "${ARM64_MACOS_SHA}"
-              else
-                url "https://github.com/WhiteKiwi/locron/releases/download/v#{version}/locron-v#{version}-x86_64-apple-darwin.tar.gz"
-                sha256 "${X86_MACOS_SHA}"
-              end
-            end
-
-            on_linux do
-              if Hardware::CPU.arm?
-                url "https://github.com/WhiteKiwi/locron/releases/download/v#{version}/locron-v#{version}-aarch64-unknown-linux-gnu.tar.gz"
-                sha256 "${ARM64_LINUX_SHA}"
-              else
-                url "https://github.com/WhiteKiwi/locron/releases/download/v#{version}/locron-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
-                sha256 "${X86_LINUX_SHA}"
-              end
-            end
-
-            def install
-              bin.install "locron"
-              # Mark this install as package-manager-managed so that
-              # \`locron self-update\` refuses to replace the binary and
-              # directs users to \`brew upgrade locron\`.
-              lib.mkpath
-              FileUtils.touch lib/".disable-self-update"
-            end
-
-            service do
-              run [opt_bin/"locron", "daemon", "run"]
-              keep_alive true
-              run_at_load false
-            end
-
-            def caveats
-              <<~EOS
-                Start the locron daemon with:
-                  brew services start locron
-                Installation never starts it automatically, and \`brew upgrade\`
-                leaves a running service on the old version; run
-                \`brew services restart locron\` after an upgrade.
-              EOS
-            end
-
-            test do
-              assert_match "locron", shell_output("#{bin}/locron --version")
-            end
-          end
-          EOF
+          sh "${GITHUB_WORKSPACE}/scripts/render-homebrew-formula.sh" \
+            "${VERSION}" \
+            "${ARM64_MACOS_SHA}" \
+            "${X86_MACOS_SHA}" \
+            "${ARM64_LINUX_SHA}" \
+            "${X86_LINUX_SHA}" \
+            > Formula/locron.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

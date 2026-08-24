@@ -38,11 +38,32 @@ jobs:
         run: |
           uname -a
           rustc -vV
+      - run: cargo test --workspace --all-targets
+
+  lint:
+    name: Lint / ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: ["1.94.0", stable]
+        runner:
+          - platform: linux-x86_64
+            os: ubuntu-24.04
+          - platform: macos-aarch64
+            os: macos-14
+    runs-on: ${{ matrix.runner.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Dependency direction
-        run: sh scripts/check-dependency-direction.sh
-      - run: cargo test --workspace --all-targets
+        run: bash scripts/check-dependency-direction.sh
 
   installer:
     name: Installer / ubuntu-latest
@@ -50,24 +71,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Shellcheck install.sh
+      - name: Shellcheck installer and release scripts
         run: |
           sudo apt-get install -y shellcheck
-          shellcheck install.sh
+          shellcheck install.sh scripts/render-homebrew-formula.sh scripts/test-render-homebrew-formula.sh
       - name: Shellcheck usage.sh
         run: |
           shellcheck scripts/usage.sh
-      - name: Usage snapshot smoke (live APIs)
-        run: |
-          set -eu
-          # GITHUB_TOKEN raises the REST quota, but it lacks the push/admin
-          # access the owner-only /traffic/* endpoints require, so a failure
-          # confined to the traffic section is expected and permitted.
-          sh scripts/usage.sh --json > usage-snapshot.json || code=$?
-          jq -e 'all(.. | numbers; . >= 0 and (. % 1) == 0)' usage-snapshot.json
-          if [ "${code:-0}" -ne 0 ]; then
-            jq -e 'has("traffic_error") and ([keys[] | select(endswith("_error"))] | all(. == "traffic_error"))' usage-snapshot.json
-          fi
+      - name: Test Homebrew formula rendering
+        run: sh scripts/test-render-homebrew-formula.sh
       - name: Refuse unsupported platforms and musl
         run: |
           set -eu

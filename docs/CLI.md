@@ -24,11 +24,11 @@ The first binary exposes these top-level commands:
 ```text
 locron add NAME <schedule> <target> [policy options]
 locron update NAME [job changes]
-locron list [--all]
+locron list|ls [--all] [--no-trunc]
 locron show NAME
 locron enable NAME
 locron disable NAME
-locron remove NAME
+locron remove|rm NAME
 locron preview <schedule-or-name> [--count N]
 locron run NAME [--wait] [--dry-run]
 locron cancel RUN_ID [--acknowledge-unconfirmed]
@@ -36,11 +36,12 @@ locron history [NAME] [--limit N]
 locron logs RUN_ID [--attempt N] [--follow] [--channel all|stdout|stderr|body]
 locron why NAME
 locron why --run RUN_ID
+locron explain NAME_OR_ID
 locron config get [KEY]
 locron config set KEY VALUE [--dry-run]
 locron config unset KEY [--dry-run]
-locron export [--include-values --acknowledge-plaintext] [--include-history]
-locron import PATH [--accept-plaintext-values] [--dry-run]
+locron export [--jobs NAME[,NAME...]] [--tag TAG[,TAG...]] [--include-values --acknowledge-plaintext] [--include-history]
+locron import PATH|URL [--accept-plaintext-values] [--dry-run]
 locron prune [--dry-run]
 locron doctor
 locron daemon run
@@ -52,6 +53,10 @@ locron dashboard status
 locron dashboard token
 locron self-update
 ```
+
+A visible alias is accepted for `list` (`ls`) and `remove` (`rm`). An alias is the same command in every respect: it accepts the identical options and arguments and renders identical human and machine output. The `command` field of the `locron.cli/v1` envelope always reports the canonical name (`list`, `remove`), and usage and help render the canonical name with the alias shown for discovery. Aliases are a keyboard convenience; they do not add a semantic surface.
+
+Human `list` output is a docker-style aligned table on stdout: a header line (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned row per live job, sorted by name. `--all` includes disabled jobs, and their `ENABLED` value distinguishes them. The header prints even when no job exists, matching `docker ps` with zero containers. Schedule summaries render as `cron 'EXPR'`, `every DUR`, or `at RFC3339`; target summaries as `run EXE [ARGS...]`, `shell CMD`, or `http METHOD URL`; enabled state as `yes` or `no`. When standard output is a terminal and the table would exceed the terminal width, the `TARGET` column — the table's final data column — is truncated to fit and marked with a trailing `…`; `NAME` and `SCHEDULE` always print in full. Truncation follows character display width (East Asian wide characters count as two columns). When standard output is redirected or piped, values print in full as before. `--no-trunc` prints full `TARGET` values on a terminal; the flag is accepted with machine output and has no effect there. Machine output is unchanged.
 
 Job references accept an exact live name or canonical UUID. Run references are canonical UUIDs. Human output may abbreviate an ID only in decorative tables; copyable output always includes the full ID.
 
@@ -347,7 +352,79 @@ before the API reports success, and it sends the same best-effort wake hint.
 
 `why --run RUN_ID` reports the immutable trigger and nominal time, state transitions, attempt outcomes, retry decisions, cancellation/replacement/supersession facts, termination-unconfirmed acknowledgement, output truncation/pruning facts, and terminal reason. Unknown facts are stated as unknown rather than inferred.
 
+`explain NAME_OR_ID` is the consolidated, live-job summary. It reports the job's canonical identity,
+enabled state, revision, normalized schedule summary and timezone, next occurrence, current
+eligibility posture, overlap decision, active-run count, global concurrency limit, and daemon
+availability. It then reports the most recent run of any state and the most recent anomalous
+terminal run, ordered by durable `requested_at_us` and canonical run identity. An anomaly is a
+terminal state other than `succeeded`: `failed`,
+`timed_out`, `cancelled`, `skipped_overlap`, `skipped_concurrency`, or `interrupted_unknown`.
+
+Each reported run carries its full canonical run ID, trigger, nominal time, request time, current or
+final state, actual start, finish, duration, and durable reason. The latest run and latest anomaly
+may be the same run. `none` is printed when there is no run history, no anomaly history, a manual run
+has no nominal time, or a disabled job has no next occurrence. An execution timing or reason that is
+not yet known prints `unknown`; machine output uses `null` for either kind. A disabled job has no
+next occurrence and an eligibility value of `disabled`; an enabled job reports
+`subject_to_admission`, because the summary does not reserve or fully simulate current global and
+per-job capacity. The separate overlap decision is `no_active_run`, `would_skip_overlap`,
+`would_replace`, or `eligible_subject_to_capacity`. The reported global concurrency value is the
+configured limit, not current usage. Daemon availability is a separate fact and does not rewrite
+the scheduler eligibility posture. A removed job is not explainable through this live-job command;
+its retained runs remain available through `history` and `why --run RUN_ID`. If a removed name is
+reused, `explain` resolves only the new live identity and its history.
+
+Machine output uses the ordinary `locron.cli/v1` envelope with `command: "explain"`. Its `data`
+object has `job`, `schedule`, `current_status`, `latest_run`, and `latest_anomaly` objects matching
+the human sections. The two run values are nullable. This summary intentionally omits immutable
+snapshots, attempts, and events; the canonical run ID is the handoff to `why --run` for that detail.
+It does not infer sleep, suspend, or another unrecorded cause.
+
 Verbose and debug output never replaces `why`: verbosity explains what the current command is doing, while `why` explains durable scheduler decisions. Diagnostics go to stderr. Secrets and configured values remain redacted at every level.
+
+## Human rendering
+
+Human output renders the same facts as machine output in readable forms; machine output is the compatibility surface. The following contract applies to the human format only.
+
+- `list` — the table documented in Command families (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`).
+- `history` — an aligned table with the header always printed and one row per run, newest first:
+  `TIME | JOB | TRIGGER | STATE | DURATION`. `TIME` is RFC 3339 UTC; `DURATION` renders in the
+  largest whole human unit; the run ID may be abbreviated in the table only.
+- `show NAME` — labeled sections `JOB` (name, id, enabled, tags, revision), `SCHEDULE`,
+  `TARGET`, and `POLICIES` (overlap, missed-run, deadline, retries, timeout, concurrency), one
+  field per line.
+- `add` / `update` — `job added: NAME (ID)` / `job updated: NAME (ID, revision N)` followed by
+  the schedule and target summary lines in the form `list` uses.
+- `enable` / `disable` — `job enabled: NAME` / `job disabled: NAME`.
+- `remove` — `job removed: NAME`.
+- `run` — `run queued: RUN_ID (job NAME)`; `--wait` follows with the streamed output and ends in
+  a terminal outcome line; `--dry-run` prints the admission decision and states that no run was
+  created.
+- `cancel` — `cancellation requested: RUN_ID`, or the acknowledged-unconfirmed resolution line
+  for a quarantined run.
+- `preview` — a first line naming the schedule, then one RFC 3339 occurrence per line.
+- `why NAME` — sections `JOB`, `SCHEDULE`, `ELIGIBILITY`, `POLICIES`, `DAEMON`; `why --run ID` —
+  sections `RUN`, `ATTEMPTS`, and a terminal-reason section. One field per line; unknown facts
+  state `unknown`.
+- `explain NAME_OR_ID` — sections `JOB`, `SCHEDULE`, `CURRENT STATUS`, `LATEST RUN`, and
+  `LATEST ANOMALY`. The last two sections use the same run-summary field order; an absent record is
+  written as `none` rather than omitted. A manual run's non-applicable nominal time is also `none`;
+  a start, finish, duration, or reason that is not yet known is `unknown`. Human eligibility renders
+  as `disabled` or `subject to admission`; overlap decisions render as `no active run`, `would skip
+  (overlap policy)`, `would replace`, or `eligible subject to capacity`. The corresponding machine
+  values remain stable lowercase snake-case codes.
+- `doctor` — one line per check: `ok   …`, `warn …`, or `fail …` carrying the check name and the
+  fact or path it verified.
+- `config get` — `KEY=VALUE` per configured key, sensitive keys redacted as documented.
+  `config set` / `config unset` — `KEY: <action>` lines per the documented environment forms.
+- `import` — `created N, updated N, unchanged N` plus per-job action lines; dry run states the
+  simulation. `prune` — `pruned: N runs, M outputs (X bytes)`; dry run states what would be
+  pruned.
+- `export` — the bare export document (existing). `logs`, `service`, `self-update`, `version`,
+  `daemon run`, and `mcp` keep their existing human forms.
+
+No human form prints an escaped JSON string, nested object, or array, and every form obeys the
+redaction rules at every verbosity level.
 
 ## Machine output
 
@@ -375,6 +452,19 @@ the required single `locron.cli/v1` envelope and places that document in `data`.
 history are not included in this tranche. `--include-history` is rejected explicitly rather than
 claiming an incomplete backup.
 
+Without `--jobs` or `--tag`, export follows the invocation context. In an interactive terminal —
+standard input, standard output, and standard error are all terminals, the `CI` environment
+variable is unset, and the format is human — export shows a selection interface on standard error
+listing every job,
+initially all selected; confirming the initial selection exports the complete job set. In every
+other context (pipe, redirection, no terminal, `CI` set, or JSON mode) export skips the interface
+and exports every job. `--jobs` and `--tag` select by exact job name and exact tag, combine as a
+union, deduplicate by job identity, and never show a selection interface in any context; a selector
+value matching no job is a validation error before any output is produced.
+
+The selection interface never writes to standard output: in every mode standard output carries only
+the export document, so redirection and the single-result machine-readable contract are unchanged.
+
 Default exports use `values_mode: "redacted"`. Global and job inline environment values, inline HTTP
 header values, and inline/JSON bodies are removed, never replaced with a literal sentinel. The
 document carries a sorted `omitted_values` JSON Pointer list for omitted global settings, including
@@ -387,6 +477,15 @@ Plaintext export is deliberately non-interactive and requires both `--include-va
 `--accept-plaintext-values`. These acknowledgements apply equally to global environment values and
 job values and are required for a faithful round trip. Without them, no command accepts or emits a
 plaintext export containing either kind of value.
+
+Import accepts a local path or an absolute HTTP or HTTPS URL; the document is validated and applied
+identically regardless of source. A URL is fetched with mandatory TLS certificate verification, a
+bounded redirect and size limit, and a total timeout; fetch failures map to the unexpected
+I/O/protocol error category with retry guidance, and document validation failures keep their
+existing categories. Import never prompts; dry-run reports the exact actions without writing. An
+export document registers executable schedules: importing from a URL carries the same trust
+boundary as installing a script obtained from that URL, and first-time imports should be reviewed
+with `--dry-run`.
 
 Import accepts a bare `locron.export/v1` document, validates and normalizes the entire document
 before opening a write transaction, and then applies settings and jobs atomically. Duplicate source

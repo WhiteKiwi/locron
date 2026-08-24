@@ -8,11 +8,15 @@ mod service;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt::Write as _;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use futures_util::StreamExt;
+use url::Url;
 
 use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
@@ -35,10 +39,10 @@ use locron_engine::{
     AttemptContext, Daemon, DaemonConfig, HttpSpec, OutputWriter, ProcessSpec, Runner, TargetSpec,
 };
 use locron_store::{
-    AdmitAttempt, AttemptCompletion, CancelOutcome, CreateJob, CursorUpdate, ImportBatch,
-    ImportJob, ImportResolution, JobRecord, LockMetadata, NewScheduledRun, OutputRecord,
-    ReconciliationSummary, RetryPlan, RunRecord, SettingsRecord, StatePaths, Store, StoreError,
-    UpdateJob,
+    AdmitAttempt, AttemptCompletion, CancelOutcome, CreateJob, CursorUpdate, EventRecord,
+    ImportBatch, ImportJob, ImportResolution, JobRecord, LockMetadata, NewScheduledRun,
+    OutputRecord, ReconciliationSummary, RetryPlan, RunRecord, SettingsRecord, StatePaths, Store,
+    StoreError, UpdateJob,
 };
 use self_update::SelfUpdateError;
 use serde::{Deserialize, Serialize};
@@ -46,6 +50,7 @@ use serde_json::{Value, json};
 use service::ServiceError;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use uuid::Uuid;
 
 const ROOT_HELP: &str = "\
@@ -73,6 +78,7 @@ const LIST_HELP: &str = "\
 Examples:
   locron list
   locron list --all
+  locron list --no-trunc
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -142,6 +148,13 @@ Examples:
 
 Navigation:
   Run 'locron --help' to list all commands.";
+const EXPLAIN_HELP: &str = "\
+Examples:
+  locron explain backup
+  locron explain 018f47a2-4a12-7c35-b9d8-0123456789ab
+
+Navigation:
+  Run 'locron --help' to list all commands.";
 const CONFIG_HELP: &str = "\
 Examples:
   locron config get
@@ -174,7 +187,15 @@ Navigation:
 const EXPORT_HELP: &str = "\
 Examples:
   locron export
+  locron export --jobs backup,heartbeat
+  locron export --tag nightly
   locron export --include-values --acknowledge-plaintext
+
+In an interactive terminal, bare 'locron export' shows a multi-select of every
+job (all initially selected) on standard error; with a piped or redirected
+standard output, in JSON mode, or with '--jobs'/'--tag', it exports without
+prompting. Selectors are exact-name/exact-tag unions; a selector matching no
+job is rejected before any output.
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -182,6 +203,11 @@ const IMPORT_HELP: &str = "\
 Examples:
   locron import backup.json --dry-run
   locron import backup.json --accept-plaintext-values
+  locron import https://example.test/backup.json --dry-run
+
+Imports a locron.export/v1 document from a local path or an absolute HTTP(S)
+URL. URL imports carry the same trust boundary as installing a script from
+that URL; review first-time imports with --dry-run.
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -335,11 +361,14 @@ enum Command {
     Add(AddArgs),
     #[command(about = "Change an existing job", after_help = UPDATE_HELP)]
     Update(UpdateArgs),
-    #[command(about = "List jobs", after_help = LIST_HELP)]
+    #[command(about = "List jobs", visible_alias = "ls", after_help = LIST_HELP)]
     List {
         /// Include disabled jobs
         #[arg(long)]
         all: bool,
+        /// Print full TARGET values instead of fitting the terminal width
+        #[arg(long)]
+        no_trunc: bool,
     },
     #[command(about = "Show a job's current definition", after_help = SHOW_HELP)]
     Show {
@@ -356,7 +385,7 @@ enum Command {
         /// Job name or canonical UUID
         name: String,
     },
-    #[command(about = "Soft-remove a job", after_help = REMOVE_HELP)]
+    #[command(about = "Soft-remove a job", visible_alias = "rm", after_help = REMOVE_HELP)]
     Remove {
         /// Job name or canonical UUID
         name: String,
@@ -415,6 +444,14 @@ enum Command {
         #[arg(long)]
         run: Option<String>,
     },
+    #[command(
+        about = "Summarize a job's schedule, current status, and notable runs",
+        after_help = EXPLAIN_HELP
+    )]
+    Explain {
+        /// Live job name or canonical UUID to summarize
+        name: String,
+    },
     #[command(about = "Inspect or change global settings", after_help = CONFIG_HELP)]
     Config {
         #[command(subcommand)]
@@ -422,6 +459,12 @@ enum Command {
     },
     #[command(about = "Export settings and job definitions", after_help = EXPORT_HELP)]
     Export {
+        /// Export exactly these job names (comma-separated; union with --tag)
+        #[arg(long, value_name = "NAME[,NAME...]")]
+        jobs: Option<String>,
+        /// Export exactly these tags (comma-separated; union with --jobs)
+        #[arg(long, value_name = "TAG[,TAG...]")]
+        tag: Option<String>,
         /// Include inline environment values, headers, and bodies in plaintext
         #[arg(long)]
         include_values: bool,
@@ -434,7 +477,7 @@ enum Command {
     },
     #[command(about = "Import settings and job definitions", after_help = IMPORT_HELP)]
     Import {
-        /// locron.export/v1 document to import
+        /// locron.export/v1 document to import (local path or http(s) URL)
         path: PathBuf,
         /// Confirm the document's plaintext values may be imported
         #[arg(long)]
@@ -938,31 +981,52 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
     match command {
         Command::Add(args) => add(&paths, args, format),
         Command::Update(args) => update(&paths, &args, format),
-        Command::List { all } => {
+        Command::List { all, no_trunc } => {
             let jobs = open(&paths)?
                 .list_jobs(all)?
                 .into_iter()
                 .map(redacted_job)
                 .collect::<Result<Vec<_>>>()?;
-            render(format, "list", json!(jobs), &[]);
+            if format == Format::Human {
+                // The TIOCGWINSZ size lookup is both the width source and the
+                // TTY gate: it fails on a pipe or redirect, so piped output
+                // always prints full values. `--no-trunc` restores full values
+                // on a terminal. The width is sampled once per invocation;
+                // size_checked returns (rows, cols), so the second element is
+                // the column count.
+                let width = if no_trunc {
+                    None
+                } else {
+                    console::Term::stdout().size_checked().map(|(_, cols)| cols)
+                };
+                render_list_table(&jobs, width)?;
+            } else {
+                render(format, "list", json!(jobs), &[]);
+            }
             Ok(())
         }
         Command::Show { name } => {
-            render(
-                format,
-                "show",
-                redacted_job(open(&paths)?.job(&name)?)?,
-                &[],
-            );
-            Ok(())
+            let job = open(&paths)?.job(&name)?;
+            let value = redacted_job(job)?;
+            if format == Format::Human {
+                render_show(&value)
+            } else {
+                render(format, "show", value, &[]);
+                Ok(())
+            }
         }
         Command::Enable { name } => toggle(&paths, &name, true, format),
         Command::Disable { name } => toggle(&paths, &name, false, format),
         Command::Remove { name } => {
             open(&paths)?.remove_job(&name, now_us())?;
             send_wake(&paths);
-            render(format, "remove", json!({"name":name,"removed":true}), &[]);
-            Ok(())
+            if format == Format::Human {
+                println!("job removed: {name}");
+                Ok(())
+            } else {
+                render(format, "remove", json!({"name":name,"removed":true}), &[]);
+                Ok(())
+            }
         }
         Command::Preview(args) => preview(&paths, args, format),
         Command::Run {
@@ -981,18 +1045,32 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
                 acknowledge_unconfirmed,
             )?;
             send_wake(&paths);
-            let data = match outcome {
-                CancelOutcome::CancelledBeforeExecution => {
-                    json!({"run_id":run_id,"requested":true,"cancelled":true,"before_execution":true})
+            if format == Format::Human {
+                match outcome {
+                    CancelOutcome::CancelledBeforeExecution => {
+                        println!("cancellation requested: {run_id} (cancelled before execution)")
+                    }
+                    CancelOutcome::CancellationRequested => {
+                        println!("cancellation requested: {run_id}")
+                    }
+                    CancelOutcome::AcknowledgedUnconfirmed => println!(
+                        "cancellation acknowledged: {run_id} (termination unconfirmed; run terminalized as interrupted_unknown)"
+                    ),
                 }
-                CancelOutcome::CancellationRequested => {
-                    json!({"run_id":run_id,"requested":true})
-                }
-                CancelOutcome::AcknowledgedUnconfirmed => {
-                    json!({"run_id":run_id,"acknowledged_unconfirmed":true,"state":"interrupted_unknown"})
-                }
-            };
-            render(format, "cancel", data, &[]);
+            } else {
+                let data = match outcome {
+                    CancelOutcome::CancelledBeforeExecution => {
+                        json!({"run_id":run_id,"requested":true,"cancelled":true,"before_execution":true})
+                    }
+                    CancelOutcome::CancellationRequested => {
+                        json!({"run_id":run_id,"requested":true})
+                    }
+                    CancelOutcome::AcknowledgedUnconfirmed => {
+                        json!({"run_id":run_id,"acknowledged_unconfirmed":true,"state":"interrupted_unknown"})
+                    }
+                };
+                render(format, "cancel", data, &[]);
+            }
             Ok(())
         }
         Command::History { name, limit } => {
@@ -1002,8 +1080,17 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
                 .into_iter()
                 .map(|run| redacted_observable_run(&store, run))
                 .collect::<Result<Vec<_>>>()?;
-            render(format, "history", json!(runs), &[]);
-            Ok(())
+            if format == Format::Human {
+                let names = store
+                    .list_jobs(true)?
+                    .into_iter()
+                    .map(|job| (job.id, job.name))
+                    .collect::<BTreeMap<_, _>>();
+                render_history_table(&runs, &names)
+            } else {
+                render(format, "history", json!(runs), &[]);
+                Ok(())
+            }
         }
         Command::Logs {
             run_id,
@@ -1012,13 +1099,18 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
             channel,
         } => logs(&paths, &run_id, attempt, follow, channel, format).await,
         Command::Why { name, run } => why(&paths, name, run, format),
+        Command::Explain { name } => explain(&paths, &name, format),
         Command::Config { command } => config(&paths, command, format),
         Command::Export {
+            jobs,
+            tag,
             include_values,
             acknowledge_plaintext,
             include_history,
         } => export(
             &paths,
+            jobs.as_deref(),
+            tag.as_deref(),
             include_values,
             acknowledge_plaintext,
             include_history,
@@ -1028,7 +1120,7 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
             path,
             accept_plaintext_values,
             dry_run,
-        } => import(&paths, &path, accept_plaintext_values, dry_run, format),
+        } => import(&paths, &path, accept_plaintext_values, dry_run, format).await,
         Command::Prune { dry_run } => prune(&paths, dry_run, format),
         Command::Doctor => doctor(&paths, format),
         Command::Daemon {
@@ -1083,12 +1175,22 @@ fn add(paths: &StatePaths, args: AddArgs, format: Format) -> Result<()> {
     validate_metadata(&args.name, args.description.as_deref(), &args.tag)?;
     let warnings = environment_warnings(&definition.environment);
     if args.dry_run {
-        render(
-            format,
-            "add",
-            json!({"dry_run":true,"normalized":{"name":args.name,"enabled":!args.disabled,"definition":redact_definition(serde_json::to_value(&definition)?)},"id":"<non-durable>"}),
-            &warnings,
-        );
+        if format == Format::Human {
+            println!("job added: {} (dry run; no changes made)", args.name);
+            render_definition_summary_lines(&redact_definition(serde_json::to_value(
+                &definition,
+            )?))?;
+            for warning in &warnings {
+                eprintln!("warning: {warning}");
+            }
+        } else {
+            render(
+                format,
+                "add",
+                json!({"dry_run":true,"normalized":{"name":args.name,"enabled":!args.disabled,"definition":redact_definition(serde_json::to_value(&definition)?)},"id":"<non-durable>"}),
+                &warnings,
+            );
+        }
         return Ok(());
     }
     let store = open(paths)?;
@@ -1103,7 +1205,21 @@ fn add(paths: &StatePaths, args: AddArgs, format: Format) -> Result<()> {
         cursor_us: now,
     })?;
     send_wake(paths);
-    render(format, "add", redacted_job(record)?, &warnings);
+    if format == Format::Human {
+        println!("job added: {} ({})", record.name, record.id);
+        let value = redacted_job(record)?;
+        let definition: Value = serde_json::from_str(
+            value["definition_json"]
+                .as_str()
+                .context("job record lacks definition_json")?,
+        )?;
+        render_definition_summary_lines(&definition)?;
+        for warning in &warnings {
+            eprintln!("warning: {warning}");
+        }
+    } else {
+        render(format, "add", redacted_job(record)?, &warnings);
+    }
     Ok(())
 }
 
@@ -1169,19 +1285,32 @@ fn update(paths: &StatePaths, args: &UpdateArgs, format: Format) -> Result<()> {
     let changed_fields = changed_fields(&before, &after);
     let warnings = environment_warnings(&definition.environment);
     if args.dry_run {
-        render(
-            format,
-            "update",
-            json!({
-                "dry_run":true,"id":current.id,"revision":current.current_revision+1,
-                "schedule_changed":schedule_changed,
-                "changed_fields":changed_fields,
-                "before":redact_definition(before),
-                "after":redact_definition(after),
-                "cursor_us":if schedule_changed { now } else { current.cursor_us }
-            }),
-            &warnings,
-        );
+        if format == Format::Human {
+            println!("job updated: {} (dry run; no changes made)", current.name);
+            let after = redact_definition(after);
+            render_definition_summary_lines(
+                after
+                    .get("definition")
+                    .context("dry-run after lacks a definition")?,
+            )?;
+            for warning in &warnings {
+                eprintln!("warning: {warning}");
+            }
+        } else {
+            render(
+                format,
+                "update",
+                json!({
+                    "dry_run":true,"id":current.id,"revision":current.current_revision+1,
+                    "schedule_changed":schedule_changed,
+                    "changed_fields":changed_fields,
+                    "before":redact_definition(before),
+                    "after":redact_definition(after),
+                    "cursor_us":if schedule_changed { now } else { current.cursor_us }
+                }),
+                &warnings,
+            );
+        }
         return Ok(());
     }
     let record = store.update_job(&UpdateJob {
@@ -1200,7 +1329,24 @@ fn update(paths: &StatePaths, args: &UpdateArgs, format: Format) -> Result<()> {
         },
     })?;
     send_wake(paths);
-    render(format, "update", redacted_job(record)?, &warnings);
+    if format == Format::Human {
+        println!(
+            "job updated: {} ({}, revision {})",
+            record.name, record.id, record.current_revision
+        );
+        let value = redacted_job(record)?;
+        let definition: Value = serde_json::from_str(
+            value["definition_json"]
+                .as_str()
+                .context("job record lacks definition_json")?,
+        )?;
+        render_definition_summary_lines(&definition)?;
+        for warning in &warnings {
+            eprintln!("warning: {warning}");
+        }
+    } else {
+        render(format, "update", redacted_job(record)?, &warnings);
+    }
     Ok(())
 }
 
@@ -1589,29 +1735,52 @@ fn parse_success_statuses(values: &[String]) -> Result<Vec<u16>> {
 fn toggle(paths: &StatePaths, name: &str, enabled: bool, format: Format) -> Result<()> {
     let record = open(paths)?.set_enabled(name, enabled, now_us())?;
     send_wake(paths);
-    render(
-        format,
-        if enabled { "enable" } else { "disable" },
-        redacted_job(record)?,
-        &[],
-    );
-    Ok(())
+    if format == Format::Human {
+        println!(
+            "job {}: {}",
+            if enabled { "enabled" } else { "disabled" },
+            record.name
+        );
+        Ok(())
+    } else {
+        render(
+            format,
+            if enabled { "enable" } else { "disable" },
+            redacted_job(record)?,
+            &[],
+        );
+        Ok(())
+    }
 }
 
 fn preview(paths: &StatePaths, args: PreviewArgs, format: Format) -> Result<()> {
-    let schedule = if let Some(name) = args.value {
+    let (schedule, summary) = if let Some(name) = args.value {
         let job = open(paths)?.job(&name)?;
-        serde_json::from_str::<JobDefinition>(&job.definition_json)?.schedule
+        let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
+        let value = redacted_job(job)?;
+        let redacted: Value = serde_json::from_str(
+            value["definition_json"]
+                .as_str()
+                .context("job record lacks definition_json")?,
+        )?;
+        (definition.schedule, Some(list_schedule_summary(&redacted)?))
     } else {
-        build_schedule_only(&args.schedule)?
+        let schedule = build_schedule_only(&args.schedule)?;
+        let summary = schedule_summary(&schedule);
+        (schedule, Some(summary))
     };
     let next = schedule.next(Timestamp::from_epoch_micros(now_us()), args.count)?;
-    render(
-        format,
-        "preview",
-        json!({"occurrences":next.iter().map(ToString::to_string).collect::<Vec<_>>()}),
-        &[],
-    );
+    let occurrences = next.iter().map(ToString::to_string).collect::<Vec<_>>();
+    if format == Format::Human {
+        if let Some(summary) = summary {
+            println!("schedule: {summary}");
+        }
+        for occurrence in &occurrences {
+            println!("{occurrence}");
+        }
+    } else {
+        render(format, "preview", json!({"occurrences":occurrences}), &[]);
+    }
     Ok(())
 }
 fn build_schedule_only(args: &ScheduleArgs) -> Result<Schedule> {
@@ -1661,12 +1830,23 @@ async fn run_job(
                 OverlapPolicy::Allow => "eligible_subject_to_capacity",
             }
         };
-        render(
-            format,
-            "run",
-            json!({"dry_run":true,"durable":false,"decision":decision,"capacity_reserved":false}),
-            &[],
-        );
+        if format == Format::Human {
+            let decision_text = match decision {
+                "eligible" => "run eligible",
+                "would_skip_overlap" => "run would skip (overlap policy)",
+                "would_replace" => "run would replace",
+                _ => "run eligible subject to capacity",
+            };
+            println!("{decision_text}: {name}");
+            println!("dry run: no run created");
+        } else {
+            render(
+                format,
+                "run",
+                json!({"dry_run":true,"durable":false,"decision":decision,"capacity_reserved":false}),
+                &[],
+            );
+        }
         return Ok(());
     }
     let run_id = Uuid::now_v7().to_string();
@@ -1678,12 +1858,19 @@ async fn run_job(
         vec![]
     };
     if !wait || format == Format::Human {
-        render(
-            format,
-            "run",
-            json!({"run_id":run.id,"state":run.state}),
-            &warnings,
-        );
+        if format == Format::Human {
+            println!("run queued: {} (job {})", run.id, name);
+            for warning in &warnings {
+                eprintln!("warning: {warning}");
+            }
+        } else {
+            render(
+                format,
+                "run",
+                json!({"run_id":run.id,"state":run.state}),
+                &warnings,
+            );
+        }
     }
     if wait {
         let run = wait_run(paths, &store, &run_id, format).await?;
@@ -1724,7 +1911,7 @@ async fn wait_run(
             "queued" | "starting" | "running" | "retry_wait"
         ) {
             if format == Format::Human {
-                println!("{}: {}", run.id, run.state);
+                println!("run finished: {} ({})", run.id, run.state);
             }
             if run.state != "succeeded" {
                 return Err(TargetOutcomeError {
@@ -1890,6 +2077,63 @@ fn emit_output_frame(
     let _ = std::io::Write::flush(&mut std::io::stdout());
 }
 
+struct CurrentJobExplanation {
+    job: Value,
+    definition: JobDefinition,
+    next_occurrence: Option<String>,
+    runs: Vec<RunRecord>,
+    daemon_running: bool,
+    global_concurrency: u8,
+}
+
+fn current_job_explanation(
+    paths: &StatePaths,
+    store: &Store,
+    reference: &str,
+    now_us: i64,
+) -> Result<CurrentJobExplanation> {
+    let job = store.job(reference)?;
+    let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
+    let next_occurrence = definition
+        .schedule
+        .next(Timestamp::from_epoch_micros(now_us), 1)?
+        .first()
+        .map(ToString::to_string);
+    let runs = store.history(Some(&job.id), 1_000)?;
+    Ok(CurrentJobExplanation {
+        job: redacted_job(job)?,
+        definition,
+        next_occurrence,
+        runs,
+        daemon_running: !daemon_lock_free(paths),
+        global_concurrency: configured_global_concurrency(paths)?,
+    })
+}
+
+fn active_run_state(state: &str) -> bool {
+    matches!(state, "queued" | "starting" | "running" | "retry_wait")
+}
+
+fn schedule_eligibility(enabled: bool) -> &'static str {
+    if enabled {
+        "subject_to_admission"
+    } else {
+        "disabled"
+    }
+}
+
+fn overlap_decision(active_runs: usize, overlap: OverlapPolicy) -> &'static str {
+    if active_runs == 0 {
+        "no_active_run"
+    } else {
+        match overlap {
+            OverlapPolicy::Skip => "would_skip_overlap",
+            OverlapPolicy::Replace => "would_replace",
+            OverlapPolicy::Allow => "eligible_subject_to_capacity",
+        }
+    }
+}
+
 fn why(
     paths: &StatePaths,
     name: Option<String>,
@@ -1899,46 +2143,131 @@ fn why(
     let store = open(paths)?;
     match (name, run) {
         (Some(name), None) => {
-            let job = store.job(&name)?;
-            let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
-            let next = definition
-                .schedule
-                .next(Timestamp::from_epoch_micros(now_us()), 1)?
-                .first()
-                .map(ToString::to_string);
-            let active = store
-                .history(Some(&name), 100)?
-                .into_iter()
-                .filter(|run| {
-                    matches!(
-                        run.state.as_str(),
-                        "queued" | "starting" | "running" | "retry_wait"
-                    )
-                })
+            let facts = current_job_explanation(paths, &store, &name, now_us())?;
+            let active = facts
+                .runs
+                .iter()
+                .take(100)
+                .filter(|run| active_run_state(&run.state))
+                .cloned()
                 .map(redacted_run)
                 .collect::<Result<Vec<_>>>()?;
-            let job = redacted_job(job)?;
-            render(
-                format,
-                "why",
-                json!({"job":job,"next_occurrence":next,"active_runs":active,"overlap":definition.policy.overlap,"daemon_running":!daemon_lock_free(paths),"explanation":"facts are read from durable state; unknown execution facts are not inferred"}),
-                &[],
-            );
+            if format == Format::Human {
+                render_why_job(
+                    &facts.job,
+                    &facts.definition,
+                    facts.next_occurrence.as_deref(),
+                    &active,
+                    facts.daemon_running,
+                    facts.global_concurrency,
+                )?;
+            } else {
+                render(
+                    format,
+                    "why",
+                    json!({"job":facts.job,"next_occurrence":facts.next_occurrence,"active_runs":active,"overlap":facts.definition.policy.overlap,"daemon_running":facts.daemon_running,"explanation":"facts are read from durable state; unknown execution facts are not inferred"}),
+                    &[],
+                );
+            }
             Ok(())
         }
         (None, Some(id)) => {
             let durable_events = store.events_for_run(&id)?;
             let run = redacted_observable_run(&store, store.run(&id)?)?;
-            render(
-                format,
-                "why",
-                json!({"run":run,"events":durable_events,"daemon_running":!daemon_lock_free(paths),"explanation":"terminal reason, immutable snapshot, ordered attempts, and audit events are durable facts"}),
-                &[],
-            );
+            let daemon_running = !daemon_lock_free(paths);
+            if format == Format::Human {
+                render_why_run(&run, &durable_events)?;
+            } else {
+                render(
+                    format,
+                    "why",
+                    json!({"run":run,"events":durable_events,"daemon_running":daemon_running,"explanation":"terminal reason, immutable snapshot, ordered attempts, and audit events are durable facts"}),
+                    &[],
+                );
+            }
             Ok(())
         }
         _ => Err(anyhow!("provide a job name or --run RUN_ID")),
     }
+}
+
+fn explain(paths: &StatePaths, name: &str, format: Format) -> Result<()> {
+    let store = open(paths)?;
+    let facts = current_job_explanation(paths, &store, name, now_us())?;
+    let report = explain_report(&store, &facts)?;
+    if format == Format::Human {
+        render_explain(&report)
+    } else {
+        render(format, "explain", report, &[]);
+        Ok(())
+    }
+}
+
+fn explain_report(store: &Store, facts: &CurrentJobExplanation) -> Result<Value> {
+    let enabled = facts.job["enabled"].as_bool().unwrap_or(false);
+    let active_runs = facts
+        .runs
+        .iter()
+        .filter(|run| active_run_state(&run.state))
+        .count();
+    let job_id = facts.job["id"].as_str().context("job record lacks id")?;
+    let (latest_run, latest_anomaly) = store.latest_and_anomalous_runs(job_id)?;
+    let latest_run = latest_run
+        .map(|run| explain_run_summary(store, run))
+        .transpose()?;
+    let latest_anomaly = latest_anomaly
+        .map(|run| explain_run_summary(store, run))
+        .transpose()?;
+    let timezone = match &facts.definition.schedule {
+        Schedule::Cron { timezone, .. } => Some(match timezone {
+            ScheduleTimeZone::Local => "local".to_owned(),
+            ScheduleTimeZone::Iana(name) => name.clone(),
+        }),
+        Schedule::Every { .. } | Schedule::At { .. } => None,
+    };
+    Ok(json!({
+        "job": {
+            "name": facts.job["name"],
+            "id": facts.job["id"],
+            "enabled": enabled,
+            "revision": facts.job["current_revision"],
+        },
+        "schedule": {
+            "summary": schedule_summary(&facts.definition.schedule),
+            "timezone": timezone,
+            "next_occurrence": if enabled { facts.next_occurrence.clone() } else { None },
+        },
+        "current_status": {
+            "eligibility": schedule_eligibility(enabled),
+            "overlap_decision": overlap_decision(active_runs, facts.definition.policy.overlap),
+            "active_runs": active_runs,
+            "global_concurrency_limit": facts.global_concurrency,
+            "daemon_available": facts.daemon_running,
+        },
+        "latest_run": latest_run,
+        "latest_anomaly": latest_anomaly,
+    }))
+}
+
+fn explain_run_summary(store: &Store, run: RunRecord) -> Result<Value> {
+    let run = redacted_observable_run(store, run)?;
+    Ok(json!({
+        "id": run["id"],
+        "trigger": run["trigger"],
+        "nominal_time": explain_instant(run["nominal_us"].as_i64()),
+        "requested_at": explain_instant(run["requested_at_us"].as_i64()),
+        "state": run["state"],
+        "started_at": explain_instant(run["actual_started_at_us"].as_i64()),
+        "finished_at": explain_instant(run["finished_at_us"].as_i64()),
+        "duration_micros": run["duration_us"],
+        "reason": run["reason"],
+    }))
+}
+
+fn explain_instant(micros: Option<i64>) -> Value {
+    micros.map_or(Value::Null, |micros| {
+        Value::String(Timestamp::from_epoch_micros(micros).to_string())
+    })
 }
 
 fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<()> {
@@ -1970,22 +2299,30 @@ fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<
             }
             if dry_run {
                 validate_config_value(&key, &value)?;
-                render(
-                    format,
-                    "config set",
-                    json!({"key":key,"value":value,"dry_run":true}),
-                    &[],
-                );
+                if format == Format::Human {
+                    println!("{key}: would be configured (dry run; no changes made)");
+                } else {
+                    render(
+                        format,
+                        "config set",
+                        json!({"key":key,"value":value,"dry_run":true}),
+                        &[],
+                    );
+                }
             } else {
                 let store = open(paths)?;
                 let settings = store.set_setting(&key, &value, now_us())?;
                 send_wake(paths);
-                render(
-                    format,
-                    "config set",
-                    redacted_settings_value(&settings)?,
-                    &[],
-                );
+                if format == Format::Human {
+                    println!("{key}: configured");
+                } else {
+                    render(
+                        format,
+                        "config set",
+                        redacted_settings_value(&settings)?,
+                        &[],
+                    );
+                }
             }
         }
         ConfigCommand::Unset { key, dry_run } => {
@@ -2083,7 +2420,11 @@ fn render_config_get(format: Format, key: Option<&str>, settings: &SettingsRecor
         let value = object
             .get(key)
             .ok_or_else(|| anyhow!("unknown configuration key"))?;
-        render(format, "config get", json!({"key":key,"value":value}), &[]);
+        if format == Format::Human {
+            println!("{key}={value}");
+        } else {
+            render(format, "config get", json!({"key":key,"value":value}), &[]);
+        }
     } else if format == Format::Human {
         for (name, value) in object.iter().filter(|(name, _)| *name != "environment") {
             println!("{name}={value}");
@@ -2111,10 +2452,15 @@ fn render_environment_change(
     dry_run: bool,
 ) {
     if format == Format::Human {
-        if configured {
-            println!("{key}: configured (value redacted)");
+        let state = if configured {
+            "configured (value redacted)"
         } else {
-            println!("{key}: unset");
+            "unset"
+        };
+        if dry_run {
+            println!("{key}: {state} (dry run; no changes made)");
+        } else {
+            println!("{key}: {state}");
         }
     } else {
         render(
@@ -2155,6 +2501,8 @@ fn validate_config_value(key: &str, value: &str) -> Result<()> {
 }
 fn export(
     paths: &StatePaths,
+    jobs: Option<&str>,
+    tags: Option<&str>,
     include_values: bool,
     acknowledge_plaintext: bool,
     include_history: bool,
@@ -2175,9 +2523,23 @@ fn export(
     } else {
         ValuesMode::Redacted
     };
+    // Interactivity is decided once, before any output: three terminals,
+    // `CI` unset, human format, and no selector.
+    let selectors = ExportSelectors::parse(jobs, tags);
+    let interactive = should_show_picker(
+        export_tty_state(),
+        std::env::var_os("CI").is_some(),
+        format,
+        !selectors.is_empty(),
+    );
     let store = open(paths)?;
-    let jobs = store
-        .list_jobs(true)?
+    let selected = select_export_jobs(
+        store.list_jobs(true)?,
+        &selectors,
+        interactive,
+        picker_for_export().as_ref(),
+    )?;
+    let jobs = selected
         .into_iter()
         .map(|job| export_job(job, values_mode))
         .collect::<Result<Vec<_>>>()?;
@@ -2206,14 +2568,22 @@ fn export(
     }
     Ok(())
 }
-fn import(
+async fn import(
     paths: &StatePaths,
     path: &Path,
     accept: bool,
     dry_run: bool,
     format: Format,
 ) -> Result<()> {
-    let document = parse_import_document(path, accept)?;
+    let document = match import_source(path)? {
+        ImportSource::Path(source) => parse_import_document(&source, accept)?,
+        ImportSource::Url(url) => {
+            let bytes = fetch_import_url(&url)
+                .await
+                .with_context(|| format!("could not fetch import URL {url}"))?;
+            parse_import_bytes(&bytes, accept)?
+        }
+    };
     let now = now_us();
     let store = if dry_run {
         paths
@@ -2225,9 +2595,20 @@ fn import(
         Some(open(paths)?)
     };
     let plan = plan_import(store.as_ref(), document, now, dry_run)?;
-    let data = import_plan_value(&plan, dry_run);
+    let action_lines = import_action_lines(&plan);
+    let (planned_created, planned_updated, planned_no_op) = import_plan_counts(&plan);
+    let settings_changed = plan.settings_changed;
     if dry_run {
-        render(format, "import", data, &[]);
+        if format == Format::Human {
+            println!(
+                "dry run: would create {planned_created}, update {planned_updated}, unchanged {planned_no_op}; no changes made"
+            );
+            for line in &action_lines {
+                println!("{line}");
+            }
+        } else {
+            render(format, "import", import_plan_value(&plan, dry_run), &[]);
+        }
         return Ok(());
     }
 
@@ -2249,13 +2630,20 @@ fn import(
             }
         }
     }
-    if no_op == mutations.len() && !plan.settings_changed {
-        render(
-            format,
-            "import",
-            json!({"created":0,"updated":0,"no_op":no_op,"settings_changed":false}),
-            &[],
-        );
+    if no_op == mutations.len() && !settings_changed {
+        if format == Format::Human {
+            println!("created 0, updated 0, unchanged {no_op}");
+            for line in &action_lines {
+                println!("{line}");
+            }
+        } else {
+            render(
+                format,
+                "import",
+                json!({"created":0,"updated":0,"no_op":no_op,"settings_changed":false}),
+                &[],
+            );
+        }
         return Ok(());
     }
     let summary = store
@@ -2267,14 +2655,389 @@ fn import(
             now_us: plan.now_us,
         })?;
     send_wake(paths);
-    render(
-        format,
-        "import",
-        json!({"created":summary.created,"updated":summary.updated,"no_op":no_op,"settings_changed":plan.settings_changed}),
-        &[],
-    );
+    if format == Format::Human {
+        println!(
+            "created {}, updated {}, unchanged {no_op}",
+            summary.created, summary.updated
+        );
+        for line in &action_lines {
+            println!("{line}");
+        }
+    } else {
+        render(
+            format,
+            "import",
+            json!({"created":summary.created,"updated":summary.updated,"no_op":no_op,"settings_changed":settings_changed}),
+            &[],
+        );
+    }
     Ok(())
 }
+
+/// The export selection interface: renders a multi-select on stderr and
+/// returns the IDs of the chosen jobs. Standard output is reserved for the
+/// export document in every mode, so the picker must never write to it.
+trait JobPicker {
+    fn pick(&self, jobs: &[JobRecord]) -> Result<Vec<String>>;
+}
+
+/// Real dialoguer `MultiSelect` picker with the term target on stderr, every
+/// item initially selected, and Enter confirming the selection.
+struct DialoguerPicker;
+
+impl JobPicker for DialoguerPicker {
+    fn pick(&self, jobs: &[JobRecord]) -> Result<Vec<String>> {
+        let items: Vec<String> = jobs.iter().map(picker_item_text).collect();
+        let defaults = vec![true; jobs.len()];
+        let chosen = dialoguer::MultiSelect::new()
+            .with_prompt("Select jobs to export")
+            .items(&items)
+            .defaults(&defaults)
+            .interact()
+            .context("export selection failed")?;
+        Ok(chosen
+            .into_iter()
+            .map(|index| jobs[index].id.clone())
+            .collect())
+    }
+}
+
+/// One picker item: the job name plus a human schedule summary.
+fn picker_item_text(job: &JobRecord) -> String {
+    let summary = serde_json::from_str::<JobDefinition>(&job.definition_json).map_or_else(
+        |_| "unknown schedule".to_owned(),
+        |definition| schedule_summary(&definition.schedule),
+    );
+    format!("{} — {}", job.name, summary)
+}
+
+/// Deterministic stand-in for the real picker used by contract tests: the
+/// `LOCRON_TEST_EXPORT_PICKER` hook's comma-separated value is the confirmed
+/// selection. It renders its prompt line on stderr, like the real picker, so
+/// tests can assert the interface never touches stdout. An empty value means
+/// the user deselected everything (a settings-only export).
+struct ScriptedPicker {
+    names: String,
+}
+
+impl JobPicker for ScriptedPicker {
+    fn pick(&self, jobs: &[JobRecord]) -> Result<Vec<String>> {
+        let mut wanted: BTreeSet<&str> = self
+            .names
+            .split(',')
+            .filter(|name| !name.is_empty())
+            .collect();
+        let mut picked = Vec::new();
+        for job in jobs {
+            if wanted.remove(job.name.as_str()) {
+                picked.push(job.id.clone());
+            }
+        }
+        if !wanted.is_empty() {
+            return Err(anyhow!(
+                "picker selection matched no job: {}",
+                wanted.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+        }
+        eprintln!(
+            "Select jobs to export: picked {} of {} jobs",
+            picked.len(),
+            jobs.len()
+        );
+        Ok(picked)
+    }
+}
+
+/// Terminal status of the three standard streams for the interactive export
+/// picker decision.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct TerminalState {
+    stdin: bool,
+    stdout: bool,
+    stderr: bool,
+}
+
+/// Reports whether stdin, stdout, and stderr are all terminals for the
+/// purpose of the interactive export picker. The `LOCRON_TEST_EXPORT_PICKER`
+/// test hook substitutes three terminals so contract tests can drive the
+/// picker branch of the real binary without a PTY; the hook never bypasses
+/// the `CI`, format, or selector terms of the decision.
+fn export_tty_state() -> TerminalState {
+    if std::env::var_os("LOCRON_TEST_EXPORT_PICKER").is_some() {
+        TerminalState {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        }
+    } else {
+        TerminalState {
+            stdin: std::io::stdin().is_terminal(),
+            stdout: std::io::stdout().is_terminal(),
+            stderr: std::io::stderr().is_terminal(),
+        }
+    }
+}
+
+/// The pure interactivity decision for `export`: the selection interface is
+/// shown only when every stream is a terminal, `CI` is unset, the output
+/// format is human, and no `--jobs`/`--tag` selector is present.
+fn should_show_picker(
+    tty: TerminalState,
+    ci_set: bool,
+    format: Format,
+    has_selectors: bool,
+) -> bool {
+    tty.stdin && tty.stdout && tty.stderr && !ci_set && format == Format::Human && !has_selectors
+}
+
+/// Returns the picker implementation for this invocation: the scripted
+/// test-hook picker when `LOCRON_TEST_EXPORT_PICKER` is set, otherwise the
+/// real dialoguer picker.
+fn picker_for_export() -> Box<dyn JobPicker> {
+    if let Ok(script) = std::env::var("LOCRON_TEST_EXPORT_PICKER") {
+        Box::new(ScriptedPicker { names: script })
+    } else {
+        Box::new(DialoguerPicker)
+    }
+}
+
+/// The `--jobs`/`--tag` selection for `export`, split on commas. Values are
+/// exact names and exact tags; an empty set means no explicit selection.
+struct ExportSelectors {
+    names: BTreeSet<String>,
+    tags: BTreeSet<String>,
+}
+
+impl ExportSelectors {
+    fn parse(jobs: Option<&str>, tags: Option<&str>) -> Self {
+        Self {
+            names: jobs
+                .map(|value| value.split(',').map(str::to_owned).collect())
+                .unwrap_or_default(),
+            tags: tags
+                .map(|value| value.split(',').map(str::to_owned).collect())
+                .unwrap_or_default(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.tags.is_empty()
+    }
+}
+
+/// Resolves the export subset from one `list_jobs(true)` snapshot. Without
+/// selectors the whole snapshot is exported unless `interactive` shows the
+/// picker, whose selection narrows it. With selectors the result is the
+/// exact-name/exact-tag union deduplicated by job ID, and any selector value
+/// matching no job is a validation error before any output is produced.
+fn select_export_jobs(
+    jobs: Vec<JobRecord>,
+    selectors: &ExportSelectors,
+    interactive: bool,
+    picker: &dyn JobPicker,
+) -> Result<Vec<JobRecord>> {
+    if selectors.is_empty() {
+        if !interactive {
+            return Ok(jobs);
+        }
+        if jobs.is_empty() {
+            // Nothing to select; a settings-only export remains legal.
+            return Ok(jobs);
+        }
+        let picked = picker.pick(&jobs)?;
+        return Ok(jobs
+            .into_iter()
+            .filter(|job| picked.iter().any(|id| id == &job.id))
+            .collect());
+    }
+    let mut selected: Vec<JobRecord> = Vec::new();
+    let mut seen_ids: BTreeSet<String> = BTreeSet::new();
+    // Which selector values have matched at least one job. A tag value must
+    // match every job carrying it, so matching is a containment check and the
+    // matched set only grows.
+    let mut matched_names: BTreeSet<String> = BTreeSet::new();
+    let mut matched_tags: BTreeSet<String> = BTreeSet::new();
+    for job in jobs {
+        let job_tags: Vec<String> = serde_json::from_str(&job.tags_json)?;
+        let name_hit = selectors.names.contains(job.name.as_str());
+        let mut tag_hit = false;
+        for tag in job_tags {
+            if selectors.tags.contains(tag.as_str()) {
+                tag_hit = true;
+                matched_tags.insert(tag);
+            }
+        }
+        if name_hit {
+            matched_names.insert(job.name.clone());
+        }
+        if (name_hit || tag_hit) && seen_ids.insert(job.id.clone()) {
+            selected.push(job);
+        }
+    }
+    let mut missing = Vec::new();
+    missing.extend(
+        selectors
+            .names
+            .iter()
+            .filter(|name| !matched_names.contains(*name))
+            .map(|name| format!("--jobs {name}")),
+    );
+    missing.extend(
+        selectors
+            .tags
+            .iter()
+            .filter(|tag| !matched_tags.contains(*tag))
+            .map(|tag| format!("--tag {tag}")),
+    );
+    if !missing.is_empty() {
+        return Err(anyhow!(
+            "export selection matched no job: {}; selectors are exact-name and exact-tag matches",
+            missing.join(", ")
+        ));
+    }
+    Ok(selected)
+}
+
+/// Maximum import document size, enforced while streaming the body.
+const IMPORT_MAX_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum redirects followed while fetching an import URL.
+const IMPORT_MAX_REDIRECTS: usize = 10;
+/// Total timeout for one import fetch, DNS through final byte.
+const IMPORT_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Where an `import` argument obtains its document: a local file or a URL.
+#[derive(Debug)]
+enum ImportSource {
+    Path(PathBuf),
+    Url(Url),
+}
+
+/// Classifies an import argument as a local path or an HTTP(S) URL. A string
+/// shaped like `scheme://...` is parsed as a URL; anything else (including a
+/// non-UTF-8 path) is treated as a path. Classification is an explicit scheme
+/// check, never a `Path::exists` guess.
+fn import_source(path: &Path) -> Result<ImportSource> {
+    let Some(input) = path.to_str() else {
+        return Ok(ImportSource::Path(path.to_owned()));
+    };
+    if !url_like(input) {
+        return Ok(ImportSource::Path(path.to_owned()));
+    }
+    let url = Url::parse(input).context("invalid import URL")?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(ImportFetchError::UnsupportedScheme {
+            scheme: url.scheme().to_owned(),
+        }
+        .into());
+    }
+    if url.username() != "" || url.password().is_some() {
+        return Err(anyhow!(
+            "import URL must not contain userinfo (username or password): {input}"
+        ));
+    }
+    Ok(ImportSource::Url(url))
+}
+
+/// True when `input` is shaped like an absolute `scheme://...` URL.
+fn url_like(input: &str) -> bool {
+    let Some((scheme, _)) = input.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+/// Fetches an import document over HTTP(S) with the same reqwest/rustls
+/// client configuration the CLI uses elsewhere: mandatory TLS certificate
+/// verification, a bounded redirect policy, a total timeout, and a 16 MiB
+/// in-memory cap enforced while streaming. The returned bytes feed the same
+/// validation path as a local file.
+async fn fetch_import_url(url: &Url) -> Result<Vec<u8>> {
+    let client = reqwest::Client::builder()
+        .user_agent(format!("locron/{} import", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::limited(IMPORT_MAX_REDIRECTS))
+        .timeout(IMPORT_FETCH_TIMEOUT)
+        .build()
+        .map_err(|error| ImportFetchError::Network(error.to_string()))?;
+    let response = client.get(url.clone()).send().await.map_err(|error| {
+        if error.is_redirect() {
+            ImportFetchError::TooManyRedirects
+        } else if error.is_timeout() {
+            ImportFetchError::TotalTimeout
+        } else {
+            ImportFetchError::Network(error.to_string())
+        }
+    })?;
+    if !response.status().is_success() {
+        return Err(ImportFetchError::HttpStatus {
+            status: response.status().as_u16(),
+        }
+        .into());
+    }
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| ImportFetchError::Network(error.to_string()))?;
+        body.extend_from_slice(&chunk);
+        if body.len() > IMPORT_MAX_BYTES {
+            return Err(ImportFetchError::BodyTooLarge {
+                limit: IMPORT_MAX_BYTES,
+            }
+            .into());
+        }
+    }
+    Ok(body)
+}
+
+/// Failures that occur while obtaining a document from an import URL. Every
+/// variant maps to exit category 5 (unexpected I/O/protocol failure); a URL
+/// with userinfo and document validation failures keep their existing
+/// validation categories.
+#[derive(Debug)]
+enum ImportFetchError {
+    UnsupportedScheme { scheme: String },
+    Network(String),
+    HttpStatus { status: u16 },
+    BodyTooLarge { limit: usize },
+    TooManyRedirects,
+    TotalTimeout,
+}
+
+impl std::fmt::Display for ImportFetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedScheme { scheme } => write!(
+                f,
+                "import URL scheme \"{scheme}\" is not supported; use an absolute http:// or https:// URL"
+            ),
+            Self::Network(detail) => write!(
+                f,
+                "network or TLS failure: {detail}; check the URL and network, then retry"
+            ),
+            Self::HttpStatus { status } => write!(
+                f,
+                "import server returned HTTP {status}; check that the URL serves a locron.export/v1 document, then retry"
+            ),
+            Self::BodyTooLarge { limit } => write!(
+                f,
+                "import document exceeds the {limit}-byte limit; export a smaller document and retry"
+            ),
+            Self::TooManyRedirects => write!(
+                f,
+                "import URL redirected more than {IMPORT_MAX_REDIRECTS} times; use a direct document URL and retry"
+            ),
+            Self::TotalTimeout => write!(
+                f,
+                "import fetch timed out after 30 seconds; check the URL and network, then retry"
+            ),
+        }
+    }
+}
+
+impl StdError for ImportFetchError {}
 
 fn export_job(job: JobRecord, mode: ValuesMode) -> Result<ExportJob> {
     let mut definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
@@ -2313,8 +3076,13 @@ fn export_job(job: JobRecord, mode: ValuesMode) -> Result<ExportJob> {
 }
 
 fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDocument> {
+    let bytes = std::fs::read(path).context("cannot read import document")?;
+    parse_import_bytes(&bytes, accept_plaintext)
+}
+
+fn parse_import_bytes(bytes: &[u8], accept_plaintext: bool) -> Result<ExportDocument> {
     let mut document: ExportDocument =
-        serde_json::from_slice(&std::fs::read(path)?).context("invalid export document")?;
+        serde_json::from_slice(bytes).context("invalid export document")?;
     if document.schema != "locron.export/v1" {
         return Err(anyhow!("unsupported export schema: {}", document.schema));
     }
@@ -2657,33 +3425,43 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
             })),
         }
     }
-    render(
-        format,
-        "doctor",
-        json!({
-            "state_dir":paths.root,
-            "database":paths.database,
-            "daemon_running":!daemon_lock_free(paths),
-            "wake_socket":paths.wake_socket.exists(),
-            "execution_path":settings.execution_path,
-            "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
-            "process_resolution":resolutions,
-            "dashboard": service::dashboard_doctor_facts(Some(paths.root.clone()))?,
-            "checks":store.integrity_check()?
-        }),
-        &[],
-    );
+    let checks = store.integrity_check()?;
+    let dashboard = service::dashboard_doctor_facts(Some(paths.root.clone()))?;
+    if format == Format::Human {
+        render_doctor_human(paths, &settings, &resolutions, &checks, &dashboard);
+    } else {
+        render(
+            format,
+            "doctor",
+            json!({
+                "state_dir":paths.root,
+                "database":paths.database,
+                "daemon_running":!daemon_lock_free(paths),
+                "wake_socket":paths.wake_socket.exists(),
+                "execution_path":settings.execution_path,
+                "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
+                "process_resolution":resolutions,
+                "dashboard":dashboard,
+                "checks":checks
+            }),
+            &[],
+        );
+    }
     Ok(())
 }
 
 fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
     if dry_run && !paths.database.is_file() {
-        render(
-            format,
-            "prune",
-            json!({"dry_run":true,"candidate_count":0,"bytes":0}),
-            &[],
-        );
+        if format == Format::Human {
+            println!("dry run: would prune 0 runs, 0 outputs (0 bytes)");
+        } else {
+            render(
+                format,
+                "prune",
+                json!({"dry_run":true,"candidate_count":0,"bytes":0}),
+                &[],
+            );
+        }
         return Ok(());
     }
     let store = if dry_run {
@@ -2718,12 +3496,30 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
             retained = retained.saturating_sub(candidate.physical_bytes);
         }
     }
-    render(
-        format,
-        "prune",
-        json!({"dry_run":dry_run,"candidate_count":candidates.len(),"bytes":candidates.iter().map(|candidate|candidate.physical_bytes).sum::<i64>()}),
-        &[],
-    );
+    let outputs = candidates.len();
+    let runs = candidates
+        .iter()
+        .map(|candidate| candidate.run_id.as_str())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let bytes: i64 = candidates
+        .iter()
+        .map(|candidate| candidate.physical_bytes)
+        .sum();
+    if format == Format::Human {
+        if dry_run {
+            println!("dry run: would prune {runs} runs, {outputs} outputs ({bytes} bytes)");
+        } else {
+            println!("pruned: {runs} runs, {outputs} outputs ({bytes} bytes)");
+        }
+    } else {
+        render(
+            format,
+            "prune",
+            json!({"dry_run":dry_run,"candidate_count":outputs,"bytes":bytes}),
+            &[],
+        );
+    }
     Ok(())
 }
 
@@ -3635,6 +4431,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::History { .. } => "history",
         Command::Logs { .. } => "logs",
         Command::Why { .. } => "why",
+        Command::Explain { .. } => "explain",
         Command::Config { .. } => "config",
         Command::Export { .. } => "export",
         Command::Import { .. } => "import",
@@ -3683,6 +4480,799 @@ pub(crate) fn redacted_observable_run(store: &Store, run: RunRecord) -> Result<V
 }
 
 pub(crate) use locron_core::redact::{redact_definition, terminal_run_state};
+
+/// Truncates `text` to at most `max_width` display columns, appending the `…`
+/// marker (one display column) only when the value actually shrinks; a value
+/// that fits is returned unchanged. Column fitting follows character display
+/// width (East Asian wide characters count as two columns), never byte or
+/// character count. A width too small to hold the marker returns the text
+/// unchanged rather than producing an unreadable cell.
+fn truncate_display(text: &str, max_width: usize) -> String {
+    if text.width() <= max_width || max_width < 1 {
+        return text.to_owned();
+    }
+    let mut truncated = String::new();
+    let mut used = 0;
+    for ch in text.chars() {
+        let ch_width = ch.width().unwrap_or(0);
+        if used + ch_width > max_width - 1 {
+            break;
+        }
+        truncated.push(ch);
+        used += ch_width;
+    }
+    truncated.push('…');
+    truncated
+}
+
+/// Renders the docker-style aligned `list` table for human output.
+fn render_list_table(jobs: &[Value], width: Option<u16>) -> Result<()> {
+    print!("{}", list_table(jobs, width)?);
+    Ok(())
+}
+
+/// Builds the docker-style aligned `list` table text: a header line (`NAME`,
+/// `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned row per job
+/// in the store's name order, with each column padded to the maximum width
+/// and columns separated by a single space. The header prints even when no
+/// job exists. The header and every value are derived only from the redacted
+/// job records (the summaries parse the redacted `definition_json` as JSON
+/// values, so no configured environment value, header value, or body can
+/// appear).
+///
+/// When `width` is `Some(terminal width)` and the natural table width
+/// (`name_width + 1 + schedule_width + 1 + target_width + 1 + 7` for the
+/// unpadded `ENABLED` column) exceeds it, only the `TARGET` column — the
+/// table's final data column — shrinks to the remaining width, marking cut
+/// values with a trailing `…`. `NAME`, `SCHEDULE`, the header, and `ENABLED`
+/// never truncate; a remaining width below one display column prints the
+/// table untruncated (rows wrap as before). A `None` width prints the
+/// full-value table.
+fn list_table(jobs: &[Value], width: Option<u16>) -> Result<String> {
+    let mut rows: Vec<(String, String, String, &str)> = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        let name = job["name"].as_str().context("job record lacks name")?;
+        let enabled = if job["enabled"].as_bool().unwrap_or(false) {
+            "yes"
+        } else {
+            "no"
+        };
+        let definition: Value = serde_json::from_str(
+            job["definition_json"]
+                .as_str()
+                .context("job record lacks definition_json")?,
+        )
+        .context("invalid definition_json in job record")?;
+        rows.push((
+            name.to_owned(),
+            list_schedule_summary(&definition)?,
+            list_target_summary(&definition)?,
+            enabled,
+        ));
+    }
+    // Each column is padded to the maximum cell width (header included); the
+    // last column is not padded so rows never carry trailing whitespace.
+    let name_width = "NAME"
+        .len()
+        .max(rows.iter().map(|row| row.0.len()).max().unwrap_or(0));
+    let schedule_width = "SCHEDULE"
+        .len()
+        .max(rows.iter().map(|row| row.1.len()).max().unwrap_or(0));
+    let target_width = "TARGET"
+        .len()
+        .max(rows.iter().map(|row| row.2.len()).max().unwrap_or(0));
+    // Fitting is a separate step from padding: when the natural table width
+    // (name + 1 + schedule + 1 + target + 1 + 7) exceeds the terminal width,
+    // only TARGET absorbs the deficit, leaving it the remaining display
+    // columns after NAME, SCHEDULE, the unpadded ENABLED label, and every
+    // inter-column space. A budget below one column falls back to the
+    // untruncated table, which wraps exactly as it always has.
+    let target_budget = width.and_then(|w| {
+        let natural = name_width + 1 + schedule_width + 1 + target_width + 1 + 7;
+        let budget = (w as usize).saturating_sub(name_width + 1 + schedule_width + 1 + 1 + 7);
+        (natural > w as usize && budget >= 1).then_some(budget)
+    });
+    let target_column = target_budget.unwrap_or(target_width);
+    let mut table = String::new();
+    writeln!(
+        table,
+        "{:<name_width$} {:<schedule_width$} {:<target_column$} ENABLED",
+        "NAME", "SCHEDULE", "TARGET"
+    )
+    .unwrap();
+    for (name, schedule, target, enabled) in &rows {
+        let rendered_target = match target_budget {
+            Some(budget) => truncate_display(target, budget),
+            None => target.clone(),
+        };
+        writeln!(
+            table,
+            "{name:<name_width$} {schedule:<schedule_width$} {rendered_target:<target_column$} {enabled}"
+        )
+        .unwrap();
+    }
+    Ok(table)
+}
+
+/// Renders a UTC RFC 3339 instant from epoch microseconds, or `unknown` when
+/// no instant is recorded.
+fn human_instant(epoch_micros: Option<i64>) -> String {
+    match epoch_micros {
+        Some(micros) => Timestamp::from_epoch_micros(micros).to_string(),
+        None => "unknown".into(),
+    }
+}
+
+/// Abbreviates a canonical UUID to its first 8 characters. The run ID may be
+/// abbreviated only in tables; every other human form prints the full ID.
+fn abbreviated_id(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
+/// Renders the aligned `history` table (`TIME | JOB | TRIGGER | STATE |
+/// DURATION`) for human output: the header always prints, rows are newest
+/// first, `TIME` is RFC 3339 UTC of the request instant, `DURATION` renders
+/// in the largest whole human unit from request to finish (`-` for active
+/// runs), and the run ID may be abbreviated only in this table. The job
+/// column prefers the live job name and falls back to the abbreviated job ID
+/// for removed jobs. All values derive from the redacted run records.
+fn render_history_table(runs: &[Value], names: &BTreeMap<String, String>) -> Result<()> {
+    let mut sorted = runs.to_vec();
+    sorted.sort_by(|a, b| {
+        b["requested_at_us"]
+            .as_i64()
+            .cmp(&a["requested_at_us"].as_i64())
+            .then_with(|| b["id"].as_str().cmp(&a["id"].as_str()))
+    });
+    let mut rows: Vec<(String, String, String, String, String)> = Vec::with_capacity(sorted.len());
+    for run in &sorted {
+        let job_id = run["job_id"].as_str().context("run record lacks job_id")?;
+        let job = names
+            .get(job_id)
+            .cloned()
+            .unwrap_or_else(|| abbreviated_id(job_id));
+        let duration = match (
+            run["requested_at_us"].as_i64(),
+            run["finished_at_us"].as_i64(),
+        ) {
+            (Some(requested), Some(finished)) if finished >= requested => {
+                human_duration(u64::try_from(finished - requested).unwrap_or(0))
+            }
+            _ => "-".to_owned(),
+        };
+        rows.push((
+            human_instant(run["requested_at_us"].as_i64()),
+            job,
+            run["trigger"].as_str().unwrap_or("unknown").to_owned(),
+            run["state"].as_str().unwrap_or("unknown").to_owned(),
+            duration,
+        ));
+    }
+    let time_width = "TIME"
+        .len()
+        .max(rows.iter().map(|row| row.0.len()).max().unwrap_or(0));
+    let job_width = "JOB"
+        .len()
+        .max(rows.iter().map(|row| row.1.len()).max().unwrap_or(0));
+    let trigger_width = "TRIGGER"
+        .len()
+        .max(rows.iter().map(|row| row.2.len()).max().unwrap_or(0));
+    let state_width = "STATE"
+        .len()
+        .max(rows.iter().map(|row| row.3.len()).max().unwrap_or(0));
+    println!(
+        "{:<time_width$} | {:<job_width$} | {:<trigger_width$} | {:<state_width$} | DURATION",
+        "TIME", "JOB", "TRIGGER", "STATE"
+    );
+    for (time, job, trigger, state, duration) in &rows {
+        println!(
+            "{time:<time_width$} | {job:<job_width$} | {trigger:<trigger_width$} | {state:<state_width$} | {duration}"
+        );
+    }
+    Ok(())
+}
+
+/// Prints the schedule and target summary lines `add` and `update` follow
+/// their outcome line with, in the same form the `list` table uses, derived
+/// from the redacted definition JSON.
+fn render_definition_summary_lines(definition: &Value) -> Result<()> {
+    println!("schedule: {}", list_schedule_summary(definition)?);
+    println!("target: {}", list_target_summary(definition)?);
+    Ok(())
+}
+
+/// Joins a job's tags as a comma-separated string, or returns an empty string
+/// when the job has no tags.
+fn render_tags(job: &Value) -> String {
+    serde_json::from_str::<Vec<String>>(job["tags_json"].as_str().unwrap_or("[]"))
+        .map(|tags| tags.join(", "))
+        .unwrap_or_default()
+}
+
+/// Renders the human timezone of a cron schedule from the redacted definition
+/// JSON: the IANA name, `local`, or `unknown`.
+fn schedule_timezone_summary(schedule: &Value) -> String {
+    match schedule
+        .get("timezone")
+        .and_then(|timezone| timezone.get("mode"))
+        .and_then(Value::as_str)
+    {
+        Some("local") => "local".to_owned(),
+        Some("iana") => schedule
+            .get("timezone")
+            .and_then(|timezone| timezone.get("name"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned(),
+        _ => "unknown".to_owned(),
+    }
+}
+
+/// Prints the `POLICIES` section lines (overlap, missed run, deadline,
+/// retries, timeout, concurrency) from the redacted definition JSON.
+fn render_policy_fields(definition: &Value) -> Result<()> {
+    let policy = definition
+        .get("policy")
+        .context("definition lacks policy")?;
+    println!(
+        "  overlap: {}",
+        policy
+            .get("overlap")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+    );
+    println!(
+        "  missed run: {}",
+        policy
+            .get("missed_run")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+    );
+    println!(
+        "  deadline: {}",
+        match policy.get("start_deadline").and_then(Value::as_u64) {
+            Some(micros) => human_duration(micros),
+            None => "none".to_owned(),
+        }
+    );
+    println!(
+        "  retries: {}",
+        policy.get("retries").and_then(Value::as_u64).unwrap_or(0)
+    );
+    println!(
+        "  timeout: {}",
+        match policy.get("timeout").and_then(Value::as_u64) {
+            Some(micros) => human_duration(micros),
+            None => "none".to_owned(),
+        }
+    );
+    println!(
+        "  concurrency: {}",
+        policy
+            .get("per_job_concurrency")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+    );
+    Ok(())
+}
+
+/// Prints the `SCHEDULE` and `TARGET` labeled sections of `show` from the
+/// redacted definition JSON.
+fn render_definition_sections(definition: &Value) -> Result<()> {
+    let schedule = definition
+        .get("schedule")
+        .context("definition lacks schedule")?;
+    println!("SCHEDULE");
+    println!("  schedule: {}", list_schedule_summary(definition)?);
+    if schedule.get("kind").and_then(Value::as_str) == Some("cron") {
+        println!("  timezone: {}", schedule_timezone_summary(schedule));
+    }
+    println!("TARGET");
+    println!("  target: {}", list_target_summary(definition)?);
+    Ok(())
+}
+
+/// Renders `show` human output: the labeled sections `JOB`, `SCHEDULE`,
+/// `TARGET`, and `POLICIES` with one field per line, derived only from the
+/// redacted job record.
+fn render_show(job: &Value) -> Result<()> {
+    let name = job["name"].as_str().context("job record lacks name")?;
+    let id = job["id"].as_str().context("job record lacks id")?;
+    let enabled = if job["enabled"].as_bool().unwrap_or(false) {
+        "yes"
+    } else {
+        "no"
+    };
+    let tags = render_tags(job);
+    let revision = job["current_revision"].as_i64().unwrap_or(0);
+    println!("JOB");
+    println!("  name: {name}");
+    println!("  id: {id}");
+    println!("  enabled: {enabled}");
+    if !tags.is_empty() {
+        println!("  tags: {tags}");
+    }
+    println!("  revision: {revision}");
+    let definition: Value = serde_json::from_str(
+        job["definition_json"]
+            .as_str()
+            .context("job record lacks definition_json")?,
+    )
+    .context("invalid definition_json in job record")?;
+    render_definition_sections(&definition)?;
+    println!("POLICIES");
+    render_policy_fields(&definition)
+}
+
+/// Renders `why NAME` human output: labeled sections `JOB`, `SCHEDULE`,
+/// `ELIGIBILITY`, `POLICIES`, and `DAEMON` with one field per line. Facts are
+/// read from durable state; unknown facts print `unknown`.
+fn render_why_job(
+    job: &Value,
+    definition: &JobDefinition,
+    next: Option<&str>,
+    active: &[Value],
+    daemon_running: bool,
+    global_concurrency: u8,
+) -> Result<()> {
+    let name = job["name"].as_str().context("job record lacks name")?;
+    let id = job["id"].as_str().context("job record lacks id")?;
+    let enabled = if job["enabled"].as_bool().unwrap_or(false) {
+        "yes"
+    } else {
+        "no"
+    };
+    let tags = render_tags(job);
+    let revision = job["current_revision"].as_i64().unwrap_or(0);
+    println!("JOB");
+    println!("  name: {name}");
+    println!("  id: {id}");
+    println!("  enabled: {enabled}");
+    if !tags.is_empty() {
+        println!("  tags: {tags}");
+    }
+    println!("  revision: {revision}");
+    let cursor = job["cursor_us"].as_i64().filter(|cursor| *cursor > 0);
+    println!("SCHEDULE");
+    println!("  schedule: {}", schedule_summary(&definition.schedule));
+    if let Schedule::Cron { timezone, .. } = &definition.schedule {
+        let timezone = match timezone {
+            ScheduleTimeZone::Local => "local".to_owned(),
+            ScheduleTimeZone::Iana(name) => name.clone(),
+        };
+        println!("  timezone: {timezone}");
+    }
+    println!("  cursor: {}", human_instant(cursor));
+    println!("  next occurrence: {}", next.unwrap_or("none"));
+    let decision = if active.is_empty() {
+        "eligible"
+    } else {
+        match definition.policy.overlap {
+            OverlapPolicy::Skip => "would skip (overlap policy)",
+            OverlapPolicy::Replace => "would replace",
+            OverlapPolicy::Allow => "eligible subject to capacity",
+        }
+    };
+    println!("ELIGIBILITY");
+    println!("  active runs: {}", active.len());
+    println!("  decision: {decision}");
+    println!("  global concurrency: {global_concurrency}");
+    println!("POLICIES");
+    let definition_value: Value = serde_json::from_str(
+        job["definition_json"]
+            .as_str()
+            .context("job record lacks definition_json")?,
+    )
+    .context("invalid definition_json in job record")?;
+    render_policy_fields(&definition_value)?;
+    println!("DAEMON");
+    println!(
+        "  daemon running: {}",
+        if daemon_running { "yes" } else { "no" }
+    );
+    Ok(())
+}
+
+/// Renders the consolidated `explain NAME_OR_ID` report. The report is the
+/// same redacted value used by machine output, keeping both forms in parity.
+fn render_explain(report: &Value) -> Result<()> {
+    let job = report["job"]
+        .as_object()
+        .context("explain report lacks job facts")?;
+    println!("JOB");
+    println!(
+        "  name: {}",
+        job["name"].as_str().context("job facts lack name")?
+    );
+    println!("  id: {}", job["id"].as_str().context("job facts lack id")?);
+    println!(
+        "  enabled: {}",
+        if job["enabled"].as_bool().unwrap_or(false) {
+            "yes"
+        } else {
+            "no"
+        }
+    );
+    println!("  revision: {}", job["revision"].as_i64().unwrap_or(0));
+
+    let schedule = report["schedule"]
+        .as_object()
+        .context("explain report lacks schedule facts")?;
+    println!("SCHEDULE");
+    println!(
+        "  schedule: {}",
+        schedule["summary"].as_str().unwrap_or("none")
+    );
+    println!(
+        "  timezone: {}",
+        schedule["timezone"].as_str().unwrap_or("none")
+    );
+    println!(
+        "  next occurrence: {}",
+        schedule["next_occurrence"].as_str().unwrap_or("none")
+    );
+
+    let status = report["current_status"]
+        .as_object()
+        .context("explain report lacks current status")?;
+    println!("CURRENT STATUS");
+    let eligibility = match status["eligibility"].as_str().unwrap_or("unknown") {
+        "subject_to_admission" => "subject to admission",
+        other => other,
+    };
+    let overlap_decision = match status["overlap_decision"].as_str().unwrap_or("unknown") {
+        "no_active_run" => "no active run",
+        "would_skip_overlap" => "would skip (overlap policy)",
+        "would_replace" => "would replace",
+        "eligible_subject_to_capacity" => "eligible subject to capacity",
+        other => other,
+    };
+    println!("  eligibility: {eligibility}");
+    println!("  overlap decision: {overlap_decision}");
+    println!(
+        "  active runs: {}",
+        status["active_runs"].as_u64().unwrap_or(0)
+    );
+    println!(
+        "  global concurrency limit: {}",
+        status["global_concurrency_limit"].as_u64().unwrap_or(0)
+    );
+    println!(
+        "  daemon available: {}",
+        if status["daemon_available"].as_bool().unwrap_or(false) {
+            "yes"
+        } else {
+            "no"
+        }
+    );
+    render_explain_run("LATEST RUN", &report["latest_run"]);
+    render_explain_run("LATEST ANOMALY", &report["latest_anomaly"]);
+    Ok(())
+}
+
+fn render_explain_run(section: &str, run: &Value) {
+    println!("{section}");
+    if run.is_null() {
+        println!("  none");
+        return;
+    }
+    println!("  run id: {}", run["id"].as_str().unwrap_or("none"));
+    println!("  trigger: {}", run["trigger"].as_str().unwrap_or("none"));
+    println!(
+        "  nominal time: {}",
+        run["nominal_time"].as_str().unwrap_or("none")
+    );
+    println!(
+        "  requested: {}",
+        run["requested_at"].as_str().unwrap_or("none")
+    );
+    println!("  state: {}", run["state"].as_str().unwrap_or("none"));
+    println!(
+        "  started: {}",
+        run["started_at"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "  finished: {}",
+        run["finished_at"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "  duration: {}",
+        run["duration_micros"]
+            .as_u64()
+            .map_or_else(|| "unknown".to_owned(), human_duration)
+    );
+    println!("  reason: {}", run["reason"].as_str().unwrap_or("unknown"));
+}
+
+/// Renders `why --run RUN_ID` human output: labeled sections `RUN`,
+/// `ATTEMPTS`, `EVENTS`, and `TERMINAL REASON` with one field per line.
+/// Facts are read from the immutable snapshot and the durable event log;
+/// unknown facts print `unknown`.
+fn render_why_run(run: &Value, events: &[EventRecord]) -> Result<()> {
+    let id = run["id"].as_str().context("run record lacks id")?;
+    println!("RUN");
+    println!("  run id: {id}");
+    println!(
+        "  trigger: {}",
+        run["trigger"].as_str().unwrap_or("unknown")
+    );
+    println!(
+        "  nominal time: {}",
+        run["nominal_us"]
+            .as_i64()
+            .map_or_else(|| "none".to_owned(), |micros| human_instant(Some(micros)))
+    );
+    println!(
+        "  requested: {}",
+        human_instant(run["requested_at_us"].as_i64())
+    );
+    println!("  state: {}", run["state"].as_str().unwrap_or("unknown"));
+    println!(
+        "  started: {}",
+        human_instant(run["actual_started_at_us"].as_i64())
+    );
+    println!(
+        "  finished: {}",
+        human_instant(run["finished_at_us"].as_i64())
+    );
+    println!(
+        "  duration: {}",
+        run["duration_us"].as_i64().map_or_else(
+            || "unknown".to_owned(),
+            |micros| human_duration(u64::try_from(micros.max(0)).unwrap_or(0))
+        )
+    );
+    println!(
+        "  outcome: {}",
+        run["outcome"].as_str().unwrap_or("unknown")
+    );
+    println!("ATTEMPTS");
+    let attempts = match run["attempts"].as_array() {
+        Some(attempts) => attempts.as_slice(),
+        None => &[],
+    };
+    if attempts.is_empty() {
+        println!("  (none)");
+    }
+    for attempt in attempts {
+        let number = attempt["attempt_number"].as_i64().unwrap_or(0);
+        let state = attempt["state"].as_str().unwrap_or("unknown");
+        let duration = attempt["duration_us"]
+            .as_i64()
+            .map_or_else(String::new, |micros: i64| {
+                format!(
+                    " ({})",
+                    human_duration(u64::try_from(micros.max(0)).unwrap_or(0))
+                )
+            });
+        println!("  attempt {number}: {state}{duration}");
+    }
+    println!("EVENTS");
+    if events.is_empty() {
+        println!("  (none)");
+    }
+    for event in events {
+        println!(
+            "  {} {}",
+            Timestamp::from_epoch_micros(event.occurred_at_us),
+            event.kind
+        );
+    }
+    println!("TERMINAL REASON");
+    match run["reason"].as_str() {
+        Some(reason) if !reason.is_empty() => println!("  reason: {reason}"),
+        _ => println!("  reason: unknown"),
+    }
+    Ok(())
+}
+
+/// Renders `doctor` human output: one line per check with an `ok`, `warn`, or
+/// `fail` level prefix carrying the check name and the fact or path verified.
+fn render_doctor_human(
+    paths: &StatePaths,
+    settings: &SettingsRecord,
+    resolutions: &[Value],
+    checks: &[String],
+    dashboard: &Value,
+) {
+    println!("ok   state dir: {}", paths.root.display());
+    println!("ok   database: {}", paths.database.display());
+    if daemon_lock_free(paths) {
+        println!("warn daemon: not running");
+    } else {
+        println!("ok   daemon: running");
+    }
+    if paths.wake_socket.exists() {
+        println!("ok   wake socket: {}", paths.wake_socket.display());
+    } else {
+        println!(
+            "warn wake socket: missing ({})",
+            paths.wake_socket.display()
+        );
+    }
+    println!("ok   execution path: {}", settings.execution_path);
+    for name in settings.environment.keys() {
+        println!("ok   environment.{name}: configured (value redacted)");
+    }
+    for resolution in resolutions {
+        let job_name = resolution["job_name"].as_str().unwrap_or("unknown");
+        if resolution["status"].as_str() == Some("resolved") {
+            let executable = resolution["resolved_executable"]
+                .as_str()
+                .unwrap_or("unknown");
+            println!("ok   process resolution: {job_name} -> {executable}");
+        } else {
+            let error = resolution["error"].as_str().unwrap_or("unknown error");
+            println!("fail process resolution: {job_name} ({error})");
+        }
+    }
+    if dashboard["registered"].as_bool() == Some(true) {
+        println!("ok   dashboard service: registered");
+    } else {
+        println!("warn dashboard service: not registered");
+    }
+    if dashboard["loaded"].as_bool() == Some(true) {
+        println!(
+            "ok   dashboard listener: {}",
+            dashboard["access_url"].as_str().unwrap_or("unknown")
+        );
+    } else {
+        println!("warn dashboard listener: not running");
+    }
+    let token_present = dashboard["token"]["present"].as_bool() == Some(true);
+    let token_permissions = dashboard["token"]["permissions"]
+        .as_str()
+        .unwrap_or("unknown");
+    if token_present && token_permissions == "owner_only" {
+        println!("ok   dashboard token: present (owner only)");
+    } else if token_present {
+        println!("fail dashboard token: present ({token_permissions})");
+    } else {
+        println!("warn dashboard token: missing");
+    }
+    for check in checks {
+        match check.split_once(':') {
+            Some(("integrity", " ok")) => println!("ok   integrity: database integrity verified"),
+            Some(("integrity", detail)) => println!("fail integrity:{detail}"),
+            Some(("foreign_key_violations", " 0")) => println!("ok   foreign key violations: 0"),
+            Some(("foreign_key_violations", detail)) => {
+                println!("fail foreign key violations:{detail}")
+            }
+            _ => println!("fail {check}"),
+        }
+    }
+}
+
+/// Counts the planned create/update/no-op actions of an import plan.
+fn import_plan_counts(plan: &ImportPlan) -> (usize, usize, usize) {
+    let mut created = 0;
+    let mut updated = 0;
+    let mut unchanged = 0;
+    for action in &plan.jobs {
+        match action {
+            PlannedImportJob::Create { .. } => created += 1,
+            PlannedImportJob::Update { .. } => updated += 1,
+            PlannedImportJob::NoOp { .. } => unchanged += 1,
+        }
+    }
+    (created, updated, unchanged)
+}
+
+/// One human action line per planned import action: `created: NAME (ID)`,
+/// `updated: NAME (ID)`, or `unchanged: NAME (ID)`.
+fn import_action_lines(plan: &ImportPlan) -> Vec<String> {
+    plan.jobs
+        .iter()
+        .map(|action| match action {
+            PlannedImportJob::Create { job, .. } => {
+                format!("created: {} ({})", job.name, job.id)
+            }
+            PlannedImportJob::Update { job, .. } => {
+                format!("updated: {} ({})", job.name, job.id)
+            }
+            PlannedImportJob::NoOp { job, .. } => format!("unchanged: {} ({})", job.name, job.id),
+        })
+        .collect()
+}
+
+/// Renders the human schedule summary (`cron 'EXPR'`, `every DUR`, or
+/// `at RFC3339`) from a typed schedule.
+fn schedule_summary(schedule: &Schedule) -> String {
+    match schedule {
+        Schedule::Cron { expression, .. } => format!("cron '{expression}'"),
+        Schedule::Every { interval, .. } => format!("every {}", human_duration(interval.get())),
+        Schedule::At { at } => format!("at {at}"),
+    }
+}
+
+/// Renders the human schedule summary (`cron 'EXPR'`, `every DUR`, or
+/// `at RFC3339`) from the redacted definition JSON.
+fn list_schedule_summary(definition: &Value) -> Result<String> {
+    let schedule = definition
+        .get("schedule")
+        .context("definition lacks schedule")?;
+    Ok(match schedule.get("kind").and_then(Value::as_str) {
+        Some("cron") => format!(
+            "cron '{}'",
+            schedule
+                .get("expression")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        ),
+        Some("every") => format!(
+            "every {}",
+            human_duration(
+                schedule
+                    .get("interval")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0)
+            )
+        ),
+        Some("at") => {
+            let at = schedule
+                .get("at")
+                .and_then(Value::as_i64)
+                .context("at schedule lacks its instant")?;
+            format!("at {}", Timestamp::from_epoch_micros(at))
+        }
+        _ => return Err(anyhow!("unknown schedule kind in definition")),
+    })
+}
+
+/// Renders the human target summary (`run EXE [ARGS...]`, `shell CMD`, or
+/// `http METHOD URL`) from the redacted definition JSON.
+fn list_target_summary(definition: &Value) -> Result<String> {
+    let target = definition
+        .get("target")
+        .context("definition lacks target")?;
+    Ok(match target.get("kind").and_then(Value::as_str) {
+        Some("process") => {
+            let executable = target
+                .get("executable")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let mut summary = format!("run {executable}");
+            if let Some(args) = target.get("args").and_then(Value::as_array) {
+                for arg in args.iter().filter_map(Value::as_str) {
+                    summary.push(' ');
+                    summary.push_str(arg);
+                }
+            }
+            summary
+        }
+        Some("shell") => format!(
+            "shell {}",
+            target.get("command").and_then(Value::as_str).unwrap_or("")
+        ),
+        Some("http") => format!(
+            "http {} {}",
+            target.get("method").and_then(Value::as_str).unwrap_or(""),
+            target.get("url").and_then(Value::as_str).unwrap_or("")
+        ),
+        _ => return Err(anyhow!("unknown target kind in definition")),
+    })
+}
+
+/// Renders a duration in the CLI's input grammar: the largest whole unit
+/// (`s`, `m`, `h`, or `d`) that divides the value, or the raw microsecond
+/// count as a defensive fallback for sub-second values (which the input
+/// grammar can never produce).
+fn human_duration(micros: u64) -> String {
+    const US_PER_SECOND: u64 = 1_000_000;
+    if !micros.is_multiple_of(US_PER_SECOND) {
+        return format!("{micros}us");
+    }
+    let seconds = micros / US_PER_SECOND;
+    if seconds.is_multiple_of(86_400) {
+        format!("{}d", seconds / 86_400)
+    } else if seconds.is_multiple_of(3_600) {
+        format!("{}h", seconds / 3_600)
+    } else if seconds.is_multiple_of(60) {
+        format!("{}m", seconds / 60)
+    } else {
+        format!("{seconds}s")
+    }
+}
 
 fn render(format: Format, command: &str, data: Value, warnings: &[&str]) {
     match format {
@@ -3779,6 +5369,15 @@ fn error_code(error: &anyhow::Error) -> &'static str {
             ServiceError::CommandFailed { .. } => "service_command_failed",
             ServiceError::Io(_) => "service_io",
         }
+    } else if let Some(fetch) = error.downcast_ref::<ImportFetchError>() {
+        match fetch {
+            ImportFetchError::UnsupportedScheme { .. } => "import_unsupported_scheme",
+            ImportFetchError::Network(_) => "import_fetch",
+            ImportFetchError::HttpStatus { .. } => "import_http_status",
+            ImportFetchError::BodyTooLarge { .. } => "import_body_too_large",
+            ImportFetchError::TooManyRedirects => "import_too_many_redirects",
+            ImportFetchError::TotalTimeout => "import_timeout",
+        }
     } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
             StoreError::NotFound(_) => "not_found",
@@ -3810,6 +5409,15 @@ fn exit_code(error: &anyhow::Error) -> i32 {
             ServiceError::UnsupportedPlatform { .. } => 2,
             ServiceError::ManagedInstall => 3,
             ServiceError::CommandFailed { .. } | ServiceError::Io(_) => 5,
+        }
+    } else if let Some(fetch) = error.downcast_ref::<ImportFetchError>() {
+        match fetch {
+            ImportFetchError::UnsupportedScheme { .. }
+            | ImportFetchError::Network(_)
+            | ImportFetchError::HttpStatus { .. }
+            | ImportFetchError::BodyTooLarge { .. }
+            | ImportFetchError::TooManyRedirects
+            | ImportFetchError::TotalTimeout => 5,
         }
     } else if let Some(store) = error.downcast_ref::<StoreError>() {
         match store {
@@ -4485,6 +6093,413 @@ mod tests {
                 .path
                 .as_deref()
                 .is_some_and(|path| Path::new(path).is_absolute())
+        );
+    }
+
+    // --- Export selection and URL import (2026-08-24) ---
+
+    fn job_record(name: &str, tags: &[&str]) -> JobRecord {
+        JobRecord {
+            id: format!("id-{name}"),
+            name: name.to_owned(),
+            description: None,
+            tags_json: serde_json::to_string(tags).unwrap(),
+            enabled: true,
+            removed_at_us: None,
+            current_revision: 1,
+            definition_json: "{}".into(),
+            cursor_us: 0,
+            updated_at_us: 0,
+            cursor_updated_at_us: 0,
+            disabled_since_us: None,
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingPicker {
+        selected: Vec<String>,
+        calls: std::cell::Cell<usize>,
+    }
+
+    impl CountingPicker {
+        fn picking(selected: &[&str]) -> Self {
+            Self {
+                selected: selected.iter().map(|id| format!("id-{id}")).collect(),
+                calls: std::cell::Cell::new(0),
+            }
+        }
+    }
+
+    impl JobPicker for CountingPicker {
+        fn pick(&self, jobs: &[JobRecord]) -> Result<Vec<String>> {
+            self.calls.set(self.calls.get() + 1);
+            assert!(
+                self.selected.len() <= jobs.len(),
+                "fake picked more jobs than exist"
+            );
+            Ok(self.selected.clone())
+        }
+    }
+
+    #[test]
+    fn export_picker_decision_is_table_tested_across_the_context_matrix() {
+        // (stdin_tty, stdout_tty, stderr_tty, ci_set, format, has_selectors)
+        let cases: &[(bool, bool, bool, bool, Format, bool, bool)] = &[
+            // The single interactive context: three terminals, CI unset,
+            // human format, no selector.
+            (true, true, true, false, Format::Human, false, true),
+            // Each stream alone can suppress the picker.
+            (false, true, true, false, Format::Human, false, false),
+            (true, false, true, false, Format::Human, false, false),
+            (true, true, false, false, Format::Human, false, false),
+            // CI, JSON, and selectors each suppress it.
+            (true, true, true, true, Format::Human, false, false),
+            (true, true, true, false, Format::Json, false, false),
+            (true, true, true, false, Format::Human, true, false),
+            // Combined hostile contexts stay non-interactive.
+            (false, false, false, true, Format::Json, true, false),
+            (true, false, false, true, Format::Human, true, false),
+            (false, true, true, true, Format::Json, false, false),
+        ];
+        for (stdin, stdout, stderr, ci, format, selectors, expected) in cases {
+            let tty = TerminalState {
+                stdin: *stdin,
+                stdout: *stdout,
+                stderr: *stderr,
+            };
+            assert_eq!(
+                should_show_picker(tty, *ci, *format, *selectors),
+                *expected,
+                "decision mismatch for stdin={stdin} stdout={stdout} stderr={stderr} ci={ci} format={format:?} selectors={selectors}"
+            );
+        }
+    }
+
+    #[test]
+    fn export_selector_union_dedup_and_no_match() {
+        let jobs = vec![
+            job_record("alpha", &[]),
+            job_record("beta", &["nightly"]),
+            job_record("gamma", &["nightly", "backup"]),
+            job_record("delta", &["backup"]),
+            job_record("epsilon", &["x"]),
+        ];
+        let selectors = ExportSelectors::parse(Some("alpha,gamma"), Some("nightly"));
+        let picker = CountingPicker::picking(&[]);
+        let selected = select_export_jobs(jobs.clone(), &selectors, true, &picker).unwrap();
+        let names: Vec<&str> = selected.iter().map(|job| job.name.as_str()).collect();
+        // alpha by name; beta and gamma by tag; store order preserved; no dup.
+        assert_eq!(names, ["alpha", "beta", "gamma"]);
+        assert_eq!(
+            picker.calls.get(),
+            0,
+            "selectors must never show the picker"
+        );
+
+        // A single job satisfying several selector values is not duplicated:
+        // gamma carries both --tag values, epsilon matches both --jobs and --tag.
+        // delta is included because "backup" matches every job carrying it.
+        let selectors = ExportSelectors::parse(Some("epsilon,gamma"), Some("x,backup"));
+        let selected = select_export_jobs(jobs.clone(), &selectors, false, &picker).unwrap();
+        let names: Vec<&str> = selected.iter().map(|job| job.name.as_str()).collect();
+        assert_eq!(names, ["gamma", "delta", "epsilon"]);
+
+        // A tag value must match every job carrying it, even when several
+        // jobs share the tag: beta and gamma both carry "nightly".
+        let selectors = ExportSelectors::parse(None, Some("nightly"));
+        let selected = select_export_jobs(jobs.clone(), &selectors, false, &picker).unwrap();
+        let names: Vec<&str> = selected.iter().map(|job| job.name.as_str()).collect();
+        assert_eq!(names, ["beta", "gamma"]);
+    }
+
+    #[test]
+    fn export_selector_no_match_is_a_validation_error_before_output() {
+        let jobs = vec![job_record("alpha", &["nightly"])];
+        let selectors = ExportSelectors::parse(Some("alpha,ghost"), Some("nightly"));
+        let error = select_export_jobs(jobs, &selectors, false, &CountingPicker::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("--jobs ghost"), "unexpected: {error}");
+        assert!(!error.contains("--jobs alpha"), "unexpected: {error}");
+        assert!(!error.contains("--tag nightly"), "unexpected: {error}");
+
+        let jobs = vec![job_record("alpha", &["nightly"])];
+        let selectors = ExportSelectors::parse(None, Some("nightly,ghost"));
+        let error = select_export_jobs(jobs, &selectors, false, &CountingPicker::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("--tag ghost"), "unexpected: {error}");
+
+        // A totally unmatched selection fails even when other jobs exist.
+        let jobs = vec![job_record("alpha", &["nightly"])];
+        let selectors = ExportSelectors::parse(Some("absent"), None);
+        let error = select_export_jobs(jobs, &selectors, false, &CountingPicker::default())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("matched no job"), "unexpected: {error}");
+    }
+
+    #[test]
+    fn export_fake_picker_drives_selection_without_a_pty() {
+        let jobs = vec![
+            job_record("alpha", &[]),
+            job_record("beta", &[]),
+            job_record("gamma", &[]),
+        ];
+        let picker = CountingPicker::picking(&["alpha", "gamma"]);
+        let selected = select_export_jobs(
+            jobs.clone(),
+            &ExportSelectors::parse(None, None),
+            true,
+            &picker,
+        )
+        .unwrap();
+        let names: Vec<&str> = selected.iter().map(|job| job.name.as_str()).collect();
+        assert_eq!(names, ["alpha", "gamma"]);
+        assert_eq!(picker.calls.get(), 1);
+
+        // An empty confirmed selection yields a settings-only export.
+        let picker = CountingPicker::picking(&[]);
+        let selected = select_export_jobs(
+            jobs.clone(),
+            &ExportSelectors::parse(None, None),
+            true,
+            &picker,
+        )
+        .unwrap();
+        assert!(selected.is_empty());
+        assert_eq!(picker.calls.get(), 1);
+    }
+
+    #[test]
+    fn export_non_interactive_never_instantiates_the_picker() {
+        let jobs = vec![job_record("alpha", &[])];
+        // Non-interactive (pipes, redirection, CI, JSON): full export, no picker.
+        let picker = CountingPicker::picking(&[]);
+        let selected = select_export_jobs(
+            jobs.clone(),
+            &ExportSelectors::parse(None, None),
+            false,
+            &picker,
+        )
+        .unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(picker.calls.get(), 0);
+
+        // JSON mode is decided non-interactive before any picker exists.
+        let tty = TerminalState {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+        };
+        let json = should_show_picker(tty, false, Format::Json, false);
+        assert!(!json);
+
+        // Zero registered jobs skip the picker even when interactive.
+        let picker = CountingPicker::picking(&[]);
+        let selected = select_export_jobs(
+            Vec::new(),
+            &ExportSelectors::parse(None, None),
+            true,
+            &picker,
+        )
+        .unwrap();
+        assert!(selected.is_empty());
+        assert_eq!(picker.calls.get(), 0);
+    }
+
+    #[test]
+    fn scripted_picker_resolves_names_and_rejects_unknown_ones() {
+        let jobs = vec![job_record("alpha", &[]), job_record("beta", &[])];
+        let picker = ScriptedPicker {
+            names: "alpha,alpha,beta".into(),
+        };
+        let picked = picker.pick(&jobs).unwrap();
+        let names: Vec<&str> = jobs
+            .iter()
+            .filter(|job| picked.contains(&job.id))
+            .map(|job| job.name.as_str())
+            .collect();
+        assert_eq!(names, ["alpha", "beta"]);
+
+        let picker = ScriptedPicker {
+            names: "alpha,ghost".into(),
+        };
+        let error = picker.pick(&jobs).unwrap_err().to_string();
+        assert!(error.contains("ghost"), "unexpected: {error}");
+
+        // An empty scripted selection means the user deselected everything.
+        let picker = ScriptedPicker {
+            names: String::new(),
+        };
+        assert!(picker.pick(&jobs).unwrap().is_empty());
+    }
+
+    #[test]
+    fn import_source_classifies_paths_and_urls_explicitly() {
+        match import_source(Path::new("backup.json")).unwrap() {
+            ImportSource::Path(path) => assert_eq!(path, Path::new("backup.json")),
+            ImportSource::Url(_) => panic!("relative name classified as URL"),
+        }
+        match import_source(Path::new("/tmp/backup.json")).unwrap() {
+            ImportSource::Path(path) => assert_eq!(path, Path::new("/tmp/backup.json")),
+            ImportSource::Url(_) => panic!("absolute path classified as URL"),
+        }
+        // A colon in a name without `://` is a path, not a scheme.
+        match import_source(Path::new("backup:2024.json")).unwrap() {
+            ImportSource::Path(path) => assert_eq!(path, Path::new("backup:2024.json")),
+            ImportSource::Url(_) => panic!("colon-name classified as URL"),
+        }
+        match import_source(Path::new("https://example.test/doc.json")).unwrap() {
+            ImportSource::Url(url) => {
+                assert_eq!(url.scheme(), "https");
+                assert_eq!(url.host_str(), Some("example.test"));
+            }
+            ImportSource::Path(_) => panic!("https URL classified as path"),
+        }
+        let error = import_source(Path::new("https://user:pass@example.test/doc.json"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("userinfo"), "unexpected: {error}");
+        let error = import_source(Path::new("ftp://example.test/doc.json"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("scheme"), "unexpected: {error}");
+        assert!(import_source(Path::new("https://example.test/")).is_ok());
+    }
+
+    fn list_job_record(name: &str, enabled: bool, shell_command: &str) -> Value {
+        json!({
+            "name": name,
+            "enabled": enabled,
+            "definition_json": serde_json::to_string(&json!({
+                "schedule": {"kind": "every", "interval": 3_600_000_000u64},
+                "target": {"kind": "shell", "command": shell_command}
+            }))
+            .unwrap(),
+        })
+    }
+
+    #[test]
+    fn truncate_display_ascii_fitting_no_fit_and_boundaries() {
+        // Fits: returned unchanged, no marker, at and above the exact width.
+        assert_eq!(truncate_display("hello", 10), "hello");
+        assert_eq!(truncate_display("hello", 5), "hello");
+        // No-fit: truncated to max_width - 1 text columns plus the marker.
+        assert_eq!(truncate_display("hello", 4), "hel…");
+        assert_eq!(truncate_display("hello", 3), "he…");
+        assert_eq!(truncate_display("hello", 2), "h…");
+        // Minimum widths: one column holds only the marker; zero cannot hold
+        // the marker, so the text is returned unchanged.
+        assert_eq!(truncate_display("hello", 1), "…");
+        assert_eq!(truncate_display("hello", 0), "hello");
+        assert_eq!(truncate_display("", 0), "");
+    }
+
+    #[test]
+    fn truncate_display_uses_display_width_for_cjk_and_emoji() {
+        // Width-2 CJK characters count as two columns.
+        assert_eq!(truncate_display("한글", 4), "한글");
+        assert_eq!(truncate_display("한글", 3), "한…");
+        assert_eq!(truncate_display("한글", 2), "…");
+        // Emoji also occupy two columns.
+        assert_eq!(truncate_display("😀", 2), "😀");
+        assert_eq!(truncate_display("😀", 1), "…");
+        assert_eq!(truncate_display("😀😀", 3), "😀…");
+        // Mixed ASCII and wide characters fit by total display width; a wide
+        // character that cannot fit the remaining budget ends the cut.
+        assert_eq!(truncate_display("a한b", 4), "a한b");
+        assert_eq!(truncate_display("a한b", 3), "a…");
+    }
+
+    #[test]
+    fn truncate_display_appends_the_marker_only_when_truncating() {
+        // An exact fit is not a truncation.
+        assert_eq!(
+            truncate_display("run /usr/bin/true", 17),
+            "run /usr/bin/true"
+        );
+        // One column over the width truncates and marks the cut.
+        assert_eq!(
+            truncate_display("run /usr/bin/true", 16),
+            "run /usr/bin/tr…"
+        );
+        // A comfortably fitting value is byte-identical.
+        assert_eq!(truncate_display("short", 80), "short");
+    }
+
+    #[test]
+    fn list_table_with_injected_widths_truncates_only_the_target_column() {
+        let jobs = vec![
+            list_job_record("a", true, "git push origin main"),
+            list_job_record("b", true, "run-a-very-long-backup-job-with-a-silly-name"),
+        ];
+        // name_width = max(4, 1, 1) = 4; schedule_width = max(8, 8, 8) = 8;
+        // target_width = max(6, 26, 50) = 50; the natural table width is
+        // 4 + 1 + 8 + 1 + 50 + 1 + 7 = 72.
+        let full = format!(
+            "{:<4} {:<8} {:<50} ENABLED\n\
+             {:<4} {:<8} {:<50} yes\n\
+             {:<4} {:<8} {:<50} yes\n",
+            "NAME",
+            "SCHEDULE",
+            "TARGET",
+            "a",
+            "every 1h",
+            "shell git push origin main",
+            "b",
+            "every 1h",
+            "shell run-a-very-long-backup-job-with-a-silly-name",
+        );
+        // No width: full values, byte-identical to the pre-change table.
+        assert_eq!(list_table(&jobs, None).unwrap(), full);
+        // A width that fits the natural table width: unchanged.
+        assert_eq!(list_table(&jobs, Some(80)).unwrap(), full);
+        assert_eq!(list_table(&jobs, Some(72)).unwrap(), full);
+        // A width that cannot even hold NAME + SCHEDULE + ENABLED alone: the
+        // documented fallback prints the untruncated table (rows wrap).
+        assert_eq!(list_table(&jobs, Some(20)).unwrap(), full);
+    }
+
+    #[test]
+    fn list_table_truncates_the_target_column_to_the_remaining_width() {
+        let jobs = vec![
+            list_job_record("a", true, "git push origin main"),
+            list_job_record("b", true, "run-a-very-long-backup-job-with-a-silly-name"),
+        ];
+        // At width 40 the fixed prefix (4 + 1 + 8 + 1) and the trailing
+        // " ENABLED" (1 + 7) leave 40 - 22 = 18 columns for TARGET; every
+        // target value shrinks to 17 text columns plus the marker.
+        let expected = format!(
+            "{:<4} {:<8} {:<18} ENABLED\n\
+             {:<4} {:<8} {:<18} yes\n\
+             {:<4} {:<8} {:<18} yes\n",
+            "NAME",
+            "SCHEDULE",
+            "TARGET",
+            "a",
+            "every 1h",
+            "shell git push or…",
+            "b",
+            "every 1h",
+            "shell run-a-very-…",
+        );
+        assert_eq!(list_table(&jobs, Some(40)).unwrap(), expected);
+    }
+
+    #[test]
+    fn consolidated_explanation_separates_eligibility_from_overlap() {
+        assert_eq!(schedule_eligibility(false), "disabled");
+        assert_eq!(schedule_eligibility(true), "subject_to_admission");
+        assert_eq!(overlap_decision(0, OverlapPolicy::Skip), "no_active_run");
+        assert_eq!(
+            overlap_decision(1, OverlapPolicy::Skip),
+            "would_skip_overlap"
+        );
+        assert_eq!(overlap_decision(1, OverlapPolicy::Replace), "would_replace");
+        assert_eq!(
+            overlap_decision(1, OverlapPolicy::Allow),
+            "eligible_subject_to_capacity"
         );
     }
 }

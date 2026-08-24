@@ -21,6 +21,64 @@ Implement from the inside out: deterministic domain behavior, transactional stor
 
 This layering costs some domain/store mapping and trait design up front. It is justified by deterministic testing and by future viewer, MCP, and desktop surfaces needing the same behavior without depending on CLI parsing or SQLite layout.
 
+## README product narrative (2026-08-24)
+
+The README leads with **“Cron that explains itself.”** and earns that claim with shipped,
+inspectable behavior. Its first screen moves from cron's silent-failure problem to locron's durable
+history and explanations, then shows a short CLI path using the real `add`, `preview`, and `why`
+syntax and current human-rendered output. Run-specific follow-up uses `history` and `why --run`;
+captured output remains separate because the queued-run confirmation or `history --format json`
+must supply the canonical run ID required by `locron logs <RUN_ID>`.
+
+The capability story follows the specification's accepted order: explainability (`why`, `history`,
+`logs`, `preview`, `doctor`), reliability (explicit missed-run and overlap policies, durable
+occurrence identity, recovery), then agent integration (`--format json`, dry-run mutations, and
+MCP over the same application boundary). SQLite, WAL, migrations, and process-group details appear
+only as supporting evidence. Installation and service-start guidance stays unchanged in substance,
+and all examples must be checked against the shipped help and isolated scratch-state output. The
+README advertises the shipped `locron explain` consolidated summary while retaining `why` as the
+detailed job/run diagnostic. It does not advertise richer event-derived decision traces or direct
+machine sleep telemetry.
+
+## Consolidated job explanation implementation (2026-08-24)
+
+The new `locron explain NAME_OR_ID` command remains a thin CLI composition over existing durable
+facts. One shared current-job explanation helper resolves the live job, deserializes its normalized
+definition, calculates its next schedule occurrence at one sampled wall-clock instant, reads active
+runs, checks daemon ownership, and loads global concurrency. Both `why NAME` and `explain` consume
+these facts. The existing `why NAME` behavior remains unchanged, including its calculated next
+occurrence and overlap-oriented eligibility for a disabled job; `explain` alone suppresses the next
+occurrence and reports `disabled`, as required by its consolidated-summary contract. For an enabled
+job, `explain` reports `subject_to_admission` rather than claiming capacity is currently available;
+the overlap decision and configured global limit are separate facts. It does not duplicate the
+store's transactional admission simulation or imply that reading the report reserves capacity.
+
+A focused store read supplies the most recent run and latest anomalous terminal run with two bounded
+queries in one read transaction, using the existing run mapping and the canonical
+`requested_at_us DESC, id DESC` order. The anomaly predicate uses the persisted terminal-state
+vocabulary rather than reason-text matching.
+This avoids relying on the general history command's 1,000-row presentation cap when retention has
+not yet pruned an unusually large burst. Live-job resolution happens before the read, which preserves
+the soft-delete boundary and prevents a reused name from collecting the removed identity's history.
+
+A dedicated redacted run-summary projection selects only canonical identity, trigger, nominal and
+request times, current/final state, derived actual-start/duration facts, finish time, and durable
+reason from the existing observable-run representation. It excludes the immutable target snapshot,
+attempt details, and event details because `explain` is a summary; `why --run` remains their detailed
+surface. Human output and the JSON `data` object are both rendered from one JSON-shaped report.
+Human rendering distinguishes known absence (`none`: no run/anomaly, disabled next occurrence,
+manual nominal time) from a fact that is not yet known (`unknown`: start, finish, duration, or
+reason), and translates the machine eligibility codes into readable phrases. No schema migration,
+new durable state, new dependency, or MCP surface is required; the added store operation is read-only
+and uses existing indexes and mapping.
+
+Edge cases are pinned as contracts: no history, only successful history, one anomalous run serving
+as both latest and anomaly, an older anomaly behind a newer success, an active latest run, a removed
+job whose run remains explainable by ID, a removed name reused by a new live job, and unchanged
+`why NAME` output for a disabled job. Redaction tests put sensitive target configuration in the job
+and assert it appears in neither human nor JSON output. The generic help-surface walk must discover
+`explain` and its example.
+
 ## Accepted implementation decisions
 
 ### Accepted: identifiers and timestamps
@@ -328,7 +386,36 @@ Short-lived commands parse input, create normalized application commands, invoke
 
 The version flag is owned by the CLI instead of clap's built-in version flag: the built-in flag exits during parsing and cannot honor `--format json`. `disable_version_flag = true` removes it, and a top-level, deliberately non-global `-V/--version` boolean is handled in `main` before tracing or state discovery, rendering `locron <version>` for human output and the standard `locron.cli/v1` envelope with `command` `version` and `data` `{"version": ...}` for JSON output, using `env!("CARGO_PKG_VERSION")`. Keeping the flag non-global preserves the existing rejection of `locron add -V` as an unexpected argument. The subcommand field becomes `Option<Command>`; when version is present the subcommand is ignored, and when it is absent the CLI reproduces clap's two existing failure surfaces byte-identically: a bare `locron` renders the full help to stderr with exit code 2 through the container-level `arg_required_else_help`, and an invocation with other arguments but no subcommand re-parses the original arguments with `subcommand_required(true)` via `try_get_matches_from` to emit the native `MissingSubcommand` error and subcommand list (`Command::error` alone renders a raw error without the command context, so it is not used). Because the field is optional, `override_usage = "locron [OPTIONS] <COMMAND>"` keeps the required-command spelling in every help and error path, and the version flag's `display_order` places it after the automatic help flag to preserve the baseline option order. The full parse completes before the version short-circuit, so invalid arguments such as `-V --format bogus` are rejected with exit code 2 rather than printing the version. Note that `required_unless_present` on the subcommand field is silently ignored by clap_derive 4.6 and must not be relied on.
 
+`list` and `remove` carry Clap 4 visible subcommand aliases (`ls`, `rm`) on their command variants. The aliases are visible rather than hidden so `locron --help` advertises the shorthand. An alias resolves to the same enum variant, so dispatch, option handling, help, and the canonical command names hard-coded at each `render` call site are untouched: machine output for an aliased invocation is byte-identical to the canonical spelling. This adds no dependency and changes no product behavior, so the frozen specification is not amended.
+
+Human `list` output renders a docker-style aligned table instead of the shared pretty-JSON fallback: a header line plus one row per live job, columns NAME, SCHEDULE, TARGET, and ENABLED derived from the redacted durable record only. Schedule summaries are `cron 'EXPR'`, `every DUR`, or `at RFC3339`; target summaries are `run EXE [ARGS...]`, `shell CMD`, or `http METHOD URL`; ENABLED is `yes` or `no`. Alignment is hand-rolled from the maximum column width with no new dependency — the workspace has repeatedly rejected non-essential crates — and values are never truncated. An empty result prints the header alone, matching `docker ps` with zero containers. Only the human `list` path changes: the `list` dispatch arm in `execute` branches on format (table for `Format::Human`, the unchanged shared `render` otherwise), so the JSON envelope, the canonical `command` field, and every other command's rendering are untouched. Human output is not a compatibility surface, but contract tests pin the table so it cannot regress accidentally. Other list-like commands (`history`) keep the pretty-JSON fallback until a reviewed decision extends table rendering.
+
+Implementation deviations from the plan above, all confined to `locron-cli`:
+
+- The summaries parse the redacted `definition_json` as JSON values rather than deserializing into typed `JobDefinition`: a redacted inline body is the string `"<redacted>"`, which serde rejects for the typed `Vec<u8>` body field ("expected a sequence"). Value-level parsing still reads only the redacted record, so the redaction guarantee is unchanged.
+- The table's renderers are named `list_schedule_summary`/`list_target_summary` because the export-selection work in the same file already owned the typed `schedule_summary(&Schedule)` name for its picker rows; both share `human_duration`.
+- `every DUR` renders the largest whole unit (`s`, `m`, `h`, or `d`) that divides the stored microseconds, matching the CLI's input grammar; a sub-second value (which the grammar can never produce) falls back to the raw `{N}us` rendering rather than truncating.
+- Rows never carry trailing whitespace: the last column is not padded.
+
 `locron daemon run` loads configuration, constructs `locron-store` behind core ports, constructs `locron-engine`, and enters its daemon runtime. Signal loops, locks, reconciliation, runners, maintenance, and graceful shutdown remain inside the engine.
+
+## Human rendering implementation (2026-08-24)
+
+Implements the frozen human-output-contract amendment (issue #4). Each command's `Format::Human` branch calls a dedicated renderer instead of the shared pretty-JSON fallback; the `Format::Json` path and the `render` envelope are untouched, so machine output is byte-identical. Renderers consume only the redacted records the JSON path already uses, so redaction parity holds by construction.
+
+Shared helpers live beside the existing list renderer: column alignment and human durations reuse `render_list_table` and `human_duration`; schedule and target summaries reuse `list_schedule_summary` and `list_target_summary`; run-state and trigger names render from the existing state vocabulary. No new dependency is added — every form is hand-rolled `println!` composition. `doctor` keeps its existing check evaluation and only changes presentation. `why` reuses its explanation facts and flattens them into labeled sections. `logs`, `run --wait` streams, `export`, `service`, `self-update`, `version`, and `mcp` are already conformant and are not changed.
+
+Contract tests pin every command's human form for empty and populated states, dry-run wording, table-only ID abbreviation, and redaction, mirroring the existing help-surface walk so a new command cannot omit its human form silently. The README demo screencast (`assets/screencast.sh`) dropped its `jq` pipes as part of this change; the recording itself is regenerated separately.
+
+Implementation deviations, all confined to `locron-cli` and confined to human branches:
+
+- The plan text above claims `run --wait` streams are "already conformant and are not changed". In fact the human wait stream is part of this work: after the queued line it now prints the terminal outcome line `run finished: {id} ({state})`, per the `docs/CLI.md` contract. The streamed progress lines themselves are unchanged.
+- `why --run` also prints an EVENTS section (`  {RFC3339} {kind}` per durable event) beyond the contract's RUN/ATTEMPTS/terminal-reason sections. The events are already loaded to produce the terminal-reason text, so this costs no extra record access and the contract does not forbid it.
+- The `why --run` RUN section omits a job-name line: the job is soft-deleted in the general case, so a name would require a best-effort extra lookup with an ambiguous fallback. The run id, trigger, and timestamps identify the run without it.
+- The `history` table has no run-id column — the contract's "run ID may abbreviate in table only" permission is unused. When the job has been soft-deleted, the JOB column falls back to the abbreviated job id (first 8 hex characters) instead of the missing name.
+- Dry-run wording choices: `{key}: would be configured (dry run; no changes made)` for `config set`, `dry run: would create N, update N, unchanged N; no changes made` for `import`, `dry run: would prune {runs} runs, {outputs} outputs ({bytes} bytes)` for `prune`, and `{decision}: {name}` plus `dry run: no run created` for `run --dry-run`.
+- `prune` reports "N runs" as the count of distinct run ids: prune rows are per-attempt, and a run with several attempts is counted once.
+- `import` no-op action lines print the import plan's pre-existing job name and id for the no-op entry (a no-op plan entry does not carry a resolved record id).
 
 ## Edge cases to handle explicitly
 
@@ -402,6 +489,8 @@ The script downloads `SHA256SUMS.txt` from the same release, selects the line fo
 
 The default install path is `$HOME/.local/bin/locron`, overridden by `LOCRON_INSTALL_DIR` (a full file path; a directory value is an error, as in mise). No root is required and no shell configuration is modified: the script prints per-shell guidance for adding the directory to `PATH` when it is absent, detected from `$SHELL` like mise's `after_finish_help`. Re-running the same command downloads, verifies, and atomically replaces the binary — this is the update path for script-installed users, and no skip-if-exists option is added because re-running is cheap and deterministic. Missing `curl`/`wget`, download failures, checksum mismatches, extraction failures, and unwritable install directories each produce a specific actionable error and a non-zero exit.
 
+A short custom domain serves the one-liner as `https://locron.whitekiwi.link/install.sh` (added 2026-08-24, completing the TODO follow-up). It is not a hosted script copy: a CloudFront viewer-request function (distribution `E2SNYXU6Z3ZE4N`, function `locron-redirect`, OAC `E2BUNP08WL3O60` in front of a private dummy S3 origin) 302-redirects `/install.sh` to the canonical release asset above and other paths to the repository. The served script is therefore always the version-consistent release asset with no release-pipeline change and no drift, the same trust level as the GitHub one-liner; the GitHub URL remains canonical in the documentation.
+
 ### Accepted: self-update subcommand
 
 Add `locron self-update` to the CLI. It updates only to the latest stable release; pinning remains an installer function per the frozen specification.
@@ -415,6 +504,8 @@ Testability uses rustup's override seam: `LOCRON_UPDATE_API_BASE` and `LOCRON_UP
 ### Accepted: tap formula marker and release pipeline
 
 The formula template embedded in `.github/workflows/release.yml` gains one line that creates the self-update marker inside the prefix (`touch lib/.disable-self-update`), and the pipeline attaches `install.sh` to GitHub Releases so the canonical one-liner exists for every published version. `docs/CLI.md` documents the `self-update` command under the reviewed CLI contract, and the README installation section adds the one-liner plus the per-channel update story (re-run the script, `brew upgrade`, or `self-update`). *(The per-channel story later moved to `docs/INSTALL.md`, which the README installation section now links.)*
+
+Implementation deviation, corrected 2026-08-24: the deployed template wrote the marker line as `FileUtils.touch` and carried an explicit `version` line, and the tap's `brew test-bot` failed on five consecutive bumps with the corresponding `brew style` and `brew audit` offenses (evidence in `docs/FINDINGS.md` §20). The template now writes `touch lib/".disable-self-update"` and renders the literal version into the four URL strings (`.../download/v${VERSION}/...`) with no `version` line — Homebrew scans the version from the literal URL token, the canonical pattern for GitHub-release binary formulas. Keeping `#{version}` placeholders without an explicit `version` line fails formula loading (`version (nil)`), so the template interpolates the version at generation time instead. Behavior is unchanged; the fix takes effect at the next tag because the workflow evaluates at the tagged commit.
 
 ### Edge cases to handle explicitly
 
@@ -433,6 +524,29 @@ The formula template embedded in `.github/workflows/release.yml` gains one line 
 - **Self-update contract tests:** local HTTP fixture drives latest resolution, checksum verification, atomic replacement (the pre-update process keeps running while new invocations run the new binary), marker-file refusal with brew guidance, "already up to date", rate-limit error mapping, and JSON envelope output; failure injection proves the old binary is untouched after download/verify errors.
 - **Formula marker:** the tap formula template contains the marker line, and a manual `brew reinstall` followed by `self-update` refusal is recorded as evidence at the next release.
 - **Platform matrix:** the existing four-target CI runs the new suites; Windows, 32-bit, and musl results remain informational.
+
+### Accepted: literal Homebrew formula rendering (2026-08-24 release follow-up)
+
+The v0.6.0 release exposed a shell-expansion defect in the inline, unquoted formula heredoc: Ruby
+documentation backticks were executed as shell command substitutions before the formula was written.
+The release workflow therefore no longer owns an executable heredoc. A checked-in formula template
+is plain data with explicit version and checksum tokens, and a small POSIX renderer validates the
+release version and all four lowercase SHA-256 values before replacing only those tokens. The
+workflow redirects the renderer's standard output into the cloned tap. Literal Ruby comments and
+caveats never pass through shell evaluation, while release-derived values still render into the
+four literal URLs and checksum fields Homebrew requires for version scanning.
+
+The renderer fails if a value has the wrong shape or a template token remains. A deterministic
+regression script renders fixed fixture values and asserts the complete package-manager guidance,
+service-upgrade caveat, literal backticks, URLs, checksums, marker, and absence of trailing
+whitespace. Push CI runs this check and shellchecks both scripts. This keeps the release-only path
+executable before the next tag rather than relying on another publication to discover template
+corruption.
+
+The already-published v0.6.0 formula is repaired directly in `WhiteKiwi/homebrew-tap`: retain the
+current v0.6.0 literal URLs and checksums, restore the guidance byte-for-byte from the style-clean
+v0.5.0 formula, then require the tap's `brew test-bot --only-tap-syntax` workflow to succeed. No
+locron release asset or product binary changes, and no v0.6.1 re-release is needed.
 
 ## Daemon service installation implementation (post-milestone delivery, 2026-08-23)
 
@@ -513,3 +627,141 @@ This section plans maintainer-facing measurement of locron's public distribution
 - **Static checks:** `sh -n` and shellcheck clean; the script contains no bashisms; all heredocs quoted.
 - **CI smoke:** the existing `installer` job in `.github/workflows/ci.yml` gains a step that runs the script in `--json` mode against the live APIs (the authenticated `GITHUB_TOKEN` keeps the REST quota off the 60/hour limit) and asserts the JSON parses and each numeric field is a non-negative integer. The owner-only `/traffic/*` endpoints reject the Actions `GITHUB_TOKEN`, so the step additionally permits an exit confined to `traffic_error` while still failing on any other `*_error` key.
 - **Local live check:** a real run prints all sections with numbers matching independently computed `jq` totals for the same day; the brew section renders 0 and crates.io renders `N/A` until their first real values.
+
+## Export selection and URL import implementation (2026-08-24)
+
+This section plans the 2026-08-24 `docs/SPEC.md` amendment: export job selection (interactive default on a TTY, deterministic filters, non-interactive full export) and import from a URL. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §15. The change is confined to `locron-cli`; `locron-core` and `locron-store` are unchanged, and the frozen dashboard spec's whole-document export download/import upload is unaffected (selection or URL support there would be its own dashboard spec change).
+
+### Accepted: selection as a filter over the existing export path
+
+Selection never reaches the store or domain crates. `locron-cli` resolves the export subset from the same `list_jobs(true)` result the existing `export` function already reads, then hands the filtered list to the existing `export_job` mapping; the document shape, redaction, and omission accounting are untouched.
+
+`--jobs NAME[,NAME...]` and `--tag TAG[,TAG...]` take exact names/tags, combine as a union, and deduplicate by job ID. Any selector value matching no job is a validation error before any output is produced (exit category 2), so a typo can never silently produce a smaller backup. Filters are valid with both human and JSON output and always suppress the picker. A zero-job state skips the picker entirely because there is nothing to select (export of settings only remains legal, as today).
+
+### Accepted: interactive default on a TTY, deterministic everywhere else
+
+Interactivity is decided once per invocation, before any output: stdin, stdout, and stderr must all be terminals (`std::io::IsTerminal`), the `CI` environment variable must be absent, output format must be human, and no `--jobs`/`--tag` selector may be present. Only that combination shows the picker; every other context exports the complete job set exactly as the current CLI does, so scripts, pipes, redirections, CI, and JSON consumers see no behavior change. This is the gh/OpenSpec/diagramkit convention from `docs/FINDINGS.md` §15, and the gh-gist piped-prompt bug is the counterexample this design rules out: non-TTY can never prompt.
+
+stderr joins the decision because the picker renders there: dialoguer's stderr terminal refuses to render on a redirected stderr (`NotConnected`), so a TTY stdin/stdout with a redirected stderr must fall back to the deterministic full export rather than fail the command. This mirrors the both-terminals rule's intent: if the selection interface cannot render, the invocation is non-interactive.
+
+The picker is a dialoguer 0.12 `MultiSelect` (MIT, rust-version 1.66, `default-features = false` — `editor`/`password` are unneeded) with the term target set to stderr, listing jobs by name with each item's schedule summary, every item initially selected, and Enter confirming. Rendering on stderr keeps the "human stdout is the bare export document" contract (`docs/CLI.md`) intact even while a picker is visible; the picker never writes to stdout. The picker interaction is wrapped behind a small selection port so contract tests drive a deterministic fake without a PTY.
+
+For contract tests, a scripted picker substitutes for the TUI without a PTY: when `LOCRON_TEST_EXPORT_PICKER` (test-only hook, documented in the test file) is set to a comma-separated job name list, export treats the invocation as having three terminals, and the selection port returns exactly those job names (rendering its prompt line on stderr) instead of running dialoguer. The `CI`, format, and selector terms of the decision still apply, so the hook cannot make a scripted or JSON export interactive; it only replaces the TUI inside a context that already qualifies.
+
+### Accepted: URL import reuses the whole-document import path
+
+`locron import` accepts an absolute `http://` or `https://` URL in addition to a path. URL detection is an explicit scheme check (an `scheme://`-shaped input is parsed as a URL; anything else is a path — never a `Path::exists` guess). The CLI fetches the body with the existing reqwest/rustls client configuration (mandatory TLS verification), with a 16 MiB in-memory cap enforced while streaming, a 10-redirect cap, and a 30-second total timeout; URLs with a userinfo component are rejected at parse time as a validation error (exit category 2, like any bad argument — the category-5 set below covers what happens after the CLI commits to fetching). The fetched bytes then enter the existing `parse_import_document` → validate → plan → one-transaction apply path byte-for-byte unchanged, so redaction rejection, plaintext acknowledgement, deterministic resolution, dry-run, and rollback are identical for both sources. Fetch failures (DNS, TLS, timeout, cap, redirect excess, non-2xx, non-HTTP scheme) map to exit category 5 with an actionable message and retry guidance; document validation failures keep their existing categories. Import never prompts — `--dry-run` is the preview, and the post-import summary already reports create/update/no-op actions.
+
+The trust boundary is documented, not coded around: `docs/CLI.md` and `docs/OPERATOR.md` state that an export document registers executable schedules and importing from a URL carries the same trust boundary as installing a script from that URL, with `--dry-run` recommended for first-time imports. No signature, pinning, or checksum scheme is added in this amendment; the existing redaction rules remain the value-protection mechanism.
+
+### Edge cases to handle explicitly
+
+- stdout is a TTY but stdin is not (input redirected): no picker — full export, matching the three-terminals rule.
+- stdin and stdout are TTYs but stderr is redirected (`locron export 2>file`): no picker — the interface cannot render on a non-terminal stderr, and dialoguer would fail the command; the invocation falls back to the deterministic full export.
+- `CI` is set while running in a real terminal (wrappers, `script -qec`): no picker — the environment marker wins, per the OpenSpec chain.
+- Picker shown while the daemon edits jobs concurrently: selection resolves against the same `list_jobs` snapshot used for the document; a concurrently deleted job simply exports its last-read definition, and a concurrently created job appears in the next export.
+- `--jobs` with a duplicate name and `--tag` with overlapping matches: union by job ID, one document entry per job.
+- Zero registered jobs: no picker; settings-only export remains valid.
+- URL import of a document with omitted values without `--accept-plaintext-values`: rejected exactly like a file import (existing rule).
+- Fetch succeeds but the body is not valid UTF-8 JSON or exceeds 16 MiB: stable validation/protocol error before any write.
+- URL import while the destination store is busy or migration-locked: existing exit category 4 behavior unchanged.
+- Human mode with a URL: the bare document/plan renders on stdout exactly as for a file; fetch diagnostics and warnings go to stderr.
+
+### Verification additions
+
+- **Selection contract tests:** `--jobs`/`--tag` union and dedup, no-match validation error before output, JSON mode with and without selectors, redaction parity between a selected export and a full export of the same jobs, and round trips (`export --jobs` → `import`) reproducing exactly the selected jobs.
+- **Interactivity tests:** the selection port is driven by a deterministic fake; the interactivity decision is a pure function tested across the TTY/CI/format/selector matrix; contract tests (via the `LOCRON_TEST_EXPORT_PICKER` hook, which drives the picker branch without a PTY) assert stdout carries only the document while the picker prompt renders on stderr, that an empty selection yields a settings-only export, that `CI` still wins over the hook, and that JSON mode never instantiates the picker.
+- **URL import fixture tests:** a local HTTP fixture serves valid documents, redacted documents, malformed JSON, oversized bodies, redirect chains, and 404/500 responses; assertions cover successful atomic import, dry-run non-mutation, category-5 fetch failures, rollback on a late destination conflict, and identical behavior versus the same document as a file.
+- **Platform matrix:** the existing four-target CI runs the new suites; no platform-specific code is introduced (TTY detection and stderr rendering are portable via dialoguer and `std::io::IsTerminal`).
+
+## Shutdown-drain test determinism and CI lint consolidation (2026-08-24)
+
+No product-behavior change — a test-harness script and the CI workflow only — so the frozen `docs/SPEC.md` is not amended. Failure evidence (run IDs, local reproduction) is recorded in `docs/TODO.md` "Shutdown-drain test determinism and CI lint consolidation backlog".
+
+### Accepted: single-member process group makes drain-cancel confirmation event-driven
+
+`daemon::tests::elapsed_shutdown_drain_cancels_runner_before_lifetime_end` failed on two macOS CI legs — run 32644652482 (`macos-aarch64` / Rust 1.94.0) and run 32644735243 (`macos-x86_64` / Rust stable), different platforms each time — with the outcome assertion receiving `TerminationUnconfirmed` instead of `Cancelled`.
+
+Root cause: the test script's `while :; do sleep 1; done` puts a second process (`sleep`) in the run's process group. The runner confirms termination only when the owned leader wait handle has resolved and `kill(-pgid, 0)` reports the whole group absent (runner `wait` branch, `runner.rs:315`; group probe `observe_group_absence`, `runner.rs:767`). When the trapped `sh` exits, its orphaned `sleep` sibling is reaped by launchd/init on its own schedule; until then it remains a zombie that the group-liveness probe counts as alive, so the test's two 20 ms grace deadlines (TERM → KILL → confirm, `runner.rs:351`) can elapse before group absence becomes observable on a loaded macOS runner. The production path is unaffected in practice — its default graces are 5 s + 5 s, which the reap latency cannot plausibly exceed — so the flake is an artifact of the test shrinking the grace to 20 ms.
+
+The fix makes confirmation event-driven rather than budget-driven. Replace the script with a pure-builtin loop (`while :; do :; done`) so the group has exactly one member: when the runner reaps the leader, group absence is true in the same poll, `termination_confirmed` is set without any deadline firing, and the outcome is `Cancelled` regardless of machine load, parallel test contention, or scheduler latency. The test also raises `termination_grace` from 20 ms to 1 s as belt-and-braces, so even a pathological TERM-to-trap delay cannot reach the KILL stage before the trap writes its marker file; the grace then gates only the escalation step, not the asserted outcome. `shutdown_drain` stays at 10 ms: it only decides when the daemon issues cancellation, and the attempt tracker cannot complete before that cancellation, so the drain always elapses. The trap still fires promptly in a builtin loop (the shell checks for pending traps between commands), and the loop burns one CPU core only from `ready` to the trap — tens of milliseconds, confined to one unit test.
+
+Rejected alternatives:
+
+- `serial_test` or `--test-threads=1`: reduces the CPU contention that amplifies the race, but keeps the fixed two-deadline budget against launchd reap latency, so the test would still flake on a loaded runner; the workspace has no other timing-sensitive test needing global serialization.
+- Lengthening the graces alone: same residual race, just rarer — a fixed budget stays load-dependent.
+- Redefining production confirmation as leader-reap-only (dropping the group-absence requirement): changes behavior the frozen documents record (SPEC: "Completion is not reported until termination is confirmed"; IMPLEMENTATION: "Leader exit alone is insufficient because an in-group descendant may still be running") to fix a test artifact. Not accepted.
+- `cargo nextest`: its parallel runner and retry support are marginal here — the engine test binary finishes in under a second — and a retry wrapper would mask rather than remove the race.
+
+### Accepted: dedicated lint job over OS × toolchain, tests over the full platform matrix
+
+`cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings` run in all eight matrix legs of `.github/workflows/ci.yml`. Clippy findings are platform-sensitive only through OS-gated code (this repository's history contains two backlogs where macOS-only or Linux-only dead code failed the opposite OS legs), and the workspace contains no architecture-gated code, so the architecture duplication among the eight clippy compile passes carries no signal.
+
+The workflow gains a `lint` job — matrix `linux-x86_64` and `macos-aarch64` × Rust 1.94.0 and stable, `fail-fast: false` — running fmt and clippy, and the `test` job's eight legs keep only `cargo test --workspace --all-targets`. This preserves exactly the coverage that has caught real bugs here (OS-gated dead code on both OSes, both toolchains' lint sets — formatting and lint rules have drifted between Rust versions before) while halving clippy compile work. rust-cache stays in the lint job so its clippy artifacts warm across runs.
+
+### Edge cases to handle explicitly
+
+- A toolchain update changes rustfmt or clippy output between Rust 1.94 and stable: both toolchains remain in the lint matrix because the CI contract requires clean results on both.
+- macOS-only or Linux-only items that are dead code: still caught, because both operating systems remain in the lint matrix.
+- The busy-loop script's CPU burn: bounded by the test's own cancellation path and confined to one unit test.
+- The `termination_grace` change must not alter what the test proves: it still asserts `Cancelled` via the drain-elapsed → daemon-cancel → TERM-trap path, now with the outcome independent of the deadline values.
+
+### Verification additions
+
+- The changed test passes 100 consecutive local runs plus the macOS CI legs, and the sibling `shutdown_drain_allows_natural_completion_before_lifetime_end` test remains untouched and green.
+- The `lint` job passes on both OS legs and both toolchains; the eight `test` job legs pass with `cargo test` only.
+
+## Usage snapshot smoke relocation (2026-08-24)
+
+No product-behavior change — CI placement only — so the frozen `docs/SPEC.md` is not amended. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §18.
+
+### Accepted: scheduled smoke workflow, hermetic push CI
+
+CI run 32654895285 failed in `Installer / ubuntu-latest` at the "Usage snapshot smoke (live APIs)" step: `scripts/usage.sh --json` exited non-zero with a non-`traffic_error` key. The step never passed `GITHUB_TOKEN` through `env:`, so the script's GitHub REST calls ran unauthenticated against the shared-IP 60/hour quota even though the script supports the token (`usage.sh` line 80). The step's tolerance predicate (`has("traffic_error") and [all *_error keys == "traffic_error"]`) then rejected the failure, as designed.
+
+New `.github/workflows/usage.yml`: `on: schedule: [cron: '0 3 * * 1']` (weekly, Monday 03:00 UTC) plus `workflow_dispatch`; one `usage` job on ubuntu-latest: checkout, run `sh scripts/usage.sh --json` with `env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}` and `permissions: contents: read`, then assert the JSON parses and every numeric field is a non-negative integer. The traffic-only tolerance from the removed step is carried over, for a reason the first plan draft missed: passing `GITHUB_TOKEN` also authenticates the preinstalled `gh`, and the owner-only `/traffic/*` endpoints then fail by design (the Actions token lacks push/admin access), so `traffic_error` is the *expected* state of an authenticated scheduled run, not a drift signal — the first `workflow_dispatch` (run 32655962445) failed on exactly this. Any other `*_error` key or an invalid snapshot still fails the run as a maintainer drift alert. No artifacts are published; the run log is the record.
+
+`ci.yml`'s installer job loses the live-smoke step; the hermetic steps stay: shellcheck on `install.sh` and `scripts/usage.sh`, the fake-`uname`/`ldd` refusal tests, and the pinned `v0.2.0` install smoke (release-asset download through the CDN-backed redirect — no REST quota consumption — consistently green across the matrix runs, e.g. 32644269125 and 32654818613).
+
+### Edge cases to handle explicitly
+
+- Scheduled workflows run only on the default branch and auto-disable after 60 days of repository inactivity — acceptable for a maintainer measurement tool; `workflow_dispatch` covers manual runs.
+- `gh` is not authenticated in the scheduled run: the traffic section prints its note and the script still exits 0 when every other section succeeds (existing script behavior, unchanged).
+- formulae.brew.sh and crates.io have their own limits and are not authenticated: their sections can still fail a scheduled run — that is the drift alert working as intended, never a push gate.
+
+### Verification additions
+
+- `ci.yml` parses and the installer job's step list no longer includes the live smoke; `rg -n "usage.sh --json" .github/workflows` shows the smoke only inside `usage.yml`.
+- The scheduled workflow cannot fire from a push (GitHub schedules run on the default branch with real cron timing); a manual `workflow_dispatch` run is recorded as evidence at first trigger.
+- The next push CI run is green; run ID recorded in `docs/TODO.md`.
+
+## Terminal-width list table truncation (2026-08-24)
+
+This section plans the 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract: Table width). Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §19. The change is confined to `locron-cli`; `locron-core`, `locron-store`, and `locron-engine` are unchanged.
+
+### Accepted: TTY-only truncation of the table's final column
+
+Width resolution is `console::Term::stdout().size_checked()` — the `TIOCGWINSZ` ioctl that docker and kubectl use. `console` 0.16 is already in the `locron-cli` dependency graph through dialoguer 0.12 (verified with `cargo tree -p locron-cli -i console`: console 0.16.4 → dialoguer 0.12.0 → locron-cli), so declaring it as a direct dependency with `default-features = false` adds zero lockfile entries. A failed size lookup — stdout redirected, piped, or otherwise not a terminal — means no truncation, so the one mechanism is both the width source and the TTY gate. The width is sampled once per invocation; a mid-print window resize is not chased (docker and kubectl behave the same). The tuple is `(rows, cols)` — verified in the console 0.16.4 source (`unix_term.rs:53–67` returns `(winsize.ws_row, winsize.ws_col)`), so the width is the second element; a PTY check at real widths confirms the truncation budget tracks the column count.
+
+Display width uses `unicode-width` 0.2, already locked transitively, declared directly on `locron-cli`. The pure helper `truncate_display(&str, max_width) -> String` walks characters, sums display width, and appends the `…` marker (display width 1) only when the value actually shrinks; a value that fits is returned unchanged.
+
+`render_list_table` gains a `width: Option<u16>` parameter, resolved once in the `list` dispatch arm for human format only. Column padding is unchanged; fitting is a separate step: the natural table width is `name_width + 1 + schedule_width + 1 + target_width + 1 + 7` (the final `ENABLED` column is unpadded), and when it exceeds the terminal width only `TARGET` — the table's final data column — absorbs the deficit. Earlier columns never truncate: `NAME` is the key for every other command, schedule summaries are inherently short, and truncating a middle column would misalign every column after it. When the deficit leaves less than one display column for `TARGET` (a pathological terminal width), no truncation occurs and the table wraps exactly as it does today — documented, not silently cut data.
+
+`--no-trunc` is a clap boolean on `List`. It is a rendering flag, not a data flag: it restores full `TARGET` values on a terminal and is accepted with no effect in machine mode, whose envelope stays byte-identical either way. `show` is unchanged — it already prints the complete definition. The `history` table is unchanged in this amendment; applying the same rule there is a deferred follow-up when a long `TRIGGER` value demonstrates the need.
+
+Testability needs no PTY: `truncate_display` and `render_list_table` are pure functions whose width is an injected parameter, so unit tests call them directly with widths of 40, 80, and `None`. Contract tests keep asserting piped `list` output — assert_cmd pipes stdout, the size lookup fails, and the output must be byte-identical to today's full-value table; the help-surface walk covers the new flag.
+
+### Edge cases to handle explicitly
+
+- A terminal narrower than `NAME + SCHEDULE + ENABLED` alone: no truncation, rows wrap as today.
+- CJK or emoji in a target: fitting uses display width, never byte or character count; a truncation may split a grapheme cluster (acceptable in a summary table — the full value lives in `show`).
+- `--no-trunc` with piped stdout: a no-op, because pipes already print full values.
+- `--no-trunc` with `--format json`: accepted and ignored; the envelope is unchanged.
+- An empty job list: header only, unchanged.
+- Window resized after invocation start: the sampled width stands for the invocation.
+
+### Verification additions
+
+- **Unit tests:** `truncate_display` — ASCII fit/no-fit and exact-boundary cases, width-2 CJK, emoji, ellipsis appended only when truncation occurs, and zero/minimum widths; `render_list_table` with injected widths covering the truncating, fitting, and too-narrow fallback paths.
+- **Contract tests:** piped human `ls` with a long target is byte-identical to the pre-change table; `--no-trunc` appears in `locron ls --help` and is accepted; `ls --no-trunc --format json` output is identical to `ls --format json`.
+- **Workspace battery:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on the installed toolchain; the four-target CI matrix stays green.

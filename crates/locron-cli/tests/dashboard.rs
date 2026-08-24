@@ -600,8 +600,8 @@ fn doctor_reports_the_dashboard_exposure_facts() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("\"registered\": true"),
+        stdout.contains("ok   dashboard service: registered"),
         "human doctor output reports the registration: {stdout}"
     );
-    assert!(stdout.contains("\"permissions\": \"owner_only\""));
+    assert!(stdout.contains("ok   dashboard token: present (owner only)"));
 }

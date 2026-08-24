@@ -51,7 +51,7 @@ locron-v{version}-{target}/
 - Verification command: `sha256sum -c SHA256SUMS.txt` (Linux) or `shasum -a 256 -c SHA256SUMS.txt` (macOS).
 
 ### Install Script Asset
-- Every release MUST also publish the repository's `install.sh` (the root-level POSIX sh installer) as a release asset. It is fetched at `https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh`, and the release workflow attaches the checked-out `install.sh` to the release.
+- Every release MUST also publish the repository's `install.sh` (the root-level POSIX sh installer) as a release asset. It is fetched at `https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh`, and the release workflow attaches the checked-out `install.sh` to the release. A short URL, `https://locron.whitekiwi.link/install.sh`, 302-redirects to that asset (a CloudFront viewer-request function in front of a dummy origin — no hosted script copy), so the short URL always serves the release-consistent script; the GitHub URL remains the canonical one-liner in release documentation.
 - The installer registers the installed binary as a login service (`locron service install`) after the atomic replace unless `LOCRON_NO_SERVICE=1` is set. Registration is best-effort: a failure warns and leaves the installation successful.
 - The installer downloads the platform archive through the same static `releases/latest/download/` redirects, verifies it against the release `SHA256SUMS.txt`, and installs it; it supports `LOCRON_VERSION` pinning and `LOCRON_INSTALL_DIR` overrides.
 

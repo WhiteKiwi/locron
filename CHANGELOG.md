@@ -1,5 +1,55 @@
 
-## [Unreleased]
+## [0.6.0] - 2026-08-24
+
+### Added
+
+- `locron explain NAME_OR_ID` provides one redacted summary of a job's schedule, next occurrence,
+  current scheduling posture, latest run, and latest anomalous terminal run. Human and versioned
+  JSON output carry the same canonical run identities and durable reasons, while `why --run`
+  remains the detailed attempt and event trace.
+
+### Documentation
+
+- Repositioned locron as “Cron that explains itself.” and reorganized the README around
+  explainability, real-world reliability, and agent integration. Examples now distinguish job
+  explanations from run explanations and use canonical run IDs for captured logs.
+- Added AI-assisted installation guidance and a copy-paste Homebrew install command using the
+  fully qualified tap name.
+
+## [0.5.0] - 2026-08-24
+
+### Added
+
+- The human `list` table fits the terminal width: on a terminal, when the table would overflow, the
+  `TARGET` column truncates to the remaining width with a trailing `…` and `--no-trunc` prints full
+  values. Piped or redirected output always prints full values, and machine output is
+  byte-identical. Truncation follows character display width, so CJK and emoji targets fit
+  correctly.
+
+## [0.4.1] - 2026-08-24
+
+### Added
+
+- Human-readable output for every command (`docs/SPEC.md` Human Output Contract, issue #4): a docker-style `history` table, confirmation lines for `add`/`update`/`enable`/`disable`/`remove`/`run`/`cancel`/`config`/`import`/`prune`, labeled report sections for `show`/`why`/`doctor`, and one-line occurrence lists for `preview`. Machine-readable output is byte-identical, and every human form honors the existing redaction rules. The demo screencast no longer pipes commands through `jq`.
+
+### Fixed
+
+- The shutdown-drain acceptance test no longer depends on launchd zombie-reap timing: a pure-builtin keep-alive loop makes the test process group single-member, so leader reap equals group absence and the two macOS CI legs stop flaking.
+
+## [0.4.0] - 2026-08-24
+
+### Added
+
+- Export selection: `locron export --jobs`/`--tag` exports an exact subset, and a bare export in an
+  interactive terminal shows a job multi-select picker (all jobs initially selected) while standard
+  output still carries only the export document. Non-interactive contexts — pipes, redirection,
+  `CI`, JSON mode — export everything as before.
+- URL import: `locron import https://…` fetches and applies an export document with mandatory TLS
+  verification, bounded redirect/size/timeout limits, and the same validation, dry-run, and
+  atomicity as a file import. Importing a document registers executable schedules, with the same
+  trust boundary as installing a script from that URL.
+- `ls`/`rm` visible aliases for `list`/`remove`, and a docker-style aligned human `list` table
+  (NAME, SCHEDULE, TARGET, ENABLED). Machine output is unchanged.
 
 ## [0.3.1] - 2026-08-23
 

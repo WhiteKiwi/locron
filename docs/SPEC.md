@@ -7,6 +7,12 @@ Frozen on 2026-08-21 after interactive product review. Changes to this document 
 Amended 2026-08-23: version reporting honors the machine-readable output contract.
 Amended 2026-08-23: installation channels and self-update added; package-manager publication removed from out-of-scope items.
 Amended 2026-08-23: daemon service installation and automatic startup added; operating-system service installation removed from out-of-scope items.
+Amended 2026-08-24: export job selection and URL import added.
+Amended 2026-08-24: human output contract added — human mode renders readable per-command forms instead of machine JSON (issue #4).
+Amended 2026-08-24: the human table form fits the terminal width on a terminal; full values remain available through the detail report, machine output, and a no-truncation rendering flag.
+Amended 2026-08-24: documentation-facing product positioning prioritizes explainability, real-world scheduling semantics, and safe automation surfaces.
+Amended 2026-08-24: a consolidated job explanation reports current scheduling facts, the latest run, and the latest anomalous run.
+Amended 2026-08-24: automated Homebrew publication preserves formula guidance literally and produces a style-clean formula.
 
 ## Goal
 
@@ -15,6 +21,19 @@ Build a local-first job scheduler that lets one user register, inspect, run, and
 The product should retain the simplicity of cron while making execution behavior observable and explicit. A user should be able to understand what was scheduled, when it was expected to run, whether it actually ran, and why it did not run without consulting operating-system-specific scheduler files or logs.
 
 locron owns scheduling and execution semantics itself. It is not a management wrapper that translates individual jobs into cron, launchd, or systemd schedules. Operating-system service managers may keep locron available, but they do not become job-level scheduling backends.
+
+## Product Positioning
+
+The primary product message is **“Cron that explains itself.”** locron is an observable local scheduler, not merely a friendlier syntax for operating-system cron. Its leading user benefit is that a person can inspect the scheduler's durable facts and understand why work ran, did not run, or is not currently eligible.
+
+Product documentation presents capabilities in this order:
+
+1. Explainability: preview, history, captured output, job and run explanations, and health diagnostics.
+2. Real-world reliability: explicit missed-run and overlap policies, durable occurrence identity, bounded catch-up, and restart or crash recovery.
+3. Safe automation: machine-readable output, non-mutating dry runs, and optional agent-facing surfaces that reuse the same validation and durable application semantics.
+4. Implementation evidence: local storage, transactions, process supervision, and similar internals support the reliability claim but do not lead the product story.
+
+Documentation examples must reflect commands and human output that exist in the current release. They must not imply that locron directly observes machine sleep state when it only has durable schedule cursors, daemon lifetime facts, and reconciliation events, and they must not present planned diagnostic commands or richer decision traces as shipped features.
 
 ## Product Principles
 
@@ -45,6 +64,7 @@ The first program milestone is complete when all of the following can be observe
 14. Stored state survives scheduler restarts and schema upgrades.
 15. Automated tests cover time progression, sleep or downtime recovery, daylight-saving transitions, overlap, timeout, cancellation, retry, and unclean restart behavior.
 16. A user can simulate a mutation or manual run without changing durable state, and can ask why a job or run is in its current state without enabling debug logs.
+17. A user can request one consolidated explanation of a job's current scheduling state, latest run, and latest anomalous terminal run without assembling those facts from several commands.
 
 ## In Scope
 
@@ -62,7 +82,7 @@ The first program milestone is complete when all of the following can be observe
 - Global and per-job concurrency limits.
 - Durable local state, execution history, and bounded log retention.
 - Machine-readable command output for automation.
-- Export and import for backup and migration.
+- Export and import for backup, migration, and command sharing, including selection of a job subset on export and import from a URL.
 - Diagnostics that explain effective paths, environment, scheduler health, and invalid jobs.
 
 ## Out of Scope
@@ -74,6 +94,7 @@ The first program milestone is complete when all of the following can be observe
 - Container orchestration.
 - Natural-language schedule parsing.
 - Built-in secret management.
+- Importing only a selected subset of jobs from an export document.
 - A web viewer or HTTP management API.
 - MCP integration.
 - A desktop application.
@@ -92,6 +113,7 @@ A user can install a working prebuilt locron on macOS and Linux without Homebrew
 - The installer is repeatable: running the same command again replaces the binary with the latest published release. Installing a pinned version is also supported.
 - The installer reports actionable errors for unsupported platforms, failed downloads, checksum mismatches, and unwritable install locations, and it does not require or modify a package manager.
 - Homebrew remains a supported channel with its own update path. A script-installed and a Homebrew-installed locron may coexist on one machine; each channel updates through itself.
+- Automated Homebrew publication must preserve the formula's package-manager marker guidance and service-upgrade caveats exactly as authored, without interpreting documentation text as shell commands, and the generated formula must pass the tap's syntax and style checks.
 - A built-in self-update subcommand replaces the running locron with the latest stable release, selected and verified exactly as the installer verifies downloads, and reports the current and new version before replacing.
 - Self-update manages only installations it can confirm are not owned by a package manager. When the running binary is package-manager-managed, self-update refuses with guidance to use that manager's update path.
 - A failed or interrupted update must leave the existing binary installed and working. Update failures and permission problems produce actionable errors.
@@ -270,9 +292,41 @@ Mutating commands and manual execution support a dry-run mode. A dry run perform
 
 A dedicated explanation command reports why a job is or is not eligible, its next occurrence, applicable missed-run and overlap decisions, current concurrency blockers, daemon availability, and redacted target resolution. The same command can explain a run from its durable snapshot, attempts, events, supersession, and terminal reason. Explanations use durable facts and current calculations rather than requiring debug logging.
 
+A broader job explanation is available for a live job by name or identity. It summarizes the job's schedule and next occurrence, its current eligibility and daemon availability, its most recent run of any state, and its most recent anomalous terminal run. An anomalous run is any terminal run whose final state is not successful, including failure, timeout, cancellation, overlap or concurrency skip, and interrupted-unknown outcomes. If the latest run is also the latest anomaly, both sections may identify the same durable run. Missing run history or missing anomaly history is stated explicitly.
+
+The consolidated explanation orders runs by durable request time and identity, carries canonical run identities, trigger and nominal-time facts, timing and duration when known, final state, and a durable terminal reason when one exists. It does not infer machine sleep or another cause that was not recorded. It is a readable summary rather than a replacement for the detailed job and run explanation commands; the run identity lets a user request the full event and attempt trace when needed. Human and machine-readable forms expose the same redacted facts.
+
 Verbose output adds user-facing decision context without changing command behavior. Debug output emits developer-oriented operational traces to standard error. Neither mode may reveal configured environment values, sensitive headers, body content, or other redacted values. Machine-readable standard output remains a single valid result independent of diagnostic verbosity.
 
 The program reports its own version on request through the standard `-V` and `--version` flags, and version output honors the machine-readable output contract. Version reporting requires no state directory or daemon and succeeds without them.
+
+## Human Output Contract
+
+Machine-readable output is the compatibility surface; human output renders the same facts for reading in a terminal. With the human format selected, every command renders one of the following forms, never a machine serialization:
+
+- **Table** — `list` (one row per live job) and `history` (one row per run) render an aligned table with a header line and one left-aligned row per record in the command's documented order. The header prints even when no record exists. Identifiers may be abbreviated inside the table only; copyable output always carries the full identity.
+- **Table width** — on a terminal, when a table would exceed the terminal width, the table truncates the last data column whose values are unbounded in length, marks the truncation with a trailing ellipsis, and keeps every other column intact. When standard output is redirected or piped, no truncation occurs and every value prints in full, so scripts and automation always receive complete values. A rendering flag restores full-width table values on a terminal, and the dedicated detail report for a job always presents the complete definition. Column fitting uses character display width, never byte length. This contract changes the human `list` table only; machine-readable output is unaffected.
+- **Confirmation lines** — commands that change state (`add`, `update`, `enable`, `disable`, `remove`, `run`, `cancel`, `config set`, `config unset`, `import`, `prune`) print one or more short lines naming the affected identity, the action taken, and the resulting facts that matter, such as the new run identity or the affected counts. A dry run states explicitly that nothing changed.
+- **Report** — `show`, `why`, `explain`, and `doctor` render labeled sections: one field per line, grouped under short section headers, so an explanation reads top to bottom. Unknown facts are stated as unknown rather than inferred. The consolidated job explanation keeps current scheduling facts, latest-run facts, and latest-anomaly facts in distinct sections.
+- **Value list** — `preview` prints a context line naming the schedule followed by one occurrence per line.
+- **Bare document** — `export` keeps the existing bare export document, suitable for redirection.
+- **Streams** — `logs`, `run --wait`, and the daemon keep their streamed output forms.
+
+All human forms honor the existing redaction rules: no configured environment value, sensitive header, body content, or other redacted value appears in any rendering, at any verbosity. Human output for these commands never presents escaped JSON strings, nested objects, or arrays — those are machine forms. Verbose and debug context go to standard error and never change the facts standard output carries.
+
+## Export and Import Semantics
+
+Export produces one typed, versioned document containing global settings and the selected jobs' normalized current definitions. Import applies a complete document atomically under the validation, redaction, plaintext-acknowledgement, resolution, and rollback rules defined for the export and import commands.
+
+A user can export the complete job set or a chosen subset:
+
+- Without an explicit selection, export follows the invocation context. In an interactive terminal, a selection interface lists every job, initially all selected, and lets the user choose which jobs to include. In a non-interactive context — no terminal, output redirected or piped, or an environment that declares the invocation non-interactive — export includes every job without prompting.
+- An explicit selection by job name or tag exports exactly the matching jobs and never prompts, in any context. A selection that matches no job is rejected before any output is produced.
+- The selection interface renders outside standard output. In every mode standard output carries only the export document, so redirection and machine-readable output remain single valid results. Machine-readable output never presents a selection interface and, without an explicit selection, exports the complete job set.
+
+Import accepts a local path or an absolute HTTP or HTTPS URL and treats both identically after the document is obtained. Import never prompts; a dry run reports exactly which jobs and settings an import would create, update, or leave unchanged without changing durable state. HTTPS fetches use mandatory TLS certificate verification.
+
+An export document describes executable schedules. Importing a document registers work that may run on this machine, whether it arrives as a file or a URL, and carries the same trust boundary as installing a script obtained from the same source. The complete document is validated before any write, and no import can partially apply.
 
 ## Retention Semantics
 

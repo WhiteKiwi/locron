@@ -3,420 +3,144 @@
 This checklist tracks implementation of the frozen `docs/SPEC.md` within the durable structure in `docs/ARCHITECTURE.md` and the milestone approach in `docs/IMPLEMENTATION.md`. It does not include packaging, the HTTP management/viewer surface, MCP, or desktop work.
 
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
-
-## 1. Close implementation decisions
-
-- [x] Review and accept or replace every implementation recommendation in `docs/IMPLEMENTATION.md`.
-- [x] Record the accepted Rust edition 2024, resolver 3, Rust 1.94 MSRV, CI toolchains, and official macOS/Linux platform floor.
-- [x] Record `locron-engine` as daemon-runtime owner and `locron-cli` as the thin entrypoint exposing `locron daemon run` in the single v1 binary.
-- [x] Select UUIDv7 identity roles, canonical text encoding, UTC epoch-microsecond instants, RFC 3339 rendering, and monotonic elapsed-time measurement.
-- [x] Select per-attempt framed output files, SQLite-owned metadata, bounded capture behavior, atomic finalization, and restartable recovery/pruning.
-- [x] Select bundled SQLite WAL/FULL operation, connection bounds, busy/degraded behavior, migration coordination, and permanent OS-locked daemon ownership.
-- [x] Select SQLite-authoritative CLI commands, best-effort Unix datagram wakeup, safety reconciliation, and polling-based wait/follow.
-- [x] Select durable round-robin fairness, ordered catch-up admission, and single-candidate replacement coalescing.
-- [x] Select SQLite table layout, dependency set, state paths, CLI shape, dry-run/why diagnostics, JSON/export versioning, and exit-code categories.
-- [x] Record the accepted decisions and trade-offs in `docs/IMPLEMENTATION.md`, `docs/CLI.md`, and `docs/STORAGE.md` before creating manifests or migrations.
-
-**Verify:** from the repository root, `rg -n "Draft recommendation|unresolved|remain.*select|need.*review" docs/IMPLEMENTATION.md docs/CLI.md docs/STORAGE.md` returns no undecided item required by workspace, schema, or CLI work, and the reviewed documents conform to `docs/SPEC.md`.
-
-## 2. Establish the Rust workspace
-
-- [x] Create the Rust edition 2024, resolver-3 virtual workspace with exactly `locron-core`, `locron-store`, `locron-engine`, and `locron-cli`.
-- [x] Set Rust 1.94 as workspace MSRV and configure shared package metadata, dependencies, profiles, formatting, lints, and one lockfile.
-- [x] Run CI on Rust 1.94 and latest stable and enforce the dependency direction documented in `docs/ARCHITECTURE.md`.
-- [x] Keep one v1 distributable `locron` binary with `locron daemon run`; do not create `locrond`, a `locron-daemon` crate, or future-surface crates.
-
-**Verify:** from the repository root, workspace metadata reports edition 2024, resolver 3, `rust-version = "1.94"`, exactly the four approved members, and one `locron` binary; format, compile, lint, and test commands pass on Rust 1.94 and latest stable; dependency inspection shows no forbidden crate edge or daemon crate/binary.
-
-## 3. Implement and test the domain core
-
-- [x] Add stable identifiers, job/revision/schedule/target/policy/run/attempt/event types and application commands/results.
-- [x] Add cross-field validation and normalization for exactly one schedule and target, all policy bounds, paths, environment, HTTP configuration, and reserved names.
-- [x] Implement pure cron, interval, and one-time occurrence enumeration with injected clock/timezone inputs.
-- [x] Implement explicit legal run/attempt transitions and persistence, clock, and executor ports.
-- [x] Update the applicable planning document first if a discovered edge case requires behavior or structure not represented in the current plan.
-
-**Verify:** core unit/property tests cover aliases, cron day OR behavior, interval anchors, schedule revisions, DST gaps/repetitions, clock movement, duration overflow, invalid combinations, and every state transition without SQLite or real-time sleeps.
-
-## 4. Implement durable SQLite state
-
-- [x] Add versioned migrations for the durable model and invariants in `docs/ARCHITECTURE.md` using the accepted choices from `docs/IMPLEMENTATION.md`.
-- [x] Implement atomic job revision/cursor mutation, manual run creation, reconciliation materialization, admission, attempt completion/retry, cancellation intent, recovery, and retention operations.
-- [x] Prove queued/retry-wait cancellation terminalizes atomically while active cancellation remains
-  durable intent, with stable not-found/conflict results.
-- [x] Enforce scheduled occurrence uniqueness, ordered attempt uniqueness, foreign keys, soft deletion, and legal persisted states.
-- [x] Add single-scheduler ownership and safe concurrent CLI access.
-- [x] Implement output metadata and the accepted output-storage consistency protocol.
-
-**Verify:** integration tests against temporary real databases pass for clean and upgrade migrations, concurrent writers, rollback injection, duplicate occurrence insertion, cursor/run atomicity, stale lifetime recovery, soft-delete history, busy/disk failure handling, and interrupted output finalization.
-
-## 5. Implement scheduler and admission semantics
-
-Current acceptance tranche (2026-08-21):
-
-- [x] Add explicit operator acknowledgement for `termination_unconfirmed` quarantine without stale
-  process signalling. **Verify:** store and CLI tests prove exact-state-only atomic release,
-  acknowledgement event/history/why visibility, ordinary-cancel guidance, no PID/PGID access,
-  non-quarantine rejection, and stable repeated conflict.
-- [x] Apply durable global concurrency changes to a running daemon. **Verify:** deterministic daemon
-  tests change 1→3→1→3 while attempts are active, prove no restart or active cancellation, zero
-  admission below active count, prompt expansion, hard maximum 64, and no store/semaphore over-admit.
-- [x] Complete the overlap/admission/retry matrix for this tranche. **Verify:** table-driven tests
-  cross `skip|replace|allow` with scheduled/manual/catch-up, zero/global/per-job capacity and
-  reductions; retry-wait versus a normal occurrence and retries beyond the original start deadline
-  remain deterministic and explainable.
-- [x] Exercise catch-up limit 1,000 through reconciliation and durable admission. **Verify:** a real
-  adapter/store test materializes exactly the newest 1,000 rows, executes/admit-orders them oldest
-  first, emits one compact exact omitted-range summary, and duplicate reconciliation is idempotent
-  without additional rows or events.
-- [x] Complete deterministic lifecycle fault-boundary coverage feasible in this tranche. **Verify:**
-  injected store/executor tests cover before admission, starting before spawn, running after spawn,
-  outcome before completion, and one-time restart uniqueness without sleep-heavy timing or unknown
-  retry.
-
-Prior correctness tranche whose broad verification clauses remain open (2026-08-21):
-
-- [x] Replace elapsed calendar scanning with bounded newest-window reconciliation and compact exact
-  range summaries shared by cron, interval, and one-time schedules.
-  **Verify:** pure tests cover long sparse ranges, deadline-before-policy ordering, limits 1 and
-  1,000, newest selection/oldest execution, DST gap/fold, backward/forward wall moves, local-zone
-  replacement, disable/re-enable, explicit recovery versus steady-state boundaries, exact cutoff and
-  1-microsecond deadline edges, and duplicate reconciliation without sleeps.
-- [x] Centralize retry classification/backoff and prove durable `retry_wait` restart behavior and all
-  forbidden retry classes.
-  **Verify:** deterministic clock/store tests cover fixed and capped exponential delay, retry count
-  exhaustion, timeout opt-in, restart eligibility, cancellation/configuration/replacement/unknown
-  exclusion, and deadline interaction.
-- [x] Make replacement supersession and confirmation fully durable and exercise admission capacity
-  interactions.
-  **Verify:** store/engine tests cover newest-only `skipped_overlap` supersession, queued/retry-wait
-  replacement without signal, active cancellation intent, confirmation failure, catch-up isolation,
-  and `skip|replace|allow` across scheduled/manual/catch-up and changed capacity.
-- [x] Add deterministic lifecycle fault boundaries without acting on stale process identities.
-  **Verify:** injected faults before spawn, after admission, while running, and after target exit show
-  `interrupted_unknown`, no unknown retry, and no duplicate one-time occurrence.
-
-- [x] Implement the long-lived daemon runtime in `locron-engine`, including lifetime/lock ownership, loop coordination, signals, bounded maintenance, and graceful shutdown.
-- [x] Reconcile startup, wake, ticks, job revisions, disabled intervals, and wall-clock changes from durable cursors.
-- [x] Prove due one-time resolution disables atomically, downtime catch-up remains unique, and manual
-  submission neither consumes nor disables the schedule.
-- [x] Apply start deadline and `skip|latest|all`, including newest bounded selection, oldest-first catch-up execution, and bounded summary events.
-- [x] Apply `skip|replace|allow`, queued/retry-wait active accounting, global default 16/range 1..64, and per-job limits.
-- [x] Implement known-failure retry classification, fixed/capped-exponential delay, durable retry wait, and no retry for unknown outcomes.
-- [x] Implement cancellation/replace intents and startup classification as `interrupted_unknown` without stale PID action.
-- [x] Update `docs/IMPLEMENTATION.md` and `docs/TODO.md` before a milestone approach change; update `docs/ARCHITECTURE.md` first if the durable engine boundary or lifecycle invariant changes.
-
-**Verify:** deterministic fake-clock/fake-executor suites pass for downtime, sleep, enable/disable, DST, backward/forward clock movement, bounded catch-up, every overlap/concurrency combination, capacity changes, retry/restart, cancellation, replacement confirmation failure, and duplicate-free one-time recovery.
-
-## 6. Implement target runners and output capture
-
-- [x] Implement direct argv and explicit-shell execution with normalized CWD and effective PATH resolution.
-- [x] Build the minimal/layered environment and inject reserved `LOCRON_*` values last.
-- [x] Create and supervise process groups with timeout, TERM grace, KILL escalation, cancellation, replacement, and graceful daemon shutdown.
-- [x] Implement HTTP methods, absolute URLs, bodies/files, headers/env headers, success ranges, TLS, redirect policy, timeout, and retry classification.
-- [x] Persist the final HTTP response content type with each attempt and expose it through durable
-  history/diagnostics without retaining other response headers.
-  **Verify:** runner tests cover present, absent, and redirect-final content types; clean/upgrade
-  migration and attempt-history tests prove the value survives restart and machine output.
-- [x] Prove `301`/`302`/`303` redirect method rewriting and `307`/`308` method/body preservation while
-  retaining cross-origin sensitive-header stripping.
-- [x] Stream, follow, truncate, finalize, and prune output under approved limits without blocking target completion.
-- [x] Prove a post-admission runtime-file/configuration failure becomes a non-retryable terminal run
-  with consistent finalized output rather than an orphaned running attempt.
-
-**Verify:** real process-tree and local HTTP fixture tests pass on macOS and Linux for argv/env/CWD/PATH, grandchildren, TERM/KILL, disappearing runtime files, redirects across origins, TLS, response classes, timeout while streaming, output truncation, redaction boundaries, and target exit/result mapping.
-
-## 7. Implement the thin CLI composition and commands
-
-- [x] Implement job CRUD, enable/disable/remove, schedule preview, history/show/logs, and cancellation.
-- [x] Complete shared add/update normalization for metadata, schedules, every target/environment
-  option, policy bounds, current global concurrency, cursor boundaries, dry-run diff, and no-op
-  rejection.
-- [x] Complete typed redacted/plaintext export and whole-document atomic import with acknowledgement,
-  collision planning, rollback, and fresh-state round trip tests; keep history explicitly deferred.
-- [x] Implement durable offline manual enqueue, run ID output, wait/follow behavior, and outcome exit mapping.
-- [x] Implement import/export with explicit env-value acknowledgement, pruning, and diagnostics.
-- [x] Expose `locron daemon run` as a thin composition entrypoint into the daemon runtime owned by `locron-engine`.
-- [x] Provide equivalent versioned machine-readable results without requiring prose parsing.
-- [x] Implement non-mutating dry-run, durable-fact `why`, repeatable verbose context, and redacted debug tracing.
-- [x] Ensure CLI handlers call shared application validation rather than duplicating policy.
-
-**Verify:** CLI contract tests pass for human and machine modes, all command families, offline enqueue, disabled/manual/one-time behavior, client disconnect without cancellation, redaction, import/export round trip, soft removal, invalid/conflicting options, diagnostics, and stable error categories; workspace inspection finds only the `locron` binary and confirms `locron daemon run` delegates to `locron-engine`.
-
-## 8. Prove crash, retention, and resource safety
-
-- [x] Inject daemon death before spawn, after the durable running commit and spawn, while running,
-  and after target exit/before final commit.
-- [x] Exercise retention age/count/byte limits and interrupted pruning/finalization.
-- [x] Stress global concurrency 16 and maximum 64, large elapsed intervals, maximum catch-up 1,000, noisy output, and SQLite contention.
-- [x] Run process-group and service-lifetime checks on macOS 14+ and Linux kernel 5.14+/glibc 2.34+
-  for `aarch64` and `x86_64`. **Evidence:** GitHub Actions run
-  [32506527959](https://github.com/WhiteKiwi/locron/actions/runs/32506527959) passed the complete
-  Rust 1.94/stable matrix on all four official platform targets.
-- [x] Treat Windows, 32-bit, and musl/Alpine results as deferred/informational rather than v1 release gates.
-- [x] Update the applicable `docs/ARCHITECTURE.md`, `docs/IMPLEMENTATION.md`, and `docs/TODO.md` content before applying any platform-driven design deviation.
-
-**Verify:** fault/stress reports demonstrate durable occurrence identity, correct `interrupted_unknown` classification, no implicit retry or duplicate one-time run, bounded materialization/storage, correct eviction order, no active-run pruning, and documented cross-platform process cleanup guarantees.
-
-## 9. Complete documentation and milestone acceptance
-
-- [x] Document installation-from-source and operation of the program milestone without claiming package-manager support.
-- [x] Document schedule, overlap, missed-run, retry, concurrency, timeout/cancellation, crash, retention, plaintext secret boundary, and exactly-once limitations.
-- [x] Document diagnostics and recovery procedures plus human and machine CLI examples.
-- [x] Map every frozen completion criterion to automated or cross-platform verification evidence.
-- [x] Review that deferred viewer/API, MCP, desktop, package publication, and service installation work did not enter milestone 1.
-- [x] Keep durable future decisions under `docs/decisions/` only when a reviewed ADR is needed; split CLI/storage contracts only after review justifies dedicated documents.
-
-**Verify:** a completion matrix links all 16 `docs/SPEC.md` criteria to passing evidence on the official macOS/Linux platform matrix; documentation examples execute successfully; architecture and implementation cross-links resolve; repository search and dependency/workspace inspection find no deferred surface implementation or premature empty ADR document.
-
-## Follow-up CLI acceptance backlog
-
-- [x] Complete the per-option help surface: every argument of every command renders a concise
-  description, semantic value names (`<EXPR>`, `<DURATION>`, `<METHOD> <URL>`, `<NAME=VALUE>`),
-  possible-value help for every value enum, and update-only markers on update-only flags, without
-  changing parsing behavior or the frozen contract in `docs/CLI.md`.
-  **Verify:** a unit test walks the generated Clap command tree and asserts every non-hidden
-  argument has non-empty help text; `cargo test -p locron-cli` passes, and manual inspection of
-  `locron add -h`, `locron update -h`, and `locron --help` shows usage, examples, and described
-  options.
-
-- [x] Audit and complete the entire CLI help surface without expanding the current scheduler
-  semantics tranche. Cover `locron help`, `locron -h`, `locron --help`, and every direct command's
-  `<cmd> help` form where Clap supports it, `<cmd> -h`, and `<cmd> --help`. Help must succeed without
-  otherwise-required arguments, exit zero, show the command's options and useful examples, provide
-  a route back to parent/top-level navigation, and follow an explicit stdout/stderr contract.
-  **Verify:** generate the complete Clap command tree in an acceptance test and exercise every
-  supported help spelling automatically so a newly added command or nested command cannot omit help
-  coverage.
-
-- [x] Exclude live-lifetime starting/running attempts from output recovery. A maintenance pass
-  previously selected every `pending`/`active` output artifact, so a just-admitted attempt whose
-  `.partial` file did not exist yet could be reconciled as `missing` before the runner created it,
-  permanently blocking finalization and leaving the run stuck `running`. Recovery now requires the
-  attempt to be terminal or owned by a lifetime other than the live daemon's.
-  **Verify:** a store regression test proves a `pending` artifact owned by the current lifetime is
-  never returned as a recovery candidate while the same artifact owned by a different (dead)
-  lifetime is; `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  and `cargo test --workspace` pass; the `acceptance_matrix` binary passes 12 consecutive runs
-  under CPU load with 0 failures.
-
-## Version output backlog (2026-08-23)
-
-- [x] Amend `docs/SPEC.md`, `docs/CLI.md`, and `docs/IMPLEMENTATION.md` for `-V/--version`
-  machine output. **Verify:** `docs/SPEC.md` records the amended version-reporting behavior;
-  `docs/CLI.md` documents the flag, its human output, and its JSON envelope; and
-  `docs/IMPLEMENTATION.md` records the flag-ownership approach and the preserved clap failure
-  surfaces.
-- [x] Implement top-level `-V/--version` handling in `crates/locron-cli` with
-  `disable_version_flag`, an `Option<Command>` subcommand, and the reproduced
-  `arg_required_else_help`/`MissingSubcommand` fallbacks. **Verify:** `cargo build -p
-  locron-cli`, `cargo fmt --check`, and `cargo clippy -p locron-cli` pass; manual runs show
-  `locron -V` and `locron --version` printing `locron <CARGO_PKG_VERSION>` on stdout and exiting 0.
-  **Evidence:** all three pass with no warnings; a byte-level comparison against the v0.1.1
-  baseline shows identical output for bare `locron`, `-v`, `add -V`, `-h`/`--help`, and plain
-  `-V`/`--version`, with exit codes preserved.
-- [x] Add contract tests in `crates/locron-cli/tests/version.rs`. **Verify:** `cargo test -p
-  locron-cli` passes, covering human plain text; `--format json` and `--json` envelopes
-  (`locron.cli/v1`, `ok: true`, `command: "version"`, `data.version == CARGO_PKG_VERSION`, empty
-  warnings); exit code 0; no state-dir access; plus regressions: bare `locron` renders full help to
-  stderr with exit 2, `locron -v` fails with the missing-subcommand error and exit 2, and `locron
-  add -V` fails as an unexpected argument with exit 2.
-  **Evidence:** 114 `locron-cli` tests pass, including the 10 new `version.rs` contract tests.
-- [x] Run the workspace verification. **Verify:** `cargo test --workspace` and `cargo clippy
-  --workspace` pass, and the help-surface acceptance tests still pass with the new flag.
-  **Evidence:** the full workspace test suite and clippy pass; the clap help-surface acceptance
-  tests pass unchanged.
-
-## Workflow node24 migration backlog (2026-08-23)
-
-- [x] Record the node24 action migration here and confirm `docs/RELEASE.md` needs no change (its CI
-  section already requires up-to-date action versions). **Verify:** `docs/RELEASE.md` line "Check
-  out repository with up-to-date action versions" covers the change; the superseded milestone-1
-  `actions/checkout@v4` Verify clause above points at this section.
-- [x] Bump the flagged node20 actions to their node24 majors in `.github/workflows/ci.yml` and
-  `.github/workflows/release.yml`: `actions/checkout@v4`→`@v7`, `actions/upload-artifact@v4`→`@v7`,
-  `actions/download-artifact@v4`→`@v8`. Keep input usage unchanged (`name`/`path`/`merge-multiple`,
-  plain checkout). **Verify:** `rg -n "checkout@v4|upload-artifact@v4|download-artifact@v4"
-  .github` returns nothing; both files parse as YAML; the v7/v8 input names used are present in the
-  published action.yml files.
-  **Evidence:** commit `07d6a79` changed exactly five version strings; both files parse as YAML;
-  no v4 references remain.
-- [x] Push to `main` and confirm the CI matrix passes with no Node 20 deprecation warnings. The
-  tag-only release workflow cannot be dry-run without publishing; its publish path is verified by
-  review and the next real release. **Verify:** the `ci.yml` run on `main` completes green on all 8
-  matrix legs and `gh run view <run> --log | grep "Node.js 20 is deprecated"` returns no matches.
-  **Evidence:** run
-  [32613812071](https://github.com/WhiteKiwi/locron/actions/runs/32613812071) concluded `success`
-  across the full matrix; the log contains zero `Node.js 20 is deprecated` warnings.
-
-## Daemon robustness backlog (2026-08-23)
-
-- [x] Replace the fixed 30-second event-loop wait with the documented earliest-deadline wait.
-  The loop must read the earliest pending admission deadline (queued or retry-wait run) durably
-  and sleep until that deadline or the 30-second safety reconciliation, whichever is earlier; an
-  attempt completion must notify the loop so a freshly scheduled retry deadline is observed
-  without reconciliation delay. **Verify:** engine tests drive the loop with injected time and
-  prove admission at the deadline rather than at the next 30-second boundary, and that a
-  completion wake is observed after an attempt commits; store tests cover the
-  earliest-deadline query. **Evidence:** engine tests
-  `run_until_ticks_at_earliest_pending_admission_deadline` (paused time: ticks at the 1s
-  admission deadline, not the 30s safety boundary) and
-  `attempt_completion_notifies_the_wake_handle`; store test
-  `earliest_pending_eligible_at_us_covers_queued_and_retry_wait_runs` (empty, queued-only,
-  retry-wait-only, mixed-earliest, terminal-excluded).
-- [x] Distinguish permanent completion conflicts from transient persistence errors in the
-  engine port and stop retrying them. A permanent conflict logs once and terminalizes the
-  attempt as `interrupted_unknown` where the store permits instead of pinning the run in
-  `running`. Completion idempotency checks compare durable identity fields, never the retry
-  timestamp. **Verify:** engine tests prove a conflicting completion does not retry forever
-  and the run reaches a terminal state; store tests cover timestamp-independent idempotent
-  recompletion. **Evidence:** engine tests
-  `permanent_completion_conflict_falls_back_once_and_never_retries` (exactly one fallback
-  `complete_runner_failure(ExecutionMayHaveStarted)`, attempt terminal as
-  `interrupted_unknown`, 5s timeout guard) and `permanent_runner_failure_conflict_breaks_without_retry`;
-  store tests `finalize_output_reconciliation_is_idempotent_across_timestamps`,
-  `runner_failure_recompletion_is_idempotent_across_timestamps`, and
-  `runner_failure_terminalizes_an_attempt_whose_output_was_already_missing`.
-
-## Post-milestone delivery backlog
-
-These items begin only after every milestone-1 completion criterion above is satisfied. They do not
-change the package-publication exclusion in `docs/SPEC.md`, and this milestone does not implement
-their workflows or release infrastructure.
-
-- [x] Define CI/CD policy and version/release policy. **Verify:** `docs/RELEASE.md` defines SemVer lockstep
-  workspace versioning, immutable tag conventions, official 4-target artifact matrix, SHA-256
-  checksums, CI/CD pipeline contracts, Homebrew/Linux packaging integration, and rollback/remediation
-  procedures.
-- [x] Complete GitHub build/test CI and GitHub Releases for release operations, including macOS and
-  Linux architecture artifacts, checksums, provenance, signing policy, and rollback policy; review
-  the next supported major of `actions/checkout` to remove the current Node 20 deprecation
-  annotation. **Verify:** `.github/workflows/ci.yml` uses an up-to-date `actions/checkout` major
-  across 4 official platforms (migrated from v4 by the "Workflow node24 migration backlog" below);
-  `.github/workflows/release.yml` implements automated 4-target matrix builds, tar.gz
-  packaging with README and dual licenses, SHA-256 checksum generation, and GitHub Release publication.
-- [x] Publish the package through `whitekiwi/homebrew-tap`. **Verify:** `Formula/locron.rb` in
-  `whitekiwi/homebrew-tap` defines multi-platform URL and SHA-256 targets for macOS and Linux on arm64
-  and x86_64 with install and test blocks.
-- [x] Publish apt/deb and yum/rpm-family packages through supported repositories. **Verify:**
-  `crates/locron-cli/Cargo.toml` specifies deb and generate-rpm metadata, and
-  `.github/workflows/release.yml` automatically builds `.deb` and `.rpm` packages on Linux runners and
-  attaches them to GitHub Releases.
-- [x] Automate Homebrew tap releases from approved version tags. **Verify:** `.github/workflows/release.yml`
-  automatically computes SHA-256 sums for macOS/Linux archives and updates `Formula/locron.rb` in
-  `whitekiwi/homebrew-tap`.
-- [x] After milestone 1 and Homebrew delivery are complete, update this repository's README for
-  install, upgrade, operation, and troubleshooting, and update `whitekiwi/homebrew-tap`'s README for
-  tap/install, supported versions, and release provenance, with reciprocal links. **Verify:**
-  `README.md` incorporates the banner asset from `assets/banner.jpg`, comprehensive badges, multi-channel
-  installation instructions (Homebrew, deb/rpm, binary tarballs, cargo source), quick start,
-  cross-links to `docs/OPERATOR.md`, `docs/CLI.md`, `docs/RELEASE.md`, and reciprocal link to
-  `whitekiwi/homebrew-tap`.
-
-## Installer and self-update backlog (2026-08-23)
-
-Authorized by the frozen 2026-08-23 `docs/SPEC.md` amendment (installation channels and self-update). Planned in `docs/IMPLEMENTATION.md` "Installer and self-update implementation"; evidence in `docs/FINDINGS.md` §11.
-
-- [x] Amend planning documents before code: SPEC (frozen), FINDINGS §11, IMPLEMENTATION section.
-  **Verify:** `rg -n "Installation Channels|11\. One-line Installer|Installer and self-update implementation" docs/SPEC.md docs/FINDINGS.md docs/IMPLEMENTATION.md` returns the amendment, the evidence section, and the implementation section, and no planning document marks an unresolved decision.
-- [x] Add `install.sh` (POSIX `sh`, repository root): target detection, latest/pinned resolution through `releases/latest/download` redirects, `SHA256SUMS.txt` verification, atomic replace into `$HOME/.local/bin` (or `LOCRON_INSTALL_DIR`), PATH guidance, actionable errors.
-  **Verify:** `sh -n install.sh` passes; fixture-driven runs (asset-base override) cover latest, pinned, checksum mismatch, unsupported arch, and unwritable dir with actionable errors and exit 1; a real `LOCRON_VERSION=v0.1.1` run on macOS arm64 installs a working binary, and re-running stays idempotent. shellcheck was unavailable locally — carried in the follow-up below.
-- [x] Smoke the real v0.1.1 release through the script.
-  **Verify:** `LOCRON_VERSION=v0.1.1 LOCRON_INSTALL_DIR=<tmp>/bin/locron sh install.sh` exits 0, prints `Installed locron v0.1.1 to ...`, the binary answers `locron 0.1.1`, and a re-run replaces it idempotently (macOS arm64). The Linux x86_64 leg is carried in the follow-up below.
-- [x] Implement `locron self-update` in `locron-cli` (deps `sha2`, `tar`, `flate2`, plus `reqwest` rustls/stream/json as the TLS client; `LOCRON_UPDATE_API_BASE`/`LOCRON_UPDATE_ASSET_BASE` test seams): latest resolution, checksum verification, atomic self-replace, marker refusal (`lib/.disable-self-update`), human and `locron.cli/v1` output, stable error mapping.
-  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test -p locron-cli` pass; the real-API smoke `locron --json self-update` returns the `locron.cli/v1` envelope with `current_version`/`new_version`/`updated` and exit 0. The reqwest addition is recorded in `docs/IMPLEMENTATION.md`.
-- [x] Self-update contract tests against a local fixture.
-  **Verify:** 9 contract tests green against a local std-TcpListener fixture: latest install (JSON envelope; replaced binary runs), human output, already-up-to-date without asset downloads, checksum-mismatch no-op leaving the old binary untouched, atomic replace while a live child process holds stdin, marker refusal with brew guidance, rate-limit mapping, and missing-asset/malformed-checksum metadata errors.
-- [x] Add the marker line to the formula template in `.github/workflows/release.yml` (`lib.mkpath` + `FileUtils.touch lib/.disable-self-update`) and attach `install.sh` to GitHub Releases (both `gh release create` and `gh release upload` paths).
-  **Verify:** the workflow parses as valid YAML and the template contains the marker creation. The generated-formula and manual `brew reinstall locron && locron self-update` refusal checks are deferred to the next real tag (follow-up below).
-- [x] Update documentation: README one-liner and per-channel update story; `docs/CLI.md` `self-update` contract; `docs/RELEASE.md` channel and asset additions; operator note that a running daemon keeps the old code until restart.
-  **Verify:** all four documents updated; CLI contract tests pass with the new subcommand; the frozen SPEC wording is followed.
-- [x] Run full workspace verification.
-  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` all pass locally. The four-target CI matrix run is deferred until the change is pushed (follow-up below).
-
-### Follow-up (open)
-
-The four-target CI matrix is already green: run [32617992398](https://github.com/WhiteKiwi/locron/actions/runs/32617992398) concluded `success` on commit `4dc570c` after the ETXTBSY and fixture-race fixes (the earlier run 32617079023 failed only on the two platform-specific test-harness legs now fixed).
-
-- [ ] Serve the one-liner under a short custom domain in the mise.run style (e.g. `https://install.locron.dev` → `releases/latest/download/install.sh`) once a domain and hosting are available; the GitHub release URL remains canonical until then.
-  **Verify:** `curl -fsSL <domain> | sh` installs a working binary; README documents the domain one-liner.
-- [x] Close the installer CI verification gaps: shellcheck, unsupported-platform/musl refusals, and the Linux install leg, via the new `installer` job in `.github/workflows/ci.yml`.
-  **Verify:** the `installer` job passes on `main`; the log shows shellcheck clean, the three refusal paths with their exact messages, and the pinned `v0.2.0` install answering `locron -V`.
-  **Evidence:** run [32621273837](https://github.com/WhiteKiwi/locron/actions/runs/32621273837) concluded `success` on commit `b12e5c7` (which fixed the SC2295 finding shellcheck 0.9.0 flagged in `install.sh`); the `installer` job and all 8 matrix legs are green.
-- [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`.
-  **Verify:** next-tag marker/release evidence recorded in this section.
-- [x] Minor cleanup: the HOME-unset guard at the top of `install.sh` is dead code after the default expansion and can be removed. Deferred to the session currently editing `install.sh` (service-registration wiring) to avoid file conflicts.
-  **Evidence:** the guard was removed in the service-registration session; `sh -n install.sh` passes and the 4 `tests/install_sh.rs` fixture tests still pass unchanged.
-
-## Daemon service installation backlog (2026-08-23)
-
-Authorized by the frozen 2026-08-23 `docs/SPEC.md` amendment (Daemon Service Installation). Planned in `docs/IMPLEMENTATION.md` "Daemon service installation implementation"; evidence in `docs/FINDINGS.md` §12.
-
-- [x] Amend planning documents before code: SPEC (frozen), FINDINGS §12, IMPLEMENTATION section, and this checklist.
-  **Verify:** `rg -n "Daemon Service Installation|12\. Daemon Service|Daemon service installation implementation" docs/SPEC.md docs/FINDINGS.md docs/IMPLEMENTATION.md` returns all three sections (SPEC amendment line 9 + section, FINDINGS §12, IMPLEMENTATION section); `rg -n "Draft|unresolved|need.*review" docs/IMPLEMENTATION.md` finds no undecided item in the new section.
-  **Evidence:** all checks pass; the SPEC amendment line records this amendment.
-- [x] Add the service-manager port to `locron-cli`: launchd and systemd-user backends behind a shared port plus a deterministic fake; embed the plist/unit templates (label `dev.locron.daemon`, `locron.service`, canonicalized `current_exe` path, `KeepAlive`/`RunAtLoad`, `Restart=on-failure`/`WantedBy=default.target`, `~/Library/Logs/locron/daemon.log`).
-  **Verify:** unit tests render both templates with a canonicalized binary path and the required keys; `cargo fmt --check` and `cargo clippy -p locron-cli` pass; workspace inspection still finds only the `locron` binary and no new dependency.
-  **Evidence:** 15 unit tests in `service::tests` pass, including `plist_template_renders_required_keys_and_paths` and `unit_template_renders_required_keys_and_paths`; `cargo fmt --all --check` and `cargo clippy -p locron-cli --all-targets -- -D warnings` pass; `locron-engine`/`locron-store` Cargo.toml unchanged (no new dependency).
-- [x] Implement `locron service install|uninstall|status` over the port with human and `locron.cli/v1` output, brew-marker refusal, lock-held deferral, and no-session guidance (exit 0).
-  **Verify:** fake-port contract tests cover install idempotency, refresh-and-restart when loaded, deferral when the state lock is held by a non-service daemon, uninstall signal-then-bootout ordering, status fields, marker refusal with brew guidance, no-session guidance exit 0, and JSON envelopes; `cargo test -p locron-cli` passes.
-  **Evidence:** 11 contract tests in `tests/service.rs` pass (install ordering, refresh restart, flock deferral, uninstall ordering, status fields, guidance exit 0 human+JSON, marker refusal exit 3 `service_managed_install`, forced-unsupported exit 2, help text); `cargo test -p locron-cli` fully green.
-- [x] Implement the launchd backend (`enable`/`bootstrap`/`print`/`kill`/`bootout`, gui→user domain fallback) and the systemd backend (`daemon-reload`/`enable --now`/`stop`/`disable`/`is-active`, user-manager detection via `XDG_RUNTIME_DIR` + bus probe). Deviations recorded in `docs/IMPLEMENTATION.md`: a loaded unit is refreshed with `stop` then `enable --now`, because `systemctl start` on an already-active unit is a no-op and a bare `enable --now` would never restart a loaded daemon onto a new binary; `launchctl kill`/`bootout` exit 3 ("no process to signal"/already unloaded, hit in the KeepAlive respawn window) is treated as success; uninstall waits for the signaled process to exit (pid gone or replaced by a respawn) rather than for the job to leave the domain, which KeepAlive jobs never do until `bootout`.
-  **Verify:** real-backend tests on the macOS CI leg register, gracefully restart (SIGTERM + KeepAlive relaunch observed via a marker process), and unregister in the available domain; the Linux CI leg drives the backend against a real user manager under `dbus-run-session`; a stripped-environment test proves the no-session guidance path.
-  **Evidence:** `tests/service_backends.rs` passes on macOS — `macos_launchd_backend_registers_restarts_and_unregisters` ran against the real gui/501 domain (plist written, log dir created, lock-pid marker changed after refresh, job left the domain on uninstall); `linux_systemd_leg_reports_what_cannot_run_here` reported the systemctl/dbus-run-session absence. Linux real leg still CI-only (see report).
-- [x] Wire install.sh (attempt registration after replace unless `LOCRON_NO_SERVICE=1`, pass output through) and self-update (post-replace `service install`). Deviation recorded in `docs/IMPLEMENTATION.md`: a non-zero registration exit (other than the guidance-exit-0 case) also leaves the install successful — the script warns and continues, since the binary replacement is the essential install and registration is best-effort.
-  **Verify:** installer fixture tests on macOS and Linux legs cover default registration, `LOCRON_NO_SERVICE=1` skip, and guidance-exit tolerance; self-update contract tests prove the service refresh happens only after a successful replace and performs first registration when none exists.
-  **Evidence:** 4 fixture tests in `tests/install_sh.rs` pass (offline `file://` release host; default registration records one `service install` after the replace, `LOCRON_NO_SERVICE=1` records none, guidance-exit-0 passes through without a warning, and a failed registration warns with the retry command while the install stays successful); 9 `tests/self_update.rs` tests pass — the successful-replace tests assert the post-replace `service install` invocation happened exactly once, and the no-replace tests (already up to date, checksum mismatch) assert no registration; `cargo fmt --all --check` and `cargo clippy -p locron-cli --all-targets -- -D warnings` pass.
-- [x] Add the brew `service` block (`run [opt_bin/"locron", "daemon", "run"]`, `keep_alive true`, `run_at_load false`) and a `brew services start locron` caveat to the release.yml formula template; add deb/rpm postinst guidance.
-  **Verify:** the workflow YAML parses; the template contains the service block; a built .deb inspected with `dpkg-deb` contains the guidance text; the generated-formula check is deferred to the next real tag.
-  **Evidence:** `yaml.safe_load` on `.github/workflows/release.yml` succeeds; the template contains `service do`, `keep_alive true`, `run_at_load false`, and the `brew services start locron` caveat; a locally built `target/debian/locron_0.2.0-1_arm64.deb` (cargo-deb 3.7.0, release build) was inspected with `ar`/`tar` (no `dpkg-deb` on this macOS host) and its `control/postinst` is mode 755, passes `sh -n`, and contains the guidance text; `rpm-scripts/postin` also passes `sh -n`. The generated-formula check stays deferred to the next real tag.
-- [x] Update documentation: `docs/CLI.md` service-family contract, `docs/OPERATOR.md` registration and linger guidance, `docs/RELEASE.md` formula/package additions, and the README install section.
-  **Verify:** documentation examples execute; cross-links resolve; CLI contract tests cover the new command family.
-  **Evidence:** `docs/CLI.md` gains the command-family line and a "Service installation" section (platforms, refresh/deferral/no-session/brew-refusal semantics, install/uninstall/status envelopes, error codes); `docs/OPERATOR.md` gains "Run the daemon as a service" with `loginctl enable-linger` guidance and updated updating semantics; `docs/RELEASE.md` documents the installer registration, formula `service` block/caveats, and postinst guidance; README install section covers script-installer registration, `LOCRON_NO_SERVICE=1`, `brew services start/restart`, and package guidance. `locron service status --json` executed on this machine matches the documented envelope; the service command family is covered by the 11 `tests/service.rs` contract tests; no new cross-links were introduced.
-- [x] Run full workspace verification and record live brew evidence.
-  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass; the four-target CI matrix passes after push; at the next real tag, live evidence shows `brew services start locron` starts the daemon and `brew upgrade` leaves the old daemon running until `brew services restart`.
-  **Evidence:** locally, `cargo fmt --all --check` (no diffs), `cargo clippy --workspace --all-targets -- -D warnings` (clean), and `cargo test --workspace` (exit 0; 20 test binaries all `ok`, 0 failed/panicked — including the 60 `service.rs` unit tests, 11 `tests/service.rs` contract tests, 4 `tests/install_sh.rs` fixture tests, 9 `tests/self_update.rs` contract tests, and the real-macOS `tests/service_backends.rs` leg) all pass. The four-target CI matrix and live brew evidence at the next real tag are recorded as deferred in the Verify clause.
-
-## Linux service-backend compile backlog (2026-08-23)
-
-The four-target CI matrix has been red on every Linux leg since the daemon service commit: the launchd-only items in `crates/locron-cli/src/service.rs` compile on Linux as dead code (clippy `-D warnings`), the systemd module carries an unused `Path` import and a `map().unwrap_or_else()` lint, and `tests/service_backends.rs` formats `PathBuf`s with `Display` in its Linux-only systemd flow.
-
-- [x] Gate the launchd-only items so Linux builds compile clean: `LABEL`, `LOG_DIR`, `LOG_FILE`, `escape_xml`, and `render_plist` under `#[cfg(any(target_os = "macos", test))]` (mirroring the existing `render_unit` pattern; the plist unit tests run on every platform), `PLIST_NAME` under `#[cfg(target_os = "macos")]`, the launchd-only `ServiceContext.uid` field under a documented targeted `allow(dead_code)`, the unused `Path` import and the `map().unwrap_or_else()` in the systemd module fixed, and the PathBuf `Display` uses in `tests/service_backends.rs` switched to `.display()`.
-  **Evidence (first push, 2026-08-23):** commit 1977574 applied the `src/service.rs` half and the `Display` fix. The macOS legs of run 32623729732 (head 9c8170d) went green, but all four Linux legs still failed clippy on the test target: the macOS-only helpers `launchctl_ok`, `daemon_lock_pid`, and `wait_until` in `tests/service_backends.rs` are dead code on Linux (`default_daemon_lock_held` and `ServiceCleanup` stay shared — the Linux test uses both). The residual fix is a second commit gating those three helpers under `#[cfg(target_os = "macos")]`.
-  **Evidence (second push, 2026-08-23):** commit 8e94ac4 gated the three helpers. Run 32642906172 (head d8c296c) still fails all four Linux legs, now on exactly one error per leg: `unused imports: Duration and Instant` in the same test target — the `wait_until` gate orphaned the `std::time` import (line 19). Every other workspace target compiles clean on Linux (clippy reports all errors per target, and no other target reports any), so this is the last residual: commit 8ebe173 gates that import. Convention learned and applied: every `#[cfg(target_os)]`-gated item must gate its own imports too.
-  **Evidence (third push, 2026-08-23):** commit 8ebe173 gated the import. Run 32643088278 (head dc6f50b) confirms the compile backlog itself is resolved: clippy passed on all four Linux legs and the matrix failure moved to `cargo test --workspace --all-targets`, where two Linux-only `tests/self_update.rs` assertions failed (the post-replace service registration never ran — see the self-update registration backlog below).
-  **Verify:** `cargo fmt --all --check`, `cargo clippy -p locron-cli --all-targets -- -D warnings`, and `cargo test -p locron-cli` pass on macOS; the four-target CI matrix passes on push — run 32644269125 (head 7edc89d), all nine jobs green.
-
-## Linux self-update registration backlog (2026-08-23)
-
-On Linux, `locron self-update` silently skips the post-replace `service install`: after the atomic rename the running process's `/proc/self/exe` resolves to the deleted old inode (`path (deleted)`), so `register_service()`'s `fs::canonicalize(env::current_exe())` fails and returns no warnings. macOS masks the bug (`_NSGetExecutablePath` returns the exec-time path string). CI run 32643088278 (head dc6f50b) caught it: `self_update_installs_the_latest_release` and `atomic_replace_keeps_a_running_process_on_the_old_binary` failed on all four Linux legs with `left: []` on the service-log assertion.
-
-- [x] Capture the canonical executable path once in `update()` before the atomic replace and thread it through `replace_binary` and `register_service`, so no post-replace path resolution happens (`crates/locron-cli/src/self_update.rs`).
-  **Evidence (2026-08-23):** commit 03375ec applied the pre-replace capture. Run 32643709447 (head 6943747) confirms the fix: the two self_update tests pass on all four Linux legs. The full matrix went green on run 32644269125 (head 7edc89d).
-  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on macOS; the two self_update tests pass on the Linux CI legs — run 32644269125 (head 7edc89d), all nine jobs green.
-
-## Fake-manager contract-test backlog (2026-08-23)
-
-`tests/service.rs` asserts the envelope's `service_name` as the hard-coded macOS label `dev.locron.daemon`, but `service_name()` returns the platform-native name (`LABEL` on macOS, `UNIT` = `locron.service` on Linux). CI run 32643709447 (head 6943747) caught it: `install_registers_and_starts_in_write_reload_probe_enable_start_order` and `status_reports_the_manager_state_fields` failed on all four Linux legs with `left: "locron.service"`.
-
-- [x] Expect the platform-native service name in the two fake-contract assertions (`cfg!`-based, matching the file's existing platform pattern), never a hard-coded label.
-  **Evidence (2026-08-23):** commit b421189 applied the platform-native expectation; both tests pass on all four Linux legs in run 32644269125 (head 7edc89d), all nine jobs green.
-  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on macOS; both tests pass on the Linux CI legs — run 32644269125 (head 7edc89d).
-
-## Workspace lint alignment backlog (2026-08-23)
-
-- [x] Bring `locron-core` and `locron-store` under `[lints] workspace = true` and clear every warning
-  that enables: document all public items in both crates, fix the four `cast_sign_loss` sites in the
-  store admission test with `try_from`, replace the infallible `try_into().expect` conversions in
-  `FrameReader::next_frame` with documented `unwrap_or_default`, and add `#[must_use]` to
-  `DaemonLock::file` and `StatePaths::new`.
-  **Verify:** `cargo clippy --workspace --all-targets -- -D warnings` reports zero warnings (465 before
-  the pass — 244 missing struct-field docs, 75 missing variant docs, 69 missing method docs, and the
-  rest structs, functions, consts, and type aliases, plus 9 non-doc lints); `cargo fmt --all --check`
-  and `cargo test --workspace --all-targets` pass (287 tests across 16 binaries); no `unsafe` was
-  introduced; the only `#[allow]` added is a scoped `clippy::needless_pass_by_value` on
-  `Store::materialize_with_summaries`, whose by-value cursor parameter is public API consumed by
-  `locron-cli`.
+Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
+
+## README Agent Skill link follow-up (2026-08-24)
+
+Documentation link only: the frozen product behavior and accepted implementation are unchanged, so
+`docs/SPEC.md` and `docs/IMPLEMENTATION.md` need no amendment.
+
+- [x] Limit the change to one Agent-friendly README reference to `WhiteKiwi/skills`, without
+  duplicating that repository's installation commands or platform guidance.
+- [x] Add the link and verify Markdown and the destination.
+  **Verify:** the README contains the requested link once, all relative links resolve, the external
+  destination responds successfully, and `git diff --check` passes.
+  **Evidence:** `rg` finds one README link; the local link/fragment check passes; the destination
+  returns HTTP 200 after redirects; `git diff --check` is clean.
+
+## Consolidated job explanation backlog (2026-08-24)
+
+Authorized by the frozen 2026-08-24 `docs/SPEC.md` consolidated-explanation amendment, contracted
+in `docs/CLI.md` “Why and diagnostics”, and planned in `docs/IMPLEMENTATION.md` “Consolidated job
+explanation implementation”.
+
+- [x] Complete and review the command contract before implementation: live-job resolution,
+  schedule/current-status facts, retained-history ordering, anomalous terminal vocabulary,
+  explicit absence states, redaction, and human/JSON parity.
+  **Verify:** `rg -n "explain NAME_OR_ID|Consolidated job explanation" docs/CLI.md
+  docs/IMPLEMENTATION.md docs/TODO.md` finds all three planning layers; the new sections contain no
+  unresolved decision or unrecorded behavior deviation.
+  **Evidence:** the search returns the command surface and exact human/machine contract in
+  `docs/CLI.md`, the shared-fact/history-selection design in `docs/IMPLEMENTATION.md`, and this
+  phased checklist. A second review found no open question or dependency/schema change.
+- [x] Add the thin `explain` command and shared current-job explanation path, including the bounded
+  store read, redacted latest-run/latest-anomaly summary projection, and labeled human report.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy -p locron-cli --all-targets -- -D warnings`,
+  and the new focused unit/store tests pass; a scratch-state invocation shows full canonical run
+  IDs, durable reasons, explicit `none` sections, and `unknown` pending facts without target
+  configuration leakage; a disabled-job regression assertion proves `why NAME` is unchanged.
+  **Evidence:** `cargo fmt --all --check` and `cargo clippy -p locron-cli --all-targets -- -D
+  warnings` are clean. The focused CLI unit test and focused store test pass; the store test proves
+  the anomaly query reaches behind the 1,000-row history presentation cap and orders equal request
+  times by canonical ID. An isolated scratch-state report showed the full job ID, explicit
+  `LATEST RUN`/`LATEST ANOMALY` `none` sections, the separate eligibility/overlap/capacity-limit
+  facts, and no configured environment value. The disabled-job contract assertion confirms
+  `why NAME` still calculates a next occurrence and prints its prior `eligible` decision.
+- [x] Add CLI contract/integration coverage for no history, success-only history, the same latest
+  run/anomaly, an older anomaly after a newer success, an active latest run, removed/history and
+  reused-name behavior, human/JSON parity, redaction, and the complete help surface.
+  **Verify:** every named scenario has an assertion in `crates/locron-cli/tests/cli.rs` (or a
+  focused integration suite), all new tests pass, and
+  `complete_command_tree_has_consistent_help_surface` passes with `explain` discovered.
+  **Evidence:** four new CLI contract tests cover every named state/history/removal/reuse scenario,
+  human/JSON fact parity, canonical IDs, explicit absence/unknown wording, and secret redaction.
+  `cargo test -p locron-cli` passes 73 CLI unit tests, 72 command-contract tests, and all 13 other
+  CLI suites when `LOCRON_STATE_DIR` points at an isolated path; the generic help walk discovers
+  `explain`, and the explicit help assertion verifies both name and UUID examples. The isolated
+  state is necessary on this workstation because a real per-user daemon owns the default lock; an
+  unisolated run's existing service test correctly observed that external daemon and deferred.
+- [x] Update README and help examples to present `explain` as the consolidated entry point while
+  retaining `why --run` for the detailed attempt/event trace and avoiding sleep inference.
+  **Verify:** every documented command matches `locron <command> --help`; an isolated-state smoke
+  run matches the shown human output; `rg -n "machine (sleep|suspended)|detected sleep" README.md`
+  finds no unsupported telemetry claim.
+  **Evidence:** the README tour now uses the actual shipped human `CURRENT STATUS`, `LATEST RUN`,
+  and `LATEST ANOMALY` forms captured from an isolated state; the explainability and JSON examples
+  include `explain`, while `why --run` remains the full attempt/event handoff. `locron explain
+  --help` contains both documented examples, the unsupported-telemetry search returns no match,
+  and `git diff --check` is clean.
+- [x] Run targeted and full workspace verification and record evidence before handoff.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  and `cargo test --workspace` pass; `git diff --check` is clean and only explain-related files are
+  changed in this worktree.
+  **Evidence:** `cargo fmt --all --check` is clean; `cargo clippy --workspace --all-targets -- -D
+  warnings` is clean; `cargo test --workspace` passes 344 tests across the four crates and all
+  integration suites (73 CLI unit, 72 CLI command-contract, 66 other CLI-suite, 36 core, 45 engine,
+  52 store), with 0 failures. The test command used an isolated `LOCRON_STATE_DIR` so the workstation's
+  real per-user daemon could not affect service fake expectations. `git diff --check` is clean, and
+  status contains only the parent SPEC amendment plus explain code, tests, CLI/implementation/TODO,
+  and README updates.
+- [x] Parent session: publish v0.6.0 after PRs #5 and #6 merge — curate the changelog, bump the
+  lockstep workspace version, commit, push `main`, create and push the annotated tag, then monitor
+  the release and Homebrew tap workflows to completion.
+  **Verify:** `Cargo.toml`, every workspace package in `Cargo.lock`, the changelog heading, binary
+  `--version`, and annotated tag all report 0.6.0; the release workflow is green; the GitHub Release
+  publishes all required assets with curated notes; the tap formula points at v0.6.0 and its
+  test-bot run is green.
+  **Evidence:** release commit `6103089` sets the lockstep workspace and lockfile packages to 0.6.0,
+  adds the curated changelog entry, and reports `locron 0.6.0` in both human and JSON version output;
+  signed annotated tag `v0.6.0` points to that commit. Release workflow
+  [32717655943](https://github.com/WhiteKiwi/locron/actions/runs/32717655943) succeeded and published
+  the non-draft [locron v0.6.0 release](https://github.com/WhiteKiwi/locron/releases/tag/v0.6.0)
+  with the curated notes and all 10 required assets: four tarballs, two debs, two rpms, `install.sh`,
+  and `SHA256SUMS.txt`. The repaired tap formula retains the four v0.6.0 URLs and matching checksums;
+  tap commit `06ae05f` passed macOS and Linux test-bot run
+  [32719051536](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/32719051536).
+
+## README product positioning refresh (2026-08-24)
+
+Authorized by the 2026-08-24 `docs/SPEC.md` Product Positioning amendment and planned in
+`docs/IMPLEMENTATION.md` “README product narrative”. This is documentation-only work; it does not
+add planned diagnostics or scheduler telemetry.
+
+- [x] Review and accept the README narrative before editing the README: lead with explainability,
+  then reliability, then agent integration; preserve installation and service-operation facts.
+  **Verify:** `rg -n "README product narrative|Cron that explains itself" docs/IMPLEMENTATION.md`
+  finds the accepted section, including the then-current exclusions for `locron explain`, richer
+  decision traces, and direct machine sleep telemetry.
+  **Evidence:** the accepted section records the narrative order, the actual log lookup contract,
+  the unchanged installation/service substance, and all three exclusions. The `locron explain`
+  exclusion is superseded by the consolidated-explanation amendment and backlog above; the other
+  two exclusions remain.
+- [x] Rewrite the README opening and demonstration using only shipped CLI syntax and actual human
+  output; keep captured logs tied to a canonical run ID rather than a job name.
+  **Verify:** run the documented commands against an isolated state directory and compare the
+  displayed output with the README; compare every command invocation with `locron <command>
+  --help`; `rg -n "locron logs [A-Za-z]" README.md` finds no job-name logs example.
+  **Evidence:** an isolated daemon/state run reproduced the documented `add`, two-occurrence
+  `preview`, and the clearly labeled selected fields from `why backup` exactly (only IDs/timestamps
+  vary); the same run verified `run --wait`, `history`, `history --format json`, `logs RUN_ID`,
+  `why --run RUN_ID`, and `doctor`. Help review confirms each invocation; the job-name logs search
+  returns no match.
+- [x] Reorder the remaining capability sections as explainability, real-world reliability, and
+  agent integration, without losing accurate installation, service, documentation, contributing,
+  security, or license guidance.
+  **Verify:** a heading scan shows that order; focused diff review confirms the retained guidance;
+  searches find no unsupported claim for machine sleep state or detailed decision traces; the
+  later-shipped `locron explain` surface is tracked in the consolidated-explanation backlog above.
+  **Evidence:** the heading scan is `A 10-second tour` → `Explainability first` → `Reliability for
+  machines that stop and restart` → `Agent-friendly by design`; installation and daemon startup,
+  all seven documentation links, contributing/security, and dual-license guidance remain. The
+  README states that downtime explanations use durable schedule cursors and reconciliation facts,
+  rather than inferred sleep telemetry, and makes no richer decision-trace claim.
+- [x] Run documentation checks and record the evidence.
+  **Verify:** all relative Markdown links in `README.md` resolve; fenced command/config snippets
+  parse where a local parser is available; `git diff --check` passes; a final rendered-text review
+  finds no malformed Markdown.
+  **Evidence:** a local UTF-8-aware link/fragment check reports every relative README link
+  resolved; all eight `sh` fences pass `sh -n`; the MCP JSON fence parses with Ruby JSON; the banner
+  asset exists; `git diff --check` is clean. No Markdown linter is installed, so headings, balanced
+  fences, lists, and inline HTML were reviewed directly.
 
 ## README demo screencast backlog (2026-08-23)
 
@@ -430,24 +154,6 @@ On Linux, `locron self-update` silently skips the post-replace `service install`
   README image renders on the repository front page; the recording shows no local paths, machine
   names, or state from the recording host (the script's `--state-dir` isolation and jq filters
   already prevent this — confirm visually).
-
-## README installation restructure (2026-08-23)
-
-No product-behavior change, so the frozen `docs/SPEC.md` is not amended.
-
-- [x] Move the per-channel installation, updating, and uninstalling content out of the README into
-  a new `docs/INSTALL.md`; the README keeps the two most common one-liners (Homebrew, install
-  script) and links the guide from its Installation section and Documentation list. The guide adds
-  uninstall instructions per channel and a verify-the-installation section, fixes the tarball unpack
-  pattern to the real archive layout, and links `docs/OPERATOR.md`/`docs/CLI.md` instead of
-  duplicating service/update semantics. `docs/IMPLEMENTATION.md` notes where the per-channel update
-  story moved.
-  **Verify:** no repository link points at the removed README install anchors; no fact from the old
-  README installation section is missing from `docs/INSTALL.md`; the README Documentation list
-  includes the new guide; the new guide's anchors (`#updating`, `#uninstalling`, `#verify-the-installation`) render.
-  **Evidence:** `rg "README.md#|#installation"` finds no stale anchors; a line-by-line diff review
-  accounts for every sentence of the old section in either the slim README section or the guide; the
-  Documentation list and guide anchors render on GitHub.
 
 ## Usage measurement backlog (2026-08-23)
 
@@ -495,9 +201,9 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   session lifecycle, CSRF/Origin/Host protections), the `locron.api/v1` envelope, and the
   CLI-category-to-HTTP-status table; the `rg` checks above pass and no planning document marks an
   unresolved decision.
-- [x] Add the `locron-server` member to the workspace with axum 0.8.9, tokio-stream 0.1.19, and
-  rust-embed (all below MSRV 1.94 per `docs/FINDINGS.md` §14); update the dependency-direction
-  enforcement check.
+- [x] Add the `locron-server` member to the workspace with axum 0.8.9, tokio-stream 0.1.19,
+  rust-embed 8.12 (mime-guess only), axum-extra 0.12 (cookie), and getrandom 0.4 (all below MSRV
+  1.94 per `docs/FINDINGS.md` §17); update the dependency-direction enforcement check.
   **Verify:** `cargo build`/`fmt --check`/`clippy -p locron-server` pass on Rust 1.94 and latest
   stable; dependency inspection shows `locron-server` depends only on `locron-core` and
   `locron-store` and nothing depends on it but `locron-cli`; the workspace still produces exactly
@@ -854,7 +560,396 @@ in `docs/FINDINGS.md` §14 (including the default-port 10824 verification). The 
   contract: loopback-only surface, token access control, viewer scope), `docs/dashboard/IMPLEMENTATION.md`
   (architecture, port/bind policy, viewer security posture, deviations), and this section.
 
+## Shutdown-drain test determinism and CI lint consolidation backlog (2026-08-24)
+
+No product-behavior change (a test-harness script and the CI workflow only), so the frozen
+`docs/SPEC.md` is not amended. Planned in `docs/IMPLEMENTATION.md` "Shutdown-drain test
+determinism and CI lint consolidation".
+
+Background: `daemon::tests::elapsed_shutdown_drain_cancels_runner_before_lifetime_end` failed on two
+macOS CI legs — run
+[32644652482](https://github.com/WhiteKiwi/locron/actions/runs/32644652482) (`macos-aarch64` /
+Rust 1.94.0) and run
+[32644735243](https://github.com/WhiteKiwi/locron/actions/runs/32644735243) (`macos-x86_64` /
+Rust stable) — with the outcome assertion receiving `Some(TerminationUnconfirmed)` instead of
+`Some(Cancelled)`. The test script's `sleep 1` adds a second process to the run's process group;
+after the trapped `sh` exits, the orphaned sibling stays a zombie until launchd reaps it, and the
+group-liveness probe (`kill(-pgid, 0)`, `runner.rs:767`) counts zombies as alive, so the test's
+two 20 ms grace deadlines elapse first on a loaded macOS runner. 40 consecutive local runs pass
+(the failure is CI-load-dependent). The fix makes the group single-member so leader reap equals
+group absence and confirmation becomes event-driven; the CI part consolidates redundant lint
+steps (clippy compile work halved, no arch-gated code exists to justify the arch duplication).
+
+- [x] Amend planning documents before code: this checklist and the `docs/IMPLEMENTATION.md`
+  section. The frozen `docs/SPEC.md` needs no amendment because neither change touches product
+  behavior.
+  **Verify:** `rg -n "Shutdown-drain test determinism" docs/IMPLEMENTATION.md docs/TODO.md`
+  returns both sections, and no planning document marks an unresolved decision in them.
+  **Evidence:** `rg` returns `docs/IMPLEMENTATION.md` (EOF section) and this checklist section;
+  no unresolved decision marker in either; the SPEC is not amended (no product-behavior change).
+- [x] Replace the test script's `sleep 1` loop with a pure-builtin loop
+  (`while :; do :; done`) and raise its `termination_grace` from 20 ms to 1 s in
+  `crates/locron-engine/src/daemon.rs`
+  (`elapsed_shutdown_drain_cancels_runner_before_lifetime_end`); `shutdown_drain` stays at 10 ms.
+  **Verify:** `for i in $(seq 1 100); do cargo test -p locron-engine --quiet
+  elapsed_shutdown_drain_cancels_runner_before_lifetime_end || break; done` completes all 100
+  iterations; `cargo test -p locron-engine` passes; the sibling
+  `shutdown_drain_allows_natural_completion_before_lifetime_end` test passes unchanged.
+  **Evidence:** the dev sub-session applied both changes (daemon.rs lines 1194/1200); the
+  100-iteration loop completes all 100 iterations (each run 0.03–0.08 s); `cargo test -p
+  locron-engine` passes 45 tests, 0 failed; the sibling test passes unchanged.
+- [x] Add a dedicated `lint` job to `.github/workflows/ci.yml` (matrix `linux-x86_64` and
+  `macos-aarch64` × Rust 1.94.0 and stable, `fail-fast: false`, rust-cache, `cargo fmt --all
+  --check`, `cargo clippy --workspace --all-targets -- -D warnings`) and remove those two steps
+  from the eight-leg `test` job so its legs run `cargo test --workspace --all-targets` only.
+  **Verify:** the workflow parses as valid YAML; `rg -n "fmt --all|cargo clippy"
+  .github/workflows/ci.yml` shows both commands only inside the `lint` job; a push run records all
+  four lint legs and all eight test legs green (run ID recorded as evidence).
+  **Evidence:** the workflow parses as valid YAML (ruby/psych — the plan's PyYAML example was
+  unavailable; jobs are `test`, `lint`, `installer` with the lint matrix/timeout/fail-fast
+  programmatically verified); `rg` finds fmt/clippy only at `ci.yml` lines 63–64 inside `lint`.
+  Push run [32654818613](https://github.com/WhiteKiwi/locron/actions/runs/32654818613) (head
+  `e9f693c`) concluded `success` — the first run of the new `lint` job (4 legs) alongside the
+  eight-leg test matrix and the installer job.
+- [x] Run full workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass locally on the
+  installed toolchain.
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
+  -D warnings` clean; `cargo test --workspace` green across all binaries, 0 failed/panicked.
+
+## Human output backlog (2026-08-24)
+
+Authorized by the frozen 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract, issue #4).
+Planned in `docs/IMPLEMENTATION.md` "Human rendering implementation"; the rendering contract is in
+`docs/CLI.md` "Human rendering".
+
+- [x] Amend planning documents before code: SPEC amendment, CLI.md contract, IMPLEMENTATION
+  section, this checklist.
+  **Verify:** `rg -n "Human Output Contract|Human rendering|Human rendering implementation"
+  docs/SPEC.md docs/CLI.md docs/IMPLEMENTATION.md` returns all three, and no planning document
+  marks an unresolved decision in the new content.
+  **Evidence:** `rg` returns `docs/SPEC.md` line 280 (amendment section + status note),
+  `docs/CLI.md` line 277 (per-command contract), and `docs/IMPLEMENTATION.md` line 344
+  (implementation approach); no unresolved marker in the new content.
+- [x] Implement the table and confirmation-line renderers: `history` table, `add`/`update`,
+  `enable`/`disable`, `remove`, `run` (queued/wait/dry-run), `cancel`, `config get|set|unset`,
+  `import`, `prune` — each human branch replaced by its documented form; the JSON path stays
+  byte-identical.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy -p locron-cli --all-targets -- -D
+  warnings`, and `cargo test -p locron-cli` pass; manual scratch-state runs show the documented
+  forms for each command, and each `--json` output is unchanged.
+  **Evidence:** `cargo fmt --all --check` is clean; `cargo clippy -p locron-cli --all-targets --
+  -D warnings` is clean; `cargo test -p locron-cli` passes 198 tests (67 unit in main.rs, 65
+  contract in cli.rs). Manual scratch-state runs (`target/debug/locron --state-dir /tmp/...`)
+  show the documented forms: `job added: NAME (UUID)` plus `schedule:`/`target:` lines;
+  `job updated: NAME (UUID, revision 2)` plus summary lines; `job enabled:`/`job disabled:`;
+  `job removed:`; `run queued: UUID (job NAME)` (with `warning: daemon is not running; run
+  remains durably queued` on stderr when no daemon) then `run finished: UUID (STATE)` on
+  `--wait`; dry-run decisions (`run would skip (overlap policy): NAME` etc.) followed by
+  `dry run: no run created`; `cancellation requested: UUID (cancelled before execution)` and a
+  second cancel returning exit 3 `durable conflict`; `global_concurrency=16` for `config get`;
+  `KEY: configured` / `KEY: would be configured (dry run; no changes made)` / `KEY: unset` for
+  set/unset; `created N, updated N, unchanged N` plus per-job action lines for import; `pruned:
+  N runs, N outputs (N bytes)` (and `dry run: would prune ...`). Every command re-run with
+  `--format json` produced byte-identical machine output.
+- [x] Implement the report and value-list renderers: `show` sections, `preview` occurrence list,
+  `why` job and run modes, `doctor` ok/warn/fail lines.
+  **Verify:** the same battery plus manual checks of `why --run` on a terminal run and a
+  `fail`-marked doctor check.
+  **Evidence:** same clean battery as the previous step. Manual `why --run` against a terminal
+  run made through a real daemon prints RUN (`run id`, `trigger: manual`, `nominal time: none`,
+  `requested`, `state: succeeded`, `started`, `finished`, `duration`, `outcome`), ATTEMPTS
+  (`attempt 1: succeeded (Nus)`), EVENTS (`{RFC3339} manual_enqueued`), and TERMINAL REASON
+  (`reason: process exited successfully`). A `fail`-marked doctor check was produced manually by
+  registering a job with a nonexistent executable: `fail process resolution: broken (executable
+  not found: /nonexistent/bin/nope)`; the same scratch run also showed `warn daemon: not
+  running` and `warn wake socket: missing` variants. `show` renders JOB/SCHEDULE/TARGET/
+  POLICIES sections, `preview` prints `schedule: ...` then one RFC 3339 occurrence per line,
+  and `doctor` renders every check with an `ok   `/`warn `/`fail ` prefix.
+- [x] Add contract tests in `crates/locron-cli/tests/cli.rs` for every command's human form:
+  empty and populated states, dry-run wording, redaction (no configured value in any human
+  output), table-only ID abbreviation, and unchanged JSON assertions.
+  **Verify:** the new tests pass, and the existing help-surface walk
+  (`complete_command_tree_has_consistent_help_surface`) passes unchanged.
+  **Evidence:** 15 new contract tests pass (cli.rs now 65, up from 50):
+  `human_add_update_enable_disable_remove_print_outcome_lines`,
+  `human_history_prints_the_aligned_table_with_header_always`,
+  `human_run_prints_the_dry_run_decision_and_queued_lines`,
+  `human_cancel_prints_the_resolution_line`, `human_show_prints_labeled_sections`,
+  `human_show_why_and_list_never_leak_configured_values`,
+  `human_preview_prints_the_schedule_line_then_occurrences`,
+  `human_why_job_prints_labeled_sections`, `human_run_wait_streams_and_prints_the_terminal_outcome_line`,
+  `human_why_run_prints_immutable_run_facts`, `human_doctor_prints_one_level_line_per_check`,
+  `human_config_forms_print_key_value_and_action_lines`,
+  `human_import_prints_counts_then_action_lines`, `human_prune_prints_the_pruned_counts`, and
+  `human_forms_leave_the_json_envelope_untouched`. The help-surface walk
+  (`complete_command_tree_has_consistent_help_surface`) passes unchanged. Redaction: the
+  never-leak contract tests assert no configured value in any human output (add/show/why/list/
+  preview/doctor), the JSON-envelope test asserts schema/command/data stability, and manual
+  re-checks of `show`, `why`, `list`, and `--json show` on a state with configured environment
+  values reported 0 leaks.
+- [x] Check `README.md`, `docs/OPERATOR.md`, and `assets/screencast.sh` for JSON-wall sample
+  output or `jq` pipes the human forms make obsolete; update the docs and note the screencast
+  regeneration.
+  **Verify:** `rg` finds no stale sample, and the screencast note is recorded.
+  **Evidence:** `rg -n "locron (add|list|preview|why|doctor|history|show)" README.md
+  docs/OPERATOR.md` returns only command listings with inline comments — no JSON-wall output
+  samples; `assets/screencast.sh` no longer contains `jq` (all ten demo commands now run in
+  plain human mode; the now-obsolete `--format json ... | jq` pipelines and the JQ_FILTER
+  fallback machinery were removed, and `bash -n` passes). The screencast recording
+  (`assets/screencast.svg`) is not regenerated in this session — regeneration requires
+  svg-term-cli/Node and belongs with the release publication.
+- [x] Run workspace verification, then close issue #4 with the fixing commit reference.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  and `cargo test --workspace` pass; `gh issue view 4` shows CLOSED with a reference to the
+  fixing commit.
+  **Evidence:** `cargo fmt --all --check` is clean; `cargo clippy --workspace --all-targets --
+  -D warnings` is clean; `cargo test --workspace` passes 330 tests across 20 suites with 0
+  failures (locron-cli: 67 unit + 65 contract + 66 across its other 12 test suites; the +15
+  contract tests over the export backlog's 315 total match this work). Closing issue #4 with
+  the fixing commit reference is the parent session's publication step (this development
+  sub-session does not run git/gh commands); the closing commit is the one that carries these
+  changes.
+
+## Usage snapshot smoke relocation backlog (2026-08-24)
+
+No product-behavior change (CI placement only), so the frozen `docs/SPEC.md` is not amended.
+Planned in `docs/IMPLEMENTATION.md` "Usage snapshot smoke relocation"; evidence in
+`docs/FINDINGS.md` §18.
+
+Background: CI run
+[32654895285](https://github.com/WhiteKiwi/locron/actions/runs/32654895285) failed in the
+`Installer / ubuntu-latest` job's "Usage snapshot smoke (live APIs)" step: the step never passed
+`GITHUB_TOKEN` to the script, so the GitHub REST calls ran unauthenticated against the shared-IP
+60/hour quota and the traffic-only tolerance predicate rejected the failure. The convention
+(FINDINGS §18: Google SWE book, Fowler, freenet-core's identical failure) is that blocking push
+CI must be hermetic and live third-party checks belong on a schedule — this backlog applies it.
+
+- [x] Amend planning documents before code: FINDINGS §18, the IMPLEMENTATION section, and this
+  checklist.
+  **Verify:** `rg -n "18\. Live External API|Usage snapshot smoke relocation" docs/FINDINGS.md
+  docs/IMPLEMENTATION.md docs/TODO.md` returns all three sections, and no planning document marks
+  an unresolved decision in them.
+  **Evidence:** `rg` returns `docs/FINDINGS.md` §18, the `docs/IMPLEMENTATION.md` EOF section,
+  and this checklist section; no unresolved decision marker in them; the SPEC is not amended (no
+  product-behavior change).
+- [x] Add `.github/workflows/usage.yml` (weekly `schedule:` cron plus `workflow_dispatch`, one
+  ubuntu-latest job, `env: GITHUB_TOKEN` with `permissions: contents: read`, JSON-shape assertion
+  without the traffic-only tolerance) and remove the live-smoke step from the `ci.yml` installer
+  job, keeping the hermetic shellcheck steps, the fake-`uname`/`ldd` refusals, and the pinned
+  `v0.2.0` install smoke.
+  **Verify:** both workflows parse as valid YAML; `rg -n "usage.sh --json" .github/workflows`
+  shows the smoke only inside `usage.yml`; the next push CI run is green (run ID recorded as
+  evidence); a manual `workflow_dispatch` run of the new workflow completes and records its
+  snapshot in the run log.
+  **Evidence:** the dev sub-session added `usage.yml` (39 lines; `on:` schedule cron `0 3 * * 1`
+  + `workflow_dispatch`, `permissions: contents: read`, one `usage` job with the `GITHUB_TOKEN`
+  env and the JSON-shape assertion) and removed only the 11-line live-smoke step from `ci.yml`
+  (installer job now shellcheck → fake-uname refusals → pinned install). Both files parse with
+  ruby/psych (`OK`, `OK`); `rg` finds the smoke only at `usage.yml:36` and no "Usage snapshot
+  smoke" in `ci.yml`. Push run
+  [32655930565](https://github.com/WhiteKiwi/locron/actions/runs/32655930565) (head `f03d631`)
+  concluded `success` — the first push run without the live smoke. The first
+  `workflow_dispatch` run (32655962445) failed on the tolerance interaction recorded in the
+  follow-up step below.
+- [x] Run workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass (the change
+  touches only workflows, so this guards against accidental drift).
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
+  -D warnings` clean; `cargo test --workspace` green (51 engine unit tests + all doc-tests, 0
+  failed); `sh -n scripts/usage.sh` passes.
+
+### Follow-up: restore the traffic-only tolerance in the scheduled smoke
+
+The first `workflow_dispatch` run (32655962445) failed: passing `GITHUB_TOKEN` also authenticates
+the preinstalled `gh`, and the owner-only `/traffic/*` endpoints then fail by design, producing
+`traffic_error` — the exact failure the removed step's tolerance existed for, and one the plan
+draft missed. `traffic_error` is the *expected* state of an authenticated scheduled run, so the
+tolerance (accept an exit confined to `traffic_error`, matching the old `ci.yml` step) must be
+restored in `usage.yml`; any other `*_error` key or an invalid snapshot still fails the run as a
+drift alert. `docs/IMPLEMENTATION.md` "Usage snapshot smoke relocation" is amended accordingly.
+
+- [x] Restore the traffic-only tolerance in `.github/workflows/usage.yml` (mirror the removed
+  step's `|| code=$?` pattern: the numbers check always runs, and a non-zero script exit is
+  accepted only when `has("traffic_error")` and every `*_error` key is `traffic_error`).
+  **Verify:** the workflow parses as valid YAML; a manual `workflow_dispatch` run completes
+  `success` with the snapshot recorded in its log; the weekly cron path is the same step logic.
+  **Evidence:** commit `eaa6c33` restored the pattern verbatim; the workflow parses (ruby/psych
+  `OK`); `workflow_dispatch` run
+  [32656326863](https://github.com/WhiteKiwi/locron/actions/runs/32656326863) concluded
+  `success` — the first authenticated run with `traffic_error` tolerated, other sections
+  green — and the push CI run
+  [32656321754](https://github.com/WhiteKiwi/locron/actions/runs/32656321754) (head `eaa6c33`)
+  concluded `success`.
+
+## Terminal-width list table truncation backlog (2026-08-24)
+
+Authorized by the frozen 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract: Table
+width). Planned in `docs/IMPLEMENTATION.md` "Terminal-width list table truncation"; evidence in
+`docs/FINDINGS.md` §19.
+
+- [ ] Amend planning documents before code: the SPEC amendment and status note, the `docs/CLI.md`
+  list contract, the IMPLEMENTATION section, FINDINGS §19, and this checklist.
+  **Verify:** `rg -n "Table width|no-trunc|Terminal-width list table" docs/SPEC.md docs/CLI.md
+  docs/IMPLEMENTATION.md docs/FINDINGS.md` returns all four, and no planning document marks an
+  unresolved decision in the new content.
+- [x] Implement width resolution (`console::Term::stdout().size_checked()`), `truncate_display`
+  (unicode-width), the `width` parameter on `render_list_table`, and the `--no-trunc` flag.
+  **Verify:** the new unit tests pass (`truncate_display` ASCII/CJK/emoji/boundary cases;
+  `render_list_table` with injected widths); `cargo fmt --all --check`, `cargo clippy -p
+  locron-cli --all-targets -- -D warnings`, and `cargo test -p locron-cli` pass.
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy -p locron-cli --all-targets --
+  -D warnings` clean; `cargo test -p locron-cli` 206 passed, 0 failed, including the new
+  `truncate_display` unit tests (ASCII fit/no-fit, exact boundary, width-2 CJK, emoji, marker
+  appended only on truncation, zero/minimum widths) and `list_table` injected-width tests
+  (Some(40) truncating, Some(72)/Some(80) fitting, Some(20) too-narrow fallback, None).
+  Cargo.lock gained no new package entries — the diff adds only the `console` and
+  `unicode-width` edges under the `locron-cli` package. Real-PTY check (`TIOCGWINSZ` via
+  pty) confirms column-count fitting: width 40 shrinks the TARGET column to the remaining 18
+  display columns with a trailing `…`, `--no-trunc` restores full values, width 22/21 falls
+  back untruncated, CJK targets truncate by display width. The plan's `(w, _)` destructuring
+  was corrected to `(_, cols)` — console's tuple is `(rows, cols)` (verified in the console
+  0.16.4 source, `unix_term.rs:53–67`); recorded in `docs/IMPLEMENTATION.md`.
+- [x] Add contract tests: piped `ls` byte-identical with a long target, `--no-trunc` in the help
+  walk, `--no-trunc --format json` identical to JSON without the flag.
+  **Verify:** the new tests pass, and the existing help-surface walk
+  (`complete_command_tree_has_consistent_help_surface`) passes unchanged.
+  **Evidence:** the three new tests pass — `piped_human_list_prints_full_targets_byte_identically`
+  (assert_cmd pipes stdout, so the size lookup fails and the full target prints, exact bytes),
+  `list_help_advertises_no_trunc_for_list_and_its_alias` (both `list` and `ls`), and
+  `list_no_trunc_is_accepted_with_json_and_ignored` (stdout and stderr byte-identical to
+  `ls --format json`); `complete_command_tree_has_consistent_help_surface` passes unchanged
+  (it walks the tree generically and does not pin the `list` flag set).
+- [x] Run full workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
+  --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass.
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
+  -D warnings` clean; `cargo test --workspace` 338 passed, 0 failed across all crates.
+- [x] Parent session: publish v0.5.0 — version bump, curated git-cliff changelog, commit, annotated
+  tag `v0.5.0`, push; monitor the release workflow per `docs/RELEASE.md`.
+  **Verify:** the release workflow run is green (run ID recorded here), the GitHub Release is
+  created with the curated notes, and the Homebrew tap update is dispatched.
+  **Evidence:** release workflow run
+  [32684370852](https://github.com/WhiteKiwi/locron/actions/runs/32684370852) concluded `success`
+  (tag `v0.5.0`); GitHub Release
+  [v0.5.0](https://github.com/WhiteKiwi/locron/releases/tag/v0.5.0) published with the curated
+  changelog notes and all ten assets (four target tarballs, two `.deb`, two `.rpm`, `install.sh`,
+  `SHA256SUMS.txt`); the tap formula updated by direct commit `85382afe` `bump(locron): 0.5.0`
+  (the workflow commits to the tap rather than opening a PR). The changelog entry was hand-curated
+  in Keep-a-Changelog format — git-cliff is not installed on the maintainer machine — which the
+  release-notes extraction and future regeneration coexist with per `docs/RELEASE.md`.
+
+Follow-ups (open, not implemented here):
+
+- [ ] Apply the same terminal-width rule to the `history` table when a long `TRIGGER` value
+  demonstrates the need.
+
+## Tap formula audit and style backlog (2026-08-24)
+
+Release-tooling fix — no product-behavior change, so the frozen `docs/SPEC.md` is not amended.
+Planned in `docs/IMPLEMENTATION.md` "Accepted: tap formula marker and release pipeline"
+(deviation note); evidence in `docs/FINDINGS.md` §20.
+
+Background: the tap's `brew test-bot` failed on five consecutive bumps (0.4.0 through 0.5.0; the
+0.5.0 run is 32684723747) with two offenses — `FormulaAudit/Miscellaneous: No need for FileUtils.
+before touch` (`formula.rb:33`) and `Stable: version 0.5.0 is redundant with version scanned from
+URL`. Both originate in the formula template embedded in `.github/workflows/release.yml`, so every
+future bump reproduces them until the template is fixed. A first fix attempt (run 32685506683)
+dropped the `version` line while keeping `#{version}` placeholders, and `brew readall` then
+rejected the formula with `version (nil)` — the placeholders interpolate to nil at class-body
+time, so the URL must carry the literal version for Homebrew to scan (FINDINGS §20).
+
+- [x] Amend planning documents before code: FINDINGS §20, the IMPLEMENTATION deviation note, and
+  this checklist.
+  **Verify:** `rg -n "20\. Homebrew Formula|No need for FileUtils|redundant with version|version
+  \(nil\)" docs/FINDINGS.md docs/IMPLEMENTATION.md docs/TODO.md` returns all three.
+  **Evidence:** `rg` returns `docs/FINDINGS.md` §20 (both offenses, the `version (nil)`
+  correction, and the accepted resolution), the `docs/IMPLEMENTATION.md` deviation note, and this
+  checklist section; no unresolved decision marker in the new content; the SPEC is not amended
+  (no product-behavior change).
+- [x] Fix the `release.yml` formula template: render the literal `${VERSION}` into the four URL
+  strings, drop the explicit `version "${VERSION}"` line, and write
+  `touch lib/".disable-self-update"` without the `FileUtils.` prefix.
+  **Verify:** the workflow parses as valid YAML; `rg -n 'FileUtils|version "|#\{version\}'
+  .github/workflows/release.yml` finds neither offense inside the template heredoc (the
+  `VERSION=` assignment remains); the locron CI run after push is green (run ID recorded as
+  evidence).
+  **Evidence:** the workflow parses (ruby/psych `OK`); `rg` finds no `FileUtils`, `version "`, or
+  `#{version}` in the template; rendering the heredoc with `VERSION=0.5.0` and the tap's real
+  SHA256 values produces a formula byte-identical (modulo indentation) to the fixed tap
+  `Formula/locron.rb`. Commits `7ec8d78` (drop version line, `touch`) and `0d7d449` (literal URL
+  interpolation); CI runs 32685535659 and 32685866396 both `success`.
+- [x] Apply the identical fix to the tap's `Formula/locron.rb` and push it.
+  **Verify:** the tap's `brew test-bot` run on the fix commit is green (run ID recorded as
+  evidence).
+  **Evidence:** commits `5e9c6a8` and `faf5ac2` on the tap; the first attempt's `brew readall`
+  rejection (`version (nil)`, run 32685506683) drove the literal-URL correction recorded in
+  FINDINGS §20; test-bot run
+  [32685847372](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/32685847372) on `faf5ac2`
+  concluded `success` — the first green run after five consecutive failures.
+- [x] Parent session: record evidence here, commit the locron-side changes, push.
+  **Verify:** the locron CI run on the push is green (run ID recorded as evidence); `gh run list
+  -R whitekiwi/homebrew-tap` shows the fix run `success`.
+  **Evidence:** locron CI run
+  [32685866396](https://github.com/WhiteKiwi/locron/actions/runs/32685866396) on `0d7d449`
+  concluded `success`; `gh run list -R whitekiwi/homebrew-tap` shows run 32685847372 `success`.
+  Future bumps generate audit-clean formulas from the fixed template; the v0.5.0 tap formula was
+  fixed directly and needs no re-release.
+
+## Homebrew formula literal-rendering release fix (2026-08-24)
+
+Authorized by the frozen 2026-08-24 `docs/SPEC.md` Homebrew-publication amendment and planned in
+`docs/IMPLEMENTATION.md` “Accepted: literal Homebrew formula rendering”. Release v0.6.0 itself
+succeeded, but the generated tap commit `b9d1d0c` lost every backtick-delimited command because the
+formula body was an unquoted shell heredoc; tap test-bot run 32718394313 also found trailing
+whitespace left by the removed substitution.
+
+- [x] Replace the executable heredoc with a literal checked-in formula template and a validated
+  token renderer, then make the release workflow call that renderer.
+  **Verify:** the workflow parses as YAML; shellcheck passes the renderer; a fixture render contains
+  the supplied version and four checksums, retains every literal backtick command, leaves no token,
+  and has no trailing whitespace.
+  **Evidence:** `packaging/homebrew/locron.rb.in` contains the literal Ruby body and five explicit
+  token kinds; `scripts/render-homebrew-formula.sh` validates a SemVer release and four lowercase
+  SHA-256 values, replaces exactly the expected token counts, and the release workflow invokes it
+  after calculating the four checksums. Ruby/Psych parses `release.yml`; shell syntax, shellcheck,
+  the fixed-value render, token search, and trailing-whitespace check all pass.
+- [x] Add the deterministic renderer regression to push CI.
+  **Verify:** the regression fails against the v0.6.0 backtick-stripped formula shape, passes against
+  the checked-in template/renderer, both shell scripts pass shellcheck, and the CI workflow parses.
+  **Evidence:** `scripts/test-render-homebrew-formula.sh` first verifies the intact rendered formula,
+  then proves the same check rejects a fixture with all four backtick expressions removed; it also
+  rejects malformed version/checksum inputs. The CI installer job shellchecks both scripts and runs
+  the regression. Ruby/Psych and actionlint accept both edited workflows.
+- [x] Repair `WhiteKiwi/homebrew-tap` v0.6.0 directly from the current URLs/checksums and the intact
+  v0.5.0 guidance, then publish it on tap `main`.
+  **Verify:** inspect staged/unstaged changes before commit; `ruby -c`, trailing-whitespace checks,
+  Homebrew readall/style/audit where locally available, and the pushed tap `brew test-bot` run all
+  succeed; record the tap commit and run ID.
+  **Evidence:** tap commit `06ae05f` (`fix: restore locron formula guidance`) changes only the four
+  damaged documentation lines, retains the v0.6.0 URLs/checksums from `b9d1d0c`, and is byte-for-byte
+  identical to a v0.6.0 render from the new source template. `ruby -c`, `brew style`, whitespace,
+  diff, staged/unstaged, and renderer-comparison checks pass. Tap test-bot run
+  [32719051536](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/32719051536) concluded
+  `success` on both its Ubuntu and macOS jobs.
+- [x] Verify and publish the locron release-tooling fix.
+  **Verify:** formatting, workflow YAML/action lint, shell syntax/shellcheck, deterministic rendering,
+  and relevant workspace checks pass; inspect staged/unstaged changes, commit with the repository
+  message format, push the branch, open a PR, and record the commit, PR URL, and CI run result.
+  **Evidence:** `cargo fmt --all --check`, workspace clippy with warnings denied, and all 344
+  workspace tests pass locally; both scripts pass `sh -n` and shellcheck; the deterministic render
+  regression, Ruby/Psych workflow parsing, actionlint, and `git diff --check` pass. Commit `5800581`
+  (`fix: render Homebrew formula literally`) was staged from only the seven planned files and pushed
+  as PR [#7](https://github.com/WhiteKiwi/locron/pull/7). CI run
+  [32719339788](https://github.com/WhiteKiwi/locron/actions/runs/32719339788) concluded `success`
+  across the installer, four lint, and eight platform/toolchain test jobs.
+
+## Carried open items from archived backlogs
+
+- [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.
+  **Verify:** next-tag marker/release evidence recorded in this section.
+
 ## Ordered deferred product roadmap
+
 
 Every phase below is post-milestone work and requires its own reviewed SPEC before implementation;
 none changes the exclusions in the current `docs/SPEC.md`.

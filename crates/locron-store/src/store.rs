@@ -1298,6 +1298,35 @@ impl Store {
         )?)
     }
 
+    /// Returns the latest run and latest anomalous terminal run for one live
+    /// job, both ordered by durable request time and canonical identity. The
+    /// focused queries are not subject to the presentation cap of
+    /// [`Store::history`].
+    pub fn latest_and_anomalous_runs(
+        &self,
+        job: &str,
+    ) -> StoreResult<(Option<RunRecord>, Option<RunRecord>)> {
+        let job_id = self.job(job)?.id;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let latest = tx
+            .query_row(
+                "SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE job_id=?1 ORDER BY requested_at_us DESC,id DESC LIMIT 1",
+                [&job_id],
+                map_run,
+            )
+            .optional()?;
+        let anomaly = tx
+            .query_row(
+                "SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE job_id=?1 AND state IN ('failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown') ORDER BY requested_at_us DESC,id DESC LIMIT 1",
+                [&job_id],
+                map_run,
+            )
+            .optional()?;
+        tx.commit()?;
+        Ok((latest, anomaly))
+    }
+
     /// Cancels the run without acknowledging an unconfirmed termination. See
     /// [`Store::cancel_with_acknowledgement`].
     pub fn cancel(&self, id: &str, now_us: i64) -> StoreResult<CancelOutcome> {
@@ -3932,6 +3961,40 @@ mod tests {
         create(&store, &second, "x");
         assert_ne!(first, store.job("x").unwrap().id);
         assert_eq!(store.run(&run).unwrap().job_id, first);
+    }
+
+    #[test]
+    fn focused_explanation_runs_ignore_history_cap_and_use_request_time_then_id() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "explain");
+        let lower_anomaly = Uuid::from_u128(1).to_string();
+        let higher_anomaly = Uuid::from_u128(2).to_string();
+        {
+            let conn = store.conn().unwrap();
+            for (id, state, sequence) in [
+                (&lower_anomaly, "cancelled", 1_i64),
+                (&higher_anomaly, "failed", 2_i64),
+            ] {
+                conn.execute(
+                    "INSERT INTO runs(id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,queue_sequence,snapshot_json,state,reason,finished_at_us) VALUES(?1,?2,1,'manual',NULL,2,2,?3,'{}',?4,'test anomaly',2)",
+                    params![id, job, sequence, state],
+                )
+                .unwrap();
+            }
+        }
+        let success_times = (3_i64..=1_003).collect::<Vec<_>>();
+        let successes = insert_terminal_runs(&store, &job, 10_000, 3, &success_times);
+
+        let capped = store.history(Some("explain"), 1_000).unwrap();
+        assert_eq!(capped.len(), 1_000);
+        assert!(capped.iter().all(|run| run.state == "succeeded"));
+
+        let (latest, anomaly) = store.latest_and_anomalous_runs("explain").unwrap();
+        assert_eq!(latest.unwrap().id, *successes.last().unwrap());
+        let anomaly = anomaly.unwrap();
+        assert_eq!(anomaly.id, higher_anomaly);
+        assert_eq!(anomaly.state, "failed");
     }
 
     #[test]
