@@ -1,4 +1,21 @@
 
+## [0.6.0] - 2026-08-24
+
+### Added
+
+- `locron explain NAME_OR_ID` provides one redacted summary of a job's schedule, next occurrence,
+  current scheduling posture, latest run, and latest anomalous terminal run. Human and versioned
+  JSON output carry the same canonical run identities and durable reasons, while `why --run`
+  remains the detailed attempt and event trace.
+
+### Documentation
+
+- Repositioned locron as “Cron that explains itself.” and reorganized the README around
+  explainability, real-world reliability, and agent integration. Examples now distinguish job
+  explanations from run explanations and use canonical run IDs for captured logs.
+- Added AI-assisted installation guidance and a copy-paste Homebrew install command using the
+  fully qualified tap name.
+
 ## [0.5.0] - 2026-08-24
 
 ### Added

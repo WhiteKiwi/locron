@@ -67,6 +67,13 @@ explanation implementation”.
   real per-user daemon could not affect service fake expectations. `git diff --check` is clean, and
   status contains only the parent SPEC amendment plus explain code, tests, CLI/implementation/TODO,
   and README updates.
+- [ ] Parent session: publish v0.6.0 after PRs #5 and #6 merge — curate the changelog, bump the
+  lockstep workspace version, commit, push `main`, create and push the annotated tag, then monitor
+  the release and Homebrew tap workflows to completion.
+  **Verify:** `Cargo.toml`, every workspace package in `Cargo.lock`, the changelog heading, binary
+  `--version`, and annotated tag all report 0.6.0; the release workflow is green; the GitHub Release
+  publishes all required assets with curated notes; the tap formula points at v0.6.0 and its
+  test-bot run is green.
 
 ## README product positioning refresh (2026-08-24)
 
