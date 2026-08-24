@@ -673,10 +673,13 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   **Evidence:** `sigkill_delivery_accepts_an_absent_group_but_not_permission_failure` covers all
   three signal results; `cancellation_kills_a_live_process_grandchild` passed 50 consecutive runs
   on macOS, including the TERM-to-KILL escalation through a live TERM-ignoring grandchild.
-- [ ] Run the full local quality gate and publish the CI reliability fix.
+- [x] Run the full local quality gate and publish the CI reliability fix.
   **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
   and `cargo test --workspace --all-targets` pass; the pushed macOS x86_64 stable CI job passes
   without a retry; record the run URL and result here.
+  **Evidence:** all three local quality-gate commands passed; the complete 13-job CI matrix,
+  including both macOS x86_64 toolchains, passed without a retry in
+  [run 32743116590](https://github.com/WhiteKiwi/locron/actions/runs/32743116590).
 
 - [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.
   **Verify:** next-tag marker/release evidence recorded in this section.
