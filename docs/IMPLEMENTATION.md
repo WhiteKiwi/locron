@@ -447,6 +447,8 @@ Testability uses rustup's override seam: `LOCRON_UPDATE_API_BASE` and `LOCRON_UP
 
 The formula template embedded in `.github/workflows/release.yml` gains one line that creates the self-update marker inside the prefix (`touch lib/.disable-self-update`), and the pipeline attaches `install.sh` to GitHub Releases so the canonical one-liner exists for every published version. `docs/CLI.md` documents the `self-update` command under the reviewed CLI contract, and the README installation section adds the one-liner plus the per-channel update story (re-run the script, `brew upgrade`, or `self-update`). *(The per-channel story later moved to `docs/INSTALL.md`, which the README installation section now links.)*
 
+Implementation deviation, corrected 2026-08-24: the deployed template wrote the marker line as `FileUtils.touch` and carried an explicit `version` line, and the tap's `brew test-bot` failed on five consecutive bumps with the corresponding `brew style` and `brew audit` offenses (evidence in `docs/FINDINGS.md` §20). The template now writes `touch lib/".disable-self-update"` and omits the `version` line — the URL's `v#{version}` marker makes Homebrew detect the version from the URL, so the self-referential URL is the canonical pattern. Behavior is unchanged; the fix takes effect at the next tag because the workflow evaluates at the tagged commit.
+
 ### Edge cases to handle explicitly
 
 - A machine has both a brew-installed and a script-installed locron; `PATH` order decides which runs, and each channel updates through itself.

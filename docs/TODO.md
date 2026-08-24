@@ -407,6 +407,35 @@ Follow-ups (open, not implemented here):
 - [ ] Apply the same terminal-width rule to the `history` table when a long `TRIGGER` value
   demonstrates the need.
 
+## Tap formula audit and style backlog (2026-08-24)
+
+Release-tooling fix — no product-behavior change, so the frozen `docs/SPEC.md` is not amended.
+Planned in `docs/IMPLEMENTATION.md` "Accepted: tap formula marker and release pipeline"
+(deviation note); evidence in `docs/FINDINGS.md` §20.
+
+Background: the tap's `brew test-bot` failed on five consecutive bumps (0.4.0 through 0.5.0; the
+0.5.0 run is 32684723747) with two offenses — `FormulaAudit/Miscellaneous: No need for FileUtils.
+before touch` (`formula.rb:33`) and `Stable: version 0.5.0 is redundant with version scanned from
+URL`. Both originate in the formula template embedded in `.github/workflows/release.yml`, so every
+future bump reproduces them until the template is fixed.
+
+- [ ] Amend planning documents before code: FINDINGS §20, the IMPLEMENTATION deviation note, and
+  this checklist.
+  **Verify:** `rg -n "20\. Homebrew Formula|No need for FileUtils|redundant with version"
+  docs/FINDINGS.md docs/IMPLEMENTATION.md docs/TODO.md` returns all three.
+- [ ] Fix the `release.yml` formula template: drop the explicit `version "${VERSION}"` line and
+  write `touch lib/".disable-self-update"` without the `FileUtils.` prefix.
+  **Verify:** the workflow parses as valid YAML; `rg -n 'FileUtils|version "' 
+  .github/workflows/release.yml` finds neither offense inside the template heredoc (the
+  `VERSION=` assignment remains); the locron CI run after push is green (run ID recorded as
+  evidence).
+- [ ] Apply the identical fix to the tap's `Formula/locron.rb` and push it.
+  **Verify:** the tap's `brew test-bot` run on the fix commit is green (run ID recorded as
+  evidence).
+- [ ] Parent session: record evidence here, commit the locron-side changes, push.
+  **Verify:** the locron CI run on the push is green (run ID recorded as evidence); `gh run list
+  -R whitekiwi/homebrew-tap` shows the fix run `success`.
+
 ## Carried open items from archived backlogs
 
 - [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.
