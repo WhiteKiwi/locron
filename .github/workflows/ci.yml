@@ -69,13 +69,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Shellcheck install.sh
+      - name: Shellcheck installer and release scripts
         run: |
           sudo apt-get install -y shellcheck
-          shellcheck install.sh
+          shellcheck install.sh scripts/render-homebrew-formula.sh scripts/test-render-homebrew-formula.sh
       - name: Shellcheck usage.sh
         run: |
           shellcheck scripts/usage.sh
+      - name: Test Homebrew formula rendering
+        run: sh scripts/test-render-homebrew-formula.sh
       - name: Refuse unsupported platforms and musl
         run: |
           set -eu

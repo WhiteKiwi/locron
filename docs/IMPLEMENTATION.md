@@ -525,6 +525,29 @@ Implementation deviation, corrected 2026-08-24: the deployed template wrote the 
 - **Formula marker:** the tap formula template contains the marker line, and a manual `brew reinstall` followed by `self-update` refusal is recorded as evidence at the next release.
 - **Platform matrix:** the existing four-target CI runs the new suites; Windows, 32-bit, and musl results remain informational.
 
+### Accepted: literal Homebrew formula rendering (2026-08-24 release follow-up)
+
+The v0.6.0 release exposed a shell-expansion defect in the inline, unquoted formula heredoc: Ruby
+documentation backticks were executed as shell command substitutions before the formula was written.
+The release workflow therefore no longer owns an executable heredoc. A checked-in formula template
+is plain data with explicit version and checksum tokens, and a small POSIX renderer validates the
+release version and all four lowercase SHA-256 values before replacing only those tokens. The
+workflow redirects the renderer's standard output into the cloned tap. Literal Ruby comments and
+caveats never pass through shell evaluation, while release-derived values still render into the
+four literal URLs and checksum fields Homebrew requires for version scanning.
+
+The renderer fails if a value has the wrong shape or a template token remains. A deterministic
+regression script renders fixed fixture values and asserts the complete package-manager guidance,
+service-upgrade caveat, literal backticks, URLs, checksums, marker, and absence of trailing
+whitespace. Push CI runs this check and shellchecks both scripts. This keeps the release-only path
+executable before the next tag rather than relying on another publication to discover template
+corruption.
+
+The already-published v0.6.0 formula is repaired directly in `WhiteKiwi/homebrew-tap`: retain the
+current v0.6.0 literal URLs and checksums, restore the guidance byte-for-byte from the style-clean
+v0.5.0 formula, then require the tap's `brew test-bot --only-tap-syntax` workflow to succeed. No
+locron release asset or product binary changes, and no v0.6.1 re-release is needed.
+
 ## Daemon service installation implementation (post-milestone delivery, 2026-08-23)
 
 This section plans the daemon-service amendment to `docs/SPEC.md`: per-user registration and automatic startup of the daemon by the script installer, a Homebrew service definition for `brew services`, and refresh-and-restart behavior on updates. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §12.
