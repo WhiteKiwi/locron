@@ -610,10 +610,17 @@ whitespace left by the removed substitution.
   diff, staged/unstaged, and renderer-comparison checks pass. Tap test-bot run
   [32719051536](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/32719051536) concluded
   `success` on both its Ubuntu and macOS jobs.
-- [ ] Verify and publish the locron release-tooling fix.
+- [x] Verify and publish the locron release-tooling fix.
   **Verify:** formatting, workflow YAML/action lint, shell syntax/shellcheck, deterministic rendering,
   and relevant workspace checks pass; inspect staged/unstaged changes, commit with the repository
   message format, push the branch, open a PR, and record the commit, PR URL, and CI run result.
+  **Evidence:** `cargo fmt --all --check`, workspace clippy with warnings denied, and all 344
+  workspace tests pass locally; both scripts pass `sh -n` and shellcheck; the deterministic render
+  regression, Ruby/Psych workflow parsing, actionlint, and `git diff --check` pass. Commit `5800581`
+  (`fix: render Homebrew formula literally`) was staged from only the seven planned files and pushed
+  as PR [#7](https://github.com/WhiteKiwi/locron/pull/7). CI run
+  [32719339788](https://github.com/WhiteKiwi/locron/actions/runs/32719339788) concluded `success`
+  across the installer, four lint, and eight platform/toolchain test jobs.
 
 ## Carried open items from archived backlogs
 
