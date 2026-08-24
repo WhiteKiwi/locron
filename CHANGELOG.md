@@ -1,4 +1,14 @@
 
+## [0.5.0] - 2026-08-24
+
+### Added
+
+- The human `list` table fits the terminal width: on a terminal, when the table would overflow, the
+  `TARGET` column truncates to the remaining width with a trailing `…` and `--no-trunc` prints full
+  values. Piped or redirected output always prints full values, and machine output is
+  byte-identical. Truncation follows character display width, so CJK and emoji targets fit
+  correctly.
+
 ## [0.4.1] - 2026-08-24
 
 ### Added
