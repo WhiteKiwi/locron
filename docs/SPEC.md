@@ -13,6 +13,7 @@ Amended 2026-08-24: the human table form fits the terminal width on a terminal; 
 Amended 2026-08-24: documentation-facing product positioning prioritizes explainability, real-world scheduling semantics, and safe automation surfaces.
 Amended 2026-08-24: a consolidated job explanation reports current scheduling facts, the latest run, and the latest anomalous run.
 Amended 2026-08-24: automated Homebrew publication preserves formula guidance literally and produces a style-clean formula.
+Amended 2026-08-24: one-time jobs may opt into automatic soft deletion after their scheduled run reaches a terminal outcome.
 
 ## Goal
 
@@ -162,6 +163,8 @@ During a daylight-saving transition, a nonexistent local wall-clock time is skip
 A fixed interval is calculated from a durable anchor, not from the previous run's completion time. The default anchor is the time at which the schedule is created. Disabling and re-enabling a job does not move the anchor. A manual trigger does not move any schedule or affect its next occurrence.
 
 A one-time schedule becomes disabled after its scheduled occurrence is resolved. Its definition and history remain available, and manual triggers remain possible. Removing the definition is a separate explicit operation.
+
+`locron add` and `locron update` accept `--delete-after-run` only with an `--at` schedule. It selects automatic removal of the job definition after the one scheduled run reaches a terminal outcome, including all configured retries. The job is soft-removed atomically with that terminal transition, so it no longer appears in `list --all`, cannot be enabled or manually run, and its name becomes reusable. Manual runs never consume this action. Disabling a job before its scheduled occurrence leaves it intact. `--delete-after-run` does not delete run metadata or captured output; normal retention remains the only mechanism that removes those records.
 
 Editing a schedule affects future occurrences only. It does not mutate runs that have already received durable identities.
 
@@ -330,7 +333,7 @@ An export document describes executable schedules. Importing a document register
 
 ## Retention Semantics
 
-Terminal run metadata is retained for 90 days by default, subject to a secondary cap of 1,000 runs per job and 10,000 runs globally. The first exceeded age or count bound evicts the oldest eligible metadata. Active runs are never pruned, and removing a job does not bypass normal retention.
+Terminal run metadata is retained for 90 days by default, subject to a secondary cap of 1,000 runs per job and 10,000 runs globally. The first exceeded age or count bound evicts the oldest eligible metadata. Active runs are never pruned, and removing a job, including automatic `--delete-after-run` removal, does not bypass normal retention.
 
 Captured process output and HTTP response bodies are retained for 30 days by default, capped at 10 MiB per run and 256 MiB globally. Per-run overflow does not terminate the target; capture stops with an explicit truncation marker and discarded-byte accounting. Global overflow removes the oldest terminal-run output first while preserving run metadata and the fact and time of pruning.
 

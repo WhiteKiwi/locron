@@ -130,6 +130,14 @@ Use the Rust standard library's non-blocking exclusive file lock on a permanent 
 
 The daemon migrates after ownership acquisition. A CLI encountering an older schema may migrate only after it temporarily proves the daemon lock is free; otherwise it reports that a daemon restart is required. Revalidate the schema version inside the migration transaction. Reject databases newer than the binary. This prevents a new CLI from changing the schema beneath an older running daemon.
 
+### Accepted: one-time automatic removal
+
+`--delete-after-run` is represented by a `completion_action` in the immutable job definition and therefore in every run snapshot; absent values deserialize as `retain` for backward-compatible imports and existing state. CLI validation permits `delete` only when the effective schedule is `--at`. It is intentionally a definition-lifetime action, not a caller-attachment or output-retention setting.
+
+When a scheduled one-time run with `completion_action=delete` reaches its final terminal transition, the store soft-removes its job in that same immediate transaction. Retry scheduling keeps the job live; manual runs never qualify. Pre-execution and runner-infrastructure terminal paths use the same predicate. The removal writes `removed_at_us`, disables the job, and leaves revisions, runs, attempts, events, and output artifacts referentially intact under normal retention. Atomicity prevents a crash from recording successful execution while leaving an auto-delete definition live, or from removing it before the terminal run exists.
+
+History renders a removed job's retained name with a removed marker. A live name resolves normally; when no live job has that name, history may resolve the removed name. Once the name is reused, the old history remains addressable by its UUID.
+
 ### Accepted: durable CLI-to-daemon control
 
 Commit job mutation, manual enqueue, cancellation intent, and global configuration changes to SQLite before attempting notification. Use an owner-only Unix datagram socket solely as a versioned best-effort wake hint. Do not send command content or treat the socket as a management API; on receipt the engine coalesces messages and rereads durable state.

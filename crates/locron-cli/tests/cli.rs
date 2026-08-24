@@ -2074,14 +2074,14 @@ fn human_history_prints_the_aligned_table_with_header_always() {
         "the JSON surface must keep the full run ID"
     );
 
-    // A removed job's rows fall back to the abbreviated job ID.
+    // A removed job retains a readable history label.
     assert_cmd::assert::Assert::new(locron(&state).args(["remove", "backup"]).output().unwrap())
         .success();
     let history = locron(&state).args(["history"]).output().unwrap();
     let after = String::from_utf8_lossy(&history.stdout);
     assert!(
-        !after.contains("| backup |"),
-        "removed job name must not appear in history:\n{after}"
+        after.contains("backup (removed)"),
+        "removed job name must carry a removed marker:\n{after}"
     );
     let row = after.lines().nth(1).expect("row must survive removal");
     assert!(

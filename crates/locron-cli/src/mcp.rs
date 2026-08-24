@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
-use locron_core::command::JobDefinition;
+use locron_core::command::{CompletionAction, JobDefinition};
 use locron_core::policy::{ExecutionPolicy, MissedRunPolicy, OverlapPolicy};
 use locron_core::schedule::{Schedule, ScheduleTimeZone};
 use locron_core::target::{Environment, HttpMethod, HttpTarget, Target};
@@ -1014,6 +1014,7 @@ fn tool_add_job(paths: &StatePaths, args: &Value) -> Result<Value> {
         cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")),
         environment: Environment::default(),
         policy,
+        completion_action: CompletionAction::Retain,
     };
 
     let global_concurrency = configured_global_concurrency(paths)?;

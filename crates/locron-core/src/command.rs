@@ -37,6 +37,20 @@ pub struct JobDefinition {
     pub environment: Environment,
     /// Concurrency, overlap, and retry behavior for runs.
     pub policy: ExecutionPolicy,
+    /// Action to apply when a one-time scheduled run reaches completion.
+    #[serde(default)]
+    pub completion_action: CompletionAction,
+}
+
+/// Lifetime action for a completed one-time schedule.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompletionAction {
+    /// Keep the disabled job definition after its one-time occurrence resolves.
+    #[default]
+    Retain,
+    /// Soft-remove the definition after its scheduled one-time run is terminal.
+    Delete,
 }
 
 impl JobDefinition {
@@ -46,6 +60,15 @@ impl JobDefinition {
         self.target.validate()?;
         self.environment.validate()?;
         self.policy.validate(global_concurrency)?;
+        if self.completion_action == CompletionAction::Delete
+            && !matches!(self.schedule, Schedule::At { .. })
+        {
+            return Err(ValidationError::new(
+                "completion_action",
+                "one_time_schedule_required",
+                "delete completion action requires a one-time schedule",
+            ));
+        }
         if !self.cwd.is_absolute() {
             return Err(ValidationError::new(
                 "cwd",

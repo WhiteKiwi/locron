@@ -21,7 +21,7 @@ use url::Url;
 use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
 use clap::{ArgAction, Args, CommandFactory, Parser, Subcommand, ValueEnum};
-use locron_core::command::JobDefinition;
+use locron_core::command::{CompletionAction, JobDefinition};
 use locron_core::policy::{BackoffMode, MissedRunPolicy, OverlapPolicy};
 use locron_core::ports::{Clock, TimeZoneResolver};
 use locron_core::schedule::{Schedule, ScheduleTimeZone};
@@ -548,6 +548,12 @@ struct ScheduleArgs {
     /// One-time ISO 8601 timestamp with an explicit offset
     #[arg(long, value_name = "RFC3339")]
     at: Option<String>,
+    /// Soft-remove this one-time job after its scheduled run completes
+    #[arg(long, conflicts_with = "retain_after_run")]
+    delete_after_run: bool,
+    /// Keep this one-time job after its scheduled run completes; update only
+    #[arg(long, conflicts_with = "delete_after_run")]
+    retain_after_run: bool,
     /// 'local' or an IANA time zone name; valid only with --cron
     #[arg(long, value_name = "IANA")]
     timezone: Option<String>,
@@ -1040,9 +1046,16 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
                 .collect::<Result<Vec<_>>>()?;
             if format == Format::Human {
                 let names = store
-                    .list_jobs(true)?
+                    .job_identities()?
                     .into_iter()
-                    .map(|job| (job.id, job.name))
+                    .map(|job| {
+                        let name = if job.removed {
+                            format!("{} (removed)", job.name)
+                        } else {
+                            job.name
+                        };
+                        (job.id, name)
+                    })
                     .collect::<BTreeMap<_, _>>();
                 render_history_table(&runs, &names)
             } else {
@@ -1376,6 +1389,26 @@ fn normalize_definition(
     };
     let schedule_changed =
         current.is_none_or(|definition| definition.schedule != normalized_schedule);
+    if current.is_none() && schedule.retain_after_run {
+        return Err(anyhow!("--retain-after-run is update-only"));
+    }
+    if schedule.delete_after_run && !matches!(normalized_schedule, Schedule::At { .. }) {
+        return Err(anyhow!("--delete-after-run requires --at"));
+    }
+    if schedule.retain_after_run && !matches!(normalized_schedule, Schedule::At { .. }) {
+        return Err(anyhow!(
+            "--retain-after-run requires an effective --at schedule"
+        ));
+    }
+    let completion_action = if schedule.delete_after_run {
+        CompletionAction::Delete
+    } else if schedule.retain_after_run || !matches!(normalized_schedule, Schedule::At { .. }) {
+        CompletionAction::Retain
+    } else {
+        current.map_or(CompletionAction::Retain, |definition| {
+            definition.completion_action
+        })
+    };
 
     let target_selectors = usize::from(target.shell.is_some())
         + usize::from(target.http.is_some())
@@ -1550,6 +1583,7 @@ fn normalize_definition(
         cwd,
         environment,
         policy: execution,
+        completion_action,
     };
     definition.validate(global_concurrency)?;
     Ok((definition, schedule_changed))
@@ -4649,8 +4683,9 @@ fn abbreviated_id(id: &str) -> String {
 /// first, `TIME` is RFC 3339 UTC of the request instant, `DURATION` renders
 /// in the largest whole human unit from request to finish (`-` for active
 /// runs), and the run ID may be abbreviated only in this table. The job
-/// column prefers the live job name and falls back to the abbreviated job ID
-/// for removed jobs. All values derive from the redacted run records.
+/// column uses the retained job name and marks soft-removed jobs; it falls
+/// back to the abbreviated job ID only for dangling legacy records. All
+/// values derive from the redacted run records.
 fn render_history_table(runs: &[Value], names: &BTreeMap<String, String>) -> Result<()> {
     let mut sorted = runs.to_vec();
     sorted.sort_by(|a, b| {
@@ -5599,6 +5634,7 @@ mod tests {
                 catch_up_limit: 1_000,
                 ..Default::default()
             },
+            completion_action: CompletionAction::Retain,
         };
         store
             .create_job(&CreateJob {
@@ -5736,6 +5772,7 @@ mod tests {
                 missed_run: MissedRunPolicy::Latest,
                 ..Default::default()
             },
+            completion_action: CompletionAction::Retain,
         };
         store
             .create_job(&CreateJob {
@@ -5799,6 +5836,7 @@ mod tests {
                 missed_run: MissedRunPolicy::All,
                 ..Default::default()
             },
+            completion_action: CompletionAction::Retain,
         };
         store
             .create_job(&CreateJob {
@@ -5863,6 +5901,7 @@ mod tests {
                 retries: 1,
                 ..Default::default()
             },
+            completion_action: CompletionAction::Retain,
         };
         store
             .create_job(&CreateJob {
@@ -5939,6 +5978,7 @@ mod tests {
                 start_deadline: Some("1s".parse().unwrap()),
                 ..Default::default()
             },
+            completion_action: CompletionAction::Retain,
         };
         let snapshot = serde_json::to_string(&definition).unwrap();
         store
@@ -6043,6 +6083,7 @@ mod tests {
                 ..Environment::default()
             },
             policy: Default::default(),
+            completion_action: CompletionAction::Retain,
         };
         let attempt = AdmitAttempt {
             run_id: Uuid::now_v7().to_string(),
@@ -6103,6 +6144,47 @@ mod tests {
                 .path
                 .as_deref()
                 .is_some_and(|path| Path::new(path).is_absolute())
+        );
+    }
+
+    #[test]
+    fn delete_after_run_requires_one_time_schedule_and_is_snapshotted() {
+        let target = TargetArgs {
+            command: vec!["/usr/bin/true".into()],
+            ..TargetArgs::default()
+        };
+        let (definition, _) = normalize_definition(
+            None,
+            &ScheduleArgs {
+                at: Some("2026-08-25T03:00:00+09:00".into()),
+                delete_after_run: true,
+                ..ScheduleArgs::default()
+            },
+            &target,
+            &PolicyArgs::default(),
+            16,
+            1,
+        )
+        .unwrap();
+        assert_eq!(definition.completion_action, CompletionAction::Delete);
+
+        let error = normalize_definition(
+            None,
+            &ScheduleArgs {
+                every: Some("1h".into()),
+                delete_after_run: true,
+                ..ScheduleArgs::default()
+            },
+            &target,
+            &PolicyArgs::default(),
+            16,
+            1,
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("--delete-after-run requires --at")
         );
     }
 

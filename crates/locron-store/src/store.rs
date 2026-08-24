@@ -4,12 +4,13 @@ use std::sync::{Mutex, MutexGuard};
 
 use locron_core::command::{
     AddJob as AddJobCommand, AddJobResult, CancelRun, CancelRunResult, CancellationDecision,
-    Configuration, ConfigurationChange, ManualRun, ManualRunResult, RemoveJob, RemoveJobResult,
-    SetJobEnabled, SetJobEnabledResult, UpdateConfiguration, UpdateJob as UpdateJobCommand,
-    UpdateJobResult,
+    CompletionAction, Configuration, ConfigurationChange, JobDefinition, ManualRun,
+    ManualRunResult, RemoveJob, RemoveJobResult, SetJobEnabled, SetJobEnabledResult,
+    UpdateConfiguration, UpdateJob as UpdateJobCommand, UpdateJobResult,
 };
 use locron_core::lifecycle::RunState;
 use locron_core::ports::PersistencePort;
+use locron_core::schedule::Schedule;
 use locron_core::{CoreError, DurationMicros, JobId, RevisionNumber};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -1271,7 +1272,20 @@ impl Store {
     /// identified by name or id, up to `limit` (capped at 1000).
     pub fn history(&self, job: Option<&str>, limit: usize) -> StoreResult<Vec<RunRecord>> {
         let job_id = match job {
-            Some(value) => Some(self.job(value)?.id),
+            Some(value) => match self.job(value) {
+                Ok(job) => Some(job.id),
+                Err(StoreError::NotFound(_)) => self
+                    .conn()?
+                    .query_row(
+                        "SELECT id FROM jobs WHERE id=?1 OR name=?1 ORDER BY removed_at_us DESC LIMIT 1",
+                        [value],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .ok_or_else(|| StoreError::NotFound(value.into()))
+                    .map(Some)?,
+                Err(error) => return Err(error),
+            },
             None => None,
         };
         let conn = self.conn()?;
@@ -1368,6 +1382,7 @@ impl Store {
                 Some(id),
                 r#"{"source":"user","risk":"process_liveness_unconfirmed"}"#,
             )?;
+            soft_remove_after_one_time_completion(&tx, id, now_us)?;
             tx.commit()?;
             return Ok(CancelOutcome::AcknowledgedUnconfirmed);
         }
@@ -1391,6 +1406,7 @@ impl Store {
                     Some(id),
                     r#"{"source":"user","before_execution":true}"#,
                 )?;
+                soft_remove_after_one_time_completion(&tx, id, now_us)?;
                 CancelOutcome::CancelledBeforeExecution
             }
             "starting" | "running" => {
@@ -1447,12 +1463,23 @@ impl Store {
     ) -> StoreResult<usize> {
         let mut conn = self.conn()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let stale_run_ids = {
+            let mut statement = tx.prepare(
+                "SELECT id FROM runs WHERE state IN ('starting','running') AND (reason IS NULL OR reason<>'termination_unconfirmed')",
+            )?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
         tx.execute(
             "DELETE FROM retry_intents WHERE run_id IN (SELECT run_id FROM attempts WHERE state IN ('starting','running'))",
             [],
         )?;
         let stale = tx.execute("UPDATE attempts SET state='interrupted_unknown',finished_at_us=?1,error_message='scheduler lifetime ended without a durable result' WHERE state IN ('starting','running')", [now_us])?;
         tx.execute("UPDATE runs SET state='interrupted_unknown',finished_at_us=?1,reason='scheduler lifetime ended without a durable result' WHERE state IN ('starting','running') AND (reason IS NULL OR reason<>'termination_unconfirmed')", [now_us])?;
+        for run_id in stale_run_ids {
+            soft_remove_after_one_time_completion(&tx, &run_id, now_us)?;
+        }
         tx.execute("UPDATE scheduler_lifetimes SET ended_at_us=?1,exit_class='stale' WHERE ended_at_us IS NULL", [now_us])?;
         tx.execute("INSERT INTO scheduler_lifetimes(id,pid,binary_version,started_at_us,heartbeat_at_us) VALUES(?1,?2,?3,?4,?4)", params![id,std::process::id(),binary_version,now_us])?;
         tx.commit()?;
@@ -1689,6 +1716,7 @@ impl Store {
                 Some(run_id),
                 &serde_json::to_string(&serde_json::json!({"source": source}))?,
             )?;
+            soft_remove_after_one_time_completion(&tx, run_id, now_us)?;
             tx.commit()?;
             return Ok(StartDecision::CancelledBeforeSpawn);
         }
@@ -1824,6 +1852,7 @@ impl Store {
                     completion.now_us
                 ],
             )?;
+            soft_remove_after_one_time_completion(&tx, &completion.run_id, completion.now_us)?;
         }
         tx.commit()?;
         Ok(())
@@ -1892,6 +1921,7 @@ impl Store {
             Some(run_id),
             r#"{"retryable":false}"#,
         )?;
+        soft_remove_after_one_time_completion(&tx, run_id, now_us)?;
         tx.commit()?;
         Ok(())
     }
@@ -1965,6 +1995,7 @@ impl Store {
                     "execution_may_have_started": execution_may_have_started,
                 }))?,
             )?;
+            soft_remove_after_one_time_completion(&tx, run_id, now_us)?;
             tx.commit()?;
             return Ok(());
         }
@@ -3072,6 +3103,52 @@ fn supersede_for_replacement(
     Ok(())
 }
 
+/// Soft-removes only the definition that created a terminal scheduled one-time
+/// run which explicitly requested deletion. The run snapshot is authoritative:
+/// later job edits and manual runs cannot change this decision.
+fn soft_remove_after_one_time_completion(
+    tx: &Transaction<'_>,
+    run_id: &str,
+    now_us: i64,
+) -> StoreResult<()> {
+    let candidate: Option<(String, String, String)> = tx
+        .query_row(
+            "SELECT job_id,trigger,snapshot_json FROM runs WHERE id=?1 AND finished_at_us IS NOT NULL",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((job_id, trigger, snapshot_json)) = candidate else {
+        return Ok(());
+    };
+    // Older databases and narrow test fixtures may have a partial snapshot.
+    // They cannot express the opt-in action, so preserving the job is safe.
+    let Ok(definition) = serde_json::from_str::<JobDefinition>(&snapshot_json) else {
+        return Ok(());
+    };
+    if trigger == "manual"
+        || definition.completion_action != CompletionAction::Delete
+        || !matches!(definition.schedule, Schedule::At { .. })
+    {
+        return Ok(());
+    }
+    let removed = tx.execute(
+        "UPDATE jobs SET enabled=0,removed_at_us=?2,updated_at_us=?2 WHERE id=?1 AND removed_at_us IS NULL",
+        params![job_id, now_us],
+    )?;
+    if removed == 1 {
+        event(
+            tx,
+            now_us,
+            "job_auto_removed",
+            Some(&job_id),
+            Some(run_id),
+            r#"{"completion_action":"delete"}"#,
+        )?;
+    }
+    Ok(())
+}
+
 fn event(
     tx: &Transaction<'_>,
     at: i64,
@@ -3322,7 +3399,125 @@ mod tests {
             cwd: cwd.into(),
             environment: Environment::default(),
             policy: ExecutionPolicy::default(),
+            completion_action: CompletionAction::Retain,
         }
+    }
+
+    #[test]
+    fn scheduled_one_time_delete_action_soft_removes_but_keeps_history() {
+        let (temp, store) = store();
+        let job_id = Uuid::now_v7().to_string();
+        let run_id = Uuid::now_v7().to_string();
+        let mut definition = application_definition(temp.path());
+        definition.schedule = Schedule::At {
+            at: Timestamp::from_epoch_micros(10),
+        };
+        definition.completion_action = CompletionAction::Delete;
+        let snapshot = serde_json::to_string(&definition).unwrap();
+        store
+            .create_job(&CreateJob {
+                id: job_id.clone(),
+                name: "auto-remove".into(),
+                description: None,
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: snapshot.clone(),
+                now_us: 1,
+                cursor_us: 1,
+            })
+            .unwrap();
+        store
+            .materialize(
+                &job_id,
+                CursorUpdate {
+                    expected_revision: 1,
+                    expected_cursor_us: 1,
+                    new_cursor_us: 10,
+                    resolve_one_time: true,
+                },
+                &[NewScheduledRun {
+                    id: run_id.clone(),
+                    job_id: job_id.clone(),
+                    revision: 1,
+                    trigger: "scheduled".into(),
+                    nominal_us: 10,
+                    requested_at_us: 10,
+                    eligible_at_us: 10,
+                    snapshot_json: snapshot,
+                }],
+                10,
+            )
+            .unwrap();
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 10, "test").unwrap();
+        let attempt = store.admit(&lifetime, 10, 1).unwrap().attempts.remove(0);
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id: run_id.clone(),
+                attempt_number: attempt.attempt_number,
+                now_us: 11,
+                duration_us: 1,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                http_content_type: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+
+        assert!(matches!(
+            store.job("auto-remove"),
+            Err(StoreError::NotFound(_))
+        ));
+        assert_eq!(
+            store.history(Some("auto-remove"), 10).unwrap()[0].id,
+            run_id
+        );
+        assert!(store.run(&run_id).is_ok());
+    }
+
+    #[test]
+    fn manual_run_does_not_consume_one_time_delete_action() {
+        let (temp, store) = store();
+        let job_id = Uuid::now_v7().to_string();
+        let run_id = Uuid::now_v7().to_string();
+        let mut definition = application_definition(temp.path());
+        definition.schedule = Schedule::At {
+            at: Timestamp::from_epoch_micros(10),
+        };
+        definition.completion_action = CompletionAction::Delete;
+        store
+            .create_job(&CreateJob {
+                id: job_id,
+                name: "manual-retains".into(),
+                description: None,
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: serde_json::to_string(&definition).unwrap(),
+                now_us: 1,
+                cursor_us: 1,
+            })
+            .unwrap();
+        store.enqueue_manual("manual-retains", &run_id, 2).unwrap();
+        let lifetime = Uuid::now_v7().to_string();
+        store.begin_lifetime(&lifetime, 2, "test").unwrap();
+        let attempt = store.admit(&lifetime, 2, 1).unwrap().attempts.remove(0);
+        store
+            .complete_attempt(&AttemptCompletion {
+                run_id,
+                attempt_number: attempt.attempt_number,
+                now_us: 3,
+                duration_us: 1,
+                state: "succeeded".into(),
+                exit_code: Some(0),
+                http_status: None,
+                http_content_type: None,
+                reason: "completed".into(),
+                retry: None,
+            })
+            .unwrap();
+        assert!(store.job("manual-retains").is_ok());
     }
 
     #[test]

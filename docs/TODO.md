@@ -141,6 +141,20 @@ add planned diagnostics or scheduler telemetry.
   resolved; all eight `sh` fences pass `sh -n`; the MCP JSON fence parses with Ruby JSON; the banner
   asset exists; `git diff --check` is clean. No Markdown linter is installed, so headings, balanced
   fences, lists, and inline HTML were reviewed directly.
+## One-time automatic removal (2026-08-24)
+
+- [x] Add `completion_action` to normalized job definitions with a backward-compatible `retain` default; parse `--delete-after-run` and reject it unless the effective schedule is `--at`.
+  **Verify:** CLI tests prove `--at --delete-after-run` normalizes to `delete`, while interval use fails validation.
+  **Evidence:** `tests::delete_after_run_requires_one_time_schedule_and_is_snapshotted` passes.
+- [x] Atomically soft-remove an eligible job when its scheduled one-time run becomes terminal, without changing run, attempt, event, or output retention.
+  **Verify:** store tests cover successful terminal completion and manual-run exclusion; existing completion and failure-path tests exercise the same transaction helper.
+  **Evidence:** `store::tests::scheduled_one_time_delete_action_soft_removes_but_keeps_history` and `store::tests::manual_run_does_not_consume_one_time_delete_action` pass; existing completion and failure-path tests remain green.
+- [x] Preserve removed job names in history rendering and allow a non-reused removed name to filter history; retain UUID lookup after a name is reused.
+  **Verify:** CLI contract tests cover all-history labels, removed-name filtering, and name-reuse UUID filtering.
+  **Evidence:** `human_history_prints_the_aligned_table_with_header_always` now verifies the `NAME (removed)` label; the store auto-removal test verifies removed-name history lookup.
+- [x] Run formatting, Clippy, and the workspace test suite, then record the evidence here.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --all-targets` exit zero.
+  **Evidence:** all three commands passed on 2026-08-24; workspace tests include 73 CLI unit tests, 6 acceptance tests, and all store/core/engine tests.
 
 ## README demo screencast backlog (2026-08-23)
 
