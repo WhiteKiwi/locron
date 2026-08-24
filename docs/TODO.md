@@ -357,17 +357,37 @@ width). Planned in `docs/IMPLEMENTATION.md` "Terminal-width list table truncatio
   **Verify:** `rg -n "Table width|no-trunc|Terminal-width list table" docs/SPEC.md docs/CLI.md
   docs/IMPLEMENTATION.md docs/FINDINGS.md` returns all four, and no planning document marks an
   unresolved decision in the new content.
-- [ ] Implement width resolution (`console::Term::stdout().size_checked()`), `truncate_display`
+- [x] Implement width resolution (`console::Term::stdout().size_checked()`), `truncate_display`
   (unicode-width), the `width` parameter on `render_list_table`, and the `--no-trunc` flag.
   **Verify:** the new unit tests pass (`truncate_display` ASCII/CJK/emoji/boundary cases;
   `render_list_table` with injected widths); `cargo fmt --all --check`, `cargo clippy -p
   locron-cli --all-targets -- -D warnings`, and `cargo test -p locron-cli` pass.
-- [ ] Add contract tests: piped `ls` byte-identical with a long target, `--no-trunc` in the help
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy -p locron-cli --all-targets --
+  -D warnings` clean; `cargo test -p locron-cli` 206 passed, 0 failed, including the new
+  `truncate_display` unit tests (ASCII fit/no-fit, exact boundary, width-2 CJK, emoji, marker
+  appended only on truncation, zero/minimum widths) and `list_table` injected-width tests
+  (Some(40) truncating, Some(72)/Some(80) fitting, Some(20) too-narrow fallback, None).
+  Cargo.lock gained no new package entries — the diff adds only the `console` and
+  `unicode-width` edges under the `locron-cli` package. Real-PTY check (`TIOCGWINSZ` via
+  pty) confirms column-count fitting: width 40 shrinks the TARGET column to the remaining 18
+  display columns with a trailing `…`, `--no-trunc` restores full values, width 22/21 falls
+  back untruncated, CJK targets truncate by display width. The plan's `(w, _)` destructuring
+  was corrected to `(_, cols)` — console's tuple is `(rows, cols)` (verified in the console
+  0.16.4 source, `unix_term.rs:53–67`); recorded in `docs/IMPLEMENTATION.md`.
+- [x] Add contract tests: piped `ls` byte-identical with a long target, `--no-trunc` in the help
   walk, `--no-trunc --format json` identical to JSON without the flag.
   **Verify:** the new tests pass, and the existing help-surface walk
   (`complete_command_tree_has_consistent_help_surface`) passes unchanged.
-- [ ] Run full workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
+  **Evidence:** the three new tests pass — `piped_human_list_prints_full_targets_byte_identically`
+  (assert_cmd pipes stdout, so the size lookup fails and the full target prints, exact bytes),
+  `list_help_advertises_no_trunc_for_list_and_its_alias` (both `list` and `ls`), and
+  `list_no_trunc_is_accepted_with_json_and_ignored` (stdout and stderr byte-identical to
+  `ls --format json`); `complete_command_tree_has_consistent_help_surface` passes unchanged
+  (it walks the tree generically and does not pin the `list` flag set).
+- [x] Run full workspace verification. **Verify:** `cargo fmt --all --check`, `cargo clippy
   --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass.
+  **Evidence:** `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets --
+  -D warnings` clean; `cargo test --workspace` 338 passed, 0 failed across all crates.
 - [ ] Parent session: publish v0.5.0 — version bump, curated git-cliff changelog, commit, annotated
   tag `v0.5.0`, push; monitor the release workflow per `docs/RELEASE.md`.
   **Verify:** the release workflow run is green (run ID recorded here), the GitHub Release is
