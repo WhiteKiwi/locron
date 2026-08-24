@@ -36,6 +36,7 @@ locron history [NAME] [--limit N]
 locron logs RUN_ID [--attempt N] [--follow] [--channel all|stdout|stderr|body]
 locron why NAME
 locron why --run RUN_ID
+locron explain NAME_OR_ID
 locron config get [KEY]
 locron config set KEY VALUE [--dry-run]
 locron config unset KEY [--dry-run]
@@ -272,6 +273,34 @@ Stable error codes: `service_unsupported_platform` (2), `service_managed_install
 
 `why --run RUN_ID` reports the immutable trigger and nominal time, state transitions, attempt outcomes, retry decisions, cancellation/replacement/supersession facts, termination-unconfirmed acknowledgement, output truncation/pruning facts, and terminal reason. Unknown facts are stated as unknown rather than inferred.
 
+`explain NAME_OR_ID` is the consolidated, live-job summary. It reports the job's canonical identity,
+enabled state, revision, normalized schedule summary and timezone, next occurrence, current
+eligibility posture, overlap decision, active-run count, global concurrency limit, and daemon
+availability. It then reports the most recent run of any state and the most recent anomalous
+terminal run, ordered by durable `requested_at_us` and canonical run identity. An anomaly is a
+terminal state other than `succeeded`: `failed`,
+`timed_out`, `cancelled`, `skipped_overlap`, `skipped_concurrency`, or `interrupted_unknown`.
+
+Each reported run carries its full canonical run ID, trigger, nominal time, request time, current or
+final state, actual start, finish, duration, and durable reason. The latest run and latest anomaly
+may be the same run. `none` is printed when there is no run history, no anomaly history, a manual run
+has no nominal time, or a disabled job has no next occurrence. An execution timing or reason that is
+not yet known prints `unknown`; machine output uses `null` for either kind. A disabled job has no
+next occurrence and an eligibility value of `disabled`; an enabled job reports
+`subject_to_admission`, because the summary does not reserve or fully simulate current global and
+per-job capacity. The separate overlap decision is `no_active_run`, `would_skip_overlap`,
+`would_replace`, or `eligible_subject_to_capacity`. The reported global concurrency value is the
+configured limit, not current usage. Daemon availability is a separate fact and does not rewrite
+the scheduler eligibility posture. A removed job is not explainable through this live-job command;
+its retained runs remain available through `history` and `why --run RUN_ID`. If a removed name is
+reused, `explain` resolves only the new live identity and its history.
+
+Machine output uses the ordinary `locron.cli/v1` envelope with `command: "explain"`. Its `data`
+object has `job`, `schedule`, `current_status`, `latest_run`, and `latest_anomaly` objects matching
+the human sections. The two run values are nullable. This summary intentionally omits immutable
+snapshots, attempts, and events; the canonical run ID is the handoff to `why --run` for that detail.
+It does not infer sleep, suspend, or another unrecorded cause.
+
 Verbose and debug output never replaces `why`: verbosity explains what the current command is doing, while `why` explains durable scheduler decisions. Diagnostics go to stderr. Secrets and configured values remain redacted at every level.
 
 ## Human rendering
@@ -298,6 +327,13 @@ Human output renders the same facts as machine output in readable forms; machine
 - `why NAME` — sections `JOB`, `SCHEDULE`, `ELIGIBILITY`, `POLICIES`, `DAEMON`; `why --run ID` —
   sections `RUN`, `ATTEMPTS`, and a terminal-reason section. One field per line; unknown facts
   state `unknown`.
+- `explain NAME_OR_ID` — sections `JOB`, `SCHEDULE`, `CURRENT STATUS`, `LATEST RUN`, and
+  `LATEST ANOMALY`. The last two sections use the same run-summary field order; an absent record is
+  written as `none` rather than omitted. A manual run's non-applicable nominal time is also `none`;
+  a start, finish, duration, or reason that is not yet known is `unknown`. Human eligibility renders
+  as `disabled` or `subject to admission`; overlap decisions render as `no active run`, `would skip
+  (overlap policy)`, `would replace`, or `eligible subject to capacity`. The corresponding machine
+  values remain stable lowercase snake-case codes.
 - `doctor` — one line per check: `ok   …`, `warn …`, or `fail …` carrying the check name and the
   fact or path it verified.
 - `config get` — `KEY=VALUE` per configured key, sensitive keys redacted as documented.

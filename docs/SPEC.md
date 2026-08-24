@@ -11,6 +11,7 @@ Amended 2026-08-24: export job selection and URL import added.
 Amended 2026-08-24: human output contract added — human mode renders readable per-command forms instead of machine JSON (issue #4).
 Amended 2026-08-24: the human table form fits the terminal width on a terminal; full values remain available through the detail report, machine output, and a no-truncation rendering flag.
 Amended 2026-08-24: documentation-facing product positioning prioritizes explainability, real-world scheduling semantics, and safe automation surfaces.
+Amended 2026-08-24: a consolidated job explanation reports current scheduling facts, the latest run, and the latest anomalous run.
 
 ## Goal
 
@@ -62,6 +63,7 @@ The first program milestone is complete when all of the following can be observe
 14. Stored state survives scheduler restarts and schema upgrades.
 15. Automated tests cover time progression, sleep or downtime recovery, daylight-saving transitions, overlap, timeout, cancellation, retry, and unclean restart behavior.
 16. A user can simulate a mutation or manual run without changing durable state, and can ask why a job or run is in its current state without enabling debug logs.
+17. A user can request one consolidated explanation of a job's current scheduling state, latest run, and latest anomalous terminal run without assembling those facts from several commands.
 
 ## In Scope
 
@@ -288,6 +290,10 @@ Mutating commands and manual execution support a dry-run mode. A dry run perform
 
 A dedicated explanation command reports why a job is or is not eligible, its next occurrence, applicable missed-run and overlap decisions, current concurrency blockers, daemon availability, and redacted target resolution. The same command can explain a run from its durable snapshot, attempts, events, supersession, and terminal reason. Explanations use durable facts and current calculations rather than requiring debug logging.
 
+A broader job explanation is available for a live job by name or identity. It summarizes the job's schedule and next occurrence, its current eligibility and daemon availability, its most recent run of any state, and its most recent anomalous terminal run. An anomalous run is any terminal run whose final state is not successful, including failure, timeout, cancellation, overlap or concurrency skip, and interrupted-unknown outcomes. If the latest run is also the latest anomaly, both sections may identify the same durable run. Missing run history or missing anomaly history is stated explicitly.
+
+The consolidated explanation orders runs by durable request time and identity, carries canonical run identities, trigger and nominal-time facts, timing and duration when known, final state, and a durable terminal reason when one exists. It does not infer machine sleep or another cause that was not recorded. It is a readable summary rather than a replacement for the detailed job and run explanation commands; the run identity lets a user request the full event and attempt trace when needed. Human and machine-readable forms expose the same redacted facts.
+
 Verbose output adds user-facing decision context without changing command behavior. Debug output emits developer-oriented operational traces to standard error. Neither mode may reveal configured environment values, sensitive headers, body content, or other redacted values. Machine-readable standard output remains a single valid result independent of diagnostic verbosity.
 
 The program reports its own version on request through the standard `-V` and `--version` flags, and version output honors the machine-readable output contract. Version reporting requires no state directory or daemon and succeeds without them.
@@ -299,7 +305,7 @@ Machine-readable output is the compatibility surface; human output renders the s
 - **Table** — `list` (one row per live job) and `history` (one row per run) render an aligned table with a header line and one left-aligned row per record in the command's documented order. The header prints even when no record exists. Identifiers may be abbreviated inside the table only; copyable output always carries the full identity.
 - **Table width** — on a terminal, when a table would exceed the terminal width, the table truncates the last data column whose values are unbounded in length, marks the truncation with a trailing ellipsis, and keeps every other column intact. When standard output is redirected or piped, no truncation occurs and every value prints in full, so scripts and automation always receive complete values. A rendering flag restores full-width table values on a terminal, and the dedicated detail report for a job always presents the complete definition. Column fitting uses character display width, never byte length. This contract changes the human `list` table only; machine-readable output is unaffected.
 - **Confirmation lines** — commands that change state (`add`, `update`, `enable`, `disable`, `remove`, `run`, `cancel`, `config set`, `config unset`, `import`, `prune`) print one or more short lines naming the affected identity, the action taken, and the resulting facts that matter, such as the new run identity or the affected counts. A dry run states explicitly that nothing changed.
-- **Report** — `show`, `why`, and `doctor` render labeled sections: one field per line, grouped under short section headers, so an explanation reads top to bottom. Unknown facts are stated as unknown rather than inferred.
+- **Report** — `show`, `why`, `explain`, and `doctor` render labeled sections: one field per line, grouped under short section headers, so an explanation reads top to bottom. Unknown facts are stated as unknown rather than inferred. The consolidated job explanation keeps current scheduling facts, latest-run facts, and latest-anomaly facts in distinct sections.
 - **Value list** — `preview` prints a context line naming the schedule followed by one occurrence per line.
 - **Bare document** — `export` keeps the existing bare export document, suitable for redirection.
 - **Streams** — `logs`, `run --wait`, and the daemon keep their streamed output forms.

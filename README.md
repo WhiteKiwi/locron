@@ -20,7 +20,7 @@ Cron runs jobs. When one does not run, figuring out why is usually your problem.
 
 `locron` is a local-first scheduler for **macOS** and **Linux**. It keeps durable run history and
 captured output, makes missed-run and overlap behavior explicit, and explains the facts behind a
-job's current eligibility or a run's terminal outcome.
+job's current scheduling state or a run's terminal outcome.
 
 ## A 10-second tour
 
@@ -38,31 +38,33 @@ schedule: every 1h
 2026-08-24T10:16:26.66083Z
 2026-08-24T11:16:26.66083Z
 
-$ locron why backup
+$ locron explain backup
 ```
 
-Selected `why` output (the complete report includes additional job, schedule, and policy fields):
+Selected `explain` output (the complete report also includes job, schedule, and latest-run fields):
 
 ```text
-ELIGIBILITY
+CURRENT STATUS
+  eligibility: subject to admission
+  overlap decision: no active run
   active runs: 0
-  decision: eligible
-  global concurrency: 16
-POLICIES
-  overlap: skip
-  missed run: skip
-DAEMON
-  daemon running: yes
+  global concurrency limit: 16
+  daemon available: no
+LATEST RUN
+  none
+LATEST ANOMALY
+  none
 ```
 
-After runs exist, `locron history backup` lists their recorded outcomes. `why NAME` explains the
-scheduler's current durable view; downtime explanations are based on schedule cursors and
-reconciliation facts, not inferred sleep telemetry. For a durable run's terminal outcome, use
-`history` and `why --run RUN_ID` to inspect that specific run's recorded outcome and reason.
+After runs exist, `locron explain backup` adds the latest run and latest anomalous terminal run to
+the report, each with its canonical run ID. `why NAME` remains the detailed scheduler view; downtime
+explanations are based on schedule cursors and reconciliation facts, not inferred sleep telemetry.
+For a durable run's full attempt/event trace, use `why --run RUN_ID`.
 
 ## Explainability first
 
 - `locron preview backup` shows upcoming occurrences before you rely on a schedule.
+- `locron explain backup` summarizes the schedule, current status, latest run, and latest anomaly.
 - `locron history backup` shows past runs, triggers, states, and durations.
 - `locron why backup` explains current job eligibility, policies, schedule cursor, and daemon
   availability.
@@ -76,6 +78,7 @@ Manual runs print their canonical run ID. History's machine-readable records exp
 
 ```sh
 locron run backup
+locron explain backup
 locron history backup --format json
 locron why --run 018f47a2-4a12-7c35-b9d8-0123456789ab
 locron logs 018f47a2-4a12-7c35-b9d8-0123456789ab
@@ -117,6 +120,7 @@ admission, imports, and pruning offer dry-run paths so scripts and coding agents
 before changing durable state.
 
 ```sh
+locron explain backup --format json
 locron why backup --format json
 locron history backup --format json
 locron add test-job --cron "0 12 * * *" --dry-run -- /usr/bin/true

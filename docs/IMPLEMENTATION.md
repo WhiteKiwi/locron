@@ -36,8 +36,48 @@ occurrence identity, recovery), then agent integration (`--format json`, dry-run
 MCP over the same application boundary). SQLite, WAL, migrations, and process-group details appear
 only as supporting evidence. Installation and service-start guidance stays unchanged in substance,
 and all examples must be checked against the shipped help and isolated scratch-state output. The
-README does not advertise `locron explain`, richer decision traces, or direct machine sleep
-telemetry.
+README advertises the shipped `locron explain` consolidated summary while retaining `why` as the
+detailed job/run diagnostic. It does not advertise richer event-derived decision traces or direct
+machine sleep telemetry.
+
+## Consolidated job explanation implementation (2026-08-24)
+
+The new `locron explain NAME_OR_ID` command remains a thin CLI composition over existing durable
+facts. One shared current-job explanation helper resolves the live job, deserializes its normalized
+definition, calculates its next schedule occurrence at one sampled wall-clock instant, reads active
+runs, checks daemon ownership, and loads global concurrency. Both `why NAME` and `explain` consume
+these facts. The existing `why NAME` behavior remains unchanged, including its calculated next
+occurrence and overlap-oriented eligibility for a disabled job; `explain` alone suppresses the next
+occurrence and reports `disabled`, as required by its consolidated-summary contract. For an enabled
+job, `explain` reports `subject_to_admission` rather than claiming capacity is currently available;
+the overlap decision and configured global limit are separate facts. It does not duplicate the
+store's transactional admission simulation or imply that reading the report reserves capacity.
+
+A focused store read supplies the most recent run and latest anomalous terminal run with two bounded
+queries in one read transaction, using the existing run mapping and the canonical
+`requested_at_us DESC, id DESC` order. The anomaly predicate uses the persisted terminal-state
+vocabulary rather than reason-text matching.
+This avoids relying on the general history command's 1,000-row presentation cap when retention has
+not yet pruned an unusually large burst. Live-job resolution happens before the read, which preserves
+the soft-delete boundary and prevents a reused name from collecting the removed identity's history.
+
+A dedicated redacted run-summary projection selects only canonical identity, trigger, nominal and
+request times, current/final state, derived actual-start/duration facts, finish time, and durable
+reason from the existing observable-run representation. It excludes the immutable target snapshot,
+attempt details, and event details because `explain` is a summary; `why --run` remains their detailed
+surface. Human output and the JSON `data` object are both rendered from one JSON-shaped report.
+Human rendering distinguishes known absence (`none`: no run/anomaly, disabled next occurrence,
+manual nominal time) from a fact that is not yet known (`unknown`: start, finish, duration, or
+reason), and translates the machine eligibility codes into readable phrases. No schema migration,
+new durable state, new dependency, or MCP surface is required; the added store operation is read-only
+and uses existing indexes and mapping.
+
+Edge cases are pinned as contracts: no history, only successful history, one anomalous run serving
+as both latest and anomaly, an older anomaly behind a newer success, an active latest run, a removed
+job whose run remains explainable by ID, a removed name reused by a new live job, and unchanged
+`why NAME` output for a disabled job. Redaction tests put sensitive target configuration in the job
+and assert it appears in neither human nor JSON output. The generic help-surface walk must discover
+`explain` and its example.
 
 ## Accepted implementation decisions
 

@@ -5,6 +5,69 @@ This checklist tracks implementation of the frozen `docs/SPEC.md` within the dur
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## Consolidated job explanation backlog (2026-08-24)
+
+Authorized by the frozen 2026-08-24 `docs/SPEC.md` consolidated-explanation amendment, contracted
+in `docs/CLI.md` “Why and diagnostics”, and planned in `docs/IMPLEMENTATION.md` “Consolidated job
+explanation implementation”.
+
+- [x] Complete and review the command contract before implementation: live-job resolution,
+  schedule/current-status facts, retained-history ordering, anomalous terminal vocabulary,
+  explicit absence states, redaction, and human/JSON parity.
+  **Verify:** `rg -n "explain NAME_OR_ID|Consolidated job explanation" docs/CLI.md
+  docs/IMPLEMENTATION.md docs/TODO.md` finds all three planning layers; the new sections contain no
+  unresolved decision or unrecorded behavior deviation.
+  **Evidence:** the search returns the command surface and exact human/machine contract in
+  `docs/CLI.md`, the shared-fact/history-selection design in `docs/IMPLEMENTATION.md`, and this
+  phased checklist. A second review found no open question or dependency/schema change.
+- [x] Add the thin `explain` command and shared current-job explanation path, including the bounded
+  store read, redacted latest-run/latest-anomaly summary projection, and labeled human report.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy -p locron-cli --all-targets -- -D warnings`,
+  and the new focused unit/store tests pass; a scratch-state invocation shows full canonical run
+  IDs, durable reasons, explicit `none` sections, and `unknown` pending facts without target
+  configuration leakage; a disabled-job regression assertion proves `why NAME` is unchanged.
+  **Evidence:** `cargo fmt --all --check` and `cargo clippy -p locron-cli --all-targets -- -D
+  warnings` are clean. The focused CLI unit test and focused store test pass; the store test proves
+  the anomaly query reaches behind the 1,000-row history presentation cap and orders equal request
+  times by canonical ID. An isolated scratch-state report showed the full job ID, explicit
+  `LATEST RUN`/`LATEST ANOMALY` `none` sections, the separate eligibility/overlap/capacity-limit
+  facts, and no configured environment value. The disabled-job contract assertion confirms
+  `why NAME` still calculates a next occurrence and prints its prior `eligible` decision.
+- [x] Add CLI contract/integration coverage for no history, success-only history, the same latest
+  run/anomaly, an older anomaly after a newer success, an active latest run, removed/history and
+  reused-name behavior, human/JSON parity, redaction, and the complete help surface.
+  **Verify:** every named scenario has an assertion in `crates/locron-cli/tests/cli.rs` (or a
+  focused integration suite), all new tests pass, and
+  `complete_command_tree_has_consistent_help_surface` passes with `explain` discovered.
+  **Evidence:** four new CLI contract tests cover every named state/history/removal/reuse scenario,
+  human/JSON fact parity, canonical IDs, explicit absence/unknown wording, and secret redaction.
+  `cargo test -p locron-cli` passes 73 CLI unit tests, 72 command-contract tests, and all 13 other
+  CLI suites when `LOCRON_STATE_DIR` points at an isolated path; the generic help walk discovers
+  `explain`, and the explicit help assertion verifies both name and UUID examples. The isolated
+  state is necessary on this workstation because a real per-user daemon owns the default lock; an
+  unisolated run's existing service test correctly observed that external daemon and deferred.
+- [x] Update README and help examples to present `explain` as the consolidated entry point while
+  retaining `why --run` for the detailed attempt/event trace and avoiding sleep inference.
+  **Verify:** every documented command matches `locron <command> --help`; an isolated-state smoke
+  run matches the shown human output; `rg -n "machine (sleep|suspended)|detected sleep" README.md`
+  finds no unsupported telemetry claim.
+  **Evidence:** the README tour now uses the actual shipped human `CURRENT STATUS`, `LATEST RUN`,
+  and `LATEST ANOMALY` forms captured from an isolated state; the explainability and JSON examples
+  include `explain`, while `why --run` remains the full attempt/event handoff. `locron explain
+  --help` contains both documented examples, the unsupported-telemetry search returns no match,
+  and `git diff --check` is clean.
+- [x] Run targeted and full workspace verification and record evidence before handoff.
+  **Verify:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  and `cargo test --workspace` pass; `git diff --check` is clean and only explain-related files are
+  changed in this worktree.
+  **Evidence:** `cargo fmt --all --check` is clean; `cargo clippy --workspace --all-targets -- -D
+  warnings` is clean; `cargo test --workspace` passes 344 tests across the four crates and all
+  integration suites (73 CLI unit, 72 CLI command-contract, 66 other CLI-suite, 36 core, 45 engine,
+  52 store), with 0 failures. The test command used an isolated `LOCRON_STATE_DIR` so the workstation's
+  real per-user daemon could not affect service fake expectations. `git diff --check` is clean, and
+  status contains only the parent SPEC amendment plus explain code, tests, CLI/implementation/TODO,
+  and README updates.
+
 ## README product positioning refresh (2026-08-24)
 
 Authorized by the 2026-08-24 `docs/SPEC.md` Product Positioning amendment and planned in
@@ -14,10 +77,12 @@ add planned diagnostics or scheduler telemetry.
 - [x] Review and accept the README narrative before editing the README: lead with explainability,
   then reliability, then agent integration; preserve installation and service-operation facts.
   **Verify:** `rg -n "README product narrative|Cron that explains itself" docs/IMPLEMENTATION.md`
-  finds the accepted section, including explicit exclusions for `locron explain`, richer decision
-  traces, and direct machine sleep telemetry.
+  finds the accepted section, including the then-current exclusions for `locron explain`, richer
+  decision traces, and direct machine sleep telemetry.
   **Evidence:** the accepted section records the narrative order, the actual log lookup contract,
-  the unchanged installation/service substance, and all three exclusions.
+  the unchanged installation/service substance, and all three exclusions. The `locron explain`
+  exclusion is superseded by the consolidated-explanation amendment and backlog above; the other
+  two exclusions remain.
 - [x] Rewrite the README opening and demonstration using only shipped CLI syntax and actual human
   output; keep captured logs tied to a canonical run ID rather than a job name.
   **Verify:** run the documented commands against an isolated state directory and compare the
@@ -32,13 +97,13 @@ add planned diagnostics or scheduler telemetry.
   agent integration, without losing accurate installation, service, documentation, contributing,
   security, or license guidance.
   **Verify:** a heading scan shows that order; focused diff review confirms the retained guidance;
-  searches find no shipped claim for `locron explain`, machine sleep state, or detailed decision
-  traces.
+  searches find no unsupported claim for machine sleep state or detailed decision traces; the
+  later-shipped `locron explain` surface is tracked in the consolidated-explanation backlog above.
   **Evidence:** the heading scan is `A 10-second tour` → `Explainability first` → `Reliability for
   machines that stop and restart` → `Agent-friendly by design`; installation and daemon startup,
   all seven documentation links, contributing/security, and dual-license guidance remain. The
   README states that downtime explanations use durable schedule cursors and reconciliation facts,
-  rather than inferred sleep telemetry, and the excluded-claim search returns no match.
+  rather than inferred sleep telemetry, and makes no richer decision-trace claim.
 - [x] Run documentation checks and record the evidence.
   **Verify:** all relative Markdown links in `README.md` resolve; fenced command/config snippets
   parse where a local parser is available; `git diff --check` passes; a final rendered-text review
