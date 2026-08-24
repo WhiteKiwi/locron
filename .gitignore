@@ -1,3 +1,4 @@
 /target/
+.claude/
 *.profraw
 .DS_Store

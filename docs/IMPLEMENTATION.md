@@ -130,6 +130,14 @@ Use the Rust standard library's non-blocking exclusive file lock on a permanent 
 
 The daemon migrates after ownership acquisition. A CLI encountering an older schema may migrate only after it temporarily proves the daemon lock is free; otherwise it reports that a daemon restart is required. Revalidate the schema version inside the migration transaction. Reject databases newer than the binary. This prevents a new CLI from changing the schema beneath an older running daemon.
 
+### Accepted: one-time automatic removal
+
+`--delete-after-run` is represented by a `completion_action` in the immutable job definition and therefore in every run snapshot; absent values deserialize as `retain` for backward-compatible imports and existing state. CLI validation permits `delete` only when the effective schedule is `--at`. It is intentionally a definition-lifetime action, not a caller-attachment or output-retention setting.
+
+When a scheduled one-time run with `completion_action=delete` reaches its final terminal transition, the store soft-removes its job in that same immediate transaction. Retry scheduling keeps the job live; manual runs never qualify. Pre-execution and runner-infrastructure terminal paths use the same predicate. The removal writes `removed_at_us`, disables the job, and leaves revisions, runs, attempts, events, and output artifacts referentially intact under normal retention. Atomicity prevents a crash from recording successful execution while leaving an auto-delete definition live, or from removing it before the terminal run exists.
+
+History renders a removed job's retained name with a removed marker. A live name resolves normally; when no live job has that name, history may resolve the removed name. Once the name is reused, the old history remains addressable by its UUID.
+
 ### Accepted: durable CLI-to-daemon control
 
 Commit job mutation, manual enqueue, cancellation intent, and global configuration changes to SQLite before attempting notification. Use an owner-only Unix datagram socket solely as a versioned best-effort wake hint. Do not send command content or treat the socket as a management API; on receipt the engine coalesces messages and rereads durable state.
@@ -734,6 +742,37 @@ New `.github/workflows/usage.yml`: `on: schedule: [cron: '0 3 * * 1']` (weekly, 
 - `ci.yml` parses and the installer job's step list no longer includes the live smoke; `rg -n "usage.sh --json" .github/workflows` shows the smoke only inside `usage.yml`.
 - The scheduled workflow cannot fire from a push (GitHub schedules run on the default branch with real cron timing); a manual `workflow_dispatch` run is recorded as evidence at first trigger.
 - The next push CI run is green; run ID recorded in `docs/TODO.md`.
+
+## Process-group cancellation confirmation on macOS (2026-08-25)
+
+No product-scope change: cancellation still reports `Cancelled` only after the owned leader has
+been reaped and its process group has received termination. The frozen `docs/SPEC.md` is unchanged.
+
+The macOS x86_64 stable CI failure in [job 97478078694](https://github.com/WhiteKiwi/locron/actions/runs/32741897719/job/97478078694)
+was a deterministic gap in the runner's confirmation rule, exposed intermittently by process
+reaping latency. The cancellation test creates a TERM-ignoring grandchild. After SIGKILL succeeds,
+that child can remain a zombie in the original process group until launchd reaps it. POSIX
+`kill(-pgid, 0)` reports that zombie as present, even though SIGKILL has made further execution
+impossible. The runner therefore incorrectly emitted `TerminationUnconfirmed` after its second
+grace deadline.
+
+The runner will retain group-absence probing before escalation: a TERM outcome remains confirmed
+only after both the direct child is reaped and the process group is absent. Once SIGKILL was either
+delivered successfully or found the group already absent (`ESRCH`), and the direct child is reaped,
+the runner will classify the cancellation or timeout as confirmed without waiting for an
+unreapable-by-locron zombie to disappear. Any SIGKILL error other than `ESRCH`, or a missing direct
+child reap, remains `TerminationUnconfirmed`.
+
+This is stronger than increasing a timeout: it removes a host-controlled zombie-reaping race while
+retaining the safety boundary for a live descendant that did not receive SIGKILL.
+
+### Verification additions
+
+- Unit-test the SIGKILL delivery predicate for success, `ESRCH`, and a permission error.
+- Run the live grandchild-cancellation regression repeatedly on macOS where available, then run
+  the complete workspace test and lint battery.
+- Confirm the next macOS x86_64 stable CI run reports the cancellation test as passed without a
+  job retry.
 
 ## Terminal-width list table truncation (2026-08-24)
 

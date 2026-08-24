@@ -290,6 +290,7 @@ impl Runner {
         let mut termination_errors = Vec::new();
         let mut confirmation_failure = false;
         let mut termination_confirmed = false;
+        let mut kill_delivered = false;
 
         while !(confirmation_failure
             || termination.is_none() && result.is_some()
@@ -375,12 +376,19 @@ impl Runner {
                         termination_confirmed = true;
                         termination_deadline = None;
                     } else if termination_stage == 1 && !group_absent {
-                        record_signal_result(&mut termination_errors, Signal::SIGKILL, signal_group(pid, Signal::SIGKILL));
+                        let signal_result = signal_group(pid, Signal::SIGKILL);
+                        kill_delivered = signal_delivered_or_absent(signal_result);
+                        record_signal_result(&mut termination_errors, Signal::SIGKILL, signal_result);
                         termination_stage = 2;
                         termination_deadline = Some(Box::pin(tokio::time::sleep(self.config.termination_grace)));
                     } else if termination_stage == 1 {
                         termination_stage = 2;
                         termination_deadline = Some(Box::pin(tokio::time::sleep(self.config.termination_grace)));
+                    } else if result.is_some() && kill_delivered {
+                        // A successful SIGKILL makes an unreaped orphan zombie incapable of
+                        // further execution even when its process group stays observable.
+                        termination_confirmed = true;
+                        termination_deadline = None;
                     } else if !group_absent || result.is_none() {
                         confirmation_failure = true;
                         termination_deadline = None;
@@ -815,6 +823,10 @@ fn record_signal_result(errors: &mut Vec<String>, signal: Signal, result: Result
     }
 }
 
+fn signal_delivered_or_absent(result: Result<(), Errno>) -> bool {
+    matches!(result, Ok(()) | Err(Errno::ESRCH))
+}
+
 fn termination_confirmation_reason(errors: &[String]) -> String {
     if errors.is_empty() {
         "termination confirmation failed after TERM and KILL deadlines".into()
@@ -1095,6 +1107,13 @@ mod tests {
         let reason = termination_confirmation_reason(&errors);
         assert!(reason.contains("termination confirmation failed"));
         assert!(reason.contains("EPERM"));
+    }
+
+    #[test]
+    fn sigkill_delivery_accepts_an_absent_group_but_not_permission_failure() {
+        assert!(signal_delivered_or_absent(Ok(())));
+        assert!(signal_delivered_or_absent(Err(Errno::ESRCH)));
+        assert!(!signal_delivered_or_absent(Err(Errno::EPERM)));
     }
 
     #[tokio::test]

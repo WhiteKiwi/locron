@@ -111,7 +111,7 @@ Exactly one schedule selector is required when creating a job:
 ```text
 --cron EXPR [--timezone local|IANA_NAME]
 --every DURATION [--anchor RFC3339]
---at RFC3339
+--at RFC3339 [--delete-after-run]
 ```
 
 Exactly one target is required:
