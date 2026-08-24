@@ -36,6 +36,17 @@ When a job does not run, you get an answer instead of silence: `locron why` expl
 
 ## Installation
 
+**🤖 Just ask your AI to do it:**
+
+Claude Code installed? Paste this and approve each step it proposes:
+
+```sh
+claude "Install locron: https://github.com/WhiteKiwi/locron"
+```
+
+It reads the README, picks the right install for your machine, and runs it — you approve every
+command before it executes, so nothing happens behind your back.
+
 **Homebrew (macOS and Linux):**
 
 ```sh
