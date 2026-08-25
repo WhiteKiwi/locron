@@ -67,8 +67,15 @@ manually supervised setup.
 
 ## Updating locron
 
-- **Install script / tarball installs** update with `locron self-update`: it verifies the downloaded archive against the release's `SHA256SUMS.txt` and replaces the binary atomically (one temp file plus rename in the executable's directory), so a failed or interrupted update leaves the old binary working. After the replace it refreshes a service registration and restarts the daemon, so a registered service runs the new version immediately; a manual `locron daemon run` keeps the old code until restarted.
+- **Install script installs** update with `locron self-update`: the exact standalone receipt beside
+  the binary authorizes replacement. The command verifies the archive and replaces the binary
+  atomically. Older script installs must rerun the installer once to adopt the receipt.
 - **Homebrew** installs update with `brew upgrade locron`; the formula marks the install (`lib/.disable-self-update`) so `locron self-update` refuses and points to Homebrew. A running `brew services` service keeps the old code until `brew services restart locron`.
+- **Cargo** installs update with `cargo install --locked locron` and uninstall with
+  `cargo uninstall locron`. Self-update refuses before network access, but `service install` and
+  `dashboard enable` remain available because Cargo does not own those registrations.
+- **Tarball and source builds** update by replacing or rebuilding the binary through the same
+  channel; receipt absence prevents built-in self-update.
 - **Debian / RPM** installs update by replacing the package; a service-managed daemon registered with `locron service install` keeps the old code until the registration is refreshed with `locron service install`.
 - A running `locron daemon run` process keeps the old code until it is restarted: self-update replaces the file on disk and never signals running processes. After updating, restart the daemon (and any long-lived `locron` MCP/`run --wait` clients) to run the new version. Durable state is versioned, so downgrades and upgrades across revisions are handled by the store migration path; schedule and history data survive the restart.
 

@@ -2,15 +2,15 @@
 # Enforce the dependency-direction rules of docs/ARCHITECTURE.md for the
 # workspace crate graph:
 #   - locron-server depends only on locron-core and locron-store among
-#     workspace crates (never on locron-engine, locron-cli, or a cycle);
-#   - nothing except locron-cli depends on locron-server.
+#     workspace crates (never on locron-engine, locron, or a cycle);
+#   - nothing except locron depends on locron-server.
 # The rules are structural: they guard the server-never-owns-the-daemon and
 # the CLI-composition-root boundaries against regression.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-workspace_members=(locron-core locron-store locron-engine locron-server locron-cli)
+workspace_members=(locron-core locron-store locron-engine locron-server locron)
 
 server_tree=$(cargo tree -p locron-server --prefix none 2>/dev/null | awk '{print $1}' | sort -u)
 for member in "${workspace_members[@]}"; do
@@ -28,7 +28,7 @@ done
 dependents=$(cargo tree -i -p locron-server --prefix none 2>/dev/null | awk '{print $1}' | sort -u)
 for member in "${workspace_members[@]}"; do
   case "$member" in
-    locron-cli | locron-server) ;;
+    locron | locron-server) ;;
     *)
       if grep -qx "$member" <<<"$dependents"; then
         echo "forbidden: workspace crate $member depends on locron-server" >&2
@@ -38,4 +38,4 @@ for member in "${workspace_members[@]}"; do
   esac
 done
 
-echo "dependency direction ok: locron-server depends only on locron-core and locron-store; only locron-cli depends on it"
+echo "dependency direction ok: locron-server depends only on locron-core and locron-store; only locron depends on it"

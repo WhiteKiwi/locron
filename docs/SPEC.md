@@ -15,6 +15,7 @@ Amended 2026-08-24: a consolidated job explanation reports current scheduling fa
 Amended 2026-08-24: automated Homebrew publication preserves formula guidance literally and produces a style-clean formula.
 Amended 2026-08-24: one-time jobs may opt into automatic soft deletion after their scheduled run reaches a terminal outcome.
 Amended 2026-08-25: the completed local dashboard is prepared as a documented v0.8.0 release, and the maintained Locron agent workflow is aligned with the released command surface.
+Amended 2026-08-25: crates.io source installation is added as an optional Rust-user distribution channel with package-manager-consistent update ownership.
 
 ## Goal
 
@@ -128,9 +129,12 @@ A user can install a working prebuilt locron on macOS and Linux without Homebrew
 - The installer is repeatable: running the same command again replaces the binary with the latest published release. Installing a pinned version is also supported.
 - The installer reports actionable errors for unsupported platforms, failed downloads, checksum mismatches, and unwritable install locations, and it does not require or modify a package manager.
 - Homebrew remains a supported channel with its own update path. A script-installed and a Homebrew-installed locron may coexist on one machine; each channel updates through itself.
+- Rust users may install the same `locron` binary from crates.io with `cargo install --locked locron`. This source-build channel requires the documented supported Rust toolchain, does not register a daemon or dashboard service automatically, and is secondary to the prebuilt installer and Homebrew paths for general users.
+- A crates.io-installed locron is updated and removed through Cargo. Built-in self-update must refuse to replace a Cargo-managed binary and must provide the exact Cargo update command, while Locron's per-user daemon and dashboard registration commands remain available because Cargo does not manage those services.
+- Every published crates.io version is built from the same reviewed release revision and reports the same version as the GitHub release. Publication includes every required workspace package in dependency order before the user-facing `locron` package, and a partial publication reports an actionable failure without moving the Git tag or overwriting an existing registry version.
 - Automated Homebrew publication must preserve the formula's package-manager marker guidance and service-upgrade caveats exactly as authored, without interpreting documentation text as shell commands, and the generated formula must pass the tap's syntax and style checks.
-- A built-in self-update subcommand replaces the running locron with the latest stable release, selected and verified exactly as the installer verifies downloads, and reports the current and new version before replacing.
-- Self-update manages only installations it can confirm are not owned by a package manager. When the running binary is package-manager-managed, self-update refuses with guidance to use that manager's update path.
+- A built-in self-update subcommand replaces the running locron with the latest stable release, selected and verified exactly as the installer verifies downloads, and reports the current and new version before replacing. The standalone installer writes a versioned ownership receipt bound to the installed executable so this update path can be identified positively.
+- Self-update manages only a receipt-bearing standalone installation. Cargo, Homebrew, deb/rpm, source builds, manually copied tarballs, and an older receipt-less standalone installation are never overwritten by inference; self-update refuses with guidance for the applicable installation path, including rerunning the standalone installer to adopt an older script installation.
 - A failed or interrupted update must leave the existing binary installed and working. Update failures and permission problems produce actionable errors.
 - Selecting a pinned version remains an installer function; self-update always moves to the latest stable release.
 

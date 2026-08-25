@@ -73,28 +73,30 @@ cargo run -- --state-dir /tmp/locron-dev doctor
 
 ## Project layout
 
-`locron` is a Cargo workspace producing one binary, `locron`, from four crates.
+`locron` is a Cargo workspace producing one binary, `locron`, from five packages.
 
 | Crate | Owns | Must not contain |
 | --- | --- | --- |
 | `locron-core` | Domain identities and values, schedules and policies, validation, state transitions, commands/results, and persistence/clock/executor ports | SQLite, CLI parsing or rendering, OS service setup |
 | `locron-store` | SQLite connections and migrations, repositories, transactions, durable uniqueness, retention records, and implementations of core persistence ports | CLI presentation, process spawning, HTTP execution |
 | `locron-engine` | The daemon runtime: lifetime and lock ownership, reconciliation, overlap/concurrency admission, retry timing, process/shell/HTTP runners, cancellation, recovery, signals, shutdown | SQLite implementation details, CLI presentation |
-| `locron-cli` | Composition root and command entrypoint: parsing, human/machine rendering, bootstrap, wiring store to engine, `locron daemon run` | Reimplemented domain policy, scheduler loops, runner lifecycle |
+| `locron-server` | Loopback dashboard/API transport and embedded viewer | Scheduler ownership and direct SQLite table access |
+| `locron` | Composition root and command entrypoint: parsing, human/machine rendering, bootstrap, wiring store to engine, `locron daemon run` | Reimplemented domain policy, scheduler loops, runner lifecycle |
 
 The dependency direction is an invariant, not a convention:
 
 ```
-                  locron-cli
-        locron-engine   locron-store
-                 locron-core
+                    locron
+       /          /      \          \
+locron-server locron-engine locron-store locron-core
 ```
 
 - `locron-core` depends on no other workspace crate.
 - `locron-store` and `locron-engine` each depend on `locron-core`.
 - **`locron-engine` does not depend on `locron-store`.** It receives persistence through core ports.
   A pull request that adds that dependency will be asked to invert it.
-- `locron-cli` is the composition root and depends on the other three. No library depends on it.
+- `locron-server` depends only on `locron-core` and `locron-store`.
+- `locron` is the composition root and depends on the other four. No library depends on it.
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the full reference.
 

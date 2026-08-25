@@ -170,6 +170,17 @@ curl -fsSL https://locron.whitekiwi.link/install.sh | sh
 The short URL redirects to the canonical
 `https://github.com/WhiteKiwi/locron/releases/latest/download/install.sh` release asset.
 
+**Cargo (Rust 1.94 or newer, source build):**
+
+```sh
+cargo install --locked locron
+```
+
+Cargo does not register the daemon or dashboard automatically. Enable either explicitly with
+`locron service install` or `locron dashboard enable`. Update with
+`cargo install --locked locron`, remove with `cargo uninstall locron`, and do not use
+`locron self-update` for a Cargo installation.
+
 **Or ask Claude Code:**
 
 ```sh

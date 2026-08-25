@@ -5,9 +5,8 @@
 //! checksum is verified before anything is touched, and the binary is replaced
 //! with one temp file plus an atomic rename in the executable's directory. A
 //! failed or interrupted update leaves the existing binary installed and
-//! working. Installations that carry the package-manager marker
-//! (`lib/.disable-self-update` next to the canonicalized executable) are
-//! refused with guidance to use that manager's update path.
+//! working. The Homebrew marker is honored first; every other installation
+//! must carry the exact standalone-installer receipt beside the executable.
 
 use std::env;
 use std::error::Error as StdError;
@@ -30,6 +29,8 @@ const API_BASE: &str = "https://api.github.com";
 const ASSET_BASE: &str = "https://github.com/WhiteKiwi/locron";
 /// Package-manager marker, relative to the canonicalized executable directory.
 const MANAGED_MARKER: &str = "../lib/.disable-self-update";
+const INSTALL_RECEIPT: &str = ".locron-install-receipt-v1";
+const INSTALL_RECEIPT_PAYLOAD: &[u8] = b"locron.install/v1\nstandalone\n";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const CHECKSUM_LEN: usize = 64;
 
@@ -54,6 +55,8 @@ pub(crate) enum SelfUpdateError {
     },
     /// A package-manager marker next to the executable refuses self-update.
     ManagedInstall,
+    /// No exact standalone-installer receipt authorizes replacing this binary.
+    UnownedInstall,
     /// The GitHub API rate limit was exceeded.
     RateLimited,
     /// The API or an asset could not be reached or returned an error status.
@@ -82,6 +85,13 @@ impl fmt::Display for SelfUpdateError {
                 formatter,
                 "this locron is installed by a package manager and self-update is disabled; \
                  update it with 'brew upgrade locron'"
+            ),
+            SelfUpdateError::UnownedInstall => write!(
+                formatter,
+                "self-update is available only for a standalone installer-owned locron; Cargo \
+                 users should run 'cargo install --locked locron', older script installations \
+                 should rerun the standalone installer once to adopt the receipt, and other \
+                 installations should use their installation channel"
             ),
             SelfUpdateError::RateLimited => write!(
                 formatter,
@@ -127,8 +137,8 @@ struct ReleaseAsset {
 /// Resolve the latest release and replace the running binary when it is newer.
 pub(crate) async fn update(state_dir: &Path) -> Result<UpdateOutcome> {
     let current_version = env!("CARGO_PKG_VERSION");
+    require_standalone_install()?;
     let target = detect_target()?;
-    refuse_managed_install()?;
 
     let client = reqwest::Client::builder()
         .user_agent(format!("locron/{current_version} self-update"))
@@ -325,15 +335,22 @@ fn detect_target() -> Result<String> {
     Ok(target.to_owned())
 }
 
-/// Refuse when a package-manager marker exists next to the running executable.
-fn refuse_managed_install() -> Result<()> {
+/// Require positive standalone ownership, after honoring Homebrew's marker.
+fn require_standalone_install() -> Result<()> {
     let executable = canonical_executable()?;
-    let marker = executable
-        .parent()
-        .unwrap_or_else(|| Path::new("/"))
-        .join(MANAGED_MARKER);
+    let directory = executable.parent().unwrap_or_else(|| Path::new("/"));
+    let marker = directory.join(MANAGED_MARKER);
     if marker.exists() {
         return Err(SelfUpdateError::ManagedInstall.into());
+    }
+    let receipt = directory.join(INSTALL_RECEIPT);
+    let metadata = fs::symlink_metadata(&receipt).map_err(|_| SelfUpdateError::UnownedInstall)?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+        return Err(SelfUpdateError::UnownedInstall.into());
+    }
+    let payload = fs::read(&receipt).map_err(|_| SelfUpdateError::UnownedInstall)?;
+    if payload != INSTALL_RECEIPT_PAYLOAD {
+        return Err(SelfUpdateError::UnownedInstall.into());
     }
     Ok(())
 }

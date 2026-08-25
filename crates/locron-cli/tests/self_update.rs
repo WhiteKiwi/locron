@@ -352,6 +352,11 @@ fn fake_binary(dir: &Path) -> std::path::PathBuf {
     fs::create_dir_all(&fake_dir).unwrap();
     let fake = fake_dir.join("locron");
     fs::copy(assert_cmd::cargo::cargo_bin("locron"), &fake).unwrap();
+    fs::write(
+        fake_dir.join(".locron-install-receipt-v1"),
+        "locron.install/v1\nstandalone\n",
+    )
+    .unwrap();
     fake
 }
 
@@ -717,6 +722,78 @@ fn marker_file_refusal_directs_to_brew_upgrade() {
             );
             true
         }));
+}
+
+#[test]
+fn missing_receipt_refuses_before_network_access() {
+    let _serial = serialized();
+    let dir = tempfile::tempdir().unwrap();
+    let fake = fake_binary(dir.path());
+    fs::remove_file(fake.parent().unwrap().join(".locron-install-receipt-v1")).unwrap();
+
+    let mut command = Command::new(&fake);
+    command
+        .env("LOCRON_UPDATE_API_BASE", "http://127.0.0.1:1")
+        .env("LOCRON_UPDATE_ASSET_BASE", "http://127.0.0.1:1");
+    command
+        .args(["--json", "self-update"])
+        .assert()
+        .failure()
+        .code(3)
+        .stdout(predicate::function(|stdout: &[u8]| {
+            let envelope: Value = serde_json::from_slice(stdout).unwrap();
+            assert_eq!(envelope["error"]["code"], "update_unowned_install");
+            let message = envelope["error"]["message"].as_str().unwrap();
+            assert!(message.contains("cargo install --locked locron"));
+            assert!(message.contains("rerun the standalone installer"));
+            true
+        }));
+}
+
+#[test]
+fn malformed_receipts_refuse_self_update() {
+    let _serial = serialized();
+    for payload in [
+        "",
+        "locron.install/v1\nstandalone",
+        "locron.install/v2\nstandalone\n",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = fake_binary(dir.path());
+        fs::write(
+            fake.parent().unwrap().join(".locron-install-receipt-v1"),
+            payload,
+        )
+        .unwrap();
+        Command::new(&fake)
+            .args(["--json", "self-update"])
+            .assert()
+            .failure()
+            .code(3)
+            .stdout(predicate::str::contains("update_unowned_install"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_receipt_refuses_self_update() {
+    use std::os::unix::fs::symlink;
+
+    let _serial = serialized();
+    let dir = tempfile::tempdir().unwrap();
+    let fake = fake_binary(dir.path());
+    let receipt = fake.parent().unwrap().join(".locron-install-receipt-v1");
+    let payload = dir.path().join("receipt-payload");
+    fs::write(&payload, "locron.install/v1\nstandalone\n").unwrap();
+    fs::remove_file(&receipt).unwrap();
+    symlink(&payload, &receipt).unwrap();
+
+    Command::new(&fake)
+        .args(["--json", "self-update"])
+        .assert()
+        .failure()
+        .code(3)
+        .stdout(predicate::str::contains("update_unowned_install"));
 }
 
 #[test]

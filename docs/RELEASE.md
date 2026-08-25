@@ -15,7 +15,9 @@ This document defines the official versioning, release, CI/CD, packaging, and di
 - **`PATCH` (0.y.z / x.y.z)**: Backward-compatible bug fixes, performance improvements, internal refactoring, or documentation updates.
 
 ### Workspace Lockstep Versioning
-All workspace crates (`locron-core`, `locron-store`, `locron-engine`, `locron-cli`) share the single unified version defined in the workspace root `Cargo.toml` (`[workspace.package] version = "..."`). Independent crate versioning is forbidden.
+All workspace packages (`locron-core`, `locron-store`, `locron-engine`, `locron-server`, `locron`)
+share the single unified version defined in the workspace root `Cargo.toml`. The four exact
+internal dependency requirements must change with it. Independent versioning is forbidden.
 
 ### Git Tag Convention
 - Release tags MUST follow the exact format `v{MAJOR}.{MINOR}.{PATCH}` (e.g. `v0.1.0`).
@@ -80,8 +82,12 @@ The repository employs three automated GitHub Actions workflows:
   2. **Build Release Binaries**: Build with `cargo build --release --locked` (leveraging LTO and symbol stripping).
   3. **Package Archives**: Assemble `.tar.gz` bundles with binary, README, and licenses.
   4. **Generate Checksums**: Compute SHA-256 hashes for all generated archives into `SHA256SUMS.txt`.
-  5. **Create GitHub Release**: Create a GitHub Release and upload all archives, `SHA256SUMS.txt`, and `install.sh`. Release notes come from the curated `## [X.Y.Z]` section of `CHANGELOG.md` at the tagged commit per the [changelog maintenance](#changelog-maintenance) policy — the workflow extracts that section and passes it with `--notes-file`. If the section is missing (release procedure not followed), it falls back to `--generate-notes` rather than failing the release, and re-runs refresh existing release notes from the same file.
-  6. **Homebrew Tap Dispatch**: Trigger downstream update in `whitekiwi/homebrew-tap` with the new version and macOS archive URLs & SHA-256 hashes. The generated formula installs `locron` into `bin`, touches `lib/.disable-self-update` so `locron self-update` refuses package-manager-managed installs, ships the `service` block (`run [opt_bin/"locron", "daemon", "run"]`, `keep_alive true`, `run_at_load false`) so `brew services` supervises the daemon, and a `caveats` section pointing at `brew services start locron`. Installation never starts the service automatically.
+  5. **Publish crates.io workspace**: Inventory all five exact versions. Publish only when none are
+     present, using the protected `crates-io` environment and the official OIDC action; skip when
+     all are present and fail when the registry is partial. Install the exact registry `locron`
+     into a temporary Cargo root and verify its version and self-update refusal.
+  6. **Create GitHub Release**: Create a GitHub Release and upload all archives, `SHA256SUMS.txt`, and `install.sh`. Release notes come from the curated `## [X.Y.Z]` section of `CHANGELOG.md` at the tagged commit per the [changelog maintenance](#changelog-maintenance) policy — the workflow extracts that section and passes it with `--notes-file`. If the section is missing (release procedure not followed), it falls back to `--generate-notes` rather than failing the release, and re-runs refresh existing release notes from the same file.
+  7. **Homebrew Tap Dispatch**: Trigger downstream update in `whitekiwi/homebrew-tap` with the new version and macOS archive URLs & SHA-256 hashes. The generated formula installs `locron` into `bin`, touches `lib/.disable-self-update` so `locron self-update` refuses package-manager-managed installs, ships the `service` block (`run [opt_bin/"locron", "daemon", "run"]`, `keep_alive true`, `run_at_load false`) so `brew services` supervises the daemon, and a `caveats` section pointing at `brew services start locron`. Installation never starts the service automatically.
 - **Job timeouts**: The `build` job has a 45-minute budget and the `publish` job a 10-minute budget (`timeout-minutes`). A hung build (e.g. a stalled runner) cancels the workflow instead of blocking the release indefinitely.
 
 ### C. Dependency Audit (`.github/workflows/audit.yml`)
@@ -98,7 +104,8 @@ The repository employs three automated GitHub Actions workflows:
 - The primary source of truth for release binaries, release notes, and checksums.
 - Standalone binaries can be downloaded, unpacked, and placed directly in `$PATH`.
 - The `install.sh` asset is the convenience installer for macOS and Linux; it defaults to `~/.local/bin/locron` and verifies the archive against `SHA256SUMS.txt`.
-- Installations from the installer or tarballs update themselves with `locron self-update` (verified, atomic replacement; never for package-manager-managed installs).
+- Only receipt-bearing standalone-installer installations update with `locron self-update`.
+  Manually copied tarballs, Cargo installs, source builds, and packages use their own channel.
 
 ### 2. Homebrew Tap (`whitekiwi/homebrew-tap`)
 - **Repository**: `https://github.com/whitekiwi/homebrew-tap`
@@ -117,18 +124,41 @@ The repository employs three automated GitHub Actions workflows:
 - `.deb` and `.rpm` packages are attached directly to GitHub Releases for distribution.
 - Package installations never register the daemon automatically: the postinst/postin scripts print the registration guidance (how to run `locron service install` from a login session, or `locron daemon run` immediately), mirroring the script installer's no-session guidance.
 
+### 4. crates.io (Rust source build)
+
+Rust 1.94+ users install with `cargo install --locked locron`, update with the same command, and
+remove with `cargo uninstall locron`. Cargo does not register services automatically; Locron's
+service and dashboard registration commands remain available. All five workspace packages publish
+in dependency order from the same immutable release revision.
+
 ---
 
 ## 5. Release and Remediation (Rollback) Policy
 
 ### Standard Release Procedure
 1. Ensure all milestone criteria and tests pass.
-2. Update workspace version in `Cargo.toml` and run `cargo check` to update `Cargo.lock`.
+2. Update the workspace version and all four exact internal versions in `Cargo.toml`, then run
+   `cargo check` to update `Cargo.lock`.
 3. Generate the release changelog: `git cliff --unreleased --prepend CHANGELOG.md` (see [Changelog Maintenance](#changelog-maintenance) below).
 4. Review and curate the generated entry — reword, merge, and drop entries until it reads like a user-facing document.
 5. Commit version bump: `git commit -m "release: vX.Y.Z"` with the workspace version and the curated changelog.
 6. Create and push annotated tag: `git tag -a vX.Y.Z -m "locron vX.Y.Z" && git push origin vX.Y.Z`.
 7. Monitor GitHub Actions release workflow execution until GitHub Release and Homebrew Tap update complete.
+
+### First crates.io bootstrap
+
+The first publication cannot use trusted publishing. From the exact clean, reviewed release commit,
+run the full package and publish dry-run gate, create a narrow temporary crates.io token, and run
+`cargo publish --workspace --locked`. Confirm all five exact versions, revoke the token immediately,
+then configure trusted publishers on every package for owner/repository `WhiteKiwi/locron`, workflow
+`release.yml`, and environment `crates-io`. Only then push the immutable tag; its idempotent inventory
+must find all five versions and continue without uploading. No permanent registry token belongs in
+GitHub secrets.
+
+If publication stops partway, do not move the tag or rerun blindly. Inventory the five exact
+versions, select only the absent packages with explicit repeated `-p` options from the same commit,
+let Cargo order that subset, and rerun the release only after all five are visible. Published
+versions cannot be overwritten; fix a bad release with a new version and yank only when warranted.
 
 ### Changelog Maintenance
 
@@ -152,7 +182,10 @@ The repository employs three automated GitHub Actions workflows:
 
 - **Build Isolation**: Binaries are built entirely in clean GitHub Actions runners using `--locked` Cargo dependencies.
 - **Supply Chain Integrity**: Checksums are computed in the release runner and published alongside binaries.
-- **Permissions**: Release workflow uses least-privilege GitHub tokens (`contents: write` for release creation, minimal repository dispatch permissions).
+- **Permissions**: permissions are job-scoped. Builds use `contents: read`; `publish-crates` alone
+  uses `contents: read` plus `id-token: write` for a short-lived crates.io token; the GitHub Release
+  job alone uses `contents: write`. There is no workflow-wide write permission or permanent
+  crates.io token.
 
 ---
 

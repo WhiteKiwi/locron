@@ -74,7 +74,11 @@ jobs:
       - name: Shellcheck installer and release scripts
         run: |
           sudo apt-get install -y shellcheck
-          shellcheck install.sh scripts/render-homebrew-formula.sh scripts/test-render-homebrew-formula.sh
+          shellcheck install.sh scripts/render-homebrew-formula.sh scripts/test-render-homebrew-formula.sh scripts/crates-version-inventory.sh scripts/test-crates-version-inventory.sh scripts/check-release-version.sh scripts/test-check-release-version.sh
+      - name: Test crates.io inventory classification
+        run: |
+          sh scripts/test-crates-version-inventory.sh
+          sh scripts/test-check-release-version.sh
       - name: Shellcheck usage.sh
         run: |
           shellcheck scripts/usage.sh
@@ -134,3 +138,40 @@ jobs:
           set -eu
           LOCRON_VERSION=v0.2.0 LOCRON_INSTALL_DIR="$PWD/test-bin/locron" sh install.sh
           "$PWD/test-bin/locron" -V
+
+  source-package:
+    name: Source packages / Rust 1.94.0
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify package inventory
+        shell: bash
+        run: |
+          mapfile -t packages < <(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name' | sort)
+          expected=(locron locron-core locron-engine locron-server locron-store)
+          diff -u <(printf '%s\n' "${expected[@]}") <(printf '%s\n' "${packages[@]}")
+          test "$(cargo metadata --no-deps --format-version 1 | jq -c '[.packages[].targets[] | select(.kind | index("bin")) | .name]')" = '["locron"]'
+      - name: Package and inspect archives
+        shell: bash
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          cargo package --workspace --locked
+          for package in locron-core locron-store locron-engine locron-server locron; do
+            archive="target/package/${package}-${VERSION}.crate"
+            tar -tf "$archive" > "$RUNNER_TEMP/${package}.files"
+            grep -q "/README.md$" "$RUNNER_TEMP/${package}.files"
+            grep -q "/LICENSE-MIT$" "$RUNNER_TEMP/${package}.files"
+            grep -q "/LICENSE-APACHE$" "$RUNNER_TEMP/${package}.files"
+            if grep -E '/(target|\.git|\.env|dashboard/node_modules)/' "$RUNNER_TEMP/${package}.files"; then
+              echo "unexpected repository/build material in $archive" >&2
+              exit 1
+            fi
+          done
+          tar -tf "target/package/locron-server-${VERSION}.crate" | grep -q '/dist/index.html$'
+      - name: Rehearse workspace publication
+        run: cargo publish --workspace --dry-run --locked

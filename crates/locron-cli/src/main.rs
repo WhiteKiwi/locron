@@ -5391,6 +5391,7 @@ fn error_code(error: &anyhow::Error) -> &'static str {
         match update {
             SelfUpdateError::UnsupportedPlatform { .. } => "update_unsupported_platform",
             SelfUpdateError::ManagedInstall => "update_managed_install",
+            SelfUpdateError::UnownedInstall => "update_unowned_install",
             SelfUpdateError::RateLimited => "update_rate_limited",
             SelfUpdateError::Network(_) => "update_network",
             SelfUpdateError::ReleaseMetadata(_) => "update_release_metadata",
@@ -5433,6 +5434,7 @@ fn exit_code(error: &anyhow::Error) -> i32 {
         match update {
             SelfUpdateError::UnsupportedPlatform { .. } => 2,
             SelfUpdateError::ManagedInstall => 3,
+            SelfUpdateError::UnownedInstall => 3,
             SelfUpdateError::RateLimited
             | SelfUpdateError::Network(_)
             | SelfUpdateError::ReleaseMetadata(_)

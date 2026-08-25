@@ -8,7 +8,7 @@ This document describes the implementation architecture for `locron mcp` based o
 
 ## 1. Component Architecture
 
-The MCP server is implemented directly inside `locron-cli` (`crates/locron-cli/src/mcp.rs`) to maintain the single-binary distribution contract and directly reuse existing `locron-core` domain commands and `locron-store` SQLite transactions.
+The MCP server is implemented directly inside `locron` (`crates/locron-cli/src/mcp.rs`) to maintain the single-binary distribution contract and directly reuse existing `locron-core` domain commands and `locron-store` SQLite transactions.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐

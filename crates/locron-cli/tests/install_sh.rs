@@ -159,6 +159,33 @@ fn installed_binary(dir: &Path) -> PathBuf {
     dir.join("inst/bin/locron")
 }
 
+fn assert_receipt(path: &Path) {
+    let directory = path.parent().unwrap();
+    let receipt = directory.join(".locron-install-receipt-v1");
+    assert_eq!(
+        fs::read_to_string(&receipt).unwrap(),
+        "locron.install/v1\nstandalone\n"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(receipt).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    assert!(
+        fs::read_dir(directory).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".locron-install-receipt-v1.")
+        }),
+        "the atomic receipt write must not leave a temporary file"
+    );
+}
+
 fn service_log_entries(dir: &Path) -> Vec<String> {
     fs::read_to_string(dir.join("service.log"))
         .map(|text| text.lines().map(str::to_owned).collect())
@@ -186,11 +213,39 @@ fn install_sh_registers_a_login_service_after_the_replace() {
         installed_binary(dir.path()).exists(),
         "the binary must be installed"
     );
+    assert_receipt(&installed_binary(dir.path()));
     assert_eq!(
         service_log_entries(dir.path()),
         ["service install"],
         "the installer must attempt service registration after the replace"
     );
+}
+
+#[test]
+fn install_sh_writes_receipt_at_the_default_destination() {
+    let _serial = serialized();
+    let dir = tempfile::tempdir().unwrap();
+    let host = release_host(dir.path());
+    let service_log = dir.path().join("service.log");
+    let output = StdCommand::new("/bin/sh")
+        .arg(installer())
+        .env("HOME", dir.path())
+        .env_remove("LOCRON_INSTALL_DIR")
+        .env("LOCRON_VERSION", NEW_TAG)
+        .env(
+            "LOCRON_UPDATE_ASSET_BASE",
+            format!("file://{}", host.root.display()),
+        )
+        .env("LOCRON_FIXTURE_SERVICE_LOG", service_log)
+        .env("LOCRON_NO_SERVICE", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_receipt(&dir.path().join(".local/bin/locron"));
 }
 
 #[test]

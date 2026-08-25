@@ -5,9 +5,6 @@ on:
     tags:
       - 'v*.*.*'
 
-permissions:
-  contents: write
-
 jobs:
   build:
     name: Build / ${{ matrix.target }}
@@ -25,6 +22,8 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
@@ -32,7 +31,7 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
-        run: cargo build --release --locked -p locron-cli
+        run: cargo build --release --locked -p locron
       - name: Package tarball archive
         shell: bash
         run: |
@@ -51,7 +50,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          cargo deb -p locron-cli --no-build
+          cargo deb -p locron --no-build
           cp target/debian/*.deb .
           cargo generate-rpm -p crates/locron-cli
           cp target/generate-rpm/*.rpm .
@@ -64,11 +63,63 @@ jobs:
             *.rpm
           if-no-files-found: warn
 
+  publish-crates:
+    name: Publish crates.io workspace
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.0
+      - name: Verify release version agreement
+        run: sh scripts/check-release-version.sh "${GITHUB_REF_NAME#v}"
+      - name: Inventory exact crate versions
+        id: inventory
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          state=$(sh scripts/crates-version-inventory.sh "$VERSION")
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+      - name: Authenticate to crates.io
+        if: steps.inventory.outputs.state == 'none'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+      - name: Publish workspace
+        if: steps.inventory.outputs.state == 'none'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish --workspace --locked
+      - name: Verify complete registry inventory
+        run: sh scripts/crates-version-inventory.sh "${GITHUB_REF_NAME#v}" | grep -qx all
+      - name: Install and verify registry package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          INSTALL_ROOT="$RUNNER_TEMP/locron-cargo-install"
+          cargo install --locked --version "=$VERSION" --root "$INSTALL_ROOT" locron
+          test "$("$INSTALL_ROOT/bin/locron" -V)" = "locron $VERSION"
+          set +e
+          output=$(LOCRON_UPDATE_API_BASE=http://127.0.0.1:1 "$INSTALL_ROOT/bin/locron" --json self-update)
+          status=$?
+          set -e
+          test "$status" -eq 3
+          printf '%s' "$output" | jq -e '.error.code == "update_unowned_install"'
+          LOCRON_STATE_DIR="$RUNNER_TEMP/locron-state" "$INSTALL_ROOT/bin/locron" service status
+          LOCRON_STATE_DIR="$RUNNER_TEMP/locron-state" "$INSTALL_ROOT/bin/locron" dashboard status
+
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, publish-crates]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - name: Download all build artifacts

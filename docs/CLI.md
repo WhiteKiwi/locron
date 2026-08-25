@@ -214,7 +214,15 @@ wake notification.
 - It resolves the latest release through the GitHub releases API (`https://api.github.com/repos/WhiteKiwi/locron/releases/latest`, overridable with `LOCRON_UPDATE_API_BASE`), then downloads the target platform's tarball and the release's `SHA256SUMS.txt` from `https://github.com/WhiteKiwi/locron/releases/download/<tag>/` (overridable with `LOCRON_UPDATE_ASSET_BASE`).
 - The tarball is verified against its published SHA-256 before anything is touched; the binary is then replaced with one temp file and an atomic rename in the executable's directory. A failed, cancelled, or interrupted update leaves the existing binary installed and working.
 - When the running version is the latest (or newer), the command exits 0 with `updated: false` and downloads nothing.
-- Self-update is refused with exit 3 and code `update_managed_install` when the package-manager marker (`lib/.disable-self-update` next to the executable) is present; the error directs the user to `brew upgrade locron`.
+- Self-update first honors the Homebrew/package-manager marker (`lib/.disable-self-update` next to
+  the executable): it refuses with exit 3 and code `update_managed_install`, directing the user to
+  `brew upgrade locron`. Otherwise it proceeds only when the canonical executable has the valid
+  versioned standalone-installer receipt written beside it by `install.sh`. A missing, malformed,
+  or mismatched receipt refuses before network access with exit 3 and code
+  `update_unowned_install`; guidance explains that Cargo users update with
+  `cargo install --locked locron`, older script installations can adopt the receipt by rerunning
+  the installer, and other users must update through their installation channel. Manually copied
+  tarballs and source builds do not gain self-update authority merely from their filesystem path.
 - Supported platforms are aarch64 and x86_64 on macOS and glibc Linux; musl Linux and other platforms fail with exit 2 and code `update_unsupported_platform`.
 - The daemon and any running `locron` process keep the old code until they restart; self-update never signals running processes.
 
@@ -234,7 +242,9 @@ Machine output for a success carries `data`:
 }
 ```
 
-Stable error codes: `update_unsupported_platform` (2), `update_managed_install` (3), `update_rate_limited` (5), `update_network` (5), `update_release_metadata` (5), `update_checksum_mismatch` (5), `update_io` (5).
+Stable error codes: `update_unsupported_platform` (2), `update_managed_install` (3),
+`update_unowned_install` (3), `update_rate_limited` (5), `update_network` (5),
+`update_release_metadata` (5), `update_checksum_mismatch` (5), `update_io` (5).
 
 After a successful replace, self-update runs `locron service install` on the replaced executable to refresh an existing service registration onto the new binary or to perform a first registration. This registration is best-effort: a failure produces a warning in the envelope (and on stderr in human mode) while the update stays successful.
 

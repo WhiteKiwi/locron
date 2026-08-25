@@ -113,7 +113,8 @@ fi
 
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/locron-install.XXXXXX")
 tmp_bin=""
-trap 'rm -rf "$tmpdir" "$tmp_bin"' EXIT INT TERM HUP
+tmp_receipt=""
+trap 'rm -rf "$tmpdir" "$tmp_bin" "$tmp_receipt"' EXIT INT TERM HUP
 
 download "$base_url/SHA256SUMS.txt" "$tmpdir/SHA256SUMS.txt"
 
@@ -181,6 +182,20 @@ fi
 if ! "$install_path" -V >/dev/null 2>&1; then
     fail "installed $install_path but it cannot be executed; the filesystem may be mounted noexec — choose another location with LOCRON_INSTALL_DIR"
 fi
+
+# Positive ownership for built-in self-update. Write the exact, versioned
+# payload with owner-only permissions and publish it with a same-directory
+# rename only after the verified binary replacement can execute.
+receipt_path="$install_dir/.locron-install-receipt-v1"
+tmp_receipt="$install_dir/.locron-install-receipt-v1.$$.tmp"
+if ! (umask 077 && printf 'locron.install/v1\nstandalone\n' > "$tmp_receipt"); then
+    fail "cannot write the standalone installation receipt in $install_dir"
+fi
+if ! chmod 600 "$tmp_receipt" || ! mv -f "$tmp_receipt" "$receipt_path"; then
+    rm -f "$tmp_receipt"
+    fail "cannot install the standalone installation receipt in $install_dir"
+fi
+tmp_receipt=""
 
 # --- report ---------------------------------------------------------------------
 

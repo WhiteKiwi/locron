@@ -1,9 +1,15 @@
 [package]
-name = "locron-cli"
+name = "locron"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
+publish.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Command-line interface and composition root for locron"
 
 [[bin]]
@@ -20,10 +26,10 @@ dialoguer = { version = "0.12", default-features = false }
 flate2.workspace = true
 futures-util.workspace = true
 jiff.workspace = true
-locron-core = { path = "../locron-core" }
-locron-engine = { path = "../locron-engine" }
-locron-server = { path = "../locron-server" }
-locron-store = { path = "../locron-store" }
+locron-core.workspace = true
+locron-engine.workspace = true
+locron-server.workspace = true
+locron-store.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

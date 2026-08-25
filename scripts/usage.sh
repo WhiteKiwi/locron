@@ -11,7 +11,7 @@
 #      30/90/365 days from formulae.brew.sh analytics. Analytics are
 #      anonymous and opt-out, so the counts understate real installs, and a
 #      formula with no recorded installs has no entry (rendered as 0).
-#   4. crates.io - N/A while the crate is unpublished; once published, the
+#   4. crates.io - N/A before the first registry bootstrap; once published, the
 #      sum of the /api/v1/crates/locron/downloads series (trailing 90 days).
 #   5. GitHub traffic - 14-day views/clones totals and uniques via gh api,
 #      printed only when the GitHub CLI is present and authenticated
@@ -34,7 +34,7 @@
 #             releases_truncated     true when the page cap was reached
 #             stars                  stargazers_count
 #             brew_30d/90d/365d      Homebrew install counts
-#             crates_io              download sum, or null while unpublished
+#             crates_io              download sum, or null before bootstrap
 #             traffic_views_total / traffic_views_uniques
 #             traffic_clones_total / traffic_clones_uniques
 #                                   (present only when gh is authenticated)
@@ -214,7 +214,7 @@ fetch_brew() {
 }
 
 # ---------------------------------------------------------------------------
-# Section 4: crates.io (N/A while unpublished)
+# Section 4: crates.io (N/A before the first registry bootstrap)
 # ---------------------------------------------------------------------------
 fetch_crates() {
   if ! resp=$(curl -sS -A "$CRATES_UA" -w '\n%{http_code}' "$CRATES_URL"); then

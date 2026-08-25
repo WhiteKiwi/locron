@@ -1043,7 +1043,7 @@ impl Store {
     /// counting duplicates that already exist. A cursor or revision mismatch
     /// returns [`StoreError::Conflict`]; `summaries` are recorded as events
     /// atomically with the cursor, and `resolve_one_time` disables the job.
-    // cursor is consumed by value at call sites in locron-cli; signature is public API
+    // cursor is consumed by value at call sites in locron; signature is public API
     #[allow(clippy::needless_pass_by_value)]
     pub fn materialize_with_summaries(
         &self,

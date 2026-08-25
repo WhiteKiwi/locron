@@ -17,7 +17,7 @@ Implement from the inside out: deterministic domain behavior, transactional stor
 1. `locron-core` defines normalized commands, schedules, policies, state transitions, and testable ports.
 2. `locron-store` implements the architecture's persistence invariants with real SQLite transactions and migrations.
 3. `locron-engine` implements the complete daemon runtime, first against fake time/execution and then against process, shell, and HTTP runners.
-4. `locron-cli` composes those layers for short-lived commands and `locron daemon run`; it does not acquire daemon responsibilities.
+4. `locron` composes those layers for short-lived commands and `locron daemon run`; it does not acquire daemon responsibilities.
 
 This layering costs some domain/store mapping and trait design up front. It is justified by deterministic testing and by future viewer, MCP, and desktop surfaces needing the same behavior without depending on CLI parsing or SQLite layout.
 
@@ -398,7 +398,7 @@ The version flag is owned by the CLI instead of clap's built-in version flag: th
 
 Human `list` output renders a docker-style aligned table instead of the shared pretty-JSON fallback: a header line plus one row per live job, columns NAME, SCHEDULE, TARGET, and ENABLED derived from the redacted durable record only. Schedule summaries are `cron 'EXPR'`, `every DUR`, or `at RFC3339`; target summaries are `run EXE [ARGS...]`, `shell CMD`, or `http METHOD URL`; ENABLED is `yes` or `no`. Alignment is hand-rolled from the maximum column width with no new dependency — the workspace has repeatedly rejected non-essential crates — and values are never truncated. An empty result prints the header alone, matching `docker ps` with zero containers. Only the human `list` path changes: the `list` dispatch arm in `execute` branches on format (table for `Format::Human`, the unchanged shared `render` otherwise), so the JSON envelope, the canonical `command` field, and every other command's rendering are untouched. Human output is not a compatibility surface, but contract tests pin the table so it cannot regress accidentally. Other list-like commands (`history`) keep the pretty-JSON fallback until a reviewed decision extends table rendering.
 
-Implementation deviations from the plan above, all confined to `locron-cli`:
+Implementation deviations from the plan above, all confined to `locron`:
 
 - The summaries parse the redacted `definition_json` as JSON values rather than deserializing into typed `JobDefinition`: a redacted inline body is the string `"<redacted>"`, which serde rejects for the typed `Vec<u8>` body field ("expected a sequence"). Value-level parsing still reads only the redacted record, so the redaction guarantee is unchanged.
 - The table's renderers are named `list_schedule_summary`/`list_target_summary` because the export-selection work in the same file already owned the typed `schedule_summary(&Schedule)` name for its picker rows; both share `human_duration`.
@@ -415,7 +415,7 @@ Shared helpers live beside the existing list renderer: column alignment and huma
 
 Contract tests pin every command's human form for empty and populated states, dry-run wording, table-only ID abbreviation, and redaction, mirroring the existing help-surface walk so a new command cannot omit its human form silently. The README demo screencast (`assets/screencast.sh`) dropped its `jq` pipes as part of this change; the recording itself is regenerated separately.
 
-Implementation deviations, all confined to `locron-cli` and confined to human branches:
+Implementation deviations, all confined to `locron` and confined to human branches:
 
 - The plan text above claims `run --wait` streams are "already conformant and are not changed". In fact the human wait stream is part of this work: after the queued line it now prints the terminal outcome line `run finished: {id} ({state})`, per the `docs/CLI.md` contract. The streamed progress lines themselves are unchanged.
 - `why --run` also prints an EVENTS section (`  {RFC3339} {kind}` per durable event) beyond the contract's RUN/ATTEMPTS/terminal-reason sections. The events are already loaded to produce the terminal-reason text, so this costs no extra record access and the contract does not forbid it.
@@ -462,7 +462,7 @@ The plan is restricted to this repository. Before an implementation deviation, u
 4. Implement versioned `locron-store` migrations and transactions for jobs/revisions, cursors, runs/attempts/retries/events, lifetimes, settings, output metadata, uniqueness, soft deletion, and bounded retention.
 5. Implement the `locron-engine` daemon runtime: ownership, startup recovery, reconciliation, overlap/concurrency admission, retry, cancellation, maintenance, signals, and graceful shutdown.
 6. Implement process, explicit-shell, and HTTP runners in `locron-engine`, including environment/path resolution, process groups, timeout/cancellation, and bounded output capture.
-7. Implement thin `locron-cli` commands and composition, including `locron daemon run`, human/versioned machine output, offline enqueue, wait/follow, import/export, prune, and doctor. Do not add another daemon crate or binary.
+7. Implement thin `locron` commands and composition, including `locron daemon run`, human/versioned machine output, offline enqueue, wait/follow, import/export, prune, and doctor. Do not add another daemon crate or binary.
 8. Add deterministic unit, integration, fault-injection, retention/disk-pressure, and platform tests for macOS 14+ and Linux kernel 5.14+/glibc 2.34+ on `aarch64` and `x86_64`.
 9. Complete user/operator documentation and map every `docs/SPEC.md` completion criterion to executable evidence without introducing deferred viewer, MCP, desktop, packaging, or service-installation work.
 
@@ -503,7 +503,7 @@ A short custom domain serves the one-liner as `https://locron.whitekiwi.link/ins
 
 Add `locron self-update` to the CLI. It updates only to the latest stable release; pinning remains an installer function per the frozen specification.
 
-Version resolution uses `GET https://api.github.com/repos/WhiteKiwi/locron/releases/latest`. This is an explicit user-triggered action, so the unauthenticated rate limit is acceptable; a rate-limit or network failure maps to the CLI's stable error categories with retry guidance, and no file is touched. The subcommand then downloads the matching tarball and the release's `SHA256SUMS.txt`, verifies the tarball hash (adding `sha2`, `tar`, and `flate2` as pure-Rust dependencies of `locron-cli`, plus `reqwest` with rustls/stream/json for the API and asset downloads — reqwest is already a workspace crate, and the `self_update`/`self-replace` crates were rejected as unnecessary surface for one temp-file-plus-rename), and extracts in a temporary directory. The extracted binary is copied to a temp file in the same directory as the running executable and replaced with a single `fs::rename`, which is atomic on both platforms: the running process keeps its old inode, and the next invocation executes the new binary.
+Version resolution uses `GET https://api.github.com/repos/WhiteKiwi/locron/releases/latest`. This is an explicit user-triggered action, so the unauthenticated rate limit is acceptable; a rate-limit or network failure maps to the CLI's stable error categories with retry guidance, and no file is touched. The subcommand then downloads the matching tarball and the release's `SHA256SUMS.txt`, verifies the tarball hash (adding `sha2`, `tar`, and `flate2` as pure-Rust dependencies of `locron`, plus `reqwest` with rustls/stream/json for the API and asset downloads — reqwest is already a workspace crate, and the `self_update`/`self-replace` crates were rejected as unnecessary surface for one temp-file-plus-rename), and extracts in a temporary directory. The extracted binary is copied to a temp file in the same directory as the running executable and replaced with a single `fs::rename`, which is atomic on both platforms: the running process keeps its old inode, and the next invocation executes the new binary.
 
 Package-manager refusal follows the mise pattern with a marker we control: the tap formula creates `lib/.disable-self-update` under the brew prefix at install time, and `self-update` refuses with a stable error directing the user to `brew upgrade locron` when the marker exists next to the canonicalized current executable. Script-installed and source-installed binaries have no marker and remain updatable. All verification and download failures occur before the rename, so a failed or interrupted update leaves the existing binary installed and working, as the specification requires. Human output reports the current and new version or "already up to date"; machine output uses the standard `locron.cli/v1` envelope with `command: "self-update"`.
 
@@ -562,7 +562,7 @@ This section plans the daemon-service amendment to `docs/SPEC.md`: per-user regi
 
 ### Accepted: binary-owned service registration
 
-`locron-cli` owns a new `locron service install|uninstall|status` family behind a small service-manager port. The port has two real backends — launchd (macOS) and systemd user units (Linux) — and a deterministic fake for tests. `locron-engine` and the store are unchanged: the daemon already performs graceful SIGTERM shutdown, single-owner locking, and stale-attempt classification, which is everything a service manager requires of it. install.sh and self-update call the subcommand rather than shelling out to `launchctl`/`systemctl` themselves, keeping the POSIX script thin and the behavior unit-testable. No new dependencies: the backends run `launchctl`/`systemctl` as child processes.
+`locron` owns a new `locron service install|uninstall|status` family behind a small service-manager port. The port has two real backends — launchd (macOS) and systemd user units (Linux) — and a deterministic fake for tests. `locron-engine` and the store are unchanged: the daemon already performs graceful SIGTERM shutdown, single-owner locking, and stale-attempt classification, which is everything a service manager requires of it. install.sh and self-update call the subcommand rather than shelling out to `launchctl`/`systemctl` themselves, keeping the POSIX script thin and the behavior unit-testable. No new dependencies: the backends run `launchctl`/`systemctl` as child processes.
 
 Templates are embedded constants, not files shipped in archives. The macOS plist carries label `dev.locron.daemon`, `ProgramArguments` `[<current_exe>, "daemon", "run"]`, `KeepAlive` true, `RunAtLoad` true, and `StandardOutPath`/`StandardErrorPath` both at `~/Library/Logs/locron/daemon.log` (created at install; the Homebrew default-log-path convention). The Linux unit is `locron.service` at `~/.config/systemd/user/` with `ExecStart=<current_exe> daemon run`, `Restart=on-failure`, and `WantedBy=default.target`. Registration always uses the canonicalized absolute path of the running binary, so repeating it repairs a registration whose binary moved or was replaced.
 
@@ -638,11 +638,11 @@ This section plans maintainer-facing measurement of locron's public distribution
 
 ## Export selection and URL import implementation (2026-08-24)
 
-This section plans the 2026-08-24 `docs/SPEC.md` amendment: export job selection (interactive default on a TTY, deterministic filters, non-interactive full export) and import from a URL. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §15. The change is confined to `locron-cli`; `locron-core` and `locron-store` are unchanged, and the frozen dashboard spec's whole-document export download/import upload is unaffected (selection or URL support there would be its own dashboard spec change).
+This section plans the 2026-08-24 `docs/SPEC.md` amendment: export job selection (interactive default on a TTY, deterministic filters, non-interactive full export) and import from a URL. Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §15. The change is confined to `locron`; `locron-core` and `locron-store` are unchanged, and the frozen dashboard spec's whole-document export download/import upload is unaffected (selection or URL support there would be its own dashboard spec change).
 
 ### Accepted: selection as a filter over the existing export path
 
-Selection never reaches the store or domain crates. `locron-cli` resolves the export subset from the same `list_jobs(true)` result the existing `export` function already reads, then hands the filtered list to the existing `export_job` mapping; the document shape, redaction, and omission accounting are untouched.
+Selection never reaches the store or domain crates. `locron` resolves the export subset from the same `list_jobs(true)` result the existing `export` function already reads, then hands the filtered list to the existing `export_job` mapping; the document shape, redaction, and omission accounting are untouched.
 
 `--jobs NAME[,NAME...]` and `--tag TAG[,TAG...]` take exact names/tags, combine as a union, and deduplicate by job ID. Any selector value matching no job is a validation error before any output is produced (exit category 2), so a typo can never silently produce a smaller backup. Filters are valid with both human and JSON output and always suppress the picker. A zero-job state skips the picker entirely because there is nothing to select (export of settings only remains legal, as today).
 
@@ -776,13 +776,13 @@ retaining the safety boundary for a live descendant that did not receive SIGKILL
 
 ## Terminal-width list table truncation (2026-08-24)
 
-This section plans the 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract: Table width). Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §19. The change is confined to `locron-cli`; `locron-core`, `locron-store`, and `locron-engine` are unchanged.
+This section plans the 2026-08-24 `docs/SPEC.md` amendment (Human Output Contract: Table width). Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §19. The change is confined to `locron`; `locron-core`, `locron-store`, and `locron-engine` are unchanged.
 
 ### Accepted: TTY-only truncation of the table's final column
 
-Width resolution is `console::Term::stdout().size_checked()` — the `TIOCGWINSZ` ioctl that docker and kubectl use. `console` 0.16 is already in the `locron-cli` dependency graph through dialoguer 0.12 (verified with `cargo tree -p locron-cli -i console`: console 0.16.4 → dialoguer 0.12.0 → locron-cli), so declaring it as a direct dependency with `default-features = false` adds zero lockfile entries. A failed size lookup — stdout redirected, piped, or otherwise not a terminal — means no truncation, so the one mechanism is both the width source and the TTY gate. The width is sampled once per invocation; a mid-print window resize is not chased (docker and kubectl behave the same). The tuple is `(rows, cols)` — verified in the console 0.16.4 source (`unix_term.rs:53–67` returns `(winsize.ws_row, winsize.ws_col)`), so the width is the second element; a PTY check at real widths confirms the truncation budget tracks the column count.
+Width resolution is `console::Term::stdout().size_checked()` — the `TIOCGWINSZ` ioctl that docker and kubectl use. `console` 0.16 is already in the `locron` dependency graph through dialoguer 0.12 (verified with `cargo tree -p locron -i console`: console 0.16.4 → dialoguer 0.12.0 → locron), so declaring it as a direct dependency with `default-features = false` adds zero lockfile entries. A failed size lookup — stdout redirected, piped, or otherwise not a terminal — means no truncation, so the one mechanism is both the width source and the TTY gate. The width is sampled once per invocation; a mid-print window resize is not chased (docker and kubectl behave the same). The tuple is `(rows, cols)` — verified in the console 0.16.4 source (`unix_term.rs:53–67` returns `(winsize.ws_row, winsize.ws_col)`), so the width is the second element; a PTY check at real widths confirms the truncation budget tracks the column count.
 
-Display width uses `unicode-width` 0.2, already locked transitively, declared directly on `locron-cli`. The pure helper `truncate_display(&str, max_width) -> String` walks characters, sums display width, and appends the `…` marker (display width 1) only when the value actually shrinks; a value that fits is returned unchanged.
+Display width uses `unicode-width` 0.2, already locked transitively, declared directly on `locron`. The pure helper `truncate_display(&str, max_width) -> String` walks characters, sums display width, and appends the `…` marker (display width 1) only when the value actually shrinks; a value that fits is returned unchanged.
 
 `render_list_table` gains a `width: Option<u16>` parameter, resolved once in the `list` dispatch arm for human format only. Column padding is unchanged; fitting is a separate step: the natural table width is `name_width + 1 + schedule_width + 1 + target_width + 1 + 7` (the final `ENABLED` column is unpadded), and when it exceeds the terminal width only `TARGET` — the table's final data column — absorbs the deficit. Earlier columns never truncate: `NAME` is the key for every other command, schedule summaries are inherently short, and truncating a middle column would misalign every column after it. When the deficit leaves less than one display column for `TARGET` (a pathological terminal width), no truncation occurs and the table wraps exactly as it does today — documented, not silently cut data.
 
@@ -941,3 +941,95 @@ Verification includes a source inventory proving every `hold_fixed(DEFAULT_PORT)
 guard, repeated high-parallelism runs of the complete dashboard integration binary, focused fixed,
 redirected, and PTY fallback tests, and the full fmt/warnings-denied Clippy/workspace all-target
 battery. The review server stays running; native matrix confirmation remains parent-owned.
+## crates.io source installation and trusted publication (2026-08-25)
+
+The accepted distribution design follows the evidence in `docs/FINDINGS.md` §34. crates.io is a
+secondary source-build channel for Rust users; the standalone installer and Homebrew remain the
+general-user paths. The user-facing Cargo package is named `locron`, retains the single `locron`
+binary target, and is published together with the four library packages required by its normal
+dependency graph.
+
+### Package graph and metadata
+
+Rename the `locron` Cargo package to `locron` without moving its source directory or creating a
+second binary. Centralize each internal dependency in `[workspace.dependencies]` as a local `path`
+plus an exact registry version equal to the lockstep workspace release. Members inherit those
+declarations so local builds use the workspace source while packaged manifests resolve the exact
+crates.io release. Cargo's native workspace publisher then owns the dependency order:
+`locron-core`; `locron-store` and `locron-engine`; `locron-server`; then `locron`.
+
+All five packages inherit the repository, root README, authors, dual license, Rust version,
+crates.io-only publication restriction, keywords, and command-line category. Package descriptions
+remain role-specific. The internal libraries are published implementation packages required by the
+binary, not a promise of an independently stable public API. Release version updates must change
+the workspace version and every exact internal version in one reviewed commit.
+
+### Installation ownership
+
+Binary ownership and service ownership stay separate. `install.sh` writes an atomic owner-only
+receipt named `.locron-install-receipt-v1` beside the installed executable after a verified atomic
+replacement. Its exact two-line payload is `locron.install/v1` then `standalone`; the deterministic
+sibling location binds it to the canonical executable directory, and moving the binary without the
+receipt intentionally drops self-update authority. `locron self-update` accepts only a regular,
+non-symlink receipt with that exact payload before downloading or replacing anything. An absent or
+malformed receipt refuses with stable machine output and channel guidance. Cargo users receive
+`cargo install --locked locron`; receipt-less older script users are told to rerun the standalone
+installer once; other installations are told to use their installation channel. The existing
+Homebrew marker remains the stronger Homebrew-specific message.
+
+Cargo does not own launchd or systemd registration, so its receipt-less binary may still run
+`locron service install` and `locron dashboard enable`. The Homebrew marker continues to block
+those mutations because Homebrew does own their service lifecycle. Manual tarball/source and
+deb/rpm installs likewise keep the existing service-registration behavior even though built-in
+self-update refuses them.
+
+### CI and release flow
+
+Push/PR CI runs `cargo publish --workspace --dry-run --locked` on Rust 1.94 after the ordinary
+workspace gate and inspects the package set, normalized manifests, bundled README/licenses, and
+absence of repository-only or secret material. No check uses `--allow-dirty` or `--no-verify`.
+
+The tag workflow adds a dedicated `publish-crates` job after the complete binary build matrix and
+before GitHub Release/Homebrew publication. Only that job receives `contents: read` and
+`id-token: write`, is bound to the protected `crates-io` environment, exchanges GitHub OIDC through
+the official `rust-lang/crates-io-auth-action@v1`, and passes the short-lived token as
+`CARGO_REGISTRY_TOKEN` to `cargo publish --workspace --locked`. The GitHub Release job alone keeps
+`contents: write`.
+
+The job first proves tag, workspace, lockfile, binary, and changelog version agreement, then queries
+all five exact package versions with a descriptive user agent. None present permits publication;
+all present is an idempotent rerun/bootstrap case and skips upload; a partial set fails with an
+inventory and explicit recovery guidance. Workspace publication is not atomic, so downstream
+publication never runs after a partial failure. After all versions become visible, install the
+exact `locron` version into a temporary Cargo root with `--locked`, verify its version and
+self-update refusal, and run non-mutating service/dashboard status checks.
+
+crates.io requires one manual first publication per new package before trusted publishers can be
+configured. The release guide therefore defines a one-time bootstrap from the exact clean release
+commit using a newly created narrow API token, immediate token revocation, trusted-publisher
+bindings for all five packages to `WhiteKiwi/locron` + `release.yml` + `crates-io`, and then the
+ordinary immutable tag. The tag job observes all versions already present and performs the same
+registry-install verification without trying to overwrite them. Later tags use OIDC only.
+
+### Documentation and TODO compaction
+
+README and installation/release documentation list the prebuilt installer and Homebrew before
+`cargo install --locked locron`, explain the Rust 1.94 source-build requirement, distinguish Cargo
+update/removal from Locron service registration, and document the one-time trusted-publisher
+bootstrap and partial-publication recovery.
+
+Keep `docs/TODO.md` as the live checklist: move fully completed top-level sections verbatim to
+`docs/TODO-archive.md`; for mixed sections, archive the completed evidence and retain only the open
+follow-up with enough context and its verification method. Verify the apparently stale unchecked
+terminal-width planning item against the existing SPEC/CLI/IMPLEMENTATION/FINDINGS records before
+marking and archiving it. Do not move any genuinely open checkbox, and preserve the current
+`docs/BACKLOG.md` distinction between inactive ideas and committed work.
+
+### Verification strategy
+
+Before handoff, run formatting, warnings-denied workspace Clippy, all workspace targets, dependency
+direction, shell syntax and shellcheck for changed scripts, workflow YAML/action lint, workspace
+package and publish dry-runs on Rust 1.94, per-package file/archive inspection, exact-version Cargo
+installation into a temporary root where possible, self-update ownership tests, CLI help/contract
+tests, Markdown link/reference checks, and `git diff --check`. No real crates.io upload is part of
+implementation verification.

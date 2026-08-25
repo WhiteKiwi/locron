@@ -3,9 +3,9 @@
 ## Status
 
 Frozen on 2026-08-24 after interactive product review and amended on 2026-08-24 to define the
-Locron brand experience. This document defines the
-web-administration surface listed as phase 1 of the deferred product roadmap in `docs/TODO.md`.
-Per that roadmap, it does not change the exclusions in the frozen `docs/SPEC.md`. Implementation
+Locron brand experience. This document defines the shipped web-administration surface. Its
+post-milestone delivery does not retroactively change the milestone exclusions in the frozen
+`docs/SPEC.md`. Implementation
 choices and their trade-offs are recorded in `IMPLEMENTATION.md` (this directory); research evidence in
 `docs/FINDINGS.md` §14.
 
@@ -106,7 +106,8 @@ daemon.
 - Serving over the MCP transport or running the server inside the daemon process.
 - Automatic registration by installers or updates: only an explicit `enable` registers the
   dashboard service.
-- The desktop application (roadmap phase 3) remains a separate surface that may consume this API.
+- A desktop application remains a separate deferred surface that may consume this API; it is
+  preserved in `docs/BACKLOG.md` rather than committed by this specification.
 
 ---
 

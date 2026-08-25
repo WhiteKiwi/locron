@@ -190,9 +190,9 @@ Use Rust and start with a small virtual Cargo workspace using resolver `3` and e
 - `locron-core`: domain types, schedule/policy vocabulary, validation, and ports/traits; no SQLite, CLI, or OS service knowledge.
 - `locron-store`: SQLite schema, migrations, transactions, occurrence uniqueness, repositories, and retention.
 - `locron-engine`: reconciliation, admission control, retries, execution, cancellation, recovery, and HTTP/process runners.
-- `locron-cli`: the `locron` binary, command parsing, human/JSON rendering, and daemon entrypoint.
+- `locron`: the `locron` binary, command parsing, human/JSON rendering, and daemon entrypoint.
 
-Keep one distributable binary in v1 even though its code is split into libraries. Do not create empty crates for later HTTP management, MCP, or desktop surfaces; add those only when their milestones begin. Enforce the following dependency shape: `locron-cli` composes `locron-engine` and `locron-store`; both depend on `locron-core`; `locron-engine` does not depend on the SQLite implementation; and no library depends back on the CLI.
+Keep one distributable binary in v1 even though its code is split into libraries. Do not create empty crates for later HTTP management, MCP, or desktop surfaces; add those only when their milestones begin. Enforce the following dependency shape: `locron` composes `locron-engine` and `locron-store`; both depend on `locron-core`; `locron-engine` does not depend on the SQLite implementation; and no library depends back on the CLI.
 
 ### Alternatives and Trade-offs
 
@@ -436,7 +436,9 @@ A maintainer-facing POSIX `sh` script, `scripts/usage.sh`, that prints one snaps
 
 - **A scheduled GitHub Action snapshotting numbers into the repository** is deferred: daily commits add repository noise and another write credential for marginal value at the current scale; the `--json` mode keeps it a drop-in when measurement history becomes worth that noise.
 - **Publishing to crates.io for measurement purposes** is rejected as a reason to publish: registry metadata and a publishing workflow are real surface, and the existing GitHub Releases, Homebrew, and deb/rpm channels already cover distribution.
-- **An in-product `locron stats` command** aggregating durable run history is a product-behavior change and therefore requires its own SPEC amendment; it is recorded on the deferred product roadmap instead of being folded into this tooling.
+- **An in-product `locron stats` command** aggregating durable run history is a product-behavior
+  change and therefore requires its own SPEC amendment; it is preserved in `docs/BACKLOG.md`
+  instead of being folded into this tooling.
 
 ## 14. Web Administration (2026-08-23)
 
@@ -630,9 +632,9 @@ A maintainer-facing POSIX `sh` script, `scripts/usage.sh`, that prints one snaps
 
 **The established convention is that terminal tables truncate to the terminal width only when standard output is a terminal; redirected or piped output prints complete values.** `docker ps`/`docker container ls` truncates columns to fit the terminal and documents `--no-trunc` as "don't truncate output"; when stdout is not a TTY the output is not truncated, because scripting consumers must never parse a truncated value. `kubectl get` likewise fits columns to the terminal width (truncating with no ellipsis), with `-o wide` adding columns and `kubectl describe` as the full detail view. `ps` fits columns to the TTY width with `+`/unlimited-width `ww` modes, and `git log` supports `%<(N,trunc)` formatting while full detail lives in `git show`. The shared rule across all four: the summary table is a fit-to-terminal view, a detail command carries complete values, and anything piped receives full data by default. Sources: https://docs.docker.com/reference/cli/docker/container/ls/, https://docs.docker.com/reference/cli/docker/container/ls/#no-trunc, https://kubernetes.io/docs/reference/kubectl/generated/kubectl_get/, https://man7.org/linux/man-pages/man1/ps.1.html, https://git-scm.com/docs/git-log#Documentation/git-log.txt-emltltNtruncemgt.
 
-**The terminal width mechanism is the `TIOCGWINSZ` ioctl** — what docker and kubectl both use — not `$COLUMNS`. `$COLUMNS` is a shell variable that is unset under `script`, in many CI/automation contexts, and does not track window resizes; a TTY width query fails on a pipe, so the single ioctl serves both as the width source and as the TTY gate. The locron-cli dependency graph already contains a crate implementing exactly this ioctl: `console` 0.16.4 (dialoguer 0.12's dependency) whose `Term::size_checked() -> Option<(u16, u16)>` performs `TIOCGWINSZ` and returns `None` when the stream is not a terminal. Verified with `cargo tree -p locron-cli -i console` (console 0.16.4 → dialoguer 0.12.0 → locron-cli) and the crate source in the local registry (size_checked at `term.rs:424`). Declaring `console` as a direct `locron-cli` dependency therefore adds zero new lockfile entries, consistent with the workspace's repeated rejection of non-essential crates (`docs/IMPLEMENTATION.md` "Thin CLI composition").
+**The terminal width mechanism is the `TIOCGWINSZ` ioctl** — what docker and kubectl both use — not `$COLUMNS`. `$COLUMNS` is a shell variable that is unset under `script`, in many CI/automation contexts, and does not track window resizes; a TTY width query fails on a pipe, so the single ioctl serves both as the width source and as the TTY gate. The `locron` dependency graph already contains a crate implementing exactly this ioctl: `console` 0.16.4 (dialoguer 0.12's dependency) whose `Term::size_checked() -> Option<(u16, u16)>` performs `TIOCGWINSZ` and returns `None` when the stream is not a terminal. Verified with `cargo tree -p locron -i console` (console 0.16.4 → dialoguer 0.12.0 → locron) and the crate source in the local registry (size_checked at `term.rs:424`). Declaring `console` as a direct `locron` dependency therefore adds zero new lockfile entries, consistent with the workspace's repeated rejection of non-essential crates (`docs/IMPLEMENTATION.md` "Thin CLI composition").
 
-**Column fitting must use character display width, not byte or character count.** East Asian wide characters (CJK, full-width forms) and many emoji occupy two columns, so `str::len()` or a character count would under-truncate or overflow by a factor of two on the very values this feature targets (Korean, Japanese, and emoji-bearing shell commands). `unicode-width` 0.2 is already in the workspace lockfile (transitively via console/clap), so the display-width calculation is also dependency-free; `console` itself gates it behind a default feature, which is why it is declared directly on `locron-cli` rather than relied on through console.
+**Column fitting must use character display width, not byte or character count.** East Asian wide characters (CJK, full-width forms) and many emoji occupy two columns, so `str::len()` or a character count would under-truncate or overflow by a factor of two on the very values this feature targets (Korean, Japanese, and emoji-bearing shell commands). `unicode-width` 0.2 is already in the workspace lockfile (transitively via console/clap), so the display-width calculation is also dependency-free; `console` itself gates it behind a default feature, which is why it is declared directly on `locron` rather than relied on through console.
 
 **Accepted resolution**: truncate only the table's final data column (TARGET in `list`) to the terminal width when stdout is a TTY, marking the cut with a trailing `…`; print full values when redirected or piped; add a `--no-trunc` rendering flag restoring full values on a terminal; keep `show` as the complete detail view; leave machine output byte-identical. Truncating only the final column preserves alignment for every earlier column and keeps NAME (the key for every other command) copyable. Middle-column truncation and a new dedicated `terminal_size` crate were rejected; applying the same rule to the `history` table is deferred until a long TRIGGER value demonstrates the need.
 
@@ -1482,3 +1484,239 @@ sequential within the integration binary. Each test either owns the bindable lis
 whole child lifetime or observes a genuinely external holder; another suite test can no longer be
 the unowned transient holder. `hold_port()` for explicit random-port strictness remains parallel and
 unchanged. No sleep, longer timeout, single-family assertion, or weakened outcome is needed.
+
+## 34. crates.io source installation and trusted publication (2026-08-25)
+
+This research supports the 2026-08-25 installation-channel amendment in `docs/SPEC.md`. It uses
+current first-party Cargo, crates.io, Rust Project, and GitHub documentation plus the official
+repositories of established Rust CLIs. It records the release design; it does not itself change
+manifests, runtime behavior, or automation.
+
+### Ecosystem and registry evidence
+
+**The install command is named after the package, not the binary target.** Cargo installs a package
+selected from crates.io and copies its executable targets into the install root's `bin` directory.
+The default source is crates.io, and only packages with executable targets can be installed
+([Cargo `install`](https://doc.rust-lang.org/cargo/commands/cargo-install.html)). Therefore a package
+named `locron-cli` with a `[[bin]]` named `locron` supports `cargo install locron-cli`, not the
+required `cargo install locron`. The user-facing package must be renamed to `locron`; retaining the
+explicit `[[bin]] name = "locron"` is harmless and keeps the executable contract obvious.
+
+`cargo install --locked` uses the `Cargo.lock` packaged with the crate instead of resolving newer
+dependencies. Cargo packages include a lockfile by default specifically so source-installed
+binaries can use it ([Cargo `package`](https://doc.rust-lang.org/cargo/commands/cargo-package.html),
+[Cargo `install`](https://doc.rust-lang.org/cargo/commands/cargo-install.html#dealing-with-the-lockfile)).
+This is the conventional secondary source-build channel: uv documents `cargo install --locked uv`,
+calls out the compatible Rust toolchain requirement, and reserves self-update for its standalone
+installer; bat likewise documents prebuilt/package-manager routes before
+`cargo install --locked bat`
+([uv installation](https://github.com/astral-sh/uv/blob/main/docs/getting-started/installation.md),
+[bat installation](https://github.com/sharkdp/bat#installation)). Locron should use the same
+presentation: installer and Homebrew first, then a clearly labeled source-build option.
+
+**Published path dependencies need registry versions.** crates.io refuses a non-development
+dependency specified only by `path`. Cargo's supported workspace form is
+`{ path = "../locron-core", version = "..." }`: local builds use the path and the packaged manifest
+uses the registry version
+([Cargo dependency locations](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations)).
+Locron's lockstep release rule is stronger than an ordinary compatible range, so every internal
+edge should use the exact workspace release, for example `version = "=0.8.0"`, rather than the
+implicit caret range from `version = "0.8.0"`. Put those path-plus-exact-version declarations in
+`[workspace.dependencies]` and inherit them in members so there is one dependency declaration per
+internal package. The root release-version update must update these exact requirements in the same
+reviewed change.
+
+The repository's dependency order is:
+
+1. `locron-core`;
+2. `locron-store` and `locron-engine` after core;
+3. `locron-server` after core and store;
+4. the renamed `locron` package after core, store, engine, and server.
+
+All five must be public because the installable package has normal (not development-only)
+dependencies on the other four. Publishing only the binary package is not possible under the
+registry's dependency rules.
+
+**Use Cargo's native workspace publisher on the supported toolchain.** Cargo 1.90 stabilized
+`cargo publish --workspace` for interdependent packages. It verifies the full selected set as if
+published, calculates dependency order, uploads ready dependency batches, and waits for uploaded
+packages to appear in the registry index before advancing. Cargo's own announcement explicitly
+states that it follows workspace dependencies in the right order and that dry-run verification
+covers the full set
+([Rust 1.90 announcement](https://blog.rust-lang.org/2025/09/18/Rust-1.90.0/#cargo-adds-native-support-for-workspace-publishing)).
+The command documentation confirms that each upload is followed by polling for index visibility;
+a timeout means the upload may already have succeeded and must be checked, not blindly retried
+([Cargo `publish`](https://doc.rust-lang.org/cargo/commands/cargo-publish.html)). Locron's Rust 1.94
+MSRV therefore supports the stable command. A hand-written publish loop and arbitrary sleeps are no
+longer justified.
+
+Workspace publication is deliberately **not atomic**. Cargo 1.90 warns that a network or server
+failure can leave a partially published workspace. The release job must preserve the Cargo output,
+report which package/version is visible, and stop downstream GitHub Release and Homebrew publication.
+It must never move or replace the tag, use `--allow-dirty`, or use `--no-verify`. An operator can
+inspect crates.io and resume only the missing packages with explicit repeated `-p` selections;
+Cargo will again order that selected subset. Already-visible versions must be treated as immutable,
+not overwritten.
+
+**Published versions are append-only release records.** The Cargo publishing guide says a published
+version cannot be overwritten and recommends a curated changelog plus a Git tag for every version.
+Yanking removes a version from new dependency resolution but does not delete its data, does not
+break an existing lockfile, and can be undone
+([Cargo publishing guide](https://doc.rust-lang.org/cargo/reference/publishing.html),
+[Cargo `yank`](https://doc.rust-lang.org/cargo/commands/cargo-yank.html)). Consequently a bad Locron
+publication is remediated by publishing a fixed new version and, only when warranted, yanking the
+bad one. A yank is not a rollback mechanism and cannot repair leaked credentials or replace source.
+
+### Trusted publishing and least privilege
+
+crates.io Trusted Publishing exchanges a GitHub Actions OIDC identity for a short-lived crates.io
+token, eliminating a long-lived registry secret. The official crates.io announcement says the first
+release of each crate must still be published manually; after that, each crate owner configures the
+trusted repository/workflow and future releases use `rust-lang/crates-io-auth-action@v1`
+([crates.io development update](https://blog.rust-lang.org/2025/07/11/crates-io-development-update-2025-07/#trusted-publishing),
+[official auth action](https://github.com/rust-lang/crates-io-auth-action)). A GitHub trusted
+publisher binds the owner or organization, repository, workflow filename, and optionally an
+environment. Locron should configure all five packages for `WhiteKiwi/locron`, `release.yml`, and a
+dedicated `crates-io` environment. The environment should allow only release tags and should use
+required-reviewer protection if that is available for the repository.
+
+The crates publication job alone needs:
+
+```yaml
+environment: crates-io
+permissions:
+  contents: read
+  id-token: write
+```
+
+GitHub documents that `id-token: write` only permits requesting an OIDC token; it does not grant
+repository write access. `contents: read` is sufficient for checkout
+([GitHub OIDC reference](https://docs.github.com/en/actions/reference/security/oidc#workflow-permissions-for-the-requesting-the-oidc-token)).
+Do not add `id-token: write` to the workflow-wide permissions. Keep `contents: write` only on the
+separate GitHub Release job. Pass `${{ steps.auth.outputs.token }}` to the publish command as
+`CARGO_REGISTRY_TOKEN`; the official action revokes its temporary token in its post step. Once one
+subsequent release has proven all five trusted-publisher bindings, enable crates.io's
+Trusted-Publishing-only mode and remove/revoke the bootstrap API token. crates.io blocks
+`pull_request_target` and `workflow_run` trusted-publishing triggers, reinforcing the existing
+release-tag trigger choice
+([2026 crates.io update](https://blog.rust-lang.org/2026/01/21/crates-io-development-update/#trusted-publishing-enhancements)).
+
+The one-time bootstrap is necessarily distinct from steady-state CI:
+
+1. Prepare a clean reviewed release commit with all five package names, metadata, exact internal
+   versions, lockfile, and tag version aligned.
+2. Run the complete package/dry-run checks below with Rust 1.94.0.
+3. From that exact commit, use a newly created narrowly scoped crates.io API token to run
+   `cargo publish --workspace --locked`. Confirm all five versions and revoke the token.
+4. Configure the same `release.yml`/`crates-io` trusted publisher on every package, then push the
+   immutable tag. The tag workflow must recognize that the bootstrap versions already exist and
+   verify them rather than attempting to overwrite them, or the bootstrap release should be
+   explicitly exempted once; all later tags publish through OIDC.
+
+The first-release exception must be documented in the operator release checklist; a permanent
+`CARGO_REGISTRY_TOKEN` repository secret is rejected.
+
+### Self-update ownership and service registration
+
+Cargo documents installation-root precedence (`--root`, `CARGO_INSTALL_ROOT`, Cargo config,
+`CARGO_HOME`, then `$HOME/.cargo`) and says it normally tracks installed packages in metadata in
+that root. It also provides `--no-track`, which deliberately disables that metadata
+([Cargo `install`](https://doc.rust-lang.org/cargo/commands/cargo-install.html)). Cargo does not
+document a stable runtime API or compiled-in variable that tells a binary which installer copied
+it. Parsing Cargo's private `.crates2.json`, assuming `~/.cargo/bin`, or looking only at the current
+runtime value of `CARGO_HOME` cannot robustly cover custom roots, moved binaries, and `--no-track`.
+
+The robust design is therefore positive standalone ownership, matching uv's established pattern:
+uv loads an installer receipt and allows self-update only when that receipt belongs to the running
+executable; absence is treated as another installation method
+([uv self-update implementation](https://github.com/astral-sh/uv/blob/main/crates/uv/src/commands/self_update.rs)).
+`install.sh` should atomically write a versioned Locron receipt under its install prefix, bind it to
+the canonical executable path, and identify `standalone` as the owner. `locron self-update` should
+proceed only when this positive receipt is valid. It may use a Cargo-root/metadata check only to
+select a more specific message, never to authorize replacement. The safe fallback for every absent
+or mismatched receipt is refusal, including custom-root and `--no-track` Cargo installs.
+
+The Cargo guidance is:
+
+```text
+cargo install --locked locron
+cargo uninstall locron
+```
+
+`--force` is unnecessary for an ordinary upgrade: Cargo reinstalls when the installed package
+version or source changes; reserve it for deliberately rebuilding the same version. A generic
+unmanaged-install refusal should still mention the Cargo update command so a Cargo user receives
+the exact remedy even when Locron cannot prove the specific manager.
+
+Self-update ownership and service ownership must remain separate checks. Absence of the standalone
+receipt refuses only binary replacement. Cargo does not install or supervise the Locron daemon or
+dashboard, so `locron service install` and `locron dashboard enable` remain allowed. The existing
+package-manager service marker continues to block those operations only for integrations such as
+Homebrew that actually own their service lifecycle. Reusing one broad “managed install” predicate
+for both concerns would incorrectly disable Cargo users' service registration.
+
+### Package metadata, documentation, and verification recommendation
+
+Set shared crates.io metadata deliberately: `license`, `repository`, `readme`, `rust-version`, and
+concise descriptions are required or strongly recommended; add at most five valid keywords and
+categories such as `command-line-utilities`. Cargo documents that crates.io requires a description
+and license, renders the declared README on the crate page, limits keywords/categories, and links
+to docs.rs automatically when no separate documentation URL is supplied
+([Cargo manifest reference](https://doc.rust-lang.org/cargo/reference/manifest.html#the-package-section)).
+Do not add a redundant homepage that merely repeats the repository URL. Restrict every package to
+`publish = ["crates-io"]` and keep the common root README and dual-license files in every generated
+package. Internal crates should describe their Locron role and should not claim a separately stable
+public-library API.
+
+README and installation docs should show the channels in this order:
+
+1. standalone installer (general users, prebuilt, service registration available);
+2. Homebrew (package-manager lifecycle);
+3. `cargo install --locked locron` (Rust 1.94+ source build, no automatic service registration);
+4. Cargo update/removal commands and an explicit warning that `locron self-update` refuses it;
+5. optional `locron service install` / `locron dashboard enable` after Cargo installation.
+
+Before any upload, require a clean tree and run at least:
+
+```text
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+cargo package --workspace --locked
+cargo publish --workspace --dry-run --locked
+```
+
+Also run `cargo package -p <package> --list` for all five packages and inspect the generated
+archives for the intended README/licenses, source, manifest normalization, lockfile, and absence of
+state files, tokens, build outputs, and unrelated docs. Cargo's package command rewrites the
+manifest, includes `Cargo.lock`, records best-effort VCS information, extracts the archive, and
+builds it from scratch; `--no-verify` defeats the most important source-package check
+([Cargo `package`](https://doc.rust-lang.org/cargo/commands/cargo-package.html)).
+
+The release workflow should add a Rust-1.94.0 `publish-crates` job after the complete platform build
+matrix and before the existing GitHub Release/Homebrew job. It first asserts that the tag, workspace
+version, `locron --version`, lockfile package versions, and changelog agree; performs the workspace
+dry run without credentials; then obtains the OIDC token and runs
+`cargo publish --workspace --locked`. Downstream publication depends on its success. After index
+visibility, verify the exact released source channel in a temporary root with
+`cargo install --locked --root <temp> locron --version <exact-version>`, run the installed
+`locron --version`, exercise Cargo self-update refusal plus daemon/dashboard registration behavior,
+and remove the temporary root. This proves the registry artifact users actually receive, not only
+the workspace checkout.
+
+### Alternatives rejected
+
+- Keep the package name `locron-cli`: rejected because it exposes the wrong install command.
+- Publish only `locron`: rejected because its four normal path dependencies must resolve from the
+  same registry.
+- Maintain a custom dependency-order shell loop with sleeps: rejected because stable Cargo 1.90+
+  now owns ordering, whole-workspace verification, and index polling.
+- Treat workspace publication as transactional: rejected because Cargo explicitly documents
+  partial publication on transport or server failure.
+- Store a permanent crates.io API token in GitHub: rejected after the one-time bootstrap because
+  official short-lived OIDC trusted publishing is available.
+- Detect Cargo exclusively from `~/.cargo/bin`, `CARGO_HOME`, or `.crates2.json`: rejected because
+  Cargo supports configured/custom roots and `--no-track`, and the private metadata format is not a
+  documented runtime contract.
+- Block service/dashboard registration whenever self-update is blocked: rejected because Cargo
+  owns only the binary installation, not Locron's per-user operating-system services.

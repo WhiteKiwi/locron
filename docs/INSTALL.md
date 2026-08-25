@@ -48,6 +48,30 @@ Set `LOCRON_VERSION` to pin a version, `LOCRON_INSTALL_DIR` to install elsewhere
 and keeps the install successful; retry with `locron service install`). The script never edits your
 shell configuration — it prints the `PATH` line to add if one is needed.
 
+The installer writes an owner-only receipt beside the binary. That receipt positively identifies
+the standalone channel to `locron self-update`. An older script installation can adopt it by
+rerunning the installer once.
+
+## Cargo (Rust users)
+
+Requires Rust 1.94 or newer and builds from source:
+
+```sh
+cargo install --locked locron
+```
+
+Cargo installs only the `locron` executable. It does not register a daemon or dashboard service;
+those remain available when wanted:
+
+```sh
+locron service install
+locron dashboard enable
+```
+
+Update with `cargo install --locked locron` and remove with `cargo uninstall locron`.
+`locron self-update` refuses Cargo installations before network access because Cargo owns the
+binary lifecycle.
+
 ## Debian, Ubuntu, Fedora, RHEL
 
 Download the package for your architecture from
@@ -73,8 +97,8 @@ tar -xzf locron-v<version>-<target>.tar.gz
 sudo mv locron-v<version>-<target>/locron /usr/local/bin/
 ```
 
-Installations from tarballs update themselves with `locron self-update` (see
-[Updating](#updating)).
+Manually copied tarballs are not owned by the standalone installer, so `locron self-update`
+refuses them. Download and replace the archive again to update.
 
 ## From source
 
@@ -82,7 +106,7 @@ Requires Rust 1.94 or newer:
 
 ```sh
 git clone https://github.com/WhiteKiwi/locron.git && cd locron
-cargo build --release -p locron-cli
+cargo build --release -p locron
 sudo cp target/release/locron /usr/local/bin/
 ```
 
@@ -94,7 +118,9 @@ The pinned toolchain in `rust-toolchain.toml` selects the right Rust version aut
 | Installed with | Update with |
 | --- | --- |
 | Homebrew | `brew upgrade locron` |
-| Install script or tarball | `locron self-update` |
+| Install script | `locron self-update` |
+| Cargo | `cargo install --locked locron` |
+| Tarball / source | Rebuild or replace the binary through the same channel |
 | `.deb` / `.rpm` | Install the new package |
 
 `locron self-update` verifies the checksum and replaces the binary atomically. A running
@@ -107,8 +133,8 @@ service registration is refreshed, and why package-managed installs refuse self-
 - **Homebrew:** `brew services stop locron` (if running), then `brew uninstall locron`. Remove the
   tap with `brew untap whitekiwi/tap` if nothing else uses it.
 - **Install script:** `locron service uninstall` stops the daemon and removes the registration,
-  then delete the binary itself (e.g. `rm ~/.local/bin/locron`). The install script never writes
-  anywhere else.
+  then delete the binary and its sibling `.locron-install-receipt-v1`.
+- **Cargo:** `locron service uninstall` if registered, then `cargo uninstall locron`.
 - **Debian / RPM:** `sudo dpkg -r locron` or `sudo rpm -e locron`.
 - **Tarball / source:** `locron service uninstall` (if you registered it), then remove the binary
   from `$PATH`.

@@ -11,6 +11,22 @@ documentation. CI and test-only changes are omitted — the commit history is th
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-25
+
+### Added
+
+- Rust users can install and update Locron from crates.io with
+  `cargo install --locked locron`. The five workspace packages publish together at one exact
+  version, and release automation verifies the registry installation before completing a release.
+
+### Changed
+
+- Built-in self-update now requires the ownership receipt written by the standalone installer.
+  Cargo, Homebrew, source, manually copied, and system-package installations remain owned by their
+  respective package managers and receive actionable update guidance instead.
+- Completed checklist history now lives in a dedicated archive, while deferred product ideas are
+  tracked separately from the active implementation checklist.
+
 ## [0.8.0] - 2026-08-25
 
 ### Added
@@ -203,7 +219,8 @@ Initial release.
 - **Distribution** — Homebrew tap, `.deb` and `.rpm` packages, and pre-built tarballs for macOS and
   Linux on both x86_64 and aarch64.
 
-[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/WhiteKiwi/locron/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/WhiteKiwi/locron/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/WhiteKiwi/locron/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/WhiteKiwi/locron/compare/v0.5.0...v0.6.0

@@ -2,9 +2,9 @@
 
 ## Status and authority
 
-This document plans the dashboard surface against the frozen `SPEC.md` (this directory), which is
-phase 1 of the deferred product roadmap in `docs/TODO.md`. The frozen `docs/SPEC.md` is not
-amended: per the roadmap, this phase does not change its exclusions. Research evidence and rejected
+This document plans the shipped dashboard surface against the frozen `SPEC.md` (this directory).
+Its post-milestone delivery does not retroactively amend the exclusions in the root
+`docs/SPEC.md`. Research evidence and rejected
 alternatives are recorded in `docs/FINDINGS.md` §14 (security, transport, framework — including the
 2026-08-24 default-port verification) and §16 (UI and API design); this document records the
 accepted implementation choices and their trade-offs, including the 2026-08-24 product decisions.
@@ -15,13 +15,13 @@ Durable-structure changes (workspace membership, the redaction boundary) update
 
 ## Architecture and approach
 
-The surface is a new workspace library crate, `locron-server`, composed by `locron-cli` through the
+The surface is a new workspace library crate, `locron-server`, composed by `locron` through the
 `locron dashboard` command family:
 
 - `locron-server` depends on `locron-core` and `locron-store` only. It never depends on
-  `locron-cli` and never talks to SQLite tables directly — every read and mutation goes through the
+  `locron` and never talks to SQLite tables directly — every read and mutation goes through the
   durable application commands, exactly like the CLI and MCP surfaces.
-- `locron-cli` remains the composition root: it owns argument parsing, human/machine rendering,
+- `locron` remains the composition root: it owns argument parsing, human/machine rendering,
   state-path discovery, the service registration through the existing service-manager port, and the
   `locron dashboard` wiring that constructs the store and starts the server. The server is a
   library; the distributable binary remains the single `locron`.
@@ -35,7 +35,7 @@ any HTTP surface.
 ### Redaction boundary move
 
 The central redaction helpers (`redacted_job`, `redact_definition`, `redacted_observable_run`,
-`redacted_run`, `redacted_settings_value`) currently live in `locron-cli/src/main.rs`. A server
+`redacted_run`, `redacted_settings_value`) currently live in `crates/locron-cli/src/main.rs`. A server
 crate cannot depend on the CLI, and the desktop surface later needs the same boundary, so the
 redaction functions move to `locron-core` as the shared redaction boundary. The CLI keeps its
 rendering and calls the core boundary; its contract tests stay green without output changes. This
@@ -102,15 +102,15 @@ the router and runs it; the CLI owns startup output and exit codes.
 No automated dependency-direction check existed when the plan was written; the step-2 "enforcement
 check" update materialized as `scripts/check-dependency-direction.sh` (a `cargo tree`-based check
 that `locron-server` depends only on `locron-core`/`locron-store` among workspace crates and that
-only `locron-cli` depends on it), wired into the CI test matrix as the "Dependency direction"
+only `locron` depends on it), wired into the CI test matrix as the "Dependency direction"
 step. The latest-stable clippy additionally introduced the `map(<f>).unwrap_or(false)` lint on
-pre-existing locron-cli code; the three occurrences were rewritten as the equivalent
+pre-existing `locron` package code; the three occurrences were rewritten as the equivalent
 `is_ok_and(...)` (behavior unchanged) to keep `clippy --workspace --all-targets -- -D warnings`
 green on both toolchains.
 
 ### Accepted: dashboard service registration
 
-The persistent path reuses the existing service-manager port in `locron-cli` (launchd and
+The persistent path reuses the existing service-manager port in `locron` (launchd and
 systemd-user backends plus the deterministic fake, built for `locron service`), adding a second
 registration target for the dashboard:
 
@@ -466,7 +466,7 @@ Implementation notes (step 9):
    and `docs/FINDINGS.md` §14 are already frozen/recorded).
 2. Add the `locron-server` member to the workspace with the accepted dependencies; update the
    dependency-direction enforcement check; confirm one `locron` binary and no new binary.
-3. Move the redaction boundary from `locron-cli` to `locron-core` with no output change; CLI
+3. Move the redaction boundary from `locron` to `locron-core` with no output change; CLI
    contract tests must pass unchanged.
 4. Implement the middleware stack and token file: loopback bind/refusal, Host allowlist, Origin
    check, token acceptance (`Authorization` header plus entry-page paste), session and CSRF

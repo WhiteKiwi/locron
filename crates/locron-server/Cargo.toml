@@ -4,6 +4,12 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
+publish.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Loopback HTTP management and viewer surface for locron"
 
 [dependencies]
@@ -13,8 +19,8 @@ base64.workspace = true
 cookie = "0.18"
 futures-util.workspace = true
 getrandom = "0.4"
-locron-core = { path = "../locron-core" }
-locron-store = { path = "../locron-store" }
+locron-core.workspace = true
+locron-store.workspace = true
 reqwest.workspace = true
 rust-embed = { version = "8.12", features = ["mime-guess"] }
 serde.workspace = true

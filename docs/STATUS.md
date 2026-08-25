@@ -8,8 +8,10 @@ completion criterion to exact automated evidence.
 
 ## Verified implementation
 
-The repository provides one Rust binary assembled from the four approved crates. The current
-revision implements the complete milestone-1 surface on macOS arm64:
+The repository provides one Rust binary from the `locron` package, composed with four internal
+library packages. The current revision also prepares all five exact-version packages for the
+secondary crates.io source-install channel; the first external registry bootstrap remains a release
+operation. The implementation provides the complete milestone-1 surface on macOS arm64:
 
 - normalized job CRUD, schedule preview, enable/disable/remove, manual run, cancellation, history,
   logs/follow, `why`, diagnostics, typed configuration, export/import, and recursive CLI help;
@@ -52,6 +54,6 @@ job recorded `uname -a` and `rustc -vV`, then passed format, Clippy with `-D war
 tests, including the process-tree, service-lifetime, and cross-process crash fixtures. GitGuardian
 also passed. This completes all 16 milestone-1 criteria mapped in `ACCEPTANCE.md`.
 
-Package publication and the HTTP viewer/API, MCP, desktop, and Mac App Store phases remain separate
-post-milestone programs. They are intentionally excluded by `SPEC.md` and require their own reviewed
-specifications before implementation or publication.
+The loopback dashboard/API and MCP surface have shipped as optional clients of the same application
+boundary. Package publication remains a separate release concern; desktop and Mac App Store ideas
+are deferred in `docs/BACKLOG.md` and require reviewed specifications before implementation.

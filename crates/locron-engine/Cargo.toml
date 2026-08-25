@@ -4,13 +4,19 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme.workspace = true
+publish.workspace = true
+keywords.workspace = true
+categories.workspace = true
 description = "Daemon runtime and target execution engine for locron"
 
 [dependencies]
 async-trait.workspace = true
 crc32fast.workspace = true
 futures-util.workspace = true
-locron-core = { path = "../locron-core" }
+locron-core.workspace = true
 nix.workspace = true
 reqwest.workspace = true
 serde.workspace = true
