@@ -9,9 +9,10 @@ completion criterion to exact automated evidence.
 ## Verified implementation
 
 The repository provides one Rust binary from the `locron` package, composed with four internal
-library packages. The current revision also prepares all five exact-version packages for the
-secondary crates.io source-install channel; the first external registry bootstrap remains a release
-operation. The implementation provides the complete milestone-1 surface on macOS arm64:
+library packages. All five exact-version packages are published at 0.9.0 for the secondary
+crates.io source-install channel, and future releases are restricted to the repository's OIDC
+trusted-publishing path. The implementation provides the complete milestone-1 surface on macOS
+arm64:
 
 - normalized job CRUD, schedule preview, enable/disable/remove, manual run, cancellation, history,
   logs/follow, `why`, diagnostics, typed configuration, export/import, and recursive CLI help;
@@ -55,5 +56,17 @@ tests, including the process-tree, service-lifetime, and cross-process crash fix
 also passed. This completes all 16 milestone-1 criteria mapped in `ACCEPTANCE.md`.
 
 The loopback dashboard/API and MCP surface have shipped as optional clients of the same application
-boundary. Package publication remains a separate release concern; desktop and Mac App Store ideas
-are deferred in `docs/BACKLOG.md` and require reviewed specifications before implementation.
+boundary. Release run
+[32811493858](https://github.com/WhiteKiwi/locron/actions/runs/32811493858) published v0.9.0 through
+the all-present crates.io gate, verified `cargo install --locked locron`, created the GitHub Release,
+and completed the Homebrew update. The temporary bootstrap token was revoked, and all five packages
+now require trusted publishing through `WhiteKiwi/locron`, `release.yml`, and the `crates-io`
+environment.
+
+The first push CI run after that release,
+[32811491695](https://github.com/WhiteKiwi/locron/actions/runs/32811491695), exposed a false archive
+inspection failure: `tar -tf | grep -q` can return failure under the hosted runner's `pipefail` even
+after finding the server asset. The corrective tree inspects the already materialized archive
+listing; local workflow and archive checks pass, while the complete hosted rerun remains pending
+publication by the parent session. Desktop and Mac App Store ideas are deferred in
+`docs/BACKLOG.md` and require reviewed specifications before implementation.

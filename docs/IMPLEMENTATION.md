@@ -1033,3 +1033,14 @@ package and publish dry-runs on Rust 1.94, per-package file/archive inspection, 
 installation into a temporary root where possible, self-update ownership tests, CLI help/contract
 tests, Markdown link/reference checks, and `git diff --check`. No real crates.io upload is part of
 implementation verification.
+
+### Source-package archive inspection follow-up (2026-08-25)
+
+The first hosted source-package run proved that piping `tar -tf` directly into `grep -q` is unsafe
+under the runner's `bash -o pipefail`: once `grep` finds the expected member and exits, `tar` can
+receive a broken pipe and make the successful inspection fail. Archive listings are already
+materialized into one file per package for the other checks, so the server asset assertion must
+read that saved listing as well. This keeps the check exact, avoids suppressing genuine `tar`
+failures, and makes local and hosted behavior deterministic. Verification reruns the failed hosted
+job on the corrective commit and requires the source-package job plus the complete CI workflow to
+pass.

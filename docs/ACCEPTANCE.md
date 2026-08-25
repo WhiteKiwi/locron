@@ -27,6 +27,16 @@ executed all workspace targets without filtering the process-lifetime or crash s
 | 16 | Simulate mutations/manual runs and explain state without debug logs. | `locron/acceptance_matrix: manual_run_dry_run_reports_eligibility_without_durable_mutation`; `locron/cli: add_dry_run_is_non_mutating_and_machine_readable`; `locron/acceptance_matrix: scheduled_history_show_why_and_logs_render_available_run_facts` | **PASS** local and official matrix |
 
 Milestone-1 implementation and its required platform evidence are complete. The optional
-dashboard/API and MCP surfaces have since shipped. The reviewed crates.io source-package and
-trusted-publication path is prepared; its irreversible first registry bootstrap remains a release
-operation. Desktop and App Store ideas are deferred in `docs/BACKLOG.md`.
+dashboard/API and MCP surfaces have since shipped. All five crates.io packages are published at
+0.9.0; the temporary bootstrap token was revoked, and each package requires trusted publishing from
+`WhiteKiwi/locron` through `release.yml` and the `crates-io` environment. Release run
+[32811493858](https://github.com/WhiteKiwi/locron/actions/runs/32811493858) passed the all-present
+publication path, an exact-version `cargo install --locked locron`, GitHub Release publication, and
+the Homebrew update.
+
+Push CI run [32811491695](https://github.com/WhiteKiwi/locron/actions/runs/32811491695) then found a
+hosted-shell false negative in source-package inspection rather than a missing archive member. The
+corrective tree reads the saved `locron-server` archive listing instead of a `tar -tf | grep -q`
+pipeline; local syntax, static, and archive verification pass, and the full hosted corrective rerun
+remains pending publication by the parent session. Desktop and App Store ideas are deferred in
+`docs/BACKLOG.md`.

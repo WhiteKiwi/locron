@@ -11,8 +11,8 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
 
 Authorized by the 2026-08-25 installation-channel amendment in `docs/SPEC.md`, researched in
 `docs/FINDINGS.md` §34, and planned in `docs/IMPLEMENTATION.md` “crates.io source installation and
-trusted publication”. The implementation prepares the repository and steady-state OIDC release
-path; it does not perform the irreversible first crates.io upload.
+trusted publication”. Version 0.9.0 completed the one-time registry bootstrap and the all-present
+branch of the release path, with steady-state OIDC publication configured for later versions.
 
 - [x] Complete and review the product contract, ecosystem research, accepted package graph,
   installation-ownership boundary, CI/CD design, and this verified checklist before implementation.
@@ -84,13 +84,30 @@ path; it does not perform the irreversible first crates.io upload.
   local Markdown links, and diff checks pass. Clean-copy workspace package and publish dry-runs
   verify all five crates; each archive carries README plus both licenses, the server carries the
   committed frontend dist, normalized internal requirements are exact, and no upload occurred.
-- [ ] At the first crates.io-backed release, bootstrap all five packages manually from the exact
+- [x] At the first crates.io-backed release, bootstrap all five packages manually from the exact
   clean release commit with a narrow temporary token, revoke it, configure each trusted publisher
   for the `crates-io` environment, then push the immutable tag and confirm the OIDC/all-present
   release path plus `cargo install --locked locron`.
   **Verify:** all five exact versions are visible, the temporary token is revoked, trusted-publisher
   bindings are recorded, the tag workflow and downstream GitHub/Homebrew publication are green, and
   a temporary-root registry install reports the tagged version.
+  **Evidence:** all five packages are visible at 0.9.0; the bootstrap token was revoked locally and
+  on crates.io; all five packages bind `WhiteKiwi/locron`, `release.yml`, and the `crates-io`
+  environment with trusted publishing required for new versions. Release run
+  [32811493858](https://github.com/WhiteKiwi/locron/actions/runs/32811493858) passed the all-present
+  publication gate, exact-version Cargo installation, GitHub Release publication, and Homebrew
+  update.
+- [x] Fix the hosted source-package archive assertion to inspect the already materialized server
+  package listing instead of piping `tar -tf` into `grep -q` under `pipefail`.
+  **Verify:** workflow syntax/static checks pass locally and the assertion reads the saved server
+  listing without a pipeline.
+  **Evidence:** YAML parsing, actionlint, a package-archive fixture, the static source-package
+  contract, and `git diff --check` pass on the corrective tree.
+- [ ] Confirm the complete hosted CI workflow on the corrective commit reports the source-package
+  job and every other job green.
+  **Verify:** record the successful corrective workflow run after the parent session publishes the
+  commit; failed run [32811491695](https://github.com/WhiteKiwi/locron/actions/runs/32811491695)
+  remains the evidence that motivated the deterministic listing-file check.
 
 ## Usage measurement backlog (2026-08-23)
 

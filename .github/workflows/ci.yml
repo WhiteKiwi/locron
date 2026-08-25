@@ -172,6 +172,6 @@ jobs:
               exit 1
             fi
           done
-          tar -tf "target/package/locron-server-${VERSION}.crate" | grep -q '/dist/index.html$'
+          grep -q '/dist/index.html$' "$RUNNER_TEMP/locron-server.files"
       - name: Rehearse workspace publication
         run: cargo publish --workspace --dry-run --locked
