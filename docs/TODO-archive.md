@@ -2197,3 +2197,11 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   **Evidence:** all three local quality-gate commands passed; the complete 13-job CI matrix,
   including both macOS x86_64 toolchains, passed without a retry in
   [run 32743116590](https://github.com/WhiteKiwi/locron/actions/runs/32743116590).
+
+## Usage measurement crates.io activation (2026-08-25)
+
+- [x] When locron is published to crates.io, confirm that the script's crates.io section switches
+  automatically and record the first real number.
+  **Evidence:** `sh scripts/usage.sh --json` reported `crates_io: 1` at 2026-08-25 05:47 UTC after
+  the 0.9.0 registry bootstrap, confirming that the live crates.io section switched from `N/A` to
+  a numeric trailing-90-day count.

@@ -113,13 +113,6 @@ branch of the release path, with steady-state OIDC publication configured for la
   including package/archive inspection, workspace publication dry-run, installer checks, all lint
   jobs, and the eight platform/toolchain test jobs.
 
-## Usage measurement backlog (2026-08-23)
-
-Follow-ups (open, not implemented here):
-
-- [ ] A scheduled snapshot job for measurement history becomes a drop-in via `--json`; adopt it only when the daily commit noise is worth the history.
-- [ ] When locron is published to crates.io, the script's crates.io section switches automatically; record the first real numbers in this checklist.
-
 ## Terminal-width list table truncation backlog (2026-08-24)
 
 Follow-ups (open, not implemented here):

@@ -26,6 +26,14 @@ implementation checklist to `docs/TODO.md` before changing code.
   windows, output contract, retention interactions, performance bounds, and redaction/privacy
   behavior before implementation planning begins.
 
+## Distribution usage history
+
+- Consider persisting dated output from `scripts/usage.sh --json` only when historical trends are
+  worth the repository noise and write permissions. The existing weekly read-only workflow checks
+  the live snapshot but deliberately does not commit a history file.
+- Reactivation must choose a retention location and cadence, account for third-party API failures
+  and count resets, and avoid making live analytics a push or release gate.
+
 ## Desktop application and Mac App Store
 
 - Consider a desktop application as a client of the existing scheduler and application contracts;
