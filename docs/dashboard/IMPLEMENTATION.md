@@ -939,3 +939,49 @@ special layout assumptions.
 - Rebuild the committed dist twice, run strict typecheck, frontend tests, Rust asset tests, full
   workspace fmt/clippy/tests, and browser-check Settings review/apply/discard, pretty JSON in both
   themes, and Recent runs pointer/keyboard behavior at desktop and narrow widths.
+
+## Disabled-job completeness and integrated dashboard QA (2026-08-25)
+
+### Complete current-job source
+
+Jobs changes its collection request from the API's enabled-only default to the existing complete
+current-job form, using the established string boolean query. The route continues to search and apply
+state filters locally so typing remains immediate and state changes need only one collection refresh.
+No server default, store query, persistence rule, or CLI behavior changes.
+
+Run history uses the same complete current-job collection solely for `job_id` to current-name
+enrichment. The durable runs query, its literal server-side partial search, trailing debounce,
+pagination, stale-response protection, and removed-job fallback remain unchanged. Keeping this second
+consumer explicit prevents disabled schedules from degrading otherwise-current run labels.
+
+### State-transition behavior
+
+List action-menu enable/disable posts through the existing mutation endpoint, keeps the Jobs hash
+route and active search/state controls, then refetches the complete collection. The shared row-click
+guard rejects any interactive click target, including a menu item portalled outside the row DOM;
+ordinary unused row space still delegates to the native row link. Under `All states`,
+the row updates in place. Under a matching single-state filter it appears, and under the opposite
+filter it leaves the result set with the existing stable empty-row treatment when necessary. The row
+action remains isolated from whole-row navigation. Detail enable/disable continues to reload the same
+detail route from durable state.
+
+Disabled jobs do not need a preview request to claim a runnable next occurrence. The Jobs facts pass
+records their next value as disabled/not scheduled while retaining last-run history; enabled jobs keep
+the existing preview request. This avoids displaying a future occurrence that the daemon will not
+admit while the schedule is disabled.
+
+### Verification strategy
+
+- Component tests require the exact complete-view Jobs request, cover enabled and disabled fixture
+  rows under all three state filters plus partial name/tag search, and prove disable/enable refreshes
+  without row navigation while preserving the selected filters. Row-navigation tests explicitly cover
+  portalled interactive targets in addition to ordinary interactive descendants.
+- Run history tests require complete-view name enrichment and retain the 250 ms trailing-debounce,
+  immediate Enter, partial-name, stale-response, literal-character, pagination, and fallback cases.
+- Static embedded-asset contracts pin both complete-view consumers and the disabled-next-occurrence
+  presentation, followed by deterministic production builds and built-JavaScript syntax validation.
+- The authenticated live QA matrix covers Jobs, Job detail, Run history, Run detail, Settings,
+  Diagnostics health loading, action menus, whole-row navigation, desktop/mobile layouts, light/dark themes, result
+  counts, empty states, and browser errors/warnings. QA state transitions are restored before handoff.
+- Finish with frontend typecheck/tests, Rust asset/server contracts, workspace fmt, warnings-denied
+  workspace clippy, and full workspace all-target tests before commit and server restart.

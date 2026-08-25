@@ -401,3 +401,20 @@ None after `docs/FINDINGS.md` §14; implementation choices and their trade-offs 
     status slot rather than participating in the form-field baseline. At narrow widths the fields
     stack in reading order with their labels and help intact, without introducing horizontal page
     overflow.
+
+## 16. Disabled-job visibility and functional QA amendment (2026-08-25)
+
+44. The Jobs route treats `All states` literally: every current enabled or disabled job is available
+    to the list, partial text search, and the state filter. `Enabled` shows only enabled jobs and
+    `Disabled` shows only disabled jobs. Changing a job state from the list refreshes that same route
+    without silently navigating away; the changed row stays visible or leaves the current result set
+    only when the selected state/search filter requires it. A disabled job remains reachable by its
+    native detail link and can be enabled again.
+45. Run history continues to show the current job name for runs whose job is disabled, so disabling a
+    schedule does not degrade durable-history labels or partial job-name search. Removed-job history
+    keeps the existing immutable/fallback identity behavior.
+46. The live dashboard is acceptance-checked as an integrated operator workflow, not only as isolated
+    components. Jobs list/search/state transitions, list and detail enable/disable, row navigation,
+    Run history trailing partial search, Settings aggregate review/discard, Diagnostics health load,
+    responsive layouts, both themes, authentication, and clean browser logs all have recorded pass or
+    explicit failure evidence before the review server is handed back.

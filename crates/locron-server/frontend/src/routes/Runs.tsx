@@ -46,7 +46,7 @@ export function Runs() {
         if (requestedQuery) params.set("q", requestedQuery);
         const [{ data }, jobs] = await Promise.all([
           api.get<SearchPage>(`/api/v1/runs?${params}`, { signal: controller.signal }),
-          api.get<Job[]>("/api/v1/jobs", { signal: controller.signal }).catch((issue) => {
+          api.get<Job[]>("/api/v1/jobs?all=1", { signal: controller.signal }).catch((issue) => {
             if ((issue as Error).name === "AbortError") throw issue;
             return { data: [], warnings: [] };
           }),

@@ -1327,3 +1327,41 @@ would fix only this copy length and would regress when help wraps. The stable so
 toolbar field grid with explicit label, control, and help rows; both fields occupy the first two
 rows, Search alone occupies the help row, and the result status is a separate aligned area. Mobile
 switches the grid back to one column so each field keeps its ordinary label/control/help flow.
+
+## 30. Disabled-job disappearance and cross-route QA inventory (2026-08-25)
+
+The defect reproduces against the authenticated review fixture. The Jobs route initially reports
+three enabled jobs. Disabling `api-heartbeat` succeeds durably, but returning to Jobs with `All states`
+selected reports only two results and omits the disabled job. The frontend then cannot produce a
+`Disabled` result because its client-side filter only sees the already-restricted response.
+
+The API contract is intentional and already exposes the required complete view. `GET /api/v1/jobs`
+lists enabled jobs by default, matching the CLI's ordinary `list`, while the existing string-flag
+query `GET /api/v1/jobs?all=1` passes `true` to the store and returns current enabled and disabled
+records. Jobs currently requests the default endpoint and then presents an `All states`/`Enabled`/
+`Disabled` client filter, so the UI label and its data source contradict each other. The accepted fix
+is to use the complete-view endpoint for operator surfaces that must name or filter current disabled
+jobs; the API default remains unchanged for compatibility.
+
+Run history independently requests the same default Jobs endpoint to map durable `job_id` values to
+current names. Consequently, runs belonging to a disabled job can fall back to a shortened ID even
+though the current job record and name still exist. Run history should use the same complete current-
+job view for enrichment. This does not invent names for removed jobs and does not alter server-side
+literal history search, pagination, or immutable run identity.
+
+The state mutation flow already refreshes Jobs in place when no run ID is returned, but live QA found
+a second defect: choosing `…` → `Disable` immediately navigates to that job's detail route. Radix
+portals the menu DOM outside the row while React still bubbles the synthetic click through the row's
+component ancestry. The shared row guard currently treats an interactive target outside the row DOM
+as unused row space, so it activates the row link. Interactive descendants and portalled interactive
+targets must both suppress row navigation. Once both fixes land, `All states` retains the changed row,
+`Disabled` gains it, and `Enabled` excludes it. QA must also prove the inverse transition,
+preservation of search/filter state, direct detail reachability, and action-menu isolation. The review
+fixture is restored after mutation checks so the user does not inherit test-only state.
+
+The broader functional pass should prioritize connected workflows where isolated tests can miss
+contract mismatches: authentication and asset freshness; Jobs state/search/navigation/action menus;
+Run history debounce, partial search, names, and pagination; job/run detail JSON and row navigation;
+Settings review/discard and theme locality; Diagnostics health loading; desktop/mobile overflow; and browser
+error/warning logs. Destructive Remove and long-running/cancellation scenarios remain covered by the
+automated server/CLI contract suites rather than mutating the user's live review fixture.

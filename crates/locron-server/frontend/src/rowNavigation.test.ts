@@ -23,9 +23,9 @@ describe("safe whole-row pointer navigation", () => {
     const menu = document.createElement("div"); menu.setAttribute("role", "menuitem"); row.replaceChildren(menu); expect(shouldNavigateRow(event(menu, row), "")).toBe(false);
   });
 
-  it("does not treat an interactive ancestor outside the row as an embedded control", () => {
+  it("ignores a portalled interactive target outside the row DOM", () => {
     const outside = document.createElement("button"), row = document.createElement("span"); outside.append(row);
-    expect(shouldNavigateRow(event(row, row), "")).toBe(true);
+    expect(shouldNavigateRow(event(outside, row), "")).toBe(false);
     vi.restoreAllMocks();
   });
 });

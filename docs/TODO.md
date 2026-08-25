@@ -1395,6 +1395,38 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   The latest embedded binary serves HTTP 200 at `http://127.0.0.1:10824/`; browser error/warning
   logs are empty.
 
+### Disabled-job visibility and integrated functional QA (2026-08-25)
+
+- [x] Reproduce the disabled-job disappearance, amend observable behavior, record the API-contract
+  diagnosis, accept the implementation approach, and review this checklist before code changes.
+  **Verify:** `docs/dashboard/SPEC.md` criteria 44–46 cover complete state filtering, disabled-job Run
+  history names, and live workflow QA; `docs/FINDINGS.md` §30 records a 3→2 live reproduction and the
+  existing `all=1` contract; `docs/dashboard/IMPLEMENTATION.md` records consumers, transitions,
+  disabled next-occurrence behavior, and verification without changing API/store defaults.
+- [x] Make Jobs and Run history consume the complete current-job collection and keep list state
+  transitions on the current route.
+  **Verify:** component tests assert the exact complete-view request, all/enabled/disabled counts,
+  partial search, list disable/enable refresh without navigation, preserved active filters, disabled
+  next-occurrence copy, and current-name enrichment for disabled-job runs.
+  **Evidence:** focused Jobs, Runs, and row-navigation tests pass 23/23. Jobs and Run history request
+  `/api/v1/jobs?all=1`; component coverage proves complete state filtering, name/description/tag
+  partial search, disabled next-occurrence suppression with last history retained, state transitions
+  without hash/filter reset, disabled-run name enrichment, and portalled action-menu isolation.
+- [ ] Rebuild embedded assets and complete the automated regression gate.
+  **Verify:** strict TypeScript, all frontend tests, embedded asset/server contracts, built-JavaScript
+  syntax, two byte-identical production builds, fmt, warnings-denied workspace clippy, and full
+  workspace all-target tests pass with `git diff --check` clean.
+  **Evidence so far:** TypeScript, all 61 frontend tests, all 15 embedded asset tests, built-JavaScript
+  syntax, fmt, warnings-denied workspace all-target clippy, and two byte-identical production builds
+  pass. The full workspace all-target test run reached `service_lifetime` with every completed suite
+  green but was stopped for the user's reboot, so no final success status is claimed.
+- [ ] Execute and record the authenticated functional browser matrix, restore fixture state, commit,
+  and restart the review server from the new embedded binary.
+  **Verify:** desktop and 390 px browser QA passes Jobs partial/state search, list/detail state toggles,
+  actions and row links, Run history debounce/name search and row entry, Run detail, Settings review/
+  discard and themes, Diagnostics health loading, result/empty states, HTTP 200, and zero browser warnings or
+  errors; the fixture ends with its original enabled jobs and the worktree is clean after commit.
+
 ## Ordered deferred product roadmap
 
 

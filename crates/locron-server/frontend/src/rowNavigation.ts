@@ -6,8 +6,7 @@ type RowEvent = { defaultPrevented: boolean; button: number; metaKey: boolean; c
 export function shouldNavigateRow(event: RowEvent, selection = globalThis.getSelection?.()?.toString() ?? "") {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || selection) return false;
   if (!(event.target instanceof Element) || !(event.currentTarget instanceof Element)) return false;
-  const interactive = event.target.closest(interactiveSelector);
-  return !interactive || !event.currentTarget.contains(interactive);
+  return event.target.closest(interactiveSelector) === null;
 }
 
 export function navigateRow(event: ReactMouseEvent<HTMLElement>) {

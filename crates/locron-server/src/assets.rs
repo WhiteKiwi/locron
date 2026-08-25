@@ -464,6 +464,27 @@ mod tests {
     }
 
     #[test]
+    fn disabled_jobs_stay_visible_named_and_non_runnable() {
+        let jobs = include_str!("../frontend/src/routes/Jobs.tsx");
+        let runs = include_str!("../frontend/src/routes/Runs.tsx");
+        for source in [jobs, runs] {
+            assert!(source.contains("api.get<Job[]>(\"/api/v1/jobs?all=1\""));
+            assert!(!source.contains("api.get<Job[]>(\"/api/v1/jobs\","));
+        }
+        for contract in [
+            "job.enabled ? api.get<{ occurrences: string[] }>",
+            "disabled — not scheduled",
+            "setRefresh((value) => value + 1)",
+            "job.enabled ? \"disable\" : \"enable\"",
+        ] {
+            assert!(jobs.contains(contract), "Jobs source contains {contract}");
+        }
+        let row_navigation = include_str!("../frontend/src/rowNavigation.ts");
+        assert!(row_navigation.contains("event.target.closest(interactiveSelector) === null"));
+        assert!(!row_navigation.contains("currentTarget.contains(interactive)"));
+    }
+
+    #[test]
     fn responsive_width_and_select_accessibility_contracts_are_explicit() {
         let css = include_str!("../assets/app.css");
         for contract in [

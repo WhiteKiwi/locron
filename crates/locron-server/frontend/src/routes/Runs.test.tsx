@@ -10,7 +10,7 @@ const emptyPage = () => ({ data: { runs: [], total: 0, offset: 0 }, warnings: []
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 
 describe("run history search", () => {
-  beforeEach(() => { vi.useFakeTimers(); get.mockReset(); get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs" ? { data: [], warnings: [] } : page("initial-run")) as never); });
+  beforeEach(() => { vi.useFakeTimers(); get.mockReset(); get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs?all=1" ? { data: [], warnings: [] } : page("initial-run")) as never); });
   afterEach(() => vi.useRealTimers());
 
   it("uses a 250 ms trailing debounce and flushes Enter immediately", async () => {
@@ -30,6 +30,16 @@ describe("run history search", () => {
     expect(get.mock.calls.some(([path]) => String(path).includes("q=back"))).toBe(true);
   });
 
+  it("uses the complete current-job view to enrich runs for a disabled job", async () => {
+    get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs?all=1" ? { data: [{ id: "job-1", name: "disabled-nightly-backup", enabled: false, definition_json: "{}" }], warnings: [] } : page("disabled-job-run")) as never);
+    render(<Runs />);
+    await act(async () => { await vi.runAllTimersAsync(); });
+    expect(get.mock.calls.some(([path]) => path === "/api/v1/jobs?all=1")).toBe(true);
+    expect(get.mock.calls.some(([path]) => path === "/api/v1/jobs")).toBe(false);
+    expect(screen.getAllByText("disabled-nightly-backup")).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: /disabled-job-run.*disabled-nightly-backup/ })).toHaveLength(2);
+  });
+
   it("uses attempt plus sequence for reconnect dedupe identity", () => {
     expect(outputEventKey({ attempt_number: 1, seq: 0 })).toBe("1:0");
     expect(outputEventKey({ attempt_number: 2, seq: 0 })).toBe("2:0");
@@ -42,7 +52,7 @@ describe("run history search", () => {
     let historyCall = 0;
     const signals: AbortSignal[] = [];
     get.mockImplementation((path, init) => {
-      if (path === "/api/v1/jobs") return Promise.resolve({ data: [], warnings: [] }) as never;
+      if (path === "/api/v1/jobs?all=1") return Promise.resolve({ data: [], warnings: [] }) as never;
       signals.push(init?.signal as AbortSignal);
       historyCall += 1;
       return (historyCall === 1 ? first.promise : second.promise) as never;
@@ -61,7 +71,7 @@ describe("run history search", () => {
   });
 
   it("pages, clears, and refreshes immediately", async () => {
-    get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs" ? { data: [], warnings: [] } : page("paged-run", 25)) as never);
+    get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs?all=1" ? { data: [], warnings: [] } : page("paged-run", 25)) as never);
     render(<Runs />);
     await act(async () => { await vi.runAllTimersAsync(); });
     get.mockClear();
@@ -81,11 +91,11 @@ describe("run history search", () => {
     render(<Runs />);
     await act(async () => { await vi.runAllTimersAsync(); });
     const input = screen.getByRole("searchbox", { name: /search by run id/i });
-    get.mockImplementation((path) => path === "/api/v1/jobs" ? Promise.resolve({ data: [], warnings: [] }) as never : Promise.reject(new Error("temporary search failure")) as never);
+    get.mockImplementation((path) => path === "/api/v1/jobs?all=1" ? Promise.resolve({ data: [], warnings: [] }) as never : Promise.reject(new Error("temporary search failure")) as never);
     fireEvent.change(input, { target: { value: "nightly" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(250); });
     expect(screen.getByText(/temporary search failure/)).toBeTruthy();
-    get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs" ? { data: [], warnings: [] } : page("nightly-backup")) as never);
+    get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs?all=1" ? { data: [], warnings: [] } : page("nightly-backup")) as never);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByText("nightly-")).toBeTruthy();
@@ -93,7 +103,7 @@ describe("run history search", () => {
   });
 
   it("keeps headers and a semantic mobile body for first-use empty history", async () => {
-    get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs" ? { data: [], warnings: [] } : emptyPage()) as never);
+    get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs?all=1" ? { data: [], warnings: [] } : emptyPage()) as never);
     render(<Runs />);
     await act(async () => { await vi.runAllTimersAsync(); });
     expect(screen.getAllByText("No runs yet")).toHaveLength(2);
@@ -113,7 +123,7 @@ describe("run history search", () => {
 
   it("recovers from filtered zero immediately and focuses the search", async () => {
     get.mockImplementation((path) => {
-      if (path === "/api/v1/jobs") return Promise.resolve({ data: [], warnings: [] }) as never;
+      if (path === "/api/v1/jobs?all=1") return Promise.resolve({ data: [], warnings: [] }) as never;
       return Promise.resolve(String(path).includes("q=missing") ? emptyPage() : page("restored-run")) as never;
     });
     render(<Runs />);
@@ -136,7 +146,7 @@ describe("run history search", () => {
 
   it("does not present initial loading or failure as a successful empty history", async () => {
     const request = deferred<ReturnType<typeof emptyPage>>();
-    get.mockImplementation((path) => path === "/api/v1/jobs" ? Promise.resolve({ data: [], warnings: [] }) as never : request.promise as never);
+    get.mockImplementation((path) => path === "/api/v1/jobs?all=1" ? Promise.resolve({ data: [], warnings: [] }) as never : request.promise as never);
     render(<Runs />);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(screen.getByText("Loading run history…")).toBeTruthy();
