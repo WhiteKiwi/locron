@@ -356,7 +356,7 @@ mod tests {
             "navigator.clipboard.writeText(source)",
             "locron.json.wrap",
             "65_536",
-            "jsonPreview(source)",
+            "jsonPreview(presentation.text)",
             "Invalid JSON",
             "<pre className=",
             "<code>",
@@ -384,6 +384,83 @@ mod tests {
         assert!(
             !shell.contains("Tooltip key={key} label={label}><a href={`#/${key}`} aria-current")
         );
+    }
+
+    #[test]
+    fn follow_up_settings_json_and_recent_run_contracts_are_explicit() {
+        let settings = include_str!("../frontend/src/routes/Settings.tsx");
+        for contract in [
+            "collectSettingsChanges",
+            "durableOrder",
+            "Review changes",
+            "Discard changes",
+            "dry_run: \"1\"",
+            "beforeunload",
+            "Remaining changes stay editable",
+            "canonical refresh failed",
+        ] {
+            assert!(settings.contains(contract), "settings contains {contract}");
+        }
+        for per_field_action in [
+            "Review concurrency",
+            "Review paths",
+            "Review retention",
+            "Review total output",
+            "Review per-run output",
+            "Review environment",
+        ] {
+            assert!(!settings.contains(per_field_action));
+        }
+        let viewer = include_str!("../frontend/src/json.tsx");
+        for contract in [
+            "formatJsonPresentation",
+            "token.kind !== \"whitespace\"",
+            "`\\n${\"  \".repeat(depth)}`",
+            "text: source",
+            "navigator.clipboard.writeText(source)",
+            "const sourceBytes",
+        ] {
+            assert!(viewer.contains(contract), "JSON viewer contains {contract}");
+        }
+        assert!(!viewer.contains("JSON.stringify"));
+        let jobs = include_str!("../frontend/src/routes/Jobs.tsx");
+        assert!(jobs.contains("<h2>Recent runs</h2>"));
+        assert!(jobs.contains("<tr className=\"clickable-row\" onClick={navigateRow}"));
+        assert!(jobs.contains("data-row-link href={`#/runs/${run.id}`}"));
+        assert!(jobs.contains("view full run {run.id} details"));
+        let css = include_str!("../assets/app.css");
+        assert!(css.contains(".settings-actions"));
+    }
+
+    #[test]
+    fn jobs_filter_grid_keeps_semantic_rows_and_mobile_order() {
+        let jobs = include_str!("../frontend/src/routes/Jobs.tsx");
+        assert!(jobs.contains("className=\"toolbar jobs-filter-grid\""));
+        let search = jobs.find("label=\"Search jobs\"").expect("search field");
+        let state = jobs.find("label=\"State filter\"").expect("state field");
+        let status = jobs
+            .find("id=\"jobs-results-status\"")
+            .expect("result status");
+        assert!(
+            search < state && state < status,
+            "DOM reading order stays search, state, status"
+        );
+
+        let css = include_str!("../assets/app.css");
+        for contract in [
+            ".jobs-filter-grid{display:grid",
+            "grid-template-areas:\"search-label state-label .\" \"search-control state-control status\" \"search-help . .\"",
+            ".jobs-filter-grid>.field{display:contents}",
+            ".jobs-filter-grid>.toolbar-status{grid-area:status",
+            "grid-template-columns:minmax(0,1fr);grid-template-areas:\"search\" \"state\" \"status\"",
+            ".jobs-filter-grid>.field{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto;width:100%;min-width:0;max-width:none;margin:0;justify-self:stretch}",
+            ".jobs-filter-grid>.field:first-of-type>label,.jobs-filter-grid>.field:first-of-type>.field-control,.jobs-filter-grid>.field:first-of-type>.field-help,.jobs-filter-grid>.field:nth-of-type(2)>label,.jobs-filter-grid>.field:nth-of-type(2)>.field-control{grid-area:auto}",
+        ] {
+            assert!(
+                css.contains(contract),
+                "Jobs filter CSS contains {contract}"
+            );
+        }
     }
 
     #[test]
@@ -574,7 +651,7 @@ mod tests {
             "run_retention_age_us",
             "ByteSizeInput",
             "Review durable change",
-            "execution search path",
+            "Execution search path",
         ] {
             assert!(settings.contains(contract));
         }

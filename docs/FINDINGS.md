@@ -1278,3 +1278,52 @@ https://carbondesignsystem.com/components/radio-button/usage/.
 Reject a full-page no-result illustration, blank `tbody`, duplicate live regions, disabled clear
 actions, fixed-height empty rows, generic collapsing gaps, negative-margin help, and tooltip-only
 explanation.
+
+## 29. Settings submission, readable JSON, and nested row consistency (2026-08-25)
+
+PatternFly's current form guidance says to default to one form per page because multiple forms and
+submit buttons create unnecessary confusion, and its full-page form pattern places the submit
+action at the bottom of the form. GOV.UK likewise recommends one main call to action on a page and
+left-aligns it with the form. PatternFly distinguishes true inline actions—which belong next to the
+single field they affect—from full-page editing, where Save and Cancel commit or discard the whole
+edit. Locron's durable settings share one scheduler configuration, so five near-identical per-field
+`Review …` buttons incorrectly suggest independent forms and make multi-setting changes repetitive.
+The accepted pattern is one dirty settings form with a bottom action group, one aggregate review,
+and one reset to the last durable snapshot. Sources:
+https://www.patternfly.org/components/forms/form/design-guidelines/,
+https://www.patternfly.org/components/inline-edit/design-guidelines/,
+https://pf3.patternfly.org/v3/pattern-library/forms-and-controls/buttons-on-forms/, and
+https://design-system.service.gov.uk/components/button/.
+
+The appearance theme remains an exception because it is explicitly browser-local and already
+applies immediately. Environment values are also gathered into the same durable review: a staged
+name/value becomes one pending change in the aggregate summary, and redaction still prevents the
+saved value from being redisplayed. The review dialog lists only changed keys, shows human old/new
+descriptions where values are safe, states that environment values remain redacted, and applies the
+validated changes in a deterministic order. A partial failure must remain visible per key and must
+not falsely report the whole form saved; successful keys refresh from the server and remaining
+dirty values stay editable.
+
+JSON's exact-source requirement and readable presentation are compatible if they are separate
+representations. The viewer parses only valid input for presentation, then produces deterministic
+two-space indentation while retaining the source token stream's key order, duplicate keys, numeric
+lexemes, escape spelling, and literal values. Copy always targets the original source. This rejects
+`JSON.parse` followed by `JSON.stringify`, which would collapse duplicate keys and may normalize
+number or escape spelling. Invalid input bypasses formatting and remains exact. Preview thresholds
+and line counts are calculated from the presented form so expansion describes what the user sees;
+the exact original byte/character count remains available for copy semantics.
+
+The existing whole-row navigation helper already encodes safe pointer delegation. The Job detail
+Recent runs table is the uncovered repeated-run surface: it currently exposes only the shortened ID
+anchor. Applying the shared row contract there removes the inconsistency without changing table
+semantics or adding another navigation abstraction. The regression inventory must cover Recent runs
+surface click, text selection, modified/non-primary clicks, the native anchor, and any future nested
+actions exactly as the Jobs and Run history tables do.
+
+The Jobs toolbar misalignment comes from composing two independent `Field` blocks in a flex row:
+Search jobs owns a helper line while State filter does not, so `align-items:flex-end` aligns the
+outer boxes instead of the label and control rows. Adding an arbitrary bottom margin to the select
+would fix only this copy length and would regress when help wraps. The stable solution is a small
+toolbar field grid with explicit label, control, and help rows; both fields occupy the first two
+rows, Search alone occupies the help row, and the result status is a separate aligned area. Mobile
+switches the grid back to one column so each field keeps its ordinary label/control/help flow.

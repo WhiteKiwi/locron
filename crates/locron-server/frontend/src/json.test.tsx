@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { JsonViewer, jsonLineCount, jsonPreview, lexJson } from "./json";
+import { JsonViewer, formatJsonPresentation, jsonLineCount, jsonPreview, lexJson } from "./json";
 
 describe("exact RFC 8259 JSON lexer", () => {
   it("preserves CRLF, Unicode, escapes, duplicate keys, and exponent spelling", () => {
@@ -25,6 +25,22 @@ describe("exact RFC 8259 JSON lexer", () => {
     expect(jsonLineCount(source)).toBe(4);
     expect(jsonPreview(source, 2)).toBe("one\r\ntwo\n");
   });
+
+  it("formats valid tokens with two spaces without normalizing their lexemes", () => {
+    const source = '{\r\n "dup":-0,"dup":1.20e+03,"esc":"\\uD55C\\/","nested":{"empty":[],"value":true}}';
+    const formatted = formatJsonPresentation(source);
+    expect(formatted.valid).toBe(true);
+    expect(formatted.text).toBe('{\n  "dup": -0,\n  "dup": 1.20e+03,\n  "esc": "\\uD55C\\/",\n  "nested": {\n    "empty": [],\n    "value": true\n  }\n}');
+    const sourceLexemes = lexJson(source).tokens.filter((token) => token.kind !== "whitespace").map((token) => token.text);
+    const formattedLexemes = formatted.tokens.filter((token) => token.kind !== "whitespace").map((token) => token.text);
+    expect(formattedLexemes).toEqual(sourceLexemes);
+  });
+
+  it("keeps empty containers compact and invalid input exact", () => {
+    expect(formatJsonPresentation('{"array":[],"object":{}}').text).toBe('{\n  "array": [],\n  "object": {}\n}');
+    const invalid = '{\r\n "broken": tru\r\n}';
+    expect(formatJsonPresentation(invalid)).toMatchObject({ valid: false, text: invalid });
+  });
 });
 
 describe("JsonViewer", () => {
@@ -42,7 +58,7 @@ describe("JsonViewer", () => {
     const source = '{"html":"<img src=x onerror=alert(1)>","escape":"\\uD55C"}\r\n';
     const { container } = render(<JsonViewer source={source} />);
     expect(container.querySelector("img")).toBeNull();
-    expect(container.querySelector("pre code")?.textContent).toBe(source);
+    expect(container.querySelector("pre code")?.textContent).toBe(formatJsonPresentation(source).text);
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(source));
     expect(await screen.findByText("Copied exact JSON.")).toBeTruthy();
@@ -74,7 +90,7 @@ describe("JsonViewer", () => {
     fireEvent.click(wrap);
     expect(wrap.getAttribute("aria-pressed")).toBe("true");
     expect(localStorage.getItem("locron.json.wrap")).toBe("true");
-    expect(screen.getByRole("button", { name: /Show all 1 lines/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Show all 3 lines/ })).toBeTruthy();
     first.unmount();
     render(<JsonViewer source="{}" />);
     expect(screen.getByRole("button", { name: "Wrap" }).getAttribute("aria-pressed")).toBe("true");

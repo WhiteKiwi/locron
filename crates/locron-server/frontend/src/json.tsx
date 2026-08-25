@@ -58,6 +58,35 @@ export function lexJson(source: string, validateStructure = true): { tokens: Jso
   return { tokens: valid ? tokens : [{ kind: "invalid", text: source }], valid };
 }
 
+export function formatJsonPresentation(source: string): { tokens: JsonToken[]; text: string; valid: boolean } {
+  const result = lexJson(source);
+  if (!result.valid) return { ...result, text: source };
+  const input = result.tokens.filter((token) => token.kind !== "whitespace");
+  const tokens: JsonToken[] = [];
+  let depth = 0;
+  const space = (text: string) => tokens.push({ kind: "whitespace", text });
+  const line = () => space(`\n${"  ".repeat(depth)}`);
+  for (let index = 0; index < input.length; index += 1) {
+    const token = input[index]!;
+    const next = input[index + 1];
+    const previous = input[index - 1];
+    if (token.text === "{" || token.text === "[") {
+      tokens.push(token);
+      const matching = token.text === "{" ? "}" : "]";
+      if (next?.text !== matching) { depth += 1; line(); }
+    } else if (token.text === "}" || token.text === "]") {
+      const matching = token.text === "}" ? "{" : "[";
+      if (previous?.text !== matching) { depth -= 1; line(); }
+      tokens.push(token);
+    } else if (token.text === ",") {
+      tokens.push(token); line();
+    } else if (token.text === ":") {
+      tokens.push(token); space(" ");
+    } else tokens.push(token);
+  }
+  return { tokens, text: tokens.map((token) => token.text).join(""), valid: true };
+}
+
 export function jsonPreview(source: string, lines = 80) {
   let cursor = 0, seen = 0;
   while (cursor < source.length && seen < lines) {
@@ -79,22 +108,23 @@ const WRAP_KEY = "locron.json.wrap";
 function initialWrap() { try { return localStorage.getItem(WRAP_KEY) === "true"; } catch { return false; } }
 
 export function JsonViewer({ source, label = "Structured JSON" }: { source: string; label?: string }) {
-  const lines = jsonLineCount(source);
-  const large = lines > 200 || new TextEncoder().encode(source).byteLength > 65_536;
+  const presentation = useMemo(() => formatJsonPresentation(source), [source]);
+  const lines = jsonLineCount(presentation.text);
+  const sourceBytes = new TextEncoder().encode(source).byteLength;
+  const large = lines > 200 || sourceBytes > 65_536;
   const [expanded, setExpanded] = useState(!large);
   const [wrap, setWrap] = useState(initialWrap);
   const [copyStatus, setCopyStatus] = useState("");
   useEffect(() => { setExpanded(!large); }, [source, large]);
-  const visible = large && !expanded ? jsonPreview(source) : source;
+  const visible = large && !expanded ? jsonPreview(presentation.text) : presentation.text;
   const result = useMemo(() => lexJson(visible, !large || expanded), [visible, large, expanded]);
-  const whole = useMemo(() => lexJson(source), [source]);
   const setWrapping = (next: boolean) => { setWrap(next); try { localStorage.setItem(WRAP_KEY, String(next)); } catch { /* storage is optional */ } };
   const copy = async () => {
     try { await navigator.clipboard.writeText(source); setCopyStatus("Copied exact JSON."); }
     catch { setCopyStatus("Copy failed. Select the JSON and copy it manually."); }
   };
   return <section className="json-viewer" aria-label={label}>
-    <header className="json-toolbar"><div><span className="json-language">{whole.valid ? "JSON" : "Invalid JSON"}</span>{large && <span className="json-size">{lines} lines</span>}</div><div className="json-tools"><span className="json-copy-status" role="status" aria-live="polite">{copyStatus}</span><button type="button" aria-pressed={wrap} onClick={() => setWrapping(!wrap)}><WrapText size={16} aria-hidden="true"/>Wrap</button><button type="button" onClick={() => void copy()}>{copyStatus.startsWith("Copied") ? <Check size={16} aria-hidden="true"/> : <Clipboard size={16} aria-hidden="true"/>}Copy</button></div></header>
+    <header className="json-toolbar"><div><span className="json-language">{presentation.valid ? "JSON" : "Invalid JSON"}</span>{large && <span className="json-size">{lines} display lines · {sourceBytes.toLocaleString()} source bytes</span>}</div><div className="json-tools"><span className="json-copy-status" role="status" aria-live="polite">{copyStatus}</span><button type="button" aria-pressed={wrap} onClick={() => setWrapping(!wrap)}><WrapText size={16} aria-hidden="true"/>Wrap</button><button type="button" onClick={() => void copy()}>{copyStatus.startsWith("Copied") ? <Check size={16} aria-hidden="true"/> : <Clipboard size={16} aria-hidden="true"/>}Copy</button></div></header>
     <pre className={`json-code${wrap ? " wrap" : ""}`}><code>{result.tokens.map((token, index) => <span className={`json-${token.kind}`} key={index}>{token.text}</span>)}</code></pre>
     {large && !expanded && <div className="json-expand"><button type="button" onClick={() => setExpanded(true)}>Show all {lines} lines</button></div>}
   </section>;

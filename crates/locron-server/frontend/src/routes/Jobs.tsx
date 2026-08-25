@@ -65,7 +65,7 @@ export function Jobs() {
   const rowActions = (job: Job) => <ActionMenu label={`Actions for ${job.name}`}><ActionMenuItem href={`#/jobs/${job.id}`}>View details</ActionMenuItem><ActionMenuItem onSelect={() => void act(job, "run")}>Run now</ActionMenuItem><ActionMenuItem href={`#/jobs/${job.id}/edit`}>Edit</ActionMenuItem><ActionMenuItem onSelect={() => void act(job, job.enabled ? "disable" : "enable")}>{job.enabled ? "Disable" : "Enable"}</ActionMenuItem></ActionMenu>;
   return <>
     <RouteHeader title="Jobs" description="Schedules, next occurrences, and the latest durable outcome." actions={<><button type="button" onClick={() => setRefresh((value) => value + 1)}><RefreshCw size={16}/>Refresh</button><a className="button primary" href="#/jobs/new"><Plus size={16}/>New job</a></>} />
-    <search className="toolbar" aria-label="Filter jobs">
+    <search className="toolbar jobs-filter-grid" aria-label="Filter jobs">
       <Field label="Search jobs" description="Match a name, description, or tag.">{({ id, describedBy }) => <input ref={search} id={id} type="search" value={query} aria-describedby={describedBy} onChange={(event) => setQuery(event.target.value)} />}</Field>
       <Field label="State filter">{({ id }) => <LocronSelect id={id} label="State filter" value={state} onChange={setState} options={[{value:"all",label:"All states"},{value:"enabled",label:"Enabled"},{value:"disabled",label:"Disabled"}]} />}</Field>
       {!error && <p id="jobs-results-status" className="toolbar-status muted" role="status" aria-atomic="true">{data === null ? "Loading jobs…" : `${rows.length} result${rows.length === 1 ? "" : "s"}.`}</p>}
@@ -110,7 +110,7 @@ export function JobDetail({ reference }: { reference: string }) {
     {feedback && <Feedback kind="error">{feedback}</Feedback>}
     {definition ? <DefinitionSummary definition={definition} /> : <Feedback kind="error">Definition is unreadable.</Feedback>}
     {why && <section className="card"><h2>Why</h2><p>{why.explanation}</p><dl className="facts"><dt>Next occurrence</dt><dd>{why.next_occurrence ?? "none"}</dd><dt>Overlap policy</dt><dd>{why.overlap}</dd><dt>Daemon</dt><dd>{why.daemon_running ? "running" : "not running"}</dd></dl></section>}
-    <section className="card"><h2>Recent runs</h2>{recent.length ? <div className="table-scroll"><table><thead><tr><th>Run</th><th>Requested</th><th>State</th></tr></thead><tbody>{recent.map((run) => <tr key={run.id}><td><a href={`#/runs/${run.id}`}>{run.id.slice(0, 8)}</a></td><td>{new Date(run.requested_at_us / 1000).toLocaleString()}</td><td>{run.state}</td></tr>)}</tbody></table></div> : <p>No runs yet.</p>}</section>
+    <section className="card"><h2>Recent runs</h2>{recent.length ? <div className="table-scroll"><table><thead><tr><th>Run</th><th>Requested</th><th>State</th></tr></thead><tbody>{recent.map((run) => <tr className="clickable-row" onClick={navigateRow} key={run.id}><td><a data-row-link href={`#/runs/${run.id}`}>{run.id.slice(0, 8)}<span className="sr-only"> — view full run {run.id} details</span></a></td><td>{new Date(run.requested_at_us / 1000).toLocaleString()}</td><td>{run.state}</td></tr>)}</tbody></table></div> : <p>No runs yet.</p>}</section>
     <details className="card"><summary>Redacted definition JSON</summary><JsonViewer source={job.definition_json} label={`Redacted definition JSON for ${job.name}`} /></details>
   </>;
 }

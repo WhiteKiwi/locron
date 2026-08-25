@@ -374,3 +374,30 @@ None after `docs/FINDINGS.md` §14; implementation choices and their trade-offs 
     body row that explains the zero result and offers a small clear-filter recovery action. A truly
     empty dataset uses the same stable table structure but different copy and a route-appropriate
     primary next action; it is not confused with a loading or request-error state.
+
+## 15. Settings, JSON, and nested-row consistency amendment (2026-08-25)
+
+40. Durable scheduler settings behave as one editable page rather than a stack of independent
+    mini-forms. A user may change several fields before committing them, sees one persistent dirty
+    state, and reaches one clear action group after the final settings section. The primary action
+    reviews all pending durable changes together before applying them; a secondary reset action
+    restores the last saved values. Unchanged settings cannot be submitted, validation identifies
+    the affected fields before review, and browser-local appearance remains immediate and outside
+    the durable save transaction.
+41. Valid structured JSON is formatted for reading by default with deterministic indentation and
+    line breaks, while preserving values, key order, number spelling, duplicate keys, and string
+    escapes from the source. Copying still returns the exact original payload rather than the
+    formatted presentation. Invalid JSON remains visibly invalid and is shown exactly as received.
+    Long-payload expansion, wrapping, narrow-screen behavior, and syntax roles apply to the
+    formatted presentation without hiding that exact-copy contract.
+42. Every repeated Job or Run summary that identifies a detail destination follows the same row
+    navigation contract, including Recent runs inside Job detail. Pointer activation of unused row
+    space opens the detail, the primary native link remains available to keyboard and assistive
+    technology users, modified/link interactions retain browser semantics, and any nested action
+    control stays isolated from row navigation.
+43. Jobs filter controls share one deliberate desktop alignment system. Search and state labels sit
+    on the same baseline, their controls start and end on the same rows, and optional help text does
+    not push one field out of alignment with its neighbor. The result count occupies a separate
+    status slot rather than participating in the form-field baseline. At narrow widths the fields
+    stack in reading order with their labels and help intact, without introducing horizontal page
+    overflow.

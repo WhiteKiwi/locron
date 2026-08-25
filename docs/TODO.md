@@ -1325,6 +1325,76 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   Feature commit `82527de` is published locally on `feat/dashboard`; the authenticated review server
   remains available at `http://127.0.0.1:10824/`. Remote push was intentionally not performed.
 
+### Settings, JSON, and nested-row consistency follow-up (2026-08-25)
+
+- [x] Amend the dashboard specification, record form-pattern evidence, accept the implementation
+  approach, and review this phased checklist before code changes.
+  **Verify:** `docs/dashboard/SPEC.md` criteria 40–42 describe only observable behavior;
+  `docs/FINDINGS.md` §29 cites the one-form/bottom-action evidence and records rejected JSON
+  normalization; `docs/dashboard/IMPLEMENTATION.md` records architecture, failure behavior, edge
+  cases, and verification; every implementation step below has a concrete Verify entry.
+- [x] Replace per-setting Review buttons with one bottom durable-settings action group and aggregate
+  review/apply flow while keeping browser-local theme changes immediate.
+  **Verify:** Settings component tests cover multi-field dirty collection, disabled unchanged state,
+  invalid-field focus, aggregate dry-run/dialog/apply ordering, discard, staged redacted environment,
+  per-key failure recovery/refetch, and absence of repeated Review buttons; browser QA confirms the
+  bottom action remains discoverable and usable at desktop and 390 px.
+  **Evidence:** all four Settings component tests pass for one ordered multi-field string-
+  flag dry-run and live apply, disabled clean state, dirty `beforeunload` protection, immediate theme,
+  scalar and reserved-environment invalid-field focus, discard, redacted environment staging, and
+  honest partial-failure canonical refetch with the failed draft retained. The Rust source contract
+  rejects every former per-field Review label and requires the one bottom action group. Browser QA
+  caught an incompatible boolean dry-run body; the frontend exact-payload test and server
+  `dry_run_never_mutates` contract now pass with the API's required string flag `"1"`. Browser QA
+  confirms zero repeated Review buttons, a disabled clean state, one bottom action group, and a
+  successful aggregate dry-run dialog listing `Global concurrency: 16 → 15`; the temporary draft
+  was discarded and the durable value remained 16.
+- [x] Pretty-format valid JSON for presentation without changing exact-source copying or invalid
+  payload handling.
+  **Verify:** pure/component tests cover two-space nested formatting, empty containers, CRLF source,
+  duplicate keys, exponent and negative-zero lexemes, Unicode/slash escapes, exact clipboard bytes,
+  invalid input, formatted preview thresholds, expansion, wrapping, XSS-safe text, and both themes.
+  **Evidence:** all nine JSON pure/component tests pass for deterministic two-space nested
+  formatting, compact empty containers, CRLF exact source, duplicate keys, exponent/negative-zero
+  lexemes, Unicode/slash escapes, exact clipboard source, exact invalid fallback, formatted line and
+  original-byte thresholds, 80-line expansion, persisted wrapping, and literal-markup safety. The
+  asset contract rejects `JSON.stringify` normalization. Browser QA renders the fixture definition
+  as a 35-line, two-space-indented document in both resolved dark and explicit light themes; the
+  light viewer computes an opaque white background and dark foreground.
+- [x] Align Jobs Search and State filter through explicit label/control/help grid rows and keep the
+  result status outside the field baseline.
+  **Verify:** component/source contracts assert shared desktop label/control grid rows and an
+  independent result slot; browser screenshots at 1440 and 390 px confirm equal control baselines,
+  intact helper text, mobile reading order, and no horizontal overflow.
+  **Evidence:** the Jobs component test passes for the labelled Search and State controls,
+  Search help association, direct independent result-status slot, and DOM order Search → State →
+  status. The Rust source/CSS contract fixes matching desktop named label/control rows, a separate
+  Search help row and status area, then a `minmax(0,1fr)` single-column mobile grid that restores
+  ordinary field boxes and the same reading order. Browser QA then exposed desktop `first-of-type`
+  area specificity leaking into the mobile field grids; the regression fix resets those exact
+  selectors at equal specificity and requires each narrow field to stretch to `width:100%` with
+  zero minimum inline size. TypeScript typecheck, all 57 frontend tests, all 14 embedded asset tests,
+  built-JS syntax, fmt, changed-server warnings-denied clippy, and two byte-identical production
+  builds pass. Browser QA at 1440 px measures both labels at top 167 px and both controls at top
+  205 px. At 390 px both fields start at 16 px, span 358 px, retain Search → helper → State →
+  status order, and report zero horizontal overflow.
+- [x] Apply shared whole-row detail navigation to Job detail Recent runs, rebuild production assets,
+  and complete the combined regression gate.
+  **Verify:** component/browser tests cover Recent runs surface click, native link, text selection,
+  modified/non-primary click and accessible full identity; two clean builds are byte-identical;
+  TypeScript, all frontend tests, Rust asset tests, fmt, warnings-denied workspace clippy, full
+  workspace all-target tests, clean browser logs, and the live review server all pass before commit.
+  **Evidence:** the Job detail component test passes for unused Recent-runs surface click,
+  modified-click isolation, native table/link semantics, and full accessible run identity; four
+  shared-helper tests retain selection, prevented, modified/non-primary, and interactive-descendant
+  guards, and the empty Recent-runs state is unchanged. Browser QA clicks the Requested cell of the
+  first Recent runs row and reaches its full run-detail URL. Two production builds emitted identical
+  index/favicon/CSS/JS names and SHA-256 hashes; built JS passes `node --check`. TypeScript typecheck,
+  all 57 frontend tests across 11 files, all 14 embedded asset tests, changed-crate warnings-denied
+  clippy, fmt, workspace warnings-denied clippy, and the full workspace all-target test gate pass.
+  The latest embedded binary serves HTTP 200 at `http://127.0.0.1:10824/`; browser error/warning
+  logs are empty.
+
 ## Ordered deferred product roadmap
 
 

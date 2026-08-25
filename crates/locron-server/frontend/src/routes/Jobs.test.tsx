@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
 import type { Job } from "../types";
-import { Jobs } from "./Jobs";
+import { JobDetail, Jobs } from "./Jobs";
 
 vi.mock("../api", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 const get = vi.mocked(api.get);
@@ -34,6 +34,28 @@ describe("responsive jobs data", () => {
     location.hash = "";
     fireEvent.click(within(row).getByRole("button", { name: /Actions for/ }));
     expect(location.hash).toBe("");
+  });
+
+  it("keeps filter fields and result status in semantic reading order", async () => {
+    render(<Jobs />);
+    await screen.findAllByText("nightly-backup-with-a-very-long-operator-visible-name");
+    const toolbar = document.querySelector<HTMLElement>('search[aria-label="Filter jobs"]')!;
+    expect(toolbar).toBeTruthy();
+    expect(toolbar.classList.contains("jobs-filter-grid")).toBe(true);
+    const fields = toolbar.querySelectorAll(":scope > .field");
+    expect(fields).toHaveLength(2);
+    expect(fields[0]?.querySelector("label")?.textContent).toBe("Search jobs");
+    expect(fields[0]?.querySelector(".field-help")?.textContent).toBe("Match a name, description, or tag.");
+    expect(fields[1]?.querySelector("label")?.textContent).toBe("State filter");
+    expect(fields[1]?.querySelector(".field-help")).toBeNull();
+    const search = screen.getByRole("searchbox", { name: "Search jobs" });
+    expect(search.getAttribute("aria-describedby")).toBe(fields[0]?.querySelector(".field-help")?.id);
+    expect(screen.getByRole("combobox", { name: "State filter" })).toBeTruthy();
+    const status = screen.getByRole("status");
+    expect(status.parentElement).toBe(toolbar);
+    expect(toolbar.children[0]).toBe(fields[0]);
+    expect(toolbar.children[1]).toBe(fields[1]);
+    expect(toolbar.children[2]).toBe(status);
   });
 
   it("keeps the table and mobile list frame for a first-use empty dataset", async () => {
@@ -80,5 +102,58 @@ describe("responsive jobs data", () => {
     expect(screen.queryByText("Loading jobs…", { selector: ".loading-state" })).toBeNull();
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByText("No jobs yet")).toBeNull();
+  });
+});
+
+describe("job detail recent runs", () => {
+  const runId = "run-12345678-90ab-cdef-1234-567890abcdef";
+  const detail: Job = {
+    id: "job-1",
+    name: "nightly-backup",
+    enabled: true,
+    definition_json: JSON.stringify({
+      schedule: { kind: "every", interval: 300_000_000, anchor: 1_800_000_000_000_000 },
+      target: { kind: "shell", command: "backup", shell: "/bin/sh" },
+      cwd: "/tmp",
+      environment: { values: {} },
+      policy: { overlap: "skip", missed_run: "skip", start_deadline: null, catch_up_limit: 1, retries: 0, retry_delay: 1_000_000, retry_cap: 1_000_000, backoff: "fixed", retry_timeout: false, timeout: null, termination_grace: 1_000_000, per_job_concurrency: 1 },
+    }),
+  };
+
+  beforeEach(() => {
+    location.hash = "";
+    get.mockImplementation((path) => {
+      if (path === "/api/v1/jobs/job-1") return Promise.resolve({ data: detail, warnings: [] }) as never;
+      if (path === "/api/v1/jobs/job-1/why") return Promise.resolve({ data: { explanation: "ready", overlap: "skip", daemon_running: true }, warnings: [] }) as never;
+      if (path === "/api/v1/runs?job=job-1&limit=5") return Promise.resolve({ data: { runs: [{ id: runId, state: "succeeded", requested_at_us: 1_800_000_000_000_000 }] }, warnings: [] }) as never;
+      return Promise.reject(new Error(`unexpected path ${String(path)}`)) as never;
+    });
+  });
+
+  it("uses the shared whole-row contract while keeping the full run ID accessible", async () => {
+    render(<JobDetail reference="job-1" />);
+    const link = await screen.findByRole("link", { name: new RegExp(`view full run ${runId} details`) });
+    expect(link.textContent).toContain(runId);
+    const row = link.closest("tr")!;
+    expect(link.getAttribute("data-row-link")).not.toBeNull();
+    expect(row.getAttribute("role")).toBeNull();
+    expect(row.getAttribute("tabindex")).toBeNull();
+    fireEvent.click(within(row).getByText("succeeded"));
+    await waitFor(() => expect(location.hash).toBe(`#/runs/${runId}`));
+    location.hash = "";
+    fireEvent.click(within(row).getByText("succeeded"), { metaKey: true });
+    expect(location.hash).toBe("");
+  });
+
+  it("preserves the existing empty recent-runs state", async () => {
+    get.mockImplementation((path) => {
+      if (path === "/api/v1/jobs/job-1") return Promise.resolve({ data: detail, warnings: [] }) as never;
+      if (path === "/api/v1/jobs/job-1/why") return Promise.resolve({ data: { explanation: "ready", overlap: "skip", daemon_running: true }, warnings: [] }) as never;
+      if (path === "/api/v1/runs?job=job-1&limit=5") return Promise.resolve({ data: { runs: [] }, warnings: [] }) as never;
+      return Promise.reject(new Error(`unexpected path ${String(path)}`)) as never;
+    });
+    render(<JobDetail reference="job-1" />);
+    await screen.findByRole("heading", { name: "Recent runs" });
+    expect(screen.getByText("No runs yet.")).toBeTruthy();
   });
 });

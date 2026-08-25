@@ -858,3 +858,84 @@ checkboxes, and review controls from colliding with their explanations.
   methods; SSE reconnect deduplicates attempt/sequence pairs; service templates retain state
   directory and explicit service mode; IPv6-only binding prints an IPv6 URL; malformed self-update
   status output produces a warning and no registration mutation.
+
+## Settings submission, exact pretty JSON, and nested row parity (2026-08-25)
+
+### Accepted: one durable Settings form and one aggregate review
+
+Settings keeps separate `saved` and editable `draft` snapshots. A pure change collector compares
+the six durable scalar/path/retention fields and optionally adds the environment name/value currently
+entered by the user. Browser-local theme state is excluded because it applies immediately and never
+touches daemon settings. Existing environment removal stays an explicit inline destructive action;
+it is not disguised as a page submission.
+
+The repeated per-field Review buttons are removed. After the Environment section, one bottom action
+group exposes primary `Review changes` and secondary `Discard changes`. Both are disabled when the
+durable draft is unchanged and no environment value is staged. Review first focuses any invalid
+field, validates the environment grammar, then dry-runs every collected change through the existing
+per-key settings endpoint. Only a fully successful dry-run opens one dialog listing every changed
+setting and its safe human consequence. The dialog applies the same ordered list through the live
+endpoint. Successful completion refetches the canonical settings snapshot, clears the environment
+inputs and dirty state, and announces the saved count. A live per-key failure names that key, closes
+neither the user's remaining draft nor the evidence of unsaved work, and refetches durable state so
+the page never claims atomic behavior the API does not provide. No batch endpoint or store invariant
+is introduced in this UI refinement.
+
+The action group remains in normal document flow at the end of the form; it is not duplicated after
+each section. Dirty-state copy and `beforeunload` protection cover accidental navigation while
+durable settings differ from the saved snapshot. Reset restores the canonical saved fields and
+clears the staged environment value without changing the immediate browser theme.
+
+### Accepted: token-preserving pretty presentation
+
+The JSON lexer remains the single source for exact syntax roles. A new pure formatter consumes a
+valid token stream, drops only source whitespace, and inserts deterministic two-space indentation,
+newlines after commas/open containers, and one space after colons. It never round-trips through a
+JavaScript object. String, key, number, literal, and punctuation token text is emitted byte-for-byte,
+so duplicate keys, exponent spelling, negative zero, Unicode escapes, slash escapes, and key order
+survive. Empty arrays/objects stay on one line. Invalid JSON bypasses the formatter and stays exact.
+
+JsonViewer derives presentation, visible preview, display line count, long-payload expansion, and
+syntax spans from that formatted string. Its Copy action continues to write the original `source`
+and reports `Copied exact JSON`; the accessible code text is the formatted presentation. The size
+threshold still uses original UTF-8 bytes while the line threshold uses formatted lines, preventing
+a one-line large object from evading progressive disclosure.
+
+### Accepted: Recent runs uses the shared row contract
+
+Job detail's Recent runs rows gain the same `clickable-row`, shared `navigateRow` delegation, and
+`data-row-link` native anchor used by Jobs and Run history. The visible short ID remains compact,
+while screen-reader text names the full run and detail destination. The row keeps native table
+semantics and ignores text selection, modified/non-primary clicks, and interactive descendants.
+No new navigation helper or synthetic row role/tab stop is added.
+
+### Accepted: Jobs filters align by semantic rows
+
+Jobs replaces the generic flex-only toolbar composition with a route-specific filter grid. Search
+and State filter each render their label and control into matching grid rows; Search's helper text
+occupies the following row without changing the neighboring control position. The result status is
+placed in its own final grid column and aligned to the control row, not centered against the full
+height of either Field. Existing `Field` semantics and labelled controls remain unchanged.
+
+Below the table breakpoint the grid becomes one column in DOM reading order—Search, State filter,
+then result status—and each Field returns to normal-flow spacing. Long helper/result copy wraps
+inside the available width. The change is scoped to the Jobs toolbar so other forms do not acquire
+special layout assumptions.
+
+### Verification additions
+
+- Settings component tests prove several scalar changes produce one review dialog and one ordered
+  apply flow; unchanged/invalid states block review; discard restores saved values; theme changes do
+  not dirty the durable form; staged environment validation/redaction and per-key failure recovery
+  remain explicit; no per-field Review button remains.
+- JSON pure/component tests prove deterministic two-space presentation while exact-copy preserves
+  CRLF, duplicate keys, exponent/negative-zero spelling, Unicode and slash escapes; invalid JSON is
+  unchanged; formatted line thresholds, expansion, wrap persistence, and literal-markup safety pass.
+- Job detail tests activate a Recent runs row surface and verify navigation, native anchor isolation,
+  text-selection and modified-click guards, full accessible run identity, and unchanged empty state.
+- Jobs component/static and browser checks prove Search and State filter labels and controls share
+  desktop grid rows, helper copy cannot shift the select, result status is independent, and 390 px
+  stacking preserves reading order without overflow.
+- Rebuild the committed dist twice, run strict typecheck, frontend tests, Rust asset tests, full
+  workspace fmt/clippy/tests, and browser-check Settings review/apply/discard, pretty JSON in both
+  themes, and Recent runs pointer/keyboard behavior at desktop and narrow widths.
