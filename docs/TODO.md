@@ -23,14 +23,25 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   tests and 65 frontend tests pass; TypeScript typecheck and the production build pass;
   `check-release-version.sh 0.9.2`, workspace package verification, the five-package publication
   dry run, and diff checks pass.
-- [ ] Commit and push the reviewed release revision, then create and push immutable annotated tag
+- [x] Commit and push the reviewed release revision, then create and push immutable annotated tag
   `v0.9.2`.
   **Verify:** `main` and `origin/main` point at the release commit, the tag resolves to that same
   commit, and the tag-triggered release workflow starts.
-- [ ] Confirm publication and update this machine's managed installations and services.
+  **Evidence:** release commit `e052877` was pushed to `main`; annotated tag `v0.9.2` resolves to
+  that exact commit and started release run
+  [32822950430](https://github.com/WhiteKiwi/locron/actions/runs/32822950430).
+- [x] Confirm publication and update this machine's managed installations and services.
   **Verify:** the release workflow, five crates, GitHub Release, and Homebrew formula report 0.9.2;
   the Homebrew binary reports 0.9.2; the daemon and standalone dashboard service are restarted on
   the new binary; and the dashboard returns HTTP 200.
+  **Evidence:** release run 32822950430 passed all four platform builds, OIDC workspace publication,
+  exact registry installation, GitHub publication, and Homebrew update; all five crates inventory as
+  0.9.2 and the public release carries all ten expected assets. Main CI run
+  [32822947779](https://github.com/WhiteKiwi/locron/actions/runs/32822947779) passed all 14 jobs and
+  audit run [32822947860](https://github.com/WhiteKiwi/locron/actions/runs/32822947860) passed both
+  policy jobs. Homebrew and standalone binaries both report 0.9.2; the Homebrew daemon and standalone
+  dashboard LaunchAgents run the expected managed paths; dashboard status reports PID 82476 with an
+  owner-only token, HTTP returns 200, and the served bundle is `app-BsbUp3HE.js`.
 
 ## Dashboard lifecycle human output and stale detail recovery (2026-08-25)
 
