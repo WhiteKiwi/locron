@@ -2205,3 +2205,26 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   **Evidence:** `sh scripts/usage.sh --json` reported `crates_io: 1` at 2026-08-25 05:47 UTC after
   the 0.9.0 registry bootstrap, confirming that the live crates.io section switched from `N/A` to
   a numeric trailing-90-day count.
+
+## Terminal-width history table truncation (2026-08-25)
+
+- [x] Document and review the accepted `history` table-width behavior and CLI surface.
+  **Verify:** SPEC, IMPLEMENTATION, CLI, and this checklist agree that TTY human output truncates
+  only `TRIGGER`, pipes retain full values, and `--no-trunc` is accepted and ignored by machine
+  output.
+  **Evidence:** the four planning/contract documents name the same TTY gate, preserved columns,
+  full pipe behavior, rendering flag, and unchanged machine surface; `git diff --check` passes.
+- [x] Add width-aware human history rendering and its rendering flag without changing data,
+  ordering, redaction, or machine output.
+  **Verify:** focused unit and CLI contract tests cover injected fitting/truncating/too-narrow/none
+  widths, Unicode display width, header-only output, piped full values, help, and byte-identical JSON
+  with and without `--no-trunc`.
+  **Evidence:** two pure renderer tests and the focused CLI contract test pass, covering ASCII and
+  wide Unicode triggers, fitting/truncating/too-narrow/none widths, empty output, help visibility,
+  piped full output, and identical JSON with the flag.
+- [x] Run the complete local quality gate and archive this completed section.
+  **Verify:** fmt, warnings-denied workspace all-target Clippy, workspace all-target tests, and
+  `git diff --check` pass on the intended tree; the completed checklist and evidence move to
+  `docs/TODO-archive.md` while no open item is lost.
+  **Evidence:** Rust 1.94 formatting and warnings-denied all-target Clippy pass; all 440 workspace
+  all-target tests pass with zero failures; `git diff --check` passes before and after archival.

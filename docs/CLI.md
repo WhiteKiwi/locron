@@ -32,7 +32,7 @@ locron remove|rm NAME
 locron preview <schedule-or-name> [--count N]
 locron run NAME [--wait] [--dry-run]
 locron cancel RUN_ID [--acknowledge-unconfirmed]
-locron history [NAME] [--limit N]
+locron history [NAME] [--limit N] [--no-trunc]
 locron logs RUN_ID [--attempt N] [--follow] [--channel all|stdout|stderr|body]
 locron why NAME
 locron why --run RUN_ID
@@ -399,7 +399,10 @@ Human output renders the same facts as machine output in readable forms; machine
 - `list` — the table documented in Command families (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`).
 - `history` — an aligned table with the header always printed and one row per run, newest first:
   `TIME | JOB | TRIGGER | STATE | DURATION`. `TIME` is RFC 3339 UTC; `DURATION` renders in the
-  largest whole human unit; the run ID may be abbreviated in the table only.
+  largest whole human unit; the run ID may be abbreviated in the table only. On a terminal,
+  `TRIGGER` is truncated with a trailing `…` when needed to fit the table while every other column
+  remains intact. Redirected or piped output keeps full trigger values. `--no-trunc` restores full
+  trigger values on a terminal and is accepted with no effect in machine mode.
 - `show NAME` — labeled sections `JOB` (name, id, enabled, tags, revision), `SCHEDULE`,
   `TARGET`, and `POLICIES` (overlap, missed-run, deadline, retries, timeout, concurrency), one
   field per line.

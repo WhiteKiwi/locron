@@ -131,6 +131,7 @@ const HISTORY_HELP: &str = "\
 Examples:
   locron history
   locron history backup --limit 50
+  locron history --no-trunc
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -421,6 +422,9 @@ enum Command {
         /// Maximum number of runs to return
         #[arg(long, default_value_t = 20)]
         limit: usize,
+        /// Print full trigger values even when stdout is a narrow terminal
+        #[arg(long)]
+        no_trunc: bool,
     },
     #[command(about = "Read captured run output", after_help = LOGS_HELP)]
     Logs {
@@ -1079,7 +1083,11 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
             }
             Ok(())
         }
-        Command::History { name, limit } => {
+        Command::History {
+            name,
+            limit,
+            no_trunc,
+        } => {
             let store = open(&paths)?;
             let runs = store
                 .history(name.as_deref(), limit)?
@@ -1099,7 +1107,12 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
                         (job.id, name)
                     })
                     .collect::<BTreeMap<_, _>>();
-                render_history_table(&runs, &names)
+                let width = if no_trunc {
+                    None
+                } else {
+                    console::Term::stdout().size_checked().map(|(_, cols)| cols)
+                };
+                render_history_table(&runs, &names, width)
             } else {
                 render(format, "history", json!(runs), &[]);
                 Ok(())
@@ -4651,7 +4664,24 @@ fn abbreviated_id(id: &str) -> String {
 /// column uses the retained job name and marks soft-removed jobs; it falls
 /// back to the abbreviated job ID only for dangling legacy records. All
 /// values derive from the redacted run records.
-fn render_history_table(runs: &[Value], names: &BTreeMap<String, String>) -> Result<()> {
+fn render_history_table(
+    runs: &[Value],
+    names: &BTreeMap<String, String>,
+    width: Option<u16>,
+) -> Result<()> {
+    print!("{}", history_table(runs, names, width)?);
+    Ok(())
+}
+
+/// Builds the aligned human `history` table. When an injected terminal width
+/// cannot hold the natural table, only `TRIGGER` shrinks; every other column
+/// and all four separators retain their natural width. A missing width keeps
+/// full values for redirected and piped output.
+fn history_table(
+    runs: &[Value],
+    names: &BTreeMap<String, String>,
+    width: Option<u16>,
+) -> Result<String> {
     let mut sorted = runs.to_vec();
     sorted.sort_by(|a, b| {
         b["requested_at_us"]
@@ -4683,28 +4713,80 @@ fn render_history_table(runs: &[Value], names: &BTreeMap<String, String>) -> Res
             duration,
         ));
     }
-    let time_width = "TIME"
-        .len()
-        .max(rows.iter().map(|row| row.0.len()).max().unwrap_or(0));
-    let job_width = "JOB"
-        .len()
-        .max(rows.iter().map(|row| row.1.len()).max().unwrap_or(0));
-    let trigger_width = "TRIGGER"
-        .len()
-        .max(rows.iter().map(|row| row.2.len()).max().unwrap_or(0));
-    let state_width = "STATE"
-        .len()
-        .max(rows.iter().map(|row| row.3.len()).max().unwrap_or(0));
-    println!(
-        "{:<time_width$} | {:<job_width$} | {:<trigger_width$} | {:<state_width$} | DURATION",
-        "TIME", "JOB", "TRIGGER", "STATE"
+    let display_width = |text: &String| text.width();
+    let time_width = "TIME".width().max(
+        rows.iter()
+            .map(|row| display_width(&row.0))
+            .max()
+            .unwrap_or(0),
     );
+    let job_width = "JOB".width().max(
+        rows.iter()
+            .map(|row| display_width(&row.1))
+            .max()
+            .unwrap_or(0),
+    );
+    let trigger_width = "TRIGGER".width().max(
+        rows.iter()
+            .map(|row| display_width(&row.2))
+            .max()
+            .unwrap_or(0),
+    );
+    let state_width = "STATE".width().max(
+        rows.iter()
+            .map(|row| display_width(&row.3))
+            .max()
+            .unwrap_or(0),
+    );
+    let duration_width = "DURATION".width().max(
+        rows.iter()
+            .map(|row| display_width(&row.4))
+            .max()
+            .unwrap_or(0),
+    );
+    let fixed_width = time_width + job_width + state_width + duration_width + 4 * 3;
+    let natural_width = fixed_width + trigger_width;
+    let trigger_budget = width.and_then(|width| {
+        let budget = (width as usize).saturating_sub(fixed_width);
+        (natural_width > width as usize && budget >= 1).then_some(budget)
+    });
+    let trigger_column = trigger_budget.unwrap_or(trigger_width);
+
+    let mut table = String::new();
+    push_display_cell(&mut table, "TIME", time_width);
+    table.push_str(" | ");
+    push_display_cell(&mut table, "JOB", job_width);
+    table.push_str(" | ");
+    push_display_cell(&mut table, "TRIGGER", trigger_column);
+    table.push_str(" | ");
+    push_display_cell(&mut table, "STATE", state_width);
+    table.push_str(" | ");
+    table.push_str("DURATION");
+    table.push('\n');
     for (time, job, trigger, state, duration) in &rows {
-        println!(
-            "{time:<time_width$} | {job:<job_width$} | {trigger:<trigger_width$} | {state:<state_width$} | {duration}"
+        push_display_cell(&mut table, time, time_width);
+        table.push_str(" | ");
+        push_display_cell(&mut table, job, job_width);
+        table.push_str(" | ");
+        let rendered_trigger = trigger_budget.map_or_else(
+            || trigger.clone(),
+            |budget| truncate_display(trigger, budget),
         );
+        push_display_cell(&mut table, &rendered_trigger, trigger_column);
+        table.push_str(" | ");
+        push_display_cell(&mut table, state, state_width);
+        table.push_str(" | ");
+        table.push_str(duration);
+        table.push('\n');
     }
-    Ok(())
+    Ok(table)
+}
+
+/// Appends one left-aligned cell padded by terminal display columns rather
+/// than bytes or scalar count, preserving alignment for wide Unicode text.
+fn push_display_cell(output: &mut String, text: &str, width: usize) {
+    output.push_str(text);
+    output.extend(std::iter::repeat_n(' ', width.saturating_sub(text.width())));
 }
 
 /// Prints the schedule and target summary lines `add` and `update` follow
@@ -6569,6 +6651,59 @@ mod tests {
             "shell run-a-very-…",
         );
         assert_eq!(list_table(&jobs, Some(40)).unwrap(), expected);
+    }
+
+    fn history_run_record(trigger: &str) -> Value {
+        json!({
+            "id": "018f47a2-4a12-7c35-b9d8-0123456789ab",
+            "job_id": "018f47a2-4a12-7c35-b9d8-0123456789ac",
+            "requested_at_us": 0,
+            "finished_at_us": 2_000_000,
+            "trigger": trigger,
+            "state": "succeeded",
+        })
+    }
+
+    fn history_names() -> BTreeMap<String, String> {
+        BTreeMap::from([(
+            "018f47a2-4a12-7c35-b9d8-0123456789ac".to_owned(),
+            "backup".to_owned(),
+        )])
+    }
+
+    #[test]
+    fn history_table_with_injected_widths_truncates_only_trigger() {
+        let runs = vec![history_run_record("scheduled-catch-up-after-long-downtime")];
+        let names = history_names();
+        let full = history_table(&runs, &names, None).unwrap();
+        assert!(full.contains("scheduled-catch-up-after-long-downtime"));
+        assert_eq!(history_table(&runs, &names, Some(120)).unwrap(), full);
+
+        let narrow = history_table(&runs, &names, Some(65)).unwrap();
+        assert!(!narrow.contains("scheduled-catch-up-after-long-downtime"));
+        assert!(narrow.contains('…'));
+        for value in ["1970-01-01T00:00:00Z", "backup", "succeeded", "2s"] {
+            assert!(
+                narrow.contains(value),
+                "preserved column missing {value}:\n{narrow}"
+            );
+        }
+        assert!(narrow.lines().all(|line| line.width() <= 65), "{narrow}");
+
+        // If the preserved columns leave no trigger cell, keep the complete
+        // table and allow wrapping instead of damaging another column.
+        assert_eq!(history_table(&runs, &names, Some(40)).unwrap(), full);
+    }
+
+    #[test]
+    fn history_table_trigger_fitting_uses_unicode_display_width() {
+        let runs = vec![history_run_record("수동실행예약")];
+        let table = history_table(&runs, &history_names(), Some(65)).unwrap();
+        assert!(table.contains("수동실행…"), "{table}");
+        assert!(table.lines().all(|line| line.width() <= 65), "{table}");
+
+        let empty = history_table(&[], &BTreeMap::new(), None).unwrap();
+        assert_eq!(empty, "TIME | JOB | TRIGGER | STATE | DURATION\n");
     }
 
     #[test]

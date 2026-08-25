@@ -805,6 +805,33 @@ Testability needs no PTY: `truncate_display` and `render_list_table` are pure fu
 - **Contract tests:** piped human `ls` with a long target is byte-identical to the pre-change table; `--no-trunc` appears in `locron ls --help` and is accepted; `ls --no-trunc --format json` output is identical to `ls --format json`.
 - **Workspace battery:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on the installed toolchain; the four-target CI matrix stays green.
 
+## Terminal-width history table truncation (2026-08-25)
+
+This section implements the 2026-08-25 `docs/SPEC.md` amendment by extending the accepted list-table
+mechanism to the human `history` table. The change remains confined to `locron`; storage, ordering,
+redaction, and machine-readable history data are unchanged.
+
+`History` gains a `--no-trunc` rendering flag. In the human dispatch path, stdout width is sampled
+once with the existing `console::Term::stdout().size_checked()` lookup unless the flag is present.
+The same failed-lookup behavior remains the TTY gate, so redirected and piped output receives no
+width and therefore retains every value. Machine mode accepts and ignores the flag, preserving the
+same envelope and data.
+
+Refactor the history renderer into a printing wrapper and a pure table builder with an injected
+optional width, matching the list renderer's test seam. The natural table width includes the five
+maximum display-width columns and the four literal ` | ` separators. If it exceeds the sampled
+terminal width, only `TRIGGER` receives the remaining budget after reserving the natural widths of
+`TIME`, `JOB`, `STATE`, and `DURATION` plus separators. A budget of at least one display column uses
+the existing Unicode display-width truncation helper and its trailing `…`; a smaller budget falls
+back to the full table so no preserved column or separator is destroyed. Column padding is based on
+display width so a wide trigger remains aligned and fits the same budget. Empty history remains the
+unchanged header-only table.
+
+Verification covers pure history-table rendering at fitting, truncating, absent-width, too-narrow,
+and Unicode widths; CLI contracts for help, piped full output, and machine-output equivalence with
+`--no-trunc`; formatting; warnings-denied all-target workspace Clippy; all workspace targets; and
+`git diff --check`.
+
 ## Dashboard v0.8.0 release preparation (2026-08-25)
 
 This section implements the corresponding `docs/SPEC.md` amendment without changing dashboard

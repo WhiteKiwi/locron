@@ -113,13 +113,6 @@ branch of the release path, with steady-state OIDC publication configured for la
   including package/archive inspection, workspace publication dry-run, installer checks, all lint
   jobs, and the eight platform/toolchain test jobs.
 
-## Terminal-width list table truncation backlog (2026-08-24)
-
-Follow-ups (open, not implemented here):
-
-- [ ] Apply the same terminal-width rule to the `history` table when a long `TRIGGER` value
-  demonstrates the need.
-
 ## Process-group cancellation confirmation on macOS (2026-08-25)
 
 - [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.

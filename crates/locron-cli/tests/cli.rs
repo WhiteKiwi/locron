@@ -2029,6 +2029,26 @@ fn human_history_prints_the_aligned_table_with_header_always() {
     assert_cmd::assert::Assert::new(locron(&empty).args(["history"]).output().unwrap())
         .success()
         .stdout("TIME | JOB | TRIGGER | STATE | DURATION\n");
+    assert_cmd::assert::Assert::new(
+        locron(&empty)
+            .args(["history", "--no-trunc"])
+            .output()
+            .unwrap(),
+    )
+    .success()
+    .stdout("TIME | JOB | TRIGGER | STATE | DURATION\n");
+    assert_cmd::assert::Assert::new(locron(&empty).args(["history", "--help"]).output().unwrap())
+        .success()
+        .stdout(predicate::str::contains("--no-trunc"));
+
+    let json = locron(&empty).args(["--json", "history"]).output().unwrap();
+    let json_no_trunc = locron(&empty)
+        .args(["history", "--no-trunc", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(json.status.success());
+    assert!(json_no_trunc.status.success());
+    assert_eq!(json.stdout, json_no_trunc.stdout);
 
     let state = tempfile::tempdir().unwrap();
     assert_cmd::assert::Assert::new(
