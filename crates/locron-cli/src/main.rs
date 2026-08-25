@@ -267,6 +267,23 @@ the package manager's own service commands there (for example
 
 Navigation:
   Run 'locron service <COMMAND>' for a subcommand or 'locron --help' for all commands.";
+const DASHBOARD_HELP: &str = "\
+Examples:
+  locron dashboard
+  locron dashboard --port 9000
+  locron dashboard enable
+  locron dashboard token
+
+Runs the web dashboard in the foreground (bare 'locron dashboard', identical
+to 'dashboard serve'), or manages its per-user service registration
+(dev.locron.dashboard LaunchAgent on macOS, locron-dashboard.service systemd
+user unit on Linux) with enable/disable/status. The dashboard registration is
+independent of the daemon registration and never touches it. Registration
+never requires administrative privileges. Package-manager-managed installs are
+refused; use the package manager's own service commands there.
+
+Navigation:
+  Run 'locron dashboard <COMMAND>' for a subcommand or 'locron --help' for all commands.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -491,6 +508,18 @@ enum Command {
     Service {
         #[command(subcommand)]
         command: service::ServiceCommand,
+    },
+    /// Run or manage the web dashboard
+    #[command(about = "Run or manage the web dashboard", after_help = DASHBOARD_HELP)]
+    Dashboard {
+        /// Port to listen on in foreground mode (default 10824)
+        #[arg(long, value_name = "N")]
+        port: Option<u16>,
+        /// Loopback address(es) to bind in foreground mode (127.0.0.1, ::1)
+        #[arg(long, value_name = "ADDR")]
+        bind: Option<String>,
+        #[command(subcommand)]
+        command: Option<service::DashboardCommand>,
     },
 }
 
@@ -934,12 +963,25 @@ fn command_uses_stream(command: &Command) -> bool {
 
 async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -> Result<()> {
     // Service commands tolerate a missing state directory (the registration
-    // probe treats it as lock-free), so they run before state discovery.
+    // probe treats it as lock-free), so they run before state discovery. The
+    // dashboard service-management commands resolve the state directory
+    // themselves for the access token.
     if matches!(command, Command::Service { .. }) {
         let Command::Service { command } = command else {
             unreachable!("matched Command::Service")
         };
         return service::execute(state_dir, command, format);
+    }
+    if matches!(command, Command::Dashboard { .. }) {
+        let Command::Dashboard {
+            port,
+            bind,
+            command,
+        } = command
+        else {
+            unreachable!("matched Command::Dashboard")
+        };
+        return service::execute_dashboard(state_dir, port, bind, command, format).await;
     }
     let paths = StatePaths::discover(state_dir.as_deref())?;
     match command {
@@ -1099,7 +1141,7 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         } => daemon(paths).await,
         Command::Mcp => mcp::run_mcp_server(paths).await,
         Command::SelfUpdate => {
-            let outcome = self_update::update().await?;
+            let outcome = self_update::update(&paths.root).await?;
             let warnings: Vec<&str> = outcome.warnings.iter().map(String::as_str).collect();
             render(
                 format,
@@ -1115,6 +1157,9 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         }
         Command::Service { .. } => {
             unreachable!("service commands run before state discovery")
+        }
+        Command::Dashboard { .. } => {
+            unreachable!("dashboard commands run before state discovery")
         }
     }
 }
@@ -2428,22 +2473,9 @@ fn render_config_get(format: Format, key: Option<&str>, settings: &SettingsRecor
 }
 
 fn redacted_settings_value(settings: &SettingsRecord) -> Result<Value> {
-    let mut value = serde_json::to_value(settings)?;
-    let environment = settings
-        .environment
-        .keys()
-        .map(|name| {
-            (
-                name.clone(),
-                json!({"configured":true,"value_redacted":true}),
-            )
-        })
-        .collect::<serde_json::Map<_, _>>();
-    value
-        .as_object_mut()
-        .expect("settings serialize as an object")
-        .insert("environment".into(), Value::Object(environment));
-    Ok(value)
+    Ok(locron_core::redact::redacted_settings_document(
+        serde_json::to_value(settings)?,
+    ))
 }
 
 fn render_environment_change(
@@ -3427,8 +3459,10 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
             })),
         }
     }
+    let checks = store.integrity_check()?;
+    let dashboard = service::dashboard_doctor_facts(Some(paths.root.clone()))?;
     if format == Format::Human {
-        render_doctor_human(paths, &settings, &resolutions, &store.integrity_check()?);
+        render_doctor_human(paths, &settings, &resolutions, &checks, &dashboard);
     } else {
         render(
             format,
@@ -3441,7 +3475,8 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
                 "execution_path":settings.execution_path,
                 "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
                 "process_resolution":resolutions,
-                "checks":store.integrity_check()?
+                "dashboard":dashboard,
+                "checks":checks
             }),
             &[],
         );
@@ -4440,6 +4475,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Mcp => "mcp",
         Command::SelfUpdate => "self-update",
         Command::Service { .. } => "service",
+        Command::Dashboard { .. } => "dashboard",
     }
 }
 #[derive(Serialize)]
@@ -4451,104 +4487,33 @@ struct Envelope<'a, T> {
     warnings: &'a [&'a str],
 }
 
+/// Redacts a job record through the shared core boundary.
 pub(crate) fn redacted_job(job: JobRecord) -> Result<Value> {
-    let mut value = serde_json::to_value(job)?;
-    if let Some(definition) = value.get_mut("definition_json") {
-        let source = definition.as_str().unwrap_or("{}");
-        *definition = Value::String(serde_json::to_string(&redact_definition(
-            serde_json::from_str(source)?,
-        ))?);
-    }
-    Ok(value)
+    Ok(locron_core::redact::redacted_job_document(
+        serde_json::to_value(job)?,
+    )?)
 }
 
+/// Redacts a run record through the shared core boundary.
 pub(crate) fn redacted_run(run: RunRecord) -> Result<Value> {
-    let mut value = serde_json::to_value(run)?;
-    if let Some(snapshot) = value.get_mut("snapshot_json") {
-        let source = snapshot.as_str().unwrap_or("{}");
-        *snapshot = Value::String(serde_json::to_string(&redact_definition(
-            serde_json::from_str(source)?,
-        ))?);
-    }
-    Ok(value)
+    Ok(locron_core::redact::redacted_run_document(
+        serde_json::to_value(run)?,
+    )?)
 }
 
+/// Redacts and enriches a run record through the shared core boundary.
+///
+/// Attempts are fetched through the store here (the core boundary takes documents only) and passed
+/// in serialized.
 pub(crate) fn redacted_observable_run(store: &Store, run: RunRecord) -> Result<Value> {
-    let source = run.trigger.clone();
-    let finished_at_us = run.finished_at_us;
-    let outcome = terminal_run_state(&run.state).then(|| run.state.clone());
     let attempts = serde_json::to_value(store.attempts_for_run(&run.id)?)?;
-    let actual_started_at_us = attempts.as_array().and_then(|attempts| {
-        attempts
-            .iter()
-            .filter_map(|attempt| attempt["running_at_us"].as_i64())
-            .min()
-    });
-    let duration_us = actual_started_at_us
-        .zip(finished_at_us)
-        .and_then(|(started, finished)| finished.checked_sub(started))
-        .filter(|duration| *duration >= 0);
-    let mut value = redacted_run(run)?;
-    let object = value
-        .as_object_mut()
-        .expect("run records serialize as objects");
-    object.insert("source".into(), json!(source));
-    object.insert("outcome".into(), json!(outcome));
-    object.insert("actual_started_at_us".into(), json!(actual_started_at_us));
-    object.insert("duration_us".into(), json!(duration_us));
-    object.insert("attempts".into(), attempts);
-    Ok(value)
+    Ok(locron_core::redact::redacted_observable_run_document(
+        serde_json::to_value(run)?,
+        attempts,
+    )?)
 }
 
-pub(crate) fn terminal_run_state(state: &str) -> bool {
-    matches!(
-        state,
-        "succeeded"
-            | "failed"
-            | "timed_out"
-            | "cancelled"
-            | "skipped_overlap"
-            | "skipped_concurrency"
-            | "interrupted_unknown"
-    )
-}
-
-pub(crate) fn redact_definition(mut definition: Value) -> Value {
-    if let Some(nested) = definition.get_mut("definition") {
-        *nested = redact_definition(nested.take());
-        return definition;
-    }
-    if let Some(values) = definition
-        .get_mut("environment")
-        .and_then(|environment| environment.get_mut("values"))
-        .and_then(Value::as_object_mut)
-    {
-        for value in values.values_mut() {
-            *value = Value::String("<redacted>".into());
-        }
-    }
-    if let Some(headers) = definition
-        .get_mut("target")
-        .and_then(|target| target.get_mut("headers"))
-        .and_then(Value::as_object_mut)
-    {
-        for value in headers.values_mut() {
-            if value.get("source").and_then(Value::as_str) == Some("inline")
-                && let Some(inline) = value.get_mut("value")
-            {
-                *inline = Value::String("<redacted>".into());
-            }
-        }
-    }
-    if let Some(body) = definition
-        .get_mut("target")
-        .and_then(|target| target.get_mut("body"))
-        && !body.is_null()
-    {
-        *body = Value::String("<redacted>".into());
-    }
-    definition
-}
+pub(crate) use locron_core::redact::{redact_definition, terminal_run_state};
 
 /// Truncates `text` to at most `max_width` display columns, appending the `…`
 /// marker (one display column) only when the value actually shrinks; a value
@@ -5143,6 +5108,7 @@ fn render_doctor_human(
     settings: &SettingsRecord,
     resolutions: &[Value],
     checks: &[String],
+    dashboard: &Value,
 ) {
     println!("ok   state dir: {}", paths.root.display());
     println!("ok   database: {}", paths.database.display());
@@ -5174,6 +5140,30 @@ fn render_doctor_human(
             let error = resolution["error"].as_str().unwrap_or("unknown error");
             println!("fail process resolution: {job_name} ({error})");
         }
+    }
+    if dashboard["registered"].as_bool() == Some(true) {
+        println!("ok   dashboard service: registered");
+    } else {
+        println!("warn dashboard service: not registered");
+    }
+    if dashboard["loaded"].as_bool() == Some(true) {
+        println!(
+            "ok   dashboard listener: {}",
+            dashboard["access_url"].as_str().unwrap_or("unknown")
+        );
+    } else {
+        println!("warn dashboard listener: not running");
+    }
+    let token_present = dashboard["token"]["present"].as_bool() == Some(true);
+    let token_permissions = dashboard["token"]["permissions"]
+        .as_str()
+        .unwrap_or("unknown");
+    if token_present && token_permissions == "owner_only" {
+        println!("ok   dashboard token: present (owner only)");
+    } else if token_present {
+        println!("fail dashboard token: present ({token_permissions})");
+    } else {
+        println!("warn dashboard token: missing");
     }
     for check in checks {
         match check.split_once(':') {

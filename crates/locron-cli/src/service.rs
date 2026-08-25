@@ -1,6 +1,7 @@
-//! `locron service` — register, unregister, and inspect the per-user daemon service.
+//! `locron service` and `locron dashboard enable|disable|status` — register,
+//! unregister, and inspect the per-user daemon and dashboard services.
 //!
-//! The daemon is registered with the operating system's per-user service
+//! Both services are registered with the operating system's per-user service
 //! manager through a small [`ServicePort`]: launchd LaunchAgents on macOS and
 //! systemd user units on Linux, both driven as child processes, plus a
 //! deterministic fake for tests. The flows themselves ([`install`],
@@ -8,6 +9,10 @@
 //! refresh and graceful restart when the service is already loaded, deferral
 //! when a manual daemon holds the state lock, and graceful stop-then-cleanup on
 //! uninstall.
+//!
+//! The two registration targets ([`Target::Daemon`] and [`Target::Dashboard`])
+//! are independent: each flow addresses exactly one target and never touches
+//! the other's registration.
 //!
 //! Registration always uses the canonicalized path of the running binary, so
 //! repeating it repairs a registration whose binary moved or was replaced.
@@ -21,8 +26,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::Subcommand;
+use locron_server::{Config, PortPolicy};
 use locron_store::{DaemonLock, StatePaths, StoreError};
 use serde_json::{Value, json};
 
@@ -31,23 +37,128 @@ use crate::{Format, render};
 /// launchd label of the registered daemon (kept on all test builds so the
 /// plist template tests run everywhere).
 #[cfg(any(target_os = "macos", test))]
-pub(crate) const LABEL: &str = "dev.locron.daemon";
-/// Name of the systemd user unit.
+const DAEMON_LABEL: &str = "dev.locron.daemon";
+/// launchd label of the registered dashboard (kept on all test builds so the
+/// plist template tests run everywhere).
+#[cfg(any(target_os = "macos", test))]
+const DASHBOARD_LABEL: &str = "dev.locron.dashboard";
+/// Name of the daemon's systemd user unit.
 #[cfg(target_os = "linux")]
-const UNIT: &str = "locron.service";
-/// Plist file name inside `~/Library/LaunchAgents`.
+const DAEMON_UNIT: &str = "locron.service";
+/// Name of the dashboard's systemd user unit.
+#[cfg(target_os = "linux")]
+const DASHBOARD_UNIT: &str = "locron-dashboard.service";
+/// Plist file name of the daemon inside `~/Library/LaunchAgents`.
 #[cfg(target_os = "macos")]
-const PLIST_NAME: &str = "dev.locron.daemon.plist";
+const DAEMON_PLIST_NAME: &str = "dev.locron.daemon.plist";
+/// Plist file name of the dashboard inside `~/Library/LaunchAgents`.
+#[cfg(target_os = "macos")]
+const DASHBOARD_PLIST_NAME: &str = "dev.locron.dashboard.plist";
 /// Log directory inside the home directory (the Homebrew default-log-path convention).
 #[cfg(any(target_os = "macos", test))]
 const LOG_DIR: &str = "Library/Logs/locron";
-/// Log file written by the service.
+/// Log file written by the daemon service.
 #[cfg(any(target_os = "macos", test))]
-const LOG_FILE: &str = "daemon.log";
+const DAEMON_LOG_FILE: &str = "daemon.log";
+/// Log file written by the dashboard service.
+#[cfg(any(target_os = "macos", test))]
+const DASHBOARD_LOG_FILE: &str = "dashboard.log";
 /// How long uninstall waits for a signaled daemon to leave the manager.
 const UNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 /// Poll interval while waiting for the daemon to exit.
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// The registration targets on the service-manager port.
+///
+/// Each target carries its own label/unit name, registration file name, log
+/// file, service arguments, and deferral behavior; the two registrations are
+/// independent and never touch each other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Target {
+    /// The scheduler daemon (`locron daemon run`).
+    Daemon,
+    /// The web dashboard (`locron dashboard serve`).
+    Dashboard,
+}
+
+impl Target {
+    /// The name the target carries in the current platform's manager.
+    pub(crate) fn service_name(self) -> &'static str {
+        match self {
+            Target::Daemon => {
+                #[cfg(target_os = "macos")]
+                {
+                    self.launchd_label()
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    DAEMON_UNIT
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+                {
+                    "locron.service"
+                }
+            }
+            Target::Dashboard => {
+                #[cfg(target_os = "macos")]
+                {
+                    self.launchd_label()
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    DASHBOARD_UNIT
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+                {
+                    "locron-dashboard.service"
+                }
+            }
+        }
+    }
+
+    /// The launchd label embedded in a plist, independent of the host that
+    /// renders the template in tests.
+    #[cfg(any(target_os = "macos", test))]
+    fn launchd_label(self) -> &'static str {
+        match self {
+            Target::Daemon => DAEMON_LABEL,
+            Target::Dashboard => DASHBOARD_LABEL,
+        }
+    }
+
+    /// The plist file name inside `~/Library/LaunchAgents`.
+    #[cfg(target_os = "macos")]
+    fn plist_name(self) -> &'static str {
+        match self {
+            Target::Daemon => DAEMON_PLIST_NAME,
+            Target::Dashboard => DASHBOARD_PLIST_NAME,
+        }
+    }
+
+    /// The log file written by the service.
+    #[cfg(any(target_os = "macos", test))]
+    fn log_file(self) -> &'static str {
+        match self {
+            Target::Daemon => DAEMON_LOG_FILE,
+            Target::Dashboard => DASHBOARD_LOG_FILE,
+        }
+    }
+
+    /// The unit description.
+    #[cfg(any(target_os = "linux", test))]
+    fn description(self) -> &'static str {
+        match self {
+            Target::Daemon => "locron scheduler daemon",
+            Target::Dashboard => "locron web dashboard",
+        }
+    }
+
+    /// Whether the start may be deferred when a manual daemon holds the state
+    /// lock. Only the daemon holds that lock; the dashboard never does.
+    fn defers_to_daemon_lock(self) -> bool {
+        matches!(self, Target::Daemon)
+    }
+}
 
 /// Guidance printed when no per-user service-manager session is available.
 /// The deb/rpm package postinst prints the same text.
@@ -172,26 +283,12 @@ pub(crate) enum ServiceCommand {
     Status,
 }
 
-/// The name the service carries in the current platform's manager.
-pub(crate) fn service_name() -> &'static str {
-    #[cfg(target_os = "macos")]
-    {
-        LABEL
-    }
-    #[cfg(target_os = "linux")]
-    {
-        UNIT
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    {
-        "locron.service"
-    }
-}
-
 /// Everything a backend needs to register the running binary as a service.
 struct ServiceContext {
     executable: PathBuf,
     home: PathBuf,
+    /// The registration target addressed by the flow.
+    target: Target,
     /// Launchd addresses the service as `gui/<uid>/<label>`; the systemd user
     /// manager has no per-domain user id, so the field is dead on Linux.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -200,7 +297,7 @@ struct ServiceContext {
 }
 
 impl ServiceContext {
-    fn new(state_dir: Option<PathBuf>) -> Result<Self, ServiceError> {
+    fn new(state_dir: Option<PathBuf>, target: Target) -> Result<Self, ServiceError> {
         let executable = canonical_executable()?;
         let home = env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
             ServiceError::Io("cannot determine the home directory (HOME is unset)".to_owned())
@@ -216,6 +313,7 @@ impl ServiceContext {
         Ok(Self {
             executable,
             home,
+            target,
             uid,
             paths,
         })
@@ -281,6 +379,7 @@ struct InstallOutcome {
 }
 
 /// Outcome of a successful `service uninstall`.
+#[derive(Debug)]
 struct UninstallOutcome {
     removed: bool,
     stopped: bool,
@@ -315,9 +414,15 @@ fn install(ctx: &ServiceContext, port: &dyn ServicePort) -> Result<InstallOutcom
             guidance: None,
         });
     }
-    let lock_held = match &ctx.paths {
-        Some(paths) => daemon_lock_held(paths)?,
-        None => false,
+    // Only the daemon defers to the daemon lock: the dashboard holds no lock,
+    // so a manually started daemon never defers its start.
+    let lock_held = if ctx.target.defers_to_daemon_lock() {
+        match &ctx.paths {
+            Some(paths) => daemon_lock_held(paths)?,
+            None => false,
+        }
+    } else {
+        false
     };
     port.enable(ctx)?;
     if lock_held {
@@ -505,30 +610,441 @@ pub(crate) fn execute(
     format: Format,
 ) -> Result<()> {
     let port = select_port()?;
-    let ctx = ServiceContext::new(state_dir)?;
+    let ctx = ServiceContext::new(state_dir, Target::Daemon)?;
     match command {
         ServiceCommand::Install => {
             let outcome = install(&ctx, port.as_ref())?;
-            render_install(format, &outcome);
+            render_install(format, Target::Daemon, "service install", &outcome);
         }
         ServiceCommand::Uninstall => {
             let outcome = uninstall(&ctx, port.as_ref())?;
-            render_uninstall(format, &outcome);
+            render_uninstall(format, Target::Daemon, "service uninstall", &outcome);
         }
         ServiceCommand::Status => {
             let outcome = status(&ctx, port.as_ref())?;
-            render_status(format, &outcome);
+            render_status(format, Target::Daemon, "service status", &outcome);
         }
     }
     Ok(())
 }
 
-fn render_install(format: Format, outcome: &InstallOutcome) {
+const DASHBOARD_ENABLE_HELP: &str = "\
+Examples:
+  locron dashboard enable
+  locron dashboard enable --reset
+
+Registers the dashboard as a per-user service and starts it, generating the
+access token when absent. Repeating it refreshes and repairs the registration.
+--reset regenerates the token first, then refreshes and restarts the service,
+invalidating the old token and any outstanding session cookies.
+
+Navigation:
+  Run 'locron dashboard --help' for dashboard commands or 'locron --help' for all commands.";
+const DASHBOARD_DISABLE_HELP: &str = "\
+Examples:
+  locron dashboard disable
+
+Unregisters the dashboard service: it stops a running service gracefully,
+removes it from the service manager, deletes the registration, and removes the
+access token. A foreground dashboard the user started themselves is never
+stopped; a warning names it.
+
+Navigation:
+  Run 'locron dashboard --help' for dashboard commands or 'locron --help' for all commands.";
+const DASHBOARD_STATUS_HELP: &str = "\
+Examples:
+  locron dashboard status
+
+Reports whether the dashboard is registered, loaded by the service manager,
+and (enabled) for the current platform, together with the access URL and
+access-token facts (presence and file-permission posture only, never the
+token value).
+
+Navigation:
+  Run 'locron dashboard --help' for dashboard commands or 'locron --help' for all commands.";
+const DASHBOARD_SERVE_HELP: &str = "\
+Examples:
+  locron dashboard
+  locron dashboard --port 9000 --bind 127.0.0.1
+
+Serves the web dashboard in the foreground: binds loopback only, prints the
+access URL, and serves until a signal. The bare 'locron dashboard' form is
+identical. An occupied default port falls back to the next free port when
+run by the user and fails in the explicitly marked registered-service mode,
+where the fixed address must never move;
+an explicit --port is always strict. The --bind option accepts only the
+loopback addresses 127.0.0.1 and ::1; any other value is refused.
+
+Navigation:
+  Run 'locron dashboard --help' for dashboard commands or 'locron --help' for all commands.";
+const DASHBOARD_TOKEN_HELP: &str = "\
+Examples:
+  locron dashboard token
+
+Re-displays the 64-character access token stored in the state directory,
+generating it when absent. This is the only output that shows the token
+value (besides the first-run foreground line); every other surface reports
+only token facts. The token is accepted by the entry-page paste box and the
+Authorization: token header.
+
+Navigation:
+  Run 'locron dashboard --help' for dashboard commands or 'locron --help' for all commands.";
+
+/// The `locron dashboard` subcommands. The bare `locron dashboard` form (no
+/// subcommand) serves in the foreground, identical to [`DashboardCommand::Serve`].
+#[derive(Clone, Copy, Subcommand, Debug)]
+pub(crate) enum DashboardCommand {
+    #[command(about = "Run the dashboard server in the foreground", after_help = DASHBOARD_SERVE_HELP)]
+    Serve {
+        /// Internal marker used only by the registered per-user service
+        #[arg(long, hide = true)]
+        service_mode: bool,
+    },
+    #[command(about = "Register and start the dashboard as a per-user service", after_help = DASHBOARD_ENABLE_HELP)]
+    Enable {
+        /// Regenerate the access token, then refresh and restart the service
+        #[arg(long)]
+        reset: bool,
+    },
+    #[command(about = "Unregister the dashboard service and remove the access token", after_help = DASHBOARD_DISABLE_HELP)]
+    Disable,
+    #[command(about = "Report the dashboard service registration state and access facts", after_help = DASHBOARD_STATUS_HELP)]
+    Status,
+    #[command(about = "Display the dashboard access token", after_help = DASHBOARD_TOKEN_HELP)]
+    Token,
+}
+
+/// The fixed access URL of the service-mode dashboard.
+fn access_url() -> String {
+    format!("http://127.0.0.1:{}/", locron_server::DEFAULT_PORT)
+}
+
+/// The state paths the dashboard flows operate on; a service context without
+/// paths cannot host the access token.
+fn dashboard_paths(ctx: &ServiceContext) -> Result<&StatePaths, ServiceError> {
+    ctx.paths
+        .as_ref()
+        .ok_or_else(|| ServiceError::Io("the dashboard state directory is unavailable".to_owned()))
+}
+
+/// Access-token facts for `dashboard status`: presence and permission posture
+/// only — the token value never leaves the token file.
+fn token_facts(paths: &StatePaths) -> Result<Value, ServiceError> {
+    let path = locron_server::token::token_path(paths);
+    match std::fs::metadata(&path) {
+        Ok(metadata) => {
+            #[cfg(unix)]
+            let mode = {
+                use std::os::unix::fs::PermissionsExt;
+                metadata.permissions().mode() & 0o777
+            };
+            #[cfg(not(unix))]
+            let mode = 0o600;
+            Ok(json!({
+                "present": true,
+                "permissions": if mode.trailing_zeros() >= 6 { "owner_only" } else { "world_readable" },
+            }))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(json!({ "present": false, "permissions": "missing" }))
+        }
+        Err(error) => Err(ServiceError::Io(format!(
+            "cannot inspect the access token file {}: {error}",
+            path.display()
+        ))),
+    }
+}
+
+/// True when something still accepts connections on the dashboard port — the
+/// fingerprint of a foreground `locron dashboard` the user started themselves.
+fn foreground_listener_present() -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, locron_server::DEFAULT_PORT)),
+        Duration::from_millis(200),
+    )
+    .is_ok()
+}
+
+/// `locron dashboard enable [--reset]`: ensure (or regenerate) the access
+/// token, then register/refresh/start the dashboard service. The dashboard
+/// holds no daemon lock, so the start never defers to a manual daemon.
+fn dashboard_enable(
+    ctx: &ServiceContext,
+    port: &dyn ServicePort,
+    reset: bool,
+) -> Result<InstallOutcome, ServiceError> {
+    refuse_managed_install(ctx)?;
+    let paths = dashboard_paths(ctx)?;
+    if reset {
+        locron_server::token::regenerate(paths).map_err(|error| {
+            ServiceError::Io(format!("cannot regenerate the access token: {error}"))
+        })?;
+    } else {
+        locron_server::token::ensure(paths).map_err(|error| {
+            ServiceError::Io(format!("cannot ensure the access token: {error}"))
+        })?;
+    }
+    install(ctx, port)
+}
+
+/// `locron dashboard disable`: unregister the service, then remove the access
+/// token, warning when a foreground instance may still be running.
+fn dashboard_disable(
+    ctx: &ServiceContext,
+    port: &dyn ServicePort,
+) -> Result<(UninstallOutcome, Option<String>), ServiceError> {
+    refuse_managed_install(ctx)?;
+    let outcome = uninstall(ctx, port)?;
+    let paths = dashboard_paths(ctx)?;
+    locron_server::token::remove(paths)
+        .map_err(|error| ServiceError::Io(format!("cannot remove the access token: {error}")))?;
+    let guidance = foreground_listener_present().then(|| {
+        "a foreground dashboard still listens on http://127.0.0.1:10824/; \
+             stop it yourself (Ctrl-C on its terminal)"
+            .to_owned()
+    });
+    Ok((outcome, guidance))
+}
+
+/// `locron dashboard status`: report the registration state, the access URL,
+/// and token facts.
+fn dashboard_status(
+    ctx: &ServiceContext,
+    port: &dyn ServicePort,
+) -> Result<(ServiceStatus, Value), ServiceError> {
+    let outcome = status(ctx, port)?;
+    let paths = dashboard_paths(ctx)?;
+    let token = token_facts(paths)?;
+    Ok((outcome, token))
+}
+
+/// The port policy for foreground serving: an explicit `--port` is always
+/// strict; without one, a user invocation falls back to the next free port
+/// while the explicit registered-service mode keeps the fixed default so the
+/// bookmarked address never moves.
+fn port_policy(explicit_port: Option<u16>, service_mode: bool) -> PortPolicy {
+    if explicit_port.is_some() || service_mode {
+        PortPolicy::Fixed
+    } else {
+        PortPolicy::Foreground
+    }
+}
+
+/// Validate the `--bind` values: only the loopback literals `127.0.0.1` and
+/// `::1` are accepted (comma separated), matching the fixed loopback-only
+/// contract; anything else is a stable usage error.
+fn parse_bind(bind: Option<&str>) -> Result<Vec<String>, String> {
+    let Some(bind) = bind else {
+        return Ok(vec!["127.0.0.1".to_owned(), "::1".to_owned()]);
+    };
+    let addresses = bind
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if addresses.is_empty() {
+        return Err("--bind requires at least one loopback address (127.0.0.1, ::1)".to_owned());
+    }
+    for address in &addresses {
+        if !matches!(*address, "127.0.0.1" | "::1") {
+            return Err(format!(
+                "--bind accepts only the loopback addresses 127.0.0.1 and ::1; refused {address}"
+            ));
+        }
+    }
+    Ok(addresses.into_iter().map(str::to_owned).collect())
+}
+
+/// The state paths for foreground serving, tolerating a missing platform
+/// default only when an explicit state directory was given.
+fn serve_paths(state_dir: Option<PathBuf>) -> Result<StatePaths, ServiceError> {
+    match StatePaths::discover(state_dir.as_deref()) {
+        Ok(paths) => Ok(paths),
+        Err(_) => state_dir
+            .map(StatePaths::new)
+            .ok_or_else(|| ServiceError::Io("cannot determine the state directory".to_owned())),
+    }
+}
+
+/// `locron dashboard` / `locron dashboard serve`: bind loopback, print the
+/// access URL, then serve until a signal.
+async fn foreground_serve(
+    state_dir: Option<PathBuf>,
+    port_arg: Option<u16>,
+    bind_arg: Option<String>,
+    service_mode: bool,
+    format: Format,
+) -> Result<()> {
+    let paths = serve_paths(state_dir)?;
+    let bind = parse_bind(bind_arg.as_deref()).map_err(|message| anyhow!(message))?;
+    let config = Config {
+        bind,
+        port: port_arg,
+        port_policy: port_policy(port_arg, service_mode),
+        token_file: locron_server::token::TOKEN_FILE_NAME.into(),
+    };
+    let bound = locron_server::bind(&config)
+        .await
+        .map_err(|error| ServiceError::Io(format!("cannot bind the dashboard server: {error}")))?;
+    let generated = !locron_server::token::token_path(&paths).exists();
+    let token = locron_server::token::ensure(&paths)
+        .map_err(|error| ServiceError::Io(format!("cannot ensure the access token: {error}")))?;
+    let url = format!("http://{}/", bound.address);
+    match format {
+        Format::Human => {
+            println!("Dashboard URL: {url}");
+            for warning in &bound.warnings {
+                eprintln!("warning: {warning}");
+            }
+            if generated {
+                println!(
+                    "Access token (newly generated; the entry-page paste box accepts it): {token}"
+                );
+            }
+        }
+        Format::Json => {
+            let mut token_data = token_facts(&paths)?;
+            token_data["generated"] = json!(generated);
+            let warnings = bound
+                .warnings
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            render(
+                format,
+                "dashboard",
+                json!({
+                    "access_url": url,
+                    "token": token_data,
+                }),
+                &warnings,
+            );
+        }
+    }
+    locron_server::serve(bound, paths)
+        .await
+        .map_err(|error| ServiceError::Io(format!("the dashboard server failed: {error}")))?;
+    Ok(())
+}
+
+/// `locron dashboard token`: ensure and re-display the access token — the only
+/// output that shows the token value.
+fn dashboard_token(state_dir: Option<PathBuf>, format: Format) -> Result<(), ServiceError> {
+    let ctx = ServiceContext::new(state_dir, Target::Dashboard)?;
+    let paths = dashboard_paths(&ctx)?;
+    let token = locron_server::token::ensure(paths)
+        .map_err(|error| ServiceError::Io(format!("cannot read the access token: {error}")))?;
+    render(
+        format,
+        "dashboard token",
+        json!({
+            "access_url": access_url(),
+            "token": token,
+        }),
+        &[],
+    );
+    Ok(())
+}
+
+/// Dashboard exposure facts for `locron doctor`: token posture and whether a
+/// dashboard service is registered (never the token value).
+pub(crate) fn dashboard_doctor_facts(state_dir: Option<PathBuf>) -> Result<Value, ServiceError> {
+    let ctx = ServiceContext::new(state_dir, Target::Dashboard)?;
+    let paths = dashboard_paths(&ctx)?;
+    let token = token_facts(paths)?;
+    let outcome = status(&ctx, select_port()?.as_ref())?;
+    Ok(json!({
+        "access_url": access_url(),
+        "token": token,
+        "registered": outcome.registered,
+        "loaded": outcome.loaded,
+    }))
+}
+
+/// Run the requested dashboard subcommand and render its result. The bare
+/// `locron dashboard` form (no subcommand) serves in the foreground.
+pub(crate) async fn execute_dashboard(
+    state_dir: Option<PathBuf>,
+    port_arg: Option<u16>,
+    bind_arg: Option<String>,
+    command: Option<DashboardCommand>,
+    format: Format,
+) -> Result<()> {
+    match command {
+        None => foreground_serve(state_dir, port_arg, bind_arg, false, format).await,
+        Some(DashboardCommand::Serve { service_mode }) => {
+            foreground_serve(state_dir, port_arg, bind_arg, service_mode, format).await
+        }
+        Some(DashboardCommand::Token) => dashboard_token(state_dir, format).map_err(Into::into),
+        Some(
+            DashboardCommand::Enable { .. } | DashboardCommand::Disable | DashboardCommand::Status,
+        ) => {
+            if port_arg.is_some() || bind_arg.is_some() {
+                return Err(anyhow!(
+                    "the --port and --bind options apply only to foreground serving; \
+                     run 'locron dashboard --port N' without a subcommand"
+                ));
+            }
+            let port = select_port()?;
+            let ctx = ServiceContext::new(state_dir, Target::Dashboard)?;
+            match command {
+                Some(DashboardCommand::Enable { reset }) => {
+                    let outcome = dashboard_enable(&ctx, port.as_ref(), reset)?;
+                    render_install(format, Target::Dashboard, "dashboard enable", &outcome);
+                }
+                Some(DashboardCommand::Disable) => {
+                    let (outcome, guidance) = dashboard_disable(&ctx, port.as_ref())?;
+                    let mut data = json!({
+                        "removed": outcome.removed,
+                        "stopped": outcome.stopped,
+                        "token_removed": true,
+                        "service_name": Target::Dashboard.service_name(),
+                    });
+                    if let Some(guidance) = guidance {
+                        data["guidance"] = json!(guidance);
+                        if format == Format::Human {
+                            eprintln!("\n{guidance}");
+                        }
+                    }
+                    render(format, "dashboard disable", data, &[]);
+                }
+                Some(DashboardCommand::Status) => {
+                    let (outcome, token) = dashboard_status(&ctx, port.as_ref())?;
+                    let mut data = json!({
+                        "registered": outcome.registered,
+                        "loaded": outcome.loaded,
+                        "enabled": outcome.enabled,
+                        "domain": outcome.domain,
+                        "pid": outcome.pid,
+                        "executable": outcome.executable,
+                        "session_available": outcome.session_available,
+                        "service_name": Target::Dashboard.service_name(),
+                        "access_url": access_url(),
+                        "token": token,
+                    });
+                    if !outcome.loaded && outcome.registered {
+                        data["guidance"] = json!(
+                            "the service is registered but not running; an occupied port at the access URL or a stopped service are the usual causes"
+                        );
+                        if format == Format::Human {
+                            eprintln!("\n{}", data["guidance"]);
+                        }
+                    }
+                    render(format, "dashboard status", data, &[]);
+                }
+                _ => unreachable!("matched a service-management dashboard command"),
+            }
+            Ok(())
+        }
+    }
+}
+
+fn render_install(format: Format, target: Target, command: &str, outcome: &InstallOutcome) {
     let mut data = json!({
         "registered": outcome.registered,
         "restarted": outcome.restarted,
         "deferred": outcome.deferred,
-        "service_name": service_name(),
+        "service_name": target.service_name(),
     });
     if let Some(domain) = &outcome.domain {
         data["domain"] = json!(domain);
@@ -539,26 +1055,26 @@ fn render_install(format: Format, outcome: &InstallOutcome) {
             eprintln!("\n{guidance}");
         }
     }
-    render(format, "service install", data, &[]);
+    render(format, command, data, &[]);
 }
 
-fn render_uninstall(format: Format, outcome: &UninstallOutcome) {
+fn render_uninstall(format: Format, target: Target, command: &str, outcome: &UninstallOutcome) {
     render(
         format,
-        "service uninstall",
+        command,
         json!({
             "removed": outcome.removed,
             "stopped": outcome.stopped,
-            "service_name": service_name(),
+            "service_name": target.service_name(),
         }),
         &[],
     );
 }
 
-fn render_status(format: Format, outcome: &ServiceStatus) {
+fn render_status(format: Format, target: Target, command: &str, outcome: &ServiceStatus) {
     render(
         format,
-        "service status",
+        command,
         json!({
             "registered": outcome.registered,
             "loaded": outcome.loaded,
@@ -567,7 +1083,7 @@ fn render_status(format: Format, outcome: &ServiceStatus) {
             "pid": outcome.pid,
             "executable": outcome.executable,
             "session_available": outcome.session_available,
-            "service_name": service_name(),
+            "service_name": target.service_name(),
         }),
         &[],
     );
@@ -609,24 +1125,39 @@ fn escape_xml(text: &str) -> String {
     escaped
 }
 
-/// Render the LaunchAgent plist for the canonicalized binary (kept on all
-/// test builds so the plist template tests run everywhere).
+/// Render the LaunchAgent plist for the canonicalized binary and target (kept
+/// on all test builds so the plist template tests run everywhere).
 #[cfg(any(target_os = "macos", test))]
-fn render_plist(executable: &Path, home: &Path) -> String {
-    let executable = escape_xml(&executable.display().to_string());
-    let log = escape_xml(&home.join(LOG_DIR).join(LOG_FILE).display().to_string());
-    format!(
+fn render_plist(ctx: &ServiceContext) -> Result<String, ServiceError> {
+    let label = ctx.target.launchd_label();
+    let executable = escape_xml(&ctx.executable.display().to_string());
+    let log = escape_xml(
+        &ctx.home
+            .join(LOG_DIR)
+            .join(ctx.target.log_file())
+            .display()
+            .to_string(),
+    );
+    let arguments = match ctx.target {
+        Target::Daemon => "    <string>daemon</string>\n    <string>run</string>".to_owned(),
+        Target::Dashboard => {
+            let state_dir = escape_xml(&dashboard_paths(ctx)?.root.display().to_string());
+            format!(
+                "    <string>--state-dir</string>\n    <string>{state_dir}</string>\n    <string>dashboard</string>\n    <string>serve</string>\n    <string>--service-mode</string>"
+            )
+        }
+    };
+    Ok(format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>{LABEL}</string>
+  <string>{label}</string>
   <key>ProgramArguments</key>
   <array>
     <string>{executable}</string>
-    <string>daemon</string>
-    <string>run</string>
+{arguments}
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -638,8 +1169,8 @@ fn render_plist(executable: &Path, home: &Path) -> String {
   <string>{log}</string>
 </dict>
 </plist>
-"#
-    )
+"#,
+    ))
 }
 
 /// Escape a path for use inside a double-quoted systemd `ExecStart` argument:
@@ -660,35 +1191,44 @@ fn escape_systemd_path(path: &str) -> String {
     escaped
 }
 
-/// Render the systemd user unit for the canonicalized binary.
+/// Render the systemd user unit for the canonicalized binary and target.
 #[cfg(any(target_os = "linux", test))]
-fn render_unit(executable: &Path) -> String {
-    let executable = escape_systemd_path(&executable.display().to_string());
-    format!(
-        r#"# Managed by 'locron service install'; remove with 'locron service uninstall'.
+fn render_unit(ctx: &ServiceContext) -> Result<String, ServiceError> {
+    let executable = escape_systemd_path(&ctx.executable.display().to_string());
+    let arguments = match ctx.target {
+        Target::Daemon => "daemon run".to_owned(),
+        Target::Dashboard => {
+            let state_dir = escape_systemd_path(&dashboard_paths(ctx)?.root.display().to_string());
+            format!("--state-dir \"{state_dir}\" dashboard serve --service-mode")
+        }
+    };
+    Ok(format!(
+        r#"# Managed by 'locron service install' / 'locron dashboard enable'; remove with
+# 'locron service uninstall' / 'locron dashboard disable'.
 [Unit]
-Description=locron scheduler daemon
+Description={description}
 
 [Service]
-ExecStart="{executable}" daemon run
+ExecStart="{executable}" {arguments}
 Restart=on-failure
 RestartSec=1
 
 [Install]
 WantedBy=default.target
-"#
-    )
+"#,
+        description = ctx.target.description(),
+    ))
 }
 
 #[cfg(target_os = "macos")]
 mod launchd {
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::process::{Command, Output};
 
     use super::{
-        LABEL, LOG_DIR, PLIST_NAME, ServiceContext, ServiceError, ServicePort, ServiceStatus,
-        StartedService, render_plist, write_private,
+        LOG_DIR, ServiceContext, ServiceError, ServicePort, ServiceStatus, StartedService,
+        render_plist, write_private,
     };
 
     /// The launchd backend: `enable`, `bootstrap`, `print`, `kill`, and
@@ -700,8 +1240,10 @@ mod launchd {
         [format!("gui/{}", ctx.uid), format!("user/{}", ctx.uid)]
     }
 
-    fn plist_path(home: &Path) -> PathBuf {
-        home.join("Library/LaunchAgents").join(PLIST_NAME)
+    fn plist_path(ctx: &ServiceContext) -> PathBuf {
+        ctx.home
+            .join("Library/LaunchAgents")
+            .join(ctx.target.plist_name())
     }
 
     fn launchctl(args: &[&str]) -> Result<Output, ServiceError> {
@@ -730,8 +1272,7 @@ mod launchd {
         Command::new("launchctl")
             .args(args)
             .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
+            .is_ok_and(|output| output.status.success())
     }
 
     /// `launchctl kill` and `bootout` fail with exit 3 when the job has no
@@ -752,7 +1293,7 @@ mod launchd {
     /// The domain the service is currently loaded in, if any.
     fn loaded_domain(ctx: &ServiceContext) -> Option<String> {
         for domain in domains(ctx) {
-            let target = format!("{domain}/{LABEL}");
+            let target = format!("{domain}/{}", ctx.target.service_name());
             if launchctl_ok(&["print", &target]) {
                 return Some(domain);
             }
@@ -779,12 +1320,12 @@ mod launchd {
                     log_directory.display()
                 ))
             })?;
-            let plist = render_plist(&ctx.executable, &ctx.home);
-            write_private(&plist_path(&ctx.home), plist.as_bytes())
+            let plist = render_plist(ctx)?;
+            write_private(&plist_path(ctx), plist.as_bytes())
         }
 
         fn remove_registration(&self, ctx: &ServiceContext) -> Result<bool, ServiceError> {
-            let path = plist_path(&ctx.home);
+            let path = plist_path(ctx);
             match fs::remove_file(&path) {
                 Ok(()) => Ok(true),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -807,12 +1348,12 @@ mod launchd {
         fn enable(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
             // Enable in the gui domain; the fallback bootstrap keeps the user
             // domain consistent when the gui domain is unavailable.
-            let target = format!("gui/{}/{}", ctx.uid, LABEL);
+            let target = format!("gui/{}/{}", ctx.uid, ctx.target.service_name());
             launchctl(&["enable", &target]).map(|_| ())
         }
 
         fn start(&self, ctx: &ServiceContext) -> Result<StartedService, ServiceError> {
-            let plist = plist_path(&ctx.home);
+            let plist = plist_path(ctx);
             let plist = plist.to_string_lossy();
             let mut last_error = None;
             for domain in domains(ctx) {
@@ -833,7 +1374,7 @@ mod launchd {
             let Some(domain) = loaded_domain(ctx) else {
                 return Ok(());
             };
-            let target = format!("{domain}/{LABEL}");
+            let target = format!("{domain}/{}", ctx.target.service_name());
             launchctl_ok_or_absent(&["kill", "SIGTERM", &target])
         }
 
@@ -846,20 +1387,20 @@ mod launchd {
             let Some(domain) = loaded_domain(ctx) else {
                 return Ok(());
             };
-            let target = format!("{domain}/{LABEL}");
+            let target = format!("{domain}/{}", ctx.target.service_name());
             launchctl_ok_or_absent(&["bootout", &target])
         }
 
         fn status(&self, ctx: &ServiceContext) -> Result<ServiceStatus, ServiceError> {
             let mut status = ServiceStatus {
-                registered: plist_path(&ctx.home).exists(),
+                registered: plist_path(ctx).exists(),
                 session_available: true,
                 ..Default::default()
             };
             let Some(domain) = loaded_domain(ctx) else {
                 return Ok(status);
             };
-            let target = format!("{domain}/{LABEL}");
+            let target = format!("{domain}/{}", ctx.target.service_name());
             let output = launchctl(&["print", &target])?;
             let output = String::from_utf8_lossy(&output.stdout);
             status.loaded = true;
@@ -877,7 +1418,7 @@ mod launchd {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 mod systemd {
     use std::env;
     use std::fs;
@@ -885,8 +1426,8 @@ mod systemd {
     use std::process::{Command, Output};
 
     use super::{
-        ServiceContext, ServiceError, ServicePort, ServiceStatus, StartedService, UNIT,
-        render_unit, write_private,
+        ServiceContext, ServiceError, ServicePort, ServiceStatus, StartedService, render_unit,
+        write_private,
     };
 
     /// The systemd-user backend: `daemon-reload`, `enable --now`, `stop`,
@@ -901,7 +1442,7 @@ mod systemd {
     }
 
     fn unit_path(ctx: &ServiceContext) -> PathBuf {
-        unit_dir(ctx).join(UNIT)
+        unit_dir(ctx).join(ctx.target.service_name())
     }
 
     fn systemctl(args: &[&str]) -> Result<Output, ServiceError> {
@@ -951,7 +1492,7 @@ mod systemd {
             fs::create_dir_all(&directory).map_err(|error| {
                 ServiceError::Io(format!("cannot create {}: {error}", directory.display()))
             })?;
-            let unit = render_unit(&ctx.executable);
+            let unit = render_unit(ctx)?;
             write_private(&unit_path(ctx), unit.as_bytes())
         }
 
@@ -971,20 +1512,25 @@ mod systemd {
             systemctl(&["--user", "daemon-reload"]).map(|_| ())
         }
 
-        fn is_loaded(&self, _ctx: &ServiceContext) -> Result<bool, ServiceError> {
-            Ok(systemctl_ok(&["--user", "is-active", UNIT]))
+        fn is_loaded(&self, ctx: &ServiceContext) -> Result<bool, ServiceError> {
+            Ok(systemctl_ok(&[
+                "--user",
+                "is-active",
+                ctx.target.service_name(),
+            ]))
         }
 
-        fn enable(&self, _ctx: &ServiceContext) -> Result<(), ServiceError> {
-            systemctl(&["--user", "enable", UNIT]).map(|_| ())
+        fn enable(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
+            systemctl(&["--user", "enable", ctx.target.service_name()]).map(|_| ())
         }
 
-        fn start(&self, _ctx: &ServiceContext) -> Result<StartedService, ServiceError> {
-            systemctl(&["--user", "enable", "--now", UNIT]).map(|_| StartedService { domain: None })
+        fn start(&self, ctx: &ServiceContext) -> Result<StartedService, ServiceError> {
+            systemctl(&["--user", "enable", "--now", ctx.target.service_name()])
+                .map(|_| StartedService { domain: None })
         }
 
-        fn stop(&self, _ctx: &ServiceContext) -> Result<(), ServiceError> {
-            systemctl(&["--user", "stop", UNIT]).map(|_| ())
+        fn stop(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
+            systemctl(&["--user", "stop", ctx.target.service_name()]).map(|_| ())
         }
 
         fn restart(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
@@ -995,8 +1541,8 @@ mod systemd {
             Ok(())
         }
 
-        fn unload(&self, _ctx: &ServiceContext) -> Result<(), ServiceError> {
-            systemctl(&["--user", "disable", UNIT]).map(|_| ())
+        fn unload(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
+            systemctl(&["--user", "disable", ctx.target.service_name()]).map(|_| ())
         }
 
         fn status(&self, ctx: &ServiceContext) -> Result<ServiceStatus, ServiceError> {
@@ -1010,8 +1556,12 @@ mod systemd {
             if !session_available {
                 return Ok(status);
             }
-            status.loaded = systemctl_ok(&["--user", "is-active", UNIT]);
-            status.enabled = Some(systemctl_ok(&["--user", "is-enabled", UNIT]));
+            status.loaded = systemctl_ok(&["--user", "is-active", ctx.target.service_name()]);
+            status.enabled = Some(systemctl_ok(&[
+                "--user",
+                "is-enabled",
+                ctx.target.service_name(),
+            ]));
             Ok(status)
         }
     }
@@ -1227,8 +1777,19 @@ mod tests {
         ServiceContext {
             executable: executable.to_path_buf(),
             home: tmp.to_path_buf(),
+            target: Target::Daemon,
             uid: 501,
             paths: None,
+        }
+    }
+
+    fn ctx_with_target(tmp: &Path, executable: &Path, target: Target) -> ServiceContext {
+        ServiceContext {
+            executable: executable.to_path_buf(),
+            home: tmp.to_path_buf(),
+            target,
+            uid: 501,
+            paths: Some(StatePaths::new(tmp.join("state"))),
         }
     }
 
@@ -1244,7 +1805,8 @@ mod tests {
     fn plist_template_renders_required_keys_and_paths() {
         let executable = Path::new("/opt/locron/bin/locron");
         let home = Path::new("/Users/tester");
-        let plist = render_plist(executable, home);
+        let ctx = ctx_with_target(home, executable, Target::Daemon);
+        let plist = render_plist(&ctx).unwrap();
         assert!(plist.contains("<string>dev.locron.daemon</string>"));
         assert!(plist.contains("<string>/opt/locron/bin/locron</string>"));
         assert!(plist.contains("<string>daemon</string>"));
@@ -1261,10 +1823,33 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_plist_template_uses_dashboard_label_args_and_log() {
+        let executable = Path::new("/opt/locron/bin/locron");
+        let home = Path::new("/Users/tester");
+        let ctx = ctx_with_target(home, executable, Target::Dashboard);
+        let plist = render_plist(&ctx).unwrap();
+        assert!(plist.contains("<string>dev.locron.dashboard</string>"));
+        assert!(plist.contains("<string>/opt/locron/bin/locron</string>"));
+        assert!(plist.contains("<string>dashboard</string>"));
+        assert!(plist.contains("<string>serve</string>"));
+        assert!(plist.contains("<string>--service-mode</string>"));
+        assert!(plist.contains("<string>--state-dir</string>"));
+        assert!(plist.contains("<string>/Users/tester/state</string>"));
+        assert!(!plist.contains("dev.locron.daemon"));
+        assert!(!plist.contains("<string>daemon</string>\n    <string>run</string>"));
+        let log = format!(
+            "<string>{}</string>",
+            home.join("Library/Logs/locron/dashboard.log").display()
+        );
+        assert_eq!(plist.matches(&log).count(), 2);
+    }
+
+    #[test]
     fn plist_template_xml_escapes_special_paths() {
         let executable = Path::new("/tmp/a&b <c>/locron");
         let home = Path::new("/Users/te'ster");
-        let plist = render_plist(executable, home);
+        let ctx = ctx_with_target(home, executable, Target::Daemon);
+        let plist = render_plist(&ctx).unwrap();
         assert!(plist.contains("/tmp/a&amp;b &lt;c&gt;/locron"));
         assert!(plist.contains("te&apos;ster"));
         assert!(!plist.contains("/tmp/a&b"));
@@ -1273,7 +1858,12 @@ mod tests {
 
     #[test]
     fn unit_template_renders_required_keys_and_paths() {
-        let unit = render_unit(Path::new("/opt/locron/bin/locron"));
+        let ctx = ctx_with_target(
+            Path::new("/home/tester"),
+            Path::new("/opt/locron/bin/locron"),
+            Target::Daemon,
+        );
+        let unit = render_unit(&ctx).unwrap();
         assert!(unit.contains("[Unit]"));
         assert!(unit.contains("[Service]"));
         assert!(unit.contains("[Install]"));
@@ -1284,9 +1874,167 @@ mod tests {
     }
 
     #[test]
+    fn systemd_backend_type_checks_on_every_test_host() {
+        let port: Box<dyn ServicePort> = Box::new(systemd::SystemdPort);
+        drop(port);
+    }
+
+    #[test]
+    fn dashboard_unit_template_uses_dashboard_description_and_args() {
+        let ctx = ctx_with_target(
+            Path::new("/home/tester"),
+            Path::new("/opt/locron/bin/locron"),
+            Target::Dashboard,
+        );
+        let unit = render_unit(&ctx).unwrap();
+        assert!(unit.contains("Description=locron web dashboard"));
+        assert!(unit.contains(
+            "ExecStart=\"/opt/locron/bin/locron\" --state-dir \"/home/tester/state\" dashboard serve --service-mode"
+        ));
+        assert!(!unit.contains("daemon run"));
+        assert!(!unit.contains("locron scheduler daemon"));
+    }
+
+    #[test]
     fn unit_template_escapes_systemd_specials() {
-        let unit = render_unit(Path::new("/tmp/a\"b $c/locron"));
+        let ctx = ctx_with_target(
+            Path::new("/home/tester"),
+            Path::new("/tmp/a\"b $c/locron"),
+            Target::Daemon,
+        );
+        let unit = render_unit(&ctx).unwrap();
         assert!(unit.contains("ExecStart=\"/tmp/a\\\"b \\$c/locron\" daemon run"));
+    }
+
+    #[test]
+    fn dashboard_enable_generates_the_token_then_registers_and_starts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = ctx_with_target(
+            tmp.path(),
+            Path::new("/opt/locron/bin/locron"),
+            Target::Dashboard,
+        );
+        let port = fake(true, false, false, false);
+        let outcome = dashboard_enable(&ctx, &port, false).unwrap();
+        assert!(outcome.registered);
+        assert!(!outcome.restarted);
+        assert!(!outcome.deferred);
+        assert_eq!(outcome.guidance, None);
+        let paths = StatePaths::new(tmp.path().join("state"));
+        let token = std::fs::read_to_string(paths.root.join("dashboard.token")).unwrap();
+        assert_eq!(token.len(), 64);
+        // The dashboard never probes the daemon lock: no status call for it,
+        // and the start is never deferred.
+        assert_eq!(
+            calls(&port),
+            [
+                "session_available",
+                "write_registration",
+                "reload",
+                "is_loaded",
+                "enable",
+                "start",
+            ]
+        );
+    }
+
+    #[test]
+    fn dashboard_enable_reuses_the_token_unless_reset() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(tmp.path().join("state"));
+        let first = locron_server::token::ensure(&paths).unwrap();
+        let ctx = ctx_with_target(
+            tmp.path(),
+            Path::new("/opt/locron/bin/locron"),
+            Target::Dashboard,
+        );
+        let port = fake(true, true, true, true);
+        let outcome = dashboard_enable(&ctx, &port, false).unwrap();
+        assert!(outcome.restarted, "repeated enable refreshes and restarts");
+        assert_eq!(
+            std::fs::read_to_string(paths.root.join("dashboard.token")).unwrap(),
+            first,
+            "enable without --reset must reuse the stored token"
+        );
+        let outcome = dashboard_enable(&ctx, &port, true).unwrap();
+        assert!(outcome.restarted);
+        let second = std::fs::read_to_string(paths.root.join("dashboard.token")).unwrap();
+        assert_ne!(first, second, "--reset must regenerate the token");
+        assert_eq!(second.len(), 64);
+    }
+
+    #[test]
+    fn dashboard_disable_unregisters_then_removes_the_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(tmp.path().join("state"));
+        locron_server::token::ensure(&paths).unwrap();
+        let ctx = ctx_with_target(
+            tmp.path(),
+            Path::new("/opt/locron/bin/locron"),
+            Target::Dashboard,
+        );
+        let port = fake(true, true, true, true);
+        let (outcome, guidance) = dashboard_disable(&ctx, &port).unwrap();
+        assert!(outcome.removed);
+        assert!(outcome.stopped);
+        assert!(
+            !paths.root.join("dashboard.token").exists(),
+            "disable must remove the access token"
+        );
+        let calls = calls(&port);
+        let stop_at = calls.iter().position(|call| call == "stop").unwrap();
+        let unload_at = calls.iter().position(|call| call == "unload").unwrap();
+        let remove_at = calls
+            .iter()
+            .position(|call| call == "remove_registration")
+            .unwrap();
+        assert!(stop_at < unload_at && unload_at < remove_at);
+        // The foreground-listener probe is best-effort; the guidance may or
+        // may not fire, but the flow must never error on it.
+        let _ = guidance;
+    }
+
+    #[test]
+    fn dashboard_flows_refuse_managed_binaries_before_touching_anything() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let marker_dir = tmp.path().join("lib");
+        fs::create_dir_all(&marker_dir).unwrap();
+        fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
+        let ctx = ctx_with_target(tmp.path(), &bin.join("locron"), Target::Dashboard);
+        let port = fake(true, false, false, false);
+        let error = dashboard_enable(&ctx, &port, false).unwrap_err();
+        assert!(matches!(error, ServiceError::ManagedInstall));
+        let paths = StatePaths::new(tmp.path().join("state"));
+        assert!(
+            !paths.root.join("dashboard.token").exists(),
+            "refusal must happen before the token is generated"
+        );
+        let error = dashboard_disable(&ctx, &port).unwrap_err();
+        assert!(matches!(error, ServiceError::ManagedInstall));
+        assert_eq!(calls(&port), Vec::<String>::new());
+    }
+
+    #[test]
+    fn dashboard_status_reports_backend_fields_and_token_facts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(tmp.path().join("state"));
+        locron_server::token::ensure(&paths).unwrap();
+        let ctx = ctx_with_target(
+            tmp.path(),
+            Path::new("/opt/locron/bin/locron"),
+            Target::Dashboard,
+        );
+        let port = fake(true, true, true, true);
+        let (outcome, token) = dashboard_status(&ctx, &port).unwrap();
+        assert!(outcome.registered);
+        assert!(outcome.loaded);
+        assert_eq!(outcome.enabled, Some(true));
+        assert_eq!(outcome.domain.as_deref(), Some("fake/domain"));
+        assert_eq!(token["present"], true);
+        assert_eq!(token["permissions"], "owner_only");
+        assert_eq!(access_url(), "http://127.0.0.1:10824/");
     }
 
     #[test]
@@ -1353,6 +2101,7 @@ mod tests {
         let ctx = ServiceContext {
             executable: PathBuf::from("/opt/locron/bin/locron"),
             home: tmp.path().to_path_buf(),
+            target: Target::Daemon,
             uid: 501,
             paths: Some(paths),
         };

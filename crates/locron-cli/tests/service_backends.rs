@@ -61,8 +61,7 @@ fn launchctl_ok(args: &[&str]) -> bool {
     Command::new("launchctl")
         .args(args)
         .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+        .is_ok_and(|output| output.status.success())
 }
 
 /// The default-state daemon lock, so a manual daemon's ownership is respected.
@@ -115,6 +114,25 @@ impl Drop for ServiceCleanup {
             .output();
         let _ = Command::new("launchctl")
             .args(["bootout", &format!("gui/{}/dev.locron.daemon", uid())])
+            .output();
+    }
+}
+
+/// Best-effort dashboard uninstall on drop (service plus the access token).
+#[cfg(target_os = "macos")]
+struct DashboardServiceCleanup {
+    binary: PathBuf,
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for DashboardServiceCleanup {
+    fn drop(&mut self) {
+        let _ = Command::new(&self.binary)
+            .arg("dashboard")
+            .arg("disable")
+            .output();
+        let _ = Command::new("launchctl")
+            .args(["bootout", &format!("gui/{}/dev.locron.dashboard", uid())])
             .output();
     }
 }
@@ -222,8 +240,7 @@ fn macos_launchd_backend_registers_restarts_and_unregisters() {
                         .arg(first_pid.to_string())
                         .stderr(std::process::Stdio::null())
                         .status()
-                        .map(|status| status.success())
-                        .unwrap_or(false)
+                        .is_ok_and(|status| status.success())
             },
             Duration::from_secs(60),
             "the old daemon pid to exit and a new pid to take the state lock",
@@ -247,6 +264,120 @@ fn macos_launchd_backend_registers_restarts_and_unregisters() {
     );
     assert!(!plist.exists(), "uninstall removes the plist");
     let (code, status) = run_json(&binary, &["service", "status"]);
+    assert_eq!(code, 0);
+    assert_eq!(status["data"]["registered"], false);
+    assert_eq!(status["data"]["loaded"], false);
+}
+
+/// The default-state dashboard access token path.
+#[cfg(target_os = "macos")]
+fn default_dashboard_token_path() -> PathBuf {
+    locron_store::StatePaths::discover(None)
+        .expect("the default state paths must resolve")
+        .root
+        .join("dashboard.token")
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_launchd_backend_registers_refreshes_and_unregisters_the_dashboard() {
+    let _serial = serialized();
+    let binary = locron();
+    let domain = format!("gui/{}", uid());
+    let target = format!("{domain}/dev.locron.dashboard");
+
+    // Detect what this environment can run.
+    if Command::new("launchctl").arg("print").output().is_err() {
+        eprintln!("SKIPPED: launchctl is unavailable in this environment");
+        return;
+    }
+    if !launchctl_ok(&["print", &domain]) && !launchctl_ok(&["print", &format!("user/{}", uid())]) {
+        eprintln!(
+            "SKIPPED: no launchd user domain is reachable here (gui/{} and user/{} both failed)",
+            uid(),
+            uid()
+        );
+        return;
+    }
+    if launchctl_ok(&["print", &target]) {
+        eprintln!("SKIPPED: dev.locron.dashboard is already registered in this environment");
+        return;
+    }
+
+    let _cleanup = DashboardServiceCleanup {
+        binary: binary.clone(),
+    };
+
+    // Enable: token generated, plist written, service bootstrapped.
+    let (code, data) = run_json(&binary, &["dashboard", "enable"]);
+    assert_eq!(code, 0, "dashboard enable must succeed");
+    assert_eq!(data["data"]["registered"], true);
+    let plist = home().join("Library/LaunchAgents/dev.locron.dashboard.plist");
+    assert!(plist.exists(), "the dashboard plist must be written");
+    assert!(
+        home().join("Library/Logs/locron").is_dir(),
+        "the log directory must be created"
+    );
+    let token_path = default_dashboard_token_path();
+    let token = fs::read_to_string(&token_path).expect("enable must generate the access token");
+    assert_eq!(token.len(), 64, "the token is 64 hex characters");
+
+    let (code, status) = run_json(&binary, &["dashboard", "status"]);
+    assert_eq!(code, 0);
+    assert_eq!(status["data"]["registered"], true);
+    assert!(status["data"]["domain"].is_string());
+    assert_eq!(status["data"]["access_url"], "http://127.0.0.1:10824/");
+    assert_eq!(status["data"]["token"]["present"], true);
+    assert_eq!(status["data"]["token"]["permissions"], "owner_only");
+
+    // The server may exit immediately when something else already listens on
+    // the fixed service-mode port; the registration and token are still
+    // asserted, and the restart observation reports a skip then.
+    let first_pid = status["data"]["pid"].as_u64().map(|pid| pid as u32);
+    if first_pid.is_none() {
+        eprintln!(
+            "SKIPPED restart observation: the dashboard process is not running \
+             (an occupied service-mode port or a deferred session); \
+             registration and the token are verified"
+        );
+    } else {
+        // Refresh: a repeat enable restarts the running service; KeepAlive
+        // relaunches it with a fresh process (the pid observation).
+        let (code, data) = run_json(&binary, &["dashboard", "enable"]);
+        assert_eq!(code, 0);
+        assert_eq!(
+            data["data"]["restarted"], true,
+            "repeat enable refreshes the service"
+        );
+        assert!(
+            wait_until(
+                || {
+                    let (_, status) = run_json(&binary, &["dashboard", "status"]);
+                    status["data"]["pid"].as_u64().map(|pid| pid as u32) != first_pid
+                },
+                Duration::from_secs(60),
+                "the dashboard to relaunch under a new pid",
+            ),
+            "SIGTERM + KeepAlive must relaunch the dashboard under a new pid"
+        );
+    }
+
+    // Disable: unregister, remove the plist and the access token.
+    let (code, data) = run_json(&binary, &["dashboard", "disable"]);
+    assert_eq!(code, 0);
+    assert_eq!(data["data"]["stopped"], true);
+    assert_eq!(data["data"]["removed"], true);
+    assert!(
+        wait_until(
+            || !launchctl_ok(&["print", &target]),
+            Duration::from_secs(30),
+            "the dashboard job to leave the launchd domain",
+        ),
+        "disable must unload the job from launchd"
+    );
+    assert!(!plist.exists(), "disable removes the plist");
+    assert!(!token_path.exists(), "disable removes the access token");
+    let (code, status) = run_json(&binary, &["dashboard", "status"]);
     assert_eq!(code, 0);
     assert_eq!(status["data"]["registered"], false);
     assert_eq!(status["data"]["loaded"], false);
@@ -308,6 +439,10 @@ done
 "{binary}" service status --json > status.json
 "{binary}" service install --json > refresh.json
 "{binary}" service uninstall --json > uninstall.json
+"{binary}" dashboard enable --json > d-enable.json
+"{binary}" dashboard status --json > d-status.json
+"{binary}" dashboard enable --json > d-refresh.json
+"{binary}" dashboard disable --json > d-disable.json
 "#,
             runtime_dir = runtime_dir.display(),
             binary = binary.display(),
@@ -337,6 +472,28 @@ done
         let uninstall = read("uninstall.json");
         assert_eq!(uninstall["data"]["removed"], true);
         assert_eq!(uninstall["data"]["stopped"], true);
+
+        // The dashboard unit is a second registration target on the same
+        // manager: enable, active, refresh, disable.
+        let d_enable = read("d-enable.json");
+        assert_eq!(d_enable["data"]["registered"], true);
+        assert_eq!(d_enable["data"]["service_name"], "locron-dashboard.service");
+        let d_status = read("d-status.json");
+        assert_eq!(
+            d_status["data"]["loaded"], true,
+            "the dashboard unit must be active"
+        );
+        assert_eq!(d_status["data"]["access_url"], "http://127.0.0.1:10824/");
+        assert_eq!(d_status["data"]["token"]["present"], true);
+        let d_refresh = read("d-refresh.json");
+        assert_eq!(
+            d_refresh["data"]["restarted"], true,
+            "repeat dashboard enable restarts the unit"
+        );
+        let d_disable = read("d-disable.json");
+        assert_eq!(d_disable["data"]["removed"], true);
+        assert_eq!(d_disable["data"]["stopped"], true);
+        assert_eq!(d_disable["data"]["token_removed"], true);
         let _ = fs::remove_dir_all(&runtime_dir);
         return;
     }
@@ -368,6 +525,38 @@ done
     assert_eq!(data["data"]["stopped"], true);
     assert_eq!(data["data"]["removed"], true);
     assert!(!unit_path.exists(), "uninstall removes the unit");
+
+    // The dashboard unit is a second registration target; it registers,
+    // becomes active, refreshes, and unregisters independently.
+    let dashboard_unit = home().join(".config/systemd/user/locron-dashboard.service");
+    if std::fs::metadata(&dashboard_unit).is_ok() {
+        eprintln!("SKIPPED: locron-dashboard.service is already registered in this environment");
+        return;
+    }
+    let (code, data) = run_json(&binary, &["dashboard", "enable"]);
+    assert_eq!(code, 0);
+    assert_eq!(data["data"]["registered"], true);
+    assert!(
+        dashboard_unit.exists(),
+        "the dashboard unit must be written"
+    );
+    let (code, status) = run_json(&binary, &["dashboard", "status"]);
+    assert_eq!(code, 0);
+    assert_eq!(
+        status["data"]["loaded"], true,
+        "the dashboard unit must be active"
+    );
+    let (code, data) = run_json(&binary, &["dashboard", "enable"]);
+    assert_eq!(code, 0);
+    assert_eq!(data["data"]["restarted"], true);
+    let (code, data) = run_json(&binary, &["dashboard", "disable"]);
+    assert_eq!(code, 0);
+    assert_eq!(data["data"]["stopped"], true);
+    assert_eq!(data["data"]["removed"], true);
+    assert!(
+        !dashboard_unit.exists(),
+        "disable removes the dashboard unit"
+    );
 }
 
 #[cfg(target_os = "linux")]

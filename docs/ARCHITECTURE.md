@@ -20,7 +20,7 @@ Future durable architectural decisions that need their own rationale and superse
 
 locron is one per-user, per-machine scheduler on macOS and Linux. It owns job schedules, durable occurrences, execution, recovery, history, and retention. It does not translate jobs into cron, launchd, or systemd entries. An operating-system service manager may keep the locron daemon running, but it is not a job-level scheduling backend.
 
-Milestone 1 has no distributed worker, multi-user authority layer, workflow graph, HTTP management server, MCP server, desktop application, or service-supervision role. Future surfaces must reuse the same application and engine boundaries rather than bypassing them to manipulate durable tables.
+Milestone 1 has no distributed worker, multi-user authority layer, workflow graph, desktop application, or service-supervision role. The MCP server ships inside `locron-cli` (`locron mcp`) over the application boundary. The HTTP management and viewer surface (`locron-server`, roadmap phase 1, `docs/dashboard/SPEC.md`) is a separate library crate that must reuse the same application and engine boundaries rather than bypassing them to manipulate durable tables, and it never owns the daemon: it holds no scheduler lifetime, runs no scheduling loop, and supervises no targets. Any future surface follows the same rule.
 
 ## Supported foundation
 
@@ -35,36 +35,41 @@ Windows, 32-bit targets, and official musl/Alpine support are deferred. Unsuppor
 
 ## Workspace and dependency direction
 
-Milestone 1 is a virtual Cargo workspace with exactly four crates and one distributable binary.
+The virtual Cargo workspace has five crates and one distributable binary. Milestone 1 shipped the first four; `locron-server` is the roadmap-phase-1 web administration surface (`docs/dashboard/SPEC.md`).
 
 | Crate | Durable responsibility | Forbidden coupling |
 |---|---|---|
-| `locron-core` | Domain identities and values, schedules and policies, validation, state transitions, application commands/results, and persistence/clock/executor ports | SQLite, CLI parsing/rendering, operating-system service setup |
+| `locron-core` | Domain identities and values, schedules and policies, validation, state transitions, application commands/results, persistence/clock/executor ports, and the shared redaction boundary over serialized documents | SQLite, CLI parsing/rendering, HTTP handling, operating-system service setup |
 | `locron-store` | SQLite connections and migrations, repositories, transactions, durable uniqueness, lifetime and retention records, and implementations of core persistence ports | CLI presentation, process spawning, HTTP execution |
 | `locron-engine` | Complete daemon runtime: lifetime/lock ownership, reconciliation loop, overlap/concurrency admission, retry timing, process/shell/HTTP runners, cancellation and recovery, maintenance, signals, and graceful shutdown | SQLite implementation details and CLI presentation |
-| `locron-cli` | Thin composition and command entrypoint for the `locron` binary: parsing, human/machine rendering, bootstrap/configuration, wiring store to engine, and `locron daemon run` | Reimplemented domain policy, scheduler loops, runner lifecycle, or daemon behavior |
+| `locron-server` | The loopback HTTP management and viewer surface: middleware security stack (Host/Origin/CSRF/token), `locron.api/v1` envelope, route handlers over the store's durable application commands, SSE live output, and the embedded single-page viewer | CLI parsing/rendering, daemon ownership, any scheduler loop or runner lifecycle, SQLite table access outside the store boundary |
+| `locron-cli` | Thin composition and command entrypoint for the `locron` binary: parsing, human/machine rendering, bootstrap/configuration, wiring store to engine, `locron daemon run`, and the `locron dashboard` family | Reimplemented domain policy, scheduler loops, runner lifecycle, or daemon behavior |
 
 ```text
-                         locron-cli
-                        /           \
-                       v             v
-              locron-engine     locron-store
-                       \             /
-                        v           v
-                         locron-core
+                          locron-cli
+            /            /          \            \
+           v            v            v            v
+   locron-server  locron-engine   locron-store  locron-core
+         |  \            \            /            /
+         |   \            v          v            /
+         |    \         locron-core               /
+         |     \_________________________________/
+         v
+   locron-core   (locron-store depends on locron-core only)
 ```
 
 - `locron-core` has no dependency on another workspace crate.
 - `locron-store` and `locron-engine` each depend on `locron-core`.
 - `locron-engine` receives persistence through core ports and does not depend on `locron-store`.
-- `locron-cli` is the composition root and depends on the other three crates.
+- `locron-server` depends on `locron-core` and `locron-store` only; it never depends on `locron-cli` and never owns daemon behavior.
+- `locron-cli` is the composition root and depends on the other four crates.
 - No library depends on `locron-cli`.
 
-There is no `locron-daemon` crate and no `locrond` binary in v1. `locron daemon run` constructs the dependencies and enters the daemon runtime owned by `locron-engine`. Future viewer/API, MCP, and desktop crates are added only when those milestones begin.
+There is no `locron-daemon` crate and no `locrond` binary in v1. `locron daemon run` constructs the dependencies and enters the daemon runtime owned by `locron-engine`. `locron dashboard` constructs the store and starts the `locron-server` library. Future desktop crates are added only when that milestone begins.
 
 ## Runtime topology and data flow
 
-The single binary has a short-lived command role and one long-lived daemon command. Both use the same domain and durable state.
+The single binary has a short-lived command role, one long-lived daemon command, and (when enabled) a separate long-lived dashboard server process. All of them use the same domain and durable state. The dashboard server is a process separate from the scheduler daemon: it reads and writes the same SQLite state through the store boundary, sends the same best-effort wake hint after durable mutations, works while the daemon is offline, and never acquires the daemon lock or a scheduler lifetime. Its restarts never affect scheduling, and daemon restarts do not stop it.
 
 ```text
 single locron binary (locron-cli)

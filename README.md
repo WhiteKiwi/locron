@@ -179,6 +179,39 @@ claude "Install locron: https://github.com/WhiteKiwi/locron"
 Review and approve each command it proposes. Every channel — packages, tarballs, building from
 source, updating, and uninstalling — is covered in the [Installation Guide](docs/INSTALL.md).
 
+## Open the local dashboard
+
+The optional dashboard gives you a clean browser view of the same durable jobs, runs, settings,
+and diagnostics as the CLI. It is **off by default**, listens only on this machine's loopback
+interface, and does not replace or control the scheduler daemon.
+
+For a foreground session, run:
+
+```sh
+locron dashboard
+```
+
+Open the printed `http://127.0.0.1:10824/` URL (the port may advance when the default is busy),
+then paste the printed access token into the entry page. The token never belongs in the URL.
+Later visits reuse the browser session; re-display the token intentionally with:
+
+```sh
+locron dashboard token
+```
+
+To keep the dashboard available after login, register its separate per-user service:
+
+```sh
+locron dashboard enable
+locron dashboard status
+```
+
+`status` reports the local URL and service posture without exposing the token. Use
+`locron dashboard disable` to stop and unregister the service. See the
+[dashboard operator guide](docs/OPERATOR.md#web-dashboard) for token reset, service behavior,
+security boundaries, and troubleshooting; the exact command and API contracts live in the
+[CLI Reference](docs/CLI.md#dashboard-web-administration).
+
 ## Start scheduling
 
 First, check the daemon:
@@ -213,11 +246,13 @@ State lives in `~/.local/share/locron` (or `$XDG_DATA_HOME/locron`) and can be o
 
 ## Documentation
 
+- **[Brand Guide](DESIGN.md)** — Locron's voice, visual system, components, motion, and accessibility rules.
 - **[Installation Guide](docs/INSTALL.md)** — install channels, updates, and uninstalling.
 - **[Operator Guide](docs/OPERATOR.md)** — daily operations, policies, and troubleshooting.
 - **[CLI Reference](docs/CLI.md)** — every command, option, and output contract.
 - **[Architecture](docs/ARCHITECTURE.md)** — system design, invariants, and durable state.
 - **[MCP Specification](docs/mcp/SPEC.md)** — tools, resources, and prompts.
+- **[Web Dashboard Specification](docs/dashboard/SPEC.md)** — the loopback-only viewer and management API.
 - **[Release Policy](docs/RELEASE.md)** — versioning, packaging, and release automation.
 - **[Changelog](CHANGELOG.md)** — notable changes in each release.
 

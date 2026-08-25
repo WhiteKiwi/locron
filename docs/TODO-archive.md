@@ -650,4 +650,3 @@ The rendering contract is owned by `docs/CLI.md`.
   0 failed/panicked. One transient `tests/service.rs` failure on the first workspace run (real
   launchd-domain contention under full parallel load) passed immediately on rerun and did not
   recur.
-

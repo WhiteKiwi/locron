@@ -296,6 +296,15 @@ pub struct RunRecord {
     pub finished_at_us: Option<i64>,
 }
 
+/// One complete, stable page of run-history search results.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RunHistoryPage {
+    /// Number of rows matching the literal query before pagination.
+    pub total: usize,
+    /// The requested newest-first page, bounded to 100 rows.
+    pub runs: Vec<RunRecord>,
+}
+
 /// The output artifact row of one attempt.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AttemptOutputRecord {
@@ -1294,6 +1303,60 @@ impl Store {
             .query_map(params![job_id, limit.min(1000) as i64], map_run)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(Into::into)
+    }
+
+    /// Returns the number of runs, optionally filtered to the job identified
+    /// by name or id. An unknown job reference returns
+    /// [`StoreError::NotFound`], matching [`Store::history`].
+    pub fn count_runs(&self, job: Option<&str>) -> StoreResult<i64> {
+        let job_id = match job {
+            Some(value) => Some(self.job(value)?.id),
+            None => None,
+        };
+        let conn = self.conn()?;
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM runs WHERE (?1 IS NULL OR job_id=?1)",
+            [job_id],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Searches the complete run history by literal Unicode-lowercased run id
+    /// or current durable job name and returns a stable page and total from one
+    /// read transaction. An empty query matches every run.
+    pub fn search_history(
+        &self,
+        query: &str,
+        limit: usize,
+        offset: usize,
+    ) -> StoreResult<RunHistoryPage> {
+        let normalized = query.trim().to_lowercase();
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let mut statement = tx.prepare(
+            "SELECT r.id,r.job_id,r.revision,r.trigger,r.nominal_us,r.requested_at_us,r.eligible_at_us,r.state,r.reason,r.snapshot_json,r.finished_at_us,j.name FROM runs r JOIN jobs j ON j.id=r.job_id ORDER BY r.requested_at_us DESC,r.id DESC",
+        )?;
+        let rows = statement
+            .query_map([], |row| Ok((map_run(row)?, row.get::<_, String>(11)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+
+        let matching = rows.into_iter().filter(|(run, job_name)| {
+            normalized.is_empty()
+                || run.id.to_lowercase().contains(&normalized)
+                || job_name.to_lowercase().contains(&normalized)
+        });
+        let mut runs = Vec::new();
+        let mut total = 0;
+        let page_end = offset.saturating_add(limit.min(100));
+        for (run, _) in matching {
+            if total >= offset && total < page_end {
+                runs.push(run);
+            }
+            total += 1;
+        }
+        tx.commit()?;
+        Ok(RunHistoryPage { total, runs })
     }
 
     /// Returns the latest run and latest anomalous terminal run for one live
@@ -2314,6 +2377,9 @@ impl Store {
                 "execution_path",
                 rusqlite::types::Value::Text(value.to_owned()),
             ),
+            "run_retention_age_us" if value == "none" => {
+                ("run_retention_age_us", rusqlite::types::Value::Null)
+            }
             "run_retention_count"
             | "run_retention_age_us"
             | "output_limit_bytes"
@@ -3373,6 +3439,56 @@ mod tests {
         identities
     }
 
+    #[test]
+    fn history_search_is_complete_literal_unicode_and_stably_paginated() {
+        let (_temp, store) = store();
+        let job = Uuid::from_u128(0x100).to_string();
+        create(&store, &job, "Nightly-backup-백업%_One");
+        let times = (1..=1_005).collect::<Vec<_>>();
+        let ids = insert_terminal_runs(&store, &job, 0x1_000, 1, &times);
+
+        let first = store.search_history("NI", 20, 0).unwrap();
+        let second = store.search_history("ni", 20, 20).unwrap();
+        assert_eq!(first.total, 1_005);
+        assert_eq!(first.runs.len(), 20);
+        assert_eq!(second.total, 1_005);
+        assert_eq!(second.runs.len(), 20);
+        assert!(first.runs.last().unwrap().requested_at_us > second.runs[0].requested_at_us);
+        assert_eq!(store.search_history("백업", 10, 0).unwrap().total, 1_005);
+        assert_eq!(store.search_history("back", 10, 0).unwrap().total, 1_005);
+        assert_eq!(store.search_history("%_", 10, 0).unwrap().total, 1_005);
+        assert_eq!(store.search_history("missing", 10, 0).unwrap().total, 0);
+
+        let partial = &ids[500][ids[500].len() - 4..];
+        assert!(
+            store
+                .search_history(partial, 100, 0)
+                .unwrap()
+                .runs
+                .iter()
+                .any(|run| run.id == ids[500])
+        );
+
+        store
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE jobs SET name='Renamed current',removed_at_us=2 WHERE id=?1",
+                [&job],
+            )
+            .unwrap();
+        assert_eq!(store.search_history("nightly", 10, 0).unwrap().total, 0);
+        assert_eq!(store.search_history("RENAMED", 10, 0).unwrap().total, 1_005);
+
+        let tied_job = Uuid::from_u128(0x200).to_string();
+        create(&store, &tied_job, "ties");
+        let tied = insert_terminal_runs(&store, &tied_job, 0x2_000, 2_000, &[2_000, 2_000]);
+        let page = store.search_history("ties", 1000, 0).unwrap();
+        assert_eq!(page.runs.len(), 2, "store bounds pages to 100 rows");
+        assert_eq!(page.runs[0].id, tied[1]);
+        assert_eq!(page.runs[1].id, tied[0]);
+    }
+
     fn import_resolution(
         source_id: &str,
         source_name: &str,
@@ -3796,6 +3912,26 @@ mod tests {
             .unwrap();
         assert_eq!(duplicate.duplicates, 1);
         assert_eq!(store.history(Some("once"), 10).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn count_runs_matches_history_resolution() {
+        let (_temp, store) = store();
+        let job = Uuid::now_v7().to_string();
+        create(&store, &job, "counted");
+        insert_terminal_runs(&store, &job, 0x1000, 1, &[10, 20, 30]);
+        assert_eq!(store.count_runs(None).unwrap(), 3);
+        assert_eq!(store.count_runs(Some("counted")).unwrap(), 3);
+        assert_eq!(store.count_runs(Some(&job)).unwrap(), 3);
+        let other = Uuid::now_v7().to_string();
+        create(&store, &other, "other");
+        insert_terminal_runs(&store, &other, 0x2000, 4, &[40]);
+        assert_eq!(store.count_runs(None).unwrap(), 4);
+        assert_eq!(store.count_runs(Some("counted")).unwrap(), 3);
+        assert!(matches!(
+            store.count_runs(Some("missing")),
+            Err(StoreError::NotFound(_))
+        ));
     }
 
     #[test]

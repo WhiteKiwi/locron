@@ -59,6 +59,23 @@ fn native_service_name() -> &'static str {
     }
 }
 
+/// The name the dashboard service carries in the current platform's manager.
+fn native_dashboard_service_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "dev.locron.dashboard"
+    } else {
+        "locron-dashboard.service"
+    }
+}
+
+/// A command running the real binary against the fake backend with a
+/// dedicated state directory (the dashboard flows write the access token).
+fn fake_dashboard_command(state: &Path, log: &Path, state_dir: &Path) -> Command {
+    let mut command = fake_command(state, log);
+    command.arg("--state-dir").arg(state_dir).arg("dashboard");
+    command
+}
+
 #[test]
 fn install_registers_and_starts_in_write_reload_probe_enable_start_order() {
     let _serial = serialized();
@@ -68,6 +85,8 @@ fn install_registers_and_starts_in_write_reload_probe_enable_start_order() {
         "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
     );
     let output = fake_command(&state, &log)
+        .arg("--state-dir")
+        .arg(tmp.path().join("locron-state"))
         .arg("service")
         .arg("install")
         .arg("--json")
@@ -365,6 +384,273 @@ fn every_service_subcommand_has_help_text() {
         let help = String::from_utf8_lossy(&output.stdout);
         assert!(
             help.contains("Usage: locron service"),
+            "{subcommand} help usage"
+        );
+        assert!(help.contains("Examples:"), "{subcommand} help examples");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard target: the same deterministic fake drives the second
+// registration target; the flows add the access-token steps around the
+// daemon registration's verified ordering.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn dashboard_enable_generates_the_token_and_registers_in_the_verified_order() {
+    let _serial = serialized();
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("state");
+    let (state, log) = seeded(
+        tmp.path(),
+        "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
+    );
+    let output = fake_dashboard_command(&state, &log, &state_dir)
+        .arg("enable")
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let data = &envelope(&output)["data"];
+    assert_eq!(data["registered"], true);
+    assert_eq!(data["restarted"], false);
+    assert_eq!(data["deferred"], false);
+    assert_eq!(data["service_name"], native_dashboard_service_name());
+    assert_eq!(data["domain"], "fake/domain");
+    let token = fs::read_to_string(state_dir.join("dashboard.token")).unwrap();
+    assert_eq!(token.len(), 64, "enable generates a 64-hex access token");
+    assert_eq!(
+        calls(&log),
+        [
+            "session_available",
+            "write_registration",
+            "reload",
+            "is_loaded",
+            "enable",
+            "start",
+        ],
+        "the dashboard flow keeps the verified write-reload-probe-enable-start order \
+         and never probes the daemon lock"
+    );
+}
+
+#[test]
+fn dashboard_enable_is_idempotent_and_reset_regenerates_then_restarts() {
+    let _serial = serialized();
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("state");
+    let (state, log) = seeded(
+        tmp.path(),
+        "{\"session\":true,\"loaded\":true,\"enabled\":true,\"registered\":true}",
+    );
+    // Prime the token the way a first enable would.
+    let output = fake_dashboard_command(&state, &log, &state_dir)
+        .arg("enable")
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let data = &envelope(&output)["data"];
+    assert_eq!(
+        data["restarted"], true,
+        "repeated enable refreshes and restarts"
+    );
+    assert_eq!(
+        calls(&log),
+        [
+            "session_available",
+            "write_registration",
+            "reload",
+            "is_loaded",
+            "restart",
+            "status",
+        ]
+    );
+    let first = fs::read_to_string(state_dir.join("dashboard.token")).unwrap();
+
+    // --reset regenerates the token before the refresh-and-restart.
+    fs::write(&log, "").unwrap();
+    let output = fake_dashboard_command(&state, &log, &state_dir)
+        .arg("enable")
+        .arg("--reset")
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(envelope(&output)["data"]["restarted"], true);
+    let second = fs::read_to_string(state_dir.join("dashboard.token")).unwrap();
+    assert_ne!(first, second, "--reset must regenerate the access token");
+    assert_eq!(second.len(), 64);
+    let order = calls(&log);
+    let restart_at = order.iter().position(|call| call == "restart").unwrap();
+    let first_call = order.first().map(String::as_str);
+    assert_eq!(first_call, Some("session_available"));
+    let _ = restart_at;
+}
+
+#[test]
+fn dashboard_disable_unregisters_then_removes_the_token() {
+    let _serial = serialized();
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("state");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("dashboard.token"), "a".repeat(64)).unwrap();
+    let (state, log) = seeded(
+        tmp.path(),
+        "{\"session\":true,\"loaded\":true,\"enabled\":true,\"registered\":true}",
+    );
+    let output = fake_dashboard_command(&state, &log, &state_dir)
+        .arg("disable")
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let data = &envelope(&output)["data"];
+    assert_eq!(data["removed"], true);
+    assert_eq!(data["stopped"], true);
+    assert_eq!(data["token_removed"], true);
+    assert_eq!(data["service_name"], native_dashboard_service_name());
+    assert!(
+        !state_dir.join("dashboard.token").exists(),
+        "disable must remove the access token"
+    );
+    let order = calls(&log);
+    assert_eq!(
+        order,
+        [
+            "session_available",
+            "is_loaded",
+            "status",
+            "stop",
+            "status",
+            "unload",
+            "remove_registration",
+            "reload",
+        ]
+    );
+}
+
+#[test]
+fn dashboard_status_reports_service_state_url_and_token_facts() {
+    let _serial = serialized();
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("state");
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("dashboard.token"), "b".repeat(64)).unwrap();
+    let (state, log) = seeded(
+        tmp.path(),
+        "{\"session\":true,\"loaded\":true,\"enabled\":true,\"registered\":true}",
+    );
+    // The real flow writes the token with 0600; mirror that here so the
+    // posture fact is observable (fs::write would use the umask).
+    let token_path = state_dir.join("dashboard.token");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&token_path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let output = fake_dashboard_command(&state, &log, &state_dir)
+        .arg("status")
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let data = &envelope(&output)["data"];
+    assert_eq!(data["registered"], true);
+    assert_eq!(data["loaded"], true);
+    assert_eq!(data["enabled"], true);
+    assert_eq!(data["service_name"], native_dashboard_service_name());
+    assert_eq!(data["access_url"], "http://127.0.0.1:10824/");
+    assert_eq!(data["token"]["present"], true);
+    assert_eq!(data["token"]["permissions"], "owner_only");
+    assert!(
+        !data["token"].as_object().unwrap().contains_key("value"),
+        "status must never report the token value"
+    );
+    assert!(
+        !format!("{data}").contains("bbbbbbbb"),
+        "no token material leaks"
+    );
+}
+
+#[test]
+fn dashboard_status_reports_a_missing_token_without_generating_one() {
+    let _serial = serialized();
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("state");
+    let (state, log) = seeded(
+        tmp.path(),
+        "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
+    );
+    let output = fake_dashboard_command(&state, &log, &state_dir)
+        .arg("status")
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let data = &envelope(&output)["data"];
+    assert_eq!(data["token"]["present"], false);
+    assert_eq!(data["token"]["permissions"], "missing");
+    assert!(
+        !state_dir.join("dashboard.token").exists(),
+        "status is read-only and must not generate a token"
+    );
+}
+
+#[test]
+fn dashboard_enable_refuses_managed_binaries_before_generating_the_token() {
+    let _serial = serialized();
+    let tmp = tempfile::tempdir().unwrap();
+    let fake_dir = tmp.path().join("fake");
+    fs::create_dir_all(&fake_dir).unwrap();
+    let fake = fake_dir.join("locron");
+    fs::copy(assert_cmd::cargo::cargo_bin("locron"), &fake).unwrap();
+    let marker_dir = tmp.path().join("lib");
+    fs::create_dir_all(&marker_dir).unwrap();
+    fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
+    let state_dir = tmp.path().join("state");
+    let (state, log) = seeded(
+        tmp.path(),
+        "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
+    );
+    let output = Command::new(&fake)
+        .env("LOCRON_SERVICE_BACKEND", "fake")
+        .env("LOCRON_SERVICE_FAKE_STATE", &state)
+        .env("LOCRON_SERVICE_FAKE_LOG", &log)
+        .arg("--state-dir")
+        .arg(&state_dir)
+        .args(["dashboard", "enable", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    let envelope = envelope(&output);
+    assert_eq!(envelope["error"]["code"], "service_managed_install");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("brew services"),
+        "guidance must point at the package manager"
+    );
+    assert!(
+        !state_dir.join("dashboard.token").exists(),
+        "refusal must happen before the token is generated"
+    );
+    assert_eq!(calls(&log), Vec::<String>::new());
+}
+
+#[test]
+fn every_dashboard_subcommand_has_help_text() {
+    let _serial = serialized();
+    for subcommand in ["enable", "disable", "status"] {
+        let output = Command::cargo_bin("locron")
+            .unwrap()
+            .args(["dashboard", subcommand, "--help"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{subcommand} --help must succeed");
+        let help = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            help.contains("Usage: locron dashboard"),
             "{subcommand} help usage"
         );
         assert!(help.contains("Examples:"), "{subcommand} help examples");

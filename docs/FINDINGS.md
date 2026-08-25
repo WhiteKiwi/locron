@@ -654,3 +654,831 @@ The first fix attempt (run 32685506683) dropped the `version` line while keeping
 **Trust is persistent item-level state, so short names keep working after the one-liner.** Verified against the local Homebrew 6.0.18 source: `cmd/install.rb` calls `Homebrew::Trust.trust_fully_qualified_items!` during install, and `trust.rb` writes the entries to `~/.homebrew/trust.json` (falling back to `$XDG_CONFIG_HOME/trust.json`) under a store lock. Subsequent short-name operations — `brew upgrade locron`, `brew services start locron`, `brew uninstall locron` — therefore resolve the formula from the tap without a trust prompt. Source: `/opt/homebrew/Library/Homebrew/cmd/install.rb` and `/opt/homebrew/Library/Homebrew/trust.rb` (Homebrew 6.0.18, 2026-08-24)
 
 **Accepted resolution**: the README and install guide replace `brew tap whitekiwi/tap && brew trust whitekiwi/tap && brew install locron` with the one-liner `brew install whitekiwi/tap/locron`. locron is a CLI formula, so no `--cask` flag; the trust explanation moves into the install guide, and the whole-tap trust previously granted by `brew trust whitekiwi/tap` is replaced by formula-only trust, matching the official recommendation.
+
+## 22. Locron Brand and Dashboard Visual Direction (2026-08-24)
+
+### Source verification
+
+The user-supplied references were checked against their official site or repository rather than
+treated as a single prescriptive style. They divide into technique libraries, inspiration
+galleries, and repeatable design-system workflows:
+
+| Reference | Verification and useful evidence |
+|---|---|
+| CloudAI-X/threejs-skills | The public repository exists and covers Three.js fundamentals, geometry, materials, lighting, animation, shaders, post-processing, interaction, and performance. It is useful when a product needs a real 3D scene, but supplies no evidence that an operations dashboard benefits from one. Source: https://github.com/CloudAI-X/threejs-skills |
+| greensock/gsap-skills | GreenSock's official repository exists and covers core tweens, timelines, ScrollTrigger, framework lifecycle cleanup, and performance. It supports deliberate choreography when native CSS is insufficient; it is not itself a reason to add animation or a runtime dependency. Source: https://github.com/greensock/gsap-skills |
+| LottieFiles/motion-design-skill | The official repository exists. Its workflow chooses purpose, properties, timing, easing, emotional intent, and brand personality before implementation, and includes accessibility/performance adaptation and state-feedback patterns. Source: https://github.com/LottieFiles/motion-design-skill |
+| AThevon/genjutsu | The public repository exists. Its `paint` workflow establishes a visual and interaction thesis, persists a design system, then audits motion, accessibility, responsive behavior, color consistency, and performance. Its `cast` workflow similarly audits reduced motion and interaction performance after focused motion work. Source: https://github.com/AThevon/genjutsu |
+| Design Spells | The official gallery exists and categorizes small interface details by device, interaction, motion, animation, 404, skeuomorphism, and other themes. Its value is selective delight at a meaningful moment, not wholesale adoption of every showcased effect. Source: https://www.designspells.com/ |
+| recent.design | The official site exists and is a daily curation spanning interface, branding, product, typography, motion, illustration, 3D, editorial, print, and packaging. It is a broad mood-board source, not a product or accessibility standard. Source: https://recent.design/ |
+| wwit | `wwit.design` exists as What Was IT and organizes Korean product references by industry, user-flow pattern, and component type, including onboarding, loading, success, lists, settings, inputs, tabs, popups, and charts. That taxonomy is useful for comparing one Locron flow at a time rather than copying an entire app. Source: https://wwit.design/ |
+| film.ai | The supplied domain currently resolves to a domain-sale page, not a searchable film-frame reference. It is unavailable as a current design source and no prior design is inferred from archived or secondary descriptions. Source: https://film.ai/ |
+| post.design | The official URL responded but exposed no verifiable page content in this research session. Search results conflate a current social-post curation description with the older Post.Design/Tangle platform, so neither is used as evidence for Locron. Source checked: https://post.design/ |
+| MengTo/Skills | Meng To's public repository exists. Its stated philosophy is to treat prompts as versioned assets, prefer specifications and references over vague direction, iterate by changing a small number of variables, and include defaults, pitfalls, demos, and acceptance checks. Its design-first workflow structures direction as goal, format, layout, type, color, and constraints. Source: https://github.com/MengTo/Skills |
+| Vercel `DESIGN.md` | No first-party `DESIGN.md` file was found in the official Vercel repositories checked; community reconstructions must not be presented as Vercel-authored. The first-party substitutes are the Geist design system and Vercel Web Interface Guidelines, which document accessible color, typography, icons, grid, interaction, focus, hit targets, borders, radii, and layered elevation. Sources: https://vercel.com/geist/stack, https://vercel.com/design/guidelines |
+| nextlevelbuilder/ui-ux-pro-max-skill | The public repository exists. The strongest transferable parts are persistent master rules with page-level overrides, product-specific anti-patterns, resilient text wrapping, status meaning beyond color alone, visible focus, correct semantics after interrupted motion, and reduced-motion support. The large catalog of fashionable styles is reference data, not a mandate to mix styles. Source: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill |
+
+Two established brand guides add what the technique repositories do not. GitHub's official Brand
+Toolkit treats logo, typography, color, illustration, mascots, accessibility, and distinct
+marketing/product systems as one identity; it also asks whether a moment is expressive or
+functional before choosing the treatment. That is a direct precedent for keeping Roki and the
+hand-drawn language while making the authenticated dashboard denser and quieter. Sources:
+https://brand.github.com/, https://brand.github.com/guides/getting-started.
+
+Mailchimp's public content guide separates stable voice from situation-dependent tone, prioritizes
+clarity over entertainment, and reserves humor for moments where it will not obstruct the user's
+work. This is the useful model for a friendly mascot-bearing developer product: onboarding may be
+warm, while a failed, interrupted, or destructive state must be direct and calm. Sources:
+https://styleguide.mailchimp.com/voice-and-tone/,
+https://styleguide.mailchimp.com/tldr/.
+
+### Existing Locron identity
+
+The repository's `assets/banner.jpg` is already a stronger source of truth than a trend gallery.
+It establishes:
+
+- a warm cream canvas, near-black rounded display lettering, graphite secondary text, restrained
+  gray surfaces, and sunny yellow as the recognitional accent;
+- Roki as a small friendly robot with yellow eyes and antenna, accompanied by hand-drawn marks,
+  a sleepy cat, books, a laptop, and handwritten encouragement;
+- a product promise that is local, easy to manage, private, secure, and built for developers; and
+- a friendly, optimistic tone that remains simple rather than loud.
+
+The banner is expressive marketing art. Its motifs should enter the product as controlled accents,
+not make every table, form, status, or log pane look hand-drawn. GitHub's expressive-versus-
+functional distinction supports this split.
+
+### Recommendation: Locron brand system
+
+Define the brand promise as **calm local control that explains itself**. Four attributes should
+govern every choice: **warm, precise, capable, and reassuring**. The warm and reassuring half comes
+from the cream/yellow/Roki banner; precise and capable come from durable run facts, local ownership,
+and the existing “Cron that explains itself” positioning.
+
+- **Voice.** Plainspoken, concise, developer-to-developer, and specific about what happened, why,
+  and what to do next. Use active verbs and sentence case. Friendly microcopy belongs in entry,
+  onboarding, success, and empty states. Errors, security, cancellation, interrupted outcomes, and
+  destructive confirmations use neutral factual language with no joke or mascot dialogue.
+- **Logo and character.** Preserve the `Locron` name as the primary identifier and Roki as a
+  supporting character, never as a replacement for the wordmark. Keep clear space around either,
+  do not distort or recolor Roki arbitrarily, and use the character at high-empathy moments such as
+  login, first-job onboarding, and a truly empty dashboard. Avoid repeating Roki in dense lists or
+  placing playful art beside dangerous actions.
+- **Color roles.** Warm cream is the application canvas, light neutral is the working surface,
+  charcoal is primary ink and strong action, graphite is secondary text, and sunny yellow is the
+  brand accent/focus highlight. Success, warning, failure, running, and unknown outcomes retain
+  separate accessible semantic colors plus text/icon labels. Yellow must not mean both “Locron” and
+  “warning,” and no status may rely on color alone.
+- **Typography.** Use a rounded, confident display treatment only for the Locron identity and
+  occasional empty-state headline. Use the system sans-serif stack for operational reading and a
+  system monospace stack for schedules, IDs, timestamps, commands, and logs. Maintain a small,
+  explicit scale and tabular numerals where values must compare vertically; do not add an external
+  font or CDN to the bundled local dashboard.
+- **Shape and illustration.** Favor soft but disciplined radii, crisp charcoal or neutral borders,
+  minimal layered shadow, and small hand-drawn yellow strokes as signatures. Icons use one coherent
+  outline weight. Cream paper texture, doodles, cat/books, and Roki are occasional editorial
+  elements, not repeated card decoration.
+- **Layout.** Use a stable grid and spacing scale, large calm outer margins, and compact internal
+  data rhythm. The first visual scan of any dashboard view should answer: current state, next
+  occurrence, latest anomaly, then available action. One filled primary action per decision area is
+  enough; secondary and destructive actions recede until needed.
+- **Components and state.** Treat jobs, runs, diagnostics, forms, status chips, notices, empty
+  states, destructive confirmations, and the log console as a documented family with the same
+  type, spacing, radii, focus, hover, disabled, loading, error, and empty-state rules. Long names,
+  IDs, URLs, tags, and translated copy must wrap or expose their full value without clipping.
+- **Motion personality.** Use “snappy-gentle” motion for feedback and hierarchy: short hover/press,
+  route/state transition, disclosure, and fresh-data acknowledgement. Prefer opacity and transform,
+  let the final semantic state remain correct when interrupted, and honor `prefers-reduced-motion`.
+  Do not add ambient loops, scroll spectacle, cursor trails, parallax, 3D, or bouncing failure
+  states to an operational dashboard. The current plain HTML/CSS/JavaScript viewer can express the
+  required motion without GSAP, Lottie, or Three.js.
+- **Accessibility and responsive behavior.** Preserve visible focus, full keyboard operation,
+  useful landmarks and labels, 44 px touch targets where the interface becomes touch-oriented,
+  16 px mobile input text, sufficient text/status contrast, and a layout that works under narrow
+  widths, zoom, text scaling, and reduced motion. Decorative handwriting and yellow accents never
+  carry essential information.
+
+The durable brand guide should record the promise and attributes; voice/tone; wordmark and Roki
+usage; palette roles and tested contrast pairs; type scale; icon/illustration rules; grid, spacing,
+radii, border, and elevation tokens; component states; motion rules; accessibility; and concrete
+do/don't examples. A small rendered specimen of real dashboard components is more useful than a
+palette page alone, matching Meng To's preference for references plus acceptance checks and
+Genjutsu's preview-and-audit approach.
+
+### Dashboard application and rejected excess
+
+The dashboard should therefore feel like the banner grew into an operations tool: a cream shell,
+charcoal hierarchy, quiet neutral work surfaces, one yellow recognitional accent, and sparse Roki or
+hand-drawn moments around onboarding. Data tables, forms, diagnostics, and logs remain restrained
+and highly legible. The dark log console is the intentional technical counter-surface, linked back
+to the brand through typography, focus, and a small yellow live indicator rather than decorative
+effects.
+
+Reject the following despite their presence in inspiration catalogs: generic purple/pink “AI”
+gradients, glassmorphism over dense data, neumorphism with weak boundaries, decorative 3D/WebGL,
+cinematic scroll narratives, continuous ambient animation, heavy blur, excessive shadows, a card
+around every value, rainbow status palettes, yellow-as-warning ambiguity, and copying Vercel or any
+gallery example as a visual identity. The goal is an original Locron system derived from its own
+banner and product promise, using external references only as decision frameworks and quality
+checks.
+
+## 23. Restrained glass and peer-theme evolution (2026-08-25)
+
+The Locron banner remains the identity source, but an authored peer dark scheme can carry the same
+cream/charcoal/yellow recognition through semantic roles rather than merely inverting the light
+palette. Glass is useful only as restrained shell hierarchy: a translucent header, navigation,
+theme/filter controls, and transient overlays over a solid fallback. Dense data, forms, notices,
+destructive actions, and the console need opaque surfaces. Local Geist variable fonts provide a
+precise product voice without a runtime request; Korean and unavailable-font fallbacks remain
+system-native. Reduced transparency must remove blur and luminosity just as reduced motion removes
+nonessential transitions.
+
+## 24. Run search, settings IA, and exact input grammar (2026-08-25)
+
+SQLite's default case folding is ASCII-focused and LIKE treats `%` and `_` as wildcards. The
+accepted literal, Unicode-aware behavior therefore reads runs joined to durable job rows in one
+read transaction, applies Rust Unicode lowercase plus literal `contains`, then computes total and
+the requested page. This keeps removed jobs searchable because their rows are retained. The run
+snapshot contains no historical job name, so a renamed job is searchable by its current durable
+name; pre-rename names are explicitly out of scope. Stable order is `requested_at_us DESC, id
+DESC`, and neither filtering nor total is capped at 1000.
+
+Settings deserves its own route because durable execution/retention/environment mutation and
+browser-local appearance are operational configuration, not diagnostics. Diagnostics remains a
+read-only explanation surface. Native radio/checkbox/select elements preserve keyboard and form
+semantics; styling them is safer than recreating listboxes. Decimal duration conversion must be
+string-and-BigInt based: at most six decimal places, one optional s/m/h/d suffix, exact
+microseconds, a safe JSON-number boundary, and field-specific empty/zero rules.
+
+## 25. Operator-facing inputs, supplied visual references, and typed frontend (2026-08-25)
+
+An inventory of every editable control found four remaining storage encodings in primary
+workflows: byte counts, epoch microseconds, colon-delimited paths, and several comma/line mini
+grammars. It also found policy inputs displayed while inapplicable, placeholder-only list filters,
+bottom-only validation, internal setting keys in success copy, and terse choices without their
+operational consequence. The accepted rule is that the ordinary workflow speaks in operator
+concepts and the wire representation remains an advanced detail.
+
+Kubernetes quantity documentation supplies the strongest size precedent: byte quantities use
+fixed-point parsing, distinguish decimal M from binary Mi, and explicitly avoid floating point
+(https://kubernetes.io/docs/reference/kubernetes-api/definitions/quantity-resource/ and
+https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/). Locron therefore
+uses a magnitude plus B/KiB/MiB/GiB unit, accepts a pasted suffix, converts with decimal strings and
+BigInt, and shows an exact byte equivalent. The two labels become `Total retained output` and
+`Output retained per run`. Zero is not `Unlimited`: total zero makes completed output eligible for
+pruning, while per-run zero drains but retains no payload and records truncation. Those effects
+must be stated before saving.
+
+Retention and policy controls need consequence-aware disclosure. GitHub exposes artifact/log
+retention as days with a documented range and default
+(https://docs.github.com/en/enterprise-cloud@latest/organizations/managing-organization-settings/configuring-the-retention-period-for-github-actions-artifacts-and-logs-in-your-organization),
+and AWS CloudWatch distinguishes finite retention from never expire
+(https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/Working-with-log-groups-and-streams.html).
+Locron's nullable age contract therefore needs an explicit `No age limit`; zero remains immediate
+expiry rather than off. Per-job concurrency is relevant only for overlap Allow, catch-up count only
+for missed All, and delay/backoff/cap only after retries are enabled. Retry copy should state that
+zero retries still means one initial attempt and preview the sequence.
+
+Raw instants are also removed from the primary schedule flow. MDN notes that `datetime-local`
+provides no timezone itself (https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input/datetime-local),
+so Locron pairs local date/time with its explicit timezone choice and an absolute-time preview.
+AWS Scheduler separates rate, cron, and one-time schedules and documents IANA timezone/DST behavior
+(https://docs.aws.amazon.com/scheduler/latest/UserGuide/schedule-types.html). Cron gets next-run
+feedback; Every is described as elapsed time; epoch microseconds remain an advanced diagnostic
+value only.
+
+Grafana Saga reinforces the form system rather than a particular dark palette. Its Field requires
+labels, descriptions, and adjacent validation (https://grafana.com/developers/saga/components/field),
+while its form pattern recommends one-column grouping, smart defaults, progressive disclosure,
+and separating destructive actions (https://grafana.com/developers/saga/patterns/forms/). Placeholder
+text is not a substitute for a label (https://grafana.com/developers/saga/components/input/).
+GOV.UK similarly links the summary to the affected field and keeps a matching inline error
+(https://design-system.service.gov.uk/components/error-summary/). The dashboard therefore uses a
+shared Field contract, focuses the first invalid control, preserves values, replaces alerts with
+inline retryable feedback, and keeps advanced/raw values collapsed.
+
+The supplied visual references were inspected in a real browser. `portfolio.whitekiwi.link` uses a
+near-black canvas, oversized condensed display type, restrained amber focus, faint oversized
+background lettering, thin dividers, and one dominant terminal workbench. The public unauthenticated
+`platform.deepseek.com/usage` surface uses a quiet split layout, soft cool artwork on one side,
+near-black form surface on the other, generous whitespace, rounded outlined fields, and a single
+high-contrast primary action; its authenticated usage view was not accessible. Grafana contributes
+dense operational hierarchy, persistent toolbars, and restrained panels. Locron adopts the shared
+principles—strong type hierarchy, quiet surfaces, one dominant workbench, disciplined spacing, and
+sparse accent—without copying logos, imagery, or product palettes. Glass remains shell-only.
+
+The existing browser code is 2,827 lines and the job view alone is 1,146 lines. This has crossed
+the point where page-sized string templates and manual DOM state remain easier than components.
+The accepted stack is Vite, React, and strict TypeScript. React's component/state guidance favors a
+component hierarchy aligned to the data model and one owner for each state
+(https://react.dev/learn/thinking-in-react and
+https://react.dev/learn/sharing-state-between-components/). Vite officially supports the React
+TypeScript template and produces static production assets
+(https://vite.dev/guide/ and https://vite.dev/guide/build.html); TypeScript is checked separately
+because Vite transpilation is not the type gate
+(https://vite.dev/guide/features.html#typescript and
+https://www.typescriptlang.org/tsconfig/noEmit.html).
+
+Node remains a development and CI tool, never an install or runtime dependency. Exact package and
+Node versions are pinned, `npm ci` uses the committed lock, strict type checking and component tests
+run before build, and a clean build must exactly reproduce the committed production tree. Rust
+embeds only that tree. Cargo must not invoke npm, `cargo package` must contain it, and a packaged
+install must serve successfully without Node. Initial production dependencies are limited to React
+and React DOM; native fetch, EventSource, hash routing, form controls, and CSS remain sufficient.
+No router, query cache, general UI kit, Redux, Axios, CDN, or runtime font request is justified.
+
+Browser chrome completes the identity. A local, original charcoal/amber SVG favicon must remain
+recognizable at small sizes. Separate light/dark `theme-color` metadata follows the resolved scheme
+as described by MDN (https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/meta/name/theme-color),
+and document titles use concise route-first names such as `Run history · Locron` without job names,
+tokens, or other mutable operator data.
+
+## 26. Modern operator cockpit, accessible primitives, and exact visual tokens (2026-08-25)
+
+### Evidence boundary and reference translation
+
+The supplied portfolio and public DeepSeek shell were already inspected directly in §25. A second
+research pass could not obtain semantic content from the portfolio, while DeepSeek's authenticated
+Usage route remained access-controlled; no private chart or billing layout is inferred. The accepted
+translation is therefore conservative:
+
+- the portfolio contributes one dominant workbench, confident type, thin dividers, and sparse amber
+  emphasis, but not giant background lettering or marketing-scale type behind operational content;
+- DeepSeek contributes quiet near-solid surfaces, generous outer space, aligned outlined controls,
+  and one high-contrast primary action, but no copied navigation, palette, or authenticated layout;
+- Grafana Saga contributes the operational model. Its navigation guidance separates global IA from
+  page-local structure, its table template places actions above comparison data, its object-list
+  guidance supports a purpose-built narrow layout, and its forms use left-aligned one-column groups,
+  progressive disclosure, 16 px component rhythm, and roughly 40 px between major sections.
+  Locron's four destinations need a simple persistent rail rather than Grafana's megamenu. Sources:
+  https://grafana.com/developers/saga/patterns/navigation/,
+  https://grafana.com/developers/saga/templates/table/,
+  https://grafana.com/developers/saga/templates/lists-of-objects/,
+  https://grafana.com/developers/saga/patterns/forms/, and
+  https://grafana.com/developers/saga/foundations/design-principles/.
+
+### Accessible headless primitives
+
+Adopt the individual MIT-licensed Radix React Select, DropdownMenu, Dialog, and Tooltip packages,
+not Radix Themes or another full UI kit. Locron continues to own its CSS, semantic tokens, markup
+wrappers, and component names. The packages' current peer ranges include React 19; Select must be
+pinned at 2.3.2 or later because that release records the React 19 infinite-render correction.
+Sources: https://github.com/radix-ui/primitives,
+https://github.com/radix-ui/primitives/blob/main/LICENSE, and
+https://github.com/radix-ui/primitives/blob/main/packages/react/select/CHANGELOG.md.
+
+- **Select** is for fixed enumerations such as units, HTTP method, and compact policy values. It
+  supplies managed focus, arrow keys, typeahead, disabled items, collision positioning, and portal
+  rendering. Radios remain better for two to four consequential choices that benefit from immediate
+  comparison. A searchable timezone chooser is deferred: WAI-ARIA distinguishes the substantially
+  larger editable-combobox contract. Sources: https://www.radix-ui.com/primitives/docs/components/select
+  and https://www.w3.org/WAI/ARIA/apg/patterns/combobox/.
+- **DropdownMenu** is for commands, especially stable row action triggers, never a persisted form
+  value. It must expose a named real button, verb-labelled items, a separated destructive group,
+  Escape/outside dismissal, and logical focus return. No nested submenu is needed initially.
+  Sources: https://www.radix-ui.com/primitives/docs/components/dropdown-menu and
+  https://www.w3.org/WAI/ARIA/apg/patterns/menu-button/.
+- **Dialog** is for short blocking decisions such as remove, cancel acknowledgement, and pruning
+  review, never the long job form. Title/description, focus trapping, cyclic Tab, Escape, visible
+  close/cancel, and focus return are required; irreversible dialogs initially focus the least
+  destructive action. Sources: https://www.radix-ui.com/primitives/docs/components/dialog and
+  https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/.
+- **Tooltip** supplements named icon buttons after a 600 ms first-open delay and 300 ms skip delay.
+  It never contains interactivity or replaces visible validation, consequence, status, or
+  instructions. Source: https://www.radix-ui.com/primitives/docs/components/tooltip and
+  https://www.w3.org/WAI/ARIA/apg/patterns/tooltip/.
+
+All layers portal into one application-owned root adjacent to the React root. Tokens therefore live
+on `:root`; the fixed depth scale is sticky 10, menu/tooltip 30, overlay 40, dialog 50. Routes close
+open layers. Popup tests cover viewport bounds, nested scroll, outside pointer, Escape, background
+inertness, and trigger focus restoration. Portals prevent clipping in tables and sticky containers,
+but their inheritance, stacking, scroll-lock, and focus behavior remain explicit regression scope.
+
+Adopt pinned `lucide-react` with direct named imports only. Lucide supplies optimized inline SVG,
+TypeScript support, tree shaking, and a coherent outline language without a runtime request. Use
+16 px icons normally, 18 px in primary navigation, 20 px only in empty states, 1.75 stroke, and
+`currentColor`; decorative icons are hidden, icon-only buttons retain accessible names, and status
+always keeps text. Roki, the wordmark, and favicon remain original assets. Sources:
+https://lucide.dev/guide/react and https://github.com/lucide-icons/lucide/blob/main/LICENSE.
+
+### Exact visual system
+
+Amber is brand focus and selection, not warning. The accepted core tokens are:
+
+| Token | Light | Dark | Role |
+|---|---:|---:|---|
+| `canvas` | `#F7F5EF` | `#151512` | application background |
+| `surface` | `#FCFBF7` | `#1C1C18` | main workbench |
+| `raised` | `#FFFFFF` | `#24231E` | menus and dialogs |
+| `border` | `#D9D5CA` | `#3A3931` | passive divider |
+| `border-control` | `#8D887E` | `#747164` | interactive boundary |
+| `text` | `#211F1A` | `#F3F0E8` | primary foreground |
+| `muted` | `#6A655B` | `#AAA69B` | secondary foreground |
+| `accent` | `#E3A91D` | `#E4AD2B` | brand marker/selection |
+| `accent-text` | `#7A4A00` | `#F0BD4C` | amber-associated text |
+| `accent-soft` | `#FFF0C2` | `#3A2C0D` | active background |
+| `on-accent` | `#241A00` | `#201800` | foreground on amber |
+| `focus` | `#B87500` | `#E4AD2B` | focus ring |
+| `primary` | `#211F1A` | `#F3F0E8` | primary button |
+| `on-primary` | `#FFFFFF` | `#151512` | primary button text |
+
+Key calculated ratios are light text/canvas 15.1:1, muted/canvas 5.31:1,
+on-accent/accent 8.14:1; dark text/canvas 16.06:1, muted/canvas 7.52:1, and
+on-accent/accent 8.65:1. Control borders exceed 3:1 against their ordinary surface. Status pairs
+are success `#176B4C/#E7F5EE` and `#70D4A7/#193329`; warning
+`#795000/#FFF3CC` and `#F0BD4C/#382B0D`; danger `#A73531/#FCECEA` and
+`#F07872/#3D211F`; info/running `#245E8C/#EAF3FC` and `#83B9EB/#1D2E3D`.
+Every status includes text. Sources: https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html
+and https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html.
+
+Use spacing `4, 8, 12, 16, 24, 32, 40, 48, 64 px`; radii `4 px` for status,
+`6 px` controls, `8 px` menus/sections, and `12 px` dialogs. Pills are limited to status and compact
+filters. Workbenches have no shadow, sticky chrome has only a divider, popups use
+`0 12px 30px rgb(0 0 0 / 0.14)`, and dialogs use `0 20px 56px rgb(0 0 0 / 0.22)`.
+Desktop rail and work surfaces are opaque. Only mobile sticky chrome may use a 92–94% surface and
+at most 10 px blur, with an opaque reduced-transparency fallback.
+
+Geist Sans remains local with `Pretendard`, `Apple SD Gothic Neo`, `Noto Sans KR`, and system
+fallbacks. Do not add a condensed display font. Page titles are 24/30 at weight 650, section titles
+18/24 at 650, subsections 15/22 at 600, body/controls 14/20, labels/buttons 13/18 at 600, dense
+table/meta 12/16 or 13/18, and code/IDs 13/20 mono. No body text is below 12 px and comparable
+numbers use tabular figures.
+
+Compact controls are 36 px, normal form controls 40 px, multiline fields at least 96 px, desktop
+icon buttons 32 px, table headers 36 px, rows 44 px, and all touch controls at least 44 px. Motion
+uses an 80 ms press, 120 ms hover/focus, 160 ms disclosure/menu, and 200 ms dialog/state duration
+with `cubic-bezier(.2, 0, 0, 1)`, animating opacity/transform only. Reduced motion removes transform
+and uses immediate or at most 80 ms opacity changes.
+
+### Application blueprint
+
+At 1024 px and wider, use an opaque 224 px left rail, 64 px brand/header block, 40 px nav items,
+and a bottom utility region for named daemon health and Settings/theme access. Route headers are at
+least 64 px; content padding is 32 px, reduced to 24 px below 1280. The workbench may reach 1440 px,
+while forms remain bounded. At 768–1023 px the rail is 64 px with labelled tooltips and a persistent
+active marker.
+
+Below 768 px, use a 56 px top bar and four equal labelled bottom destinations plus the safe-area
+inset. Content padding is 16 px and primary actions remain labelled in the header; no hamburger-only
+navigation or floating icon-only action is needed. Dialog width becomes `calc(100vw - 32px)` and
+200% zoom naturally enters the narrow composition. This supports WCAG reflow without two-dimensional
+page scrolling: https://www.w3.org/WAI/WCAG22/Understanding/reflow.html.
+
+Desktop Jobs and Run history use a wrapping toolbar, a 240–420 px growing search, following filters,
+live result state, and the primary action at the far right. Rows use aligned tabular values and a
+stable overflow-menu column. Below a 760 px container width, render semantic object rows—not hidden
+columns or a horizontally scrolling page—with name/status, schedule/next occurrence, latest
+run/trigger time, a named action menu, and a detail link. Dividers, not floating cards, separate rows.
+
+The job form uses a 720 px primary measure and a 176 px sticky section rail on wide screens. Its
+sections are Identity, Schedule, Target, Environment, Policy, and Review, separated by 40 px, with
+20 px field gaps and 8 px label-to-control gaps. Paired controls use two columns only when both keep
+at least 240 px. A solid sticky action bar is at least 64 px, exposes review/save, cancel, dirty, and
+saving state, and reserves enough page padding not to obscure the final field. Settings reuses this
+system, visually separates browser-local Appearance from durable policy, and puts pruning/destructive
+old→new consequences in a short review dialog.
+
+### Adopted and rejected
+
+Adopt selective Radix primitives, direct-import Lucide icons, a 224/64 px adaptive rail, labelled
+four-item mobile bottom navigation, mobile object rows, one-column long forms, and sticky actions.
+Reject a full themes/UI kit, custom combobox/listbox, icon fonts/CDNs, glass workbenches, authenticated
+marketing heroes, ambient gradients/glow/texture, a card around every field/value, amber warnings,
+tooltip-only instructions, icon-only core actions, hover-only row actions, nested dialogs/submenus,
+parallax, ambient loops, and long decorative animation. The final matrix covers both themes at
+desktop, compact rail, mobile, and 200% zoom across entry, every route, tables/object rows, Select,
+menu, tooltip, dialog, validation, loading, empty, error, destructive review, keyboard-only use,
+reduced motion, and empty developer logs.
+
+## 27. Finish quality: code, type, material, rows, and perceptual color (2026-08-25)
+
+### Changed decisions and reference boundary
+
+This amendment refines §25–26. JSON becomes a purpose-built read-only viewer instead of a generic
+monospace block. Glass expands from mobile chrome to genuinely overlapping sticky and transient
+layers in both themes, while persistent rails and content remain opaque. Job and Run title links
+remain the semantic destinations, but the noninteractive row surface becomes a pointer target; the
+row never becomes a duplicate keyboard widget.
+
+Public AI guidance is useful as a state-audit method, not as an aesthetic preset. Microsoft HAX and
+Google PAIR emphasize expectations, explanation, recovery, and action-oriented testable patterns;
+Locron transfers that method without presenting itself as an AI product. Vercel's current interface
+guide adds directly relevant native semantics, visible focus, inline help before tooltips, tabular
+numbers, resilient content, labelled status, and explicit motion properties. Sources:
+https://www.microsoft.com/en-us/haxtoolkit/ai-guidelines/,
+https://pair.withgoogle.com/guidebook-v2/, and https://vercel.com/design/guidelines.
+
+The supplied skills remain process references. MengTo/Skills supports explicit reference boundaries,
+constraints, pitfalls, and acceptance checks; Genjutsu supports an interaction thesis and state
+audit but not cinematic effects; LottieFiles requires purpose, timing, easing, accessibility, and
+performance before motion but does not justify a Lottie dependency; UI UX Pro Max contributes focus,
+responsive, status, and reduced-motion checks but its style catalog is not authority to mix trends.
+Design Spells, recent.design, and wwit remain technique and flow galleries rather than accessibility
+or product-identity standards. Sources: https://github.com/MengTo/Skills,
+https://github.com/AThevon/genjutsu, https://github.com/LottieFiles/motion-design-skill,
+https://github.com/nextlevelbuilder/ui-ux-pro-max-skill, https://www.designspells.com/,
+https://recent.design/, and https://wwit.design/.
+
+### Dependency-free exact JSON viewer
+
+Do not add Monaco, CodeMirror, or Shiki for this read-only JSON requirement. Monaco is an editor with
+workers and editor focus behavior and does not support mobile browsers. CodeMirror itself recommends
+avoiding `EditorView` when only syntax presentation is required. Shiki is accurate, but its presets
+and grammar/theme/regex-or-WASM lifecycle are disproportionate for one language. CodeMirror becomes
+the future candidate only if search, fold navigation, diffing, or editing becomes a real product
+need. Sources: https://github.com/microsoft/monaco-editor,
+https://codemirror.net/examples/readonly/, and https://shiki.style/guide/bundles.
+
+Implement a small RFC 8259 lexer over the original string; never parse and reserialize, which can
+change whitespace, line endings, key order, escapes, duplicate keys, and numeric spelling. Tokenize
+strings/escapes, numbers, `true`/`false`/`null`, punctuation, and whitespace; a string is a key only
+when the next non-whitespace token is a colon. Render React text nodes inside `<pre><code>`, never
+HTML injection. Syntax roles use color plus weight/opacity, so plain text remains intelligible with
+color removed. Source: https://www.rfc-editor.org/rfc/rfc8259.
+
+The compact opaque header exposes `JSON`, exact Copy with visible status, and a Wrap toggle. Content
+uses local Geist Mono 13/20, weight 430, zero tracking, disabled ligatures, and tabular numbers. Line
+numbers are hidden from assistive technology; AT receives one continuous code value. Copy writes the
+untouched source. Invalid JSON shows `Invalid JSON`, preserves the exact plain source, and remains
+copyable. Above 200 lines or 64 KiB, initially show the first 80 complete lines with `Show all N
+lines`; full source remains in memory for copy. Expanded content is internally bounded to 480 px
+desktop and 360 px narrow. Wrap defaults off and persists locally. Tests cover escapes, Unicode,
+CRLF, duplicate keys, exponents, invalid input, literal markup, exact copy, themes, zoom, and limits.
+
+### Application typography
+
+Geist's typography system defines each role with size, line-height, tracking, and weight, separates
+multiline Copy from single-line Label, and uses tabular figures for data. Geist Sans/Mono remain the
+locally licensed bundled fonts; Korean uses native fallbacks rather than another assumed or newly
+bundled font. Sources: https://vercel.com/geist/typography,
+https://github.com/vercel/geist-font, and https://github.com/vercel/geist-font/blob/main/LICENSE.txt.
+
+Use `"Geist Sans", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR",
+"Malgun Gothic", system-ui, sans-serif` and `"Geist Mono", ui-monospace, SFMono-Regular, Menlo,
+Consolas, monospace`. Set optical sizing, normal kerning, no synthetic faces, normal ligatures, and
+tabular numeric columns. The exact application roles are:
+
+| Role | Size / line / weight / tracking | Mixed Korean/Latin tracking |
+|---|---|---|
+| empty/display | 32 / 40 / 650 / `-.025em` | `-.012em` |
+| page title | 24 / 32 / 650 / `-.018em` | `-.010em` |
+| section title | 18 / 26 / 620 / `-.012em` | `-.006em` |
+| subsection | 15 / 22 / 600 / `-.006em` | `0` |
+| nav/menu/control | 14 / 20 / 540 / `-.006em` | `0` |
+| body/copy | 14 / 21 / 420 / `-.003em` | `0` |
+| field label | 13 / 18 / 560 / `-.004em` | `0` |
+| table primary | 13 / 18 / 500 / `-.003em` | `0` |
+| metadata/caption | 12 / 17 / 450 / `+.005em` | `0` |
+| JSON/code | 13 / 20 / 430 / `0` | `0` |
+| mobile input | 16 / 22 / 420–500 / `0` | `0` |
+
+Use variable weights rather than a coarse 400/700 rhythm. Never apply all-caps or negative tracking
+to Korean operational labels. Align icon/text by baseline with at most a one-pixel optical
+adjustment rather than loose padding.
+
+### Tooltip, material, and whole-row interaction
+
+Labelled desktop and mobile navigation render no Tooltip and no duplicate `title`. Hover changes
+only surface, text/icon contrast, and the active marker. Tooltips remain permitted for the 64 px
+icon-only rail and genuinely icon-only supplemental controls; the trigger owns an independent
+accessible name. APG keeps focus on the trigger, Escape dismisses, and no focusable content appears
+inside. WCAG also requires custom hover/focus content to be dismissible, hoverable, and persistent.
+Sources: https://www.w3.org/WAI/ARIA/apg/patterns/tooltip/,
+https://www.w3.org/WAI/WCAG22/Understanding/content-on-hover-or-focus.html, and
+https://vercel.com/design/guidelines.
+
+Apple reserves material for functional controls/navigation and warns against content-layer overuse;
+Microsoft reserves Acrylic for transient light-dismiss surfaces and opaque Mica-like bases for
+long-lived content; Vercel distinguishes page surfaces from tooltip/menu/modal elevation and avoids
+stacking material. Therefore desktop rail, workbench, table, form, code, notice, and status surfaces
+remain opaque. Glass is limited to sticky chrome with content scrolling behind it, mobile bottom
+navigation, and transient menus/popovers/tooltips. Dialog content remains opaque over smoke. Sources:
+https://developer.apple.com/design/human-interface-guidelines/materials,
+https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/materials, and
+https://vercel.com/geist/materials.
+
+| Material | Light | Dark |
+|---|---|---|
+| sticky chrome | `rgb(252 251 247 / .86)`, blur 14px, saturate 108% | `rgb(28 28 24 / .82)`, blur 14px, saturate 108% |
+| transient | `rgb(255 255 255 / .92)`, blur 16px, saturate 110% | `rgb(36 35 30 / .90)`, blur 16px, saturate 110% |
+| hairline | inset `0 1px rgb(255 255 255 / .72)`, outer `rgb(33 31 26 / .10)` | inset `0 1px rgb(255 255 255 / .10)`, outer `rgb(255 255 255 / .12)` |
+| local shadow | `0 10px 28px rgb(33 31 26 / .10)` | `0 12px 32px rgb(0 0 0 / .32)` |
+| solid fallback | `#FCFBF7` / `#FFFFFF` | `#1C1C18` / `#24231E` |
+| modal smoke | `rgb(21 21 18 / .38)` | `rgb(0 0 0 / .58)` |
+
+Set the solid value first and enhance under `@supports`. Forced colors, increased contrast, reduced
+transparency, and an app-level solid-material hook remove blur. Blur never exceeds 16 px, saturation
+110%, or two glass layers in one sightline; no background decoration is added merely to expose blur.
+
+For row navigation, retain native table/header/cell semantics and one real anchor in the primary
+cell. Jobs append a screen-reader-only “view job details”; Runs expose the full ID and job/time
+context to AT even when visually shortened. Each menu is separately named for the row. Pointer
+delegation activates the real link only for a primary unmodified click on noninteractive row space,
+with no text selection. It ignores prevented events, modifiers, non-primary buttons, and origins in
+links, buttons, inputs, selects, textareas, or menu items. Never wrap a row in an anchor, give the
+row `role=link`/`tabindex`, or stretch a pseudo-element over nested controls. Sources:
+https://www.w3.org/WAI/tutorials/tables/,
+https://www.w3.org/WAI/ARIA/apg/patterns/link/, and https://vercel.com/design/guidelines.
+
+### Perceptual color roles
+
+Radix assigns steps 1–2 to backgrounds, 3–5 to normal/hover/active component surfaces, 6–8 to
+separators/control borders/focus, and 11–12 to secondary/primary text. Geist independently separates
+page backgrounds, component states, border states, high-contrast fills, and accessible text/icon
+roles. Locron follows that anatomy with warm sand/olive neutrals and a separate custom amber scale;
+it does not add a Radix Colors runtime dependency or copy Vercel values. Sources:
+https://www.radix-ui.com/colors/docs/palette-composition/understanding-the-scale,
+https://www.radix-ui.com/colors/docs/palette-composition/composing-a-palette, and
+https://vercel.com/geist/colors.
+
+| Role | Light | Dark |
+|---|---:|---:|
+| canvas | `#F7F5EF` | `#151512` |
+| surface | `#FCFBF7` | `#1C1C18` |
+| raised | `#FFFFFF` | `#24231E` |
+| hover | `#F4F0E6` | `#25241F` |
+| pressed | `#EBE5D7` | `#2D2B24` |
+| selected | `#FFF0C2` | `#3A2C0D` |
+| border | `#D9D5CA` | `#3A3931` |
+| border-control | `#8D887E` | `#747164` |
+| text | `#211F1A` | `#F3F0E8` |
+| muted | `#6A655B` | `#AAA69B` |
+| disabled-text | `#817C72` | `#858176` |
+| accent | `#E3A91D` | `#E4AD2B` |
+| accent-text | `#7A4A00` | `#F0BD4C` |
+| on-accent | `#241A00` | `#201800` |
+| focus | `#B87500` | `#E4AD2B` |
+| primary | `#211F1A` | `#F3F0E8` |
+| on-primary | `#FFFFFF` | `#151512` |
+
+Calculated light ratios include text/canvas 15.10:1, muted/canvas 5.31:1,
+control/surface 3.41:1, focus/surface 3.63:1, accent-text/selected 6.59:1, and
+on-accent/accent 8.14:1. Dark ratios are 16.06:1, 7.52:1, 3.49:1, 8.39:1,
+7.82:1, and 8.65:1 respectively. Status pairs stay as §26 and remain labelled. WCAG requires
+4.5:1 normal text and 3:1 necessary controls/states; a focus indicator must remain distinguishable
+from adjacent color. Sources: https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html,
+https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html, and
+https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html.
+
+CSS Color 4 describes OKLCH as more perceptually uniform, so it is useful in design tooling for
+checking monotonic lightness and restraining amber chroma. Audited sRGB hex remains runtime truth:
+it keeps screenshots deterministic and WCAG contrast explicit. Do not synthesize state colors at
+runtime with `color-mix`, arbitrary alpha, or ad-hoc OKLCH deltas. Source:
+https://www.w3.org/TR/css-color-4/#ok-lab.
+
+Final verification crosses both themes with 1440/1024/768/390 px and 100%/200% zoom; mixed Korean,
+Latin, and long identifiers; valid/invalid/large/exact-copy/XSS JSON; labelled and icon-only nav;
+tooltip dismissal and persistence; supported/fallback/reduced/forced material; row surface click,
+text selection, modified anchor clicks, menu isolation, Tab/Enter, and screen-reader link names;
+every status/disabled/focus state; reduced motion; and text/icon/boundary/selected/status contrast.
+
+## 28. Stable filtered-empty tables and control-to-help spacing (2026-08-25)
+
+Grafana Saga explicitly recommends retaining a table header when no data exists, using the body-row
+space to explain the condition and recovery, and omitting pagination when there is nothing to page.
+Its empty-state pattern distinguishes filtered `not-found` from first-use creation and permits a
+clear-filter action. PatternFly similarly distinguishes compact no-result recovery from getting-
+started empty states and uses 24 px table-empty padding. Carbon instead removes the table so a screen
+reader does not traverse headers before learning that no content exists, so header preservation is
+not a universal rule. Locron accepts Grafana's stable operational context and mitigates Carbon's
+concern through the existing immediate polite result count and one concise semantic body row, not an
+illustrated empty page. Sources: https://grafana.com/developers/saga/templates/lists-of-objects/,
+https://grafana.com/developers/saga/patterns/empty-state/,
+https://v4-archive.patternfly.org/v4/components/empty-state/design-guidelines/, and
+https://preview.carbondesignsystem.com/building-blocks/core/patterns/empty-states.
+
+Jobs and Run history retain toolbar, frame, 36 px header, labels, and widths after a successful zero
+response. Render `<tbody><tr><td colspan={visibleColumnCount}>…</td></tr></tbody>` with a 24 px centered
+cell, a 112 px minimum content block, and at most 480 px copy, yielding at least 160 px body space.
+Narrow object layouts use 24 px by 16 px and a 96 px minimum. Pagination disappears at total zero.
+Filtered copy is `No jobs match these filters` or `No runs match these filters`, followed by one
+sentence and a secondary `Clear filters` action. Clearing resets all active filters and returns focus
+to search before the ordinary result announcement reports the restored count. Initial empty copy is
+`No jobs yet` with Create job, or `No runs yet` with an explanation and View/Create job. Loading,
+error, authorization, first use, and filtered zero remain distinct.
+
+The existing adjacent `role="status" aria-atomic="true"` politely announces the count; the table
+references that status and the body row is not another live region. W3C documents `role=status` for
+search result counts without focus movement. Sources:
+https://www.w3.org/WAI/WCAG21/Techniques/aria/ARIA22 and
+https://www.w3.org/WAI/WCAG22/working-examples/aria-role-status-searchresults/.
+
+Material and PatternFly use 4 px for helper text beneath a single control, while Grafana uses 16 px
+between form components and 40 px between sections; Carbon allows 16–32 px after a radio group.
+Locron adopts explicit semantic slots: label/legend to control 8 px, final segmented/radio edge to
+help 8 px, help/error internal gap 4 px, last help/error to next field 20 px, and section to section
+40 px. Theme help is normal-flow muted 13/18 text, at most 56 characters wide, associated to the
+group through `aria-describedby`, and begins after the whole wrapped group. Sources:
+https://m1.material.io/components/text-fields.html,
+https://pf4.patternfly.org/components/form/,
+https://www.patternfly.org/components/helper-text/,
+https://grafana.com/developers/saga/patterns/forms/, and
+https://carbondesignsystem.com/components/radio-button/usage/.
+
+Reject a full-page no-result illustration, blank `tbody`, duplicate live regions, disabled clear
+actions, fixed-height empty rows, generic collapsing gaps, negative-margin help, and tooltip-only
+explanation.
+
+## 29. Settings submission, readable JSON, and nested row consistency (2026-08-25)
+
+PatternFly's current form guidance says to default to one form per page because multiple forms and
+submit buttons create unnecessary confusion, and its full-page form pattern places the submit
+action at the bottom of the form. GOV.UK likewise recommends one main call to action on a page and
+left-aligns it with the form. PatternFly distinguishes true inline actions—which belong next to the
+single field they affect—from full-page editing, where Save and Cancel commit or discard the whole
+edit. Locron's durable settings share one scheduler configuration, so five near-identical per-field
+`Review …` buttons incorrectly suggest independent forms and make multi-setting changes repetitive.
+The accepted pattern is one dirty settings form with a bottom action group, one aggregate review,
+and one reset to the last durable snapshot. Sources:
+https://www.patternfly.org/components/forms/form/design-guidelines/,
+https://www.patternfly.org/components/inline-edit/design-guidelines/,
+https://pf3.patternfly.org/v3/pattern-library/forms-and-controls/buttons-on-forms/, and
+https://design-system.service.gov.uk/components/button/.
+
+The appearance theme remains an exception because it is explicitly browser-local and already
+applies immediately. Environment values are also gathered into the same durable review: a staged
+name/value becomes one pending change in the aggregate summary, and redaction still prevents the
+saved value from being redisplayed. The review dialog lists only changed keys, shows human old/new
+descriptions where values are safe, states that environment values remain redacted, and applies the
+validated changes in a deterministic order. A partial failure must remain visible per key and must
+not falsely report the whole form saved; successful keys refresh from the server and remaining
+dirty values stay editable.
+
+JSON's exact-source requirement and readable presentation are compatible if they are separate
+representations. The viewer parses only valid input for presentation, then produces deterministic
+two-space indentation while retaining the source token stream's key order, duplicate keys, numeric
+lexemes, escape spelling, and literal values. Copy always targets the original source. This rejects
+`JSON.parse` followed by `JSON.stringify`, which would collapse duplicate keys and may normalize
+number or escape spelling. Invalid input bypasses formatting and remains exact. Preview thresholds
+and line counts are calculated from the presented form so expansion describes what the user sees;
+the exact original byte/character count remains available for copy semantics.
+
+The existing whole-row navigation helper already encodes safe pointer delegation. The Job detail
+Recent runs table is the uncovered repeated-run surface: it currently exposes only the shortened ID
+anchor. Applying the shared row contract there removes the inconsistency without changing table
+semantics or adding another navigation abstraction. The regression inventory must cover Recent runs
+surface click, text selection, modified/non-primary clicks, the native anchor, and any future nested
+actions exactly as the Jobs and Run history tables do.
+
+The Jobs toolbar misalignment comes from composing two independent `Field` blocks in a flex row:
+Search jobs owns a helper line while State filter does not, so `align-items:flex-end` aligns the
+outer boxes instead of the label and control rows. Adding an arbitrary bottom margin to the select
+would fix only this copy length and would regress when help wraps. The stable solution is a small
+toolbar field grid with explicit label, control, and help rows; both fields occupy the first two
+rows, Search alone occupies the help row, and the result status is a separate aligned area. Mobile
+switches the grid back to one column so each field keeps its ordinary label/control/help flow.
+
+## 30. Disabled-job disappearance and cross-route QA inventory (2026-08-25)
+
+The defect reproduces against the authenticated review fixture. The Jobs route initially reports
+three enabled jobs. Disabling `api-heartbeat` succeeds durably, but returning to Jobs with `All states`
+selected reports only two results and omits the disabled job. The frontend then cannot produce a
+`Disabled` result because its client-side filter only sees the already-restricted response.
+
+The API contract is intentional and already exposes the required complete view. `GET /api/v1/jobs`
+lists enabled jobs by default, matching the CLI's ordinary `list`, while the existing string-flag
+query `GET /api/v1/jobs?all=1` passes `true` to the store and returns current enabled and disabled
+records. Jobs currently requests the default endpoint and then presents an `All states`/`Enabled`/
+`Disabled` client filter, so the UI label and its data source contradict each other. The accepted fix
+is to use the complete-view endpoint for operator surfaces that must name or filter current disabled
+jobs; the API default remains unchanged for compatibility.
+
+Run history independently requests the same default Jobs endpoint to map durable `job_id` values to
+current names. Consequently, runs belonging to a disabled job can fall back to a shortened ID even
+though the current job record and name still exist. Run history should use the same complete current-
+job view for enrichment. This does not invent names for removed jobs and does not alter server-side
+literal history search, pagination, or immutable run identity.
+
+The state mutation flow already refreshes Jobs in place when no run ID is returned, but live QA found
+a second defect: choosing `…` → `Disable` immediately navigates to that job's detail route. Radix
+portals the menu DOM outside the row while React still bubbles the synthetic click through the row's
+component ancestry. The shared row guard currently treats an interactive target outside the row DOM
+as unused row space, so it activates the row link. Interactive descendants and portalled interactive
+targets must both suppress row navigation. Once both fixes land, `All states` retains the changed row,
+`Disabled` gains it, and `Enabled` excludes it. QA must also prove the inverse transition,
+preservation of search/filter state, direct detail reachability, and action-menu isolation. The review
+fixture is restored after mutation checks so the user does not inherit test-only state.
+
+The broader functional pass should prioritize connected workflows where isolated tests can miss
+contract mismatches: authentication and asset freshness; Jobs state/search/navigation/action menus;
+Run history debounce, partial search, names, and pagination; job/run detail JSON and row navigation;
+Settings review/discard and theme locality; Diagnostics health loading; desktop/mobile overflow; and browser
+error/warning logs. Destructive Remove and long-running/cancellation scenarios remain covered by the
+automated server/CLI contract suites rather than mutating the user's live review fixture.
+
+## 31. Linux-only dashboard service compilation regression (2026-08-25)
+
+The v0.8.0 preparation commit `7fcb716` passed the complete local macOS battery, but that evidence
+compiled only the active macOS `cfg` branches. PR #9 CI run
+[32801485007](https://github.com/WhiteKiwi/locron/actions/runs/32801485007), on the same head, exposed
+two Linux-only source-boundary defects before any test could execute.
+
+The Rust 1.94.0 Linux lint job
+[97663055695](https://github.com/WhiteKiwi/locron/actions/runs/32801485007/job/97663055695)
+failed `cargo clippy --workspace --all-targets -- -D warnings` with five `E0425` errors in
+`crates/locron-cli/src/service.rs`: the systemd `is_loaded`, `enable`, `start`, `stop`, and `unload`
+methods bind their service context as `_ctx` but read `ctx.target.service_name()` at lines 1509,
+1514, 1518, 1523, and 1535. The same lint job additionally rejected two Linux test-target
+`dead_code` warnings: `DashboardServiceCleanup` at `service_backends.rs:122` and
+`default_dashboard_token_path` at line 271. The Rust 1.94.0 Linux test job
+[97663055756](https://github.com/WhiteKiwi/locron/actions/runs/32801485007/job/97663055756)
+failed `cargo test --workspace --all-targets` on the same five `E0425` errors. Stable and aarch64
+Linux legs failed the same source revision; both Rust-version rows are therefore affected by the
+platform branch, not a toolchain-specific change.
+
+The adjacent `ServicePort` implementations show the intended convention: a context argument is
+named `ctx` when its target or paths are read and `_ctx` only when the implementation genuinely
+does not use it. The systemd `session_available` and `reload` methods legitimately keep `_ctx`;
+the five failing methods must bind `ctx`. A complete `_ctx` inventory found no other binding in
+`service.rs` that subsequently reads `ctx`.
+
+The two dead-code items support only the macOS dashboard launchd test. The cleanup type's sole
+construction and the token-path helper's sole call are inside
+`macos_launchd_backend_registers_refreshes_and_unregisters_the_dashboard`. Their definitions should
+carry the same `#[cfg(target_os = "macos")]` boundary as that test. A blanket `allow(dead_code)`
+would hide future platform drift and is rejected. `ServiceCleanup`, `uid`, and the common command
+helpers remain cross-platform because the Linux direct-session test uses them.
+
+The local toolchain has the `x86_64-unknown-linux-gnu` Rust target, but a target-specific Cargo check
+stops in `libsqlite3-sys` and `aws-lc-sys` build scripts because the host has no
+`x86_64-linux-gnu-gcc`; it never reaches Locron Rust source. Installing a cross C toolchain is not a
+proportionate repository fix. The systemd module itself uses portable standard-library APIs and can
+be compiled safely in ordinary unit-test builds without invoking `systemctl`. Extending its cfg from
+Linux-only to Linux-or-test, plus a test that coerces `SystemdPort` to a `dyn ServicePort` trait
+object, gives macOS Clippy and tests a persistent type-check seam for the complete implementation.
+The authoritative native Linux confirmation remains the parent session's CI rerun after the fix is
+pushed.
+
+## 32. Platform-neutral service template seam (2026-08-25)
+
+The first portability fix reached native Linux compilation and exposed the next platform-coupling
+layer on PR #9 CI run
+[32802465277](https://github.com/WhiteKiwi/locron/actions/runs/32802465277), head `95fbae5`.
+Rust 1.94.0 lint job
+[97665903962](https://github.com/WhiteKiwi/locron/actions/runs/32802465277/job/97665903962)
+compiled the previous five systemd identifier fixes, then failed only because `DAEMON_LABEL` and
+`DASHBOARD_LABEL` were unused at `service.rs:40` and `:44` in the Linux test build. Rust 1.94.0 test
+job [97665904093](https://github.com/WhiteKiwi/locron/actions/runs/32802465277/job/97665904093)
+compiled and ran 82 CLI unit tests; 80 passed and the two plist template tests failed. The daemon
+assertion at line 1800 could not find `<string>dev.locron.daemon</string>`, and the dashboard
+assertion at line 1821 could not find `<string>dev.locron.dashboard</string>`.
+
+`Target::service_name()` intentionally selects the current service manager's runtime identity:
+launchd labels on macOS and systemd unit file names on Linux. Linux tests compile `render_plist`,
+which currently calls that current-platform selector, so it renders `locron.service` or
+`locron-dashboard.service` into a launchd document. The constants are consequently unused, and the
+template is semantically wrong. Weakening the template assertions or suppressing dead code would
+hide that cross-platform error.
+
+The platform-neutral boundary is an explicit launchd-label accessor on `Target`, available on
+macOS and test builds. `render_plist` must use it regardless of the host compiling the template;
+`service_name()` continues to choose the active manager identity for status envelopes, manager
+commands, launchd runtime targets, and systemd unit paths. On macOS its branch may delegate to the
+same launchd accessor so labels have one source of truth.
+
+An adjacent renderer audit found no analogous current-platform leakage. `render_unit` embeds only
+the target-specific description, executable, and arguments; the unit file path is chosen later by
+the Linux systemd port through `service_name()`, where current-platform selection is correct.
+`render_plist` owns the only manager identity embedded inside template contents. Plist file names
+and log files already have explicit launchd/test-scoped accessors.
+
+## 33. Dual-stack dashboard port-test ownership race (2026-08-25)
+
+The platform-neutral template fix made warnings-denied lint green on both Linux toolchains in PR #9
+CI run [32803014653](https://github.com/WhiteKiwi/locron/actions/runs/32803014653), head
+`341bf2a`. The remaining failures are nondeterministic dashboard integration-test port ownership,
+not server template or runtime compilation failures.
+
+Linux aarch64 Rust 1.94.0 job
+[97667526486](https://github.com/WhiteKiwi/locron/actions/runs/32803014653/job/97667526486)
+failed `foreground_serve_falls_back_when_the_default_port_is_occupied`: the test's parsed startup
+line still reported port 10824, violating its line-480 assertion. macOS aarch64 Rust 1.94.0 job
+[97667526530](https://github.com/WhiteKiwi/locron/actions/runs/32803014653/job/97667526530)
+failed `service_mode_keeps_the_default_port_fixed_when_occupied` because the child kept serving and
+did not exit within the ten-second deadline at line 189. Linux x86_64 1.94.0/stable, Linux aarch64
+stable, and macOS aarch64 stable passed the same tests; both Linux lint legs passed. The mixed
+matrix result is consistent with an intra-binary scheduling race.
+
+The server's dual-stack behavior is intentional. It attempts every configured loopback address on
+one candidate port, warns and continues when only one family binds, and treats the port as
+unavailable only when neither family binds. Existing server coverage proves that an occupied IPv4
+address can validly serve on IPv6 at the same fixed port. Therefore a strict/fallback occupancy test
+must keep every bindable loopback family unavailable for the child lifetime; occupying IPv4 alone
+would not satisfy the product contract.
+
+The dashboard integration binary has exactly three fixed-default-port tests:
+`service_mode_keeps_the_default_port_fixed_when_occupied`,
+`redirected_bare_serve_still_uses_foreground_fallback`, and
+`foreground_serve_falls_back_when_the_default_port_is_occupied`. Rust runs integration tests in
+parallel. Their shared `hold_fixed(10824)` helper treats zero newly acquired listeners as success,
+assuming another owner will continue occupying both families. If test A owns both listeners, test B
+sees zero and advances without ownership; when A finishes and releases before B's child binds, B can
+bind 10824. Foreground then reports the supposedly occupied default, while fixed service mode starts
+and outlives the completion deadline. The two CI failures are the opposite policy manifestations of
+the same lifetime gap.
+
+A poison-tolerant process-static mutex around all three fixed-default-port tests makes ownership
+sequential within the integration binary. Each test either owns the bindable listeners for its
+whole child lifetime or observes a genuinely external holder; another suite test can no longer be
+the unowned transient holder. `hold_port()` for explicit random-port strictness remains parallel and
+unchanged. No sleep, longer timeout, single-family assertion, or weakened outcome is needed.

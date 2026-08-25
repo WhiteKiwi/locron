@@ -1,0 +1,32 @@
+[package]
+name = "locron-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Loopback HTTP management and viewer surface for locron"
+
+[dependencies]
+axum = "0.8.9"
+axum-extra = { version = "0.12", features = ["cookie"] }
+base64.workspace = true
+cookie = "0.18"
+futures-util.workspace = true
+getrandom = "0.4"
+locron-core = { path = "../locron-core" }
+locron-store = { path = "../locron-store" }
+reqwest.workspace = true
+rust-embed = { version = "8.12", features = ["mime-guess"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-stream = "0.1.19"
+uuid.workspace = true
+
+[dev-dependencies]
+sha2.workspace = true
+tempfile.workspace = true
+tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true

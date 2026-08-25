@@ -804,3 +804,140 @@ Testability needs no PTY: `truncate_display` and `render_list_table` are pure fu
 - **Unit tests:** `truncate_display` — ASCII fit/no-fit and exact-boundary cases, width-2 CJK, emoji, ellipsis appended only when truncation occurs, and zero/minimum widths; `render_list_table` with injected widths covering the truncating, fitting, and too-narrow fallback paths.
 - **Contract tests:** piped human `ls` with a long target is byte-identical to the pre-change table; `--no-trunc` appears in `locron ls --help` and is accepted; `ls --no-trunc --format json` output is identical to `ls --format json`.
 - **Workspace battery:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on the installed toolchain; the four-target CI matrix stays green.
+
+## Dashboard v0.8.0 release preparation (2026-08-25)
+
+This section implements the corresponding `docs/SPEC.md` amendment without changing dashboard
+runtime behavior. The feature implementation and its integrated browser QA are already complete;
+this pass makes the shipped surface discoverable, gives it one release identity, and prepares the
+reviewed branch for the repository publication workflow.
+
+### Documentation and release-note structure
+
+The README will introduce the dashboard immediately after installation and before the broader CLI
+quick start. The shortest supported flow is foreground-first: start `locron dashboard`, open the
+printed loopback URL, and paste the printed token into the entry page. A compact persistent-service
+alternative will use `locron dashboard enable`, with `status` for the stable local URL and `token`
+for intentional token re-display. The copy must say that the dashboard is optional, disabled by
+default, loopback-only, and backed by the same durable jobs, runs, settings, and diagnostics as the
+CLI. It must not place a token in a URL, imply remote access, or imply that the dashboard replaces or
+owns the scheduler daemon.
+
+The existing Operator and CLI references remain the detailed source of truth. Their dashboard
+sections will be checked for stale paths or statements; only user-facing inconsistencies found in
+that review will change. The README documentation index will point to the operational guide as well
+as the design/specification material so a new user can move from quick start to lifecycle and
+security detail.
+
+`CHANGELOG.md` will be normalized into chronological Keep a Changelog order, because its current
+header and Unreleased section sit below several released entries after an earlier merge. A curated
+`0.8.0` entry will summarize the complete user-visible dashboard: lifecycle commands, loopback and
+token boundary, authenticated management and diagnostics, responsive light/dark interface,
+human-friendly schedule/size controls, debounced partial search, row navigation, and redacted
+pretty JSON. Test-only and internal implementation details stay out of the entry. The comparison
+links will advance from `v0.7.0` to `v0.8.0`, while Unreleased remains empty and ready for the next
+change.
+
+### Version synchronization
+
+The workspace package version changes from `0.7.0` to `0.8.0`, a backward-compatible feature
+release. Member manifests inherit the workspace version, so `Cargo.toml` is the only hand-edited
+manifest. `cargo check --workspace` will perform Cargo's normal lockfile reconciliation; the five
+workspace package records in `Cargo.lock` must all report `0.8.0`, with dependency versions
+otherwise unchanged.
+
+### Publication boundary and maintained skill
+
+This repository preparation does not open or merge a pull request, create a tag, publish a GitHub
+release, update Homebrew, or modify the separate `WhiteKiwi/skills` repository. Those external
+mutations belong to the parent publication session after review. The parent will compare the
+released dashboard command surface against the Locron skill before publication; if it changes the
+skill, that repository's generated packages and validation must be synchronized independently.
+
+### Verification additions
+
+- Validate every relative README Markdown link and every shell fence used by the quick start; scan
+  the new dashboard copy for token-in-URL examples and contradictory remote/off-by-default claims.
+- Confirm `CHANGELOG.md` has one heading, strictly descending released versions, a `0.8.0` entry,
+  and comparison links based on `v0.8.0` and `v0.7.0`.
+- Run `cargo check --workspace --locked` after normal lockfile generation, and assert the workspace
+  manifest plus all five Locron lockfile package records report `0.8.0`.
+- Run `cargo fmt --all --check`, `git diff --check`, and inspect staged and unstaged changes so the
+  release-preparation commit contains only the specification amendment, planning documents,
+  user-facing documentation, changelog, and version metadata.
+
+## Linux service cfg portability follow-up (2026-08-25)
+
+This is a compilation-portability correction for the already-specified daemon and dashboard
+service behavior. No root or dashboard specification changes: systemd receives the same target
+service names, and the real-backend tests keep the same platform ownership.
+
+The systemd `ServicePort` methods that select a daemon or dashboard unit must rename their existing
+`_ctx` binding to `ctx`. There is no data-flow or command change; the correction merely makes the
+identifier used in each existing `systemctl` argument available in the Linux compilation branch.
+The adjacent context-independent methods retain `_ctx`, making the unused/used distinction
+compiler-enforced.
+
+The macOS-only dashboard cleanup type, its `Drop` implementation, and the default dashboard token
+path helper will receive `#[cfg(target_os = "macos")]`. Scoping both the type and implementation is
+necessary: scoping only the construction leaves the definition dead on Linux, while scoping only
+the type leaves an invalid implementation. The common daemon cleanup remains available on Linux.
+
+Verification proceeds from the narrowest platform seam outward:
+
+1. Compile the systemd module on Linux and in unit-test builds, and add a no-command unit test that
+   boxes `SystemdPort` as a `dyn ServicePort` trait object. A source contract additionally confirms
+   only truly unused arguments retain `_ctx` and that the dashboard cleanup type, implementation,
+   and token helper are under macOS cfg.
+2. `cargo fmt --all --check`, warnings-denied workspace all-target Clippy, and the complete
+   workspace all-target test suite run on the available macOS toolchain to detect cross-platform
+   fallout.
+3. Attempt the installed Linux Rust target check, record any missing cross-C-toolchain boundary, and
+   require the parent-owned native CI rerun as the final Linux compile proof.
+
+The follow-up commit contains only this implementation correction and its FINDINGS,
+IMPLEMENTATION, and TODO evidence. The parent session owns push and PR workflow actions.
+
+## Service template identity follow-up (2026-08-25)
+
+No service behavior changes. This follow-up separates two concepts that were equivalent only on a
+macOS host: the active platform manager's service identity and the launchd identity embedded in a
+plist template.
+
+Add `Target::launchd_label()` under `cfg(any(target_os = "macos", test))`, mapping daemon and
+dashboard directly to `DAEMON_LABEL` and `DASHBOARD_LABEL`. The macOS branch of
+`Target::service_name()` delegates to this accessor, retaining one launchd label source of truth.
+Linux `service_name()` continues returning `DAEMON_UNIT`/`DASHBOARD_UNIT`, so all systemd manager
+commands, unit paths, CLI output, and API output are unchanged.
+
+`render_plist` uses `launchd_label()` instead of `service_name()`. That makes the template output a
+property of the requested format, not of the host executing its test. Existing daemon/dashboard
+plist assertions remain strict and become portable; the launchd constants become genuinely used in
+Linux test builds. `render_unit` stays unchanged because it embeds no service-manager name.
+
+Verification requires the two focused plist tests and the systemd compile seam on the local host,
+a source contract proving `render_plist` uses `launchd_label` while unit-path/manager calls retain
+`service_name`, warnings-denied all-target Clippy, full workspace all-target tests, fmt, and diff
+checks. Native Linux remains parent-owned CI confirmation after publication of the scoped fix.
+
+## Dashboard fixed-port test serialization follow-up (2026-08-25)
+
+Runtime binding behavior remains unchanged: partial IPv4/IPv6 success is valid, foreground falls
+back only when no configured family can bind the candidate port, and fixed mode errors under the
+same all-family conflict condition.
+
+Add a test-only `serialized_default_port()` helper in the dashboard CLI integration suite. A
+process-static `Mutex<()>` returns a poison-tolerant guard so a failed test does not prevent later
+cleanup or diagnostics. Acquire that guard before `hold_fixed(DEFAULT_PORT)` in exactly the three
+tests that exercise default-port fixed/fallback behavior, and retain it through child cleanup by
+ordinary lexical lifetime. Random explicit-port tests do not share the resource and stay parallel.
+
+The existing `hold_fixed` dual-family helper and all assertions remain unchanged. In a clean CI
+environment, each serialized test owns both loopback listeners. If an external process owns the
+default port, the existing helper can still observe that stable conflict; the mutex specifically
+eliminates unowned conflicts created by another test in this process.
+
+Verification includes a source inventory proving every `hold_fixed(DEFAULT_PORT)` call acquires the
+guard, repeated high-parallelism runs of the complete dashboard integration binary, focused fixed,
+redirected, and PTY fallback tests, and the full fmt/warnings-denied Clippy/workspace all-target
+battery. The review server stays running; native matrix confirmation remains parent-owned.

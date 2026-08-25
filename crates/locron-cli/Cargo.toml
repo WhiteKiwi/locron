@@ -22,6 +22,7 @@ futures-util.workspace = true
 jiff.workspace = true
 locron-core = { path = "../locron-core" }
 locron-engine = { path = "../locron-engine" }
+locron-server = { path = "../locron-server" }
 locron-store = { path = "../locron-store" }
 reqwest.workspace = true
 serde.workspace = true

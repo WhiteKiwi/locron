@@ -211,6 +211,50 @@ idempotent.
 `-v` and `--debug` add redacted stderr diagnostics. They do not change JSON stdout and are not a
 replacement for `why`.
 
+## Web dashboard
+
+`locron dashboard` starts the loopback-only web administration surface: a browser viewer plus an
+HTTP API over the same durable application commands as the CLI (see
+[`dashboard/SPEC.md`](dashboard/SPEC.md) for the full contract). It runs as a process
+separate from the scheduler daemon, is off by default, and serves only loopback addresses.
+
+- **Foreground:** `locron dashboard` (identical to `locron dashboard serve`) binds, prints the
+  exact access URL, and serves until interrupted. An occupied default port falls back to the next
+  free port in foreground mode; an explicit `--port` is always strict, and `--bind` accepts only
+  the loopback literals `127.0.0.1` and `::1`.
+- **Service:** `locron dashboard enable` registers the dashboard as a per-user service — a
+  `dev.locron.dashboard` LaunchAgent on macOS, a `locron-dashboard.service` systemd user unit on
+  Linux — that starts immediately and again at login. In service mode the port is fixed, so a
+  bookmarked address never moves. `locron dashboard status` reports the registered service,
+  whether it is loaded, and token facts; `locron dashboard disable` unregisters the service and
+  removes the token.
+- On Linux the dashboard service stops at logout exactly like the daemon; the same optional
+  `loginctl enable-linger "$USER"` step keeps both running after logout and across boots.
+- `locron dashboard token` re-displays the stored token. `locron doctor` reports the dashboard
+  exposure facts (token posture and registration) without the token value.
+
+### Access token
+
+- On first use the dashboard generates a 64-character random token, writes it owner-only (`0600`)
+  into the state directory as `dashboard.token`, and prints it in the foreground startup output.
+  Later starts reuse it.
+- The token is accepted by the entry-page paste box — which then sets a same-site session cookie,
+  so later visits need no token — or through an `Authorization: token` header for scripts and
+  automation. It never appears in a URL, in logs, or in diagnostics.
+- `locron dashboard token` re-displays the stored token; `locron dashboard enable --reset`
+  regenerates it and restarts the service; `locron dashboard disable` removes it. Removing the
+  token file yourself causes regeneration on the next start.
+
+### What loopback does and does not protect
+
+Binding to `127.0.0.1`/`::1` answers only on your machine's loopback interface: no other machine
+can reach the dashboard, and any non-loopback bind address is refused outright rather than merely
+warned about. Loopback is not a boundary between processes, though — any process running on your
+machine can connect to the port. The access token, the Host/Origin validation, and the anti-CSRF
+checks are what stop another local process or page from reading your scheduler or mutating it
+through the API. Do not proxy or tunnel the port to other machines: the surface is explicitly not
+remote access.
+
 ## Model Context Protocol (MCP) server
 
 `locron mcp` serves the Model Context Protocol over stdio for AI assistants. It reuses the same

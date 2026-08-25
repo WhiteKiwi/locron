@@ -26,12 +26,41 @@ use sha2::{Digest, Sha256};
 const NEW_TAG: &str = "v9.9.9";
 const NEW_VERSION: &str = "9.9.9";
 /// The fixture's replacement binary: a tiny shell script that reports its
-/// version and records a post-replace `service install` invocation in
-/// `$LOCRON_FIXTURE_SERVICE_LOG` when that environment is set.
+/// version and records post-replace `service install`, `dashboard status`,
+/// and `dashboard enable` invocations in `$LOCRON_FIXTURE_SERVICE_LOG` when
+/// that environment is set. `$LOCRON_FIXTURE_DASHBOARD_REGISTERED` makes
+/// `dashboard status --json` report a registered dashboard.
 const NEW_BINARY: &[u8] = b"#!/bin/sh\n\
 if [ \"${1:-}\" = \"service\" ] && [ \"${2:-}\" = \"install\" ]; then\n\
     if [ -n \"${LOCRON_FIXTURE_SERVICE_LOG:-}\" ]; then\n\
         echo \"service install\" >> \"$LOCRON_FIXTURE_SERVICE_LOG\"\n\
+    fi\n\
+    exit 0\n\
+fi\n\
+if [ \"${1:-}\" = \"dashboard\" ] && [ \"${2:-}\" = \"status\" ]; then\n\
+    if [ -n \"${LOCRON_FIXTURE_EXPECT_STATE_DIR:-}\" ] && { [ \"${3:-}\" != \"--state-dir\" ] || [ \"${4:-}\" != \"$LOCRON_FIXTURE_EXPECT_STATE_DIR\" ]; }; then\n\
+        exit 9\n\
+    fi\n\
+    if [ -n \"${LOCRON_FIXTURE_SERVICE_LOG:-}\" ]; then\n\
+        echo \"dashboard status\" >> \"$LOCRON_FIXTURE_SERVICE_LOG\"\n\
+    fi\n\
+    if [ \"${LOCRON_FIXTURE_DASHBOARD_REGISTERED:-0}\" = \"malformed\" ]; then\n\
+        echo '{\"schema\":\"locron.cli/v1\",\"ok\":true,\"command\":\"dashboard status\",\"data\":{\"registered\":\"yes\"},\"warnings\":[]}'\n\
+    elif [ \"${LOCRON_FIXTURE_DASHBOARD_REGISTERED:-0}\" = \"missing\" ]; then\n\
+        echo '{\"schema\":\"locron.cli/v1\",\"ok\":true,\"command\":\"dashboard status\",\"data\":{},\"warnings\":[]}'\n\
+    elif [ \"${LOCRON_FIXTURE_DASHBOARD_REGISTERED:-0}\" = \"1\" ]; then\n\
+        echo '{\"schema\":\"locron.cli/v1\",\"ok\":true,\"command\":\"dashboard status\",\"data\":{\"registered\":true,\"loaded\":true,\"enabled\":true,\"domain\":null,\"pid\":null,\"executable\":null,\"session_available\":false,\"service_name\":\"dev.locron.dashboard\",\"access_url\":\"http://127.0.0.1:10824/\",\"token\":{\"present\":true,\"permissions\":\"owner_only\"}},\"warnings\":[]}'\n\
+    else\n\
+        echo '{\"schema\":\"locron.cli/v1\",\"ok\":true,\"command\":\"dashboard status\",\"data\":{\"registered\":false,\"loaded\":false,\"enabled\":null,\"domain\":null,\"pid\":null,\"executable\":null,\"session_available\":false,\"service_name\":\"dev.locron.dashboard\",\"access_url\":\"http://127.0.0.1:10824/\",\"token\":{\"present\":false,\"permissions\":\"missing\"}},\"warnings\":[]}'\n\
+    fi\n\
+    exit 0\n\
+fi\n\
+if [ \"${1:-}\" = \"dashboard\" ] && [ \"${2:-}\" = \"enable\" ]; then\n\
+    if [ -n \"${LOCRON_FIXTURE_EXPECT_STATE_DIR:-}\" ] && { [ \"${3:-}\" != \"--state-dir\" ] || [ \"${4:-}\" != \"$LOCRON_FIXTURE_EXPECT_STATE_DIR\" ]; }; then\n\
+        exit 9\n\
+    fi\n\
+    if [ -n \"${LOCRON_FIXTURE_SERVICE_LOG:-}\" ]; then\n\
+        echo \"dashboard enable\" >> \"$LOCRON_FIXTURE_SERVICE_LOG\"\n\
     fi\n\
     exit 0\n\
 fi\n\
@@ -398,9 +427,111 @@ fn self_update_installs_the_latest_release() {
     )));
     assert_eq!(
         service_log_entries(&service_log),
-        ["service install"],
-        "a successful replace must run the post-replace service registration once"
+        ["service install", "dashboard status"],
+        "a successful replace must run the post-replace service registration once \
+         and probe the dashboard registration"
     );
+}
+
+#[test]
+fn self_update_refreshes_a_registered_dashboard_exactly_once_after_replace() {
+    let _serial = serialized();
+    let target = expected_target();
+    let fixture = update_fixture(&target, &valid_sums(&target));
+    let dir = tempfile::tempdir().unwrap();
+    let fake = fake_binary(dir.path());
+    let service_log = dir.path().join("service.log");
+    let state_dir = dir.path().join("custom-state");
+
+    locron_command(&fake, &fixture, &service_log)
+        .env("LOCRON_FIXTURE_DASHBOARD_REGISTERED", "1")
+        .env("LOCRON_FIXTURE_EXPECT_STATE_DIR", &state_dir)
+        .arg("--state-dir")
+        .arg(&state_dir)
+        .args(["--json", "self-update"])
+        .assert()
+        .success()
+        .stdout(predicate::function(|stdout: &[u8]| {
+            let envelope: Value = serde_json::from_slice(stdout).unwrap();
+            assert_eq!(envelope["data"]["updated"], true);
+            assert_eq!(envelope["warnings"], serde_json::json!([]));
+            true
+        }));
+
+    assert_eq!(
+        fs::read(&fake).unwrap(),
+        NEW_BINARY,
+        "the executable must contain the new binary"
+    );
+    assert_eq!(
+        service_log_entries(&service_log),
+        ["service install", "dashboard status", "dashboard enable"],
+        "a successful replace must refresh a registered dashboard exactly once"
+    );
+}
+
+#[test]
+fn self_update_leaves_an_absent_dashboard_untouched() {
+    let _serial = serialized();
+    let target = expected_target();
+    let fixture = update_fixture(&target, &valid_sums(&target));
+    let dir = tempfile::tempdir().unwrap();
+    let fake = fake_binary(dir.path());
+    let service_log = dir.path().join("service.log");
+
+    locron_command(&fake, &fixture, &service_log)
+        .env("LOCRON_FIXTURE_DASHBOARD_REGISTERED", "0")
+        .args(["--json", "self-update"])
+        .assert()
+        .success()
+        .stdout(predicate::function(|stdout: &[u8]| {
+            let envelope: Value = serde_json::from_slice(stdout).unwrap();
+            assert_eq!(envelope["data"]["updated"], true);
+            assert_eq!(envelope["warnings"], serde_json::json!([]));
+            true
+        }));
+
+    assert_eq!(
+        service_log_entries(&service_log),
+        ["service install", "dashboard status"],
+        "a dashboard that was never enabled must not be registered by the update"
+    );
+}
+
+#[test]
+fn self_update_warns_and_does_not_mutate_on_malformed_dashboard_status() {
+    let _serial = serialized();
+    let target = expected_target();
+    for malformed in ["malformed", "missing"] {
+        let fixture = update_fixture(&target, &valid_sums(&target));
+        let dir = tempfile::tempdir().unwrap();
+        let fake = fake_binary(dir.path());
+        let service_log = dir.path().join("service.log");
+
+        locron_command(&fake, &fixture, &service_log)
+            .env("LOCRON_FIXTURE_DASHBOARD_REGISTERED", malformed)
+            .args(["--json", "self-update"])
+            .assert()
+            .success()
+            .stdout(predicate::function(|stdout: &[u8]| {
+                let envelope: Value = serde_json::from_slice(stdout).unwrap();
+                assert_eq!(envelope["data"]["updated"], true);
+                assert!(
+                    envelope["warnings"][0].as_str().is_some_and(
+                        |warning| warning.contains("data.registered must be a boolean")
+                    ),
+                    "warning: {}",
+                    envelope["warnings"]
+                );
+                true
+            }));
+
+        assert_eq!(
+            service_log_entries(&service_log),
+            ["service install", "dashboard status"],
+            "malformed status must never register or refresh the dashboard"
+        );
+    }
 }
 
 #[test]
@@ -545,8 +676,9 @@ fn atomic_replace_keeps_a_running_process_on_the_old_binary() {
     assert_eq!(fs::read(&fake).unwrap(), NEW_BINARY);
     assert_eq!(
         service_log_entries(&service_log),
-        ["service install"],
-        "the replace must run the post-replace service registration"
+        ["service install", "dashboard status"],
+        "the replace must run the post-replace service registration and the \
+         dashboard probe"
     );
 
     drop(running.stdin.take());

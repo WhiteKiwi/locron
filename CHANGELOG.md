@@ -1,3 +1,44 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) as described in
+[`docs/RELEASE.md`](docs/RELEASE.md).
+
+Entries cover user-visible change: behavior, CLI surface, output contracts, packaging, and
+documentation. CI and test-only changes are omitted — the commit history is the record for those.
+
+## [Unreleased]
+
+## [0.8.0] - 2026-08-25
+
+### Added
+
+- `locron dashboard` provides an optional local web interface over the same durable jobs, runs,
+  settings, diagnostics, validation, dry-run, and redaction boundaries as the CLI. Foreground,
+  enable, disable, status, and token commands cover temporary use and per-user service lifecycle.
+- The authenticated `locron.api/v1` management API exposes job and run operations, schedule
+  preview, settings, import/export, pruning, diagnostics, and live updates for local clients.
+- The responsive dashboard includes light, dark, and system themes; accessible job and run tables;
+  whole-row detail navigation; searchable history; structured forms for durations, output sizes,
+  and schedules; aggregate settings review; and a redacted, pretty-formatted JSON viewer.
+
+### Security
+
+- Dashboard servers refuse non-loopback binds and protect state with an owner-only random token,
+  authenticated browser sessions, Host and Origin validation, double-submit CSRF checks, and a
+  no-referrer policy. Tokens are pasted into the entry page or sent in an authorization header and
+  never accepted in URLs, logs, diagnostics, or API responses.
+
+### Changed
+
+- Job and run searches match partial names, descriptions, tags, and identifiers after a short
+  typing debounce. Enabled and disabled jobs remain discoverable under the corresponding state
+  filters, and empty results preserve table context with clear recovery actions.
+- The primary documentation now gives a copyable path from installation to the loopback dashboard
+  and explains foreground versus persistent service operation without changing the CLI-first
+  scheduler model.
 
 ## [0.7.0] - 2026-08-24
 
@@ -109,25 +150,6 @@
 - README restructured to one install line per channel, a quick start, and a consolidated MCP
   section.
 
-# Changelog
-
-All notable changes to this project are documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
-adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) as described in
-[`docs/RELEASE.md`](docs/RELEASE.md).
-
-Entries cover user-visible change: behavior, CLI surface, output contracts, packaging, and
-documentation. CI and test-only changes are omitted — the commit history is the record for those.
-
-## [Unreleased]
-
-### Fixed
-
-- Daemon admission latency is now bounded, and attempts that conflict permanently are no longer
-  retried indefinitely.
-- Output recovery no longer treats a live attempt's captured output as orphaned.
-
 ## [0.2.0] - 2026-08-23
 
 ### Added
@@ -181,7 +203,14 @@ Initial release.
 - **Distribution** — Homebrew tap, `.deb` and `.rpm` packages, and pre-built tarballs for macOS and
   Linux on both x86_64 and aarch64.
 
-[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/WhiteKiwi/locron/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/WhiteKiwi/locron/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/WhiteKiwi/locron/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/WhiteKiwi/locron/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/WhiteKiwi/locron/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/WhiteKiwi/locron/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/WhiteKiwi/locron/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/WhiteKiwi/locron/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/WhiteKiwi/locron/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/WhiteKiwi/locron/compare/v0.1.0...v0.1.1
