@@ -2114,6 +2114,13 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_port_policy_matches_invocation_mode() {
+        assert_eq!(port_policy(None, false), PortPolicy::Foreground);
+        assert_eq!(port_policy(Some(0), false), PortPolicy::Fixed);
+        assert_eq!(port_policy(None, true), PortPolicy::Fixed);
+    }
+
+    #[test]
     fn install_first_registration_orders_write_reload_probe_enable_start() {
         let tmp = tempfile::tempdir().unwrap();
         let port = fake(true, false, false, false);

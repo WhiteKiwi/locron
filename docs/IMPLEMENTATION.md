@@ -1155,3 +1155,25 @@ Implementation and verification order:
 The plan review confirms that no state, API, routing, authentication, token storage, or machine
 schema change is required. The changes are limited to presentation selection and explicit 404
 recovery, so the durable architecture remains unchanged.
+
+## Deterministic dashboard port-policy verification (2026-08-25)
+
+The dashboard specification and runtime binding behavior remain unchanged. Replace CLI integration
+contracts that manufacture a conflict on the global default port 10824 with two deterministic
+seams. In `locron-server`, bind an OS-assigned port on one loopback family, configure the server to
+that same family, and retain the listener while exercising both `Foreground` and `Fixed` policies
+against that owned preferred port. Foreground must select a different bound port; fixed must return
+`AddrInUse`. Existing coverage continues to verify the independent partial-family behavior. The
+helper must never accept an empty listener set as proof of occupancy.
+
+At the CLI service boundary, unit-test the pure port-policy selector: absent explicit port plus
+ordinary foreground selects fallback, while an explicit port or hidden registered-service mode is
+fixed. Retain explicit OS-assigned-port integration coverage for human/JSON startup, serving, and
+strict occupied-port error mapping. Remove the redirected and PTY tests whose only additional
+mechanism is a race-prone conflict on 10824, along with the global-port occupancy and mutex helpers.
+
+Verification proceeds in three layers: focused server and CLI policy tests; repeated parallel runs
+of the dashboard integration binary and relevant server tests; then formatting, warnings-denied
+workspace Clippy, the complete workspace all-target suite, and diff checks. The plan deliberately
+does not add sleeps, retries, weakened assertions, test-only production environment variables, or
+workflow-level serialization.

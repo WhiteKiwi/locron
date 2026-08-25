@@ -3,8 +3,8 @@
 //! The service-management flows (`enable`/`disable`/`status`) are covered by
 //! `service.rs` against the deterministic fake backend; this suite covers the
 //! command surface that drives real processes: foreground serving (startup URL
-//! and token output, bind refusal, port strictness, fallback, service-mode
-//! fixed port), the `token` display command, and the doctor exposure facts.
+//! and token output, bind refusal, and explicit-port strictness), the `token`
+//! display command, and the doctor exposure facts.
 
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -15,9 +15,8 @@ use std::thread;
 use std::time::Duration;
 
 use assert_cmd::cargo::cargo_bin;
+use locron_server::DEFAULT_PORT;
 use serde_json::Value;
-
-const DEFAULT_PORT: u16 = 10824;
 
 fn locron() -> Command {
     Command::new(cargo_bin("locron"))
@@ -41,16 +40,6 @@ fn free_port() -> u16 {
 struct HeldPort {
     port: u16,
     _listeners: Vec<TcpListener>,
-}
-
-/// Serializes the contracts that occupy the shared fixed default port. Rust
-/// runs this integration binary's tests in parallel, so every such test must
-/// own the port conflict for its complete child-process lifetime.
-fn serialized_default_port() -> std::sync::MutexGuard<'static, ()> {
-    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    SERIAL
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Binds `port` on both loopback families, keeping whatever succeeds. A bind
@@ -87,22 +76,6 @@ fn hold_port() -> HeldPort {
     panic!("could not hold a free port on both loopback families");
 }
 
-/// Holds a fixed port on both loopback families, retrying while only one
-/// family could be held (a transient holder may release the other family
-/// before the server under test binds). An empty result means something else
-/// holds both families, which blocks the server just as well.
-fn hold_fixed(port: u16) -> Vec<TcpListener> {
-    for _ in 0..10 {
-        let listeners = occupy(port);
-        match listeners.len() {
-            2 => return listeners,
-            0 => return listeners,
-            _ => drop(listeners),
-        }
-    }
-    panic!("could not hold {port} on both loopback families");
-}
-
 /// Reads `stdout` line by line on a thread; `next` waits for the next line
 /// with a deadline, so a child that never prints fails the test instead of
 /// hanging it.
@@ -132,49 +105,15 @@ fn kill(child: &mut Child) {
     let _ = child.wait();
 }
 
-/// Owns a spawned serve child — directly or wrapped in `script` — and
-/// guarantees the server process dies when the test ends, including when an
-/// assertion panics. On macOS, killing the `script` parent does not deliver
-/// SIGHUP to its PTY child, so the serve child is additionally located by its
-/// unique `--state-dir` command-line argument and killed.
+/// Owns a spawned serve child and guarantees it dies when the test ends,
+/// including when an assertion panics.
 struct ServeGuard {
     child: Child,
-    state_dir: Option<String>,
 }
 
 impl Drop for ServeGuard {
     fn drop(&mut self) {
         kill(&mut self.child);
-        if let Some(state_dir) = &self.state_dir {
-            kill_serve_child(state_dir);
-        }
-    }
-}
-
-/// Kills every process whose command line names `locron` and `state_dir`.
-///
-/// On macOS, killing the `script` parent does not deliver SIGHUP to its PTY
-/// child, so the serve child would otherwise survive the test and keep the
-/// stdout pipe open. The `--state-dir <dir>` argument is unique to this
-/// test's child, which makes the scan unambiguous.
-fn kill_serve_child(state_dir: &str) {
-    use std::process::Command;
-    let Ok(ps) = Command::new("ps").arg("-axo").arg("pid=,command=").output() else {
-        eprintln!("SKIPPED: `ps` is unavailable; the serve child must be reaped manually");
-        return;
-    };
-    let text = String::from_utf8_lossy(&ps.stdout);
-    for line in text.lines() {
-        let mut parts = line.trim_start().splitn(2, char::is_whitespace);
-        let Some(pid) = parts.next().and_then(|pid| pid.parse::<u32>().ok()) else {
-            continue;
-        };
-        if parts
-            .next()
-            .is_some_and(|command| command.contains("locron") && command.contains(state_dir))
-        {
-            let _ = Command::new("kill").arg(pid.to_string()).status();
-        }
     }
 }
 
@@ -251,10 +190,7 @@ fn foreground_serve_prints_the_url_and_token_then_serves() {
         .spawn()
         .unwrap();
     let (receiver, reader) = line_reader(child.stdout.take().unwrap());
-    let guard = ServeGuard {
-        child,
-        state_dir: None,
-    };
+    let guard = ServeGuard { child };
 
     assert_eq!(
         next_line(&receiver, "the access URL"),
@@ -303,10 +239,7 @@ fn foreground_serve_machine_envelope_reports_facts_not_the_token() {
         .spawn()
         .unwrap();
     let (receiver, reader) = line_reader(child.stdout.take().unwrap());
-    let guard = ServeGuard {
-        child,
-        state_dir: None,
-    };
+    let guard = ServeGuard { child };
 
     let line = next_line(&receiver, "the machine envelope");
     let envelope: Value = serde_json::from_str(&line).expect("envelope on the first line");
@@ -373,149 +306,6 @@ fn explicit_port_is_strict_when_occupied() {
             .contains(&port.to_string()),
         "the error names the occupied port"
     );
-}
-
-#[test]
-fn service_mode_keeps_the_default_port_fixed_when_occupied() {
-    // Only the hidden marker carried by launchd/systemd registration selects
-    // the fixed policy: an occupied 10824 is an error, never a silent fallback.
-    let _serial = serialized_default_port();
-    let _fixed = hold_fixed(DEFAULT_PORT);
-    let dir = tempfile::tempdir().unwrap();
-    let mut command = locron();
-    command
-        .stdin(Stdio::null())
-        .arg("--state-dir")
-        .arg(dir.path());
-    command.args(["dashboard", "serve", "--service-mode", "--json"]);
-    let output = run_with_timeout(&mut command, Duration::from_secs(10));
-    assert_eq!(
-        output.status.code(),
-        Some(5),
-        "service mode must fail on an occupied default port"
-    );
-    let error = &envelope(&output)["error"];
-    assert_eq!(error["code"], "service_io");
-    assert!(
-        error["message"]
-            .as_str()
-            .unwrap()
-            .contains(&DEFAULT_PORT.to_string()),
-        "the error names the fixed port"
-    );
-}
-
-#[test]
-fn redirected_bare_serve_still_uses_foreground_fallback() {
-    let _serial = serialized_default_port();
-    let _fixed = hold_fixed(DEFAULT_PORT);
-    let dir = tempfile::tempdir().unwrap();
-    let mut child = locron()
-        .stdin(Stdio::null())
-        .arg("--state-dir")
-        .arg(dir.path())
-        .arg("dashboard")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let (receiver, reader) = line_reader(child.stdout.take().unwrap());
-    let guard = ServeGuard {
-        child,
-        state_dir: None,
-    };
-    let line = next_line(&receiver, "the redirected fallback URL");
-    let port = line
-        .strip_prefix("Dashboard URL: http://127.0.0.1:")
-        .and_then(|rest| rest.strip_suffix('/'))
-        .and_then(|port| port.parse::<u16>().ok())
-        .unwrap_or_else(|| panic!("unexpected startup line: {line:?}"));
-    assert_ne!(
-        port, DEFAULT_PORT,
-        "redirected foreground serve must fall back"
-    );
-    assert_eq!(http_status(port), Some(200));
-    drop(guard);
-    let _ = reader.join();
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-#[test]
-fn foreground_serve_falls_back_when_the_default_port_is_occupied() {
-    // A real PTY is another foreground context. The child dies with SIGHUP
-    // when the PTY closes.
-    if Command::new("script").arg("-V").output().is_err() {
-        eprintln!("SKIPPED: `script` is unavailable in this environment");
-        return;
-    }
-    let _serial = serialized_default_port();
-    let _fixed = hold_fixed(DEFAULT_PORT);
-    let dir = tempfile::tempdir().unwrap();
-    let binary = cargo_bin("locron");
-    let binary = binary.display().to_string();
-    let state_dir = dir.path().display().to_string();
-    let mut command = Command::new("script");
-    if cfg!(target_os = "macos") {
-        command.args([
-            "-q",
-            "/dev/null",
-            &binary,
-            "--state-dir",
-            &state_dir,
-            "dashboard",
-        ]);
-    } else {
-        let invocation = format!("{binary:?} --state-dir {state_dir:?} dashboard");
-        command.args(["-q", "-c", &invocation, "/dev/null"]);
-    }
-    let child = command.stdout(Stdio::piped()).spawn().unwrap();
-    let mut guard = ServeGuard {
-        child,
-        state_dir: Some(state_dir),
-    };
-    let (receiver, reader) = line_reader(guard.child.stdout.take().unwrap());
-
-    // macOS `script` prefixes the PTY output with terminal control bytes, so
-    // locate the startup line by its marker instead of assuming it is first.
-    let line = loop {
-        let line = next_line(&receiver, "the fallback URL");
-        let line = line.trim_end_matches('\r').to_owned();
-        if line.contains("Dashboard URL: http://127.0.0.1:") {
-            break line;
-        }
-    };
-    let port = line
-        .find("Dashboard URL: http://127.0.0.1:")
-        .map(|start| line[start + "Dashboard URL: http://127.0.0.1:".len()..].to_owned())
-        .and_then(|rest| rest.strip_suffix('/').map(str::to_owned))
-        .and_then(|port| port.parse::<u16>().ok())
-        .unwrap_or_else(|| panic!("unexpected startup line: {line:?}"));
-    assert_ne!(
-        port, DEFAULT_PORT,
-        "an occupied default port must fall back (startup line: {line:?})"
-    );
-    assert_eq!(
-        http_status(port),
-        Some(200),
-        "the fallback server must serve"
-    );
-
-    // Closing the PTY delivers SIGHUP on Linux; on macOS the serve child
-    // survives the `script` parent, so the guard additionally kills it by its
-    // unique `--state-dir` argument. The port poll below catches a failed
-    // cleanup instead of leaking a server.
-    drop(guard);
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the fallback server must stop when its terminal closes"
-        );
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    // The child is dead, so its end of the stdout pipe is closed and the
-    // reader thread has finished.
-    let _ = reader.join();
 }
 
 #[test]

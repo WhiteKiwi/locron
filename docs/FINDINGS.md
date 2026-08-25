@@ -1720,3 +1720,33 @@ the workspace checkout.
   documented runtime contract.
 - Block service/dashboard registration whenever self-update is blocked: rejected because Cargo
   owns only the binary installation, not Locron's per-user operating-system services.
+
+## 35. Dashboard default-port test lifetime race (2026-08-25)
+
+CI run [32834650532](https://github.com/WhiteKiwi/locron/actions/runs/32834650532), job
+[97760707674](https://github.com/WhiteKiwi/locron/actions/runs/32834650532/job/97760707674),
+failed `redirected_bare_serve_still_uses_foreground_fallback`: the child reported the supposedly
+occupied default port 10824. The other seven platform/toolchain test jobs passed the same suite,
+and the immediately preceding run passed, which identifies shared-host timing rather than a
+platform or product regression.
+
+The earlier process-static mutex serialized only the three tests that deliberately occupy 10824.
+It cannot own a host port across other test processes or external services. More importantly,
+`hold_fixed` treats zero newly acquired listeners as success on the assumption that the current
+owner will remain alive through the child bind. If that unowned listener closes between those
+events, the child legitimately binds 10824. The mutex narrows this gap but cannot close it because
+the test still borrows another process's listener lifetime.
+
+The deterministic boundary is already available in the server configuration: a test may bind an
+OS-assigned port on one loopback family, configure that same family, and retain the listener while
+combining the owned preferred port with `PortPolicy::Foreground` or `PortPolicy::Fixed`. Server
+tests can therefore prove real conflict, fallback, and strict failure without using the globally
+meaningful product default; the existing partial-family contract continues to cover dual-stack
+behavior independently. CLI unit tests can separately prove that no
+explicit port selects foreground policy while explicit-port and service-mode forms select fixed
+policy. Existing explicit random-port CLI integration tests continue to prove startup/output and
+strict error mapping. This composition covers the same product contract while every network
+precondition is owned for the full assertion lifetime.
+
+Retried binds, longer timeouts, CI-level test serialization, and accepting port 10824 are rejected:
+they retain the borrowed-resource race, hide it, or weaken the foreground fallback contract.

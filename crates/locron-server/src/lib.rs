@@ -297,6 +297,15 @@ mod tests {
     const SESSION_COOKIE_NAME: &str = "locron_session";
     const CSRF_COOKIE_NAME: &str = "csrf_token";
 
+    fn held_ipv4_port_with_probe_room() -> std::net::TcpListener {
+        loop {
+            let held = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+            if held.local_addr().unwrap().port() <= u16::MAX - 10 {
+                return held;
+            }
+        }
+    }
+
     fn test_state() -> AppState {
         AppState {
             paths: StatePaths::new(PathBuf::from("/nonexistent/test-state")),
@@ -754,6 +763,44 @@ mod tests {
             }),
             "all loopback listeners share the reported OS-assigned port"
         );
+    }
+
+    #[tokio::test]
+    async fn foreground_policy_falls_back_from_owned_ipv4_port() {
+        let held = held_ipv4_port_with_probe_room();
+        let port = held.local_addr().unwrap().port();
+        let config = Config {
+            bind: vec![std::net::Ipv4Addr::LOCALHOST.to_string()],
+            port: Some(port),
+            port_policy: PortPolicy::Foreground,
+            ..Config::default()
+        };
+
+        let bound = bind(&config).await.expect("foreground fallback bind");
+
+        assert_ne!(bound.port, port);
+        assert!(bound.address.is_ipv4());
+        assert!(bound.warnings.is_empty());
+        drop(held);
+    }
+
+    #[tokio::test]
+    async fn fixed_policy_rejects_owned_ipv4_port() {
+        let held = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = held.local_addr().unwrap().port();
+        let config = Config {
+            bind: vec![std::net::Ipv4Addr::LOCALHOST.to_string()],
+            port: Some(port),
+            port_policy: PortPolicy::Fixed,
+            ..Config::default()
+        };
+
+        let Err(error) = bind(&config).await else {
+            panic!("fixed bind must reject conflict");
+        };
+
+        assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
+        drop(held);
     }
 
     #[tokio::test]

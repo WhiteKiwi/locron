@@ -7,6 +7,34 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## Deterministic dashboard port-policy verification (2026-08-25)
+
+- [x] Replace global-default-port conflict tests with test-owned server policy contracts and pure
+  CLI policy-selection coverage while preserving product behavior.
+  **Verify:** focused tests prove owned-port foreground fallback, fixed conflict failure, the
+  independent dual-stack partial-bind contract, and all three CLI policy branches; no test binds or
+  assumes exclusive ownership of port 10824.
+  **Evidence:** `locron-server` tests retain an OS-assigned IPv4 listener through both the
+  foreground fallback and fixed `AddrInUse` assertions, while the existing occupied-IPv4/IPv6
+  partial-bind contract still passes. The pure CLI selector test covers ordinary foreground,
+  explicit-port, and registered-service forms. The dashboard integration suite retains its
+  explicit random-port startup, serving, and strict error contracts, and source inventory finds no
+  fixed-default-port occupancy helper or bind.
+- [x] Stress the corrected dashboard/server seams under parallel execution.
+  **Verify:** the dashboard integration binary and focused server tests each pass at least 20
+  consecutive parallel runs with unchanged assertions and no retry-on-failure wrapper.
+  **Evidence:** the complete dashboard integration binary passed 20 consecutive runs, and the
+  complete `locron-server` library suite passed 20 consecutive runs; Rust's ordinary parallel test
+  execution remained enabled and each command failed immediately on an unsuccessful run.
+- [x] Complete the repository verification gate and inspect the final scoped diff.
+  **Verify:** `cargo fmt --all --check`, warnings-denied workspace all-target Clippy, the complete
+  workspace all-target suite, focused policy tests, and `git diff --check` pass; staged and
+  unstaged changes contain only this correction and its planning evidence.
+  **Evidence:** formatting and warnings-denied workspace all-target Clippy pass; all 441 workspace
+  all-target tests pass across 21 suites, including the focused policy and retained partial-bind
+  contracts; `git diff --check` passes. The final six-file unstaged diff contains only the three
+  test files and three planning/evidence documents for this correction, with no staged changes.
+
 ## README information architecture refresh (2026-08-25)
 
 - [x] Reorganize the README opening and practical workflow so the first screen identifies locron as
