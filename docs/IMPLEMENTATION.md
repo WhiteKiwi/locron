@@ -40,6 +40,44 @@ README advertises the shipped `locron explain` consolidated summary while retain
 detailed job/run diagnostic. It does not advertise richer event-derived decision traces or direct
 machine sleep telemetry.
 
+## README information architecture refresh (2026-08-25)
+
+Keep the accepted “Cron that explains itself.” positioning, but make the first screen answer four
+questions without relying on the banner or badges: locron is a local scheduler; it records and
+explains scheduled execution; it is for developers and automation agents; and it supports macOS
+and Linux. Add one restrained supporting line for the human-and-agent audience. Do not describe
+locron as AI-powered, a cron wrapper, an MCP server, or a GUI for an operating-system scheduler.
+
+Reorder the existing material into a short operational story. The opening tour uses only shipped
+syntax and demonstrates create, preview, inspect, and explain; installation follows early enough
+that a convinced reader does not need to cross the reliability and agent sections first. A compact
+problem statement explains why laptop sleep, restarts, network loss, missed occurrences, and
+overlaps require durable scheduling facts. The reliability section then maps those conditions to
+the existing missed-run, overlap, retry, timeout, cancellation, supervision, output-retention, and
+startup-reconciliation behavior without claiming direct sleep detection or exactly-once external
+effects.
+
+Describe human and machine interfaces as views over the same scheduler model. Human surfaces are
+the readable CLI and optional loopback-only dashboard; automation surfaces are the versioned CLI
+envelope, non-mutating dry runs, and MCP. A small Mermaid feedback loop may show plan, preview or
+dry-run, mutate, execute, inspect, and adjust, but it must remain secondary to concrete commands.
+MCP keeps its current configuration example and exact shipped inventory while no longer carrying
+the entire agent story by itself.
+
+Add two compact scope clarifications after the practical workflow. First, explain without a
+winner-takes-all feature matrix that cron is a portable scheduling primitive and launchd/systemd
+are native service managers, while locron owns a consistent cross-platform job/run/attempt model,
+history, policies, and explanations. Second, show the actual component boundary: CLI, dashboard,
+and MCP enter the shared application boundary; the engine schedules and supervises process, shell,
+and HTTP targets; SQLite stores durable state. Link to the architecture document for invariants
+instead of expanding storage and process details in the README.
+
+Preserve installation-channel ownership guidance, dashboard token and loopback boundaries, target
+and schedule examples, documentation links, contribution guidance, and licensing. Verify every
+command against CLI help or contract tests, validate local Markdown links, and run Markdown/style
+and diff checks available in the repository. No source, schema, API, or behavior change belongs in
+this documentation-only refresh.
+
 ## Consolidated job explanation implementation (2026-08-24)
 
 The new `locron explain NAME_OR_ID` command remains a thin CLI composition over existing durable

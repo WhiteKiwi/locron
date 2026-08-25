@@ -5,7 +5,8 @@
 <h1 align="center">locron</h1>
 
 <p align="center">
-  <strong>Cron that explains itself.</strong>
+  <strong>Cron that explains itself.</strong><br>
+  A local-first scheduler for developers and automation agents on macOS and Linux.
 </p>
 
 <p align="center">
@@ -14,146 +15,45 @@
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg" alt="License"></a>
 </p>
 
----
+`locron` schedules process, shell, and HTTP work, then keeps the durable facts needed to operate
+it: what was due, what ran, what was skipped, what it produced, and why it reached its current
+state. Human-readable commands, versioned machine output, and the optional dashboard and MCP server
+all use the same scheduling model.
 
-Cron runs jobs. When one does not run, figuring out why is usually your problem.
+## See the workflow
 
-`locron` is a local-first scheduler for **macOS** and **Linux**. It keeps durable run history and
-captured output, makes missed-run and overlap behavior explicit, and explains the facts behind a
-job's current scheduling state or a run's terminal outcome.
-
-## A 10-second tour
-
-Add a job, preview its schedule, and ask what the scheduler currently knows. IDs and timestamps
-will differ; the command output below uses the current CLI's human format.
-
-```console
-$ locron add backup --every 1h -- /bin/echo backup-complete
-job added: backup (01a0330e-8ca5-77b1-baa5-eaeebe71b2b2)
-schedule: every 1h
-target: run /bin/echo backup-complete
-
-$ locron preview backup --count 2
-schedule: every 1h
-2026-08-24T10:16:26.66083Z
-2026-08-24T11:16:26.66083Z
-
-$ locron explain backup
-```
-
-Selected `explain` output (the complete report also includes job, schedule, and latest-run fields):
-
-```text
-CURRENT STATUS
-  eligibility: subject to admission
-  overlap decision: no active run
-  active runs: 0
-  global concurrency limit: 16
-  daemon available: no
-LATEST RUN
-  none
-LATEST ANOMALY
-  none
-```
-
-After runs exist, `locron explain backup` adds the latest run and latest anomalous terminal run to
-the report, each with its canonical run ID. `why NAME` remains the detailed scheduler view; downtime
-explanations are based on schedule cursors and reconciliation facts, not inferred sleep telemetry.
-For a durable run's full attempt/event trace, use `why --run RUN_ID`.
-
-## Explainability first
-
-- `locron preview backup` shows upcoming occurrences before you rely on a schedule.
-- `locron explain backup` summarizes the schedule, current status, latest run, and latest anomaly.
-- `locron history backup` shows past runs, triggers, states, and durations.
-- `locron why backup` explains current job eligibility, policies, schedule cursor, and daemon
-  availability.
-- `locron why --run <RUN_ID>` explains one durable run, including attempts, recorded events, and
-  its terminal reason.
-- `locron logs <RUN_ID>` reads that run's captured output; add `--follow` while it is active.
-- `locron doctor` checks the daemon, state directory, database, execution path, and job target
-  resolution.
-
-Manual runs print their canonical run ID. History's machine-readable records expose it as well:
+Create a job, preview its schedule, run it, inspect the result, and ask what the scheduler knows:
 
 ```sh
+locron add backup --every 1h -- /bin/echo backup-complete
+locron preview backup --count 2
 locron run backup
+locron history backup
 locron explain backup
-locron history backup --format json
-locron why --run 018f47a2-4a12-7c35-b9d8-0123456789ab
-locron logs 018f47a2-4a12-7c35-b9d8-0123456789ab
 ```
 
-## Reliability for machines that stop and restart
-
-Local machines sleep, reboot, lose network access, and sometimes start a new occurrence before the
-previous one has finished. locron turns those cases into named policies instead of hidden behavior.
-
-- **Missed runs:** choose `skip`, `latest`, or bounded `all` catch-up behavior.
-- **Overlaps:** choose `skip`, `replace`, or `allow`, subject to concurrency limits.
-- **Durable occurrences:** schedule revisions, nominal times, run identities, attempts, and events
-  survive daemon restarts in the local state store.
-- **Recovery:** startup reconciliation classifies interrupted work without blindly repeating an
-  external side effect whose outcome is unknown.
-- **Supervision:** process groups, timeouts, cancellation, termination grace periods, retries, and
-  bounded output capture are part of the scheduler's execution model.
-- **Targets:** run direct processes, explicit shell commands, or HTTP requests.
-
-Declare the behavior with the job:
+`explain` combines the job's schedule and current eligibility with its latest run and latest
+anomalous terminal run. For the full attempt and event trace, use the canonical run ID printed by
+`run` or returned by `history --format json`:
 
 ```sh
-locron add sync --every 15m \
-  --missed-run latest \
-  --overlap skip \
-  --timeout 10m \
-  -- /usr/local/bin/sync-data
+locron why --run <RUN_ID>
+locron logs <RUN_ID>
 ```
 
-The durable state is stored in bundled SQLite with WAL transactions and atomic migrations. Those
-are implementation details, but they are what let the observable scheduling facts survive a
-process crash or restart.
-
-## Agent-friendly by design
-
-CLI commands support versioned `locron.cli/v1` machine output. Job creation and updates, manual-run
-admission, imports, and pruning offer dry-run paths so scripts and coding agents can validate intent
-before changing durable state.
+Job-level `why` shows policies, the durable schedule cursor, daemon availability, and current
+admission facts. `doctor` checks the daemon, state directory, database, execution path, and target
+resolution.
 
 ```sh
-locron explain backup --format json
-locron why backup --format json
-locron history backup --format json
-locron add test-job --cron "0 12 * * *" --dry-run -- /usr/bin/true
+locron why backup
+locron doctor
 ```
 
-`locron mcp` serves the [Model Context Protocol](https://modelcontextprotocol.io) over stdio, so
-Claude Desktop, Cursor, and other MCP clients can inspect and manage the scheduler through the same
-validation, redaction, and durable application boundary as the CLI.
+Downtime explanations come from durable schedule cursors, daemon lifetime records, and
+reconciliation events. locron does not claim to detect when a machine was asleep.
 
-It exposes **13 tools**, **5 resources**, and **2 prompts**. Every mutating tool accepts
-`"dry_run": true`, and domain failures are returned as tool errors the assistant can inspect.
-
-Register it with any MCP client using the same entry — `claude_desktop_config.json` for Claude
-Desktop, or `.cursor/mcp.json` / Cursor Settings → MCP for Cursor:
-
-```json
-{
-  "mcpServers": {
-    "locron": {
-      "command": "locron",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-If `locron` is not on the client's `PATH`, use an absolute path. See the
-[MCP Specification](docs/mcp/SPEC.md) for the full tool, resource, and prompt reference.
-
-For a guided, dry-run-first agent workflow, see the
-[locron Agent Skill](https://github.com/WhiteKiwi/skills).
-
-## Installation
+## Install
 
 **Homebrew (macOS and Linux):**
 
@@ -190,38 +90,81 @@ claude "Install locron: https://github.com/WhiteKiwi/locron"
 Review and approve each command it proposes. Every channel — packages, tarballs, building from
 source, updating, and uninstalling — is covered in the [Installation Guide](docs/INSTALL.md).
 
-## Open the local dashboard
+## Why a local scheduler needs operational state
 
-The optional dashboard gives you a clean browser view of the same durable jobs, runs, settings,
-and diagnostics as the CLI. It is **off by default**, listens only on this machine's loopback
-interface, and does not replace or control the scheduler daemon.
+Scheduling a command is simple. Operating scheduled work on a laptop is not: machines sleep and
+reboot, networks disappear, processes crash, occurrences are missed, and runs overlap. locron
+treats those conditions as normal inputs to the scheduler rather than leaving them implicit.
 
-For a foreground session, run:
+| Condition | Recorded behavior |
+|---|---|
+| An occurrence became due while locron was unavailable | `skip`, `latest`, or bounded `all` missed-run policy |
+| The previous run is still active | `skip`, `replace`, or bounded `allow` overlap policy |
+| An attempt failed or timed out | Explicit timeout and retry policy, with attempts kept on one durable run |
+| A process must stop | Process-group cancellation and a configurable termination grace period |
+| The daemon stopped mid-run | Startup reconciliation records an honest interrupted or uncertain outcome |
+| Output exceeds retention limits | Bounded capture and explicit truncation or pruning facts |
+
+locron does not promise exactly-once external effects. When a crash makes an outcome unknowable,
+it preserves that uncertainty instead of assuming success or blindly repeating the work. Targets
+that require stronger duplicate protection can use the durable run ID as an idempotency key.
+
+Declare the relevant behavior with the job:
 
 ```sh
-locron dashboard
+locron add sync --every 15m \
+  --missed-run latest \
+  --overlap skip \
+  --timeout 10m \
+  -- /usr/local/bin/sync-data
 ```
 
-Open the printed `http://127.0.0.1:10824/` URL (the port may advance when the default is busy),
-then paste the printed access token into the entry page. The token never belongs in the URL.
-Later visits reuse the browser session; re-display the token intentionally with:
+See the [Operator Guide](docs/OPERATOR.md) for policy details and recovery procedures.
+
+## One model for people and automation
+
+The readable CLI and optional loopback-only dashboard are human views over the same durable jobs
+and runs used by automation. CLI commands can instead return the versioned `locron.cli/v1` JSON
+envelope. Mutations such as job changes, manual runs, imports, and pruning provide non-mutating
+dry-run paths.
+
+```mermaid
+flowchart LR
+    A[Plan] --> B[Preview / dry-run]
+    B --> C[Create / update]
+    C --> D[Execute]
+    D --> E[History / logs / why]
+    E --> A
+```
 
 ```sh
-locron dashboard token
+locron add test-job --cron "0 12 * * *" --dry-run -- /usr/bin/true
+locron run backup --dry-run
+locron history backup --format json
+locron why backup --format json
 ```
 
-To keep the dashboard available after login, register its separate per-user service:
+`locron mcp` serves the [Model Context Protocol](https://modelcontextprotocol.io) over stdio. It
+exposes **13 tools**, **5 resources**, and **2 prompts** through the same validation, redaction, and
+durable application boundary as the CLI; every mutating tool accepts `"dry_run": true`.
 
-```sh
-locron dashboard enable
-locron dashboard status
+Register it with any MCP client using the same entry — `claude_desktop_config.json` for Claude
+Desktop, or `.cursor/mcp.json` / Cursor Settings → MCP for Cursor:
+
+```json
+{
+  "mcpServers": {
+    "locron": {
+      "command": "locron",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
-`status` reports the local URL and service posture without exposing the token. Use
-`locron dashboard disable` to stop and unregister the service. See the
-[dashboard operator guide](docs/OPERATOR.md#web-dashboard) for token reset, service behavior,
-security boundaries, and troubleshooting; the exact command and API contracts live in the
-[CLI Reference](docs/CLI.md#dashboard-web-administration).
+If `locron` is not on the client's `PATH`, use an absolute path. See the
+[MCP Specification](docs/mcp/SPEC.md) for the complete contract and the
+[locron Agent Skill](https://github.com/WhiteKiwi/skills) for a guided, dry-run-first workflow.
 
 ## Start scheduling
 
@@ -236,7 +179,7 @@ never auto-start; run `brew services start locron` once instead. For manual cont
 `locron daemon run` runs it in the foreground. See
 [service setup](docs/OPERATOR.md#run-the-daemon-as-a-service) for the complete lifecycle.
 
-Then add any supported target:
+Then add any supported schedule and target combination:
 
 ```sh
 # Direct process every 15 minutes
@@ -252,18 +195,85 @@ locron add health-check --every 5m --http GET https://example.com/health
 locron add deploy-task --at 2026-09-01T09:00:00+09:00 -- /usr/local/bin/deploy
 ```
 
+Schedules are five-field cron expressions, fixed intervals, or one-time timestamps with an explicit
+offset. Targets are direct processes, explicitly requested shell commands, or HTTP requests. List,
+preview, run, inspect, and remove a job with:
+
+```sh
+locron list
+locron preview backup
+locron run backup --wait
+locron history backup
+locron remove backup
+```
+
 State lives in `~/.local/share/locron` (or `$XDG_DATA_HOME/locron`) and can be overridden with
 `--state-dir` or `LOCRON_STATE_DIR`.
 
+## How locron fits
+
+cron is a compact, portable primitive for deciding when a command is due. launchd and systemd are
+native service managers that can keep programs such as the locron daemon available. locron does
+not translate each job into those systems. It owns one consistent macOS/Linux model for schedules,
+jobs, runs, attempts, policies, captured output, history, and explanations.
+
+That boundary is deliberate: operating-system service managers supervise locron itself; locron
+schedules and supervises the individual targets.
+
+## Architecture at a glance
+
+```text
+CLI ───────┐
+Dashboard ─┼─> shared validation and application boundary
+MCP ───────┘                │
+                   ┌────────┴────────┐
+                   v                 v
+       durable SQLite state <─> scheduling and supervision
+                                      /      |      \
+                                 process   shell    HTTP
+```
+
+The engine creates a durable run and attempt before external execution, reconciles incomplete work
+after restart, and supervises process groups without holding a database transaction across target
+execution. SQLite runs in WAL mode with atomic migrations and stores explicit job, run, attempt,
+event, and scheduler-lifetime facts. See [Architecture](docs/ARCHITECTURE.md) for the component
+boundaries and persistence invariants.
+
+## Open the local dashboard
+
+The optional dashboard shows the same durable jobs, runs, settings, and diagnostics as the CLI. It
+is **off by default**, listens only on this machine's loopback interface, and does not replace or
+control the scheduler daemon.
+
+```sh
+locron dashboard
+```
+
+Open the printed `http://127.0.0.1:10824/` URL (the port may advance when the default is busy), then
+paste the printed access token into the entry page. The token never belongs in the URL. Later visits
+reuse the browser session; re-display the token intentionally with `locron dashboard token`.
+
+To keep the dashboard available after login, register its separate per-user service:
+
+```sh
+locron dashboard enable
+locron dashboard status
+```
+
+`status` reports the local URL and service posture without exposing the token. Use
+`locron dashboard disable` to stop and unregister the service. See the
+[dashboard operator guide](docs/OPERATOR.md#web-dashboard) for security and troubleshooting and the
+[CLI Reference](docs/CLI.md#dashboard-web-administration) for the exact command and API contracts.
+
 ## Documentation
 
-- **[Brand Guide](DESIGN.md)** — Locron's voice, visual system, components, motion, and accessibility rules.
+- **[Brand Guide](DESIGN.md)** — voice, visual system, components, motion, and accessibility.
 - **[Installation Guide](docs/INSTALL.md)** — install channels, updates, and uninstalling.
 - **[Operator Guide](docs/OPERATOR.md)** — daily operations, policies, and troubleshooting.
 - **[CLI Reference](docs/CLI.md)** — every command, option, and output contract.
 - **[Architecture](docs/ARCHITECTURE.md)** — system design, invariants, and durable state.
 - **[MCP Specification](docs/mcp/SPEC.md)** — tools, resources, and prompts.
-- **[Web Dashboard Specification](docs/dashboard/SPEC.md)** — the loopback-only viewer and management API.
+- **[Web Dashboard Specification](docs/dashboard/SPEC.md)** — loopback viewer and management API.
 - **[Release Policy](docs/RELEASE.md)** — versioning, packaging, and release automation.
 - **[Changelog](CHANGELOG.md)** — notable changes in each release.
 
