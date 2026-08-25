@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
-import { outputEventKey, Runs } from "./Runs";
+import { outputEventKey, RunDetail, Runs } from "./Runs";
 
 vi.mock("../api", () => ({ api: { get: vi.fn() } }));
 const get = vi.mocked(api.get);
@@ -157,5 +157,26 @@ describe("run history search", () => {
     expect(screen.queryByText("Loading run history…")).toBeNull();
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByText("No runs yet")).toBeNull();
+  });
+});
+
+describe("run detail recovery", () => {
+  beforeEach(() => get.mockReset());
+
+  it("renders a complete recovery state when a stale run route returns 404", async () => {
+    const missing = Object.assign(new Error("01a03413-3cce-7ef1-8031-95987dc0fa02"), { status: 404 });
+    get.mockImplementation((path) => path === "/api/v1/runs/missing-run" ? Promise.reject(missing) as never : Promise.resolve({ data: { explanation: "", daemon_running: false, events: [] }, warnings: [] }) as never);
+    render(<RunDetail id="missing-run" />);
+    expect(await screen.findByRole("heading", { name: "Run not found" })).toBeTruthy();
+    expect(screen.getByText(/removed by retention.*link may be stale/i)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View run history" }).getAttribute("href")).toBe("#/runs");
+    expect(screen.queryByText("01a03413-3cce-7ef1-8031-95987dc0fa02")).toBeNull();
+  });
+
+  it("keeps non-404 run detail failures as request feedback", async () => {
+    get.mockImplementation((path) => path === "/api/v1/runs/run-1" ? Promise.reject(Object.assign(new Error("database temporarily unavailable"), { status: 503 })) as never : Promise.resolve({ data: { explanation: "", daemon_running: false, events: [] }, warnings: [] }) as never);
+    render(<RunDetail id="run-1" />);
+    expect(await screen.findByText("database temporarily unavailable")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Run not found" })).toBeNull();
   });
 });

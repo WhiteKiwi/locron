@@ -1071,3 +1071,49 @@ read that saved listing as well. This keeps the check exact, avoids suppressing 
 failures, and makes local and hosted behavior deterministic. Verification reruns the failed hosted
 job on the corrective commit and requires the source-package job plus the complete CI workflow to
 pass.
+
+## Dashboard lifecycle human output and stale detail recovery (2026-08-25)
+
+The CLI output audit follows command dispatch rather than only searching the shared renderer. The
+ordinary scheduler commands already select a command-specific human renderer before calling the
+machine envelope renderer. The remaining accidental pretty-JSON paths are the three daemon service
+commands, the four non-foreground dashboard lifecycle commands, and successful `self-update`.
+Human `export` remains intentionally serialized because its stdout is the portable export document,
+not a command result report.
+
+Remove the shared renderer's pretty-JSON human fallback after the audit. Reaching it in human mode
+is an internal contract violation, which prevents a later command from silently reintroducing this
+class of omission; intentional serialized surfaces such as export continue to render explicitly.
+
+Keep the existing JSON data shapes and error envelopes unchanged. In human mode, service and
+dashboard lifecycle commands instead print a stable labeled report. Installation reports service
+identity and registration/restart/defer facts; removal reports service identity and stop/removal
+facts; status reports registration, running/enabled/session state and optional manager facts.
+Dashboard status extends that report with the access URL and token presence/permission posture,
+while dashboard disable reports token removal. `dashboard token` prints the access URL and an
+`Access token:` label followed by the unmodified token on its own line so it remains immediately
+copyable. Existing actionable guidance remains on stderr and no command other than token or the
+first foreground startup line reveals the token value. Successful human self-update reports the
+old and new versions and whether replacement occurred.
+
+The frontend keeps successful-login deep links intact. Job and run detail loaders distinguish a
+404 response from loading and from other request failures. A missing detail route renders its own
+route header and card that name the resource category, explain that the durable resource may have
+been removed or the link may be stale, and provide a direct collection link (`#/jobs` or `#/runs`).
+The raw missing identifier is not used as the page-level explanation. Valid detail responses keep
+the existing detail UI, and non-404 failures keep their ordinary request feedback so operational
+errors are not mislabeled as absent data.
+
+Implementation and verification order:
+
+1. Add focused CLI contract assertions for all lifecycle human forms and successful self-update
+   while retaining their existing JSON assertions.
+2. Add job and run detail tests for 404, non-404, and valid response branches, then implement the
+   explicit missing-resource states without changing hash routing.
+3. Run the complete service/dashboard/self-update integration suites and frontend test/build
+   checks, followed by workspace formatting, warnings-denied Clippy, relevant workspace tests, and
+   diff checks.
+
+The plan review confirms that no state, API, routing, authentication, token storage, or machine
+schema change is required. The changes are limited to presentation selection and explicit 404
+recovery, so the durable architecture remains unchanged.

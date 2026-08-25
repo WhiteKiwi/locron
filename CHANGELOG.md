@@ -11,6 +11,16 @@ documentation. CI and test-only changes are omitted — the commit history is th
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-08-25
+
+### Fixed
+
+- Service and dashboard lifecycle commands, `dashboard token`, and successful self-updates now
+  render labeled terminal reports in default human mode instead of pretty-printed JSON. Machine
+  envelopes remain unchanged, and dashboard tokens stay copyable without appearing in status output.
+- Stale dashboard links now show complete job- or run-not-found pages with a direct route back to
+  the applicable collection instead of displaying only a raw missing identifier.
+
 ## [0.9.1] - 2026-08-25
 
 ### Changed
@@ -227,7 +237,8 @@ Initial release.
 - **Distribution** — Homebrew tap, `.deb` and `.rpm` packages, and pre-built tarballs for macOS and
   Linux on both x86_64 and aarch64.
 
-[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/WhiteKiwi/locron/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/WhiteKiwi/locron/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/WhiteKiwi/locron/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/WhiteKiwi/locron/compare/v0.7.0...v0.8.0

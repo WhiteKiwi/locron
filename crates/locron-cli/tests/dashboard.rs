@@ -561,10 +561,11 @@ fn dashboard_token_displays_the_stored_token() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stdout).contains(&token),
-        "the human form shows the token value"
-    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Access URL: http://127.0.0.1:"));
+    assert!(stdout.contains("Access token:\n"));
+    assert!(stdout.lines().any(|line| line == token));
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
 }
 
 #[test]

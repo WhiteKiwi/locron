@@ -934,15 +934,21 @@ fn dashboard_token(state_dir: Option<PathBuf>, format: Format) -> Result<(), Ser
     let paths = dashboard_paths(&ctx)?;
     let token = locron_server::token::ensure(paths)
         .map_err(|error| ServiceError::Io(format!("cannot read the access token: {error}")))?;
-    render(
-        format,
-        "dashboard token",
-        json!({
-            "access_url": access_url(),
-            "token": token,
-        }),
-        &[],
-    );
+    if format == Format::Human {
+        println!("Access URL: {}", access_url());
+        println!("Access token:");
+        println!("{token}");
+    } else {
+        render(
+            format,
+            "dashboard token",
+            json!({
+                "access_url": access_url(),
+                "token": token,
+            }),
+            &[],
+        );
+    }
     Ok(())
 }
 
@@ -1006,7 +1012,12 @@ pub(crate) async fn execute_dashboard(
                             eprintln!("\n{guidance}");
                         }
                     }
-                    render(format, "dashboard disable", data, &[]);
+                    if format == Format::Human {
+                        render_uninstall_human(Target::Dashboard, &outcome);
+                        println!("Access token removed: yes");
+                    } else {
+                        render(format, "dashboard disable", data, &[]);
+                    }
                 }
                 Some(DashboardCommand::Status) => {
                     let (outcome, token) = dashboard_status(&ctx, port.as_ref())?;
@@ -1030,7 +1041,20 @@ pub(crate) async fn execute_dashboard(
                             eprintln!("\n{}", data["guidance"]);
                         }
                     }
-                    render(format, "dashboard status", data, &[]);
+                    if format == Format::Human {
+                        render_status_human(Target::Dashboard, &outcome);
+                        println!("Access URL: {}", access_url());
+                        println!(
+                            "Access token present: {}",
+                            yes_no(token["present"].as_bool().unwrap_or(false))
+                        );
+                        println!(
+                            "Access token permissions: {}",
+                            token["permissions"].as_str().unwrap_or("unknown")
+                        );
+                    } else {
+                        render(format, "dashboard status", data, &[]);
+                    }
                 }
                 _ => unreachable!("matched a service-management dashboard command"),
             }
@@ -1055,38 +1079,90 @@ fn render_install(format: Format, target: Target, command: &str, outcome: &Insta
             eprintln!("\n{guidance}");
         }
     }
-    render(format, command, data, &[]);
+    if format == Format::Human {
+        render_install_human(target, outcome);
+    } else {
+        render(format, command, data, &[]);
+    }
 }
 
 fn render_uninstall(format: Format, target: Target, command: &str, outcome: &UninstallOutcome) {
-    render(
-        format,
-        command,
-        json!({
-            "removed": outcome.removed,
-            "stopped": outcome.stopped,
-            "service_name": target.service_name(),
-        }),
-        &[],
-    );
+    if format == Format::Human {
+        render_uninstall_human(target, outcome);
+    } else {
+        render(
+            format,
+            command,
+            json!({
+                "removed": outcome.removed,
+                "stopped": outcome.stopped,
+                "service_name": target.service_name(),
+            }),
+            &[],
+        );
+    }
 }
 
 fn render_status(format: Format, target: Target, command: &str, outcome: &ServiceStatus) {
-    render(
-        format,
-        command,
-        json!({
-            "registered": outcome.registered,
-            "loaded": outcome.loaded,
-            "enabled": outcome.enabled,
-            "domain": outcome.domain,
-            "pid": outcome.pid,
-            "executable": outcome.executable,
-            "session_available": outcome.session_available,
-            "service_name": target.service_name(),
-        }),
-        &[],
+    if format == Format::Human {
+        render_status_human(target, outcome);
+    } else {
+        render(
+            format,
+            command,
+            json!({
+                "registered": outcome.registered,
+                "loaded": outcome.loaded,
+                "enabled": outcome.enabled,
+                "domain": outcome.domain,
+                "pid": outcome.pid,
+                "executable": outcome.executable,
+                "session_available": outcome.session_available,
+                "service_name": target.service_name(),
+            }),
+            &[],
+        );
+    }
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
+}
+
+fn render_install_human(target: Target, outcome: &InstallOutcome) {
+    println!("Service: {}", target.service_name());
+    println!("Registered: {}", yes_no(outcome.registered));
+    println!("Restarted: {}", yes_no(outcome.restarted));
+    println!("Start deferred: {}", yes_no(outcome.deferred));
+    if let Some(domain) = &outcome.domain {
+        println!("Manager domain: {domain}");
+    }
+}
+
+fn render_uninstall_human(target: Target, outcome: &UninstallOutcome) {
+    println!("Service: {}", target.service_name());
+    println!("Removed: {}", yes_no(outcome.removed));
+    println!("Stopped: {}", yes_no(outcome.stopped));
+}
+
+fn render_status_human(target: Target, outcome: &ServiceStatus) {
+    println!("Service: {}", target.service_name());
+    println!("Registered: {}", yes_no(outcome.registered));
+    println!("Running: {}", yes_no(outcome.loaded));
+    println!("Enabled: {}", outcome.enabled.map_or("unknown", yes_no));
+    println!(
+        "Service-manager session available: {}",
+        yes_no(outcome.session_available)
     );
+    if let Some(domain) = &outcome.domain {
+        println!("Manager domain: {domain}");
+    }
+    if let Some(pid) = outcome.pid {
+        println!("PID: {pid}");
+    }
+    if let Some(executable) = &outcome.executable {
+        println!("Executable: {executable}");
+    }
 }
 
 /// Write a registration file owned by the user with 0644 permissions (launchd

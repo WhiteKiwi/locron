@@ -103,6 +103,7 @@ function decodeFrame(frame: LogFrame) {
 
 export function RunDetail({ id }: { id: string }) {
   const [run, setRun] = useState<RunDetailData | null>(null);
+  const [missing, setMissing] = useState(false);
   const [lines, setLines] = useState<string[]>([]);
   const [status, setStatus] = useState("");
   const [following, setFollowing] = useState(false);
@@ -113,10 +114,20 @@ export function RunDetail({ id }: { id: string }) {
     void Promise.all([
       api.get<RunDetailData>(`/api/v1/runs/${id}`, { signal: controller.signal }).then(({ data }) => setRun(data)),
       api.get<{ explanation: string; daemon_running: boolean; events: Array<{ id?: string; kind: string; occurred_at_us: number; details_json?: string }> }>(`/api/v1/runs/${id}/why`, { signal: controller.signal }).then(({ data }) => setWhy(data)).catch(() => undefined),
-    ]).catch((issue) => setStatus(issue.message));
+    ]).catch((issue) => {
+      if ((issue as { status?: number }).status === 404) setMissing(true);
+      else if ((issue as Error).name !== "AbortError") setStatus((issue as Error).message);
+    });
     return controller;
   }, [id]);
-  useEffect(() => { const controller = load(); return () => controller.abort(); }, [load]);
+  useEffect(() => {
+    setRun(null);
+    setStatus("");
+    setMissing(false);
+    setWhy(null);
+    const controller = load();
+    return () => controller.abort();
+  }, [load]);
   useEffect(() => {
     if (!following) return;
     const source = new EventSource(`/api/v1/runs/${encodeURIComponent(id)}/stream`);
@@ -145,6 +156,10 @@ export function RunDetail({ id }: { id: string }) {
     return () => { handlers.forEach((handler, name) => source.removeEventListener(name, handler)); source.close(); };
   }, [following, id, load]);
 
+  if (missing) return <>
+    <RouteHeader title="Run not found" description="This run may have been removed by retention, or this link may be stale." actions={<a className="button primary" href="#/runs">View run history</a>} />
+    <section className="card"><h2>This run is unavailable</h2><p>Return to Run history to choose an existing durable run.</p></section>
+  </>;
   if (!run) return <Feedback kind={status ? "error" : "muted"}>{status || "Loading run…"}</Feedback>;
   const loadAttempt = async (attempt = run.attempts.at(-1)?.attempt_number ?? 1) => {
     try {

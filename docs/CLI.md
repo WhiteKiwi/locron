@@ -433,8 +433,11 @@ Human output renders the same facts as machine output in readable forms; machine
 - `import` — `created N, updated N, unchanged N` plus per-job action lines; dry run states the
   simulation. `prune` — `pruned: N runs, M outputs (X bytes)`; dry run states what would be
   pruned.
-- `export` — the bare export document (existing). `logs`, `service`, `self-update`, `version`,
-  `daemon run`, and `mcp` keep their existing human forms.
+- `service install|uninstall|status`, `dashboard enable|disable|status|token`, and `self-update` —
+  labeled lifecycle reports. `dashboard token` puts the unmodified token on its own copyable line;
+  other lifecycle reports never reveal it.
+- `export` — the bare export document (existing). `logs`, `version`, `daemon run`, and `mcp` keep
+  their existing human forms.
 
 No human form prints an escaped JSON string, nested object, or array, and every form obeys the
 redaction rules at every verbosity level.

@@ -274,4 +274,21 @@ describe("job detail recent runs", () => {
     await screen.findByRole("heading", { name: "Recent runs" });
     expect(screen.getByText("No runs yet.")).toBeTruthy();
   });
+
+  it("renders a complete recovery state when a stale job route returns 404", async () => {
+    const missing = Object.assign(new Error("01a03413-3cce-7ef1-8031-95987dc0fa02"), { status: 404 });
+    get.mockImplementation((path) => path === "/api/v1/jobs/missing-job" ? Promise.reject(missing) as never : Promise.reject(new Error("secondary lookup unavailable")) as never);
+    render(<JobDetail reference="missing-job" />);
+    expect(await screen.findByRole("heading", { name: "Job not found" })).toBeTruthy();
+    expect(screen.getByText(/may have been removed.*link may be stale/i)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View all jobs" }).getAttribute("href")).toBe("#/jobs");
+    expect(screen.queryByText("01a03413-3cce-7ef1-8031-95987dc0fa02")).toBeNull();
+  });
+
+  it("keeps non-404 job detail failures as request feedback", async () => {
+    get.mockImplementation((path) => path === "/api/v1/jobs/job-1" ? Promise.reject(Object.assign(new Error("database temporarily unavailable"), { status: 503 })) as never : Promise.reject(new Error("secondary lookup unavailable")) as never);
+    render(<JobDetail reference="job-1" />);
+    expect(await screen.findByText("database temporarily unavailable")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Job not found" })).toBeNull();
+  });
 });

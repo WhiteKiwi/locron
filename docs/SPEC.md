@@ -17,6 +17,7 @@ Amended 2026-08-24: one-time jobs may opt into automatic soft deletion after the
 Amended 2026-08-25: the completed local dashboard is prepared as a documented v0.8.0 release, and the maintained Locron agent workflow is aligned with the released command surface.
 Amended 2026-08-25: crates.io source installation is added as an optional Rust-user distribution channel with package-manager-consistent update ownership.
 Amended 2026-08-25: terminal-width fitting extends from the human `list` table to the human `history` table.
+Amended 2026-08-25: dashboard lifecycle output and stale dashboard detail routes receive complete human-readable fallbacks.
 
 ## Goal
 
@@ -114,6 +115,10 @@ The excluded delivery surfaces may influence compatibility boundaries, but they 
 The first public dashboard release is a backward-compatible feature release. Its version, release notes, installation channels, primary product documentation, and maintained agent workflow describe one consistent shipped surface.
 
 Primary documentation must give a new user a short, copyable path from installation to starting the dashboard, obtaining or re-displaying the local token, authenticating, and understanding that the server is loopback-only and off by default. It must introduce the dashboard as an optional way to inspect and manage the same durable jobs, runs, settings, and diagnostics as the command line, not as a separate scheduler or remote control plane.
+
+Dashboard lifecycle commands obey the same output-mode boundary as the rest of the CLI. In default human mode, `dashboard token` prints labeled, copyable access facts rather than a JSON object; `--json` remains the only machine envelope. The other dashboard lifecycle commands are audited against that boundary so none silently falls back to serialized objects or arrays.
+
+Successful authentication preserves an explicitly addressed dashboard route. If that route names a job or run that no longer exists, the dashboard renders a complete not-found state that names the missing resource category, explains that it may have been removed, and offers a direct route back to the applicable collection. A raw identifier or API error string alone is not an acceptable page state.
 
 The maintained Locron agent workflow must discover the installed command surface before using dashboard lifecycle commands, treat dashboard service registration and token reset as explicit mutations, avoid exposing tokens, and preserve the existing dry-run and exact-target verification rules. If that workflow changes for this release, its generated platform packages must remain synchronized and pass their repository's validation before publication.
 

@@ -7,6 +7,61 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## v0.9.2 patch release (2026-08-25)
+
+- [x] Prepare the lockstep v0.9.2 workspace version and curated changelog entry for the completed
+  lifecycle human-output and stale dashboard-route fixes.
+  **Verify:** all five workspace packages and exact internal requirements report 0.9.2, the lockfile
+  agrees, and the changelog section and comparison links identify v0.9.2.
+  **Evidence:** Cargo metadata and the refreshed lockfile report all five packages at 0.9.2; the
+  four workspace internal requirements are exact `=0.9.2`; the curated changelog and comparison
+  links identify v0.9.2.
+- [x] Run the release-version contract and focused local release checks on the exact release tree.
+  **Verify:** formatting, warnings-denied Clippy, workspace tests, frontend tests/typecheck/build,
+  release-version agreement, workspace publication dry-run, and `git diff --check` pass.
+  **Evidence:** Rust 1.94 formatting and warnings-denied all-target Clippy pass; all 441 workspace
+  tests and 65 frontend tests pass; TypeScript typecheck and the production build pass;
+  `check-release-version.sh 0.9.2`, workspace package verification, the five-package publication
+  dry run, and diff checks pass.
+- [ ] Commit and push the reviewed release revision, then create and push immutable annotated tag
+  `v0.9.2`.
+  **Verify:** `main` and `origin/main` point at the release commit, the tag resolves to that same
+  commit, and the tag-triggered release workflow starts.
+- [ ] Confirm publication and update this machine's managed installations and services.
+  **Verify:** the release workflow, five crates, GitHub Release, and Homebrew formula report 0.9.2;
+  the Homebrew binary reports 0.9.2; the daemon and standalone dashboard service are restarted on
+  the new binary; and the dashboard returns HTTP 200.
+
+## Dashboard lifecycle human output and stale detail recovery (2026-08-25)
+
+- [x] Replace raw serialized default output across daemon service, dashboard lifecycle, and
+  successful self-update commands with labeled human reports while preserving every `--json`
+  envelope and token secrecy boundary.
+  **Verify:** focused integration tests cover service install/uninstall/status, dashboard
+  enable/disable/status/token, and successful self-update in both applicable output modes; human
+  stdout is not parseable as a JSON object, token output is labeled and copyable, and only the
+  token command contains the token value.
+  **Evidence:** the service/dashboard/self-update integration suites pass 45 tests; focused human
+  contracts cover all seven lifecycle commands plus successful self-update, preserve the existing
+  JSON assertions, reject JSON-object stdout in human mode, and verify dashboard status does not
+  contain token material. The shared renderer no longer has a human pretty-JSON fallback; export's
+  portable JSON document remains an explicit exception.
+- [x] Render complete job and run not-found states for stale authenticated detail routes while
+  preserving valid deep links and ordinary non-404 failure feedback.
+  **Verify:** frontend component tests prove each 404 names the missing resource category, explains
+  the stale/removal case, links directly to its collection, hides the raw API identifier-only
+  feedback, and leaves valid and non-404 branches unchanged.
+  **Evidence:** job and run component contracts cover 404 recovery and non-404 feedback alongside
+  the existing valid-detail tests. Both missing states name their resource, explain removal/stale
+  links, route directly to `#/jobs` or `#/runs`, and omit the raw API identifier message.
+- [x] Run the focused and repository-level verification gates and record their evidence here.
+  **Verify:** frontend tests and production build, service/dashboard/self-update integration tests,
+  workspace formatting, warnings-denied all-target Clippy, relevant workspace tests, and
+  `git diff --check` all pass on the intended tree.
+  **Evidence:** all 65 frontend tests, TypeScript typecheck, and the Vite production build pass;
+  Rust 1.94 workspace formatting and warnings-denied all-target Clippy pass; all 441 workspace
+  all-target tests pass across 21 suites. The final diff and generated frontend bundle checks pass.
+
 ## v0.9.1 patch release (2026-08-25)
 
 - [x] Prepare the lockstep v0.9.1 workspace version and curated changelog entry for the completed

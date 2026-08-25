@@ -553,12 +553,16 @@ fn human_output_reports_current_and_new_version() {
         .assert()
         .success()
         .stdout(predicate::str::contains(format!(
-            "\"current_version\": \"{}\"",
+            "Current version: {}",
             env!("CARGO_PKG_VERSION")
         )))
         .stdout(predicate::str::contains(format!(
-            "\"new_version\": \"{NEW_VERSION}\""
-        )));
+            "New version: {NEW_VERSION}"
+        )))
+        .stdout(predicate::str::contains("Updated: yes"))
+        .stdout(predicate::function(|stdout: &[u8]| {
+            serde_json::from_slice::<Value>(stdout).is_err()
+        }));
 }
 
 #[test]

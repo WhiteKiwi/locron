@@ -1156,16 +1156,25 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         Command::SelfUpdate => {
             let outcome = self_update::update(&paths.root).await?;
             let warnings: Vec<&str> = outcome.warnings.iter().map(String::as_str).collect();
-            render(
-                format,
-                "self-update",
-                json!({
-                    "current_version": outcome.current_version,
-                    "new_version": outcome.new_version,
-                    "updated": outcome.updated,
-                }),
-                &warnings,
-            );
+            if format == Format::Human {
+                println!("Current version: {}", outcome.current_version);
+                println!("New version: {}", outcome.new_version);
+                println!("Updated: {}", yes_no(outcome.updated));
+                for warning in warnings {
+                    eprintln!("warning: {warning}");
+                }
+            } else {
+                render(
+                    format,
+                    "self-update",
+                    json!({
+                        "current_version": outcome.current_version,
+                        "new_version": outcome.new_version,
+                        "updated": outcome.updated,
+                    }),
+                    &warnings,
+                );
+            }
             Ok(())
         }
         Command::Service { .. } => {
@@ -5391,6 +5400,10 @@ fn human_duration(micros: u64) -> String {
     }
 }
 
+fn yes_no(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
+}
+
 fn render(format: Format, command: &str, data: Value, warnings: &[&str]) {
     match format {
         Format::Json => println!(
@@ -5404,15 +5417,9 @@ fn render(format: Format, command: &str, data: Value, warnings: &[&str]) {
             })
             .expect("JSON rendering")
         ),
-        Format::Human => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&data).expect("JSON rendering")
-            );
-            for warning in warnings {
-                eprintln!("warning: {warning}")
-            }
-        }
+        Format::Human => unreachable!(
+            "commands must select a command-specific human renderer before the JSON envelope"
+        ),
     }
 }
 fn render_error(format: Format, command: &str, error: &anyhow::Error) {

@@ -309,9 +309,66 @@ fn no_session_install_human_mode_prints_the_guidance_to_stderr() {
     assert!(output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("locron service install"));
-    // Human output is still the pretty JSON data on stdout.
-    let data: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(data["registered"], false);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Registered: no"));
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+}
+
+#[test]
+fn lifecycle_human_modes_render_labeled_reports_instead_of_json() {
+    let _serial = serialized();
+    let tmp = tempfile::tempdir().unwrap();
+    let state_dir = tmp.path().join("locron-state");
+    let (state, log) = seeded(
+        tmp.path(),
+        "{\"session\":true,\"loaded\":true,\"enabled\":true,\"registered\":true}",
+    );
+
+    for (command, expected) in [
+        (["service", "install"], "Registered: yes"),
+        (["service", "uninstall"], "Removed: yes"),
+        (["service", "status"], "Running: yes"),
+    ] {
+        let output = fake_command(&state, &log).args(command).output().unwrap();
+        assert!(output.status.success(), "{}", command.join(" "));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("Service:"), "{stdout}");
+        assert!(stdout.contains(expected), "{stdout}");
+        assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    }
+
+    fs::create_dir_all(&state_dir).unwrap();
+    fs::write(state_dir.join("dashboard.token"), "d".repeat(64)).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(
+            state_dir.join("dashboard.token"),
+            fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+    }
+    for (command, expected) in [
+        ("enable", "Registered: yes"),
+        ("status", "Access token permissions: owner_only"),
+        ("disable", "Access token removed: yes"),
+    ] {
+        if command == "disable" && !state_dir.join("dashboard.token").exists() {
+            fs::write(state_dir.join("dashboard.token"), "d".repeat(64)).unwrap();
+        }
+        let output = fake_dashboard_command(&state, &log, &state_dir)
+            .arg(command)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "dashboard {command}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("Service:"), "{stdout}");
+        assert!(stdout.contains(expected), "{stdout}");
+        assert!(
+            !stdout.contains(&"d".repeat(64)),
+            "status must not reveal token material"
+        );
+        assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    }
 }
 
 #[test]

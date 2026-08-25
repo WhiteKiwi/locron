@@ -78,18 +78,31 @@ export function Jobs() {
 export function JobDetail({ reference }: { reference: string }) {
   const [job, setJob] = useState<Job | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [missing, setMissing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [why, setWhy] = useState<{ explanation: string; next_occurrence?: string; overlap: string; daemon_running: boolean } | null>(null);
   const [recent, setRecent] = useState<Array<{ id: string; state: string; requested_at_us: number }>>([]);
   useEffect(() => {
     const controller = new AbortController();
+    setJob(null);
+    setFeedback("");
+    setMissing(false);
+    setWhy(null);
+    setRecent([]);
     void Promise.all([
       api.get<Job>(`/api/v1/jobs/${encodeURIComponent(reference)}`, { signal: controller.signal }).then(({ data }) => setJob(data)),
       api.get<{ explanation: string; next_occurrence?: string; overlap: string; daemon_running: boolean }>(`/api/v1/jobs/${encodeURIComponent(reference)}/why`, { signal: controller.signal }).then(({ data }) => setWhy(data)).catch(() => undefined),
       api.get<{ runs: Array<{ id: string; state: string; requested_at_us: number }> }>(`/api/v1/runs?job=${encodeURIComponent(reference)}&limit=5`, { signal: controller.signal }).then(({ data }) => setRecent(data.runs)).catch(() => undefined),
-    ]).catch((issue) => setFeedback(issue.message));
+    ]).catch((issue) => {
+      if ((issue as { status?: number }).status === 404) setMissing(true);
+      else if ((issue as Error).name !== "AbortError") setFeedback((issue as Error).message);
+    });
     return () => controller.abort();
   }, [reference]);
+  if (missing) return <>
+    <RouteHeader title="Job not found" description="This job may have been removed, or this link may be stale." actions={<a className="button primary" href="#/jobs">View all jobs</a>} />
+    <section className="card"><h2>This job is unavailable</h2><p>Return to Jobs to choose an existing durable job.</p></section>
+  </>;
   if (!job) return <Feedback kind={feedback ? "error" : "muted"}>{feedback || "Loading job…"}</Feedback>;
   let definition: Definition | null;
   try { definition = JSON.parse(job.definition_json) as Definition; } catch { definition = null; }
