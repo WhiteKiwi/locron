@@ -37,6 +37,7 @@ the Homebrew update.
 Push CI run [32811491695](https://github.com/WhiteKiwi/locron/actions/runs/32811491695) then found a
 hosted-shell false negative in source-package inspection rather than a missing archive member. The
 corrective tree reads the saved `locron-server` archive listing instead of a `tar -tf | grep -q`
-pipeline; local syntax, static, and archive verification pass, and the full hosted corrective rerun
-remains pending publication by the parent session. Desktop and App Store ideas are deferred in
-`docs/BACKLOG.md`.
+pipeline. Corrective run
+[32812563494](https://github.com/WhiteKiwi/locron/actions/runs/32812563494) passed all 14 jobs,
+including source-package inspection and publication dry-run, installer checks, lint, and the eight
+platform/toolchain test jobs. Desktop and App Store ideas are deferred in `docs/BACKLOG.md`.

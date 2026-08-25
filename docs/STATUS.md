@@ -67,6 +67,8 @@ The first push CI run after that release,
 [32811491695](https://github.com/WhiteKiwi/locron/actions/runs/32811491695), exposed a false archive
 inspection failure: `tar -tf | grep -q` can return failure under the hosted runner's `pipefail` even
 after finding the server asset. The corrective tree inspects the already materialized archive
-listing; local workflow and archive checks pass, while the complete hosted rerun remains pending
-publication by the parent session. Desktop and Mac App Store ideas are deferred in
-`docs/BACKLOG.md` and require reviewed specifications before implementation.
+listing. Corrective run
+[32812563494](https://github.com/WhiteKiwi/locron/actions/runs/32812563494) passed all 14 hosted jobs,
+including source-package inspection and publication dry-run, installer checks, lint, and the eight
+platform/toolchain test jobs. Desktop and Mac App Store ideas are deferred in `docs/BACKLOG.md` and
+require reviewed specifications before implementation.

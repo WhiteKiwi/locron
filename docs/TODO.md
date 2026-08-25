@@ -103,11 +103,15 @@ branch of the release path, with steady-state OIDC publication configured for la
   listing without a pipeline.
   **Evidence:** YAML parsing, actionlint, a package-archive fixture, the static source-package
   contract, and `git diff --check` pass on the corrective tree.
-- [ ] Confirm the complete hosted CI workflow on the corrective commit reports the source-package
+- [x] Confirm the complete hosted CI workflow on the corrective commit reports the source-package
   job and every other job green.
-  **Verify:** record the successful corrective workflow run after the parent session publishes the
-  commit; failed run [32811491695](https://github.com/WhiteKiwi/locron/actions/runs/32811491695)
-  remains the evidence that motivated the deterministic listing-file check.
+  **Verify:** record the successful corrective workflow run; failed run
+  [32811491695](https://github.com/WhiteKiwi/locron/actions/runs/32811491695) remains the evidence that
+  motivated the deterministic listing-file check.
+  **Evidence:** corrective run
+  [32812563494](https://github.com/WhiteKiwi/locron/actions/runs/32812563494) passed all 14 jobs,
+  including package/archive inspection, workspace publication dry-run, installer checks, all lint
+  jobs, and the eight platform/toolchain test jobs.
 
 ## Usage measurement backlog (2026-08-23)
 
