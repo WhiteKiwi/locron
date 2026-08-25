@@ -88,7 +88,7 @@ impl Target {
             Target::Daemon => {
                 #[cfg(target_os = "macos")]
                 {
-                    DAEMON_LABEL
+                    self.launchd_label()
                 }
                 #[cfg(target_os = "linux")]
                 {
@@ -102,7 +102,7 @@ impl Target {
             Target::Dashboard => {
                 #[cfg(target_os = "macos")]
                 {
-                    DASHBOARD_LABEL
+                    self.launchd_label()
                 }
                 #[cfg(target_os = "linux")]
                 {
@@ -113,6 +113,16 @@ impl Target {
                     "locron-dashboard.service"
                 }
             }
+        }
+    }
+
+    /// The launchd label embedded in a plist, independent of the host that
+    /// renders the template in tests.
+    #[cfg(any(target_os = "macos", test))]
+    fn launchd_label(self) -> &'static str {
+        match self {
+            Target::Daemon => DAEMON_LABEL,
+            Target::Dashboard => DASHBOARD_LABEL,
         }
     }
 
@@ -1119,7 +1129,7 @@ fn escape_xml(text: &str) -> String {
 /// on all test builds so the plist template tests run everywhere).
 #[cfg(any(target_os = "macos", test))]
 fn render_plist(ctx: &ServiceContext) -> Result<String, ServiceError> {
-    let label = ctx.target.service_name();
+    let label = ctx.target.launchd_label();
     let executable = escape_xml(&ctx.executable.display().to_string());
     let log = escape_xml(
         &ctx.home

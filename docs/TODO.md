@@ -1514,6 +1514,36 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   `x86_64-linux-gnu-gcc` is not installed; native Linux confirmation remains the parent-owned CI
   rerun. Final staged/unstaged inspection and commit hash are recorded in the handoff.
 
+## Service template identity follow-up (2026-08-25)
+
+- [x] Record the second Linux CI reproduction and review the manager-identity separation before
+  code changes.
+  **Verify:** FINDINGS §32 names run 32802465277, head `95fbae5`, lint job 97665903962 with both
+  unused constants, test job 97665904093 with both failed plist assertions and its 80/82 result;
+  IMPLEMENTATION records accessor ownership, unchanged runtime behavior, adjacent renderer audit,
+  and verification.
+  **Evidence:** exact CI logs and the `Target`/renderer call inventory were reviewed before editing
+  `service.rs`; no specification change is required.
+- [x] Separate launchd template labels from active-platform service names.
+  **Verify:** `Target` has an explicit macOS/test launchd-label accessor; macOS `service_name`
+  delegates to it, Linux keeps unit names, and `render_plist` uses the label accessor; existing
+  plist assertions remain unchanged, `render_unit` remains platform-neutral, and no dead-code
+  allowance is added.
+  **Evidence:** `Target::launchd_label` maps both launchd constants under macOS/test cfg;
+  `render_plist` uses it, the macOS `service_name` branches delegate to it, and Linux branches still
+  return the two systemd units. The three existing plist tests remain strict and pass; the adjacent
+  renderer source contract confirms `render_unit` embeds no current-platform service name.
+- [x] Complete the local gate and hand native Linux confirmation to the parent session.
+  **Verify:** focused template/compile-seam tests, source-contract inspection, fmt,
+  warnings-denied workspace all-target Clippy, full workspace all-target tests, and diff checks pass;
+  staged/unstaged inspection is clean after a scoped convention-compliant commit.
+  **Evidence:** the three focused plist tests, systemd compile-seam test, source contract, fmt,
+  warnings-denied workspace all-target Clippy, and complete workspace all-target suite pass. The
+  first full-suite attempt caught a transient real-launchd restart observation while the preserved
+  review server occupied port 10824; the isolated real-backend suite then passed 3/3 and a complete
+  rerun passed without stopping that server. `git diff --check` is clean; final staged/unstaged
+  inspection and commit hash are recorded in the handoff.
+
 ## Ordered deferred product roadmap
 
 

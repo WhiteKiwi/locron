@@ -897,3 +897,25 @@ Verification proceeds from the narrowest platform seam outward:
 
 The follow-up commit contains only this implementation correction and its FINDINGS,
 IMPLEMENTATION, and TODO evidence. The parent session owns push and PR workflow actions.
+
+## Service template identity follow-up (2026-08-25)
+
+No service behavior changes. This follow-up separates two concepts that were equivalent only on a
+macOS host: the active platform manager's service identity and the launchd identity embedded in a
+plist template.
+
+Add `Target::launchd_label()` under `cfg(any(target_os = "macos", test))`, mapping daemon and
+dashboard directly to `DAEMON_LABEL` and `DASHBOARD_LABEL`. The macOS branch of
+`Target::service_name()` delegates to this accessor, retaining one launchd label source of truth.
+Linux `service_name()` continues returning `DAEMON_UNIT`/`DASHBOARD_UNIT`, so all systemd manager
+commands, unit paths, CLI output, and API output are unchanged.
+
+`render_plist` uses `launchd_label()` instead of `service_name()`. That makes the template output a
+property of the requested format, not of the host executing its test. Existing daemon/dashboard
+plist assertions remain strict and become portable; the launchd constants become genuinely used in
+Linux test builds. `render_unit` stays unchanged because it embeds no service-manager name.
+
+Verification requires the two focused plist tests and the systemd compile seam on the local host,
+a source contract proving `render_plist` uses `launchd_label` while unit-path/manager calls retain
+`service_name`, warnings-denied all-target Clippy, full workspace all-target tests, fmt, and diff
+checks. Native Linux remains parent-owned CI confirmation after publication of the scoped fix.

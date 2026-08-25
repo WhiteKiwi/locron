@@ -1405,7 +1405,39 @@ stops in `libsqlite3-sys` and `aws-lc-sys` build scripts because the host has no
 proportionate repository fix. The systemd module itself uses portable standard-library APIs and can
 be compiled safely in ordinary unit-test builds without invoking `systemctl`. Extending its cfg from
 Linux-only to Linux-or-test, plus a test that coerces `SystemdPort` to a `dyn ServicePort` trait
-object, gives
-macOS Clippy and tests a persistent type-check seam for the complete implementation. The
-authoritative native Linux confirmation remains the parent session's CI rerun after the fix is
+object, gives macOS Clippy and tests a persistent type-check seam for the complete implementation.
+The authoritative native Linux confirmation remains the parent session's CI rerun after the fix is
 pushed.
+
+## 32. Platform-neutral service template seam (2026-08-25)
+
+The first portability fix reached native Linux compilation and exposed the next platform-coupling
+layer on PR #9 CI run
+[32802465277](https://github.com/WhiteKiwi/locron/actions/runs/32802465277), head `95fbae5`.
+Rust 1.94.0 lint job
+[97665903962](https://github.com/WhiteKiwi/locron/actions/runs/32802465277/job/97665903962)
+compiled the previous five systemd identifier fixes, then failed only because `DAEMON_LABEL` and
+`DASHBOARD_LABEL` were unused at `service.rs:40` and `:44` in the Linux test build. Rust 1.94.0 test
+job [97665904093](https://github.com/WhiteKiwi/locron/actions/runs/32802465277/job/97665904093)
+compiled and ran 82 CLI unit tests; 80 passed and the two plist template tests failed. The daemon
+assertion at line 1800 could not find `<string>dev.locron.daemon</string>`, and the dashboard
+assertion at line 1821 could not find `<string>dev.locron.dashboard</string>`.
+
+`Target::service_name()` intentionally selects the current service manager's runtime identity:
+launchd labels on macOS and systemd unit file names on Linux. Linux tests compile `render_plist`,
+which currently calls that current-platform selector, so it renders `locron.service` or
+`locron-dashboard.service` into a launchd document. The constants are consequently unused, and the
+template is semantically wrong. Weakening the template assertions or suppressing dead code would
+hide that cross-platform error.
+
+The platform-neutral boundary is an explicit launchd-label accessor on `Target`, available on
+macOS and test builds. `render_plist` must use it regardless of the host compiling the template;
+`service_name()` continues to choose the active manager identity for status envelopes, manager
+commands, launchd runtime targets, and systemd unit paths. On macOS its branch may delegate to the
+same launchd accessor so labels have one source of truth.
+
+An adjacent renderer audit found no analogous current-platform leakage. `render_unit` embeds only
+the target-specific description, executable, and arguments; the unit file path is chosen later by
+the Linux systemd port through `service_name()`, where current-platform selection is correct.
+`render_plist` owns the only manager identity embedded inside template contents. Plist file names
+and log files already have explicit launchd/test-scoped accessors.
