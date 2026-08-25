@@ -1412,20 +1412,33 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   `/api/v1/jobs?all=1`; component coverage proves complete state filtering, name/description/tag
   partial search, disabled next-occurrence suppression with last history retained, state transitions
   without hash/filter reset, disabled-run name enrichment, and portalled action-menu isolation.
-- [ ] Rebuild embedded assets and complete the automated regression gate.
+- [x] Rebuild embedded assets and complete the automated regression gate.
   **Verify:** strict TypeScript, all frontend tests, embedded asset/server contracts, built-JavaScript
   syntax, two byte-identical production builds, fmt, warnings-denied workspace clippy, and full
   workspace all-target tests pass with `git diff --check` clean.
-  **Evidence so far:** TypeScript, all 61 frontend tests, all 15 embedded asset tests, built-JavaScript
+  **Evidence:** TypeScript, all 61 frontend tests, all 15 embedded asset tests, built-JavaScript
   syntax, fmt, warnings-denied workspace all-target clippy, and two byte-identical production builds
-  pass. The full workspace all-target test run reached `service_lifetime` with every completed suite
-  green but was stopped for the user's reboot, so no final success status is claimed.
-- [ ] Execute and record the authenticated functional browser matrix, restore fixture state, commit,
+  pass. After reboot, the complete workspace all-target test run, including both `service_lifetime`
+  cases and the 27-test server library suite, exits successfully with no failures. `git diff --check`
+  is clean.
+- [x] Execute and record the authenticated functional browser matrix, restore fixture state, commit,
   and restart the review server from the new embedded binary.
   **Verify:** desktop and 390 px browser QA passes Jobs partial/state search, list/detail state toggles,
   actions and row links, Run history debounce/name search and row entry, Run detail, Settings review/
-  discard and themes, Diagnostics health loading, result/empty states, HTTP 200, and zero browser warnings or
-  errors; the fixture ends with its original enabled jobs and the worktree is clean after commit.
+  discard and themes, Diagnostics health loading, result/empty states, HTTP 200, and zero browser
+  warnings or errors; the fixture ends with its original enabled jobs and the worktree is clean after
+  commit.
+  **Evidence:** authenticated desktop QA proves All states retains three rows after list Disable,
+  Disabled returns one, Enabled plus the `heart` partial returns zero with the stable table empty row,
+  and list Enable restores the row without leaving `#/jobs`. Disabled Next reads `disabled — not
+  scheduled`; list and detail row/state actions, Run history `heart` trailing search with the disabled
+  current name, Run-detail output loading, Recent runs row navigation, New job Every/Shell dry-run,
+  Settings aggregate review/discard, light/dark/System themes, and Diagnostics health/integrity all
+  pass. At 390 px both filters start at 16 px, share the available width, render three mobile rows,
+  and produce zero horizontal overflow; desktop labels and controls share exact baselines. JSON is
+  pretty-presented in both themes, every QA state change is restored, HTTP returns 200, and browser
+  error/warning logs are empty. Implementation commit `86dd9fc` is preserved locally and the latest
+  embedded review server runs at `http://127.0.0.1:10824/`.
 
 ## Ordered deferred product roadmap
 
