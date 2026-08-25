@@ -2228,3 +2228,14 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   `docs/TODO-archive.md` while no open item is lost.
   **Evidence:** Rust 1.94 formatting and warnings-denied all-target Clippy pass; all 440 workspace
   all-target tests pass with zero failures; `git diff --check` passes before and after archival.
+
+## Homebrew marker confirmation for v0.9.0 (2026-08-25)
+
+- [x] At the next real tag, verify that the published formula creates the package-manager marker,
+  `locron self-update` refuses with Homebrew guidance, and the release carries `install.sh`.
+  **Verify:** next-tag marker and release-asset evidence are recorded here.
+  **Evidence:** after updating Xcode Command Line Tools to 26.6,
+  `brew reinstall whitekiwi/tap/locron` installed 0.9.0 successfully and created
+  `/opt/homebrew/Cellar/locron/0.9.0/lib/.disable-self-update`; the installed 0.9.0 binary refused
+  `self-update` with exit 3 and `brew upgrade locron` guidance; the v0.9.0 GitHub Release asset list
+  includes `install.sh`; and the existing Homebrew service remained started.

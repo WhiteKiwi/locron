@@ -112,8 +112,3 @@ branch of the release path, with steady-state OIDC publication configured for la
   [32812563494](https://github.com/WhiteKiwi/locron/actions/runs/32812563494) passed all 14 jobs,
   including package/archive inspection, workspace publication dry-run, installer checks, all lint
   jobs, and the eight platform/toolchain test jobs.
-
-## Process-group cancellation confirmation on macOS (2026-08-25)
-
-- [ ] At the next real tag: verify the published formula creates the marker (`brew reinstall locron && locron self-update` refuses with brew guidance) and the release carries `install.sh`. Carried from the archived "Installer and self-update backlog (2026-08-23)" in `docs/TODO-archive.md`.
-  **Verify:** next-tag marker/release evidence recorded in this section.
