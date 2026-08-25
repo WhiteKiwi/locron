@@ -7,6 +7,29 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## v0.9.1 patch release (2026-08-25)
+
+- [x] Prepare the lockstep v0.9.1 workspace version and curated changelog entry for the completed
+  human `history` terminal-width improvement.
+  **Verify:** all five workspace packages and exact internal requirements report 0.9.1, the lockfile
+  agrees, and the changelog comparison links and release section name v0.9.1.
+  **Evidence:** `cargo check --workspace` resolved all five packages at 0.9.1 and refreshed the
+  lockfile; the root manifest carries four exact `=0.9.1` internal requirements and the curated
+  changelog section and comparison links identify v0.9.1.
+- [x] Run the release-version contract and focused local release checks on the exact release tree.
+  **Verify:** formatting, release-version agreement, history-table tests, package checks, and
+  `git diff --check` pass before the release commit is created.
+  **Evidence:** workspace formatting, `check-release-version.sh 0.9.1`, both focused history-table
+  test paths, clean-tree workspace package verification, workspace publication dry-run, and diff
+  checks pass; the dry run packaged and verified all five 0.9.1 crates without uploading.
+- [ ] Commit and push the reviewed release revision, then create and push immutable annotated tag
+  `v0.9.1`.
+  **Verify:** `main` and `origin/main` point at the release commit, the tag resolves to that same
+  commit, and the tag-triggered release workflow starts.
+- [ ] Confirm the complete automated publication across crates.io, GitHub Release, and Homebrew.
+  **Verify:** the release workflow is green; all five crates report 0.9.1; the GitHub Release has
+  archives, Linux packages, checksums, and installer; Homebrew stable resolves to 0.9.1.
+
 ## crates.io source installation and trusted publication (2026-08-25)
 
 Authorized by the 2026-08-25 installation-channel amendment in `docs/SPEC.md`, researched in

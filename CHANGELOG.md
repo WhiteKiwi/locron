@@ -11,6 +11,14 @@ documentation. CI and test-only changes are omitted — the commit history is th
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-25
+
+### Changed
+
+- Human `locron history` output now fits narrow terminals by truncating only the trigger column.
+  Redirected and machine-readable output remain complete, and `--no-trunc` preserves the full
+  human table when requested.
+
 ## [0.9.0] - 2026-08-25
 
 ### Added
@@ -219,7 +227,8 @@ Initial release.
 - **Distribution** — Homebrew tap, `.deb` and `.rpm` packages, and pre-built tarballs for macOS and
   Linux on both x86_64 and aarch64.
 
-[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/WhiteKiwi/locron/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/WhiteKiwi/locron/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/WhiteKiwi/locron/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/WhiteKiwi/locron/compare/v0.6.0...v0.7.0
