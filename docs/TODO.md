@@ -7,6 +7,37 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## README information architecture refresh (2026-08-25)
+
+- [x] Reorganize the README opening and practical workflow so the first screen identifies locron as
+  a local, explainable scheduler for developers and agents on macOS and Linux, while preserving the
+  accepted non-marketing voice and shipped command syntax.
+  **Verify:** compare the rendered opening and section order with the frozen product positioning;
+  run every changed command example against CLI help or an isolated state directory.
+  **Evidence:** the opening now identifies the scheduler, audience, platforms, and durable
+  explainability model before the first heading, then demonstrates add, preview, run, history, and
+  explanation before installation. The complete opening workflow ran successfully against the
+  current debug binary in an isolated state directory; all added target and policy examples passed
+  dry-run validation, and every referenced locron command resolved through current CLI help.
+- [x] Add concise local-failure, human/agent feedback-loop, scheduler-scope, and architecture
+  explanations without overstating sleep detection, exactly-once execution, MCP, or OS-service
+  integration.
+  **Verify:** trace each technical claim to the specification, architecture, CLI/MCP contracts, or
+  implementation tests; confirm cron, launchd, and systemd wording describes scope rather than a
+  dishonest feature comparison.
+  **Evidence:** the local-failure table and uncertainty warning trace to the accepted schedule,
+  recovery, supervision, retention, and SQLite invariants; the interface inventory matches the CLI,
+  dashboard, and MCP contracts. The scope section distinguishes cron's scheduling primitive and
+  launchd/systemd service-management roles without a feature matrix, and the README explicitly
+  rejects inferred sleep detection and exactly-once external effects.
+- [x] Preserve and verify installation, dashboard, target/schedule, documentation, contribution,
+  and license guidance after the reorganization.
+  **Verify:** run the repository's Markdown link/reference checks, inspect heading and code-fence
+  structure, and require `git diff --check` to pass on the final documentation-only diff.
+  **Evidence:** all 21 local Markdown links and their fragments resolve, the banner asset exists,
+  and the 16-heading/34-fence structure is balanced. Preserved service, dashboard, schedule, and
+  target commands passed help or isolated dry-run checks; `git diff --check` passes.
+
 ## v0.9.2 patch release (2026-08-25)
 
 - [x] Prepare the lockstep v0.9.2 workspace version and curated changelog entry for the completed
