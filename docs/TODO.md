@@ -1544,6 +1544,39 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   rerun passed without stopping that server. `git diff --check` is clean; final staged/unstaged
   inspection and commit hash are recorded in the handoff.
 
+## Dashboard fixed-port test serialization follow-up (2026-08-25)
+
+- [x] Record the third CI reproduction and review the dual-stack test-lifetime diagnosis before
+  code changes.
+  **Verify:** FINDINGS §33 names run 32803014653/head `341bf2a`, both failing jobs/tests/lines, green
+  lint and passing matrix evidence, all three shared-default callers, intended partial-family bind
+  semantics, and the ownership race; IMPLEMENTATION records the mutex lifetime and unchanged runtime.
+  **Evidence:** the CI matrix, dashboard test inventory, server bind implementation, server
+  partial-family test, and dashboard specification were reviewed before editing the harness.
+- [x] Serialize every fixed-default-port dashboard integration contract.
+  **Verify:** one poison-tolerant process-static guard is acquired before `hold_fixed(DEFAULT_PORT)`
+  in exactly the service-mode, redirected-foreground, and PTY-foreground tests and lives through
+  child cleanup; random-port tests and production bind code are unchanged; timeouts and assertions
+  are not weakened.
+  **Evidence:** `serialized_default_port()` owns a process-static `Mutex<()>`, recovers a poisoned
+  guard, and is acquired immediately before `hold_fixed(DEFAULT_PORT)` by all three and only those
+  three tests. Source inventory confirms the guard order and preserved ten-second deadline; the
+  production server, dual-family occupancy helper, child cleanup, random-port tests, and policy
+  assertions are unchanged.
+- [x] Stress and complete the local regression gate before parent CI confirmation.
+  **Verify:** the complete dashboard integration binary passes repeatedly with parallel test threads;
+  all three focused policies pass; source inventory, fmt, warnings-denied workspace all-target Clippy,
+  full workspace all-target tests, and diff checks pass; staged/unstaged inspection is clean after a
+  scoped convention-compliant commit.
+  **Evidence:** each of the three fixed-default-port policies passes in isolation; the complete
+  dashboard integration binary passes 10/10 repetitions with `--test-threads=16`; `cargo fmt --all
+  --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and the complete `cargo test
+  --workspace --all-targets` battery pass. The first full-suite attempt observed one transient exit-5
+  failure in the pre-existing real-launchd dashboard refresh test while the preserved review server
+  occupied 10824; its isolated rerun passed, then the complete workspace rerun passed without stopping
+  the server. Source inventory and `git diff --check` pass; the scoped commit and final staged/unstaged
+  inspection are recorded in the handoff.
+
 ## Ordered deferred product roadmap
 
 

@@ -43,6 +43,16 @@ struct HeldPort {
     _listeners: Vec<TcpListener>,
 }
 
+/// Serializes the contracts that occupy the shared fixed default port. Rust
+/// runs this integration binary's tests in parallel, so every such test must
+/// own the port conflict for its complete child-process lifetime.
+fn serialized_default_port() -> std::sync::MutexGuard<'static, ()> {
+    static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Binds `port` on both loopback families, keeping whatever succeeds. A bind
 /// that fails because something else already holds the address is equally
 /// fine — the port stays occupied from the server's point of view.
@@ -369,6 +379,7 @@ fn explicit_port_is_strict_when_occupied() {
 fn service_mode_keeps_the_default_port_fixed_when_occupied() {
     // Only the hidden marker carried by launchd/systemd registration selects
     // the fixed policy: an occupied 10824 is an error, never a silent fallback.
+    let _serial = serialized_default_port();
     let _fixed = hold_fixed(DEFAULT_PORT);
     let dir = tempfile::tempdir().unwrap();
     let mut command = locron();
@@ -396,6 +407,7 @@ fn service_mode_keeps_the_default_port_fixed_when_occupied() {
 
 #[test]
 fn redirected_bare_serve_still_uses_foreground_fallback() {
+    let _serial = serialized_default_port();
     let _fixed = hold_fixed(DEFAULT_PORT);
     let dir = tempfile::tempdir().unwrap();
     let mut child = locron()
@@ -436,6 +448,7 @@ fn foreground_serve_falls_back_when_the_default_port_is_occupied() {
         eprintln!("SKIPPED: `script` is unavailable in this environment");
         return;
     }
+    let _serial = serialized_default_port();
     let _fixed = hold_fixed(DEFAULT_PORT);
     let dir = tempfile::tempdir().unwrap();
     let binary = cargo_bin("locron");

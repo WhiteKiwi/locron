@@ -1441,3 +1441,44 @@ the target-specific description, executable, and arguments; the unit file path i
 the Linux systemd port through `service_name()`, where current-platform selection is correct.
 `render_plist` owns the only manager identity embedded inside template contents. Plist file names
 and log files already have explicit launchd/test-scoped accessors.
+
+## 33. Dual-stack dashboard port-test ownership race (2026-08-25)
+
+The platform-neutral template fix made warnings-denied lint green on both Linux toolchains in PR #9
+CI run [32803014653](https://github.com/WhiteKiwi/locron/actions/runs/32803014653), head
+`341bf2a`. The remaining failures are nondeterministic dashboard integration-test port ownership,
+not server template or runtime compilation failures.
+
+Linux aarch64 Rust 1.94.0 job
+[97667526486](https://github.com/WhiteKiwi/locron/actions/runs/32803014653/job/97667526486)
+failed `foreground_serve_falls_back_when_the_default_port_is_occupied`: the test's parsed startup
+line still reported port 10824, violating its line-480 assertion. macOS aarch64 Rust 1.94.0 job
+[97667526530](https://github.com/WhiteKiwi/locron/actions/runs/32803014653/job/97667526530)
+failed `service_mode_keeps_the_default_port_fixed_when_occupied` because the child kept serving and
+did not exit within the ten-second deadline at line 189. Linux x86_64 1.94.0/stable, Linux aarch64
+stable, and macOS aarch64 stable passed the same tests; both Linux lint legs passed. The mixed
+matrix result is consistent with an intra-binary scheduling race.
+
+The server's dual-stack behavior is intentional. It attempts every configured loopback address on
+one candidate port, warns and continues when only one family binds, and treats the port as
+unavailable only when neither family binds. Existing server coverage proves that an occupied IPv4
+address can validly serve on IPv6 at the same fixed port. Therefore a strict/fallback occupancy test
+must keep every bindable loopback family unavailable for the child lifetime; occupying IPv4 alone
+would not satisfy the product contract.
+
+The dashboard integration binary has exactly three fixed-default-port tests:
+`service_mode_keeps_the_default_port_fixed_when_occupied`,
+`redirected_bare_serve_still_uses_foreground_fallback`, and
+`foreground_serve_falls_back_when_the_default_port_is_occupied`. Rust runs integration tests in
+parallel. Their shared `hold_fixed(10824)` helper treats zero newly acquired listeners as success,
+assuming another owner will continue occupying both families. If test A owns both listeners, test B
+sees zero and advances without ownership; when A finishes and releases before B's child binds, B can
+bind 10824. Foreground then reports the supposedly occupied default, while fixed service mode starts
+and outlives the completion deadline. The two CI failures are the opposite policy manifestations of
+the same lifetime gap.
+
+A poison-tolerant process-static mutex around all three fixed-default-port tests makes ownership
+sequential within the integration binary. Each test either owns the bindable listeners for its
+whole child lifetime or observes a genuinely external holder; another suite test can no longer be
+the unowned transient holder. `hold_port()` for explicit random-port strictness remains parallel and
+unchanged. No sleep, longer timeout, single-family assertion, or weakened outcome is needed.

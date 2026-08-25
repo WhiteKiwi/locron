@@ -919,3 +919,25 @@ Verification requires the two focused plist tests and the systemd compile seam o
 a source contract proving `render_plist` uses `launchd_label` while unit-path/manager calls retain
 `service_name`, warnings-denied all-target Clippy, full workspace all-target tests, fmt, and diff
 checks. Native Linux remains parent-owned CI confirmation after publication of the scoped fix.
+
+## Dashboard fixed-port test serialization follow-up (2026-08-25)
+
+Runtime binding behavior remains unchanged: partial IPv4/IPv6 success is valid, foreground falls
+back only when no configured family can bind the candidate port, and fixed mode errors under the
+same all-family conflict condition.
+
+Add a test-only `serialized_default_port()` helper in the dashboard CLI integration suite. A
+process-static `Mutex<()>` returns a poison-tolerant guard so a failed test does not prevent later
+cleanup or diagnostics. Acquire that guard before `hold_fixed(DEFAULT_PORT)` in exactly the three
+tests that exercise default-port fixed/fallback behavior, and retain it through child cleanup by
+ordinary lexical lifetime. Random explicit-port tests do not share the resource and stay parallel.
+
+The existing `hold_fixed` dual-family helper and all assertions remain unchanged. In a clean CI
+environment, each serialized test owns both loopback listeners. If an external process owns the
+default port, the existing helper can still observe that stable conflict; the mutex specifically
+eliminates unowned conflicts created by another test in this process.
+
+Verification includes a source inventory proving every `hold_fixed(DEFAULT_PORT)` call acquires the
+guard, repeated high-parallelism runs of the complete dashboard integration binary, focused fixed,
+redirected, and PTY fallback tests, and the full fmt/warnings-denied Clippy/workspace all-target
+battery. The review server stays running; native matrix confirmation remains parent-owned.
