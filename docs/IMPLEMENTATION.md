@@ -865,3 +865,35 @@ skill, that repository's generated packages and validation must be synchronized 
 - Run `cargo fmt --all --check`, `git diff --check`, and inspect staged and unstaged changes so the
   release-preparation commit contains only the specification amendment, planning documents,
   user-facing documentation, changelog, and version metadata.
+
+## Linux service cfg portability follow-up (2026-08-25)
+
+This is a compilation-portability correction for the already-specified daemon and dashboard
+service behavior. No root or dashboard specification changes: systemd receives the same target
+service names, and the real-backend tests keep the same platform ownership.
+
+The systemd `ServicePort` methods that select a daemon or dashboard unit must rename their existing
+`_ctx` binding to `ctx`. There is no data-flow or command change; the correction merely makes the
+identifier used in each existing `systemctl` argument available in the Linux compilation branch.
+The adjacent context-independent methods retain `_ctx`, making the unused/used distinction
+compiler-enforced.
+
+The macOS-only dashboard cleanup type, its `Drop` implementation, and the default dashboard token
+path helper will receive `#[cfg(target_os = "macos")]`. Scoping both the type and implementation is
+necessary: scoping only the construction leaves the definition dead on Linux, while scoping only
+the type leaves an invalid implementation. The common daemon cleanup remains available on Linux.
+
+Verification proceeds from the narrowest platform seam outward:
+
+1. Compile the systemd module on Linux and in unit-test builds, and add a no-command unit test that
+   boxes `SystemdPort` as a `dyn ServicePort` trait object. A source contract additionally confirms
+   only truly unused arguments retain `_ctx` and that the dashboard cleanup type, implementation,
+   and token helper are under macOS cfg.
+2. `cargo fmt --all --check`, warnings-denied workspace all-target Clippy, and the complete
+   workspace all-target test suite run on the available macOS toolchain to detect cross-platform
+   fallout.
+3. Attempt the installed Linux Rust target check, record any missing cross-C-toolchain boundary, and
+   require the parent-owned native CI rerun as the final Linux compile proof.
+
+The follow-up commit contains only this implementation correction and its FINDINGS,
+IMPLEMENTATION, and TODO evidence. The parent session owns push and PR workflow actions.

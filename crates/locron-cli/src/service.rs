@@ -1408,7 +1408,7 @@ mod launchd {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 mod systemd {
     use std::env;
     use std::fs;
@@ -1502,7 +1502,7 @@ mod systemd {
             systemctl(&["--user", "daemon-reload"]).map(|_| ())
         }
 
-        fn is_loaded(&self, _ctx: &ServiceContext) -> Result<bool, ServiceError> {
+        fn is_loaded(&self, ctx: &ServiceContext) -> Result<bool, ServiceError> {
             Ok(systemctl_ok(&[
                 "--user",
                 "is-active",
@@ -1510,16 +1510,16 @@ mod systemd {
             ]))
         }
 
-        fn enable(&self, _ctx: &ServiceContext) -> Result<(), ServiceError> {
+        fn enable(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
             systemctl(&["--user", "enable", ctx.target.service_name()]).map(|_| ())
         }
 
-        fn start(&self, _ctx: &ServiceContext) -> Result<StartedService, ServiceError> {
+        fn start(&self, ctx: &ServiceContext) -> Result<StartedService, ServiceError> {
             systemctl(&["--user", "enable", "--now", ctx.target.service_name()])
                 .map(|_| StartedService { domain: None })
         }
 
-        fn stop(&self, _ctx: &ServiceContext) -> Result<(), ServiceError> {
+        fn stop(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
             systemctl(&["--user", "stop", ctx.target.service_name()]).map(|_| ())
         }
 
@@ -1531,7 +1531,7 @@ mod systemd {
             Ok(())
         }
 
-        fn unload(&self, _ctx: &ServiceContext) -> Result<(), ServiceError> {
+        fn unload(&self, ctx: &ServiceContext) -> Result<(), ServiceError> {
             systemctl(&["--user", "disable", ctx.target.service_name()]).map(|_| ())
         }
 
@@ -1861,6 +1861,12 @@ mod tests {
         assert!(unit.contains("ExecStart=\"/opt/locron/bin/locron\" daemon run"));
         assert!(unit.contains("Restart=on-failure"));
         assert!(unit.contains("WantedBy=default.target"));
+    }
+
+    #[test]
+    fn systemd_backend_type_checks_on_every_test_host() {
+        let port: Box<dyn ServicePort> = Box::new(systemd::SystemdPort);
+        drop(port);
     }
 
     #[test]

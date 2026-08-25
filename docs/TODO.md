@@ -1484,6 +1484,36 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   check, and `git diff --check` pass. Final staged/unstaged inspection is recorded in the handoff;
   publication and the separate skill audit remain owned by the parent session.
 
+## Linux service cfg portability follow-up (2026-08-25)
+
+- [x] Record the CI reproduction and review the portability plan before code changes.
+  **Verify:** `docs/FINDINGS.md` names the run, head, failing jobs, commands, five E0425 locations,
+  and two warnings-denied dead-code locations; `docs/IMPLEMENTATION.md` records the identifier and
+  cfg-scoping fix, adjacent audit, Linux verification limitation, and publication boundary.
+  **Evidence:** FINDINGS §31 records run 32801485007 on `7fcb716`, lint job 97663055695 and test job
+  97663055756; the implementation plan was reviewed before editing either Rust file.
+- [x] Correct the systemd context bindings and scope macOS-only dashboard test helpers accurately.
+  **Verify:** all five target-selecting systemd methods bind `ctx`; only context-independent methods
+  retain `_ctx`; `DashboardServiceCleanup`, its `Drop` implementation, and
+  `default_dashboard_token_path` are compiled only on macOS; the systemd implementation is also
+  type-checked in unit-test builds without running systemctl; no blanket dead-code allow is added.
+  **Evidence:** systemd `is_loaded`, `enable`, `start`, `stop`, and `unload` now bind `ctx`, while
+  only `session_available` and `reload` retain unused `_ctx`; the complete systemd module compiles
+  under `cfg(test)` and `systemd_backend_type_checks_on_every_test_host` proves its trait boundary
+  without executing manager commands. The dashboard cleanup type, its Drop implementation, and the
+  token-path helper each carry macOS cfg, with no dead-code allowance.
+- [x] Complete the local regression gate and hand off Linux confirmation to the parent session.
+  **Verify:** source-contract inspection, `cargo fmt --all --check`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --all-targets`,
+  and `git diff --check` pass; a Linux-target check runs when locally feasible or the missing target
+  is recorded; staged/unstaged inspection is clean after a scoped convention-compliant commit.
+  **Evidence:** the cfg source contract, fmt, warnings-denied workspace all-target Clippy, the full
+  workspace all-target suite (including 82 CLI unit tests and the new systemd compile seam), and
+  `git diff --check` pass. The installed `x86_64-unknown-linux-gnu` target check was attempted but
+  stopped before Locron source in `libsqlite3-sys`/`aws-lc-sys` because
+  `x86_64-linux-gnu-gcc` is not installed; native Linux confirmation remains the parent-owned CI
+  rerun. Final staged/unstaged inspection and commit hash are recorded in the handoff.
+
 ## Ordered deferred product roadmap
 
 

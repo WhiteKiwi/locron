@@ -119,10 +119,12 @@ impl Drop for ServiceCleanup {
 }
 
 /// Best-effort dashboard uninstall on drop (service plus the access token).
+#[cfg(target_os = "macos")]
 struct DashboardServiceCleanup {
     binary: PathBuf,
 }
 
+#[cfg(target_os = "macos")]
 impl Drop for DashboardServiceCleanup {
     fn drop(&mut self) {
         let _ = Command::new(&self.binary)
@@ -268,6 +270,7 @@ fn macos_launchd_backend_registers_restarts_and_unregisters() {
 }
 
 /// The default-state dashboard access token path.
+#[cfg(target_os = "macos")]
 fn default_dashboard_token_path() -> PathBuf {
     locron_store::StatePaths::discover(None)
         .expect("the default state paths must resolve")

@@ -1365,3 +1365,47 @@ Run history debounce, partial search, names, and pagination; job/run detail JSON
 Settings review/discard and theme locality; Diagnostics health loading; desktop/mobile overflow; and browser
 error/warning logs. Destructive Remove and long-running/cancellation scenarios remain covered by the
 automated server/CLI contract suites rather than mutating the user's live review fixture.
+
+## 31. Linux-only dashboard service compilation regression (2026-08-25)
+
+The v0.8.0 preparation commit `7fcb716` passed the complete local macOS battery, but that evidence
+compiled only the active macOS `cfg` branches. PR #9 CI run
+[32801485007](https://github.com/WhiteKiwi/locron/actions/runs/32801485007), on the same head, exposed
+two Linux-only source-boundary defects before any test could execute.
+
+The Rust 1.94.0 Linux lint job
+[97663055695](https://github.com/WhiteKiwi/locron/actions/runs/32801485007/job/97663055695)
+failed `cargo clippy --workspace --all-targets -- -D warnings` with five `E0425` errors in
+`crates/locron-cli/src/service.rs`: the systemd `is_loaded`, `enable`, `start`, `stop`, and `unload`
+methods bind their service context as `_ctx` but read `ctx.target.service_name()` at lines 1509,
+1514, 1518, 1523, and 1535. The same lint job additionally rejected two Linux test-target
+`dead_code` warnings: `DashboardServiceCleanup` at `service_backends.rs:122` and
+`default_dashboard_token_path` at line 271. The Rust 1.94.0 Linux test job
+[97663055756](https://github.com/WhiteKiwi/locron/actions/runs/32801485007/job/97663055756)
+failed `cargo test --workspace --all-targets` on the same five `E0425` errors. Stable and aarch64
+Linux legs failed the same source revision; both Rust-version rows are therefore affected by the
+platform branch, not a toolchain-specific change.
+
+The adjacent `ServicePort` implementations show the intended convention: a context argument is
+named `ctx` when its target or paths are read and `_ctx` only when the implementation genuinely
+does not use it. The systemd `session_available` and `reload` methods legitimately keep `_ctx`;
+the five failing methods must bind `ctx`. A complete `_ctx` inventory found no other binding in
+`service.rs` that subsequently reads `ctx`.
+
+The two dead-code items support only the macOS dashboard launchd test. The cleanup type's sole
+construction and the token-path helper's sole call are inside
+`macos_launchd_backend_registers_refreshes_and_unregisters_the_dashboard`. Their definitions should
+carry the same `#[cfg(target_os = "macos")]` boundary as that test. A blanket `allow(dead_code)`
+would hide future platform drift and is rejected. `ServiceCleanup`, `uid`, and the common command
+helpers remain cross-platform because the Linux direct-session test uses them.
+
+The local toolchain has the `x86_64-unknown-linux-gnu` Rust target, but a target-specific Cargo check
+stops in `libsqlite3-sys` and `aws-lc-sys` build scripts because the host has no
+`x86_64-linux-gnu-gcc`; it never reaches Locron Rust source. Installing a cross C toolchain is not a
+proportionate repository fix. The systemd module itself uses portable standard-library APIs and can
+be compiled safely in ordinary unit-test builds without invoking `systemctl`. Extending its cfg from
+Linux-only to Linux-or-test, plus a test that coerces `SystemdPort` to a `dyn ServicePort` trait
+object, gives
+macOS Clippy and tests a persistent type-check seam for the complete implementation. The
+authoritative native Linux confirmation remains the parent session's CI rerun after the fix is
+pushed.
