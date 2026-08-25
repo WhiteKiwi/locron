@@ -14,6 +14,7 @@ Amended 2026-08-24: documentation-facing product positioning prioritizes explain
 Amended 2026-08-24: a consolidated job explanation reports current scheduling facts, the latest run, and the latest anomalous run.
 Amended 2026-08-24: automated Homebrew publication preserves formula guidance literally and produces a style-clean formula.
 Amended 2026-08-24: one-time jobs may opt into automatic soft deletion after their scheduled run reaches a terminal outcome.
+Amended 2026-08-25: the completed local dashboard is prepared as a documented v0.8.0 release, and the maintained Locron agent workflow is aligned with the released command surface.
 
 ## Goal
 
@@ -66,6 +67,7 @@ The first program milestone is complete when all of the following can be observe
 15. Automated tests cover time progression, sleep or downtime recovery, daylight-saving transitions, overlap, timeout, cancellation, retry, and unclean restart behavior.
 16. A user can simulate a mutation or manual run without changing durable state, and can ask why a job or run is in its current state without enabling debug logs.
 17. A user can request one consolidated explanation of a job's current scheduling state, latest run, and latest anomalous terminal run without assembling those facts from several commands.
+18. A user can discover, start, authenticate to, and safely manage Locron through the optional loopback-only dashboard from the primary product documentation.
 
 ## In Scope
 
@@ -85,6 +87,8 @@ The first program milestone is complete when all of the following can be observe
 - Machine-readable command output for automation.
 - Export and import for backup, migration, and command sharing, including selection of a job subset on export and import from a URL.
 - Diagnostics that explain effective paths, environment, scheduler health, and invalid jobs.
+- An optional loopback-only web dashboard and authenticated local management API that reuse the scheduler's validation, redaction, and durable application semantics.
+- An optional local Model Context Protocol surface and maintained agent workflow that reuse the same safe application boundary.
 
 ## Out of Scope
 
@@ -96,12 +100,22 @@ The first program milestone is complete when all of the following can be observe
 - Natural-language schedule parsing.
 - Built-in secret management.
 - Importing only a selected subset of jobs from an export document.
-- A web viewer or HTTP management API.
-- MCP integration.
+- A hosted, remotely exposed, or multi-user web control plane.
+- Agent behavior that bypasses Locron validation, dry-run support, redaction, or the user's explicit authorization.
 - A desktop application.
 - Operating-system service installation beyond the per-user registration and startup described in Daemon Service Installation, such as system-wide units, multi-user services, or container-supervisor integration.
 
 The excluded delivery surfaces may influence compatibility boundaries, but they are not acceptance criteria for the first program milestone.
+
+## Dashboard Release and Discoverability
+
+The first public dashboard release is a backward-compatible feature release. Its version, release notes, installation channels, primary product documentation, and maintained agent workflow describe one consistent shipped surface.
+
+Primary documentation must give a new user a short, copyable path from installation to starting the dashboard, obtaining or re-displaying the local token, authenticating, and understanding that the server is loopback-only and off by default. It must introduce the dashboard as an optional way to inspect and manage the same durable jobs, runs, settings, and diagnostics as the command line, not as a separate scheduler or remote control plane.
+
+The maintained Locron agent workflow must discover the installed command surface before using dashboard lifecycle commands, treat dashboard service registration and token reset as explicit mutations, avoid exposing tokens, and preserve the existing dry-run and exact-target verification rules. If that workflow changes for this release, its generated platform packages must remain synchronized and pass their repository's validation before publication.
+
+The release is complete only when the feature branch is reviewed and merged, the versioned release tag points at the reviewed merge result, all required continuous-integration and release jobs succeed, published artifacts and release notes identify the same version, and the supported package update path has completed or reports an actionable failure.
 
 ## Installation Channels
 

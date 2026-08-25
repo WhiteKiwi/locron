@@ -215,7 +215,7 @@ replacement for `why`.
 
 `locron dashboard` starts the loopback-only web administration surface: a browser viewer plus an
 HTTP API over the same durable application commands as the CLI (see
-[`docs/dashboard/SPEC.md`](docs/dashboard/SPEC.md) for the full contract). It runs as a process
+[`dashboard/SPEC.md`](dashboard/SPEC.md) for the full contract). It runs as a process
 separate from the scheduler daemon, is off by default, and serves only loopback addresses.
 
 - **Foreground:** `locron dashboard` (identical to `locron dashboard serve`) binds, prints the

@@ -1440,6 +1440,50 @@ is a runner correctness and CI-reliability change; it does not amend the frozen 
   error/warning logs are empty. Implementation commit `86dd9fc` is preserved locally and the latest
   embedded review server runs at `http://127.0.0.1:10824/`.
 
+## Dashboard v0.8.0 release preparation (2026-08-25)
+
+- [x] Review and freeze the release-preparation plan before changing release metadata or
+  user-facing documentation.
+  **Verify:** `docs/SPEC.md` contains the dashboard release/discoverability amendment;
+  `docs/IMPLEMENTATION.md` records the documentation structure, version strategy, publication
+  boundary, edge cases, and verification; every implementation step below has a concrete Verify
+  entry and no unresolved release-preparation question remains.
+  **Evidence:** the 2026-08-25 specification amendment defines the observable release boundary;
+  the implementation section records documentation placement, release-note content, version and
+  lockfile strategy, publication ownership, edge cases, and checks; this four-step checklist was
+  reviewed in order before README, changelog, or version edits began.
+- [x] Add a concise dashboard quick start and improve operational discoverability without
+  contradicting the detailed CLI and Operator contracts.
+  **Verify:** every relative README Markdown link resolves; shell fences parse with `sh -n`; the
+  quick start covers foreground and persistent startup, URL discovery, explicit token paste or
+  re-display, loopback-only exposure, optional/off-by-default posture, and the shared durable state;
+  scans find no token-in-URL example or remote-control claim.
+  **Evidence:** README now places the foreground and persistent-service dashboard quick start
+  immediately after installation, links to the Operator and CLI anchors, and states the optional,
+  off-by-default, loopback-only, shared-state and token-paste boundaries. All relative README links
+  and anchors resolve, all 11 `sh` fences pass `sh -n`, the safety/discoverability contract scan
+  passes, and the stale Operator link now resolves from `docs/OPERATOR.md` to `dashboard/SPEC.md`.
+- [x] Curate the `0.8.0` changelog and synchronize the workspace and lockfile versions.
+  **Verify:** `CHANGELOG.md` has one top-level heading, an empty Unreleased section followed by
+  strictly descending releases, a complete user-facing `0.8.0` entry, and correct comparison links;
+  `Cargo.toml` and all five Locron package records in `Cargo.lock` report `0.8.0` after normal Cargo
+  reconciliation.
+  **Evidence:** CHANGELOG has one top-level heading, an empty Unreleased section, strictly
+  descending `0.8.0` through `0.1.0` entries, and `v0.8.0`/`v0.7.0` comparison links. Normal
+  `cargo check --workspace` updated only the five Locron lockfile package versions; a direct parser
+  confirms all five plus the workspace manifest report `0.8.0`, and `locron --version` prints
+  `locron 0.8.0`.
+- [x] Run the release-preparation validation and commit only the intended files for parent
+  publication.
+  **Verify:** `cargo check --workspace --locked`, `cargo fmt --all --check`, documentation checks,
+  and `git diff --check` pass; staged/unstaged inspection shows no unrelated work; the resulting
+  commit follows `{type}: {imperative message}` and no push, PR, merge, tag, release, Homebrew, or
+  separate skills-repository mutation occurs in this sub-session.
+  **Evidence:** `cargo check --workspace --locked`, `cargo fmt --all --check`, the README link,
+  anchor, shell-fence, and safety checks, the CHANGELOG structure check, the version consistency
+  check, and `git diff --check` pass. Final staged/unstaged inspection is recorded in the handoff;
+  publication and the separate skill audit remain owned by the parent session.
+
 ## Ordered deferred product roadmap
 
 

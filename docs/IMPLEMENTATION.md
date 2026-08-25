@@ -804,3 +804,64 @@ Testability needs no PTY: `truncate_display` and `render_list_table` are pure fu
 - **Unit tests:** `truncate_display` — ASCII fit/no-fit and exact-boundary cases, width-2 CJK, emoji, ellipsis appended only when truncation occurs, and zero/minimum widths; `render_list_table` with injected widths covering the truncating, fitting, and too-narrow fallback paths.
 - **Contract tests:** piped human `ls` with a long target is byte-identical to the pre-change table; `--no-trunc` appears in `locron ls --help` and is accepted; `ls --no-trunc --format json` output is identical to `ls --format json`.
 - **Workspace battery:** `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` pass on the installed toolchain; the four-target CI matrix stays green.
+
+## Dashboard v0.8.0 release preparation (2026-08-25)
+
+This section implements the corresponding `docs/SPEC.md` amendment without changing dashboard
+runtime behavior. The feature implementation and its integrated browser QA are already complete;
+this pass makes the shipped surface discoverable, gives it one release identity, and prepares the
+reviewed branch for the repository publication workflow.
+
+### Documentation and release-note structure
+
+The README will introduce the dashboard immediately after installation and before the broader CLI
+quick start. The shortest supported flow is foreground-first: start `locron dashboard`, open the
+printed loopback URL, and paste the printed token into the entry page. A compact persistent-service
+alternative will use `locron dashboard enable`, with `status` for the stable local URL and `token`
+for intentional token re-display. The copy must say that the dashboard is optional, disabled by
+default, loopback-only, and backed by the same durable jobs, runs, settings, and diagnostics as the
+CLI. It must not place a token in a URL, imply remote access, or imply that the dashboard replaces or
+owns the scheduler daemon.
+
+The existing Operator and CLI references remain the detailed source of truth. Their dashboard
+sections will be checked for stale paths or statements; only user-facing inconsistencies found in
+that review will change. The README documentation index will point to the operational guide as well
+as the design/specification material so a new user can move from quick start to lifecycle and
+security detail.
+
+`CHANGELOG.md` will be normalized into chronological Keep a Changelog order, because its current
+header and Unreleased section sit below several released entries after an earlier merge. A curated
+`0.8.0` entry will summarize the complete user-visible dashboard: lifecycle commands, loopback and
+token boundary, authenticated management and diagnostics, responsive light/dark interface,
+human-friendly schedule/size controls, debounced partial search, row navigation, and redacted
+pretty JSON. Test-only and internal implementation details stay out of the entry. The comparison
+links will advance from `v0.7.0` to `v0.8.0`, while Unreleased remains empty and ready for the next
+change.
+
+### Version synchronization
+
+The workspace package version changes from `0.7.0` to `0.8.0`, a backward-compatible feature
+release. Member manifests inherit the workspace version, so `Cargo.toml` is the only hand-edited
+manifest. `cargo check --workspace` will perform Cargo's normal lockfile reconciliation; the five
+workspace package records in `Cargo.lock` must all report `0.8.0`, with dependency versions
+otherwise unchanged.
+
+### Publication boundary and maintained skill
+
+This repository preparation does not open or merge a pull request, create a tag, publish a GitHub
+release, update Homebrew, or modify the separate `WhiteKiwi/skills` repository. Those external
+mutations belong to the parent publication session after review. The parent will compare the
+released dashboard command surface against the Locron skill before publication; if it changes the
+skill, that repository's generated packages and validation must be synchronized independently.
+
+### Verification additions
+
+- Validate every relative README Markdown link and every shell fence used by the quick start; scan
+  the new dashboard copy for token-in-URL examples and contradictory remote/off-by-default claims.
+- Confirm `CHANGELOG.md` has one heading, strictly descending released versions, a `0.8.0` entry,
+  and comparison links based on `v0.8.0` and `v0.7.0`.
+- Run `cargo check --workspace --locked` after normal lockfile generation, and assert the workspace
+  manifest plus all five Locron lockfile package records report `0.8.0`.
+- Run `cargo fmt --all --check`, `git diff --check`, and inspect staged and unstaged changes so the
+  release-preparation commit contains only the specification amendment, planning documents,
+  user-facing documentation, changelog, and version metadata.
