@@ -22,13 +22,22 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   **Evidence:** workspace formatting, `check-release-version.sh 0.9.1`, both focused history-table
   test paths, clean-tree workspace package verification, workspace publication dry-run, and diff
   checks pass; the dry run packaged and verified all five 0.9.1 crates without uploading.
-- [ ] Commit and push the reviewed release revision, then create and push immutable annotated tag
+- [x] Commit and push the reviewed release revision, then create and push immutable annotated tag
   `v0.9.1`.
   **Verify:** `main` and `origin/main` point at the release commit, the tag resolves to that same
   commit, and the tag-triggered release workflow starts.
-- [ ] Confirm the complete automated publication across crates.io, GitHub Release, and Homebrew.
+  **Evidence:** release commit `157bd06` was pushed to `main`; annotated tag `v0.9.1` resolves to
+  that commit and started release run
+  [32819209936](https://github.com/WhiteKiwi/locron/actions/runs/32819209936).
+- [x] Confirm the complete automated publication across crates.io, GitHub Release, and Homebrew.
   **Verify:** the release workflow is green; all five crates report 0.9.1; the GitHub Release has
   archives, Linux packages, checksums, and installer; Homebrew stable resolves to 0.9.1.
+  **Evidence:** release run 32819209936 passed all four platform builds, OIDC workspace publication,
+  registry installation, GitHub publication, and Homebrew update; independent inventory reports all
+  five crates at 0.9.1, the public release carries all ten expected assets, and refreshed Homebrew
+  metadata resolves `whitekiwi/tap/locron` stable to 0.9.1. Main CI run
+  [32819207261](https://github.com/WhiteKiwi/locron/actions/runs/32819207261) and audit run
+  [32819207292](https://github.com/WhiteKiwi/locron/actions/runs/32819207292) also passed.
 
 ## crates.io source installation and trusted publication (2026-08-25)
 
