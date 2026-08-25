@@ -33,11 +33,3 @@ implementation checklist to `docs/TODO.md` before changing code.
   the live snapshot but deliberately does not commit a history file.
 - Reactivation must choose a retention location and cadence, account for third-party API failures
   and count resets, and avoid making live analytics a push or release gate.
-
-## Desktop application and Mac App Store
-
-- Consider a desktop application as a client of the existing scheduler and application contracts;
-  it must not introduce another scheduling engine.
-- Consider Mac App Store delivery only after the desktop contract is defined. Planning must cover
-  sandboxing, entitlements, background-execution constraints, review requirements, update
-  provenance, and coexistence with direct and package-manager installations.
