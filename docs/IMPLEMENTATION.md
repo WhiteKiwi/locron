@@ -1188,7 +1188,7 @@ The test matrix uses an explicit include list: stable Rust on Linux x86_64, Linu
 x86_64, and macOS arm64, plus Rust 1.94.0 on Linux x86_64 as the MSRV gate. The lint matrix uses
 stable Rust on Linux x86_64 and macOS arm64, preserving both OS-gated Clippy branches without
 repeating architecture-independent lint compilation or running the same lint policy twice on the
-MSRV. Installer and Rust-1.94 source-package jobs remain unchanged.
+MSRV. Installer and Rust-1.94 source-package job commands remain unchanged.
 
 Every matrix job exports its selected toolchain through `RUSTUP_TOOLCHAIN` in addition to installing
 it. This prevents the checked-in Rust 1.94 `rust-toolchain.toml` from silently overriding `stable`;
@@ -1202,9 +1202,11 @@ selection also keeps stable and MSRV artifacts separate.
 well below native compilation time. Cache saves are restricted to `refs/heads/main`; pull requests
 may restore default-branch caches but do not create branch-local job variants. Existing caches are
 left to GitHub's normal eviction until the optimized workflow is proven; cleanup is a separate,
-reproducible maintenance operation after hosted verification.
+reproducible maintenance operation after hosted verification. Release-tag jobs also restore through
+the action but never save: an immutable tag is not a reusable cache producer, and three recent tags
+already account for twelve one-release entries and about 2.64 GB.
 
 Verification requires workflow YAML parsing and actionlint, local formatting plus warnings-denied
 Clippy and workspace tests under Rust 1.94, a clean diff, and a hosted push run with exactly nine
 successful jobs. Hosted logs must show Rust stable rather than 1.94 in every stable `Record platform`
-step, and the Actions cache inventory must stop growing on a pull-request-only cache miss.
+step, and neither pull-request nor release-tag cache misses may create new entries.

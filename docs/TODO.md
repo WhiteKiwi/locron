@@ -20,13 +20,15 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   the local stable assertion selected Rust 1.98.0 instead of the repository's 1.94 override. Hosted
   run 32983148063 likewise recorded Rust 1.98.0 on all four stable test hosts and both stable lint
   hosts while the MSRV job recorded Rust 1.94.0.
-- [x] Restrict Rust cache creation to the default branch without disabling useful dependency and
+- [ ] Restrict Rust cache creation to the default branch without disabling useful dependency and
   target restoration.
-  **Verify:** every Rust cache step uses a main-only save condition, workflow YAML/actionlint pass,
-  and pull-request execution remains able to restore the default-branch cache.
-  **Evidence:** all three `Swatinem/rust-cache` steps remain unconditional restore steps and use
-  only `save-if: github.ref == 'refs/heads/main'` to suppress non-main writes; YAML parsing,
-  actionlint, and the cache contract check pass.
+  **Verify:** every CI Rust cache step uses a main-only save condition, release-tag cache steps use
+  restore-only mode, workflow YAML/actionlint pass, and pull-request/release execution can restore
+  without creating branch- or tag-local entries.
+  **Evidence:** the three CI cache steps use `save-if: github.ref == 'refs/heads/main'`. Inventory
+  also identifies twelve release-tag caches totaling 2,636,106,740 bytes across the latest three
+  tags, so release cache writes are included in this correction; hosted restore-only evidence
+  remains open.
 - [ ] Complete local and hosted verification and record measured job count, wall time, runner time,
   toolchain versions, and cache behavior.
   **Verify:** Rust 1.94 formatting, warnings-denied all-target Clippy, workspace all-target tests,
