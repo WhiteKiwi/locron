@@ -9,7 +9,7 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
 
 ## CI toolchain and cache optimization (2026-08-26)
 
-- [ ] Correct toolchain selection and reduce the test/lint matrix from fourteen jobs to nine while
+- [x] Correct toolchain selection and reduce the test/lint matrix from fourteen jobs to nine while
   preserving stable coverage on all four supported hosts, stable lint on both operating systems,
   and one Linux x86_64 Rust 1.94 MSRV gate.
   **Verify:** workflow inspection finds an explicit five-entry test matrix, two-entry lint matrix,
@@ -17,8 +17,9 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   jobs; hosted stable logs report stable Rust rather than 1.94.
   **Evidence:** local workflow inspection and an executable YAML contract confirm the five-entry
   test matrix, two-entry lint matrix, job-level toolchain selection, and compiler-path assertions;
-  the local stable assertion selected Rust 1.98.0 instead of the repository's 1.94 override. The
-  hosted stable log check remains open.
+  the local stable assertion selected Rust 1.98.0 instead of the repository's 1.94 override. Hosted
+  run 32983148063 likewise recorded Rust 1.98.0 on all four stable test hosts and both stable lint
+  hosts while the MSRV job recorded Rust 1.94.0.
 - [x] Restrict Rust cache creation to the default branch without disabling useful dependency and
   target restoration.
   **Verify:** every Rust cache step uses a main-only save condition, workflow YAML/actionlint pass,
@@ -32,7 +33,9 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   `git diff --check`, and the nine-job hosted CI run pass; evidence is added before handoff.
   **Evidence:** local Rust 1.94 formatting and warnings-denied all-target Clippy pass, as do all 441
   workspace all-target tests across 21 suites. Test jobs no longer install unused rustfmt/Clippy
-  components. Hosted timing, runner-minute, toolchain, and cache evidence remains open.
+  components. Hosted run 32983148063 created exactly nine jobs and passed every toolchain assertion,
+  but attempts 1 and 2 were both externally cancelled by `@WhiteKiwi` after about 65 seconds before
+  the test, lint, source-package, timing, and cache-save evidence could complete.
 
 ## Deterministic dashboard port-policy verification (2026-08-25)
 
