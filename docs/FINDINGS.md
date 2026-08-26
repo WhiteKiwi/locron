@@ -1772,13 +1772,6 @@ better reduction is fewer meaningful jobs and main-only cache saves, not disabli
 GitHub documents a default 10 GB repository cache limit and least-recently-used eviction beyond the
 configured limit, so the existing shape risks cache churn.
 
-Twelve of those entries are release-tag caches: four entries each for `v0.9.0`, `v0.9.1`, and
-`v0.9.2`, totaling 2,636,106,740 bytes. An immutable tag normally builds once, so writing a new cache
-namespace for every release spends repository capacity without warming the next tag. The release
-jobs should retain cache restoration but set `save-if: false`; GitHub's default-branch cache remains
-the reusable producer for ordinary and release builds, while an exceptional rerun simply recompiles
-anything absent from that reusable cache.
-
 Retain stable tests on all four supported host combinations, retain stable lint on Linux and macOS
 to cover OS-gated code, and run the Rust 1.94 MSRV test once on Linux x86_64. Installer and source
 package jobs remain independent. This reduces fourteen jobs to nine while preserving every native
