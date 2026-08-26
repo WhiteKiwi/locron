@@ -1177,3 +1177,34 @@ of the dashboard integration binary and relevant server tests; then formatting, 
 workspace Clippy, the complete workspace all-target suite, and diff checks. The plan deliberately
 does not add sleeps, retries, weakened assertions, test-only production environment variables, or
 workflow-level serialization.
+
+## CI toolchain and cache optimization (2026-08-26)
+
+This is a CI correctness and resource-use correction. It changes no Locron product behavior,
+platform support, MSRV, release workflow, or durable contract, so `docs/SPEC.md` remains unchanged.
+Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §36.
+
+The test matrix uses an explicit include list: stable Rust on Linux x86_64, Linux arm64, macOS
+x86_64, and macOS arm64, plus Rust 1.94.0 on Linux x86_64 as the MSRV gate. The lint matrix uses
+stable Rust on Linux x86_64 and macOS arm64, preserving both OS-gated Clippy branches without
+repeating architecture-independent lint compilation or running the same lint policy twice on the
+MSRV. Installer and Rust-1.94 source-package jobs remain unchanged.
+
+Every matrix job exports its selected toolchain through `RUSTUP_TOOLCHAIN` in addition to installing
+it. This prevents the checked-in Rust 1.94 `rust-toolchain.toml` from silently overriding `stable`;
+the test and lint recording steps compare rustup's active compiler path with the compiler path
+selected explicitly by the matrix toolchain and fail on a mismatch before any test or lint runs.
+Their version output then provides hosted evidence that stable commands use the installed stable
+compiler. Rust cache keys already fingerprint `RUST*` environment variables, so the explicit
+selection also keeps stable and MSRV artifacts separate.
+
+`Swatinem/rust-cache` continues restoring dependency and target artifacts because restore cost is
+well below native compilation time. Cache saves are restricted to `refs/heads/main`; pull requests
+may restore default-branch caches but do not create branch-local job variants. Existing caches are
+left to GitHub's normal eviction until the optimized workflow is proven; cleanup is a separate,
+reproducible maintenance operation after hosted verification.
+
+Verification requires workflow YAML parsing and actionlint, local formatting plus warnings-denied
+Clippy and workspace tests under Rust 1.94, a clean diff, and a hosted push run with exactly nine
+successful jobs. Hosted logs must show Rust stable rather than 1.94 in every stable `Record platform`
+step, and the Actions cache inventory must stop growing on a pull-request-only cache miss.

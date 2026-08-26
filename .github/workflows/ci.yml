@@ -13,45 +13,65 @@ jobs:
   test:
     name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
     timeout-minutes: 30
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     strategy:
       fail-fast: false
       matrix:
-        rust: ["1.94.0", stable]
-        runner:
-          - platform: linux-x86_64
-            os: ubuntu-24.04
-          - platform: linux-aarch64
-            os: ubuntu-24.04-arm
-          - platform: macos-x86_64
-            os: macos-15-intel
-          - platform: macos-aarch64
-            os: macos-14
+        include:
+          - rust: stable
+            runner:
+              platform: linux-x86_64
+              os: ubuntu-24.04
+          - rust: stable
+            runner:
+              platform: linux-aarch64
+              os: ubuntu-24.04-arm
+          - rust: stable
+            runner:
+              platform: macos-x86_64
+              os: macos-15-intel
+          - rust: stable
+            runner:
+              platform: macos-aarch64
+              os: macos-14
+          - rust: 1.94.0
+            runner:
+              platform: linux-x86_64
+              os: ubuntu-24.04
     runs-on: ${{ matrix.runner.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Record platform
         run: |
           uname -a
           rustc -vV
+          test "$(rustup which rustc)" = "$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)"
       - run: cargo test --workspace --all-targets
 
   lint:
     name: Lint / ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
     timeout-minutes: 30
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     strategy:
       fail-fast: false
       matrix:
-        rust: ["1.94.0", stable]
-        runner:
-          - platform: linux-x86_64
-            os: ubuntu-24.04
-          - platform: macos-aarch64
-            os: macos-14
+        include:
+          - rust: stable
+            runner:
+              platform: linux-x86_64
+              os: ubuntu-24.04
+          - rust: stable
+            runner:
+              platform: macos-aarch64
+              os: macos-14
     runs-on: ${{ matrix.runner.os }}
     steps:
       - uses: actions/checkout@v7
@@ -60,6 +80,12 @@ jobs:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Record toolchain
+        run: |
+          rustc -vV
+          test "$(rustup which rustc)" = "$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)"
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Dependency direction
@@ -149,6 +175,8 @@ jobs:
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Verify package inventory
         shell: bash
         run: |

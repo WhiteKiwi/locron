@@ -1750,3 +1750,30 @@ precondition is owned for the full assertion lifetime.
 
 Retried binds, longer timeouts, CI-level test serialization, and accepting port 10824 are rejected:
 they retain the borrowed-resource race, hide it, or weaken the foreground fallback contract.
+
+## 36. CI toolchain selection and cache pressure (2026-08-26)
+
+Hosted run 32836599403 completed in about four minutes of wall time but scheduled fourteen jobs and
+consumed about 26 runner-minutes. The test matrix crossed Rust 1.94.0 and `stable` with four native
+platforms, while the lint matrix crossed both toolchains with Linux x86_64 and macOS arm64. The
+platform coverage is valuable for process, filesystem, and service-manager code, but applying the
+MSRV dimension to every native platform repeats the same compatibility signal.
+
+The `stable` jobs did not provide their intended signal. `dtolnay/rust-toolchain` installed Rust
+1.98.0, but commands executed inside the checkout reported Rust 1.94.0 because the repository's
+`rust-toolchain.toml` directory override won toolchain selection. Job-level `RUSTUP_TOOLCHAIN` is
+required so each matrix entry controls both Cargo execution and the cache environment fingerprint.
+
+The Actions cache API reported 33 active caches totaling 10,539,851,766 bytes. Individual
+`Swatinem/rust-cache` entries were roughly 179–451 MiB and were separated by job ID, platform,
+architecture, and Rust environment. Restore time ranged from about 5 to 40 seconds while native test
+commands took roughly two to three minutes, so dependency/target caching remains worthwhile. The
+better reduction is fewer meaningful jobs and main-only cache saves, not disabling target caches.
+GitHub documents a default 10 GB repository cache limit and least-recently-used eviction beyond the
+configured limit, so the existing shape risks cache churn.
+
+Retain stable tests on all four supported host combinations, retain stable lint on Linux and macOS
+to cover OS-gated code, and run the Rust 1.94 MSRV test once on Linux x86_64. Installer and source
+package jobs remain independent. This reduces fourteen jobs to nine while preserving every native
+platform, both operating-system lint branches, MSRV execution, packaging, and installer evidence.
+Pull requests restore compatible caches but only the default branch saves new entries.

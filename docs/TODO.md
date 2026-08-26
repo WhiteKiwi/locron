@@ -7,6 +7,33 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## CI toolchain and cache optimization (2026-08-26)
+
+- [ ] Correct toolchain selection and reduce the test/lint matrix from fourteen jobs to nine while
+  preserving stable coverage on all four supported hosts, stable lint on both operating systems,
+  and one Linux x86_64 Rust 1.94 MSRV gate.
+  **Verify:** workflow inspection finds an explicit five-entry test matrix, two-entry lint matrix,
+  job-level `RUSTUP_TOOLCHAIN`, and pre-command active-versus-selected compiler assertions in both
+  jobs; hosted stable logs report stable Rust rather than 1.94.
+  **Evidence:** local workflow inspection and an executable YAML contract confirm the five-entry
+  test matrix, two-entry lint matrix, job-level toolchain selection, and compiler-path assertions;
+  the local stable assertion selected Rust 1.98.0 instead of the repository's 1.94 override. The
+  hosted stable log check remains open.
+- [x] Restrict Rust cache creation to the default branch without disabling useful dependency and
+  target restoration.
+  **Verify:** every Rust cache step uses a main-only save condition, workflow YAML/actionlint pass,
+  and pull-request execution remains able to restore the default-branch cache.
+  **Evidence:** all three `Swatinem/rust-cache` steps remain unconditional restore steps and use
+  only `save-if: github.ref == 'refs/heads/main'` to suppress non-main writes; YAML parsing,
+  actionlint, and the cache contract check pass.
+- [ ] Complete local and hosted verification and record measured job count, wall time, runner time,
+  toolchain versions, and cache behavior.
+  **Verify:** Rust 1.94 formatting, warnings-denied all-target Clippy, workspace all-target tests,
+  `git diff --check`, and the nine-job hosted CI run pass; evidence is added before handoff.
+  **Evidence:** local Rust 1.94 formatting and warnings-denied all-target Clippy pass, as do all 441
+  workspace all-target tests across 21 suites. Test jobs no longer install unused rustfmt/Clippy
+  components. Hosted timing, runner-minute, toolchain, and cache evidence remains open.
+
 ## Deterministic dashboard port-policy verification (2026-08-25)
 
 - [x] Replace global-default-port conflict tests with test-owned server policy contracts and pure
