@@ -1784,3 +1784,18 @@ to cover OS-gated code, and run the Rust 1.94 MSRV test once on Linux x86_64. In
 package jobs remain independent. This reduces fourteen jobs to nine while preserving every native
 platform, both operating-system lint branches, MSRV execution, packaging, and installer evidence.
 Pull requests restore compatible caches but only the default branch saves new entries.
+
+Hosted run 33026056426 completed after the GitHub Actions incident and proved that runner startup,
+tests, packaging, and installer validation were healthy: seven jobs passed and only the two lint
+jobs failed. Both lint jobs used Rust 1.98.0 and rejected pre-existing
+`Result::map(...).unwrap_or(false)` expressions under `-D warnings` with
+`clippy::map_unwrap_or`; Rust 1.94 Clippy had accepted the same source. The latest cache-only commit
+did not introduce those expressions.
+
+Using a floating `stable` channel for a blocking lint gate makes the accepted warning set change
+without a repository change, while pinning all compatibility tests would lose forward-compiler
+coverage. Separate those concerns: keep the test matrix on floating stable plus the explicit 1.94
+MSRV leg, but pin blocking formatting and Clippy to Rust 1.98.0. Make 1.98.0 the checked-in
+development toolchain so the documented local command and CI execute the same linter. Keep
+`workspace.package.rust-version = "1.94"` as the package/MSRV contract. A later lint-toolchain bump
+must therefore be an intentional repository change whose local lint fixes land with the bump.

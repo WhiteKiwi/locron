@@ -410,8 +410,7 @@ fn linux_systemd_backend_registers_restarts_and_unregisters() {
     let direct_session = Command::new("systemctl")
         .args(["--user", "show-environment"])
         .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|output| output.status.success());
 
     if !direct_session {
         if !has_on_path("dbus-run-session") || !has_on_path("systemd") {

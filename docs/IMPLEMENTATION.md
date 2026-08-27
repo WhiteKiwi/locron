@@ -1185,18 +1185,17 @@ platform support, MSRV, release workflow, or durable contract, so `docs/SPEC.md`
 Evidence and rejected alternatives are recorded in `docs/FINDINGS.md` §36.
 
 The test matrix uses an explicit include list: stable Rust on Linux x86_64, Linux arm64, macOS
-x86_64, and macOS arm64, plus Rust 1.94.0 on Linux x86_64 as the MSRV gate. The lint matrix uses
-stable Rust on Linux x86_64 and macOS arm64, preserving both OS-gated Clippy branches without
-repeating architecture-independent lint compilation or running the same lint policy twice on the
-MSRV. Installer and Rust-1.94 source-package job commands remain unchanged.
+x86_64, and macOS arm64, plus Rust 1.94.0 on Linux x86_64 as the MSRV gate. The lint matrix uses the
+exact Rust 1.98.0 development toolchain on Linux x86_64 and macOS arm64, preserving both OS-gated
+Clippy branches without letting a moving stable release silently change the blocking warning set.
+Installer and Rust-1.94 source-package job commands remain unchanged.
 
 Every matrix job exports its selected toolchain through `RUSTUP_TOOLCHAIN` in addition to installing
-it. This prevents the checked-in Rust 1.94 `rust-toolchain.toml` from silently overriding `stable`;
-the test and lint recording steps compare rustup's active compiler path with the compiler path
-selected explicitly by the matrix toolchain and fail on a mismatch before any test or lint runs.
-Their version output then provides hosted evidence that stable commands use the installed stable
-compiler. Rust cache keys already fingerprint `RUST*` environment variables, so the explicit
-selection also keeps stable and MSRV artifacts separate.
+it. The checked-in `rust-toolchain.toml` selects exact Rust 1.98.0 with rustfmt and Clippy for normal
+development, while `Cargo.toml` retains Rust 1.94 as the MSRV contract. The test and lint recording
+steps compare rustup's active compiler path with the compiler selected explicitly by the matrix and
+fail on a mismatch before any command runs. Rust cache keys fingerprint `RUST*` environment
+variables, so stable, pinned lint, and MSRV artifacts remain separate.
 
 `Swatinem/rust-cache` continues restoring dependency and target artifacts because restore cost is
 well below native compilation time. Cache saves are restricted to `refs/heads/main`; pull requests
@@ -1206,7 +1205,8 @@ reproducible maintenance operation after hosted verification. Release-tag jobs a
 the action but never save: an immutable tag is not a reusable cache producer, and three recent tags
 already account for twelve one-release entries and about 2.64 GB.
 
-Verification requires workflow YAML parsing and actionlint, local formatting plus warnings-denied
-Clippy and workspace tests under Rust 1.94, a clean diff, and a hosted push run with exactly nine
-successful jobs. Hosted logs must show Rust stable rather than 1.94 in every stable `Record platform`
-step, and neither pull-request nor release-tag cache misses may create new entries.
+Verification requires workflow YAML parsing and actionlint, local formatting and warnings-denied
+Clippy under the pinned Rust 1.98.0 development toolchain, workspace tests under Rust 1.94, a clean
+diff, and a hosted push run with exactly nine successful jobs. Hosted logs must show floating stable
+on compatibility tests, exact 1.98.0 on lint, and 1.94.0 on the MSRV leg. Neither pull-request nor
+release-tag cache misses may create new entries.

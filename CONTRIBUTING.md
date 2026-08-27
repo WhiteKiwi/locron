@@ -47,9 +47,11 @@ That costs one round trip; a rejected 800-line pull request costs an afternoon.
 
 ### Prerequisites
 
-- **Rust 1.94.0.** The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml), so
-  `rustup` selects the right version — including `clippy` and `rustfmt` — automatically. 1.94 is also
-  the project's MSRV, and CI builds against both `1.94.0` and `stable`.
+- **Rustup with Rust 1.98.0 and 1.94.0.** The development and blocking lint toolchain is pinned to
+  exact Rust 1.98.0 in [`rust-toolchain.toml`](rust-toolchain.toml), so `rustup` selects it — including
+  `clippy` and `rustfmt` — automatically. Rust 1.94 remains the project's MSRV. CI tests the MSRV
+  explicitly and also tests floating `stable` for forward compatibility; its two blocking lint jobs
+  use exact Rust 1.98.0 so a new stable release cannot change the warning gate unexpectedly.
 - **macOS or Linux.** Windows is not a supported target.
 - Nothing else. SQLite is compiled in through `rusqlite`'s bundled feature, so there is no system
   library to install and no external service to run.
@@ -104,16 +106,19 @@ locron-server locron-engine locron-store locron-core
 
 ## Before you push
 
-Run exactly what CI runs. All three must pass:
+Run the same three toolchain roles enforced by CI. All four commands must pass:
 
 ```sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
+cargo +1.98.0 fmt --all --check
+cargo +1.98.0 clippy --workspace --all-targets -- -D warnings
+cargo +1.94.0 test --workspace --all-targets
+cargo +stable test --workspace --all-targets
 ```
 
-Note that CI escalates warnings to errors, so **any new lint warning fails the build**. The
-workspace also enforces:
+Rust 1.98.0 is the reviewed development/lint baseline, Rust 1.94 is the minimum supported compiler,
+and floating stable catches forward-compatibility regressions without defining the lint policy.
+CI escalates Rust 1.98.0 warnings to errors, so **any new lint warning fails the build**. The workspace
+also enforces:
 
 - `unsafe_code = "forbid"` — there is no `unsafe` in this repository, and contributions may not
   introduce it.
@@ -188,8 +193,9 @@ git cliff --unreleased --prepend CHANGELOG.md
   path: daemon crash mid-run, clock jumps and DST transitions, overlapping executions, and restart
   recovery.
 
-CI runs `fmt`, `clippy`, and the test suite on macOS and Linux, on both `x86_64` and `aarch64`,
-against MSRV and stable. A green local run on one platform is a good signal, not a guarantee.
+CI runs `fmt` and `clippy` with exact Rust 1.98.0 on Linux x86_64 and macOS arm64. It runs the test
+suite with floating stable on macOS and Linux, on both `x86_64` and `aarch64`, plus one Rust 1.94
+MSRV job on Linux x86_64. A green local run on one platform is a good signal, not a guarantee.
 
 ---
 

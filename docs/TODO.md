@@ -9,8 +9,29 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
 
 ## CI toolchain and cache optimization (2026-08-26)
 
+- [x] Replace the two `clippy::map_unwrap_or` violations with the direct `Result::is_ok_and`
+  predicate without changing service detection behavior.
+  **Verify:** focused source inspection finds no equivalent map/unwrap pattern and Rust 1.98.0
+  warnings-denied all-target Clippy passes on the local macOS host.
+  **Evidence:** focused repository search found no remaining command-output
+  `map(...).unwrap_or(false)` expression, and Rust 1.98.0 all-target Clippy passed with warnings
+  denied on macOS arm64.
+- [x] Separate the pinned development/lint toolchain from the package MSRV and document the policy.
+  **Verify:** `rust-toolchain.toml` selects exact Rust 1.98.0, `Cargo.toml` retains `rust-version =
+  "1.94"`, the two lint matrix entries select 1.98.0, stable compatibility tests remain present,
+  actionlint passes, and contributor commands describe the same split.
+  **Evidence:** local inspection confirmed exact Rust 1.98.0 for development and both lint jobs,
+  Rust 1.94 for the package contract and MSRV job, four floating-stable compatibility jobs, and
+  matching contributor commands; actionlint passed.
+- [ ] Prove the correction locally and on hosted runners without adding CI fan-out.
+  **Verify:** formatting and Clippy pass on 1.98.0, all workspace all-target tests pass on 1.94.0,
+  `git diff --check` passes, and one nine-job hosted run succeeds with the expected three toolchain
+  roles; record the run and timing evidence before handoff.
+  **Evidence:** local Rust 1.98.0 formatting and warnings-denied Clippy passed, all 441 Rust 1.94
+  workspace all-target tests passed, and `git diff --check` passed. Hosted verification remains.
+
 - [x] Correct toolchain selection and reduce the test/lint matrix from fourteen jobs to nine while
-  preserving stable coverage on all four supported hosts, stable lint on both operating systems,
+  preserving stable coverage on all four supported hosts, lint on both operating systems,
   and one Linux x86_64 Rust 1.94 MSRV gate.
   **Verify:** workflow inspection finds an explicit five-entry test matrix, two-entry lint matrix,
   job-level `RUSTUP_TOOLCHAIN`, and pre-command active-versus-selected compiler assertions in both
