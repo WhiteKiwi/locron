@@ -1799,3 +1799,10 @@ MSRV leg, but pin blocking formatting and Clippy to Rust 1.98.0. Make 1.98.0 the
 development toolchain so the documented local command and CI execute the same linter. Keep
 `workspace.package.rust-version = "1.94"` as the package/MSRV contract. A later lint-toolchain bump
 must therefore be an intentional repository change whose local lint fixes land with the bump.
+
+The correction was verified by hosted push run 33027459455: all nine jobs succeeded in five minutes
+of wall time and 1,312 runner-seconds. Both lint hosts reported exact Rust 1.98.0, all four native
+compatibility hosts ran floating stable, and the Linux MSRV and source-package jobs ran Rust 1.94.0.
+The post-job cache steps also completed successfully. After the run, the cache inventory contained
+28 entries totaling 10,030,878,419 bytes, down from 33 entries and 10,539,851,766 bytes before the
+optimization as older variants were evicted.

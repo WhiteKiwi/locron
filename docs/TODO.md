@@ -23,12 +23,14 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   **Evidence:** local inspection confirmed exact Rust 1.98.0 for development and both lint jobs,
   Rust 1.94 for the package contract and MSRV job, four floating-stable compatibility jobs, and
   matching contributor commands; actionlint passed.
-- [ ] Prove the correction locally and on hosted runners without adding CI fan-out.
+- [x] Prove the correction locally and on hosted runners without adding CI fan-out.
   **Verify:** formatting and Clippy pass on 1.98.0, all workspace all-target tests pass on 1.94.0,
   `git diff --check` passes, and one nine-job hosted run succeeds with the expected three toolchain
   roles; record the run and timing evidence before handoff.
   **Evidence:** local Rust 1.98.0 formatting and warnings-denied Clippy passed, all 441 Rust 1.94
-  workspace all-target tests passed, and `git diff --check` passed. Hosted verification remains.
+  workspace all-target tests passed, and `git diff --check` passed. Hosted push run 33027459455
+  completed all nine jobs successfully in five minutes and 1,312 runner-seconds with exact 1.98.0
+  lint, floating-stable native tests, and the 1.94.0 MSRV/package jobs.
 
 - [x] Correct toolchain selection and reduce the test/lint matrix from fourteen jobs to nine while
   preserving stable coverage on all four supported hosts, lint on both operating systems,
@@ -50,15 +52,15 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   also identifies twelve release-tag caches totaling 2,636,106,740 bytes across the latest three
   tags, so release cache writes are included in this correction; hosted restore-only evidence
   remains open.
-- [ ] Complete local and hosted verification and record measured job count, wall time, runner time,
+- [x] Complete local and hosted verification and record measured job count, wall time, runner time,
   toolchain versions, and cache behavior.
   **Verify:** Rust 1.94 formatting, warnings-denied all-target Clippy, workspace all-target tests,
   `git diff --check`, and the nine-job hosted CI run pass; evidence is added before handoff.
-  **Evidence:** local Rust 1.94 formatting and warnings-denied all-target Clippy pass, as do all 441
-  workspace all-target tests across 21 suites. Test jobs no longer install unused rustfmt/Clippy
-  components. Hosted run 32983148063 created exactly nine jobs and passed every toolchain assertion,
-  but attempts 1 and 2 were both externally cancelled by `@WhiteKiwi` after about 65 seconds before
-  the test, lint, source-package, timing, and cache-save evidence could complete.
+  **Evidence:** local Rust 1.98 formatting and warnings-denied all-target Clippy pass, as do all 441
+  Rust 1.94 workspace all-target tests across 21 suites. Test jobs no longer install unused
+  rustfmt/Clippy components. Hosted push run 33027459455 passed all nine jobs in five minutes and
+  1,312 runner-seconds; its cache post-steps succeeded, and inventory afterward was 28 entries and
+  10,030,878,419 bytes versus 33 entries and 10,539,851,766 bytes before optimization.
 
 ## Deterministic dashboard port-policy verification (2026-08-25)
 
