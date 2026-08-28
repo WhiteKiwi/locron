@@ -7,6 +7,46 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## Active dashboard run detail live following (2026-08-28)
+
+- [x] Cover automatic active following, terminal no-stream behavior, run and attempt transitions,
+  base64 output, replay deduplication, pause/resume, reconnect feedback, and guarded terminal
+  reconciliation with focused frontend tests.
+  **Verify:** the run-detail Vitest cases use a controllable `EventSource` and deferred API
+  responses to assert each state transition, exactly one terminal refresh, and no update after
+  unmount or route replacement; a deferred auxiliary explanation must not delay primary detail
+  rendering or automatic following.
+  **Evidence:** the focused run-detail suite passed 18 tests, including seven live-follow cases.
+  A deferred-why case proves the active primary detail renders and opens its stream before the
+  explanation resolves; the remaining cases cover terminal no-open, state/output application,
+  replay deduplication, pause/resume, one terminal reconciliation, route replacement, and unmount
+  cancellation.
+- [x] Implement the run-detail live state lifecycle without changing server or durable semantics.
+  **Verify:** focused source inspection and the frontend tests prove active snapshots auto-follow,
+  terminal snapshots remain static, durable content survives reconnect, replay frames are deduped,
+  and pause/resume only controls observation.
+  **Evidence:** source inspection confirms the primary detail request independently drives render
+  and automatic following, while a separately abortable latest-generation explanation request
+  enriches the page later. The client still applies all four named SSE events, decodes `data_b64`,
+  persists replay keys, and leaves server and cancellation semantics unchanged; all 72 frontend
+  tests and TypeScript checking passed.
+- [x] Rebuild the committed frontend distribution.
+  **Verify:** `npm run build` succeeds, `frontend/dist/index.html` references the newly generated
+  hashed bundle, and the Rust asset contract recognizes the updated typed source and bundle.
+  **Evidence:** Vite production build succeeded and replaced `app-BsbUp3HE.js` with
+  `app-3tuS37E9.js`; the generated bundle contains independent primary/explanation loading plus the
+  automatic-follow, base64, pause, and durable reconciliation contracts, and all 15 filtered Rust
+  asset tests passed.
+- [x] Complete proportionate verification and record evidence.
+  **Verify:** focused run-detail tests, full frontend tests, frontend typecheck and build, focused
+  `locron-server` Rust tests, formatting, and `git diff --check` all pass; inspect status to ensure
+  only scoped files changed and no real Locron durable state was modified.
+  **Evidence:** focused frontend 18/18 and complete frontend 72/72 tests passed; TypeScript and Vite
+  build passed; 15 filtered asset tests and the earlier four SSE server contract tests passed;
+  warnings-denied `locron-server` all-target Clippy, workspace rustfmt check, and `git diff --check`
+  passed. Status contains only the four planning documents, run-detail source/tests, and regenerated
+  frontend distribution; no Locron CLI mutation or real durable-state command was run.
+
 ## CI toolchain and cache optimization (2026-08-26)
 
 - [x] Replace the two `clippy::map_unwrap_or` violations with the direct `Result::is_ok_and`

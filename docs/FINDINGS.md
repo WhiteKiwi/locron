@@ -1806,3 +1806,42 @@ compatibility hosts ran floating stable, and the Linux MSRV and source-package j
 The post-job cache steps also completed successfully. After the run, the cache inventory contained
 28 entries totaling 10,030,878,419 bytes, down from 33 entries and 10,539,851,766 bytes before the
 optimization as older variants were evicted.
+
+## 37. Active dashboard run detail live-follow gap (2026-08-28)
+
+The reported run `01a0465e-2799-7ba0-8491-67cf453a5aea` reached `succeeded` after about
+149.9 seconds with one attempt and two stdout frames. Its authenticated run-detail request returns
+HTTP 200 in about 5 ms, and the dashboard log contains no corresponding request error. These facts
+rule out a slow or failed durable-detail read and point to the client after its initial snapshot.
+
+The server stream already provides the required source of truth. It emits named `run`, `attempt`,
+`output`, and final `termination` events, polls durable state and framed output every 200 ms, replays
+current state and output from the beginning on each connection, and closes after exactly one
+terminal event. Contract tests cover ordered state transitions, reconnect replay, arbitrary output
+bytes in `data_b64`, and one final termination event.
+
+The run-detail client does not consume that contract correctly:
+
+- live following initializes disabled, so an active detail page opens no stream until the user
+  presses `Follow output`;
+- `run` and `attempt` events are parsed but ignored, leaving the snapshot state and attempt table
+  stale throughout execution;
+- `output` frames carry `data_b64`, but the client reads a nonexistent `text` property, so a stream
+  that is manually opened still cannot render the captured bytes correctly;
+- its replay-deduplication set belongs to one `EventSource` effect lifetime, so pausing/resuming or
+  a newly created source forgets prior frames and appends replay duplicates; and
+- terminal reconciliation can start without a per-view generation guard, allowing a late request
+  to update an unmounted or different detail view.
+
+The fix belongs in the frontend. After the initial detail response, active states should enable
+following automatically. One run-detail lifetime should own replay keys and a request generation;
+state events should update the visible snapshot immediately, output should decode `data_b64`, and
+termination should close following then run one guarded full reconciliation. A stream error should
+only change connection feedback because native `EventSource` reconnects automatically and the last
+durable snapshot remains useful. Terminal initial snapshots should never construct an
+`EventSource`.
+
+A client-owned key of `(attempt_number, seq)` matches the server's replay identity. Keep that set
+across automatic reconnects and pause/resume, but reset it when the route run identity changes.
+Manual durable output loading should rebuild the visible output and seed the same identity set from
+the returned frames so a subsequent replay does not duplicate those frames.

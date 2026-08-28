@@ -1,13 +1,39 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api";
+import type { RunDetailData } from "../types";
 import { outputEventKey, RunDetail, Runs } from "./Runs";
 
-vi.mock("../api", () => ({ api: { get: vi.fn() } }));
+vi.mock("../api", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 const get = vi.mocked(api.get);
 const page = (id: string, total = 1) => ({ data: { runs: [{ id, job_id: "job-1", requested_at_us: 1_787_650_200_000_000, trigger: "manual", state: "succeeded" }], total, offset: 0 }, warnings: [] });
 const emptyPage = () => ({ data: { runs: [], total: 0, offset: 0 }, warnings: [] });
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
+
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+  readonly listeners = new Map<string, Set<EventListener>>();
+  onopen: ((event: Event) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  closed = false;
+  constructor(readonly url: string) { FakeEventSource.instances.push(this); }
+  addEventListener(name: string, listener: EventListener) {
+    const listeners = this.listeners.get(name) ?? new Set<EventListener>();
+    listeners.add(listener);
+    this.listeners.set(name, listeners);
+  }
+  removeEventListener(name: string, listener: EventListener) { this.listeners.get(name)?.delete(listener); }
+  close() { this.closed = true; }
+  emit(name: string, data: unknown) {
+    const event = new MessageEvent(name, { data: JSON.stringify(data) });
+    for (const listener of this.listeners.get(name) ?? []) listener(event);
+  }
+  open() { this.onopen?.(new Event("open")); }
+  fail() { this.onerror?.(new Event("error")); }
+}
+
+const detail = (id: string, state: string, attempts: RunDetailData["attempts"] = []) => ({ data: { id, job_id: "job-1", requested_at_us: 1_787_650_200_000_000, trigger: "manual", state, attempts }, warnings: [] });
+const explanation = { data: { explanation: "Durable facts", daemon_running: true, events: [] }, warnings: [] };
 
 describe("run history search", () => {
   beforeEach(() => { vi.useFakeTimers(); get.mockReset(); get.mockImplementation((path) => Promise.resolve(path === "/api/v1/jobs?all=1" ? { data: [], warnings: [] } : page("initial-run")) as never); });
@@ -178,5 +204,130 @@ describe("run detail recovery", () => {
     render(<RunDetail id="run-1" />);
     expect(await screen.findByText("database temporarily unavailable")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Run not found" })).toBeNull();
+  });
+});
+
+describe("active run detail live following", () => {
+  beforeEach(() => {
+    get.mockReset();
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("renders and automatically follows from primary detail before the auxiliary explanation resolves", async () => {
+    const slowExplanation = deferred<typeof explanation>();
+    get.mockImplementation((path) => path.endsWith("/why") ? slowExplanation.promise as never : Promise.resolve(detail("slow-why-run", "running")) as never);
+    render(<RunDetail id="slow-why-run" />);
+    expect(await screen.findByRole("heading", { name: "Run slow-why" })).toBeTruthy();
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(screen.queryByText("Durable facts")).toBeNull();
+    await act(async () => { slowExplanation.resolve(explanation); await slowExplanation.promise; });
+    expect(screen.getByText("Durable facts")).toBeTruthy();
+  });
+
+  it("automatically follows active state and applies replay-safe run, attempt, and base64 output events", async () => {
+    get.mockImplementation((path) => Promise.resolve(path.endsWith("/why") ? explanation : detail("active-run", "queued")) as never);
+    render(<RunDetail id="active-run" />);
+    expect(await screen.findByRole("heading", { name: "Run active-r" })).toBeTruthy();
+    expect(FakeEventSource.instances).toHaveLength(1);
+    const source = FakeEventSource.instances[0]!;
+    expect(source.url).toBe("/api/v1/runs/active-run/stream");
+    act(() => {
+      source.open();
+      source.emit("run", { state: "running" });
+      source.emit("attempt", { attempt_number: 1, state: "running" });
+      source.emit("output", { attempt_number: 1, seq: 0, channel: "stdout", data_b64: "aGVsbG8=" });
+      source.emit("output", { attempt_number: 1, seq: 0, channel: "stdout", data_b64: "aGVsbG8=" });
+    });
+    expect(screen.getAllByText("running")).toHaveLength(2);
+    expect(screen.getByText("[stdout] hello")).toBeTruthy();
+    expect(screen.getByText("Connected — replaying, then live")).toBeTruthy();
+    act(() => source.fail());
+    expect(screen.getByText(/Connection lost.*last durable details remain visible/)).toBeTruthy();
+    expect(screen.getByText("[stdout] hello")).toBeTruthy();
+  });
+
+  it("pauses and resumes without clearing durable content or duplicating replayed frames", async () => {
+    get.mockImplementation((path) => Promise.resolve(path.endsWith("/why") ? explanation : detail("pause-run", "running", [{ attempt_number: 1, state: "running" }])) as never);
+    render(<RunDetail id="pause-run" />);
+    await screen.findByRole("heading", { name: "Run pause-ru" });
+    const first = FakeEventSource.instances[0]!;
+    act(() => first.emit("output", { attempt_number: 1, seq: 3, channel: "stdout", data_b64: "b25jZQ==" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pause live updates" }));
+    expect(first.closed).toBe(true);
+    expect(screen.getByText("Live updates paused; the run continues.")).toBeTruthy();
+    expect(screen.getByText("[stdout] once")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Resume live updates" }));
+    expect(FakeEventSource.instances).toHaveLength(2);
+    act(() => FakeEventSource.instances[1]!.emit("output", { attempt_number: 1, seq: 3, channel: "stdout", data_b64: "b25jZQ==" }));
+    expect(screen.getAllByText("[stdout] once")).toHaveLength(1);
+  });
+
+  it("does not open a stream for an initially terminal run", async () => {
+    get.mockImplementation((path) => Promise.resolve(path.endsWith("/why") ? explanation : detail("done-run", "succeeded", [{ attempt_number: 1, state: "succeeded" }])) as never);
+    render(<RunDetail id="done-run" />);
+    await screen.findByRole("heading", { name: "Run done-run" });
+    expect(FakeEventSource.instances).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /live updates/i })).toBeNull();
+  });
+
+  it("reconciles terminal run, explanation, attempts, and retained output exactly once", async () => {
+    let detailCalls = 0;
+    get.mockImplementation((path) => {
+      if (path.endsWith("/why")) return Promise.resolve(explanation) as never;
+      if (path.includes("/logs?attempt=1")) return Promise.resolve({ data: { frames: [{ channel: "stdout", sequence: 0, bytes: "ZmluYWw=" }] }, warnings: [] }) as never;
+      detailCalls += 1;
+      return Promise.resolve(detailCalls === 1 ? detail("finish-run", "running", [{ attempt_number: 1, state: "running" }]) : detail("finish-run", "succeeded", [{ attempt_number: 1, state: "succeeded", duration_us: 42 }])) as never;
+    });
+    render(<RunDetail id="finish-run" />);
+    await screen.findByRole("heading", { name: "Run finish-r" });
+    const source = FakeEventSource.instances[0]!;
+    act(() => {
+      source.emit("termination", { state: "succeeded", reason: "complete" });
+      source.emit("termination", { state: "succeeded", reason: "complete" });
+    });
+    expect(await screen.findByText("Run finished: succeeded. Durable details reconciled.")).toBeTruthy();
+    expect(screen.getByText("[stdout] final")).toBeTruthy();
+    expect(screen.getByText("0.000042s")).toBeTruthy();
+    expect(detailCalls).toBe(2);
+    expect(source.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it("closes the old stream and ignores its events when the run identity changes", async () => {
+    get.mockImplementation((path) => {
+      if (path.endsWith("/why")) return Promise.resolve(explanation) as never;
+      return Promise.resolve(path.includes("run-b") ? detail("run-b", "succeeded") : detail("run-a", "running")) as never;
+    });
+    const view = render(<RunDetail id="run-a" />);
+    await screen.findByRole("heading", { name: "Run run-a" });
+    const oldSource = FakeEventSource.instances[0]!;
+    view.rerender(<RunDetail id="run-b" />);
+    await screen.findByRole("heading", { name: "Run run-b" });
+    expect(oldSource.closed).toBe(true);
+    act(() => oldSource.emit("run", { state: "failed" }));
+    expect(screen.getByText("succeeded")).toBeTruthy();
+    expect(screen.queryByText("failed")).toBeNull();
+  });
+
+  it("aborts terminal reconciliation when the detail view unmounts", async () => {
+    const terminalDetail = deferred<ReturnType<typeof detail>>();
+    let detailCalls = 0;
+    let terminalSignal: AbortSignal | undefined;
+    get.mockImplementation((path, init) => {
+      if (path.endsWith("/why")) return Promise.resolve(explanation) as never;
+      detailCalls += 1;
+      if (detailCalls === 1) return Promise.resolve(detail("unmount-run", "running")) as never;
+      terminalSignal = init?.signal as AbortSignal;
+      return terminalDetail.promise as never;
+    });
+    const view = render(<RunDetail id="unmount-run" />);
+    await screen.findByRole("heading", { name: "Run unmount-" });
+    act(() => FakeEventSource.instances[0]!.emit("termination", { state: "succeeded" }));
+    expect(terminalSignal?.aborted).toBe(false);
+    view.unmount();
+    expect(terminalSignal?.aborted).toBe(true);
+    terminalDetail.resolve(detail("unmount-run", "succeeded"));
   });
 });

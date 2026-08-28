@@ -374,6 +374,33 @@ Cleanup occurs at scheduler startup and periodically in bounded batches. Retenti
 - Sensitive values must not appear in normal list, inspect, or log output.
 - Removing a job must not silently erase its execution history.
 
+## Active Dashboard Run Detail Amendment (2026-08-28)
+
+An active run detail view must progress without requiring the user to reload the route or opt into
+basic live observation. After the initial durable snapshot loads, the view automatically follows
+that run while it remains non-terminal and reflects run-state transitions, attempt transitions,
+and newly captured output in order. The page must make the live connection state visible without
+replacing already loaded durable facts with a page-level loading state.
+
+Automatic following stops after the explicit terminal signal and reconciles the complete terminal
+run, attempt, explanation, audit-event, and retained-output facts. A user may pause and resume live
+following without cancelling or otherwise changing the run. Reconnection must not duplicate output,
+and a temporarily lost stream must keep the last durable snapshot visible with actionable status.
+
+Terminal runs remain point-in-time detail views and do not open an unnecessary live stream. A
+missing run, an initial request failure, and a stream failure remain distinct states. Existing
+authentication, redaction, retention, cancellation, and durable execution semantics are unchanged.
+
+Observable completion criteria:
+
+- Opening an active run reaches its detail surface after the initial detail response and begins
+  following it automatically.
+- Run and attempt state changes and captured output appear while execution is in progress without a
+  route reload or manual follow action.
+- The terminal signal closes live following and refreshes all complete durable facts exactly once.
+- Pausing, resuming, reconnecting, navigating away, or receiving a duplicate stream frame never
+  cancels the run, duplicates output, or updates an unmounted or different run detail view.
+
 ## Open Questions
 
 None. Implementation choices and their trade-offs are recorded separately from this frozen product specification.

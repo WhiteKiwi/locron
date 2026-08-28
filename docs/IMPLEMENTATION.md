@@ -1210,3 +1210,55 @@ Clippy under the pinned Rust 1.98.0 development toolchain, workspace tests under
 diff, and a hosted push run with exactly nine successful jobs. Hosted logs must show floating stable
 on compatibility tests, exact 1.98.0 on lint, and 1.94.0 on the MSRV leg. Neither pull-request nor
 release-tag cache misses may create new entries.
+
+## Active dashboard run detail live following (2026-08-28)
+
+The existing run detail API remains the initial and terminal durable snapshot, while the existing
+run stream remains the incremental transport. The primary detail response renders and decides
+automatic following as soon as it completes; the auxiliary explanation request is independently
+guarded and may enrich the page later, so a slow or unavailable explanation never holds the whole
+detail surface in its loading state. No server route, event schema, authentication, durable state,
+cancellation, or retention behavior changes.
+
+The detail component classifies the initial run state with the same terminal-state vocabulary as
+the backend. A successful non-terminal snapshot automatically enables following; a terminal
+snapshot stays static. The prior snapshot remains rendered while the stream is connecting or
+reconnecting, and connection feedback distinguishes connecting, connected, paused, lost/retrying,
+and terminal reconciliation from initial loading or request failure.
+
+One component lifetime owns a route generation, a latest-explanation generation, an output
+replay-key set, and whether terminal reconciliation has already begun. Changing the run identity
+or unmounting invalidates outstanding detail, explanation, log, and terminal-reconciliation
+requests and closes the active stream. A newer refresh also supersedes an older auxiliary
+explanation response. Every async completion and event handler checks the applicable generation
+before updating React state.
+
+Named stream events are applied as follows:
+
+- `run` replaces the visible run state;
+- `attempt` upserts the matching attempt number and state while preserving already loaded durable
+  fields, ordered by attempt number;
+- `output` decodes `data_b64` as bytes, renders UTF-8 with replacement for malformed sequences,
+  and appends only when `(attempt_number, seq)` has not been seen in this run-detail lifetime;
+- `termination` is accepted once, closes following, updates the terminal state immediately, then
+  performs one full guarded refresh of run, attempts, explanation, audit events, and retained
+  output.
+
+Pause closes the current `EventSource` without mutating the run or clearing rendered facts. Resume
+opens a new source and uses the lifetime replay-key set to discard replayed output. Manual output
+loading replaces the visible output with the selected attempt's durable frames and seeds replay
+keys for those frame sequences, preventing a later stream replay from duplicating them.
+
+Implementation order:
+
+1. Extend focused run-detail tests with a controllable `EventSource` and deferred API requests.
+2. Add guarded snapshot loading, automatic active following, live state application, base64 output
+   decoding, lifetime deduplication, pause/resume, and one terminal reconciliation.
+3. Rebuild the committed dashboard distribution and verify its embedded-source contracts.
+4. Run focused frontend tests, frontend typecheck and production build, then proportionate Rust
+   server/asset verification and repository diff checks.
+
+Plan review confirms that the server stream already carries every required event and durable replay
+behavior. The minimal correction is therefore frontend-only plus its committed production bundle;
+changing polling, SSE framing, or scheduler state would increase risk without addressing the
+observed client omissions.
