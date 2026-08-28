@@ -11,6 +11,15 @@ documentation. CI and test-only changes are omitted — the commit history is th
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-08-28
+
+### Fixed
+
+- Active dashboard run details now render as soon as their primary snapshot loads, automatically
+  follow run and attempt state plus newly captured output, and reconcile complete durable facts
+  once on termination. Pausing, reconnecting, or navigating away preserves loaded facts without
+  duplicating output or updating a stale view.
+
 ## [0.9.2] - 2026-08-25
 
 ### Fixed
@@ -237,7 +246,8 @@ Initial release.
 - **Distribution** — Homebrew tap, `.deb` and `.rpm` packages, and pre-built tarballs for macOS and
   Linux on both x86_64 and aarch64.
 
-[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/WhiteKiwi/locron/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/WhiteKiwi/locron/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/WhiteKiwi/locron/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/WhiteKiwi/locron/compare/v0.8.0...v0.9.0

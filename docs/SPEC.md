@@ -401,6 +401,21 @@ Observable completion criteria:
 - Pausing, resuming, reconnecting, navigating away, or receiving a duplicate stream frame never
   cancels the run, duplicates output, or updates an unmounted or different run detail view.
 
+## v0.9.3 Patch Release Amendment (2026-08-28)
+
+The completed active run-detail correction ships as patch release v0.9.3. The release contains the
+reviewed dashboard behavior above without widening the supported platform, installation, API,
+authentication, durable-state, or scheduling contracts.
+
+Observable completion criteria:
+
+- The v0.9.3 version, changelog, immutable tag, published crates, archives, checksums, installer,
+  GitHub Release, and Homebrew formula identify the same reviewed revision.
+- Tag-triggered release verification passes on every supported release platform before publication
+  completes.
+- The v0.9.3 changelog describes the active run-detail loading and live-follow correction without
+  advertising unrelated CI-only work.
+
 ## Open Questions
 
 None. Implementation choices and their trade-offs are recorded separately from this frozen product specification.

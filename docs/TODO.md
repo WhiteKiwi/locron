@@ -7,6 +7,37 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## v0.9.3 patch release (2026-08-28)
+
+- [x] Prepare the lockstep v0.9.3 workspace version and curated changelog for the completed active
+  run-detail loading and live-follow correction.
+  **Verify:** Cargo metadata and the lockfile report all five packages at 0.9.3, all four internal
+  requirements are exact `=0.9.3`, and the changelog section/comparison links identify v0.9.3
+  without including CI-only work.
+  **Evidence:** Cargo metadata and the refreshed lockfile report all five packages at 0.9.3; the
+  four workspace internal requirements are exact `=0.9.3`. The curated v0.9.3 Fixed entry and both
+  comparison links cover only the active run-detail loading/live-follow correction, while CI-only
+  toolchain and cache work remains omitted.
+- [x] Run the complete local release-candidate verification without uploading or publishing.
+  **Verify:** `scripts/check-release-version.sh 0.9.3`, formatting, warnings-denied workspace
+  all-target Clippy, all workspace all-target tests, focused and full frontend tests, frontend
+  typecheck/build, locked workspace package and publish dry-runs, and `git diff --check` pass on the
+  intended tree.
+  **Evidence:** `check-release-version.sh 0.9.3`, Rust 1.98 formatting and warnings-denied
+  workspace all-target Clippy, all 441 Rust tests across 21 suites, focused run-detail 18/18 and
+  full frontend 72/72 tests, TypeScript checking, Vite production build, and diff checks pass.
+  From a VCS-clean temporary copy, Rust 1.94 locked workspace package verification and five-package
+  publish dry-run both pass without uploading; Cargo reports the existing yanked `chacha20 0.10.1`
+  lockfile warning but completes every package verification successfully.
+- [x] Hand the verified release candidate to the parent session for publication.
+  **Verify:** final status and staged/unstaged diff inspection identify only the reviewed run-detail
+  correction, its release metadata/planning evidence, and any already reviewed CI commits; this
+  development sub-session does not commit, tag, push, publish, or change external systems.
+  **Evidence:** final inspection finds no staged changes and exactly six unstaged release-candidate
+  files: Cargo manifest/lockfile, changelog, and the three planning documents. The reviewed
+  run-detail source/tests/bundle are already contained in `3d0f351`; this sub-session created no
+  commit or tag and performed no push, registry upload, release creation, or external mutation.
+
 ## Active dashboard run detail live following (2026-08-28)
 
 - [x] Cover automatic active following, terminal no-stream behavior, run and attempt transitions,

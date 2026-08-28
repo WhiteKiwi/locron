@@ -1262,3 +1262,25 @@ Plan review confirms that the server stream already carries every required event
 behavior. The minimal correction is therefore frontend-only plus its committed production bundle;
 changing polling, SSE framing, or scheduler state would increase risk without addressing the
 observed client omissions.
+
+## v0.9.3 patch release (2026-08-28)
+
+Prepare v0.9.3 as a lockstep workspace patch release from the reviewed active run-detail
+correction. Change the workspace package version and all four exact internal dependency
+requirements from 0.9.2 to 0.9.3, then refresh the lockfile through Cargo so all five package
+records agree. No dependency, feature, platform, API, schema, or workflow behavior changes as part
+of this release preparation.
+
+Curate the changelog directly from the user-visible correction: an active run detail renders as
+soon as its primary snapshot arrives, follows state, attempt, and output changes automatically,
+and performs one complete reconciliation on termination. Omit the intervening toolchain, cache,
+and workflow-only commits because the changelog policy intentionally excludes CI-only work. Add
+the v0.9.3 comparison link and advance the Unreleased comparison base without rewriting prior
+release sections.
+
+Verification runs against the exact local release candidate without publishing it: require the
+release-version contract for 0.9.3, formatting, warnings-denied workspace all-target Clippy, the
+complete workspace all-target test suite, frontend focused/full tests plus typecheck and production
+build, workspace package and publish dry-runs with the lockfile enforced, and final status/diff
+inspection including `git diff --check`. The parent session owns the release commit, immutable tag,
+push, hosted release workflow, registry/GitHub/Homebrew publication, and post-publication checks.
