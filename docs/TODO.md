@@ -7,6 +7,29 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## Rustls advisory remediation (2026-09-28)
+
+- [x] Reproduce the failed audit and review the upstream fix boundary and existing product scope.
+  **Verify:** the latest hosted failure and a local advisory check identify the same locked crate;
+  RustSec names a patched version; the specification and accepted dependency policy are reviewed.
+  **Evidence:** Audit run 36437796931 and the local cargo-deny command both report
+  `RUSTSEC-2026-0285` for `rustls 0.23.43`; RustSec names `0.23.45` as the first patched release.
+  Findings §38 and the implementation approach were recorded before the lockfile change.
+- [x] Update the lockfile to the patched Rustls release with no advisory exemption.
+  **Verify:** inspect the exact lockfile diff and `cargo tree -i rustls --locked`; the resolved
+  version is at least `0.23.45`, and no unrelated manifest or audit policy changes appear.
+  **Evidence:** the final `Cargo.lock` diff changes only `rustls` from `0.23.43` to `0.23.45`
+  and its registry checksum. `cargo tree -i rustls --locked` resolves `0.23.45` through the
+  existing `reqwest 0.13.5` graph; no manifest or `deny.toml` change is needed.
+- [ ] Verify the corrected graph locally and in hosted pull-request checks.
+  **Verify:** both cargo-deny check groups, locked Rust 1.94 workspace compilation, relevant tests,
+  formatting and diff checks pass locally; the proposed revision's Audit and CI jobs pass.
+  **Local evidence:** both `cargo deny --all-features check` groups passed (`advisories` and
+  `bans licenses sources`); `cargo +1.94.0 check --workspace --all-targets --locked` and
+  `cargo +1.94.0 test --workspace --all-targets --locked` passed on macOS arm64. Rust 1.94
+  `cargo fmt --all -- --check` and `git diff --check` passed. Hosted pull-request Audit and CI
+  checks are pending.
+
 ## v0.9.3 patch release (2026-08-28)
 
 - [x] Prepare the lockstep v0.9.3 workspace version and curated changelog for the completed active
