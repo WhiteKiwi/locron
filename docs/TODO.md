@@ -28,11 +28,15 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   **Verify:** version contract, both audit groups, formatting, warnings-denied Clippy, locked
   all-target workspace tests, clean-tree package and publish dry-runs, and diff checks pass; the
   release-candidate pull request passes CI and Audit on its exact head.
-  **Local evidence:** on macOS arm64 with Rust 1.94, `cargo check --workspace --all-targets`,
+  **Local evidence:** `sh scripts/check-release-version.sh 0.9.4` passed. On macOS arm64 with
+  Rust 1.94, `cargo check --workspace --all-targets`,
   `cargo deny --all-features check advisories`, `cargo deny --all-features check bans licenses
   sources`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D
   warnings`, `cargo test --workspace --all-targets --locked`, and `git diff --check` passed.
-  Clean-tree package/publish dry-runs and hosted pull-request CI/Audit remain pending.
+  From the clean release-candidate commit, `cargo package --workspace --locked` and
+  `cargo publish --workspace --dry-run --locked` verified all five packages without upload. Cargo
+  warned about the existing yanked `chacha20 0.10.1` lockfile entry but completed successfully.
+  Hosted pull-request CI/Audit remain pending.
 - [ ] Merge the verified candidate and create the immutable release tag.
   **Verify:** the main commit contains the reviewed candidate, main CI and Audit pass, the annotated
   v0.9.4 tag resolves to that exact commit, and its push starts the Release workflow.
