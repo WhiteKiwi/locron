@@ -21,14 +21,16 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   **Evidence:** the final `Cargo.lock` diff changes only `rustls` from `0.23.43` to `0.23.45`
   and its registry checksum. `cargo tree -i rustls --locked` resolves `0.23.45` through the
   existing `reqwest 0.13.5` graph; no manifest or `deny.toml` change is needed.
-- [ ] Verify the corrected graph locally and in hosted pull-request checks.
+- [x] Verify the corrected graph locally and in hosted pull-request checks.
   **Verify:** both cargo-deny check groups, locked Rust 1.94 workspace compilation, relevant tests,
   formatting and diff checks pass locally; the proposed revision's Audit and CI jobs pass.
   **Local evidence:** both `cargo deny --all-features check` groups passed (`advisories` and
   `bans licenses sources`); `cargo +1.94.0 check --workspace --all-targets --locked` and
   `cargo +1.94.0 test --workspace --all-targets --locked` passed on macOS arm64. Rust 1.94
   `cargo fmt --all -- --check` and `git diff --check` passed. Hosted pull-request Audit and CI
-  checks are pending.
+  runs [36441017911](https://github.com/WhiteKiwi/locron/actions/runs/36441017911) and
+  [36441017897](https://github.com/WhiteKiwi/locron/actions/runs/36441017897) passed on PR #16's
+  fix revision `c9530ce`, including both audit jobs and all nine CI jobs.
 
 ## v0.9.3 patch release (2026-08-28)
 
