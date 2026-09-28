@@ -28,6 +28,30 @@ hosted pull-request Audit and CI jobs on the exact proposed revision before publ
 patched crate cannot satisfy the current manifest or MSRV, revisit this plan before expanding the
 dependency change.
 
+## v0.9.4 security patch release (2026-09-29)
+
+Prepare v0.9.4 from the reviewed main-branch Rustls fix. Advance the one workspace version and
+all four exact internal dependency requirements in lockstep, then let Cargo refresh only the five
+workspace package records in the lockfile. Preserve the patched `rustls 0.23.45` resolution and
+avoid unrelated dependency updates, source changes, or audit exemptions.
+
+Create a curated `Security` changelog entry stating that the published TLS dependency is updated
+to resolve RUSTSEC-2026-0285, with no claim that scheduler behavior changed. Use the release's UTC
+date and update the Unreleased and v0.9.4 comparison links. The existing v0.9.3 tag and artifacts
+are immutable.
+
+Verify version agreement, the patched dependency graph, both cargo-deny groups, formatting,
+warnings-denied Clippy, complete locked workspace tests, and a clean-tree workspace package and
+publish dry run. Use a release branch and pull request so the exact candidate receives hosted CI
+and Audit checks before merging. Recheck the merged main revision and its hosted checks; tag only
+that clean, verified release commit with an annotated v0.9.4 tag.
+
+After tag push, wait for the release workflow and verify all five exact crates, the registry
+installation gate, GitHub Release assets and checksums, and the Homebrew formula at v0.9.4. If the
+registry becomes partial or a publication stage fails, inspect the exact durable state before any
+retry; never move the immutable tag or overwrite an existing package version. The release does not
+change this machine's installed Locron binary or running services.
+
 ## Milestone approach
 
 Implement from the inside out: deterministic domain behavior, transactional storage, daemon orchestration and runners, then the thin CLI. This order makes time, crash, and concurrency policy testable before it is coupled to a real clock or terminal.

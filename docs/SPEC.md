@@ -416,6 +416,23 @@ Observable completion criteria:
 - The v0.9.3 changelog describes the active run-detail loading and live-follow correction without
   advertising unrelated CI-only work.
 
+## v0.9.4 Security Patch Release Amendment (2026-09-29)
+
+Publish the already reviewed fix for RUSTSEC-2026-0285 as a new patch version so users of every
+supported installation channel can obtain a build with the corrected TLS dependency. This release
+does not add or change scheduling behavior, commands, APIs, storage, platforms, or installation
+channels.
+
+Observable completion criteria:
+
+- The v0.9.4 executable from each supported installation channel uses the patched TLS dependency
+  from the reviewed revision, all published workspace packages identify v0.9.4, and the security
+  audit and supported-platform validation pass.
+- The version, curated security note, immutable tag, published crates, downloadable archives,
+  checksums, installer, GitHub Release, and Homebrew formula identify v0.9.4 consistently.
+- The existing v0.9.3 release and tag remain intact; users can obtain the fix by updating through
+  their installation channel.
+
 ## Open Questions
 
 None. Implementation choices and their trade-offs are recorded separately from this frozen product specification.
