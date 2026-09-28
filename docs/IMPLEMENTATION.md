@@ -10,6 +10,24 @@ Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, th
 
 `docs/FINDINGS.md` preserves the research path and does not override the frozen specification. In particular, v1 has no `queue-one` overlap policy and global concurrency defaults to 16, not 4.
 
+## Rustls advisory remediation (2026-09-28)
+
+This is dependency maintenance under the existing safe-by-default product contract; it changes no
+Locron command, API, schema, or supported platform, so the frozen specification remains unchanged.
+The hosted and local audit evidence and the upstream fixed-version boundary are recorded in
+`docs/FINDINGS.md` §38.
+
+Update only the locked `rustls` package to the first patched release, `0.23.45`, using Cargo's
+targeted resolver command. Accept a related transitive lockfile change only if Cargo requires it;
+do not introduce a direct manifest pin or an advisory ignore. This keeps the security gate active
+and minimizes unrelated dependency movement after the recent Dependabot update.
+
+Verify the selected lockfile version and dependency path, run both cargo-deny audit groups, then
+check the locked workspace against the Rust 1.94 MSRV and run the relevant test gate. Confirm the
+hosted pull-request Audit and CI jobs on the exact proposed revision before publication. If the
+patched crate cannot satisfy the current manifest or MSRV, revisit this plan before expanding the
+dependency change.
+
 ## Milestone approach
 
 Implement from the inside out: deterministic domain behavior, transactional storage, daemon orchestration and runners, then the thin CLI. This order makes time, crash, and concurrency policy testable before it is coupled to a real clock or terminal.

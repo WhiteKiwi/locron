@@ -1845,3 +1845,18 @@ A client-owned key of `(attempt_number, seq)` matches the server's replay identi
 across automatic reconnects and pause/resume, but reset it when the route run identity changes.
 Manual durable output loading should rebuild the visible output and seed the same identity set from
 the returned frames so a subsequent replay does not duplicate those frames.
+
+## 38. Rustls advisory in the dependency audit (2026-09-28)
+
+The latest main-branch [Audit run 36437796931](https://github.com/WhiteKiwi/locron/actions/runs/36437796931)
+failed only its `cargo-deny / advisories` job; `bans licenses sources` and the separate main-branch
+CI run passed. A local `cargo deny --all-features check advisories` on that revision reproduced
+`RUSTSEC-2026-0285` against locked `rustls 0.23.43`. The same finding appears in the preceding
+scheduled Audit run 36317841500, so it is not a runner-only failure.
+
+The [RustSec advisory](https://rustsec.org/advisories/RUSTSEC-2026-0285.html), checked on
+2026-09-28, identifies affected `rustls` versions and names `0.23.45` as the first patched
+version. The workspace uses `rustls` transitively through `reqwest 0.13.5`, including the CLI,
+engine, and server; `cargo tree -i rustls --locked` confirms that path. The workspace manifest
+accepts `reqwest 0.13`, so a targeted lockfile update should resolve the advisory without adding
+a direct dependency, changing the supported platforms, or weakening `deny.toml`.
