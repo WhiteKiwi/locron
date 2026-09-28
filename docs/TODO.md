@@ -7,6 +7,46 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## v0.9.4 security patch release (2026-09-29)
+
+- [x] Define the release scope and review the distribution preconditions before changing metadata.
+  **Verify:** the specification, findings, implementation approach, and this checklist agree that
+  v0.9.4 distributes only the reviewed Rustls fix; v0.9.4 has no existing tag or crates.
+  **Evidence:** main revision `403e0d6` contains the fix and its Audit passed; the latest release
+  is v0.9.3, the v0.9.4 registry inventory is `none`, and no remote v0.9.4 tag exists. Findings
+  §39 records the checked release workflow and sources.
+- [x] Prepare the exact v0.9.4 release candidate and curated security note.
+  **Verify:** all five workspace packages and exact internal requirements report 0.9.4, the
+  lockfile preserves patched Rustls, the changelog has a v0.9.4 Security entry dated in UTC, and
+  the comparison links are correct.
+  **Evidence:** `cargo metadata --no-deps --format-version 1 --locked` reports all five packages
+  at 0.9.4 and each internal dependency requirement at exact `=0.9.4`; Cargo refreshed only the
+  five workspace package versions in `Cargo.lock`. `cargo tree -i rustls --locked` retains
+  `rustls 0.23.45` through `reqwest 0.13.5`. The curated Security note is dated 2026-09-28 UTC,
+  with Unreleased comparing from v0.9.4 and v0.9.4 comparing v0.9.3 to v0.9.4.
+- [x] Pass local release gates and hosted pull-request validation.
+  **Verify:** version contract, both audit groups, formatting, warnings-denied Clippy, locked
+  all-target workspace tests, clean-tree package and publish dry-runs, and diff checks pass; the
+  release-candidate pull request passes CI and Audit on its exact head.
+  **Local evidence:** `sh scripts/check-release-version.sh 0.9.4` passed. On macOS arm64 with
+  Rust 1.94, `cargo check --workspace --all-targets`,
+  `cargo deny --all-features check advisories`, `cargo deny --all-features check bans licenses
+  sources`, `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D
+  warnings`, `cargo test --workspace --all-targets --locked`, and `git diff --check` passed.
+  From the clean release-candidate commit, `cargo package --workspace --locked` and
+  `cargo publish --workspace --dry-run --locked` verified all five packages without upload. Cargo
+  warned about the existing yanked `chacha20 0.10.1` lockfile entry but completed successfully.
+  PR #17 passed both [Audit](https://github.com/WhiteKiwi/locron/actions/runs/36444021204)
+  jobs and all nine [CI](https://github.com/WhiteKiwi/locron/actions/runs/36444021108) jobs on
+  release-candidate revision `3ea80ee`.
+- [ ] Merge the verified candidate and create the immutable release tag.
+  **Verify:** the main commit contains the reviewed candidate, main CI and Audit pass, the annotated
+  v0.9.4 tag resolves to that exact commit, and its push starts the Release workflow.
+- [ ] Confirm v0.9.4 distribution across all release channels.
+  **Verify:** the Release workflow succeeds, all five exact crates are present, the GitHub Release
+  has the four platform archives, Linux packages, checksums, and installer, and the Homebrew tap
+  formula identifies v0.9.4 with matching archive checksums.
+
 ## Rustls advisory remediation (2026-09-28)
 
 - [x] Reproduce the failed audit and review the upstream fix boundary and existing product scope.

@@ -1860,3 +1860,19 @@ version. The workspace uses `rustls` transitively through `reqwest 0.13.5`, incl
 engine, and server; `cargo tree -i rustls --locked` confirms that path. The workspace manifest
 accepts `reqwest 0.13`, so a targeted lockfile update should resolve the advisory without adding
 a direct dependency, changing the supported platforms, or weakening `deny.toml`.
+
+## 39. v0.9.4 security release readiness (2026-09-29)
+
+At planning time, the merged fix is main revision `403e0d6`; its dependency Audit run
+[36442239774](https://github.com/WhiteKiwi/locron/actions/runs/36442239774) passed, and its main
+CI run was still in progress. The latest published release and immutable tag are v0.9.3, whose
+revision predates the fixed lockfile. The workspace version is still 0.9.3. The exact v0.9.4
+crates.io inventory script reported `none`, and no remote `v0.9.4` tag exists.
+
+The repository's [release workflow](../.github/workflows/release.yml) runs on a new `v*.*.*` tag,
+not on a main-branch merge. Its pipeline builds four platform archives, publishes all five
+lockstep crates with trusted publishing, verifies a registry installation, creates the GitHub
+Release with checksums and installer, and updates the Homebrew tap. The
+[release procedure](RELEASE.md#standard-release-procedure) requires a curated changelog and a
+version-consistent reviewed commit before the immutable tag. A new v0.9.4 patch release is thus
+needed to distribute the already merged security fix; the existing v0.9.3 tag must remain intact.

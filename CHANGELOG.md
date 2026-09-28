@@ -11,6 +11,13 @@ documentation. CI and test-only changes are omitted — the commit history is th
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-09-28
+
+### Security
+
+- Updated the transitive TLS dependency `rustls` to patched version `0.23.45`, resolving
+  `RUSTSEC-2026-0285` in published builds.
+
 ## [0.9.3] - 2026-08-28
 
 ### Fixed
@@ -246,7 +253,8 @@ Initial release.
 - **Distribution** — Homebrew tap, `.deb` and `.rpm` packages, and pre-built tarballs for macOS and
   Linux on both x86_64 and aarch64.
 
-[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/WhiteKiwi/locron/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/WhiteKiwi/locron/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/WhiteKiwi/locron/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/WhiteKiwi/locron/compare/v0.9.0...v0.9.1
