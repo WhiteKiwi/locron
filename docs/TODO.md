@@ -24,7 +24,7 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   five workspace package versions in `Cargo.lock`. `cargo tree -i rustls --locked` retains
   `rustls 0.23.45` through `reqwest 0.13.5`. The curated Security note is dated 2026-09-28 UTC,
   with Unreleased comparing from v0.9.4 and v0.9.4 comparing v0.9.3 to v0.9.4.
-- [ ] Pass local release gates and hosted pull-request validation.
+- [x] Pass local release gates and hosted pull-request validation.
   **Verify:** version contract, both audit groups, formatting, warnings-denied Clippy, locked
   all-target workspace tests, clean-tree package and publish dry-runs, and diff checks pass; the
   release-candidate pull request passes CI and Audit on its exact head.
@@ -36,7 +36,9 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   From the clean release-candidate commit, `cargo package --workspace --locked` and
   `cargo publish --workspace --dry-run --locked` verified all five packages without upload. Cargo
   warned about the existing yanked `chacha20 0.10.1` lockfile entry but completed successfully.
-  Hosted pull-request CI/Audit remain pending.
+  PR #17 passed both [Audit](https://github.com/WhiteKiwi/locron/actions/runs/36444021204)
+  jobs and all nine [CI](https://github.com/WhiteKiwi/locron/actions/runs/36444021108) jobs on
+  release-candidate revision `3ea80ee`.
 - [ ] Merge the verified candidate and create the immutable release tag.
   **Verify:** the main commit contains the reviewed candidate, main CI and Audit pass, the annotated
   v0.9.4 tag resolves to that exact commit, and its push starts the Release workflow.
