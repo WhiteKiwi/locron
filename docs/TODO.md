@@ -38,14 +38,29 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   warned about the existing yanked `chacha20 0.10.1` lockfile entry but completed successfully.
   PR #17 passed both [Audit](https://github.com/WhiteKiwi/locron/actions/runs/36444021204)
   jobs and all nine [CI](https://github.com/WhiteKiwi/locron/actions/runs/36444021108) jobs on
-  release-candidate revision `3ea80ee`.
-- [ ] Merge the verified candidate and create the immutable release tag.
+  release-candidate revision `3ea80ee`. Its final revision `87fc612` passed
+  [Audit](https://github.com/WhiteKiwi/locron/actions/runs/36444685961) and
+  [CI](https://github.com/WhiteKiwi/locron/actions/runs/36444685755); one macOS arm64 daemon-startup
+  test failure passed on a rerun of the same commit.
+- [x] Merge the verified candidate and create the immutable release tag.
   **Verify:** the main commit contains the reviewed candidate, main CI and Audit pass, the annotated
   v0.9.4 tag resolves to that exact commit, and its push starts the Release workflow.
-- [ ] Confirm v0.9.4 distribution across all release channels.
+  **Evidence:** PR #17 merged as `7933535f713f7a456d4dc3b350ef96060d1b08ce`;
+  [main CI](https://github.com/WhiteKiwi/locron/actions/runs/36445855635) and
+  [Audit](https://github.com/WhiteKiwi/locron/actions/runs/36445855545) passed.
+  The annotated `v0.9.4` tag peels to that exact commit and triggered the
+  [Release workflow](https://github.com/WhiteKiwi/locron/actions/runs/36446625418).
+- [x] Confirm v0.9.4 distribution across all release channels.
   **Verify:** the Release workflow succeeds, all five exact crates are present, the GitHub Release
   has the four platform archives, Linux packages, checksums, and installer, and the Homebrew tap
   formula identifies v0.9.4 with matching archive checksums.
+  **Evidence:** the Release workflow passed all four builds, crates.io publication and registry
+  installation, and GitHub Release publication. The five-crate v0.9.4 inventory is `all`.
+  [GitHub Release v0.9.4](https://github.com/WhiteKiwi/locron/releases/tag/v0.9.4) is published
+  with 10 assets: four archives, four Linux packages, `SHA256SUMS.txt`, and `install.sh`.
+  All eight checksums match the release asset digests; the installer digest matches the tagged
+  source. The [Homebrew formula](https://github.com/WhiteKiwi/homebrew-tap/blob/main/Formula/locron.rb)
+  points all four platform URLs to v0.9.4 with matching SHA-256 digests.
 
 ## Rustls advisory remediation (2026-09-28)
 
