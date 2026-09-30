@@ -476,6 +476,63 @@ Observable completion criteria:
 - Existing versioned assets and tags remain unchanged. Publication does not replace this
   machine's installed binary or modify its live jobs/services.
 
+## Second feedback and macOS background identity amendment (2026-09-30)
+
+Make existing jobs easier to distinguish and investigate macOS background-item identity after
+standalone updates. The second feedback confirms the v0.9.5 corrections in the reporter's isolated
+profile, including a successful update from v0.9.2; that observation is user-reported evidence.
+
+Accepted scope:
+
+- Human job summaries identify direct-process, shell, and HTTP targets explicitly as `process:`,
+  `shell:`, and `http:`. Existing structured target kinds and executable arguments remain intact.
+- Updating an already registered macOS service preserves its stable registration when its
+  definition has not changed and still restarts it gracefully onto the updated executable.
+  Changed definitions, first registration, disabled services, and manually running daemons retain
+  their existing supported semantics. Investigate whether this prevents repeated background-item
+  notifications or only reduces unnecessary registration activity; do not promise removal of
+  historical macOS entries without evidence.
+- Establish the signing and developer identity of the official macOS release, distinguish active
+  services from historical operating-system records, and document the requirements for a recognized
+  developer identity. Do not invent a developer identity or reset unrelated background items.
+- Official macOS archives in the next patch release contain Developer ID signed and notarized
+  executables with a stable signing identity. Publication fails if either macOS architecture lacks
+  a verified signature or accepted notarization. A signing-account identity is not an app bundle;
+  the operating system may display the certificate owner's name and retain historical records.
+- Add a release verification that exercises a previously affected standalone updater against the
+  published release, with isolated job state and no changes to this machine's installed services.
+
+Completion requires consistent human target labels, unchanged machine target contracts and
+redaction, service-refresh regression coverage, source-backed findings for notification,
+duplicate-item, and signing behavior, and distribution of the reviewed patch with verified macOS
+signatures and accepted notarization. Existing versioned assets remain intact. No live job,
+installed-binary, system-wide background-item reset, private-key export, or signing-account
+enrollment is included.
+
+The selected refresh correction avoids identical registration-file writes and preserves the
+existing SIGTERM/KeepAlive restart. Reloading changed service definitions is deferred to a separate
+shutdown/reload policy. Signing uses the available Mac signing environment for trusted release
+artifacts; it does not add an app bundle or promise that all existing background-item notices cease.
+
+## v0.9.6 macOS identity and feedback correction release amendment (2026-09-30)
+
+Publish the reviewed second-feedback corrections as v0.9.6 across the existing channels. This patch
+changes human target summaries, reduces unnecessary registration-file writes, and adds recognized
+macOS distribution signatures without changing commands, scheduling, storage, or supported platforms.
+
+Observable completion criteria:
+
+- Versions, curated notes, immutable tag, five registry packages, archives/packages, installer,
+  checksums, GitHub Release, and Homebrew identify the same reviewed v0.9.6 revision.
+- Both published macOS executables carry the expected Developer ID team and stable signing
+  identifier, validate strictly, and have accepted notarization. Checksums describe their final
+  signed bytes, and Homebrew uses the same archives.
+- Exact-revision validation and the release workflow pass. A real v0.9.2 standalone updater in an
+  ephemeral isolated Linux fixture obtains the published v0.9.6 release successfully.
+- This host's installed binary, real jobs/services, unrelated background records, signing keys,
+  and existing released tags/assets stay intact.
+
 ## Open Questions
 
-None. Implementation choices and their trade-offs are recorded separately from this frozen product specification.
+Research resolves the second-feedback questions in FINDINGS §42. Implementation choices and
+their trade-offs are recorded separately from this frozen product specification.

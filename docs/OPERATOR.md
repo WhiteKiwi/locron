@@ -371,3 +371,19 @@ following is a contract-shape example, not output the current build can produce:
 Until streaming acceptance is complete, use terminal `locron logs RUN_ID` output and a separate
 `locron why --run RUN_ID` query. Do not build automation around the current `--follow --json`
 behavior.
+
+### Reading target and macOS background identity
+
+Human lists, details, and registration previews identify targets as `process:`, `shell:`, or
+`http:`. For example, `process: http POST https://example.test/` executes a program named
+`http`, while `http: POST https://example.test/` sends an HTTP request. Machine target kinds stay
+unchanged.
+
+The daemon and dashboard are separate macOS background services and can appear as two entries.
+Official macOS downloads from v0.9.6 use Developer ID signing with identifier `dev.locron.cli`
+and notarization. Certificate attribution does not create an app bundle or guarantee grouping,
+removal of historical entries, or suppression of system notifications. Standalone executable
+notarization tickets cannot be stapled, so notarization verification may require online access.
+Refreshing an identical plist preserves its file metadata when permissions are safe; the loaded
+service still restarts through SIGTERM and KeepAlive. Reloading a changed cached launchd
+registration is outside this correction.

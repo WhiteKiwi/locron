@@ -64,31 +64,53 @@ locron-v{version}-{target}/
 The repository employs three automated GitHub Actions workflows:
 
 ### A. Validation CI (`.github/workflows/ci.yml`)
-- **Trigger**: Every push to any branch and pull requests targeting `main`.
-- **Matrix**: 4 runner platforms (Ubuntu 24.04 x86_64, Ubuntu 24.04 ARM, macOS 15 Intel, macOS 14 ARM) × 2 Rust versions (`1.94.0` MSRV, `stable`).
-- **Steps**:
-  1. Check out repository with up-to-date action versions.
-  2. Install toolchain with `rustfmt` and `clippy`.
-  3. Validate formatting: `cargo fmt --all --check`.
-  4. Validate linter: `cargo clippy --workspace --all-targets -- -D warnings`.
-  5. Run complete test suite: `cargo test --workspace --all-targets`.
-- **Job timeout**: The `test` job has a 30-minute budget (`timeout-minutes: 30`) so a hung runner or compile step fails fast instead of consuming the GitHub Actions default of 360 minutes.
+- **Trigger**: Pushes to `main`, pull requests, and manual dispatch.
+- **Tests**: Rust 1.94.0 on Ubuntu x86_64 and stable on the four supported hosted platforms.
+- **Lint**: pinned Rust 1.98.0, rustfmt, warnings-denied Clippy, and dependency-direction checks.
+- **Installer/scripts**: shellcheck, checksum/version/inventory fixtures, and deterministic signing,
+  immutable-publication, workflow, and updater-isolation fixtures. These tests use no credentials.
+- **Source package**: clean Rust 1.94.0 locked workspace package and publish dry runs.
+- The actual workflow has nine jobs including the test matrix; inspect `ci.yml` for exact gates.
 
 ### B. Release Automation (`.github/workflows/release.yml`)
 - **Trigger**: Push of git tags matching `v*.*.*`.
 - **Workflow authoring constraint**: Step `if:` conditions must stay env-based (`if: env.TAP_TOKEN != ''`). Referencing a secret expression directly inside a step `if:` (e.g. `${{ secrets.X != '' }}`) makes GitHub Actions fail workflow evaluation — every push then produces a zero-job phantom run and tag pushes never trigger the real pipeline.
-- **Workflow Pipeline**:
-  1. **Pre-flight & Verification**: Run tests across the release matrix to ensure zero regressions on the tagged commit.
-  2. **Build Release Binaries**: Build with `cargo build --release --locked` (leveraging LTO and symbol stripping).
-  3. **Package Archives**: Assemble `.tar.gz` bundles with binary, README, and licenses.
-  4. **Generate Checksums**: Compute SHA-256 hashes for all generated archives into `SHA256SUMS.txt`.
-  5. **Publish crates.io workspace**: Inventory all five exact versions. Publish only when none are
-     present, using the protected `crates-io` environment and the official OIDC action; skip when
-     all are present and fail when the registry is partial. Install the exact registry `locron`
-     into a temporary Cargo root and verify its version and self-update refusal.
-  6. **Create GitHub Release**: Create a GitHub Release and upload all archives, `SHA256SUMS.txt`, and `install.sh`. Release notes come from the curated `## [X.Y.Z]` section of `CHANGELOG.md` at the tagged commit per the [changelog maintenance](#changelog-maintenance) policy — the workflow extracts that section and passes it with `--notes-file`. If the section is missing (release procedure not followed), it falls back to `--generate-notes` rather than failing the release, and re-runs refresh existing release notes from the same file.
-  7. **Homebrew Tap Dispatch**: Trigger downstream update in `whitekiwi/homebrew-tap` with the new version and macOS archive URLs & SHA-256 hashes. The generated formula installs `locron` into `bin`, touches `lib/.disable-self-update` so `locron self-update` refuses package-manager-managed installs, ships the `service` block (`run [opt_bin/"locron", "daemon", "run"]`, `keep_alive true`, `run_at_load false`) so `brew services` supervises the daemon, and a `caveats` section pointing at `brew services start locron`. Installation never starts the service automatically.
-- **Job timeouts**: The `build` job has a 45-minute budget and the `publish` job a 10-minute budget (`timeout-minutes`). A hung build (e.g. a stalled runner) cancels the workflow instead of blocking the release indefinitely.
+- **Workflow pipeline**:
+  1. Build the four release targets on their hosted platforms and produce archives plus four
+     Linux packages. Tagged releases follow reviewed exact-revision CI and Audit checks.
+  2. Sign both macOS archives on the maintainer's one-job foreground ephemeral Mac runner.
+     The job accepts only a push in `WhiteKiwi/locron` at a release tag and selects the sole
+     `locron-signing-${{ github.run_id }}` label. Configure this runner with `--ephemeral` and
+     `--no-default-labels`; do not install a persistent runner service or expose it to PRs.
+     The parent release operator owns exact-run routing, observation and de-registration.
+  3. `scripts/sign-macos-release.py` validates private staged inputs and uses the existing login
+     Keychain Developer ID identity `F998EC776E413B3E4D00D5A1D63BBE6FA5C5765E`, team
+     `4H4Z446LHS`, stable identifier `dev.locron.cli`, runtime and timestamp. It acquires the
+     persistent shared `~/Library/Caches/home-hub/apple-signing.lock` using `fcntl.flock` and
+     never unlinks it. Keychain search lists, ACLs, defaults and contents remain unchanged.
+     One ZIP of both signed executables is submitted using `c6s-notary`; accepted status,
+     issue-free notary log, strict signature checks and online
+     `codesign -R=notarized --check-notarization` verification are required.
+     Both final archives appear only after every check succeeds. An internal receipt and notary
+     diagnostics are retained separately; no extra public asset or private key is distributed.
+     Bare executables and ZIPs cannot have tickets stapled. Developer attribution does not
+     promise a combined background entry, cleanup of old records, or notification suppression.
+  4. Publish all five crates only after build and signing succeed. Inventory exact versions;
+     publish when none exist, skip when all exist, and fail on partial inventory. Use the protected
+     `crates-io` environment and OIDC; install and verify the exact registry package afterward.
+  5. Download only Linux artifacts and the separate signed-macos artifact. Verify exactly four
+     archives and four packages, then generate bare-filename SHA256SUMS over those final bytes.
+     Publish those eight files, checksums and the tagged installer (ten assets). Require curated
+     changelog notes. An existing release is accepted only when all ten digests and its exact
+     inventory match; never clobber assets or rewrite existing notes. Homebrew uses the same
+     final archive digests and commits the rendered formula to the tap.
+  6. On ephemeral hosted Linux x86_64, `scripts/smoke-published-updater.py` verifies the published
+     v0.9.2 archive, creates a receipt-bearing temporary binary and durable fixture job, guards
+     the expected latest tag, and runs the actual updater. It preserves HOME, isolates state and
+     XDG config, removes service-session and Locron overrides, and checks version/envelope/digest,
+     receipt, unchanged job state and absence of manager units. Never run it on a personal host.
+- **Timeouts**: hosted builds 45 minutes, local signing 60, crates 30, GitHub publication 10,
+  published-updater smoke 15. The signing command/lock budget is bounded independently.
 
 ### C. Dependency Audit (`.github/workflows/audit.yml`)
 - **Trigger**: Daily on a schedule, and on any push or pull request that touches a `Cargo.toml`, `Cargo.lock`, `deny.toml`, or the audit workflow itself. Manual runs are available via `workflow_dispatch`.

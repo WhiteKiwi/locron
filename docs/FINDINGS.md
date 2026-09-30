@@ -2027,3 +2027,239 @@ state. The Homebrew formula has all four v0.9.5 archive URLs and matching hashes
 versioned assets/tags and this host's installed binaries, real jobs, and services remain intact.
 The [Homebrew tap validation](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/36661419833)
 also passed on both macOS and Linux at formula commit `578c9e7e3c01496ba03eb29dbe6dc0f812809e94`.
+
+## 42. Second feedback: target labels, stable launchd refresh, identity, and published updater smoke (2026-09-30)
+
+Research checked main `f690f44`, current release/service/CLI sources and their regression fixtures,
+the v0.9.2 updater/service implementation, Apple's current host manpages, and primary Apple
+ServiceManagement documentation. No executable, registration, service, job, release artifact, or
+signing account was changed by this research session.
+
+### Human target labels
+
+`list_target_summary` is the common redacted human formatter for list rows, add/update result
+summaries (including dry runs), and show's TARGET section. Change only its prefixes to
+`process: EXE [ARGS...]`, `shell: CMD`, and `http: METHOD URL`. Preserve argument order and existing
+redaction. `why` and `explain` do not currently render these target summaries, so this scope does
+not require adding target sections there. Stored/JSON target kinds remain `process`, `shell`, and
+`http`; the machine list's existing latest-run observation and all API/MCP targets stay intact.
+
+CLI tests include exact target/table strings, aliases, redirected full output, width fitting,
+`--no-trunc`, and human/JSON redaction checks. Update expected human strings and target width
+budgets, retain exact full-table and exact-fit assertions, and add direct-process `http` versus
+HTTP-target discrimination. Do not replace structured machine kinds, arguments, or warning hints.
+Update CLI/operator examples and formatter comments consistently.
+
+### Loaded macOS services already use SIGTERM without rebootstrap
+
+The current install flow is `session_available → write_registration → reload → is_loaded`.
+For a loaded macOS service it then calls `restart → stop → launchctl kill SIGTERM` and reports
+status. `reload` is a no-op; `enable`, `bootout`, and `bootstrap` are not called on this loaded
+branch. An ordinary self-update invokes this flow by executing the newly replaced binary's
+`service install`; an already registered dashboard similarly receives `dashboard enable`.
+Thus the demonstrated unnecessary action is the identical plist write, not repeated explicit
+rebootstrap. `write_private` currently rewrites bytes and permissions even when content matches.
+
+Both plists have stable labels (`dev.locron.daemon`, `dev.locron.dashboard`), canonical executable
+paths, `RunAtLoad=true`, and `KeepAlive=true`. Apple-supplied host manuals
+`/usr/share/man/man1/launchctl.1` and `/usr/share/man/man5/launchd.plist.5` distinguish loading
+service definitions from signaling processes, define persistent enable/disable overrides, and
+state that boolean KeepAlive keeps the job running. This supports preserving the existing loaded
+registration while SIGTERM/KeepAlive restarts onto a binary replaced at the same path.
+
+Compare the desired rendered plist bytes with the existing file before writing; a match should
+leave the file/inode/mtime intact. A missing file is first registration; a different file is a
+changed definition, not an ordinary same-path binary replacement. Propagate inspection errors
+rather than silently assuming unchanged. Keep machine install outcome fields stable.
+
+Semantics to preserve and test:
+
+- Loaded, matching definition: skip file rewrite, preserve loaded domain/enable overrides, send
+  the existing graceful SIGTERM, and observe a replacement process in a controlled backend test.
+- Unloaded service, including an explicitly disabled service: explicit install/enable currently
+  enables and starts it. A content match must not turn explicit install into a no-op.
+- Manual daemon lock held with service unloaded: retain registration/enable but defer start.
+  A manually running daemon is not signaled. The dashboard does not defer to the daemon lock.
+- No manager session: retain the existing guidance before any registration write.
+- Changed definition: current code writes the new plist but SIGTERM does not reload its cached
+  launchd definition. Fresh definition loading requires a distinct unload/bootstrap path; define
+  its graceful shutdown and failure semantics before extending this correction.
+
+The uninstall-oriented `wait_until_stopped` returns success even at its timeout and treats a
+replacement PID as the old process having exited. It cannot alone prove a changed-definition
+reload is graceful: KeepAlive can respawn the previous definition before bootout. Do not silently
+reuse it and claim guaranteed safe reload. The smallest correction can preserve current changed-
+definition semantics while avoiding identical writes; a broader reload correction needs a reviewed
+policy and targeted tests. Avoid `kickstart -k` as a shortcut because it kills a running process.
+
+Use temporary contexts for plist-byte comparisons and fake/backend-command fixtures for loaded,
+changed, disabled, deferred, and no-session call ordering. Existing `service_backends` tests operate
+real managers and default-state registrations; this user's personal host is not an appropriate
+place to execute them for new behavior. Any real launchd observation belongs on an ephemeral CI
+runner. File-write reduction does not establish elimination of BTM notifications or historical
+entries; no background-item database reset is justified by this source evidence.
+
+### Release signing and unbundled identity
+
+The release workflow runs Cargo's release build (the release profile strips symbols), copies the
+binary into an archive directory and creates the tarball. There is no explicit Developer ID
+signing, stable signing-identifier setting, notary submission, keychain import, or app bundle in
+that pipeline. Plists include no `AssociatedBundleIdentifiers`, and the project does not use
+SMAppService. A stable launchd label is not a signing certificate or bundle identity.
+
+Apple's [Updating helper executables from earlier versions of macOS](https://developer.apple.com/documentation/servicemanagement/updating-helper-executables-from-earlier-versions-of-macos),
+checked through its official Markdown representation, explains that legacy helper/app association
+requires an actual app bundle with matching Team Identifier known to Launch Services. Without
+bundle association, the UI uses the signing certificate's organization; unattributable unsigned
+executables fall back to the executable name. Do not add a fictitious bundle identifier or claim
+that a plist label controls developer attribution. A stable code identifier may help maintain
+identity across builds, but ad-hoc signing alone supplies no recognized developer certificate.
+
+The parent session independently found linker ad-hoc signatures with no TeamIdentifier in both
+installed v0.9.2 and downloaded official v0.9.5 arm64 binaries, with different generated signing
+identifiers. It also found a valid local Developer ID Application identity. These are parent-owned
+read-only host measurements, not proof of a usable GitHub signing credential or notarization path.
+Parent research will establish exact signing/account requirements; this source review does not
+justify exporting a private key, enrolling an account, or claiming notifications are resolved.
+
+### Safe published v0.9.2 updater verification
+
+Add a post-publication job on an ephemeral GitHub-hosted Linux x86_64 runner. Guard Linux/architecture
+and the expected release tag; download the official v0.9.2 archive/checksums, verify its hash while
+accepting historical `./` syntax, extract/copy the binary into a temporary fixture, and write the
+exact standalone receipt payload (`locron.install/v1\nstandalone\n`) beside that copy. Assert the
+baseline reports 0.9.2 before invoking its real self-update against the published latest release.
+This verifies the old running parser rather than only compiling/testing the corrected parser.
+
+Preserve the runner's real HOME. Put `LOCRON_STATE_DIR` and `XDG_CONFIG_HOME` inside the fixture;
+unset `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS`, plus service-backend/update-origin overrides.
+Both v0.9.2 and current SystemdPort return no-session before writing registration when the runtime
+variable is absent. The isolated XDG config path also makes dashboard status find no preexisting
+registration, preventing dashboard enable. `LOCRON_NO_SERVICE` is installer-only and cannot be
+used to suppress updater service effects. The job must not run on the owner's Mac or install into
+its normal prefix.
+
+Check the updater envelope's from/to versions and success, final binary version/digest, absence
+of unit files, and unchanged isolated job state. Preserve published assets/tags. Ensure the latest
+release tag matches the workflow's expected tag before invoking the old updater, and fail clearly
+if publication visibility or a concurrent newer release invalidates that assumption. Downloaded
+archive checksum/digest verification and the existing fake updater/service regressions remain
+separate gates; a Linux smoke proves published updater compatibility, not macOS signing or BTM UI
+behavior. No actual updater smoke was executed by this read-only research session.
+
+
+### Parent identity measurements and selected v0.9.6 signing route
+
+The parent completed additional read-only host checks and a disposable-copy signing proof. The
+installed v0.9.2 and downloaded v0.9.5 arm64 binaries have linker ad-hoc signatures, no TeamIdentifier,
+and generated identifiers `locron-d286d7a30a27f9e0` and `locron-961b8069c8f84fb9`. A temporary copy
+signed with the existing Developer ID Application identity passed strict verification with
+`Identifier=dev.locron.cli`, `TeamIdentifier=4H4Z446LHS`, hardened runtime, and secure timestamp.
+The existing login-keychain `c6s-notary` profile authenticated a read-only notary history request;
+that proves authentication, not accepted notarization of Locron. No private key was exported.
+
+The parent's BTM inventory identifies exactly two Locron legacy agents, daemon and dashboard,
+with one live process each. Both currently have `Name=locron`, null DeveloperName and Unknown
+Developer attribution. The reporter subsequently confirmed two same-name rows, consistent with the two independent
+services. Neither observation establishes historical-record cleanup behavior. Rewriting avoidance and stable recognized
+signing may affect future attribution, but historical-entry cleanup and notification elimination
+remain unproven. Developer ID identifies its certificate owner rather than inventing a Locron app
+bundle or organization.
+
+At this check the repository has only `TAP_GITHUB_TOKEN` as an explicitly configured Actions secret,
+only the `crates-io` environment, and no Locron self-hosted Actions runner. The selected route keeps
+four hosted build jobs, then runs a tag-only macOS signing job using a one-job foreground ephemeral
+runner controlled by the parent. It consumes both unsigned Mac artifacts, signs their binaries
+through the already authorized Mac keychain, notarizes ZIP payloads, strictly verifies signature/
+team/identifier/runtime/timestamp, assesses Gatekeeper, and emits a separate signed-macos artifact.
+The parent owns transient runner registration, execution and cleanup; no persistent launchd runner,
+private-key export, new signing account, or permanent CI signing credential is introduced.
+
+Home-hub [runner policy](/Users/whitekiwi/workspaces/home-hub/hosts/RUNNER_PLAN.md) and
+[Apple runner runbook](/Users/whitekiwi/workspaces/home-hub/runners/c6s-clients/INFRA.md) require
+cooperating with `~/Library/Caches/home-hub/apple-signing.lock` and using SSD runner/cache paths.
+The existing ios-lab helper implements the lock with Python `fcntl.flock` on an open persistent
+file. Use that same advisory-lock primitive, wait with a bounded deadline, and release the handle
+in all outcomes; do not unlink/replace the lock file or change global keychain search lists. Use
+run-scoped staging under the parent's SSD workspace and retain diagnostic metadata, not credentials.
+
+Apple's [Customizing the notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow),
+checked in its official Markdown representation, supports `notarytool` submission and accepted
+status verification. It explicitly distinguishes ZIP notarization from stapling: neither ZIPs nor
+standalone binaries support attaching a ticket directly. Submit the signed binaries in ZIP payloads
+using `c6s-notary`, require a structured `Accepted` result, then assess the exact final signed
+binary. Repackage those unchanged signed bytes into the existing platform tarballs. This route
+supports online Gatekeeper verification and must not claim an offline stapled distribution.
+A signing proof alone must not satisfy the accepted-notarization gate.
+
+### Signing pipeline edge cases and minimum verification design
+
+- Fail closed on a non-tag/non-push/noncanonical repository event, unexpected tag/version, missing
+  expected archive, wrong architecture/layout, missing signing identity/profile, wrong team/code
+  identifier, absent runtime/timestamp, failed strict verification, non-Accepted notarization, or
+  failed Gatekeeper assessment. Do not emit a publishable signed artifact after a partial two-
+  architecture success. Keep notary request IDs/status and rejection logs for diagnosis.
+- Read the two unsigned artifacts from this exact workflow run; require both expected signed
+  archive names before artifact upload. `publish-crates` must depend on successful signing, so no
+  partial registry release precedes a signing failure. The GitHub publisher must download Linux
+  artifacts and the signed-macos artifact explicitly, never merge all original build artifacts.
+  Generate checksums and Homebrew hashes only after selecting the signed Mac tarballs.
+- No binary stripping, modification, rebuild, or signing operation may follow accepted submission;
+  only archive-container repacking is allowed. Verification should re-extract final archives and
+  compare their binary bytes/digests with the accepted signed payload. `codesign --verify` proves
+  integrity but does not replace team/identifier/runtime/timestamp or notarization checks.
+- Workflow event guards protect the trusted signing job, but repository-scoped self-hosted runners
+  can accept other eligible jobs. Parent activation must target/watch the exact approved release
+  run, use restrictive or run-scoped labels, and prevent unrelated PR/arbitrary-ref jobs from
+  reaching this temporary runner. A guard only inside the signing script is not a complete runner
+  isolation boundary. Keep the runner available for only one expected job and remove it afterward.
+- Minimum deterministic tests can inject a command runner into signing orchestration: two-archive
+  success and output names, identity/verification failure, notary rejection/invalid status, missing
+  architecture, and final-archive byte preservation. Fixtures use fake tools/results and temporary
+  files, without using the keychain or network. Add static workflow assertions for tag guards,
+  signed dependency gates, and explicit publisher artifact selection. Keep one actual parent-owned
+  signing/notary acceptance proof and the published old-updater smoke as separate live gates.
+
+
+### Actual notarization rehearsal and corrected standalone-code validation
+
+The parent submitted a disposable two-architecture signed Locron v0.9.5 ZIP through the existing
+profile. Submission `48af4dbd-0222-4aa7-84ae-465d2aec04a2` returned Accepted with `issues=null`,
+and its log contains tickets for both architectures. The preliminary `spctl --assess --type execute`
+checks nevertheless exited 3 with `rejected (the code is valid but does not seem to be an app)`.
+This is an unsuitable app-assessment tool for this unbundled executable, not evidence that the
+accepted notary tickets disappeared. Re-signing identical binaries produced matching ticket
+cdhashes; the parent verified both with
+`codesign --verify --strict --verbose=4 -R=notarized --check-notarization`, each exit 0 and an
+explicit notarized requirement satisfied.
+
+Apple DTS's [Testing a Notarised Product](https://developer.apple.com/forums/thread/130560),
+updated 2024-12-05 and checked 2026-09-30, distinguishes apps from other code. It specifies
+`codesign -R="notarized" --check-notarization` for other code on macOS 10.15+. The implementation
+plan therefore replaces spctl app assessment with the strict online notarized code requirement.
+Receipts record that actual command, requirement and exit result rather than a fabricated spctl
+source. Failed checks retain bounded diagnostics, without providing partial publication archives.
+This quick code check does not establish fresh-machine quarantine behavior or offline startup;
+Apple recommends separate fresh-machine product testing, and standalone tickets cannot be stapled.
+
+
+### Corrected full-helper rehearsal and clean package evidence
+
+The parent reran the complete corrected signing helper on disposable copies of the two official
+v0.9.5 Mac archives. Its internal `locron.macos-signing/v1` receipt records
+`dev.locron.cli`, team `4H4Z446LHS`, and Accepted submission
+`f6dc05ed-d6ba-4f25-80f2-7923c1c5db66`. The retained notary log has `issues=null` and tickets for
+both architectures. Both strict online notarized code requirements returned exit 0. The helper
+verified architecture/version/signature properties and repacked archives without changing the
+signed executable bytes. This validates the selected pipeline on real disposable inputs; it
+neither modifies the existing public v0.9.5 assets nor claims v0.9.6 has already been published.
+The parent confirmed preservation of the installed binary and plist hashes/inode/mtime, and the
+existing Keychain search list/default.
+
+A clean private Git snapshot containing tracked candidate sources and exactly the four new
+release scripts passed Rust 1.94 `cargo package --workspace --locked` and
+`cargo publish --workspace --dry-run --locked`. All five crate inventories, README/licenses,
+excluded-build-material and server dist checks passed; no package was uploaded. The parent owns
+these checks and retained `clean-msrv-package.log` under its private publication workspace.
+Hosted exact-revision CI/Audit, tagged signing/publication, published old-updater smoke, final
+channel inventory and post-publication host readback remain pending.

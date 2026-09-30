@@ -111,6 +111,8 @@ jobs:
           shellcheck scripts/usage.sh
       - name: Test Homebrew formula rendering
         run: sh scripts/test-render-homebrew-formula.sh
+      - name: Test signing, immutable release and updater boundaries
+        run: python3 -B scripts/test-release-scripts.py
       - name: Check release checksum filenames
         run: sh scripts/test-generate-release-checksums.sh
       - name: Refuse unsupported platforms and musl

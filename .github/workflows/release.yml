@@ -65,9 +65,43 @@ jobs:
             *.rpm
           if-no-files-found: warn
 
+  sign-macos:
+    name: Sign and notarize macOS archives
+    needs: build
+    if: github.event_name == 'push' && github.repository == 'WhiteKiwi/locron' && startsWith(github.ref, 'refs/tags/')
+    runs-on: locron-signing-${{ github.run_id }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download only macOS build inputs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*-apple-darwin'
+          path: unsigned-macos
+          merge-multiple: true
+      - name: Sign, notarize and verify final code requirements
+        run: python3 -B scripts/sign-macos-release.py "$GITHUB_REF_NAME" unsigned-macos signed-macos
+      - name: Upload signed publication inputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-macos
+          path: signed-macos/*.tar.gz
+          if-no-files-found: error
+      - name: Preserve non-secret signing verification
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-signing-verification
+          path: |
+            signed-macos/verification.json
+            signed-macos.diagnostics/*.json
+          if-no-files-found: warn
+
   publish-crates:
     name: Publish crates.io workspace
-    needs: build
+    needs: [build, sign-macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: crates-io
@@ -117,18 +151,26 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [build, publish-crates]
+    needs: [build, sign-macos, publish-crates]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - name: Download all build artifacts
+      - name: Download only Linux build artifacts
         uses: actions/download-artifact@v8
         with:
+          pattern: '*-unknown-linux-gnu'
           path: artifacts
           merge-multiple: true
+      - name: Download final signed macOS archives
+        uses: actions/download-artifact@v8
+        with:
+          name: signed-macos
+          path: artifacts
+      - name: Verify final archive and package inventory
+        run: python3 -B scripts/release-assets.py inventory "$GITHUB_REF_NAME" artifacts
       - name: Generate Checksums
         working-directory: artifacts
         run: |
@@ -154,29 +196,7 @@ jobs:
       - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            echo "Release ${GITHUB_REF_NAME} already exists; uploading assets"
-            gh release upload "${GITHUB_REF_NAME}" \
-              artifacts/*.tar.gz \
-              artifacts/*.deb \
-              artifacts/*.rpm \
-              artifacts/SHA256SUMS.txt \
-              install.sh \
-              --clobber
-            [ -s release-notes.md ] && gh release edit "${GITHUB_REF_NAME}" --notes-file release-notes.md
-          else
-            NOTES_ARGS=(--generate-notes)
-            [ -s release-notes.md ] && NOTES_ARGS=(--notes-file release-notes.md)
-            gh release create "${GITHUB_REF_NAME}" \
-              artifacts/*.tar.gz \
-              artifacts/*.deb \
-              artifacts/*.rpm \
-              artifacts/SHA256SUMS.txt \
-              install.sh \
-              --title "locron ${GITHUB_REF_NAME}" \
-              "${NOTES_ARGS[@]}"
-          fi
+        run: python3 -B scripts/release-assets.py publish "$GITHUB_REF_NAME" artifacts
       - name: Update Homebrew Tap Formula
         # Note: keep this env-based. Referencing a secret directly inside a
         # step `if:` makes GitHub Actions fail workflow evaluation entirely,
@@ -211,3 +231,16 @@ jobs:
             git commit -m "bump(locron): ${VERSION}"
             git push origin main
           fi
+
+  smoke-updater:
+    name: Published v0.9.2 updater compatibility
+    needs: publish
+    if: github.event_name == 'push' && github.repository == 'WhiteKiwi/locron' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the real published standalone upgrade in isolation
+        run: python3 -B scripts/smoke-published-updater.py "$GITHUB_REF_NAME"

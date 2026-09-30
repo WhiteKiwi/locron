@@ -1183,6 +1183,44 @@ fn write_private(path: &Path, content: &[u8]) -> Result<(), ServiceError> {
     Ok(())
 }
 
+/// Avoid refreshing a launchd registration whose bytes and permissions are
+/// already suitable. Inspection failures must not turn into silent rewrites.
+#[cfg(any(target_os = "macos", test))]
+fn write_registration_if_changed(path: &Path, content: &[u8]) -> Result<(), ServiceError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => Some(metadata),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(ServiceError::Io(format!(
+                "cannot inspect {}: {error}",
+                path.display()
+            )));
+        }
+    };
+    if let Some(metadata) = metadata {
+        if !metadata.is_file() {
+            return Err(ServiceError::Io(format!(
+                "registration is not a regular file: {}",
+                path.display()
+            )));
+        }
+        let existing = fs::read(path).map_err(|error| {
+            ServiceError::Io(format!("cannot inspect {}: {error}", path.display()))
+        })?;
+        #[cfg(unix)]
+        let safe_permissions = {
+            use std::os::unix::fs::PermissionsExt;
+            metadata.permissions().mode() & 0o7022 == 0
+        };
+        #[cfg(not(unix))]
+        let safe_permissions = true;
+        if existing == content && safe_permissions {
+            return Ok(());
+        }
+    }
+    write_private(path, content)
+}
+
 /// XML-escape a value for embedding in the plist (kept on all test builds so
 /// the plist template tests run everywhere).
 #[cfg(any(target_os = "macos", test))]
@@ -1304,7 +1342,7 @@ mod launchd {
 
     use super::{
         LOG_DIR, ServiceContext, ServiceError, ServicePort, ServiceStatus, StartedService,
-        render_plist, write_private,
+        render_plist, write_registration_if_changed,
     };
 
     /// The launchd backend: `enable`, `bootstrap`, `print`, `kill`, and
@@ -1397,7 +1435,7 @@ mod launchd {
                 ))
             })?;
             let plist = render_plist(ctx)?;
-            write_private(&plist_path(ctx), plist.as_bytes())
+            write_registration_if_changed(&plist_path(ctx), plist.as_bytes())
         }
 
         fn remove_registration(&self, ctx: &ServiceContext) -> Result<bool, ServiceError> {
@@ -1833,6 +1871,49 @@ mod tests {
     use locron_store::LockMetadata;
 
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn unchanged_registration_preserves_metadata_and_repairs_permissions() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("service.plist");
+        write_registration_if_changed(&path, b"definition").unwrap();
+        fs::File::open(&path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(
+                std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000),
+            ))
+            .unwrap();
+        let before = fs::metadata(&path).unwrap();
+        write_registration_if_changed(&path, b"definition").unwrap();
+        let after = fs::metadata(&path).unwrap();
+        assert_eq!(before.ino(), after.ino());
+        assert_eq!(before.modified().unwrap(), after.modified().unwrap());
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).unwrap();
+        write_registration_if_changed(&path, b"definition").unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o7777,
+            0o644
+        );
+        write_registration_if_changed(&path, b"changed").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"changed");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn registration_inspection_refuses_links_and_non_directory_parent() {
+        use std::os::unix::fs::symlink;
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        fs::write(&original, b"unchanged").unwrap();
+        let link = temp.path().join("link");
+        symlink(&original, &link).unwrap();
+        assert!(write_registration_if_changed(&link, b"new").is_err());
+        assert_eq!(fs::read(&original).unwrap(), b"unchanged");
+        assert!(write_registration_if_changed(&original.join("child"), b"new").is_err());
+        assert!(write_registration_if_changed(temp.path(), b"new").is_err());
+    }
 
     #[allow(clippy::fn_params_excessive_bools)]
     fn fake(session: bool, loaded: bool, enabled: bool, registered: bool) -> FakeServicePort {

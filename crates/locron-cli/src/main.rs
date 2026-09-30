@@ -5412,8 +5412,8 @@ fn list_schedule_summary(definition: &Value) -> Result<String> {
     })
 }
 
-/// Renders the human target summary (`run EXE [ARGS...]`, `shell CMD`, or
-/// `http METHOD URL`) from the redacted definition JSON.
+/// Renders the human target summary (`process: EXE [ARGS...]`, `shell: CMD`, or
+/// `http: METHOD URL`) from the redacted definition JSON.
 fn list_target_summary(definition: &Value) -> Result<String> {
     let target = definition
         .get("target")
@@ -5424,7 +5424,7 @@ fn list_target_summary(definition: &Value) -> Result<String> {
                 .get("executable")
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let mut summary = format!("run {executable}");
+            let mut summary = format!("process: {executable}");
             if let Some(args) = target.get("args").and_then(Value::as_array) {
                 for arg in args.iter().filter_map(Value::as_str) {
                     summary.push(' ');
@@ -5434,11 +5434,11 @@ fn list_target_summary(definition: &Value) -> Result<String> {
             summary
         }
         Some("shell") => format!(
-            "shell {}",
+            "shell: {}",
             target.get("command").and_then(Value::as_str).unwrap_or("")
         ),
         Some("http") => format!(
-            "http {} {}",
+            "http: {} {}",
             target.get("method").and_then(Value::as_str).unwrap_or(""),
             target.get("url").and_then(Value::as_str).unwrap_or("")
         ),
@@ -6669,6 +6669,26 @@ mod tests {
     }
 
     #[test]
+    fn human_target_selectors_distinguish_process_http_and_preserve_argv() {
+        assert_eq!(
+            list_target_summary(&json!({"target":{"kind":"process", "executable":"http", "args":["POST", "https://example.test/"]}})).unwrap(),
+            "process: http POST https://example.test/"
+        );
+        assert_eq!(
+            list_target_summary(
+                &json!({"target":{"kind":"http", "method":"POST", "url":"https://example.test/"}})
+            )
+            .unwrap(),
+            "http: POST https://example.test/"
+        );
+        assert_eq!(
+            list_target_summary(&json!({"target":{"kind":"shell", "command":"printf ok"}}))
+                .unwrap(),
+            "shell: printf ok"
+        );
+    }
+
+    #[test]
     fn list_table_preserves_latest_state_and_only_truncates_target() {
         let mut jobs = vec![
             list_job_record("a", true, "git push origin main"),
@@ -6677,21 +6697,21 @@ mod tests {
         jobs[0]["latest_run"] = json!({"id":"run", "state":"failed"});
         let full = list_table(&jobs, None).unwrap();
         let expected = format!(
-            "{:<4} {:<8} {:<50} ENABLED LAST RUN\n{:<4} {:<8} {:<50} {:<7} failed\n{:<4} {:<8} {:<50} {:<7} none\n",
+            "{:<4} {:<8} {:<51} ENABLED LAST RUN\n{:<4} {:<8} {:<51} {:<7} failed\n{:<4} {:<8} {:<51} {:<7} none\n",
             "NAME",
             "SCHEDULE",
             "TARGET",
             "a",
             "every 1h",
-            "shell git push origin main",
+            "shell: git push origin main",
             "yes",
             "b",
             "every 1h",
-            "shell run-a-very-long-backup-job-with-a-silly-name",
+            "shell: run-a-very-long-backup-job-with-a-silly-name",
             "no"
         );
         assert_eq!(full, expected);
-        assert_eq!(full, list_table(&jobs, Some(81)).unwrap());
+        assert_eq!(full, list_table(&jobs, Some(82)).unwrap());
         assert!(full.contains("ENABLED LAST RUN"));
         assert!(full.contains("yes     failed"));
         assert!(full.contains("no      none"));

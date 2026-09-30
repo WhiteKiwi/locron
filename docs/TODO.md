@@ -7,6 +7,78 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## Second feedback and v0.9.6 signed macOS release (2026-09-30)
+
+- [x] Review research, host evidence, release preconditions, and the complete plan.
+  **Verify:** SPEC, FINDINGS §42, IMPLEMENTATION, and this checklist agree; latest release is
+  v0.9.5, no v0.9.6 tag exists, and five-crate inventory is none. Record actual signature/BTM
+  metadata and real disposable signing proof; distinguish reporter observations from host facts.
+  **Evidence:** separate research and parent plan review resolved FINDINGS §42 before development.
+  Latest release is v0.9.5, v0.9.6 tag is absent, and registry inventory is `none`. Host measurements
+  identify two legitimate legacy agents (one per daemon/dashboard) with unknown developer;
+  the reporter confirmed two same-name entries. Official v0.9.5 is linker ad-hoc signed, while a
+  disposable copy passed timestamped/runtime Developer ID signing and strict verification as
+  `dev.locron.cli` / team `4H4Z446LHS`. Existing notary-profile read-only authentication passed.
+- [x] Distinguish all human target summaries.
+  **Verify:** list/show/add/update use `process:`, `shell:`, `http:`; direct-process `http` differs
+  from an HTTP target; exact table/width/redaction/dry-run contracts pass and JSON kinds stay fixed.
+  **Evidence:** common formatter and selector unit test, full 72-test CLI contract suite, exact
+  82-column fit and narrow TARGET-only truncation, and existing secret-redaction checks pass.
+- [x] Preserve identical macOS registration files during refresh.
+  **Verify:** temporary-file tests prove matching safe content preserves inode/mtime, different
+  or missing content writes, unsafe permissions are repaired, and inspection failures surface.
+  Existing loaded/unloaded/manual-lock/no-session/dashboard/JSON service contracts still pass.
+  **Evidence:** explicit historical mtime and inode remain unchanged for matching safe bytes;
+  missing/changed content writes, writable permissions repair to 0644, and symlink/non-directory
+  inspection failures surface. CLI unit and 19 fake-port service contracts pass; the real
+  service_backends target was deliberately not executed on this personal host.
+- [x] Add verified signing/notarization and signed-only release inputs.
+  **Verify:** archive/signature/notary/code-requirement rejection fixtures, workflow source gates,
+  actionlint, and script validation pass. A disposable real Mac rehearsal verifies both
+  architectures with `dev.locron.cli`, Developer ID team, runtime/timestamp, accepted notarization,
+  strict signature verification, and online `codesign -R=notarized --check-notarization` verification;
+  Keychain state stays intact.
+  **Local evidence:** 15 deterministic Python tests cover archive rejection, identity fields,
+  canonical submission IDs, notary/code-requirement failures, shared-lock refusal, exact input inventory,
+  immutable digest matching, signed-only workflow dependencies and guarded release execution.
+  actionlint passes. The parent ran the complete corrected helper on disposable copies of both
+  official v0.9.5 archives. Submission `f6dc05ed-d6ba-4f25-80f2-7923c1c5db66` was Accepted with
+  `issues=null`; both strict online notarized requirements returned exit 0. Its receipt records
+  expected identity/team and both signed binary/archive hashes; repacking preserved signed bytes.
+  Installed binary/plist SHA/inode/mtime and Keychain search/default comparisons stayed unchanged.
+  This rehearsal validates the helper; the v0.9.6 tagged publication still requires its own job.
+- [ ] Add the isolated published-old-updater smoke.
+  **Verify:** helper/fixture tests cover expected-tag and checksum refusals and no-session
+  isolation without HOME override; hosted release smoke later executes real v0.9.2 self-update
+  and checks final version/digest, no unit files, and unchanged job state.
+  **Local evidence:** historical checksum syntax, checksum/latest-tag refusal, exact receipt,
+  HOME preservation, manager/Locron override removal, full mocked envelope/digest upgrade and
+  durable job comparison pass. CI runs these fixtures; actual published smoke remains pending.
+- [x] Prepare v0.9.6 metadata/docs and pass local candidate gates.
+  **Verify:** all five packages and exact internal requirements agree, only workspace lockfile
+  versions change, Rustls stays patched, curated notes match tested behavior, version/script gates,
+  formatting, locked workspace tests/Clippy, audits, diff checks, and clean MSRV package/publish
+  dry runs pass without upload or real-manager tests on the owner's host.
+  **Local evidence:** versions/exact requirements agree at 0.9.6; Cargo changed only five workspace
+  lockfile records and keeps Rustls 0.23.45. Rust 1.94 locked all-target workspace check, formatting,
+  Rust 1.98 warnings-denied locked all-target Clippy, 446 tests across 20 selected suites
+  (0 failed/ignored; excludes service_backends), both cargo-deny groups, actionlint, shellcheck,
+  15 Python fixtures, four existing release-shell fixtures, version contract and diff checks pass.
+  A clean private Git snapshot containing tracked sources and exactly the four new scripts passed
+  Rust 1.94 `cargo package --workspace --locked` and
+  `cargo publish --workspace --dry-run --locked` without upload. All five crate inventories,
+  README/licenses, excluded build material and server dist checks passed. The parent retained
+  `clean-msrv-package.log` in its private publication workspace. Hosted checks remain pending.
+- [ ] Publish the reviewed exact revision through a pull request and immutable tag.
+  **Verify:** candidate CI/Audit and merged-main CI/Audit pass; the annotated v0.9.6 tag peels to
+  that reviewed merge. A release-specific one-job foreground Mac runner consumes only the expected
+  tag signing job, exits/de-registers, and leaves no persistent host service or credential copy.
+- [ ] Verify final distribution, real update compatibility, and host preservation.
+  **Verify:** release/signing/smoke and Homebrew jobs succeed; all five registry versions and ten
+  public assets exist, archive/package hashes and Homebrew match, downloaded Mac binaries validate
+  strictly with expected identity and notarization; installed Locron binary/PIDs/plists, jobs,
+  signing Keychain metadata, unrelated background records, and older release assets remain intact.
+
 ## v0.9.5 feedback correction release (2026-09-30)
 
 - [x] Review release scope, preconditions, and publication plan.
