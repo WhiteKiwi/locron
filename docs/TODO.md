@@ -21,7 +21,7 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   script passes, and the root manifest has four exact `=0.9.5` requirements. Cargo changed only
   the five workspace versions in the lockfile; `rustls 0.23.45` remains selected. Reviewed
   Unreleased entries moved to UTC-dated 2026-09-30 v0.9.5 notes with updated comparison links.
-- [ ] Pass local candidate and exact-revision hosted release gates.
+- [x] Pass local candidate and exact-revision hosted release gates.
   **Verify:** version contract, audit groups, formatting, warnings-denied locked Clippy, workspace
   all-target tests, workflow/script contracts, clean-tree MSRV package/publish dry runs, diff checks,
   and the PR head's hosted CI/Audit checks succeed without publication from the development session.
@@ -35,14 +35,32 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   Rust 1.94 `cargo package --workspace --locked` and
   `cargo publish --workspace --dry-run --locked` verified all five packages without upload.
   Cargo repeated the existing yanked `chacha20 0.10.1` warning; no dependency movement was made.
-  Hosted exact-revision checks are pending, so this step remains open.
-- [ ] Merge the verified candidate and trigger its immutable release tag.
+  **Hosted evidence:** PR #18 passed all nine [CI jobs](https://github.com/WhiteKiwi/locron/actions/runs/36659441908)
+  and both [Audit groups](https://github.com/WhiteKiwi/locron/actions/runs/36659442057) on candidate
+  `b718ab5b35f4fc9840de2681ce97fad3162f2de7` before merge.
+- [x] Merge the verified candidate and trigger its immutable release tag.
   **Verify:** merged main contains the reviewed change, main CI/Audit pass, annotated v0.9.5 peels
   to that exact commit, and tag push starts the Release workflow.
-- [ ] Confirm distribution and old-updater compatibility.
+  **Evidence:** PR #18 merged as `c6d1aaa6a3126bb9d54b2b83b17f99a93115abd1`; its tree matches the
+  reviewed candidate. [Main CI](https://github.com/WhiteKiwi/locron/actions/runs/36659868860) and
+  [Audit](https://github.com/WhiteKiwi/locron/actions/runs/36659868800) passed. The annotated v0.9.5 tag
+  peels to that commit and started [Release](https://github.com/WhiteKiwi/locron/actions/runs/36660197485).
+- [x] Confirm distribution and old-updater compatibility.
   **Verify:** Release succeeds, registry inventory is all, all ten GitHub assets are present,
   bare checksum filenames and hashes match published archives/packages and Homebrew, downloaded
   macOS arm64 binary/isolated installer report 0.9.5, and no installed/live state changed.
+  **Evidence:** [Release](https://github.com/WhiteKiwi/locron/actions/runs/36660197485) succeeded,
+  including all four platform builds, five-crate publication and fresh registry installation,
+  GitHub publication, and the Homebrew update. Exact five-crate inventory is `all`.
+  [GitHub Release v0.9.5](https://github.com/WhiteKiwi/locron/releases/tag/v0.9.5) contains all ten
+  expected assets. All eight bare checksum entries match downloaded archive/package bytes and
+  GitHub asset digests; the installer matches the tagged source. The extracted macOS arm64 binary
+  reports 0.9.5, and a pinned standalone install into a temporary directory with
+  `LOCRON_NO_SERVICE=1` reports 0.9.5 with the correct ownership receipt and no state directory.
+  The Homebrew formula uses v0.9.5 for all four archives with matching checksums. Existing tags,
+  released assets, installed binaries, and live jobs/services were not changed.
+  Both macOS and Linux [Homebrew tap checks](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/36661419833)
+  passed on formula commit `578c9e7e3c01496ba03eb29dbe6dc0f812809e94`.
 
 ## First feedback triage (2026-09-30)
 

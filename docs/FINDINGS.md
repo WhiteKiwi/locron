@@ -2008,3 +2008,22 @@ verify workflow success, five exact registry versions, eight bare checksum entri
 archive/package digests, matching installer source, and Homebrew v0.9.5 URLs/digests. Inventory any
 partial publication before retries. Neither preparation nor publication includes this host's
 installed binary or live jobs/services; use extracted artifacts/isolated fixtures for validation.
+
+### Publication verification
+
+PR #18's candidate `b718ab5` and merge `c6d1aaa6a3126bb9d54b2b83b17f99a93115abd1` passed
+their exact hosted CI/Audit gates. The annotated v0.9.5 tag identifies the merge commit, and
+[Release run 36660197485](https://github.com/WhiteKiwi/locron/actions/runs/36660197485) succeeded
+across four platform builds, all five registry packages, a fresh registry installation, GitHub
+assets, and Homebrew publication. The [public release](https://github.com/WhiteKiwi/locron/releases/tag/v0.9.5)
+was published on 2026-09-30 UTC; exact registry inventory is `all`.
+
+Direct downloads verified all eight archive/package hashes against bare checksum entries and
+GitHub asset digests. This also checks the old parser's exact-filename lookup contract without
+running a live updater or altering service registration. The tagged installer bytes match the
+release asset. An extracted macOS arm64 binary and a pinned temporary no-service standalone
+installation both report 0.9.5; the latter writes the correct receipt without creating scheduler
+state. The Homebrew formula has all four v0.9.5 archive URLs and matching hashes. Existing
+versioned assets/tags and this host's installed binaries, real jobs, and services remain intact.
+The [Homebrew tap validation](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/36661419833)
+also passed on both macOS and Linux at formula commit `578c9e7e3c01496ba03eb29dbe6dc0f812809e94`.
