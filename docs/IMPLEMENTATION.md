@@ -10,6 +10,26 @@ Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, th
 
 `docs/FINDINGS.md` preserves the research path and does not override the frozen specification. In particular, v1 has no `queue-one` overlap policy and global concurrency defaults to 16, not 4.
 
+## Acceptance startup observer correction before v0.9.6 tagging (2026-09-30)
+
+FINDINGS §43 records the merged-main MSRV failure and an established harness interference path;
+the discarded daemon stderr leaves the exact hosted fatal cause uncertain. This is a test-only
+verification correction, so the product SPEC and runtime lock behavior stay unchanged.
+
+Replace the acceptance helper's active `try_prove_free` startup probes with a passive read of
+existing `LockMetadata`. Require the spawned child's PID and child liveness; retry only absent,
+partial, or stale metadata within the existing startup deadline. Never acquire or modify the
+observed lock. Capture daemon stderr in a fixture tempfile, read a bounded diagnostic on exit or
+timeout, and establish the RAII child guard before startup observation so failures reap fixture
+children. Preserve the existing acceptance scenarios, startup budgets, and restart semantics.
+
+Verify passive no-write/no-lock observation with deterministic missing/malformed/stale/held-lock
+fixtures, and verify bounded stderr with a deliberately failed child. Run the acceptance suite
+on Rust 1.94 and the pinned lint toolchain, plus formatting, locked warnings-denied Clippy and diff
+checks. The parent reviews the scoped branch and exact hosted PR/main CI and Audit before tagging;
+a blind rerun of the failed unchanged test is not this correction. No manager, Keychain, installed
+binary, publication, dependency or product source operation belongs to the development session.
+
 ## Second feedback and v0.9.6 signed macOS release (2026-09-30)
 
 Implement the reviewed SPEC amendments with FINDINGS §42 as the evidence record. The reporter
