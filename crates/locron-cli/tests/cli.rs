@@ -1792,9 +1792,9 @@ fn human_list_aligns_columns_across_name_widths() {
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
         .stdout(
-            "NAME     SCHEDULE               TARGET            ENABLED LAST RUN\n\
-         a        cron '* * * * *'       run /usr/bin/true yes     none\n\
-         longname cron '0 9 * * MON-FRI' run /usr/bin/true yes     none\n",
+            "NAME     SCHEDULE               TARGET                 ENABLED LAST RUN\n\
+         a        cron '* * * * *'       process: /usr/bin/true yes     none\n\
+         longname cron '0 9 * * MON-FRI' process: /usr/bin/true yes     none\n",
         );
 }
 
@@ -1821,8 +1821,8 @@ fn piped_human_list_prints_full_targets_byte_identically() {
     assert_cmd::assert::Assert::new(locron(&state).args(["ls"]).output().unwrap())
         .success()
         .stdout(
-            "NAME   SCHEDULE TARGET                                                  ENABLED LAST RUN\n\
-         backup every 1h shell echo run-a-very-long-backup-job-with-a-silly-name yes     none\n",
+            "NAME   SCHEDULE TARGET                                                   ENABLED LAST RUN\n\
+         backup every 1h shell: echo run-a-very-long-backup-job-with-a-silly-name yes     none\n",
         )
         .stderr("");
 }
@@ -1884,14 +1884,14 @@ fn human_list_all_marks_disabled_jobs_no() {
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
         .stdout(
-            "NAME   SCHEDULE TARGET            ENABLED LAST RUN\nbackup every 1h run /usr/bin/true yes     none\n",
+            "NAME   SCHEDULE TARGET                 ENABLED LAST RUN\nbackup every 1h process: /usr/bin/true yes     none\n",
         );
     assert_cmd::assert::Assert::new(locron(&state).args(["list", "--all"]).output().unwrap())
         .success()
         .stdout(
-            "NAME   SCHEDULE TARGET            ENABLED LAST RUN\n\
-         backup every 1h run /usr/bin/true yes     none\n\
-         ping   every 1h run /usr/bin/true no      none\n",
+            "NAME   SCHEDULE TARGET                 ENABLED LAST RUN\n\
+         backup every 1h process: /usr/bin/true yes     none\n\
+         ping   every 1h process: /usr/bin/true no      none\n",
         );
 }
 
@@ -1925,7 +1925,7 @@ fn human_list_never_leaks_configured_values() {
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
         .stdout(predicate::str::contains(
-            "http POST https://example.com/hook",
+            "http: POST https://example.com/hook",
         ))
         .stdout(predicate::str::contains("should-not-leak").not())
         .stdout(predicate::str::contains("secret-header").not())
@@ -1944,7 +1944,7 @@ fn human_add_update_enable_disable_remove_print_outcome_lines() {
     .success()
     .stdout(predicate::str::contains("job added: backup ("))
     .stdout(predicate::str::contains("schedule: every 1h"))
-    .stdout(predicate::str::contains("target: run /usr/bin/true"));
+    .stdout(predicate::str::contains("target: process: /usr/bin/true"));
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["update", "backup", "--every", "2h", "--", "/usr/bin/true"])
@@ -1987,7 +1987,7 @@ fn human_add_update_enable_disable_remove_print_outcome_lines() {
         "job added: dry (dry run; no changes made)",
     ))
     .stdout(predicate::str::contains("schedule: every 1h"))
-    .stdout(predicate::str::contains("target: run /usr/bin/true"));
+    .stdout(predicate::str::contains("target: process: /usr/bin/true"));
     assert!(!dry.path().join("state.db").exists());
     assert_cmd::assert::Assert::new(
         locron(&dry)
@@ -2245,7 +2245,7 @@ fn human_show_prints_labeled_sections() {
         "  tags: ",
         "  revision: 1\n",
         "SCHEDULE\n  schedule: cron '0 9 * * *'\n  timezone: UTC\n",
-        "TARGET\n  target: shell printf ok\n",
+        "TARGET\n  target: shell: printf ok\n",
         "POLICIES\n  overlap: skip\n",
         "  missed run: skip\n",
         "  deadline: none\n",

@@ -10,6 +10,97 @@ Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, th
 
 `docs/FINDINGS.md` preserves the research path and does not override the frozen specification. In particular, v1 has no `queue-one` overlap policy and global concurrency defaults to 16, not 4.
 
+## Second feedback and v0.9.6 signed macOS release (2026-09-30)
+
+Implement the reviewed SPEC amendments with FINDINGS §42 as the evidence record. The reporter
+confirmed two same-name background entries; read-only host inspection identifies one daemon and
+one dashboard, not two instances of either service. Preserve both independent services. No schema,
+dependency, app bundle, installed binary, or live Locron state change belongs to this work.
+
+### Human target summaries and registration-file stability
+
+Change the shared redacted human target formatter to `process:`, `shell:`, and `http:` for list,
+show, and add/update summaries, including dry runs. Preserve JSON target kinds, argv order,
+warnings, and redaction. Update exact-output and terminal-width tests and operator examples;
+keep LAST RUN visible under the current TARGET-only truncation rule.
+
+In the macOS registration writer, compare the desired plist bytes with the existing regular
+registration file before writing. Matching content with safe existing permissions leaves the
+file/inode/mtime unchanged. Missing or different files retain the current write path; unsafe
+permissions must still be repaired. Propagate inspection errors. Leave service-manager ordering,
+explicit enable of unloaded services, manual-lock deferral, dashboard independence, and the
+loaded SIGTERM/KeepAlive restart intact. Do not add bootout/bootstrap or kickstart to the ordinary
+update path. Changed-definition reload remains deferred because the present cached-definition
+and bounded shutdown policy need separate design. Test actual temporary file metadata as well
+as existing fake-port order and machine envelopes; do not execute real-manager tests on this host.
+
+### Recognized macOS distribution identity
+
+The existing release build jobs remain hosted and produce unsigned internal archives. Add a
+tag-only macOS signing job after those builds, restricted to the exact repository and a release
+tag. It selects a release-specific foreground ephemeral runner on the maintainer's Mac; it is
+not a persistent runner service and accepts one reviewed job before de-registration. The parent
+publication session owns registration, exact-run observation, and cleanup. Do not expose this
+runner to PR or arbitrary-branch work. Use only `locron-signing-${{ github.run_id }}` as the runner selector, with
+`--no-default-labels` on the one-job runner. Private signing material remains in the existing login Keychain, and its search list,
+ACLs, defaults, and contents remain unchanged.
+
+A standard-library signing helper validates exactly the two expected Mac archive layouts,
+rejects traversal/symlink/unexpected members, verifies architecture and version, and stages copies
+in a private temporary directory. Acquire the existing shared `fcntl.flock` at
+`~/Library/Caches/home-hub/apple-signing.lock`; never unlink that lock or use a different locking
+protocol. Sign both executables with the existing exact Developer ID Application identity,
+`--timestamp`, `--options runtime`, and stable identifier `dev.locron.cli`. Verify strict signatures,
+expected team `4H4Z446LHS`, identity, timestamp, runtime flag, and executable architecture.
+
+Submit a ZIP containing both signed binaries with the existing `c6s-notary` login-Keychain
+profile, require accepted status, and inspect its log for issues. Bare executable tickets and ZIP
+files cannot be stapled; validate the online `notarized` code requirement with
+`codesign --check-notarization` after acceptance and document this limit. Repack the original archive layouts with the final signed binary bytes, README/licenses,
+and correct executable mode. Stage all outputs before replacing the output directory's files;
+failure must not supply unsigned or partially signed publication inputs. Retain a compact
+non-secret verification receipt as an internal workflow artifact, not an added public download.
+
+Upload final archives as a separate signed-macos artifact. The registry publisher requires signing
+success, and the GitHub publisher downloads only the Linux build artifacts and signed-macos output.
+Generate checksums after signing; Homebrew consumes those same archive bytes. Verify the expected
+four archive/four package inventory before publication. An existing versioned release is only
+accepted after its inventory and hashes match the intended files; never clobber its assets.
+
+Use deterministic archive/signature/notary/code-requirement fixtures for fail-closed boundaries, source
+workflow checks for signed-only inputs and job dependencies, and a local disposable real signing
+rehearsal before tag publication. A recognized certificate supplies developer attribution for an
+unbundled executable; it does not create an app identity, guarantee UI grouping, remove historical
+BTM records, or prove that every macOS notification ceases. Do not claim those outcomes in notes.
+
+### Published updater compatibility
+
+After GitHub publication, run a real v0.9.2 standalone updater on ephemeral hosted Linux x86_64.
+Verify the historical archive checksum, create a temporary copy with the exact standalone receipt,
+and guard the expected latest release tag. Preserve HOME; isolate `LOCRON_STATE_DIR` and
+`XDG_CONFIG_HOME`, and remove manager-runtime and update-origin/backend overrides. The systemd
+no-session branch returns guidance before registration, and isolated config prevents dashboard
+registration. Assert version/envelope/digest results, no unit files, and unchanged fixture job
+state. Never run this smoke on the owner's Mac. Add deterministic parsing/refusal fixtures to CI
+and preserve the existing checksum parser/generation and service tests.
+
+### Release and verification order
+
+Advance workspace metadata, exact internal requirements, and only the five lockfile records to
+0.9.6; preserve Rustls 0.23.45 and unrelated dependencies. Curate UTC-dated user-facing notes for
+target distinction, identical-plist stability, and official macOS signing/notarization. Record
+no promise of notification suppression, one combined background entry, or changed-definition
+reload. Update CLI/RELEASE documentation and all three planning documents as decisions arise.
+
+Pass version checks, formatting, warnings-denied locked Clippy, complete locked workspace tests,
+both cargo-deny groups, signing/smoke/script fixtures, actionlint, shellcheck, and clean MSRV
+workspace package/publish dry runs. Review staged and unstaged changes, commit the scoped release
+candidate, and pass hosted PR CI/Audit before merging. Verify exact merged main checks before its
+immutable annotated v0.9.6 tag. The parent then starts the one-job signing runner for that reviewed
+tag and observes signing, publication, old-updater smoke, registry inventory, assets/digests,
+Homebrew, and runner cleanup. Read back this host's Locron registration/PIDs and signing Keychain
+metadata to confirm preservation. Inventory durable publication state before any retry.
+
 ## Rustls advisory remediation (2026-09-28)
 
 This is dependency maintenance under the existing safe-by-default product contract; it changes no

@@ -11,6 +11,20 @@ documentation. CI and test-only changes are omitted — the commit history is th
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-09-30
+
+### Changed
+
+- Human job summaries distinguish `process:`, `shell:`, and `http:` targets in lists,
+  details, and registration previews.
+- Official macOS downloads are signed with a stable Developer ID identity and notarized.
+  Standalone notarization tickets cannot be stapled, so verification may need network access.
+
+### Fixed
+
+- Refreshing a macOS service preserves an identical registration file with safe permissions,
+  avoiding unnecessary plist rewrites during updates.
+
 ## [0.9.5] - 2026-09-30
 
 ### Added
@@ -267,7 +281,8 @@ Initial release.
 - **Distribution** — Homebrew tap, `.deb` and `.rpm` packages, and pre-built tarballs for macOS and
   Linux on both x86_64 and aarch64.
 
-[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/WhiteKiwi/locron/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/WhiteKiwi/locron/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/WhiteKiwi/locron/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/WhiteKiwi/locron/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/WhiteKiwi/locron/compare/v0.9.2...v0.9.3
