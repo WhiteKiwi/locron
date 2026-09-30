@@ -2263,3 +2263,49 @@ excluded-build-material and server dist checks passed; no package was uploaded. 
 these checks and retained `clean-msrv-package.log` under its private publication workspace.
 Hosted exact-revision CI/Audit, tagged signing/publication, published old-updater smoke, final
 channel inventory and post-publication host readback remain pending.
+
+
+## 43. Acceptance daemon startup observer interferes with its lock (2026-09-30)
+
+Merged-main CI run `36668890592`, Rust 1.94 Linux job `109739419238`, failed at
+`acceptance_matrix.rs:135` in `run_wait_renders_ordered_retry_output_frames_for_one_durable_run`:
+`daemon exited during startup`, with `Some(ExitStatus(unix_wait_status(512)))` (exit 2).
+The same-tree PR passed its nine CI jobs and two Audit groups. The acceptance harness, daemon
+acquisition and store lock source are unchanged between v0.9.5 and merged main `26a6128`.
+The parent retained the exact failing hosted job log in its private publication workspace.
+
+The harness currently polls `DaemonLock::try_prove_free`. Source proves this is an active probe:
+it creates/opens the permanent lock file, sets permissions, briefly acquires an exclusive
+nonblocking OS lock, then unlocks it. The concurrently starting daemon also uses a nonblocking
+exclusive acquisition and immediately fails when that lock is held. The observer can therefore
+cause the very startup refusal it is trying to detect. The hosted daemon's stderr was discarded,
+so its exact fatal cause is unavailable; the race is established in source, while attributing
+this particular exit 2 to it remains a hypothesis. Do not silently rerun the failure to green.
+
+Use a test-only passive observer: read existing `daemon.lock` bytes, deserialize public
+`LockMetadata`, and require its PID to match the spawned, still-live child. Missing/partial/stale
+metadata is not readiness; it remains bounded by the existing startup deadline. The observer
+must never create a file, acquire/release a lock, or change permissions. Keep the test deadline
+and daemon product behavior unchanged. A tempfile-backed stderr stream avoids pipe backpressure
+and supplies bounded diagnostics on premature child exit or timeout. Construct the RAII daemon
+guard before observing so a failing assertion also cleans up the spawned fixture child.
+
+Deterministic regressions should cover absent/malformed/stale metadata without mutation, matching
+metadata readable while an exclusive owner holds the lock, and bounded stderr on a deliberately
+failed child. Run the corrected acceptance suite under MSRV and pinned stable tooling, then use
+exact-revision hosted CI/Audit as the publication gate. This correction is confined to the test
+harness; it requires no product API, scheduler policy, storage migration, service manager, signing,
+or dependency change.
+
+
+The reviewed correction is implemented only in `tests/acceptance_matrix.rs`. Startup observation
+now reads existing metadata and requires the spawned PID while its child is live, without any
+lock probe or write. Tempfile stderr avoids pipe backpressure and supplies at most 8192 captured
+bytes plus a truncation marker. The daemon guard exists before observation and cleans up failures.
+Three deterministic regressions verify missing/malformed/stale/held-lock observations without
+mutation, bounded stderr from an intentionally failed child, and timeout guard reaping.
+Rust 1.94 and 1.98 each passed all nine acceptance tests, including the previously failing retry
+scenario. Pinned warnings-denied locked all-target CLI Clippy, formatting and diff checks passed.
+These results verify the harness correction but do not recover the discarded hosted stderr or
+retroactively establish the exact original exit-2 cause. The parent still gates the tag on fresh
+exact-revision hosted PR/main CI and Audit.

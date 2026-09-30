@@ -3,13 +3,14 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
-use locron_store::DaemonLock;
+use locron_store::LockMetadata;
 use serde_json::Value;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(12);
@@ -119,31 +120,81 @@ fn wait_for_child(mut child: Child, timeout: Duration) -> Output {
 
 struct Daemon {
     child: Option<Child>,
+    stderr: tempfile::NamedTempFile,
+}
+
+fn lock_metadata_matches_pid(path: &Path, pid: u32) -> bool {
+    fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<LockMetadata>(&bytes).ok())
+        .is_some_and(|metadata| metadata.pid == pid)
 }
 
 impl Daemon {
-    fn start(state: &tempfile::TempDir) -> Self {
-        let mut child = locron(state)
-            .args(["daemon", "run"])
+    fn spawn(command: &mut Command) -> Self {
+        let stderr = tempfile::NamedTempFile::new().unwrap();
+        let child = command
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(stderr.as_file().try_clone().unwrap())
             .spawn()
             .unwrap();
-        let lock_path = state.path().join("daemon.lock");
-        let deadline = Instant::now() + COMMAND_TIMEOUT;
-        while DaemonLock::try_prove_free(&lock_path).is_ok() && Instant::now() < deadline {
-            assert_eq!(
-                child.try_wait().unwrap(),
-                None,
-                "daemon exited during startup"
-            );
+        Self {
+            child: Some(child),
+            stderr,
+        }
+    }
+
+    fn stderr_diagnostic(&self) -> String {
+        const LIMIT: usize = 8192;
+        let mut bytes = Vec::new();
+        fs::File::open(self.stderr.path())
+            .unwrap()
+            .take((LIMIT + 1) as u64)
+            .read_to_end(&mut bytes)
+            .unwrap();
+        let truncated = bytes.len() > LIMIT;
+        bytes.truncate(LIMIT);
+        let mut diagnostic = String::from_utf8_lossy(&bytes).into_owned();
+        if truncated {
+            diagnostic.push_str("\n[stderr truncated]");
+        }
+        diagnostic
+    }
+
+    fn wait_for_startup(&mut self, lock_path: &Path, timeout: Duration) -> Result<(), String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Some(status) = self.child.as_mut().unwrap().try_wait().unwrap() {
+                return Err(format!(
+                    "daemon exited during startup ({status}): stderr={}",
+                    self.stderr_diagnostic()
+                ));
+            }
+            // Read only: probing the OS lock can race with the daemon's own
+            // nonblocking acquisition and make the observer prevent startup.
+            if lock_metadata_matches_pid(lock_path, self.id())
+                && self.child.as_mut().unwrap().try_wait().unwrap().is_none()
+            {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "daemon did not publish its lock metadata before {timeout:?}: stderr={}",
+                    self.stderr_diagnostic()
+                ));
+            }
             thread::sleep(Duration::from_millis(20));
         }
-        assert!(
-            DaemonLock::try_prove_free(&lock_path).is_err(),
-            "daemon did not acquire its durable lock"
-        );
-        Self { child: Some(child) }
+    }
+
+    fn start(state: &tempfile::TempDir) -> Self {
+        // Establish cleanup before observing: startup failures must reap the
+        // fixture child too, rather than leave it to hosted runner cleanup.
+        let mut daemon = Self::spawn(locron(state).args(["daemon", "run"]));
+        daemon
+            .wait_for_startup(&state.path().join("daemon.lock"), COMMAND_TIMEOUT)
+            .unwrap_or_else(|error| panic!("{error}"));
+        daemon
     }
 
     fn id(&self) -> u32 {
@@ -168,6 +219,77 @@ impl Drop for Daemon {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+#[test]
+fn startup_metadata_observer_is_passive_and_requires_the_child_pid() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let state = tempfile::tempdir().unwrap();
+    let path = state.path().join("daemon.lock");
+    let pid = std::process::id();
+    assert!(!lock_metadata_matches_pid(&path, pid));
+    assert!(!path.exists(), "observation must not create the lock");
+    fs::write(&path, b"partial metadata").unwrap();
+    assert!(!lock_metadata_matches_pid(&path, pid));
+    assert_eq!(fs::read(&path).unwrap(), b"partial metadata");
+
+    let metadata = LockMetadata {
+        pid,
+        lifetime_id: "fixture".into(),
+        started_at_us: 1,
+        binary_version: env!("CARGO_PKG_VERSION").into(),
+    };
+    let _owner = locron_store::DaemonLock::acquire(&path, &metadata).unwrap();
+    let before = fs::metadata(&path).unwrap();
+    let bytes = fs::read(&path).unwrap();
+    assert!(!lock_metadata_matches_pid(&path, pid + 1));
+    assert!(lock_metadata_matches_pid(&path, pid));
+    let after = fs::metadata(&path).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert_eq!(before.ino(), after.ino());
+    assert_eq!(before.modified().unwrap(), after.modified().unwrap());
+    assert_eq!(before.permissions().mode(), after.permissions().mode());
+}
+
+#[test]
+fn failed_startup_reports_bounded_stderr_and_reaps_the_child() {
+    let state = tempfile::tempdir().unwrap();
+    let mut daemon = Daemon::spawn(Command::new("sh").args([
+        "-c",
+        "printf 'known startup error\n' >&2; printf '%09000d' 0 >&2; exit 7",
+    ]));
+    let error = daemon
+        .wait_for_startup(&state.path().join("daemon.lock"), COMMAND_TIMEOUT)
+        .unwrap_err();
+    assert!(error.contains("exit status: 7"), "{error}");
+    assert!(error.contains("known startup error"));
+    assert!(error.contains("[stderr truncated]"));
+    assert!(error.len() < 8400);
+    daemon.stop();
+    assert!(daemon.child.is_none());
+}
+
+#[test]
+fn startup_timeout_guard_reaps_a_live_fixture_child() {
+    let state = tempfile::tempdir().unwrap();
+    let mut daemon = Daemon::spawn(Command::new("sleep").arg("60"));
+    let pid = daemon.id();
+    assert!(
+        daemon
+            .wait_for_startup(&state.path().join("daemon.lock"), Duration::ZERO)
+            .is_err()
+    );
+    drop(daemon);
+    assert!(
+        !Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .unwrap()
+            .status
+            .success(),
+        "fixture child remains live after guard cleanup"
+    );
 }
 
 fn log_payload(state: &tempfile::TempDir, run_id: &str, attempt: u16) -> Vec<u8> {

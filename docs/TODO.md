@@ -7,6 +7,31 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## Acceptance startup observer correction before v0.9.6 tagging (2026-09-30)
+
+- [x] Establish the failing hosted evidence and harness interference scope.
+  **Verify:** FINDINGS §43 distinguishes the exact exit-2 observation, source-proven competing
+  lock probe, and unavailable stderr; product source is unchanged since v0.9.5. Review this plan
+  before creating the scoped follow-up development branch.
+  **Evidence:** parent hosted log and current source inspection agree; no exact fatal cause is
+  claimed and no retry or product change is proposed.
+- [x] Make the acceptance startup observer passive and diagnostic.
+  **Verify:** missing/malformed/stale metadata never creates or mutates the lock; matching PID
+  metadata is readable while an exclusive owner holds it. A failed child reports bounded captured
+  stderr, and guard cleanup reaps it. Existing acceptance scenarios and deadlines stay intact.
+  **Evidence:** three deterministic harness regressions pass: no-create/no-mutate and held-lock
+  metadata reads with PID refusal, failed-child exit/stderr truncation, and live-child timeout
+  guard reaping. Daemon stderr uses a tempfile and reads at most 8192 diagnostic bytes. Product
+  lock/runtime behavior, other harnesses and all existing startup deadlines are unchanged.
+- [ ] Pass scoped local and exact-revision hosted verification before tagging.
+  **Verify:** acceptance tests pass on Rust 1.94 and the pinned lint toolchain; formatting, locked
+  warnings-denied Clippy and diff checks pass. Parent source review and exact PR/main CI/Audit pass
+  before the immutable release tag. Hosted/publication operations remain parent-owned.
+  **Local evidence:** Rust 1.94 and 1.98 each pass the complete nine-test acceptance target
+  (six existing scenarios plus three deterministic regressions; zero failed/ignored). Rust 1.98
+  locked warnings-denied `cargo clippy -p locron --all-targets`, formatting and diff checks pass.
+  Source is frozen for parent review; exact-revision hosted checks remain pending.
+
 ## Second feedback and v0.9.6 signed macOS release (2026-09-30)
 
 - [x] Review research, host evidence, release preconditions, and the complete plan.
