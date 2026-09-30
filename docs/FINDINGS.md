@@ -1876,3 +1876,135 @@ Release with checksums and installer, and updates the Homebrew tap. The
 [release procedure](RELEASE.md#standard-release-procedure) requires a curated changelog and a
 version-consistent reviewed commit before the immutable tag. A new v0.9.4 patch release is thus
 needed to distribute the already merged security fix; the existing v0.9.3 tag must remain intact.
+
+## 40. First feedback: updater, registration warnings, and latest-run visibility (2026-09-30)
+
+Research checked the current v0.9.4 source, the v0.9.2 updater source, and the public
+[v0.9.4 release](https://github.com/WhiteKiwi/locron/releases/tag/v0.9.4). No installed binary,
+live job, daemon, or dashboard was changed, and no self-update operation was executed.
+
+### L-1: published filename format does not match the updater parser
+
+The [release checksum asset](https://github.com/WhiteKiwi/locron/releases/download/v0.9.4/SHA256SUMS.txt)
+downloaded directly from GitHub contains
+`91e3927e3b140714277c7ea9a4925b59bef40954094f7ce48f19c6e47857091f  ./locron-v0.9.4-aarch64-apple-darwin.tar.gz`.
+`gh release view v0.9.4 --repo WhiteKiwi/locron --json tagName,url,assets` confirms the matching
+archive is uploaded, has size 5,644,611 bytes, and has the same SHA-256 digest. The workflow's
+`sha256sum ./*.* > SHA256SUMS.txt` deliberately emits the leading `./`.
+
+Both v0.9.2 and current `checksum_for` compare the second whitespace-delimited field directly
+with the bare archive filename. Thus the published line cannot match, even though its hash and
+archive exist. The default updater downloads this exact asset from
+`https://github.com/WhiteKiwi/locron/releases/download/<tag>/SHA256SUMS.txt`, after selecting the
+latest tag through the GitHub releases API. No alternate checksum manifest is used. Explicit
+`LOCRON_UPDATE_API_BASE` and `LOCRON_UPDATE_ASSET_BASE` overrides can change those origins;
+their presence in the reporter's process was not established.
+
+The standalone installer uses a different grep-based lookup and accepts this published form,
+including the `./` in its relative downloaded filename. Therefore installation or replacement
+through the installer is consistent with reaching v0.9.2; the report does not establish a prior
+successful built-in self-update. Existing integration fixtures generate bare names, explaining
+why the published-format mismatch was not covered.
+
+Normalize only checksum filename syntax: accept bare names and one leading `./`, and support
+the standard optional `*` binary-mode marker before that filename. Preserve exact remaining
+filename comparison rather than accepting arbitrary paths or suffix matches. Preserve 64-digit
+hex validation, archive hashing before replacement, ownership checks, and atomic replacement.
+Use the published `./` format in the successful end-to-end fixture; cover bare/binary-marker
+forms and malformed, missing, wrong-name, and mismatch failures without mutating real services.
+
+The parser fix alone cannot restore the update path for already installed affected clients:
+their old parser must verify the next release before they can download the fixed binary. Future
+releases must also emit bare filenames, for example by hashing explicit `*.tar.gz *.deb *.rpm`
+operands inside the artifact directory rather than `./*.*`. This also avoids accidentally hashing
+an existing checksum file during a repeated generation. Do not rewrite published v0.9.2–v0.9.4
+assets or tags. The installer accepts bare names in both pinned and latest-release modes, while
+Homebrew computes archive hashes independently and crates.io does not consume SHA256SUMS.txt.
+Add a local release-checksum fixture that verifies expected bare names and `sha256sum -c` round
+tripping. Keep new-parser compatibility with historical `./` checksum assets as a separate test.
+
+### L-2: reuse CLI execution resolution as an advisory probe
+
+CLI `doctor` already uses `engine_target` and `resolve_attempt_executable`. These apply the
+execution PATH and global environment, job PATH, environment-file values, then inline job
+values; relative PATH entries and relative executable paths resolve against job cwd. Calling
+only the low-level engine resolver with the CLI's inherited PATH would lose this behavior.
+The underlying resolver checks for a file, not executable permission, so warnings should claim
+resolution failure rather than exhaustive execution readiness.
+
+CLI `add` and `update` currently collect only environment-policy warnings. Their existing
+warning branches cover human stderr and machine envelopes in both live and dry-run modes.
+Read existing settings through `config_dry_run_settings(paths, true)`, which uses defaults when
+no state database exists, and probe only `Target::Process` via `engine_target` with a synthetic
+diagnostic attempt. Do not execute the target or create durable state. An environment-file or
+settings failure must become a safe advisory warning, not reject an otherwise valid mutation.
+Do not echo effective environment values or raw resolver errors that could include them.
+
+Offer `did you mean --http <METHOD> <URL>?` only when executable `http` is missing, its first
+argument is an uppercase method supported by Locron, and its second argument parses as an
+HTTP(S) URL. Render the validated method and literal `<URL>` placeholder; do not repeat the
+actual URL, argv, or credentials. A successfully resolved `http` remains a valid process target.
+Keep the scope at CLI add/update: API and MCP have separate mutation handlers, and the API doctor
+has a different simpler resolver. Broad cross-surface refactoring is unnecessary for this fix.
+
+### L-3: project the latest retained run without loading history
+
+`list_jobs` currently returns definitions without a run observation. `latest_and_anomalous_runs`
+defines the canonical ordering as `requested_at_us DESC,id DESC`, but invoking it for every list
+row would introduce repeated reads and load unused anomaly records and execution snapshots.
+The existing `runs_history(job_id, requested_at_us DESC, id)` index supports a focused latest-run
+lookup without a schema migration.
+
+Add a dedicated list projection that reads jobs and optional latest run id/state in one SQLite
+snapshot, preferably one query with a correlated latest-run selection. Preserve existing
+`list_jobs` callers and its filtering/name order. Add `latest_run: {id,state}` or `null` to CLI
+list machine rows and a human `LAST RUN` column, using `none` for no retained run. Apply the
+same retained-run ordering across revisions and triggers, including active and skipped states;
+do not infer whether a job ever ran after retention removed its history. Keep the state column
+visible when fitting terminal width by extending the fixed-column budget; only TARGET shrinks
+under the existing table-fitting contract.
+
+Consecutive-failure counts remain deferred because retry attempts, skipped/cancelled states,
+and retention require an agreed definition. Target-label renaming is also deferred. Regression
+coverage should distinguish enabled state from run state, exercise tied request times, no
+retained runs and filtering, preserve redaction, and verify dry runs leave state unchanged.
+
+## 41. v0.9.5 feedback correction release readiness (2026-09-30)
+
+Read-only inventory confirms the latest public [GitHub Release is v0.9.4](https://github.com/WhiteKiwi/locron/releases/tag/v0.9.4).
+`git ls-remote --tags origin refs/tags/v0.9.5` returns no tag, and
+`sh scripts/crates-version-inventory.sh 0.9.5` reports `none` for the five exact package versions.
+The workspace version and four exact internal requirements still identify 0.9.4 at this check;
+the correction tree is not yet a version-consistent release candidate.
+
+The selected patch corrects existing self-update verification and diagnostics/observability of
+existing process-registration and run-state behavior. It adds no command or configuration option,
+changes no scheduling/retry policy, introduces no storage migration, and preserves platforms and
+installation channels. Machine list observations are additive and checks remain advisory. Curated
+notes must not promise failure streaks, exhaustive execution readiness, renamed targets, or
+installed service changes. This follows the bug-correction/remediation patch path in
+[RELEASE.md](RELEASE.md#standard-release-procedure); new commands, policies, or additive migrations
+would instead require its minor-version policy.
+
+The [tag workflow](../.github/workflows/release.yml) already builds four platform archives and
+four Linux packages, publishes all five workspace crates with trusted publishing, verifies registry
+installation/ownership, attaches checksums and `install.sh`, then updates Homebrew. Bare filenames
+in future checksums let affected older clients verify the next release before obtaining the fixed
+parser. Historical tags/assets stay intact. Homebrew independently hashes archives and crates.io
+does not consume the checksum file.
+
+Remaining local gates are lockstep metadata/lockfile refresh, UTC-dated curated v0.9.5 changelog,
+version-agreement script, security/license audits, Rust 1.94 MSRV validation, and clean-source
+package/publish dry runs. The correction tree passed 446 locked all-target workspace tests,
+formatting, warnings-denied Clippy, actionlint and checksum/script fixtures on Rust 1.98 macOS
+arm64; that does not establish candidate metadata or Rust 1.94 compatibility. Preserve patched
+Rustls and avoid unrelated lockfile changes. A private clean temporary Git snapshot can verify
+packaging without `--allow-dirty`, upload, or changing the main checkout.
+
+Actual [CI workflow](../.github/workflows/ci.yml) definitions govern hosted gates rather than the
+historical matrix summary in RELEASE.md. Exact candidate/merge CI and Audit must pass before the
+annotated immutable v0.9.5 tag; manifest changes trigger Audit's existing path filter. After tagging,
+verify workflow success, five exact registry versions, eight bare checksum entries and matching
+archive/package digests, matching installer source, and Homebrew v0.9.5 URLs/digests. Inventory any
+partial publication before retries. Neither preparation nor publication includes this host's
+installed binary or live jobs/services; use extracted artifacts/isolated fixtures for validation.

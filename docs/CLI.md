@@ -56,7 +56,12 @@ locron self-update
 
 A visible alias is accepted for `list` (`ls`) and `remove` (`rm`). An alias is the same command in every respect: it accepts the identical options and arguments and renders identical human and machine output. The `command` field of the `locron.cli/v1` envelope always reports the canonical name (`list`, `remove`), and usage and help render the canonical name with the alias shown for discovery. Aliases are a keyboard convenience; they do not add a semantic surface.
 
-Human `list` output is a docker-style aligned table on stdout: a header line (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned row per live job, sorted by name. `--all` includes disabled jobs, and their `ENABLED` value distinguishes them. The header prints even when no job exists, matching `docker ps` with zero containers. Schedule summaries render as `cron 'EXPR'`, `every DUR`, or `at RFC3339`; target summaries as `run EXE [ARGS...]`, `shell CMD`, or `http METHOD URL`; enabled state as `yes` or `no`. When standard output is a terminal and the table would exceed the terminal width, the `TARGET` column — the table's final data column — is truncated to fit and marked with a trailing `…`; `NAME` and `SCHEDULE` always print in full. Truncation follows character display width (East Asian wide characters count as two columns). When standard output is redirected or piped, values print in full as before. `--no-trunc` prints full `TARGET` values on a terminal; the flag is accepted with machine output and has no effect there. Machine output is unchanged.
+Human `list` output is a docker-style aligned table on stdout: a header line (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`, `LAST RUN`) followed by one left-aligned row per live job, sorted by name. `--all` includes disabled jobs, and their `ENABLED` value distinguishes them. The header prints even when no job exists, matching `docker ps` with zero containers. Schedule summaries render as `cron 'EXPR'`, `every DUR`, or `at RFC3339`; target summaries as `run EXE [ARGS...]`, `shell CMD`, or `http METHOD URL`; enabled state as `yes` or `no`. When standard output is a terminal and the table would exceed the terminal width, the `TARGET` column is truncated to fit and marked with a trailing `…`; `NAME`, `SCHEDULE`, `ENABLED`, and `LAST RUN` always print in full. Truncation follows character display width (East Asian wide characters count as two columns). When standard output is redirected or piped, values print in full as before. `--no-trunc` prints full `TARGET` values on a terminal; the flag is accepted with machine output and has no effect there. Machine list rows gain `latest_run: {id,state}` or `null`; other job outputs stay unchanged.
+
+`LAST RUN` shows the latest retained run's durable state (`queued`, `running`, `failed`,
+`succeeded`, and other run states), or `none` when no run remains. It is independent of
+`ENABLED`. Latest is ordered by request time and canonical run identity across all revisions
+and triggers. Retention can remove history, so `none` does not mean a job never ran.
 
 Job references accept an exact live name or canonical UUID. Run references are canonical UUIDs. Human output may abbreviate an ID only in decorative tables; copyable output always includes the full ID.
 
@@ -143,8 +148,8 @@ apply to every target because HTTP header environment sources use the same effec
 Runtime file and working-directory paths are expanded, made absolute, and lexically normalized at
 registration. Job execution-PATH entries receive the same normalization. A path-bearing process
 executable is normalized against the effective working directory; a bare executable remains bare.
-A readable env file with group/other permission bits produces a path-only warning without reading
-or printing its contents.
+An env file with group/other permission bits produces a metadata-based warning without printing
+its contents. Direct-process resolution checks read env-file values to inspect the effective PATH.
 
 `--json-body` validates one JSON value, stores its normalized UTF-8 encoding, and supplies
 `Content-Type: application/json` unless that header is explicitly configured. A partial body update
@@ -174,6 +179,16 @@ Per-job concurrency is validated against the current durable global setting. A c
 uses the durable setting when state exists and the documented default 16 otherwise.
 
 Five-field cron accepts wildcard, list, range, and step syntax; case-insensitive three-letter month and weekday names; Sunday as `0` or `7`; and `@yearly`, `@annually`, `@monthly`, `@weekly`, `@daily`, `@midnight`, and `@hourly`. It rejects seconds, year fields, `@reboot`, and Quartz extensions. Duration input accepts integer `s`, `m`, `h`, and `d` units without calendar-month interpretation.
+
+CLI `add` and `update`, including dry runs, warn if a direct-process executable cannot be
+resolved with the effective job environment and working directory. The check uses the same
+resolution as CLI `doctor`: global execution PATH/environment, job PATH, env-file values,
+then inline job values. The warning does not prevent registration of a binary to be installed
+later and does not prove that a resolved file will execute successfully. If settings or the
+job environment cannot be inspected, a generic advisory warning reports that limitation.
+Human warnings go to stderr; machine warnings stay in the envelope. A missing bare `http`
+with a supported uppercase method and HTTP(S) URL adds `did you mean --http METHOD <URL>?`;
+the hint omits the actual URL and trailing arguments.
 
 Target-specific flags are rejected with another target kind. Options with mutually exclusive sources, such as inline body and body file, fail before persistence. `update` uses the same validators and creates an immutable revision; changing a schedule requires a complete new schedule selector.
 
@@ -396,7 +411,7 @@ Verbose and debug output never replaces `why`: verbosity explains what the curre
 
 Human output renders the same facts as machine output in readable forms; machine output is the compatibility surface. The following contract applies to the human format only.
 
-- `list` — the table documented in Command families (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`).
+- `list` — the table documented in Command families (`NAME`, `SCHEDULE`, `TARGET`, `ENABLED`, `LAST RUN`).
 - `history` — an aligned table with the header always printed and one row per run, newest first:
   `TIME | JOB | TRIGGER | STATE | DURATION`. `TIME` is RFC 3339 UTC; `DURATION` renders in the
   largest whole human unit; the run ID may be abbreviated in the table only. On a terminal,

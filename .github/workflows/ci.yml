@@ -101,7 +101,7 @@ jobs:
       - name: Shellcheck installer and release scripts
         run: |
           sudo apt-get install -y shellcheck
-          shellcheck install.sh scripts/render-homebrew-formula.sh scripts/test-render-homebrew-formula.sh scripts/crates-version-inventory.sh scripts/test-crates-version-inventory.sh scripts/check-release-version.sh scripts/test-check-release-version.sh
+          shellcheck install.sh scripts/generate-release-checksums.sh scripts/test-generate-release-checksums.sh scripts/render-homebrew-formula.sh scripts/test-render-homebrew-formula.sh scripts/crates-version-inventory.sh scripts/test-crates-version-inventory.sh scripts/check-release-version.sh scripts/test-check-release-version.sh
       - name: Test crates.io inventory classification
         run: |
           sh scripts/test-crates-version-inventory.sh
@@ -111,6 +111,8 @@ jobs:
           shellcheck scripts/usage.sh
       - name: Test Homebrew formula rendering
         run: sh scripts/test-render-homebrew-formula.sh
+      - name: Check release checksum filenames
+        run: sh scripts/test-generate-release-checksums.sh
       - name: Refuse unsupported platforms and musl
         run: |
           set -eu

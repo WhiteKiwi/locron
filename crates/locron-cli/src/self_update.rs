@@ -420,6 +420,8 @@ fn checksum_for(sums: &str, asset: &str) -> Result<String> {
         let (Some(hash), Some(name)) = (fields.next(), fields.next()) else {
             continue;
         };
+        let name = name.strip_prefix('*').unwrap_or(name);
+        let name = name.strip_prefix("./").unwrap_or(name);
         if name != asset {
             continue;
         }
@@ -429,7 +431,7 @@ fn checksum_for(sums: &str, asset: &str) -> Result<String> {
             ))
             .into());
         }
-        return Ok(hash.to_owned());
+        return Ok(hash.to_ascii_lowercase());
     }
     Err(SelfUpdateError::ReleaseMetadata(format!(
         "no checksum entry for {asset} in SHA256SUMS.txt"
@@ -627,5 +629,36 @@ fn require_asset(release: &LatestRelease, name: &str) -> Result<()> {
             SelfUpdateError::ReleaseMetadata(format!("the latest release does not publish {name}"))
                 .into(),
         )
+    }
+}
+
+#[cfg(test)]
+mod checksum_tests {
+    use super::*;
+
+    #[test]
+    fn published_filename_forms_are_exact_and_hashes_are_normalized() {
+        let hash = "AB".repeat(32);
+        for filename in [
+            "archive.tar.gz",
+            "./archive.tar.gz",
+            "*archive.tar.gz",
+            "*./archive.tar.gz",
+        ] {
+            assert_eq!(
+                checksum_for(&format!("{hash}  {filename}\n"), "archive.tar.gz").unwrap(),
+                hash.to_ascii_lowercase()
+            );
+        }
+        for filename in [
+            "../archive.tar.gz",
+            "dir/archive.tar.gz",
+            "././archive.tar.gz",
+            "other-archive.tar.gz",
+        ] {
+            assert!(checksum_for(&format!("{hash}  {filename}\n"), "archive.tar.gz").is_err());
+        }
+        assert!(checksum_for("invalid  ./archive.tar.gz\n", "archive.tar.gz").is_err());
+        assert!(checksum_for("", "archive.tar.gz").is_err());
     }
 }
