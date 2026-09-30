@@ -23,14 +23,19 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   metadata reads with PID refusal, failed-child exit/stderr truncation, and live-child timeout
   guard reaping. Daemon stderr uses a tempfile and reads at most 8192 diagnostic bytes. Product
   lock/runtime behavior, other harnesses and all existing startup deadlines are unchanged.
-- [ ] Pass scoped local and exact-revision hosted verification before tagging.
+- [x] Pass scoped local and exact-revision hosted verification before tagging.
   **Verify:** acceptance tests pass on Rust 1.94 and the pinned lint toolchain; formatting, locked
   warnings-denied Clippy and diff checks pass. Parent source review and exact PR/main CI/Audit pass
   before the immutable release tag. Hosted/publication operations remain parent-owned.
   **Local evidence:** Rust 1.94 and 1.98 each pass the complete nine-test acceptance target
   (six existing scenarios plus three deterministic regressions; zero failed/ignored). Rust 1.98
   locked warnings-denied `cargo clippy -p locron --all-targets`, formatting and diff checks pass.
-  Source is frozen for parent review; exact-revision hosted checks remain pending.
+  **Hosted evidence:** reviewed follow-up PR #20 passed all nine CI jobs in
+  [36670144377](https://github.com/WhiteKiwi/locron/actions/runs/36670144377) and both Audit groups in
+  [36670144256](https://github.com/WhiteKiwi/locron/actions/runs/36670144256). Reviewed merge
+  `531d1a48e796e1949de4e1bbd1e6562646935f46` passed all nine main CI jobs in
+  [36670573034](https://github.com/WhiteKiwi/locron/actions/runs/36670573034) and both Audit groups in
+  [36670575858](https://github.com/WhiteKiwi/locron/actions/runs/36670575858) before tagging.
 
 ## Second feedback and v0.9.6 signed macOS release (2026-09-30)
 
@@ -39,7 +44,8 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   v0.9.5, no v0.9.6 tag exists, and five-crate inventory is none. Record actual signature/BTM
   metadata and real disposable signing proof; distinguish reporter observations from host facts.
   **Evidence:** separate research and parent plan review resolved FINDINGS §42 before development.
-  Latest release is v0.9.5, v0.9.6 tag is absent, and registry inventory is `none`. Host measurements
+  At preflight the latest release was v0.9.5, v0.9.6 tag was absent, and registry inventory was
+  `none`. Host measurements
   identify two legitimate legacy agents (one per daemon/dashboard) with unknown developer;
   the reporter confirmed two same-name entries. Official v0.9.5 is linker ad-hoc signed, while a
   disposable copy passed timestamped/runtime Developer ID signing and strict verification as
@@ -71,14 +77,20 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   `issues=null`; both strict online notarized requirements returned exit 0. Its receipt records
   expected identity/team and both signed binary/archive hashes; repacking preserved signed bytes.
   Installed binary/plist SHA/inode/mtime and Keychain search/default comparisons stayed unchanged.
-  This rehearsal validates the helper; the v0.9.6 tagged publication still requires its own job.
-- [ ] Add the isolated published-old-updater smoke.
+  **Publication evidence:** tagged signing job `109748138949` passed for both v0.9.6 architectures;
+  submission `33bee0a5-7d30-4c76-82e2-799f41057b0f` was Accepted with no issues. Independently
+  downloaded public archives match its signed binary/archive hashes; both pass the strict online
+  notarized requirement with the expected identifier/team/runtime/timestamp. See FINDINGS §44.
+- [x] Add the isolated published-old-updater smoke.
   **Verify:** helper/fixture tests cover expected-tag and checksum refusals and no-session
   isolation without HOME override; hosted release smoke later executes real v0.9.2 self-update
   and checks final version/digest, no unit files, and unchanged job state.
   **Local evidence:** historical checksum syntax, checksum/latest-tag refusal, exact receipt,
   HOME preservation, manager/Locron override removal, full mocked envelope/digest upgrade and
-  durable job comparison pass. CI runs these fixtures; actual published smoke remains pending.
+  durable job comparison pass. **Hosted evidence:** release job `109749726069` executed the real
+  published v0.9.2 Linux x86_64 binary's self-update to v0.9.6. The final version and binary digest
+  match, fixture job state is preserved, and no manager unit exists; the complete release run
+  [36671250966](https://github.com/WhiteKiwi/locron/actions/runs/36671250966) succeeded.
 - [x] Prepare v0.9.6 metadata/docs and pass local candidate gates.
   **Verify:** all five packages and exact internal requirements agree, only workspace lockfile
   versions change, Rustls stays patched, curated notes match tested behavior, version/script gates,
@@ -93,16 +105,35 @@ Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24);
   Rust 1.94 `cargo package --workspace --locked` and
   `cargo publish --workspace --dry-run --locked` without upload. All five crate inventories,
   README/licenses, excluded build material and server dist checks passed. The parent retained
-  `clean-msrv-package.log` in its private publication workspace. Hosted checks remain pending.
-- [ ] Publish the reviewed exact revision through a pull request and immutable tag.
+  `clean-msrv-package.log` in its private publication workspace. Exact merged-main CI/Audit passed
+  the final harness correction and complete hosted suites, including real service backend checks
+  on disposable runners and the clean MSRV source-package/publication dry-run gate.
+- [x] Publish the reviewed exact revision through a pull request and immutable tag.
   **Verify:** candidate CI/Audit and merged-main CI/Audit pass; the annotated v0.9.6 tag peels to
   that reviewed merge. A release-specific one-job foreground Mac runner consumes only the expected
   tag signing job, exits/de-registers, and leaves no persistent host service or credential copy.
-- [ ] Verify final distribution, real update compatibility, and host preservation.
+  **Evidence:** PRs #19 and #20 merged after review. Annotated tag `v0.9.6` (object
+  `6090839c60019b24c399d83671cdd56df1f60a84`) peels to reviewed merge
+  `531d1a48e796e1949de4e1bbd1e6562646935f46`.
+  Run-specific ephemeral runner #21 accepted only the exact release signing context through its
+  pre-job hook, completed one job, exited 0, and de-registered. Its owned runtime/work/cache paths
+  were removed; six unrelated runner listeners remain live and no persistent runner service exists.
+- [x] Verify final distribution, real update compatibility, and host preservation.
   **Verify:** release/signing/smoke and Homebrew jobs succeed; all five registry versions and ten
   public assets exist, archive/package hashes and Homebrew match, downloaded Mac binaries validate
   strictly with expected identity and notarization; installed Locron binary/PIDs/plists, jobs,
   signing Keychain metadata, unrelated background records, and older release assets remain intact.
+  **Evidence:** all eight release jobs and both Homebrew test-bot jobs in
+  [36672303131](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/36672303131) passed. Independent
+  registry inventory is `all`; all ten public assets and eight bare checksums match, tagged installer
+  bytes agree, four Homebrew URLs/hashes match, and Linux package version/architecture metadata
+  agrees. Both published Mac binaries pass strict signature and online notarization verification.
+  A private no-service install preserves signed bytes and reports 0.9.6; isolated disabled-job
+  fixtures verify human labels and unchanged JSON kinds. Installed owner Locron remains 0.9.2;
+  its binary and plist bytes/inodes/mtimes, service PIDs 859/870, 45 durable job definitions, Keychain
+  search/default metadata, and v0.9.2–v0.9.5 release asset metadata are unchanged. No background-item
+  database reset or owner service update occurred. Fresh-machine quarantine/UI notification and
+  historical BTM display behavior remain unverified; no suppression or one-row claim is made.
 
 ## v0.9.5 feedback correction release (2026-09-30)
 

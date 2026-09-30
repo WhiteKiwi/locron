@@ -2262,7 +2262,8 @@ release scripts passed Rust 1.94 `cargo package --workspace --locked` and
 excluded-build-material and server dist checks passed; no package was uploaded. The parent owns
 these checks and retained `clean-msrv-package.log` under its private publication workspace.
 Hosted exact-revision CI/Audit, tagged signing/publication, published old-updater smoke, final
-channel inventory and post-publication host readback remain pending.
+channel inventory and post-publication host readback were subsequent parent gates; their completed
+results are recorded in §44.
 
 
 ## 43. Acceptance daemon startup observer interferes with its lock (2026-09-30)
@@ -2307,5 +2308,64 @@ mutation, bounded stderr from an intentionally failed child, and timeout guard r
 Rust 1.94 and 1.98 each passed all nine acceptance tests, including the previously failing retry
 scenario. Pinned warnings-denied locked all-target CLI Clippy, formatting and diff checks passed.
 These results verify the harness correction but do not recover the discarded hosted stderr or
-retroactively establish the exact original exit-2 cause. The parent still gates the tag on fresh
-exact-revision hosted PR/main CI and Audit.
+retroactively establish the exact original exit-2 cause. Exact-revision hosted PR/main CI and Audit
+subsequently passed before tagging; see the publication receipt in §44.
+
+
+## 44. v0.9.6 signed publication and preservation receipt (2026-09-30)
+
+Reviewed [PR #19](https://github.com/WhiteKiwi/locron/pull/19) implemented the second feedback.
+The scoped test-harness follow-up [PR #20](https://github.com/WhiteKiwi/locron/pull/20) passed all
+nine [PR CI jobs](https://github.com/WhiteKiwi/locron/actions/runs/36670144377) and both
+[Audit groups](https://github.com/WhiteKiwi/locron/actions/runs/36670144256). Its reviewed merge
+`531d1a48e796e1949de4e1bbd1e6562646935f46` passed all nine
+[main CI jobs](https://github.com/WhiteKiwi/locron/actions/runs/36670573034), including full hosted
+service-backend and clean MSRV package gates, and both
+[main Audit groups](https://github.com/WhiteKiwi/locron/actions/runs/36670575858). The immutable
+annotated `v0.9.6` tag object `6090839c60019b24c399d83671cdd56df1f60a84` peels to that merge.
+
+All eight jobs of [release run 36671250966](https://github.com/WhiteKiwi/locron/actions/runs/36671250966)
+succeeded: four hosted platform builds, the two-architecture Mac signing job, workspace registry
+publication with exact registry-install verification, GitHub/Homebrew publication, and the real
+published-old-updater smoke. The one-job foreground ephemeral runner #21 had only the run-specific
+label `locron-signing-36671250966`. An administrator-owned pre-job hook checked repository, push
+event, tag, commit, run ID/attempt, workflow/ref and job against the approved context before checkout;
+the actual job logged approval and runner ID 21. It exited 0 and de-registered afterward. Its owned
+temporary runtime, SSD work and cache directories were removed, with six unrelated runner listeners
+still live. No signing key export, new CI signing secret, Keychain ACL/search/default change, or
+persistent runner service was needed.
+
+The retained `locron.macos-signing/v1` receipt records identifier `dev.locron.cli`, team
+`4H4Z446LHS`, and Accepted notary submission `33bee0a5-7d30-4c76-82e2-799f41057b0f`.
+The notary log has `issues=null` and tickets for both architectures. Independent downloads from
+[the public release](https://github.com/WhiteKiwi/locron/releases/tag/v0.9.6) match both archive and
+signed executable hashes in the receipt. Apple Silicon and Intel binaries report 0.9.6, have the
+expected architecture, Developer ID Application authority, team, identifier, hardened runtime and
+secure timestamp, and both pass
+`codesign --verify --strict --verbose=4 -R=notarized --check-notarization`. A private standalone
+no-service installation reports 0.9.6 and preserves the signed Apple Silicon executable bytes.
+This verifies released code and online tickets, not fresh-machine quarantine, offline behavior,
+Settings attribution refresh, notification suppression, or cleanup of historical background rows.
+
+Independent crates.io inventory reports all five 0.9.6 packages. GitHub carries exactly ten assets;
+all eight bare-name archive/package checksums and GitHub asset digests match downloaded bytes.
+The installer matches the tag. Debian and RPM metadata agree on 0.9.6-1 and their intended
+architectures; both Debian payload binaries match the corresponding Linux tarballs. Homebrew
+revision `3fb2113c3b4fccdfaebc46ec9fbd4e9d12120f93` has all four v0.9.6 URLs and matching hashes.
+Both Linux and macOS jobs in [tap run 36672303131](https://github.com/WhiteKiwi/homebrew-tap/actions/runs/36672303131)
+passed. Isolated disabled-job fixtures using the public Mac binary confirm distinct `process:`,
+`http:` and `shell:` human labels in add/list/show, preserved LAST RUN, and unchanged JSON target kinds.
+
+The hosted Linux x86_64 smoke used the actual public v0.9.2 standalone binary and its self-update
+path against this public release. Its `locron.published-updater-smoke/v1` receipt records
+`from=0.9.2`, `to=0.9.6`, `job_state_preserved=true`, `manager_units=0`, and final binary SHA-256
+`9eeb91c241756f8c7df068b5d5df604bb23c773bb1d845d45b5940ca9d17e172`. This is an actual upgrade on
+an isolated hosted runner, separate from the reporter's earlier Mac v0.9.2 → v0.9.5 confirmation.
+
+Post-publication owner-host readback preserves the installed 0.9.2 binary hash/inode, both LaunchAgent
+hashes/inodes/mtimes, daemon/dashboard PIDs 859/870, and all 45 durable job records excluding naturally
+advancing scheduler cursors. Keychain search/default metadata and v0.9.2–v0.9.5 release IDs and asset
+IDs/names/sizes/digests/update timestamps agree with the baseline. No owner installation, job,
+service registration, or global background-item database reset was performed. The same-name two-row
+observation is consistent with the two independently registered services; the release reduces
+identical plist writes and supplies distribution identity without combining those services.
