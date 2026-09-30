@@ -22,6 +22,16 @@ locron config get
 locron list --all
 ```
 
+The `LAST RUN` column exposes the latest retained run state separately from whether a job is
+enabled. Inspect `failed` or `timed_out` jobs with `locron explain JOB`, `locron history JOB`,
+and `locron why --run RUN_ID`. `none` means no run is retained; retention may have removed
+older history.
+
+Read advisory warnings from `add` and `update`, including dry runs. A process-resolution
+warning allows registration but identifies a missing executable or an environment that could
+not be checked. Verify job PATH, cwd, and environment with `doctor` before relying on scheduled
+execution. Use `--http POST URL` for HTTP work; `-- http POST URL` registers a process instead.
+
 ## Run the daemon as a service
 
 `locron service install` registers and starts the daemon with the platform's per-user service

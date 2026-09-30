@@ -7,6 +7,96 @@ Deferred ideas that are not active commitments live in `docs/BACKLOG.md`.
 If a planned implementation decision changes, update and review `docs/IMPLEMENTATION.md` and this checklist before changing code. Update `docs/ARCHITECTURE.md` first for a durable structure/invariant change and `docs/SPEC.md` first for an observable behavior/scope change.
 Completed historical sections live in `docs/TODO-archive.md` (moved 2026-08-24); this file keeps open work and recent backlogs.
 
+## v0.9.5 feedback correction release (2026-09-30)
+
+- [x] Review release scope, preconditions, and publication plan.
+  **Verify:** SPEC, FINDINGS §41, IMPLEMENTATION, and this checklist agree on the correction scope;
+  the latest release is v0.9.4, no v0.9.5 remote tag exists, and exact registry inventory is none.
+  **Evidence:** research and parent source review independently confirmed all three preconditions;
+  the completed plan preserves old-client checksum compatibility and reviewed correction scope.
+- [x] Prepare consistent v0.9.5 metadata and curated release notes.
+  **Verify:** all five packages and four exact internal requirements identify 0.9.5, unrelated
+  dependencies stay fixed, and the UTC-dated changelog/comparison links identify the same release.
+  **Evidence:** Cargo metadata lists all five packages at 0.9.5, the release-version contract
+  script passes, and the root manifest has four exact `=0.9.5` requirements. Cargo changed only
+  the five workspace versions in the lockfile; `rustls 0.23.45` remains selected. Reviewed
+  Unreleased entries moved to UTC-dated 2026-09-30 v0.9.5 notes with updated comparison links.
+- [ ] Pass local candidate and exact-revision hosted release gates.
+  **Verify:** version contract, audit groups, formatting, warnings-denied locked Clippy, workspace
+  all-target tests, workflow/script contracts, clean-tree MSRV package/publish dry runs, diff checks,
+  and the PR head's hosted CI/Audit checks succeed without publication from the development session.
+  **Local evidence:** `sh scripts/check-release-version.sh 0.9.5` passed. Rust 1.94
+  `cargo check --workspace --all-targets`, `cargo test --workspace --all-targets --locked`
+  (446 tests across 22 suites, 0 failed/ignored), and formatting passed. Final-candidate
+  warnings-denied locked workspace Clippy passed on Rust 1.98. Both cargo-deny groups passed
+  (`advisories`; `bans licenses sources`), preserving Rustls 0.23.45. actionlint passed both
+  changed workflows; the installer/release-script shellcheck set, checksum fixture, version-script
+  fixture, and diff checks passed. From a clean private Git snapshot of candidate sources,
+  Rust 1.94 `cargo package --workspace --locked` and
+  `cargo publish --workspace --dry-run --locked` verified all five packages without upload.
+  Cargo repeated the existing yanked `chacha20 0.10.1` warning; no dependency movement was made.
+  Hosted exact-revision checks are pending, so this step remains open.
+- [ ] Merge the verified candidate and trigger its immutable release tag.
+  **Verify:** merged main contains the reviewed change, main CI/Audit pass, annotated v0.9.5 peels
+  to that exact commit, and tag push starts the Release workflow.
+- [ ] Confirm distribution and old-updater compatibility.
+  **Verify:** Release succeeds, registry inventory is all, all ten GitHub assets are present,
+  bare checksum filenames and hashes match published archives/packages and Homebrew, downloaded
+  macOS arm64 binary/isolated installer report 0.9.5, and no installed/live state changed.
+
+## First feedback triage (2026-09-30)
+
+- [x] Confirm feedback against current code and release artifacts; review the complete plan.
+  **Verify:** FINDINGS §40 distinguishes reproduced bugs from hypotheses, confirms checksum
+  source/format and old-client bootstrap, and agrees with SPEC and IMPLEMENTATION scope.
+  **Evidence:** separate research checked the direct v0.9.4 asset and both parser revisions;
+  parent review confirmed advisory CLI reuse, snapshot-based list projection, and bare filenames
+  for future old-client updates. Planning reviewed before development; absent retained history
+  renders `none`, because retention prevents inferring a job never ran.
+- [x] Fix checksum parsing and future release checksum filenames.
+  **Verify:** updater tests cover bare, `./`, binary marker, malformed/missing/mismatch entries
+  and failure preservation; release-generation fixture verifies bare names accepted by the old
+  parser, including the CI shellcheck/script gate; installer tests still pass. No historical
+  release asset changes.
+  **Evidence:** checksum unit coverage accepts bare/`./`/binary-marker forms and rejects unrelated
+  paths; all 15 updater integration tests pass with successful fixtures using the published `./`
+  format. All 5 installer fixtures pass. The checksum script fixture generates three bare
+  archive/package entries, excludes prior checksum output, and verifies each with `sha256sum -c`.
+  The fixture and both scripts are now checked by the existing CI script gate.
+- [x] Add advisory process-resolution warnings and the narrow HTTP-selector hint.
+  **Verify:** add/update human and JSON tests cover success, missing executable, effective PATH,
+  env-file precedence/failure, selective hints, redaction, and non-mutating dry runs. Registration
+  still succeeds for unavailable binaries; doctor uses the same resolution mechanism.
+  **Evidence:** the 4 new feedback integration tests and existing 72 CLI contracts pass. Missing
+  executables still register; dry-run add creates no files and dry-run update preserves the job.
+  Effective relative env-file PATH, inline overrides, global PATH, and doctor parity are checked.
+  Invalid env-file content receives a generic warning; unsupported/lowercase methods and invalid
+  URLs do not trigger hints, and warnings omit supplied URLs, credentials, and env-file content.
+- [x] Expose latest retained run identity/state in list JSON and human table.
+  **Verify:** store/CLI tests cover absence, failure/success/active states, ordering/ties, disabled
+  filtering, removed-name reuse, retention absence, and width fitting without hidden state;
+  projections do not use history caps or target snapshot parsing.
+  **Evidence:** the store projection regression passes across tied request times, revisions,
+  manual/scheduled triggers, success/failure/active/skipped/cancelled states, disabled filtering,
+  removed-name reuse, and removed retained rows, with deliberately invalid run snapshots.
+  The CLI feedback test checks null, queued identity/state, cancellation, and unchanged show.
+  Exact full/piped table assertions, exact-fit width, narrow-state visibility, and no-run `none`
+  regressions pass.
+- [x] Complete documentation and regression verification; review the scoped diff.
+  **Verify:** CLI/operator reference and Unreleased changelog match final behavior; formatting,
+  warnings-denied locked workspace Clippy, locked workspace all-target tests, applicable workflow
+  checks, and `git diff --check` pass. Record limitations and confirm no installed state changes.
+  **Evidence:** final-tree `cargo test --workspace --all-targets --locked` passed all 446 tests
+  across 22 suites with no ignored tests. `cargo fmt --all -- --check` and
+  `cargo clippy --workspace --all-targets --locked -- -D warnings` passed. `actionlint` passed
+  both changed workflows; shellcheck passed the full installer/release-script CI set, including
+  both checksum scripts. `sh scripts/test-generate-release-checksums.sh` and `git diff --check`
+  passed. CLI/operator guidance, help, and curated Unreleased notes match the implemented scope.
+  Source/test/doc/workflow review found no remaining issue. Verification used isolated temporary
+  state and fixtures; no installed binary, live jobs/services, released assets, or tags changed.
+  Release publication and installed-client replacement remain outside this request; advisory
+  resolution checks file presence and cannot guarantee future execution or count failure streaks.
+
 ## v0.9.4 security patch release (2026-09-29)
 
 - [x] Define the release scope and review the distribution preconditions before changing metadata.

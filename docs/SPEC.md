@@ -433,6 +433,49 @@ Observable completion criteria:
 - The existing v0.9.3 release and tag remain intact; users can obtain the fix by updating through
   their installation channel.
 
+## First feedback triage amendment (2026-09-30)
+
+Improve update reliability and early visibility of incorrectly registered or failing work.
+The accepted scope is:
+
+- Self-update accepts the checksum filename forms emitted by the official release pipeline,
+  including a leading `./`, while retaining checksum verification and failure atomicity.
+  Future releases publish bare checksum filenames so already installed older updaters can
+  obtain the correction. Existing versioned release assets remain unchanged.
+- Adding or updating a direct-process job, including a dry run, warns when the executable
+  cannot be resolved with the effective job environment. The warning is advisory: registering
+  a binary that will be installed later remains allowed. A missing `http` executable with a
+  method and HTTP(S) URL also offers the correct `--http` selector as a hint.
+- The human job list exposes the latest retained run state for each job and clearly distinguishes
+  a job with no retained run. Machine output gains the equivalent additive observation.
+
+Consecutive-failure counting is deferred: retention, skipped/cancelled runs, and retry attempts
+need a separate product definition. Target-label renaming is also deferred; the warning and
+specific selector hint address the demonstrated mistake without broad output churn.
+No release publication, installed-binary replacement, or real job/service mutation is included.
+
+Completion requires regression coverage of published checksum forms, advisory resolution and
+selector hints, retained latest-run observations, unchanged dry-run state, and existing redaction
+and machine-output behavior.
+
+## v0.9.5 feedback correction release amendment (2026-09-30)
+
+Publish the reviewed first-feedback corrections as patch release v0.9.5. This release restores
+the standalone update path, adds advisory checks for the existing process-registration contract,
+and makes the existing retained run state visible in job lists. It adds no command, scheduling
+policy, storage migration, or supported platform.
+
+Observable completion criteria:
+
+- The version, curated release notes, immutable tag, five published workspace packages,
+  supported-platform archives, Linux packages, checksums, installer, and Homebrew formula agree
+  on v0.9.5 and the reviewed release revision.
+- Local release gates, exact-revision hosted CI/Audit, and the tag release workflow succeed.
+- Published checksum filenames are bare names accepted by affected older updaters; downloaded
+  release archives match those checksums and the matching Homebrew digest.
+- Existing versioned assets and tags remain unchanged. Publication does not replace this
+  machine's installed binary or modify its live jobs/services.
+
 ## Open Questions
 
 None. Implementation choices and their trade-offs are recorded separately from this frozen product specification.

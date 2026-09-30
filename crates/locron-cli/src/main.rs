@@ -61,6 +61,8 @@ Examples:
 Navigation:
   Run 'locron help <COMMAND>' for detailed command help.";
 const ADD_HELP: &str = "\
+Missing process executables produce an advisory warning; registration remains allowed.
+
 Examples:
   locron add backup --every 1h -- /usr/bin/backup
   locron add heartbeat --cron '*/5 * * * *' --http GET https://example.test/health
@@ -68,6 +70,9 @@ Examples:
 Navigation:
   Run 'locron --help' to list all commands.";
 const UPDATE_HELP: &str = "\
+Process resolution is checked with the effective job environment, including on dry runs.
+Resolution warnings do not prevent registration.
+
 Examples:
   locron update backup --retries 3 --dry-run
   locron update heartbeat --cron '*/10 * * * *' --timezone UTC
@@ -79,6 +84,8 @@ Examples:
   locron list
   locron list --all
   locron list --no-trunc
+
+LAST RUN shows the latest retained run state, or none when no run is retained.
 
 Navigation:
   Run 'locron --help' to list all commands.";
@@ -993,9 +1000,13 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         Command::Update(args) => update(&paths, &args, format),
         Command::List { all, no_trunc } => {
             let jobs = open(&paths)?
-                .list_jobs(all)?
+                .list_jobs_with_latest_run(all)?
                 .into_iter()
-                .map(redacted_job)
+                .map(|record| {
+                    let mut job = redacted_job(record.job)?;
+                    job["latest_run"] = serde_json::to_value(record.latest_run)?;
+                    Ok(job)
+                })
                 .collect::<Result<Vec<_>>>()?;
             if format == Format::Human {
                 // The TIOCGWINSZ size lookup is both the width source and the
@@ -1208,7 +1219,8 @@ fn add(paths: &StatePaths, args: AddArgs, format: Format) -> Result<()> {
         now,
     )?;
     validate_metadata(&args.name, args.description.as_deref(), &args.tag)?;
-    let warnings = environment_warnings(&definition.environment);
+    let warnings = registration_warnings(paths, &definition);
+    let warnings = warnings.iter().map(String::as_str).collect::<Vec<_>>();
     if args.dry_run {
         if format == Format::Human {
             println!("job added: {} (dry run; no changes made)", args.name);
@@ -1318,7 +1330,8 @@ fn update(paths: &StatePaths, args: &UpdateArgs, format: Format) -> Result<()> {
     )?;
     let after = job_fields(&name, description.as_deref(), &tags, enabled, &definition)?;
     let changed_fields = changed_fields(&before, &after);
-    let warnings = environment_warnings(&definition.environment);
+    let warnings = registration_warnings(paths, &definition);
+    let warnings = warnings.iter().map(String::as_str).collect::<Vec<_>>();
     if args.dry_run {
         if format == Format::Human {
             println!("job updated: {} (dry run; no changes made)", current.name);
@@ -4226,6 +4239,55 @@ pub(crate) fn engine_target(
     }
 }
 
+/// Advisory only: use the doctor's execution environment without executing work.
+fn registration_warnings(paths: &StatePaths, definition: &JobDefinition) -> Vec<String> {
+    let mut warnings = environment_warnings(&definition.environment)
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let Target::Process { executable, args } = &definition.target else {
+        return warnings;
+    };
+    let Ok(settings) = config_dry_run_settings(paths, true) else {
+        warnings.push("could not check process resolution: settings unavailable".into());
+        return warnings;
+    };
+    let attempt = AdmitAttempt {
+        run_id: Uuid::nil().to_string(),
+        job_id: Uuid::nil().to_string(),
+        attempt_number: 1,
+        trigger: "diagnostic".into(),
+        nominal_us: None,
+        snapshot_json: String::new(),
+    };
+    match engine_target(definition, &attempt, &settings) {
+        Ok(_) => {}
+        Err(error) if error == format!("executable not found: {executable}") => {
+            warnings.push("process executable could not be resolved with the effective job environment; registration is allowed".into());
+            if executable == "http"
+                && args.first().is_some_and(|method| {
+                    matches!(
+                        method.as_str(),
+                        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD"
+                    )
+                })
+                && args
+                    .get(1)
+                    .and_then(|url| url.parse::<reqwest::Url>().ok())
+                    .is_some_and(|url| {
+                        matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
+                    })
+            {
+                warnings.push(format!("did you mean --http {} <URL>?", args[0]));
+            }
+        }
+        Err(_) => warnings.push(
+            "could not check process resolution: effective job environment unavailable".into(),
+        ),
+    }
+    warnings
+}
+
 fn resolve_attempt_executable(
     executable: &str,
     cwd: &Path,
@@ -4568,7 +4630,7 @@ fn render_list_table(jobs: &[Value], width: Option<u16>) -> Result<()> {
 }
 
 /// Builds the docker-style aligned `list` table text: a header line (`NAME`,
-/// `SCHEDULE`, `TARGET`, `ENABLED`) followed by one left-aligned row per job
+/// `SCHEDULE`, `TARGET`, `ENABLED`, `LAST RUN`) followed by one left-aligned row per job
 /// in the store's name order, with each column padded to the maximum width
 /// and columns separated by a single space. The header prints even when no
 /// job exists. The header and every value are derived only from the redacted
@@ -4577,15 +4639,14 @@ fn render_list_table(jobs: &[Value], width: Option<u16>) -> Result<()> {
 /// appear).
 ///
 /// When `width` is `Some(terminal width)` and the natural table width
-/// (`name_width + 1 + schedule_width + 1 + target_width + 1 + 7` for the
-/// unpadded `ENABLED` column) exceeds it, only the `TARGET` column — the
-/// table's final data column — shrinks to the remaining width, marking cut
-/// values with a trailing `…`. `NAME`, `SCHEDULE`, the header, and `ENABLED`
+/// (`name_width + schedule_width + target_width + 7 + last_run_width + 4`)
+/// exceeds it, only the `TARGET` column shrinks to the remaining width, marking
+/// cut values with a trailing `…`. `NAME`, `SCHEDULE`, `ENABLED`, and `LAST RUN`
 /// never truncate; a remaining width below one display column prints the
 /// table untruncated (rows wrap as before). A `None` width prints the
 /// full-value table.
 fn list_table(jobs: &[Value], width: Option<u16>) -> Result<String> {
-    let mut rows: Vec<(String, String, String, &str)> = Vec::with_capacity(jobs.len());
+    let mut rows: Vec<(String, String, String, &str, &str)> = Vec::with_capacity(jobs.len());
     for job in jobs {
         let name = job["name"].as_str().context("job record lacks name")?;
         let enabled = if job["enabled"].as_bool().unwrap_or(false) {
@@ -4604,6 +4665,7 @@ fn list_table(jobs: &[Value], width: Option<u16>) -> Result<String> {
             list_schedule_summary(&definition)?,
             list_target_summary(&definition)?,
             enabled,
+            job["latest_run"]["state"].as_str().unwrap_or("none"),
         ));
     }
     // Each column is padded to the maximum cell width (header included); the
@@ -4617,33 +4679,38 @@ fn list_table(jobs: &[Value], width: Option<u16>) -> Result<String> {
     let target_width = "TARGET"
         .len()
         .max(rows.iter().map(|row| row.2.len()).max().unwrap_or(0));
+    let last_run_width = "LAST RUN"
+        .len()
+        .max(rows.iter().map(|row| row.4.len()).max().unwrap_or(0));
     // Fitting is a separate step from padding: when the natural table width
-    // (name + 1 + schedule + 1 + target + 1 + 7) exceeds the terminal width,
+    // (name + schedule + target + 7 + last run + 4) exceeds the terminal width,
     // only TARGET absorbs the deficit, leaving it the remaining display
-    // columns after NAME, SCHEDULE, the unpadded ENABLED label, and every
+    // columns after NAME, SCHEDULE, ENABLED, LAST RUN, and every
     // inter-column space. A budget below one column falls back to the
     // untruncated table, which wraps exactly as it always has.
     let target_budget = width.and_then(|w| {
-        let natural = name_width + 1 + schedule_width + 1 + target_width + 1 + 7;
-        let budget = (w as usize).saturating_sub(name_width + 1 + schedule_width + 1 + 1 + 7);
+        let natural =
+            name_width + 1 + schedule_width + 1 + target_width + 1 + 7 + 1 + last_run_width;
+        let budget = (w as usize)
+            .saturating_sub(name_width + 1 + schedule_width + 1 + 1 + 7 + 1 + last_run_width);
         (natural > w as usize && budget >= 1).then_some(budget)
     });
     let target_column = target_budget.unwrap_or(target_width);
     let mut table = String::new();
     writeln!(
         table,
-        "{:<name_width$} {:<schedule_width$} {:<target_column$} ENABLED",
+        "{:<name_width$} {:<schedule_width$} {:<target_column$} ENABLED LAST RUN",
         "NAME", "SCHEDULE", "TARGET"
     )
     .unwrap();
-    for (name, schedule, target, enabled) in &rows {
+    for (name, schedule, target, enabled, last_run) in &rows {
         let rendered_target = match target_budget {
             Some(budget) => truncate_display(target, budget),
             None => target.clone(),
         };
         writeln!(
             table,
-            "{name:<name_width$} {schedule:<schedule_width$} {rendered_target:<target_column$} {enabled}"
+            "{name:<name_width$} {schedule:<schedule_width$} {rendered_target:<target_column$} {enabled:<7} {last_run}"
         )
         .unwrap();
     }
@@ -6602,62 +6669,39 @@ mod tests {
     }
 
     #[test]
-    fn list_table_with_injected_widths_truncates_only_the_target_column() {
-        let jobs = vec![
+    fn list_table_preserves_latest_state_and_only_truncates_target() {
+        let mut jobs = vec![
             list_job_record("a", true, "git push origin main"),
-            list_job_record("b", true, "run-a-very-long-backup-job-with-a-silly-name"),
+            list_job_record("b", false, "run-a-very-long-backup-job-with-a-silly-name"),
         ];
-        // name_width = max(4, 1, 1) = 4; schedule_width = max(8, 8, 8) = 8;
-        // target_width = max(6, 26, 50) = 50; the natural table width is
-        // 4 + 1 + 8 + 1 + 50 + 1 + 7 = 72.
-        let full = format!(
-            "{:<4} {:<8} {:<50} ENABLED\n\
-             {:<4} {:<8} {:<50} yes\n\
-             {:<4} {:<8} {:<50} yes\n",
+        jobs[0]["latest_run"] = json!({"id":"run", "state":"failed"});
+        let full = list_table(&jobs, None).unwrap();
+        let expected = format!(
+            "{:<4} {:<8} {:<50} ENABLED LAST RUN\n{:<4} {:<8} {:<50} {:<7} failed\n{:<4} {:<8} {:<50} {:<7} none\n",
             "NAME",
             "SCHEDULE",
             "TARGET",
             "a",
             "every 1h",
             "shell git push origin main",
+            "yes",
             "b",
             "every 1h",
             "shell run-a-very-long-backup-job-with-a-silly-name",
+            "no"
         );
-        // No width: full values, byte-identical to the pre-change table.
-        assert_eq!(list_table(&jobs, None).unwrap(), full);
-        // A width that fits the natural table width: unchanged.
-        assert_eq!(list_table(&jobs, Some(80)).unwrap(), full);
-        assert_eq!(list_table(&jobs, Some(72)).unwrap(), full);
-        // A width that cannot even hold NAME + SCHEDULE + ENABLED alone: the
-        // documented fallback prints the untruncated table (rows wrap).
-        assert_eq!(list_table(&jobs, Some(20)).unwrap(), full);
-    }
-
-    #[test]
-    fn list_table_truncates_the_target_column_to_the_remaining_width() {
-        let jobs = vec![
-            list_job_record("a", true, "git push origin main"),
-            list_job_record("b", true, "run-a-very-long-backup-job-with-a-silly-name"),
-        ];
-        // At width 40 the fixed prefix (4 + 1 + 8 + 1) and the trailing
-        // " ENABLED" (1 + 7) leave 40 - 22 = 18 columns for TARGET; every
-        // target value shrinks to 17 text columns plus the marker.
-        let expected = format!(
-            "{:<4} {:<8} {:<18} ENABLED\n\
-             {:<4} {:<8} {:<18} yes\n\
-             {:<4} {:<8} {:<18} yes\n",
-            "NAME",
-            "SCHEDULE",
-            "TARGET",
-            "a",
-            "every 1h",
-            "shell git push or…",
-            "b",
-            "every 1h",
-            "shell run-a-very-…",
-        );
-        assert_eq!(list_table(&jobs, Some(40)).unwrap(), expected);
+        assert_eq!(full, expected);
+        assert_eq!(full, list_table(&jobs, Some(81)).unwrap());
+        assert!(full.contains("ENABLED LAST RUN"));
+        assert!(full.contains("yes     failed"));
+        assert!(full.contains("no      none"));
+        assert_eq!(full, list_table(&jobs, Some(100)).unwrap());
+        assert_eq!(full, list_table(&jobs, Some(20)).unwrap());
+        let narrow = list_table(&jobs, Some(40)).unwrap();
+        assert!(narrow.contains('…'));
+        assert!(narrow.contains("yes     failed"));
+        assert!(narrow.contains("no      none"));
+        assert!(narrow.lines().all(|line| line.width() <= 40));
     }
 
     fn history_run_record(trigger: &str) -> Value {

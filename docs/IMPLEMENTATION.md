@@ -52,6 +52,70 @@ registry becomes partial or a publication stage fails, inspect the exact durable
 retry; never move the immutable tag or overwrite an existing package version. The release does not
 change this machine's installed Locron binary or running services.
 
+## First feedback triage (2026-09-30)
+
+Implement the accepted SPEC amendment with no schema migration, dependency changes, release
+publication, or mutation of installed jobs/services. Findings §40 records source and release evidence.
+
+1. Normalize checksum filenames by removing the optional binary-mode `*` marker and a single
+   leading `./`, then compare the whole name. Keep 64-hex validation, lowercase comparison, and
+   download verification before replacement. Reject unrelated paths instead of matching basenames.
+   Generate future release checksums from bare filenames rather than `./*.*`; this is necessary
+   for older updaters to fetch the fixed build. Do not edit historical release assets.
+2. Compose advisory direct-process registration checks from the same `engine_target` resolution
+   used by CLI doctor, using current global settings or equivalent non-mutating defaults for a
+   new state directory and a non-durable diagnostic attempt. Check the normalized effective job,
+   including environment precedence, relative PATH entries, and CWD. Warnings go to human stderr
+   or the JSON envelope's `warnings`, on real and dry-run add/update paths. Resolution failures
+   never reject registration. Preserve environment warnings. Do not execute the target or fetch
+   HTTP/body files. For non-resolution configuration failures, report inability to check without
+   exposing arbitrary environment-file content. Only a missing bare `http` executable, supported
+   uppercase HTTP method, and valid HTTP(S) URL trigger the `--http METHOD <URL>` hint; never echo
+   the supplied URL or trailing argv in the hint. CLI-only scope avoids widening API/MCP contracts.
+3. Add a store list projection that reads each live job and its latest retained run identity/state
+   in one SQLite snapshot, ordered by job name and with latest chosen by
+   `requested_at_us DESC,id DESC`. Preserve `list_jobs` for existing consumers. Select only the
+   run fields needed, without parsing snapshots, querying anomalies, or using history's cap.
+   JSON list rows gain `latest_run: {id,state}` or `null`; other job projections stay unchanged.
+   The human table gains `LAST RUN`, showing the current durable state or `none`. Reserve this
+   column when fitting TARGET so state is always visible; keep `--no-trunc` and pipe behavior.
+   Active runs, skipped/cancelled states, removed identities/name reuse, and pruned history are
+   observations, not inferred failures or success. No consecutive-failure counter is introduced.
+4. Update CLI/operator guidance and the Unreleased changelog, then verify the focused updater,
+   installer, registration, store, and human/JSON contracts plus a release-checksum fixture in
+   the existing CI shellcheck/script gate, locked workspace tests,
+   warnings-denied Clippy, formatting, workflow syntax/actionlint where available, and diff checks.
+
+The development sub-session owns code, contracts, and checklist evidence after plan review.
+The parent reviews the resulting diff and test report. Existing output redaction and dry-run
+non-mutation are explicit regression gates. This scope intentionally leaves installed-binary
+replacement and release publication for a separate requested release.
+
+## v0.9.5 feedback correction release (2026-09-30)
+
+Prepare the reviewed feedback corrections as one lockstep patch release. The release corrects
+existing update/registration/inspection behavior without adding commands, execution policy,
+dependencies, or a storage migration. Findings §41 records release preconditions.
+
+Advance the workspace package version and all four exact internal requirements from 0.9.4
+to 0.9.5, then use Cargo to refresh the five workspace lockfile entries without dependency movement.
+Move the reviewed user-visible Unreleased entries into a curated 0.9.5 entry dated 2026-09-30 UTC,
+and advance comparison links. Preserve the bare-checksum generation and its CI contract so older
+updaters can verify the new build.
+
+Verify version agreement, patched dependencies and both cargo-deny groups, formatting,
+warnings-denied locked workspace all-target Clippy and tests, workflow/script checks, and
+Rust-1.94 clean-tree workspace package/publish dry runs with no upload. The development sub-session
+prepares metadata and evidence; the parent inspects/stages/commits the scoped tree, creates a PR,
+and requires the exact head's CI/Audit checks before merging. Recheck main's hosted results before
+creating and pushing the immutable annotated v0.9.5 tag.
+
+Wait for the release workflow to complete, then verify all five registry versions, all four
+archives/four Linux packages/checksums/installer, bare checksum names and archive digests, and the
+Homebrew formula. If publication becomes partial, inspect the exact durable state before a bounded
+retry; never move a tag or replace existing versioned assets. Verify a downloaded macOS arm64 binary
+and isolated no-service installer smoke. Do not replace the installed binary or restart live services.
+
 ## Milestone approach
 
 Implement from the inside out: deterministic domain behavior, transactional storage, daemon orchestration and runners, then the thin CLI. This order makes time, crash, and concurrency policy testable before it is coupled to a real clock or terminal.

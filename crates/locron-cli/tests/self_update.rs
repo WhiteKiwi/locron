@@ -298,7 +298,7 @@ fn fixture_tarball(target: &str) -> Vec<u8> {
 
 fn valid_sums(target: &str) -> String {
     let hash = sha256_hex(&fixture_tarball(target));
-    format!("{hash}  locron-{NEW_TAG}-{target}.tar.gz\n")
+    format!("{hash}  ./locron-{NEW_TAG}-{target}.tar.gz\n")
 }
 
 /// A fixture serving the latest document, checksums, and the target tarball.

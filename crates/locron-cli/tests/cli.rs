@@ -1773,7 +1773,7 @@ fn empty_list_prints_the_header_only() {
     let state = tempfile::tempdir().unwrap();
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
-        .stdout("NAME SCHEDULE TARGET ENABLED\n")
+        .stdout("NAME SCHEDULE TARGET ENABLED LAST RUN\n")
         .stderr("");
 }
 
@@ -1792,9 +1792,9 @@ fn human_list_aligns_columns_across_name_widths() {
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
         .stdout(
-            "NAME     SCHEDULE               TARGET            ENABLED\n\
-         a        cron '* * * * *'       run /usr/bin/true yes\n\
-         longname cron '0 9 * * MON-FRI' run /usr/bin/true yes\n",
+            "NAME     SCHEDULE               TARGET            ENABLED LAST RUN\n\
+         a        cron '* * * * *'       run /usr/bin/true yes     none\n\
+         longname cron '0 9 * * MON-FRI' run /usr/bin/true yes     none\n",
         );
 }
 
@@ -1821,8 +1821,8 @@ fn piped_human_list_prints_full_targets_byte_identically() {
     assert_cmd::assert::Assert::new(locron(&state).args(["ls"]).output().unwrap())
         .success()
         .stdout(
-            "NAME   SCHEDULE TARGET                                                  ENABLED\n\
-         backup every 1h shell echo run-a-very-long-backup-job-with-a-silly-name yes\n",
+            "NAME   SCHEDULE TARGET                                                  ENABLED LAST RUN\n\
+         backup every 1h shell echo run-a-very-long-backup-job-with-a-silly-name yes     none\n",
         )
         .stderr("");
 }
@@ -1884,14 +1884,14 @@ fn human_list_all_marks_disabled_jobs_no() {
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
         .stdout(
-            "NAME   SCHEDULE TARGET            ENABLED\nbackup every 1h run /usr/bin/true yes\n",
+            "NAME   SCHEDULE TARGET            ENABLED LAST RUN\nbackup every 1h run /usr/bin/true yes     none\n",
         );
     assert_cmd::assert::Assert::new(locron(&state).args(["list", "--all"]).output().unwrap())
         .success()
         .stdout(
-            "NAME   SCHEDULE TARGET            ENABLED\n\
-         backup every 1h run /usr/bin/true yes\n\
-         ping   every 1h run /usr/bin/true no\n",
+            "NAME   SCHEDULE TARGET            ENABLED LAST RUN\n\
+         backup every 1h run /usr/bin/true yes     none\n\
+         ping   every 1h run /usr/bin/true no      none\n",
         );
 }
 

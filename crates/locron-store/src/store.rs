@@ -183,6 +183,24 @@ pub struct JobRecord {
     pub disabled_since_us: Option<i64>,
 }
 
+/// Latest retained run observation, without execution snapshots.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LatestRunSummary {
+    /// Canonical run identity.
+    pub id: String,
+    /// Current durable run state.
+    pub state: String,
+}
+
+/// One job and its latest retained run, read in one snapshot.
+#[derive(Clone, Debug)]
+pub struct JobListRecord {
+    /// Current live job definition.
+    pub job: JobRecord,
+    /// Latest retained run, or none when no run remains.
+    pub latest_run: Option<LatestRunSummary>,
+}
+
 /// Input for materializing one scheduled run occurrence.
 #[derive(Clone, Debug)]
 pub struct NewScheduledRun {
@@ -767,6 +785,26 @@ impl Store {
         let mut statement = conn.prepare("SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE j.removed_at_us IS NULL AND (?1 OR j.enabled=1) ORDER BY j.name COLLATE BINARY")?;
         statement
             .query_map([all], map_job)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    /// Lists jobs with their latest retained run in a single statement snapshot.
+    /// Latest means durable request time followed by canonical run identity,
+    /// across all revisions and triggers. No execution snapshot is loaded.
+    pub fn list_jobs_with_latest_run(&self, all: bool) -> StoreResult<Vec<JobListRecord>> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare("SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us,last.id,last.state FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision LEFT JOIN runs last ON last.id=(SELECT id FROM runs WHERE job_id=j.id ORDER BY requested_at_us DESC,id DESC LIMIT 1) WHERE j.removed_at_us IS NULL AND (?1 OR j.enabled=1) ORDER BY j.name COLLATE BINARY")?;
+        statement
+            .query_map([all], |row| {
+                let id: Option<String> = row.get(12)?;
+                Ok(JobListRecord {
+                    job: map_job(row)?,
+                    latest_run: id
+                        .map(|id| row.get(13).map(|state| LatestRunSummary { id, state }))
+                        .transpose()?,
+                })
+            })?
             .collect::<Result<Vec<_>, _>>()
             .map_err(Into::into)
     }
@@ -3392,6 +3430,108 @@ mod tests {
                 cursor_us: 1,
             })
             .unwrap();
+    }
+
+    #[test]
+    fn latest_list_projection_orders_retained_runs_and_preserves_job_identity() {
+        let (_temp, store) = store();
+        create(&store, "00000000-0000-4000-8000-000000000001", "alpha");
+        create(&store, "00000000-0000-4000-8000-000000000002", "beta");
+        store
+            .set_enabled("00000000-0000-4000-8000-000000000002", false, 2)
+            .unwrap();
+        assert!(
+            store.list_jobs_with_latest_run(false).unwrap()[0]
+                .latest_run
+                .is_none()
+        );
+        assert_eq!(store.list_jobs_with_latest_run(true).unwrap().len(), 2);
+        {
+            let conn = store.conn().unwrap();
+            // Deliberately invalid snapshots prove this focused read does not parse them.
+            for (id, time, sequence, state) in [
+                ("a", 10, 1, "failed"),
+                ("z", 10, 2, "running"),
+                ("newer", 11, 3, "succeeded"),
+            ] {
+                conn.execute("INSERT INTO runs(id,job_id,revision,trigger,requested_at_us,eligible_at_us,queue_sequence,snapshot_json,state) VALUES(?1,'00000000-0000-4000-8000-000000000001',1,'manual',?2,?2,?3,'not-json',?4)", params![id,time,sequence,state]).unwrap();
+            }
+        }
+        let rows = store.list_jobs_with_latest_run(false).unwrap();
+        assert_eq!(rows[0].latest_run.as_ref().unwrap().id, "newer");
+        assert_eq!(rows[0].latest_run.as_ref().unwrap().state, "succeeded");
+        // A newer definition does not hide a more recently requested older-revision run.
+        store
+            .update_job(&UpdateJob {
+                id: "00000000-0000-4000-8000-000000000001".into(),
+                expected_revision: 1,
+                name: "alpha".into(),
+                description: Some("updated".into()),
+                tags_json: "[]".into(),
+                enabled: true,
+                definition_json: "{}".into(),
+                now_us: 12,
+                cursor_us: 12,
+            })
+            .unwrap();
+        store.conn().unwrap().execute("INSERT INTO runs(id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,queue_sequence,snapshot_json,state) VALUES('scheduled','00000000-0000-4000-8000-000000000001',2,'scheduled',8,8,8,4,'not-json','succeeded')", []).unwrap();
+        assert_eq!(
+            store.list_jobs_with_latest_run(false).unwrap()[0]
+                .latest_run
+                .as_ref()
+                .unwrap()
+                .id,
+            "newer"
+        );
+        store
+            .conn()
+            .unwrap()
+            .execute("DELETE FROM runs WHERE id='newer'", [])
+            .unwrap();
+        let rows = store.list_jobs_with_latest_run(false).unwrap();
+        assert_eq!(rows[0].latest_run.as_ref().unwrap().id, "z");
+        assert_eq!(rows[0].latest_run.as_ref().unwrap().state, "running");
+        for state in [
+            "failed",
+            "timed_out",
+            "retry_wait",
+            "cancelled",
+            "skipped_overlap",
+            "skipped_concurrency",
+        ] {
+            store
+                .conn()
+                .unwrap()
+                .execute("UPDATE runs SET state=?1 WHERE id='z'", [state])
+                .unwrap();
+            assert_eq!(
+                store.list_jobs_with_latest_run(false).unwrap()[0]
+                    .latest_run
+                    .as_ref()
+                    .unwrap()
+                    .state,
+                state
+            );
+        }
+        store
+            .conn()
+            .unwrap()
+            .execute("DELETE FROM runs", [])
+            .unwrap();
+        assert!(
+            store.list_jobs_with_latest_run(false).unwrap()[0]
+                .latest_run
+                .is_none()
+        );
+        // Removed history belongs to the old identity, never a reused live name.
+        store.conn().unwrap().execute("INSERT INTO runs(id,job_id,revision,trigger,requested_at_us,eligible_at_us,queue_sequence,snapshot_json,state) VALUES('retained','00000000-0000-4000-8000-000000000001',1,'manual',12,12,4,'not-json','failed')", []).unwrap();
+        store
+            .remove_job("00000000-0000-4000-8000-000000000001", 13)
+            .unwrap();
+        create(&store, "00000000-0000-4000-8000-000000000003", "alpha");
+        let rows = store.list_jobs_with_latest_run(false).unwrap();
+        assert_eq!(rows[0].job.id, "00000000-0000-4000-8000-000000000003");
+        assert!(rows[0].latest_run.is_none());
     }
 
     fn create_with_policy(store: &Store, id: &str, name: &str, overlap: &str, limit: i64) {

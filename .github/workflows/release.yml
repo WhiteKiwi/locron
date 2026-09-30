@@ -132,7 +132,7 @@ jobs:
       - name: Generate Checksums
         working-directory: artifacts
         run: |
-          sha256sum ./*.* > SHA256SUMS.txt
+          sh ../scripts/generate-release-checksums.sh .
           cat SHA256SUMS.txt
       - name: Extract Release Notes
         run: |
