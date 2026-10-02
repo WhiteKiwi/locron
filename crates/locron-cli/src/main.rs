@@ -7183,11 +7183,13 @@ mod tests {
                 self.paths.final_output(&self.run_id, 1).unwrap()
             }
 
-            fn output(&self) -> locron_store::AttemptOutputRecord {
-                self.store.attempts_for_run(&self.run_id).unwrap()[0]
+            fn assert_output(&self, expected_state: &str, expected_bytes: i64) {
+                let output = self.store.attempts_for_run(&self.run_id).unwrap()[0]
                     .output
                     .clone()
-                    .unwrap()
+                    .unwrap();
+                assert_eq!(output.state, expected_state);
+                assert_eq!(output.physical_bytes, expected_bytes);
             }
 
             fn seed_file(&self) {
@@ -7195,9 +7197,7 @@ mod tests {
             }
 
             fn assert_pending(&self) {
-                let output = self.output();
-                assert_eq!(output.state, "prune_pending");
-                assert_eq!(output.physical_bytes, 8);
+                self.assert_output("prune_pending", 8);
                 assert_eq!(self.store.pending_output_prunes(10).unwrap().len(), 1);
                 let reopened = Store::open_read_only(&self.paths.database).unwrap();
                 assert_eq!(
@@ -7228,8 +7228,7 @@ mod tests {
             prune(&fixture.paths, false, Format::Json).unwrap();
 
             assert!(!fixture.path().exists());
-            assert_eq!(fixture.output().state, "pruned");
-            assert_eq!(fixture.output().physical_bytes, 0);
+            fixture.assert_output("pruned", 0);
             assert!(fixture.store.pending_output_prunes(10).unwrap().is_empty());
             assert_eq!(std::fs::read(unrelated).unwrap(), b"unrelated");
         }
@@ -7244,8 +7243,7 @@ mod tests {
             prune(&fixture.paths, false, Format::Json).unwrap();
 
             assert!(!directory.exists());
-            assert_eq!(fixture.output().state, "pruned");
-            assert_eq!(fixture.output().physical_bytes, 0);
+            fixture.assert_output("pruned", 0);
             assert!(fixture.store.pending_output_prunes(10).unwrap().is_empty());
         }
 
