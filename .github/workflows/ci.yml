@@ -280,6 +280,15 @@ jobs:
         run: |
           cargo test --locked -p locron --bin locron --target '${{ matrix.target }}' self_update::windows_
           if ($LASTEXITCODE -ne 0) { throw 'native Windows distribution contract fixtures failed' }
+      - name: Verify stock PowerShell installer bootstrap
+        shell: powershell
+        run: |
+          if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) { throw 'installer fixtures require stock PowerShell 5.1' }
+          Get-ExecutionPolicy -List | Format-Table | Out-String | Write-Output
+          python -B scripts/render-windows-uninstaller.py --check
+          if ($LASTEXITCODE -ne 0) { throw 'retained uninstaller bootstrap differs from reviewed source' }
+          & './scripts/test-windows-installer.ps1'
+          if (-not $?) { throw 'stock PowerShell installer bootstrap fixtures failed' }
       - name: Package and verify current-version ZIP without developer PATH
         shell: powershell
         run: |
