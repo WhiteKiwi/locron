@@ -1561,6 +1561,15 @@ Verify: the exact original identity matches; identical bytes or path paired with
 volume or any different file-ID bit refuses. This comparison performs no I/O and does not
 authorize replacement, restoration or any task effect.
 
+Expose pure next_path()->Option<&Path> and matches_next_identity(&FileIdentity)->bool accessors
+without exposing service wire fields. Consumers validate the record's account/phase first, then
+bind a Restoring/Restored frame to the actual guarded destination and strict receipt full ID (or
+the verified package completion/old rollback leaf). None matches no identity; an existing next
+binding compares both complete fixed-width volume/file components. Verify: None stays None and
+refuses identity matching; the exact next path/identity succeeds, while any high or low identity
+bit or different volume refuses even with identical bytes/path. These readbacks add no phase,
+effect, callback count or ownership authority and never replace live existing-only guard checks.
+
 The persistence plan exposes that maximum record byte count and finite callback ceilings for R
 frozen roles: quiesce <=4R+2, restore <=4R+2, remove <=2R+2. These include per-effect intent/result,
 forced-stop facts and initial/terminal records; retries/polling do not append unbounded snapshots.
