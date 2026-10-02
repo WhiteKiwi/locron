@@ -833,6 +833,15 @@ or leaves a background writer/flush thread. Engine owns the asynchronous named-p
 listener and role-control cancellation adapter. Server uses the core sender without gaining an
 engine dependency; CLI composes engine listeners after acquiring the owning lifetime lock.
 
+The remote-pipe engine fixture is a reviewed generic PowerShell adapter caller. The accepted
+stock-binary bootstrap retains verified JSON CmdletInfo objects; its input already becomes
+$request through &$locronFromJson. Port both fixture output branches to
+`| & $locronToJson -Compress`, without rediscovering ConvertTo-Json by command name. Keep the
+localhost remote view, 200ms connection bound, rejected boolean, private listener guards and
+actual remote-refusal assertion unchanged. The loader's security, worker limits and original
+cold gate remain authoritative. Verify native x64/ARM64/MSRV engine tests execute this exact
+fixture with the accepted loader and still reject the remote pipe view.
+
 Maintenance and the registered supervisor use the Windows-only synchronous
 notification::request_shutdown_guarded_until(&DirectoryGuard, role, lifetime, std::time::Instant).
 Capture min(caller deadline, API-entry plus 200ms) once, before endpoint naming, worker spawn or

@@ -2870,6 +2870,16 @@ warm-up, test retry or passing cleanup fact from destructor/PID disappearance is
 
 ### Local named pipes with creation-time security
 
+The accepted stock loader at 8674237 validates the Utility binary's retained ConvertFrom-Json
+and ConvertTo-Json CmdletInfo objects, implementing assembly/type and loaded location before
+passing them to a generic static caller. Its request input already invokes &$locronFromJson.
+The existing engine remote-pipe fixture still invokes unqualified ConvertTo-Json in both its
+successful-connect and rejected-connect output branches. Select the minimal two-invocation port
+to `| & $locronToJson -Compress` within that one static fixture string. Preserve the same output
+schema, Connect(200), remote view, actual rejection assertion and owned listener lifetime; no
+fallback, connection retry, deadline change or bootstrap warming is introduced.
+Source: [accepted guarded stock JSON bootstrap](https://github.com/WhiteKiwi/locron/blob/8674237e1948c311aea1a7ea98d0549255b98240/crates/locron-core/src/windows/stock_json.ps1).
+
 Maintenance control must consume its caller's remaining shutdown budget instead of starting a
 new two-hundred-millisecond exchange after endpoint naming or runtime startup. The exact pinned
 Tokio 1.53.1 timeout implementation polls the inner future before its timer; an immediately ready
