@@ -882,3 +882,238 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use futures_util::StreamExt;
+    use serde_json::{Value, json};
+    use std::time::Duration;
+    use tokio::io::AsyncWriteExt;
+
+    struct RunningServer {
+        paths: StatePaths,
+        address: SocketAddr,
+        token: String,
+        client: reqwest::Client,
+        stop: Option<tokio::sync::oneshot::Sender<()>>,
+        task: Option<tokio::task::JoinHandle<io::Result<()>>>,
+        _temporary: tempfile::TempDir,
+    }
+
+    impl RunningServer {
+        async fn start() -> Self {
+            let temporary = tempfile::tempdir().expect("temporary parent");
+            let root = temporary.path().join("private-dashboard");
+            let guard = locron_core::filesystem::DirectoryGuard::private(&root)
+                .expect("private dashboard fixture");
+            let paths = StatePaths::new(guard.normalized_path().to_path_buf());
+            paths.ensure().expect("state layout");
+            let token = token::ensure(&paths).expect("private token");
+            let bound = bind(&Config {
+                bind: vec![std::net::Ipv4Addr::LOCALHOST.to_string()],
+                port: Some(0),
+                port_policy: PortPolicy::Fixed,
+                ..Config::default()
+            })
+            .await
+            .expect("ephemeral dashboard listener");
+            let address = bound.address;
+            let (stop, stopped) = tokio::sync::oneshot::channel();
+            let state_paths = paths.clone();
+            let task = tokio::spawn(serve_until(bound, state_paths, async {
+                let _ = stopped.await;
+            }));
+            Self {
+                paths,
+                address,
+                token,
+                client: reqwest::Client::builder()
+                    .no_proxy()
+                    .timeout(Duration::from_secs(30))
+                    .build()
+                    .expect("loopback client"),
+                stop: Some(stop),
+                task: Some(task),
+                _temporary: temporary,
+            }
+        }
+
+        fn url(&self, path: &str) -> String {
+            format!("http://{}{path}", self.address)
+        }
+
+        async fn post(&self, path: &str, body: Option<&Value>) -> Value {
+            let mut request = self
+                .client
+                .post(self.url(path))
+                .header("authorization", format!("token {}", self.token));
+            if let Some(body) = body {
+                request = request.json(body);
+            }
+            let response = request.send().await.expect("dashboard mutation");
+            let status = response.status();
+            let body: Value = response.json().await.expect("mutation envelope");
+            assert!(status.is_success(), "{status}: {body}");
+            assert_eq!(body["ok"], true, "{body}");
+            body
+        }
+
+        async fn queue_run(&self) -> String {
+            let job = self
+                .post(
+                    "/api/v1/jobs",
+                    Some(&json!({
+                        "name": "dashboard shutdown fixture",
+                        "description": null,
+                        "tags": [],
+                        "enabled": true,
+                        "definition": {
+                            "schedule": {"kind": "cron", "expression": "* * * * *", "timezone": {"mode": "local"}},
+                            "target": {"kind": "process", "executable": std::env::current_exe().expect("native executable"), "args": []},
+                            "cwd": self.paths.root,
+                            "environment": {"values": {}},
+                            "policy": {
+                                "overlap": "skip", "missed_run": "skip", "catch_up_limit": 10,
+                                "retries": 0, "retry_delay": 0, "retry_cap": 0,
+                                "backoff": "exponential", "retry_timeout": false,
+                                "timeout": null, "start_deadline": null,
+                                "termination_grace": 0, "per_job_concurrency": 1
+                            }
+                        }
+                    })),
+                )
+                .await;
+            let job_id = job["data"]["id"].as_str().expect("job id");
+            let run = self.post(&format!("/api/v1/jobs/{job_id}/run"), None).await;
+            assert_eq!(run["data"]["state"], "queued");
+            run["data"]["run_id"].as_str().expect("run id").to_owned()
+        }
+
+        async fn shutdown(&mut self, deadline: Duration) -> io::Result<()> {
+            self.stop.take().expect("owned stop sender").send(()).ok();
+            let mut task = self.task.take().expect("owned server task");
+            match tokio::time::timeout(deadline, &mut task).await {
+                Ok(result) => result.expect("server task did not panic"),
+                Err(_) => {
+                    task.abort();
+                    let _ = task.await;
+                    Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "dashboard fixture exceeded its outer deadline",
+                    ))
+                }
+            }
+        }
+    }
+
+    impl Drop for RunningServer {
+        fn drop(&mut self) {
+            if let Some(stop) = self.stop.take() {
+                let _ = stop.send(());
+            }
+            if let Some(task) = self.task.take() {
+                task.abort();
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cooperative_shutdown_closes_active_sse_without_cancelling_a_durable_run() {
+        let mut server = RunningServer::start().await;
+        let run_id = server.queue_run().await;
+        let response = server
+            .client
+            .get(server.url(&format!("/api/v1/runs/{run_id}/stream")))
+            .header("authorization", format!("token {}", server.token))
+            .send()
+            .await
+            .expect("active SSE request");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let mut stream = response.bytes_stream();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut bytes = Vec::new();
+            while !String::from_utf8_lossy(&bytes).contains("event: run") {
+                bytes.extend_from_slice(
+                    &stream
+                        .next()
+                        .await
+                        .expect("initial SSE event")
+                        .expect("SSE bytes"),
+                );
+            }
+        })
+        .await
+        .expect("SSE fixture was active before shutdown");
+
+        server
+            .shutdown(Duration::from_secs(3))
+            .await
+            .expect("active SSE must permit graceful dashboard shutdown");
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while let Some(chunk) = stream.next().await {
+                chunk.expect("finite SSE completion");
+            }
+        })
+        .await
+        .expect("SSE response closes after dashboard shutdown");
+
+        let store = locron_store::Store::open(server.paths.clone(), "test", 1)
+            .expect("durable state after dashboard exit");
+        let run = store.run(&run_id).expect("queued run survives");
+        assert_eq!(run.state, "queued");
+        assert_eq!(run.finished_at_us, None);
+        assert!(
+            !store
+                .cancellation_requested(&run_id)
+                .expect("cancellation fact")
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stalled_headers_and_request_bodies_have_a_finite_dashboard_drain() {
+        let mut server = RunningServer::start().await;
+        let mut headers = tokio::net::TcpStream::connect(server.address)
+            .await
+            .expect("stalled header client");
+        headers
+            .write_all(b"GET /api/v1/jobs HTTP/1.1\r\nHost: 127.0.0.1\r\n")
+            .await
+            .expect("partial headers");
+        let mut body = tokio::net::TcpStream::connect(server.address)
+            .await
+            .expect("stalled body client");
+        body.write_all(
+            format!(
+                "POST /api/v1/jobs HTTP/1.1\r\nHost: {}\r\nAuthorization: token {}\r\nContent-Type: application/json\r\nContent-Length: 10000\r\n\r\n{{",
+                server.address, server.token
+            )
+            .as_bytes(),
+        )
+        .await
+        .expect("partial body");
+        let response = server
+            .client
+            .get(server.url("/api/v1/session"))
+            .header("authorization", format!("token {}", server.token))
+            .send()
+            .await
+            .expect("listener remains responsive");
+        assert!(response.status().is_success());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let start = std::time::Instant::now();
+        let result = server.shutdown(Duration::from_secs(13)).await;
+        if let Err(error) = result {
+            assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+            assert_eq!(
+                error.to_string(),
+                "dashboard connection drain exceeded its deadline"
+            );
+        }
+        assert!(start.elapsed() < Duration::from_secs(12));
+        // The transport fixture observes serve_until. Actual role/launcher exit is checked by
+        // the CLI lifecycle suite, since axum can own detached connection tasks until runtime drop.
+        drop((headers, body));
+    }
+}
