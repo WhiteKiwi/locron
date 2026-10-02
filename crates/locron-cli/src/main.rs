@@ -571,6 +571,14 @@ enum DaemonCommand {
         /// Internal registration marker used by lifetime-scoped cooperative control.
         #[arg(long, hide = true)]
         service_mode: bool,
+        /// Existing registered supervisor activation UUID.
+        #[cfg(windows)]
+        #[arg(long, hide = true, requires_all = ["service_mode", "worker_lifetime"])]
+        supervisor_lifetime: Option<String>,
+        /// This owned worker's activation and actual role UUID.
+        #[cfg(windows)]
+        #[arg(long, hide = true, requires_all = ["service_mode", "supervisor_lifetime"])]
+        worker_lifetime: Option<String>,
     },
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -1169,8 +1177,27 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         Command::Prune { dry_run } => prune(&paths, dry_run, format),
         Command::Doctor => doctor(&paths, format),
         Command::Daemon {
-            command: DaemonCommand::Run { service_mode },
-        } => daemon(paths, service_mode).await,
+            command:
+                DaemonCommand::Run {
+                    service_mode,
+                    #[cfg(windows)]
+                    supervisor_lifetime,
+                    #[cfg(windows)]
+                    worker_lifetime,
+                },
+        } => {
+            #[cfg(windows)]
+            {
+                let lifetimes = service::supervised_lifetimes(
+                    service_mode,
+                    supervisor_lifetime,
+                    worker_lifetime,
+                )?;
+                daemon_supervised(paths, service_mode, lifetimes).await
+            }
+            #[cfg(not(windows))]
+            daemon(paths, service_mode).await
+        }
         Command::Mcp => mcp::run_mcp_server(paths).await,
         Command::SelfUpdate => {
             let outcome = self_update::update(&paths.root).await?;
@@ -3667,6 +3694,41 @@ async fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {
     daemon_with_lock(paths, service_mode, lifetime, cancellation, lock).await
 }
 
+#[cfg(windows)]
+async fn daemon_supervised(
+    paths: StatePaths,
+    service_mode: bool,
+    lifetimes: Option<service::SupervisedLifetimes>,
+) -> Result<()> {
+    let Some(lifetimes) = lifetimes else {
+        return daemon(paths, service_mode).await;
+    };
+    // Parent validation is existing-only and precedes all child state writes.
+    let parent_guard =
+        service::validate_supervisor(&paths, service::Target::Daemon, &lifetimes.supervisor)?;
+    let cancellation = CancellationToken::new();
+    let activation = RegisteredDaemonActivation::acquire_at(
+        &paths,
+        &paths.daemon_worker_activation_lock,
+        "daemon-worker",
+        &lifetimes.worker,
+        cancellation.clone(),
+    )?;
+    let result = async {
+        let Some(lock) =
+            wait_for_registered_daemon_lock(&paths, &lifetimes.worker, &cancellation).await?
+        else {
+            return Ok(());
+        };
+        daemon_with_lock(paths, true, lifetimes.worker, cancellation, Some(lock)).await
+    }
+    .await;
+    // daemon_with_lock has already awaited wake/role listeners and released daemon.lock.
+    activation.close().await;
+    drop(parent_guard);
+    result
+}
+
 async fn daemon_with_lock(
     paths: StatePaths,
     service_mode: bool,
@@ -3791,11 +3853,27 @@ struct RegisteredDaemonActivation {
 impl RegisteredDaemonActivation {
     fn acquire(paths: &StatePaths, cancellation: CancellationToken) -> Result<Self> {
         let lifetime = Uuid::now_v7().to_string();
-        let lock = locron_store::DaemonLock::acquire_role(
+        Self::acquire_at(
+            paths,
             &paths.daemon_activation_lock,
+            "daemon-activation",
+            &lifetime,
+            cancellation,
+        )
+    }
+
+    fn acquire_at(
+        paths: &StatePaths,
+        lease_path: &Path,
+        control_role: &str,
+        lifetime: &str,
+        cancellation: CancellationToken,
+    ) -> Result<Self> {
+        let lock = locron_store::DaemonLock::acquire_role(
+            lease_path,
             &LockMetadata {
                 pid: std::process::id(),
-                lifetime_id: lifetime.clone(),
+                lifetime_id: lifetime.to_owned(),
                 started_at_us: now_us(),
                 binary_version: env!("CARGO_PKG_VERSION").into(),
             },
@@ -3803,8 +3881,8 @@ impl RegisteredDaemonActivation {
         )?;
         let control = locron_engine::ipc::bind_role_control(
             &paths.root,
-            "daemon-activation",
-            &lifetime,
+            control_role,
+            lifetime,
             cancellation.clone(),
         )?;
         let signal = tokio::spawn(async move {
