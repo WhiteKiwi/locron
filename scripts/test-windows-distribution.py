@@ -146,8 +146,11 @@ class WindowsDistributionTests(unittest.TestCase):
     def test_normal_and_delayed_dependencies_refuse_non_stock_runtime(self):
         for delayed in (False, True):
             self.assertEqual(windows.pe_imports(imported_executable("KERNEL32.dll", delayed)), ["kernel32.dll"])
+            synchronization = "api-ms-win-core-synch-l1-2-0.dll"
+            self.assertEqual(windows.pe_imports(imported_executable(synchronization, delayed)), [synchronization])
             for dll in ("VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "MSVCP140.dll", "ucrtbased.dll",
-                        "libssl-3.dll", "private.dll", "../kernel32.dll"):
+                        "libssl-3.dll", "private.dll", "../kernel32.dll", "api-ms-win-core-synch-l1-3-0.dll",
+                        "api-ms-win-private-unknown-l1-1-0.dll", "api-ms-win-crt-runtime-l1-1-0.dll"):
                 with self.subTest(delayed=delayed, dll=dll), self.assertRaises(ValueError):
                     windows.pe_imports(imported_executable(dll, delayed))
         binary = bytearray(imported_executable("kernel32.dll"))

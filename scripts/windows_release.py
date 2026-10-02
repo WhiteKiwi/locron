@@ -17,6 +17,10 @@ MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 # Deliberately finite: a new DLL requires review against the minimum Windows 11
 # image. VC redistributables and application libraries never pass this gate.
 SYSTEM_DLLS = frozenset((
+    # WaitOnAddress/WakeByAddress*: Microsoft documents this exact API set
+    # since Windows 8; it is a stock OS contract, not a redistributable.
+    # https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitonaddress
+    "api-ms-win-core-synch-l1-2-0.dll",
     "advapi32.dll", "bcrypt.dll", "bcryptprimitives.dll", "cfgmgr32.dll", "combase.dll",
     "crypt32.dll", "dbghelp.dll", "gdi32.dll", "iphlpapi.dll", "kernel32.dll", "kernelbase.dll",
     "netapi32.dll", "normaliz.dll", "ntdll.dll", "ole32.dll", "oleaut32.dll", "psapi.dll",

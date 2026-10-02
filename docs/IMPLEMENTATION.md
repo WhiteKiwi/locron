@@ -215,6 +215,11 @@ redistributable DLLs, debug runtimes and other application DLLs. Run the package
 version check with only Windows system directories in its child PATH. These gates verify the
 build intent and direct dependencies; clean Windows 11 acceptance remains required to prove
 runtime behavior without Visual Studio, a Rust toolchain or separately installed VC redistributables.
+The finite allowlist includes only the explicitly reviewed api-ms-win-core-synch-l1-2-0.dll API
+set used by the native Rust build. Microsoft's
+[WaitOnAddress requirements](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitonaddress)
+identify this synchronization contract as available since Windows 8. Other API-set names still
+require individual review; no prefix-based exemption admits an unknown dependency.
 PR CI builds both native Windows release targets with this configuration, packages the current
 workspace version as a test input, validates the actual ZIP and retains import/hash/toolchain facts.
 The rustc host triple must equal the selected target before building either native package.
