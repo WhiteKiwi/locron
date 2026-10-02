@@ -85,6 +85,25 @@ struct WorkerPermit<'a> {
     pool: &'a WorkerPermits,
 }
 
+/// Ownership of the process-wide generic-or-COM child slot.
+///
+/// Hold this permit through confirmed child/I/O cleanup or quarantine. Never call a generic
+/// script adapter while retaining it: that adapter needs the same single slot.
+pub struct ScriptWorkerPermit {
+    _permit: WorkerPermit<'static>,
+}
+
+impl ScriptWorkerPermit {
+    /// Admits one caller-owned fixed adapter against its existing absolute operation deadline.
+    /// Queueing occurs on the caller without creating a waiting thread or native child.
+    pub fn acquire_until(deadline: Instant) -> io::Result<Self> {
+        remaining(deadline)?;
+        let permit = ADAPTER_WORKERS.acquire(deadline)?;
+        remaining(deadline)?;
+        Ok(Self { _permit: permit })
+    }
+}
+
 impl Drop for WorkerPermit<'_> {
     fn drop(&mut self) {
         let mut active = self
@@ -749,6 +768,31 @@ mod tests {
         });
         assert_eq!(queries.load(std::sync::atomic::Ordering::Relaxed), 1);
         assert_eq!(*initializer.active.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn owned_com_permit_refuses_generic_admission_without_starting_another_child() {
+        let permit = ScriptWorkerPermit::acquire_until(Instant::now() + ADAPTER_TIMEOUT).unwrap();
+        let entered = Instant::now();
+        let error = run_script_with_deadline(
+            "throw 'a saturated generic slot must not execute this source'",
+            &json!({}),
+            entered + Duration::from_millis(40),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(entered.elapsed() < Duration::from_secs(1));
+        drop(permit);
+        let expired = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .expect("fixture clock supports a one-millisecond subtraction");
+        assert_eq!(
+            ScriptWorkerPermit::acquire_until(expired)
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
     }
 
     #[test]
