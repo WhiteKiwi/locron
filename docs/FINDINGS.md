@@ -2811,6 +2811,14 @@ Sources: [TaskFolder registration and flags](https://learn.microsoft.com/en-us/w
 [engine PID semantics](https://learn.microsoft.com/en-us/windows/win32/taskschd/runningtask-enginepid),
 [immediate Stop and caller rights](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-stop).
 
+Development selected a hidden waiting stock PowerShell launcher using static EncodedCommand and
+data-only EncodedArguments. The documented UTF-16LE EncodedArguments representation accepts a
+serialized CLIXML argument array; a native Windows PowerShell 5.1 fixture round-tripped one
+base64 JSON value containing Korean text, quotes, ampersands, dollar/backtick characters and a
+trailing backslash without source interpolation. This proves argument transport only; real task
+ownership, role exit propagation and crash restart still require native integrated acceptance.
+Source: [Windows PowerShell 5.1 executable parameters](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
+
 ### Recommended design order and remaining proof
 
 Hosted native tests found an elevated token's default file owner can be Administrators despite

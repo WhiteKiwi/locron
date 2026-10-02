@@ -220,6 +220,45 @@ Preserve enabled/disabled role state on refresh; run roles directly or use a fix
 that waits and propagates exit status so restart works. Task.Stop is a documented hard fallback
 after cooperative timeout, with kill-on-close/recovery behavior, not graceful-drain evidence.
 
+Windows registration uses the shared full-file-identity/SID digest for role-specific task names.
+Select a fixed hidden stock PowerShell 5.1 launcher: `-EncodedCommand` carries only static source,
+and `-EncodedArguments` carries a serialized CLIXML array containing one base64 JSON request.
+The launcher validates the current SID and uses ProcessStartInfo with UseShellExecute=false,
+CreateNoWindow=true, exact escaped Windows argv and an explicit working directory; it waits for
+the role and returns that role's exit code. The wrapper's PID is never the role's PID. This
+keeps paths/data out of executable source and avoids a separate installed script or policy change.
+Readback compares semantic principal/trigger/power/restart/action fields and retains a disabled
+registration on refresh. Cooperative failure first waits under the shutdown deadline; Task.Stop
+then targets only the validated owned registration with the unchanged registered-service lifetime.
+After this hard fallback, actual role-lock exit is still required and forced completion is
+reported explicitly; unowned/manual holders remain a bounded refusal or registration deferral.
+
+Updater/package maintenance inventories every current-SID Locron task bound to the verified
+installed executable, across all state roots. Compare full Windows file identity while retained
+no-follow file/ancestor guards remain live; path lowercasing and filename matching do not prove
+an executable binding. Parse only the fixed launcher command plus its strictly generated one-value
+CLIXML/base64-JSON argument representation. Reconstruct the private state guard and shared full
+instance digest, and validate role, deterministic task name, marker, task ACL and executable.
+Malformed, foreign or unconfirmed bindings refuse maintenance before stopping any process.
+
+Expose a guarded in-memory snapshot and a serializable versioned restore record containing the
+current SID, previous executable, and each prior registered role's state root, instance digest,
+task name, original enabled flag and exact semantic definition fingerprint. Exclude transient
+run/result observations and the enabled flag from that fingerprint. Quiesce disables activation
+for every owned binding before requesting exact lifetime shutdown; actual role-lock and waiting
+launcher exit remain necessary. The private journal records confirmed quiescence and explicit
+forced fallback facts, without containing executable task source or arbitrary role arguments.
+Restore reconstructs guards and checks every existing definition against the recorded fingerprint
+before the first write, then binds only prior registered roles to the new verified executable and
+restores their exact enabled flags. Changed definitions/roots/SIDs fail closed; disabled roles stay
+disabled. Missing registrations are not silently recreated from a stale record.
+
+The package flow composes these same APIs through the existing installer maintenance modes:
+Prepare snapshots/quiesces all bindings for one verified executable and journals an operation UUID;
+Complete validates the installed package and restores prior registrations; Remove quiesces and
+removes only the validated prior registrations. No additional release asset or arbitrary manifest
+hook is introduced. Distribution owns the private journal/receipt and package registration proof.
+
 ### Unsigned release, installation and update handoff
 
 Add native x64/ARM64 MSVC ZIP builds containing locron.exe, README and both licenses. Extend exact
