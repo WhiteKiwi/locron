@@ -201,6 +201,14 @@ ten seconds. Add concurrent-first-request, idle retirement/restart, failure-with
 wrong-ID/oversized-frame and abrupt-parent-exit fixtures. Generic arbitrary-script tests and
 Task Scheduler COM calls remain outside the fixed filesystem dispatch; a later fixed COM worker
 requires its own reviewed contract and the same shared lifecycle deadline.
+Run the native core-library harness with --test-threads=1 because its real-stock timeout/cap
+fixtures deliberately consume the one shared generic child slot for up to thirty seconds.
+This serializes unrelated harness cases, not the implementation: explicit concurrent-first-use
+and saturated-queue fixtures still create real concurrent callers and retain their original
+deadline assertions. Run destructive fixed-worker faults and abrupt-parent cases in exact spawned
+test-helper processes, so those intentional failures cannot invalidate other state tests.
+Keep the core cold gate before post-gate probes and retain normal harness parallelism in the
+other libraries. Splitting the CI core/store invocations changes no coverage or production bound.
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable

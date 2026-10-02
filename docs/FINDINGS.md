@@ -2771,6 +2771,14 @@ cap fixtures under the original thirty-second maximum and measure prompt cleanup
 
 Evidence: [native ARM64 job and post-gate diagnostics](https://github.com/WhiteKiwi/locron/actions/runs/37031019704/job/110917557150).
 
+The selected one-generic-child limit makes unrelated test-harness timeout/cap cases compete for
+the same intentionally occupied thirty-second slot. Serialize only native core-library harness
+cases while preserving explicit concurrent-caller and saturated-queue fixtures. Isolate fixed
+worker protocol faults and parent-crash cases in exact test subprocesses; failure is expected to
+invalidate queued work in that process and must not contaminate unrelated state fixtures.
+Other library harnesses retain normal parallelism. This is test scheduling for deliberate owned
+failures, not a cold-start workaround or a larger production deadline.
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
