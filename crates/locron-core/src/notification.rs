@@ -2,6 +2,11 @@
 
 use std::io;
 use std::path::Path;
+#[cfg(windows)]
+use std::time::{Duration, Instant};
+
+#[cfg(windows)]
+const CLIENT_TIMEOUT: Duration = Duration::from_millis(200);
 
 /// Wake framing shared by the secured Windows client and listener.
 pub const WAKE_MESSAGE: &[u8] = b"locron-wake/v1\n";
@@ -85,6 +90,33 @@ pub fn request_shutdown(root: &Path, role: &str, lifetime: &str) -> io::Result<(
     }
 }
 
+/// Requests exact-lifetime shutdown within the caller's remaining absolute budget.
+///
+/// The retained guard and cached SID avoid filesystem/SID initialization. Success acknowledges
+/// delivery only; a timeout can follow queued I/O and never proves nondelivery or actual exit.
+#[cfg(windows)]
+pub fn request_shutdown_guarded_until(
+    guard: &crate::filesystem::DirectoryGuard,
+    role: &str,
+    lifetime: &str,
+    deadline: Instant,
+) -> io::Result<()> {
+    let entered = Instant::now();
+    let deadline = deadline.min(
+        entered
+            .checked_add(CLIENT_TIMEOUT)
+            .ok_or_else(control_deadline_error)?,
+    );
+    ensure_deadline(Some(deadline))?;
+    let lifetime = endpoint_lifetime(role, Some(lifetime))?;
+    let sid = crate::windows::cached_current_user_sid()?;
+    ensure_deadline(Some(deadline))?;
+    let identity = instance_identity_for_sid(guard, &sid)?;
+    ensure_deadline(Some(deadline))?;
+    let name = endpoint_name_from_identity(&identity, role, lifetime);
+    send_message_with_runtime(&name, SHUTDOWN_MESSAGE, Some(deadline), client_runtime)
+}
+
 /// Stable account/state identity for local endpoints and registered role names.
 #[cfg(windows)]
 pub fn instance_identity(root: &Path) -> io::Result<String> {
@@ -95,6 +127,14 @@ pub fn instance_identity(root: &Path) -> io::Result<String> {
 #[cfg(windows)]
 pub fn instance_identity_guarded(guard: &crate::filesystem::DirectoryGuard) -> io::Result<String> {
     let sid = crate::windows::current_user_sid()?;
+    instance_identity_for_sid(guard, &sid)
+}
+
+#[cfg(windows)]
+fn instance_identity_for_sid(
+    guard: &crate::filesystem::DirectoryGuard,
+    sid: &str,
+) -> io::Result<String> {
     let file_id::FileId::HighRes {
         volume_serial_number,
         file_id,
@@ -110,7 +150,7 @@ pub fn instance_identity_guarded(guard: &crate::filesystem::DirectoryGuard) -> i
             "state filesystem cannot provide full file identity",
         ));
     };
-    identity_digest(&sid, volume_serial_number, file_id)
+    identity_digest(sid, volume_serial_number, file_id)
 }
 
 #[cfg(windows)]
@@ -146,6 +186,13 @@ pub fn endpoint_name_guarded(
     role: &str,
     lifetime: Option<&str>,
 ) -> io::Result<String> {
+    let lifetime = endpoint_lifetime(role, lifetime)?;
+    let identity = instance_identity_guarded(guard)?;
+    Ok(endpoint_name_from_identity(&identity, role, lifetime))
+}
+
+#[cfg(windows)]
+fn endpoint_lifetime(role: &str, lifetime: Option<&str>) -> io::Result<Option<uuid::Uuid>> {
     let lifetime = lifetime
         .map(uuid::Uuid::parse_str)
         .transpose()
@@ -172,59 +219,136 @@ pub fn endpoint_name_guarded(
             "invalid role/lifetime endpoint",
         ));
     }
-    let identity = instance_identity_guarded(guard)?;
+    Ok(lifetime)
+}
+
+#[cfg(windows)]
+fn endpoint_name_from_identity(identity: &str, role: &str, lifetime: Option<uuid::Uuid>) -> String {
     let lifetime = lifetime.map(|value| value.simple().to_string());
-    Ok(match lifetime {
+    match lifetime {
         Some(lifetime) => format!(r"\\.\pipe\locron-v1-{identity}-{role}-{lifetime}"),
         None => format!(r"\\.\pipe\locron-v1-{identity}-{role}"),
-    })
+    }
 }
 
 #[cfg(windows)]
 fn send_message(name: &str, message: &'static [u8]) -> io::Result<()> {
+    send_message_with_runtime(name, message, None, client_runtime)
+}
+
+#[cfg(windows)]
+fn client_runtime() -> io::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+}
+
+#[cfg(windows)]
+fn control_deadline_error() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::TimedOut,
+        "local control deadline elapsed; delivery may be uncertain",
+    )
+}
+
+#[cfg(windows)]
+fn ensure_deadline(deadline: Option<Instant>) -> io::Result<()> {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        Err(control_deadline_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+async fn deadline_io<T>(
+    deadline: Option<Instant>,
+    operation: impl std::future::Future<Output = io::Result<T>>,
+) -> io::Result<T> {
+    let mut operation = std::pin::pin!(operation);
+    std::future::poll_fn(|context| {
+        if let Err(error) = ensure_deadline(deadline) {
+            return std::task::Poll::Ready(Err(error));
+        }
+        match operation.as_mut().poll(context) {
+            std::task::Poll::Pending => std::task::Poll::Pending,
+            std::task::Poll::Ready(result) => {
+                // A write polled before expiry may already be queued; do not claim nondelivery.
+                std::task::Poll::Ready(ensure_deadline(deadline).and(result))
+            }
+        }
+    })
+    .await
+}
+
+#[cfg(windows)]
+async fn exchange_frame(
+    stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin),
+    message: &'static [u8],
+    deadline: Option<Instant>,
+) -> io::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let size = u8::try_from(message.len()).map_err(io::Error::other)?;
+    deadline_io(deadline, stream.write_u8(size)).await?;
+    deadline_io(deadline, stream.write_all(message)).await?;
+    let mut ack = [0; ACK_MESSAGE.len()];
+    deadline_io(deadline, stream.read_exact(&mut ack)).await?;
+    if ack != ACK_MESSAGE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid local hint acknowledgement",
+        ));
+    }
+    deadline_io(deadline, stream.write_u8(0xff)).await
+}
+
+#[cfg(windows)]
+fn send_message_with_runtime(
+    name: &str,
+    message: &'static [u8],
+    deadline: Option<Instant>,
+    initialize: impl FnOnce() -> io::Result<tokio::runtime::Runtime> + Send + 'static,
+) -> io::Result<()> {
+    ensure_deadline(deadline)?;
     let name = name.to_owned();
-    // The joined worker avoids nested runtime panics. One deadline covers all native I/O.
+    ensure_deadline(deadline)?;
+    // The joined worker avoids nested runtime panics and never outlives this call.
     std::thread::Builder::new()
         .name("locron-ipc-hint".into())
         .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_io()
-                .enable_time()
-                .build()?;
+            ensure_deadline(deadline)?;
+            let runtime = initialize()?;
+            ensure_deadline(deadline)?;
             runtime.block_on(async {
-                tokio::time::timeout(std::time::Duration::from_millis(200), async {
-                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let exchange = async {
                     let mut options = tokio::net::windows::named_pipe::ClientOptions::new();
                     // SECURITY_IDENTIFICATION; Tokio also sets SECURITY_SQOS_PRESENT.
                     options.security_qos_flags(0x0001_0000);
                     let mut stream = loop {
+                        ensure_deadline(deadline)?;
                         match options.open(&name) {
                             Ok(stream) => break stream,
                             Err(error) if error.raw_os_error() == Some(231) => {
-                                tokio::time::sleep(std::time::Duration::from_millis(5)).await
+                                tokio::time::sleep(Duration::from_millis(5)).await;
                             }
                             Err(error) => return Err(error),
                         }
                     };
-                    stream
-                        .write_u8(u8::try_from(message.len()).map_err(io::Error::other)?)
-                        .await?;
-                    stream.write_all(message).await?;
-                    let mut ack = [0; ACK_MESSAGE.len()];
-                    stream.read_exact(&mut ack).await?;
-                    if ack != ACK_MESSAGE {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "invalid local hint acknowledgement",
-                        ));
+                    exchange_frame(&mut stream, message, deadline).await
+                };
+                match deadline {
+                    Some(deadline) => {
+                        tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), exchange)
+                            .await
+                            .map_err(|_| control_deadline_error())?
                     }
-                    stream.write_u8(0xff).await?;
-                    Ok(())
-                })
-                .await
-                .map_err(|_| {
-                    io::Error::new(io::ErrorKind::TimedOut, "local hint deadline elapsed")
-                })?
+                    None => tokio::time::timeout(CLIENT_TIMEOUT, exchange)
+                        .await
+                        .map_err(|_| {
+                            io::Error::new(io::ErrorKind::TimedOut, "local hint deadline elapsed")
+                        })?,
+                }
             })
         })?
         .join()
@@ -257,6 +381,164 @@ mod passive_tests {
 mod tests {
     use super::*;
     use crate::filesystem::DirectoryGuard;
+    use std::pin::Pin;
+    use std::sync::{Arc, Mutex};
+    use std::task::{Context, Poll};
+
+    fn sleep_past(deadline: Instant) {
+        std::thread::sleep(
+            deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(2),
+        );
+    }
+
+    #[derive(Default)]
+    struct WireState {
+        written: Vec<u8>,
+        receipt_polls: usize,
+        receipt_ready: bool,
+        ack_crosses: Option<Instant>,
+    }
+
+    struct FixtureWire(Arc<Mutex<WireState>>);
+
+    impl tokio::io::AsyncRead for FixtureWire {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            buffer: &mut tokio::io::ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let crossing = self.0.lock().unwrap().ack_crosses.take();
+            if let Some(deadline) = crossing {
+                // Deliberately crosses the deadline inside an already-ready I/O poll.
+                sleep_past(deadline);
+            }
+            buffer.put_slice(&ACK_MESSAGE[..buffer.remaining().min(ACK_MESSAGE.len())]);
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl tokio::io::AsyncWrite for FixtureWire {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            buffer: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let mut state = self.0.lock().unwrap();
+            if buffer == [0xff] {
+                state.receipt_polls += 1;
+                if !state.receipt_ready {
+                    return Poll::Pending;
+                }
+            }
+            state.written.extend_from_slice(buffer);
+            Poll::Ready(Ok(buffer.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[test]
+    fn expired_control_refuses_before_worker_initialization() {
+        let result = send_message_with_runtime(
+            "never opened",
+            SHUTDOWN_MESSAGE,
+            Some(Instant::now()),
+            || panic!("an expired sender initialized a worker"),
+        );
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+
+        let temporary = tempfile::tempdir().unwrap();
+        let guard = DirectoryGuard::private(&temporary.path().join("private")).unwrap();
+        // Expiry also precedes validation/identity lookup in the public guarded boundary.
+        let error = request_shutdown_guarded_until(&guard, "invalid", "invalid", Instant::now())
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(guard.normalized_path().is_dir());
+    }
+
+    #[test]
+    fn worker_startup_cannot_renew_the_control_deadline() {
+        let deadline = Instant::now() + CLIENT_TIMEOUT;
+        let initialized = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_initialized = Arc::clone(&initialized);
+        let worker_finished = Arc::clone(&finished);
+        let result = send_message_with_runtime(
+            "never opened",
+            SHUTDOWN_MESSAGE,
+            Some(deadline),
+            move || {
+                worker_initialized.store(true, std::sync::atomic::Ordering::SeqCst);
+                sleep_past(deadline);
+                let runtime = client_runtime();
+                worker_finished.store(true, std::sync::atomic::Ordering::SeqCst);
+                runtime
+            },
+        );
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert!(initialized.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(
+            finished.load(std::sync::atomic::Ordering::SeqCst),
+            "the delayed worker was left in the background"
+        );
+    }
+
+    #[test]
+    fn ready_acknowledgement_crossing_expiry_never_initiates_the_receipt() {
+        let runtime = client_runtime().unwrap();
+        let _entered = runtime.enter();
+        let deadline = Instant::now() + CLIENT_TIMEOUT;
+        let state = Arc::new(Mutex::new(WireState {
+            ack_crosses: Some(deadline),
+            ..WireState::default()
+        }));
+        let mut wire = FixtureWire(Arc::clone(&state));
+        let mut exchange = std::pin::pin!(tokio::time::timeout_at(
+            tokio::time::Instant::from_std(deadline),
+            exchange_frame(&mut wire, SHUTDOWN_MESSAGE, Some(deadline)),
+        ));
+        let mut context = Context::from_waker(std::task::Waker::noop());
+        let Poll::Ready(Ok(Err(error))) = exchange.as_mut().poll(&mut context) else {
+            panic!("the inner ready-I/O expiry gate did not refuse the receipt");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        let state = state.lock().unwrap();
+        assert_eq!(state.receipt_polls, 0);
+        assert_eq!(state.written[0], SHUTDOWN_MESSAGE.len() as u8);
+        assert_eq!(&state.written[1..], SHUTDOWN_MESSAGE);
+    }
+
+    #[test]
+    fn pending_receipt_is_not_polled_again_after_it_becomes_ready_past_expiry() {
+        let runtime = client_runtime().unwrap();
+        let _entered = runtime.enter();
+        let deadline = Instant::now() + CLIENT_TIMEOUT;
+        let state = Arc::new(Mutex::new(WireState::default()));
+        let mut wire = FixtureWire(Arc::clone(&state));
+        let mut exchange = std::pin::pin!(tokio::time::timeout_at(
+            tokio::time::Instant::from_std(deadline),
+            exchange_frame(&mut wire, SHUTDOWN_MESSAGE, Some(deadline)),
+        ));
+        let mut context = Context::from_waker(std::task::Waker::noop());
+        assert!(exchange.as_mut().poll(&mut context).is_pending());
+        assert_eq!(state.lock().unwrap().receipt_polls, 1);
+        sleep_past(deadline);
+        state.lock().unwrap().receipt_ready = true;
+        let Poll::Ready(Ok(Err(error))) = exchange.as_mut().poll(&mut context) else {
+            panic!("the expired previously-pending receipt was polled again");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        let state = state.lock().unwrap();
+        assert_eq!(state.receipt_polls, 1);
+        assert_eq!(state.written[0], SHUTDOWN_MESSAGE.len() as u8);
+        assert_eq!(&state.written[1..], SHUTDOWN_MESSAGE);
+    }
 
     #[test]
     fn identity_has_a_fixed_wire_vector_and_preserves_all_128_bits() {
