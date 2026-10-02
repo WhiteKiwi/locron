@@ -18,6 +18,10 @@ authoritative planning workflow in this order:
 The intent of this PR is to make that next planning cycle concrete and reviewable before touching
 platform-sensitive scheduler code.
 
+**Distribution decision (2026-10-02):** the first Windows release will use unsigned MSVC ZIPs,
+immutable GitHub release assets, and SHA-256 verification. Authenticode signing is a deferred,
+non-blocking follow-up tracked in [#37](https://github.com/WhiteKiwi/locron/issues/37).
+
 ## Recommended support scope
 
 ### First official Windows release
@@ -40,6 +44,7 @@ GitHub currently provides standard public-repository hosted runners for both Win
 - Windows Service / LocalSystem installation.
 - MSI/MSIX packaging.
 - Microsoft Store distribution.
+- Authenticode signing for the first Windows milestone; track it separately in #37.
 - system-wide/multi-user scheduling.
 - WSL-specific integration beyond treating WSL as Linux when Locron is installed inside WSL.
 
@@ -195,8 +200,9 @@ The dashboard stays loopback-only on Windows. Validate:
 - Amend SPEC/FINDINGS/IMPLEMENTATION/TODO after this proposal is accepted.
 - Freeze the minimum Windows version, shell behavior, Task Scheduler contract, state location,
   process-tree semantics, wake IPC, and distribution channels.
-- **Verify:** every Windows-visible behavior has one authoritative planning location and no existing
-  document still says Windows is unsupported for the planned milestone.
+- **Verify:** every Windows-visible behavior has one authoritative planning location; planned
+  milestone acceptance is explicit, while current released-platform statements stay accurate until
+  the final release gates pass.
 
 ### Phase 1 — compile and path portability
 
@@ -239,17 +245,20 @@ Release assets:
 - `locron-v{version}-x86_64-pc-windows-msvc.zip`
 - `locron-v{version}-aarch64-pc-windows-msvc.zip`
 
-Each archive should contain the signed `locron.exe`, README, and both licenses. The existing
-checksum inventory/immutability checks must include the Windows assets.
+Each archive should contain the unsigned `locron.exe`, README, and both licenses. The existing
+checksum inventory/immutability checks must include the final Windows assets while retaining
+compatibility with historical releases. Publish through the canonical `WhiteKiwi/locron` GitHub
+release over HTTPS; SHA-256 verifies downloaded bytes against that release, not publisher identity.
 
-- **Verify:** both archives are built on reviewed release revisions, signatures and checksums verify,
-  and the executable runs on clean Windows 11 VMs without Rust/Visual Studio installed.
+- **Verify:** both archives are built on the reviewed release revision; release source, checksums,
+  version and architecture match; the executable is recorded as unsigned and runs on clean Windows
+  11 VMs without Rust/Visual Studio installed under the documented supported security settings.
 
 ### Phase 5 — installation and updates
 
 Provide three Windows channels:
 
-1. **GitHub Releases** — signed ZIPs as the canonical release artifacts.
+1. **GitHub Releases** — unsigned ZIPs as the canonical release artifacts for the first milestone.
 2. **Standalone PowerShell installer** — user-scoped install with a receipt and optional service
    registration, analogous to the current shell installer.
 3. **WinGet** — preferred package-manager experience for normal Windows users.
@@ -265,8 +274,10 @@ handoff that waits for the original process to exit, replaces the exact owned ex
 receipt semantics, and refreshes previously enabled registrations. Do not use "replace on reboot" as
 the ordinary update path.
 
-- **Verify:** install, upgrade, downgrade refusal, interrupted update, checksum/signature failure,
-  service refresh, uninstall, and package-manager ownership all have clean-VM tests.
+- **Verify:** install, upgrade, downgrade refusal, interrupted update, untrusted-source/checksum/
+  version/architecture failure, service refresh, uninstall, and package-manager ownership all have
+  clean-VM tests. Installer and updater verification use the explicit initial unsigned policy;
+  checksum verification must not be described as Authenticode or publisher authentication.
 
 ### Phase 6 — documentation and release acceptance
 
@@ -277,29 +288,37 @@ Only after the Windows gates pass:
 - add Windows examples without rewriting POSIX examples as if shell syntax were portable;
 - add a release acceptance run on fresh x64 and ARM64 Windows 11 machines.
 
-Windows support is complete only when the same release revision has green CI, signed published
-artifacts, verified package-manager metadata, and clean-machine acceptance evidence.
+Windows support is complete only when the same release revision has green CI, unsigned immutable
+published artifacts with verified checksums, verified package-manager metadata, documented security
+policy limitations, and clean-machine acceptance evidence. Signing enrollment is not a release gate.
 
 ## Distribution and non-code work
 
 The runtime changes are only part of the milestone. The release should not be called complete until
 the following operational work is done.
 
-### Code signing and SmartScreen
+### Initial unsigned distribution and deferred signing
 
-Windows binaries should be Authenticode-signed and timestamped with one stable publisher identity
-before they are archived. Microsoft recommends its Artifact Signing service for non-Store
-distribution and documents that unsigned files start with no transferable publisher reputation.
+The maintainer selected unsigned distribution for the first Windows milestone. Release packaging,
+PowerShell installation, self-update, and WinGet must agree on this policy. Provider eligibility,
+business-history checks, and signing credentials are deferred to #37 and do not block this release.
 
-Signing is not only a CI step:
+- build both architectures from the reviewed revision and publish immutable ZIPs and SHA-256
+  checksums through the canonical GitHub release;
+- verify the exact release source, version, architecture and final archive digest before installation
+  or update; preserve receipt, ACL and rollback requirements;
+- state clearly that the executable has no Authenticode publisher identity and that a checksum from
+  the same release source checks integrity without independently authenticating the publisher;
+- document observed Defender/SmartScreen behavior and unknown-publisher prompts without promising
+  warning-free execution; Smart App Control or organizational policy can block unsigned files;
+- record security settings and download provenance in clean-machine acceptance, including browser
+  downloads with Mark of the Web; document blocked configurations as limitations and do not make
+  disabling Windows protections an automatic installer/update action.
 
-- choose and verify the publisher identity early;
-- store signing credentials/identity outside ordinary repository secrets where appropriate;
-- sign the exact bytes later placed into ZIP/installer/WinGet flows;
-- verify the signature in release automation;
-- document that early releases may still receive SmartScreen reputation prompts;
-- do not rotate signing identities casually because publisher reputation is part of the user
-  experience.
+If signing is adopted later, publish a new immutable release with an explicit verification-policy
+migration, trusted timestamps, and a stable validated publisher/profile that tolerates legitimate
+certificate renewal. Do not rewrite prior unsigned assets or silently fall back from a required
+signature check to checksum-only verification. Signing still does not guarantee SmartScreen reputation.
 
 ### WinGet publication
 
@@ -333,7 +352,7 @@ Maintain a Windows-specific acceptance matrix covering at least:
 - long paths;
 - locked/unlocked desktop sessions;
 - reboot and sign-out/sign-in;
-- Defender/SmartScreen behavior;
+- Defender/SmartScreen/Smart App Control behavior and any organizational policy restrictions;
 - direct process, `cmd.exe` shell, explicit PowerShell/`pwsh` shell, HTTP target;
 - timeout, cancel, replace, retry, missed-run recovery, crash recovery;
 - dashboard and MCP;
@@ -347,7 +366,7 @@ acceptance environment.
 Windows support introduces user questions that do not exist on Unix:
 
 - Task Scheduler entries and their lifecycle;
-- SmartScreen / publisher verification;
+- SmartScreen / unsigned publisher status, canonical download source, and checksum verification;
 - PATH and command-extension resolution;
 - Windows path quoting;
 - PowerShell versus `cmd.exe`;
@@ -367,8 +386,9 @@ Windows becomes an advertised supported target only when all are true:
 - [ ] named-pipe wake behavior and fallback are verified.
 - [ ] daemon and dashboard register without admin/password on a clean standard account.
 - [ ] reboot/login recovery is verified.
-- [ ] signed ZIP assets and checksums are published from the reviewed revision.
-- [ ] Authenticode verification passes for the published executable.
+- [ ] unsigned immutable ZIP assets and checksums are published from the reviewed revision.
+- [ ] published source/version/architecture/digests match the initial unsigned policy; security
+      warnings and blocked configurations are documented, without requiring signing enrollment.
 - [ ] standalone install/update/uninstall passes on clean VMs.
 - [ ] WinGet ownership/update behavior is verified.
 - [ ] README/INSTALL/OPERATOR/CLI/RELEASE/SECURITY/CONTRIBUTING no longer contradict support.
