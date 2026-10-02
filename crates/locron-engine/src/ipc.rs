@@ -42,7 +42,7 @@ fn async_client(stream: AcceptedPipe<pipe_mode::Bytes>) -> io::Result<BoundedCli
         .map_err(|_| io::Error::other("accepted local pipe ownership cannot be transferred"))?;
     DuplexPipeStream::try_from(handle)
         .map(BoundedClient)
-        .map_err(io::Error::other)
+        .map_err(io::Error::from)
 }
 
 /// Binds wake after owner-lock acquisition; endpoint failure keeps durable fallback active.
