@@ -1,12 +1,15 @@
 //! Lifetime-owned secured local Windows listeners.
 
 use std::io;
+use std::os::windows::io::OwnedHandle;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use interprocess::os::windows::named_pipe::tokio::DuplexPipeStream;
-use interprocess::os::windows::named_pipe::{PipeListenerOptions, pipe_mode};
+use interprocess::os::windows::named_pipe::{
+    DuplexPipeStream as AcceptedPipe, PipeListenerOptions, pipe_mode,
+};
 use interprocess::os::windows::security_descriptor::SecurityDescriptor;
 use locron_core::filesystem::DirectoryGuard;
 use locron_core::notification::{
@@ -29,6 +32,17 @@ impl Drop for BoundedClient {
         // Includes cancellation/abort while an ACK write is pending.
         self.0.assume_flushed();
     }
+}
+
+fn async_client(stream: AcceptedPipe<pipe_mode::Bytes>) -> io::Result<BoundedClient> {
+    // No synchronous payload I/O occurs. Ownership transfer must never leave a flush worker.
+    stream.assume_flushed();
+    stream.set_nonblocking(false)?;
+    let handle = OwnedHandle::try_from(stream)
+        .map_err(|_| io::Error::other("accepted local pipe ownership cannot be transferred"))?;
+    DuplexPipeStream::try_from(handle)
+        .map(BoundedClient)
+        .map_err(io::Error::other)
 }
 
 /// Binds wake after owner-lock acquisition; endpoint failure keeps durable fallback active.
@@ -65,8 +79,9 @@ fn bind(
         .security_descriptor(Some(descriptor))
         .accept_remote(false)
         .inheritable(false)
+        .nonblocking(true)
         .instance_limit(std::num::NonZeroU8::new(2))
-        .create_tokio_duplex::<pipe_mode::Bytes>()?;
+        .create_duplex::<pipe_mode::Bytes>()?;
     let message = match &action {
         Action::Wake(_) => WAKE_MESSAGE,
         Action::Stop(_) => SHUTDOWN_MESSAGE,
@@ -74,10 +89,21 @@ fn bind(
     Ok(tokio::spawn(async move {
         let _guard = guard;
         loop {
-            let mut client = match listener.accept().await {
-                Ok(client) => BoundedClient(client),
+            let accepted = match listener.accept() {
+                Ok(client) => client,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    continue;
+                }
                 Err(error) => {
                     tracing::warn!(%error, "local endpoint accept failed");
+                    break;
+                }
+            };
+            let mut client = match async_client(accepted) {
+                Ok(client) => client,
+                Err(error) => {
+                    tracing::warn!(%error, "accepted local pipe conversion failed");
                     break;
                 }
             };
@@ -171,6 +197,67 @@ mod tests {
             .await
             .unwrap()
             .unwrap_err();
+    }
+
+    fn disconnect_before_first_poll(name: &str) {
+        let mut options = ClientOptions::new();
+        options.security_qos_flags(0x0001_0000);
+        // This function never yields: on the current-thread test runtime, the spawned owner
+        // has not called accept yet. Its stored instance must reset this dead connection.
+        let peer = options.open(name).unwrap();
+        drop(peer);
+    }
+
+    #[tokio::test]
+    async fn pre_accept_disconnect_preserves_the_owned_wake_endpoint() {
+        let root = FixtureRoot::new();
+        let wake = Arc::new(Notify::new());
+        let listener = bind_wake(&root.path, Arc::clone(&wake)).unwrap();
+        let name = endpoint_name(&root.path, "wake", None).unwrap();
+        disconnect_before_first_poll(&name);
+        assert!(bind_wake(&root.path, Arc::clone(&wake)).is_err());
+        notify(&root.path).await;
+        tokio::time::timeout(Duration::from_secs(1), wake.notified())
+            .await
+            .unwrap();
+        assert!(
+            !listener.is_finished(),
+            "wake ownership exited after an early peer close"
+        );
+        assert!(bind_wake(&root.path, Arc::clone(&wake)).is_err());
+        close(listener).await;
+        assert!(send_wake(&root.path).is_err());
+    }
+
+    #[tokio::test]
+    async fn pre_accept_disconnect_preserves_exact_lifetime_control() {
+        let root = FixtureRoot::new();
+        let lifetime = uuid::Uuid::now_v7().to_string();
+        let cancellation = CancellationToken::new();
+        let listener =
+            bind_role_control(&root.path, "dashboard", &lifetime, cancellation.clone()).unwrap();
+        let name = endpoint_name(&root.path, "dashboard", Some(&lifetime)).unwrap();
+        disconnect_before_first_poll(&name);
+        assert!(
+            bind_role_control(&root.path, "dashboard", &lifetime, cancellation.clone()).is_err()
+        );
+        assert!(!cancellation.is_cancelled());
+        let path = root.path.clone();
+        let expected = lifetime.clone();
+        tokio::task::spawn_blocking(move || request_shutdown(&path, "dashboard", &expected))
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), cancellation.cancelled())
+            .await
+            .unwrap();
+        assert!(
+            !listener.is_finished(),
+            "control ownership exited after an early peer close"
+        );
+        assert!(bind_role_control(&root.path, "dashboard", &lifetime, cancellation).is_err());
+        close(listener).await;
+        assert!(request_shutdown(&root.path, "dashboard", &lifetime).is_err());
     }
 
     #[tokio::test]
