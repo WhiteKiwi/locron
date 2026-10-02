@@ -25,7 +25,12 @@ type AdmissionRow = (String, String, String, i64, String, Option<i64>);
 const MAINTENANCE_BATCH_LIMIT: usize = 100;
 
 #[cfg(windows)]
-fn validate_sqlite_files(database: &Path, create: bool) -> std::io::Result<bool> {
+fn validate_sqlite_files(
+    database: &Path,
+    create: bool,
+    trace: &crate::windows_open::OpenTrace,
+) -> std::io::Result<bool> {
+    use crate::windows_open::Stage;
     use locron_core::filesystem::{create_private_new, open_private};
     use std::fs::OpenOptions;
     use std::io::ErrorKind;
@@ -37,10 +42,20 @@ fn validate_sqlite_files(database: &Path, create: bool) -> std::io::Result<bool>
         }
         Err(error) if error.kind() == ErrorKind::NotFound && create => {
             // Creation races fail closed instead of opening a raced-in path.
-            drop(create_private_new(database)?);
+            drop(trace.io(Stage::DatabaseCreate, create_private_new(database))?);
             true
         }
-        Err(error) => return Err(error),
+        Err(error) => {
+            trace.io_failure(
+                if create {
+                    Stage::DatabaseOpen
+                } else {
+                    Stage::DatabaseFinal
+                },
+                &error,
+            );
+            return Err(error);
+        }
     };
     for suffix in ["-wal", "-shm"] {
         let mut path = database.as_os_str().to_os_string();
@@ -49,10 +64,24 @@ fn validate_sqlite_files(database: &Path, create: bool) -> std::io::Result<bool>
         match open_private(&path, OpenOptions::new().read(true)) {
             Ok(file) => drop(file),
             Err(error) if error.kind() == ErrorKind::NotFound && create => {
-                drop(create_private_new(&path)?);
+                let stage = if suffix == "-wal" {
+                    Stage::WalCreate
+                } else {
+                    Stage::ShmCreate
+                };
+                drop(trace.io(stage, create_private_new(&path))?);
             }
             Err(error) if error.kind() == ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
+            Err(error) => {
+                let stage = match (suffix, create) {
+                    ("-wal", true) => Stage::WalOpen,
+                    ("-wal", false) => Stage::WalFinal,
+                    (_, true) => Stage::ShmOpen,
+                    (_, false) => Stage::ShmFinal,
+                };
+                trace.io_failure(stage, &error);
+                return Err(error);
+            }
         }
     }
     Ok(fresh)
@@ -803,20 +832,39 @@ impl Store {
     /// backed by a configured WAL connection. The daemon lock is acquired
     /// separately via [`Store::acquire_daemon_lock`].
     pub fn open(paths: StatePaths, binary_version: &str, now_us: i64) -> StoreResult<Self> {
+        #[cfg(windows)]
+        use crate::windows_open::{OpenTrace, Stage};
+        #[cfg(windows)]
+        let trace = OpenTrace::new();
+        #[cfg(windows)]
+        paths.ensure_with_trace(&trace)?;
+        #[cfg(not(windows))]
         paths.ensure()?;
         #[cfg(windows)]
-        let state_guard = paths.guard()?;
+        let state_guard = trace.store(Stage::StateGuard, paths.guard())?;
         #[cfg(windows)]
-        let fresh = validate_sqlite_files(&paths.database, true)?;
+        let fresh = validate_sqlite_files(&paths.database, true, &trace)?;
+        #[cfg(windows)]
+        let mut connection = trace.sqlite(Stage::Connection, Connection::open(&paths.database))?;
+        #[cfg(not(windows))]
         let mut connection = Connection::open(&paths.database)?;
+        #[cfg(windows)]
+        trace.store(Stage::Configure, configure(&connection))?;
+        #[cfg(not(windows))]
         configure(&connection)?;
+        #[cfg(windows)]
+        trace.store(
+            Stage::Migrate,
+            migrate(&mut connection, binary_version, now_us),
+        )?;
+        #[cfg(not(windows))]
         migrate(&mut connection, binary_version, now_us)?;
         #[cfg(windows)]
         if fresh {
-            connection.execute("UPDATE settings SET execution_path=?1 WHERE singleton=1 AND execution_path='/usr/local/bin:/usr/bin:/bin' AND updated_at_us=0", [locron_core::execution::default_execution_path()])?;
+            trace.sqlite(Stage::FreshSettings, connection.execute("UPDATE settings SET execution_path=?1 WHERE singleton=1 AND execution_path='/usr/local/bin:/usr/bin:/bin' AND updated_at_us=0", [locron_core::execution::default_execution_path()]))?;
         }
         #[cfg(windows)]
-        validate_sqlite_files(&paths.database, false)?;
+        validate_sqlite_files(&paths.database, false, &trace)?;
         Ok(Self {
             paths,
             connection: Mutex::new(connection),

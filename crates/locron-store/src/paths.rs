@@ -66,9 +66,28 @@ impl StatePaths {
 
     /// Creates the state layout without following an existing symlink at any managed root.
     pub fn ensure(&self) -> Result<(), StoreError> {
-        ensure_private_directory(&self.root)?;
-        ensure_private_directory(&self.outputs)?;
-        ensure_private_directory(&self.temporary)?;
+        #[cfg(windows)]
+        {
+            self.ensure_with_trace(&crate::windows_open::OpenTrace::new())
+        }
+        #[cfg(not(windows))]
+        {
+            ensure_private_directory(&self.root)?;
+            ensure_private_directory(&self.outputs)?;
+            ensure_private_directory(&self.temporary)?;
+            Ok(())
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn ensure_with_trace(
+        &self,
+        trace: &crate::windows_open::OpenTrace,
+    ) -> Result<(), StoreError> {
+        use crate::windows_open::Stage;
+        trace.store(Stage::Root, ensure_private_directory(&self.root))?;
+        trace.store(Stage::Outputs, ensure_private_directory(&self.outputs))?;
+        trace.store(Stage::Temporary, ensure_private_directory(&self.temporary))?;
         Ok(())
     }
 
