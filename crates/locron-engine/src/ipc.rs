@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use interprocess::os::windows::named_pipe::tokio::DuplexPipeStream;
+use interprocess::os::windows::named_pipe::tokio::{DuplexPipeStream, FromHandleErrorKind};
 use interprocess::os::windows::named_pipe::{
     DuplexPipeStream as AcceptedPipe, PipeListenerOptions, pipe_mode,
 };
@@ -27,6 +27,31 @@ enum Action {
 
 struct BoundedClient(DuplexPipeStream<pipe_mode::Bytes>);
 
+#[derive(Clone, Copy, Debug)]
+enum ConversionStage {
+    WaitMode,
+    OwnershipTransfer,
+    Tokio(FromHandleErrorKind),
+}
+
+impl std::fmt::Display for ConversionStage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WaitMode => formatter.write_str("wait-mode"),
+            Self::OwnershipTransfer => formatter.write_str("ownership-transfer"),
+            Self::Tokio(details) => write!(formatter, "Tokio ({details})"),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("accepted local pipe conversion failed at {stage}: {cause:?}")]
+struct ClientConversionFailure {
+    stage: ConversionStage,
+    #[source]
+    cause: Option<io::Error>,
+}
+
 impl Drop for BoundedClient {
     fn drop(&mut self) {
         // Includes cancellation/abort while an ACK write is pending.
@@ -34,15 +59,36 @@ impl Drop for BoundedClient {
     }
 }
 
-fn async_client(stream: AcceptedPipe<pipe_mode::Bytes>) -> io::Result<BoundedClient> {
+fn async_client(
+    stream: AcceptedPipe<pipe_mode::Bytes>,
+) -> Result<BoundedClient, ClientConversionFailure> {
     // No synchronous payload I/O occurs. Ownership transfer must never leave a flush worker.
     stream.assume_flushed();
-    stream.set_nonblocking(false)?;
-    let handle = OwnedHandle::try_from(stream)
-        .map_err(|_| io::Error::other("accepted local pipe ownership cannot be transferred"))?;
+    stream
+        .set_nonblocking(false)
+        .map_err(|error| ClientConversionFailure {
+            stage: ConversionStage::WaitMode,
+            cause: Some(error),
+        })?;
+    let handle = OwnedHandle::try_from(stream).map_err(|stream| {
+        drop(stream);
+        ClientConversionFailure {
+            stage: ConversionStage::OwnershipTransfer,
+            cause: None,
+        }
+    })?;
     DuplexPipeStream::try_from(handle)
         .map(BoundedClient)
-        .map_err(io::Error::from)
+        .map_err(|error| {
+            let failure = ClientConversionFailure {
+                stage: ConversionStage::Tokio(error.details),
+                cause: error.cause,
+            };
+            // A failed safe conversion returns the original owned handle. Close only it;
+            // the listener already retains its independently replenished instance.
+            drop(error.source);
+            failure
+        })
 }
 
 /// Binds wake after owner-lock acquisition; endpoint failure keeps durable fallback active.
@@ -68,6 +114,21 @@ fn bind(
     lifetime: Option<&str>,
     action: Action,
 ) -> io::Result<tokio::task::JoinHandle<()>> {
+    bind_with_converter(root, role, lifetime, action, async_client)
+}
+
+fn bind_with_converter<C>(
+    root: &Path,
+    role: &str,
+    lifetime: Option<&str>,
+    action: Action,
+    mut convert: C,
+) -> io::Result<tokio::task::JoinHandle<()>>
+where
+    C: FnMut(AcceptedPipe<pipe_mode::Bytes>) -> Result<BoundedClient, ClientConversionFailure>
+        + Send
+        + 'static,
+{
     let guard = DirectoryGuard::private(root)?;
     let sid = locron_core::windows::current_user_sid()?;
     let name = endpoint_name_guarded(&guard, role, lifetime)?;
@@ -100,11 +161,19 @@ fn bind(
                     break;
                 }
             };
-            let mut client = match async_client(accepted) {
+            let mut client = match convert(accepted) {
                 Ok(client) => client,
                 Err(error) => {
-                    tracing::warn!(%error, "accepted local pipe conversion failed");
-                    break;
+                    tracing::warn!(
+                        stage = %error.stage,
+                        raw_os_error = ?error.cause.as_ref().and_then(io::Error::raw_os_error),
+                        %error,
+                        "accepted local pipe conversion failed"
+                    );
+                    // Refuse this peer without releasing the already replenished listener.
+                    // A disconnected-peer storm must still yield to cancellation/abort.
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    continue;
                 }
             };
             let _accepted = tokio::time::timeout(Duration::from_millis(200), async {
@@ -201,6 +270,55 @@ mod tests {
             .await
             .unwrap()
             .unwrap_err();
+    }
+
+    async fn listener_with_closed_accepted_peer(
+        root: &Path,
+        role: &str,
+        lifetime: Option<&str>,
+        action: Action,
+    ) -> tokio::task::JoinHandle<()> {
+        let peer_slot = Arc::new(std::sync::Mutex::new(None::<NamedPipeClient>));
+        let closing_peer = Arc::clone(&peer_slot);
+        let (boundary_sender, boundary_receiver) = tokio::sync::oneshot::channel();
+        let mut boundary_sender = Some(boundary_sender);
+        let listener = bind_with_converter(root, role, lifetime, action, move |accepted| {
+            if let Some(sender) = boundary_sender.take() {
+                // The owner has accepted and retained its replacement. Close the actual
+                // connected client here, then run the real native conversion exactly once.
+                let peer = closing_peer.lock().unwrap().take().unwrap();
+                drop(peer);
+                let result = async_client(accepted);
+                let evidence = result.as_ref().err().map(|error| {
+                    (
+                        error.stage.to_string(),
+                        error.cause.as_ref().and_then(io::Error::raw_os_error),
+                    )
+                });
+                sender.send(evidence).unwrap();
+                result
+            } else {
+                async_client(accepted)
+            }
+        })
+        .unwrap();
+        let name = endpoint_name(root, role, lifetime).unwrap();
+        let mut options = ClientOptions::new();
+        options.security_qos_flags(0x0001_0000);
+        // No yield before this connection is retained. The current-thread owner cannot
+        // accept it until the next await, which makes the close boundary deterministic.
+        *peer_slot.lock().unwrap() = Some(options.open(&name).unwrap());
+        let evidence = tokio::time::timeout(Duration::from_secs(1), boundary_receiver)
+            .await
+            .unwrap()
+            .unwrap();
+        // Depending on the native stage, a closed peer either fails conversion or converts
+        // and returns EOF. Do not assume an error stage or fabricate an OS error.
+        assert!(
+            !listener.is_finished(),
+            "accepted peer close released listener ownership: {evidence:?}"
+        );
+        listener
     }
 
     fn held_fixture_listener(name: &str) -> PipeListener<pipe_mode::Bytes, pipe_mode::Bytes> {
@@ -445,6 +563,67 @@ mod tests {
         assert!(request_shutdown(&root.path, "dashboard", &lifetime).is_err());
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn accepted_peer_close_preserves_wake_ownership_and_teardown() {
+        let root = FixtureRoot::new();
+        let wake = Arc::new(Notify::new());
+        let listener = listener_with_closed_accepted_peer(
+            &root.path,
+            "wake",
+            None,
+            Action::Wake(Arc::clone(&wake)),
+        )
+        .await;
+        assert!(bind_wake(&root.path, Arc::clone(&wake)).is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), wake.notified())
+                .await
+                .is_err(),
+            "closed accepted peer acted as a wake hint"
+        );
+        notify(&root.path).await;
+        tokio::time::timeout(Duration::from_secs(1), wake.notified())
+            .await
+            .unwrap();
+        assert!(!listener.is_finished());
+        assert!(bind_wake(&root.path, Arc::clone(&wake)).is_err());
+        close(listener).await;
+        assert!(send_wake(&root.path).is_err());
+        std::fs::rename(&root.path, root.path.with_file_name("closed")).unwrap();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn accepted_peer_close_preserves_exact_control_ownership_and_teardown() {
+        let root = FixtureRoot::new();
+        let lifetime = uuid::Uuid::now_v7().to_string();
+        let cancellation = CancellationToken::new();
+        let listener = listener_with_closed_accepted_peer(
+            &root.path,
+            "dashboard",
+            Some(&lifetime),
+            Action::Stop(cancellation.clone()),
+        )
+        .await;
+        assert!(!cancellation.is_cancelled());
+        assert!(
+            bind_role_control(&root.path, "dashboard", &lifetime, cancellation.clone()).is_err()
+        );
+        let path = root.path.clone();
+        let expected = lifetime.clone();
+        tokio::task::spawn_blocking(move || request_shutdown(&path, "dashboard", &expected))
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), cancellation.cancelled())
+            .await
+            .unwrap();
+        assert!(!listener.is_finished());
+        assert!(bind_role_control(&root.path, "dashboard", &lifetime, cancellation).is_err());
+        close(listener).await;
+        assert!(request_shutdown(&root.path, "dashboard", &lifetime).is_err());
+        std::fs::rename(&root.path, root.path.with_file_name("closed")).unwrap();
+    }
+
     #[tokio::test]
     async fn wake_hints_are_versioned_coalesced_and_collision_safe() {
         let root = FixtureRoot::new();
@@ -487,6 +666,15 @@ mod tests {
             let mut peer = client(&name).await;
             peer.write_all(&payload).await.unwrap();
             drop(peer);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            assert!(
+                !listener.is_finished(),
+                "malformed peer released the owned listener"
+            );
+            assert!(
+                bind_wake(&root.path, Arc::clone(&wake)).is_err(),
+                "malformed peer released first-instance collision protection"
+            );
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
         assert!(
