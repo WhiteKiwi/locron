@@ -648,6 +648,13 @@ again on each guarded rename attempt. Keep all other failures immediate. A reade
 that bound leaves the synced partial intact and reports a real infrastructure failure for normal
 recovery; never claim finalization or discard captured bytes when the rename has not succeeded.
 
+Windows output pruning uses the shared guarded private-file deletion primitive after committing
+the existing pending-retention transition. Validate the private parent chain and existing leaf
+before deleting it; refuse reparse/non-file/unsafe-descriptor paths, and mark retention complete
+only after successful deletion or an already-missing leaf. Keep the existing Unix deletion path.
+Native CLI fixtures prove valid output deletion, idempotent missing output, and unsafe-leaf
+refusal with the pending state preserved and the unrelated object left intact.
+
 ### Wake, cooperative role control and Task Scheduler
 
 Use Windows-only interprocess =2.4.4 with tokio, safe SDDL SecurityDescriptor deserialization and
