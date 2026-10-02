@@ -1898,6 +1898,19 @@ fits this distribution journal. Revalidate and reserve against the actual valida
 each resumed-operation entry before another effect. The first flushed frame contains the complete
 original lifecycle snapshot and durable verified backups before any disable/delete; later frames
 record each delete intent and every newly created identity before bytes are written.
+Embed every ServiceRestoreRecord as a serde JSON object in the concrete outer journal record,
+never as an escaped JSON string. Its pure persistence_plan provides the maximum complete object
+bytes and finite callback counts. Serialize the complete bounded worst-case outer representation
+with its actual typed slots, then add checked growth for each repeated immutable original and
+mutable current service slot: maximum object bytes minus that slot's serialized object bytes.
+Every optional outer field has a fixed serialized key; a currently absent service slot is null
+(four bytes), so reserve the maximum future object minus those four bytes. Include any future
+outer value/collection growth and frame overhead separately; absence must not omit future field
+names, punctuation or bindings from the reservation. A missing validated provider maximum,
+arithmetic overflow, a baseline larger than its promised maximum, or an uncounted repeated slot
+refuses preflight. The codec accepts only the resulting bounded byte-growth reservation and still
+rejects any actual append beyond it. This is size accounting for the concrete typed record,
+not permission to synthesize a replacement service record or replay arbitrary JSON.
 sync_all must succeed before the next
 effect. Frame/size exhaustion, flush uncertainty, a truncated/corrupt tail or an unknown created
 identity is an explicit refusal with backups retained and no replay inferred from status. Recovery
