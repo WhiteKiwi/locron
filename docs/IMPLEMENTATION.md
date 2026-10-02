@@ -673,6 +673,16 @@ the digest. Scheduler task names use this shared identity to avoid duplicate ali
 Pipe names add an explicit protocol version, role and canonical UUID lifetime for control roles;
 wake has no lifetime. Listener construction derives its name from the same guard it retains.
 
+Path-based identity and client endpoint derivation use DirectoryGuard::existing_private and
+never create or repair a missing state root. Ordinary first-run composition creates private state
+explicitly while acquiring its role lock or opening its store, before deriving identity; listener
+construction then retains that established guard. Registration/status/maintenance callers use
+the guarded form after their explicit existing-state or installation boundary. Missing or stale
+hint/control lookups fail without recreating an old root. Native tests call identity, endpoint,
+wake and exact-lifetime stop with an absent private-child path and assert both refusal and that
+the path remains absent; first-run CLI activation and dashboard tests continue proving explicit
+creation and cross-binary identity on existing roots.
+
 Separate secured control endpoints bind role/lifetime identity and deliver only graceful shutdown
 requests to that role's existing cancellation token. Lifecycle coordination first disables automatic
 task activation, requests stop, and waits for confirmed role/lock exit. A failed request/remaining
