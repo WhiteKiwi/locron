@@ -33,7 +33,7 @@ function New-PeFixture([int]$Machine = 0x8664, [bool]$Signed = $false) {
     return ,$bytes
 }
 function New-ZipFixture([string]$Extra = '', [string]$WrongName = '') {
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Add-Type -AssemblyName System.IO.Compression
     $memory = [IO.MemoryStream]::new()
     $zip = [IO.Compression.ZipArchive]::new($memory, [IO.Compression.ZipArchiveMode]::Create, $true)
     try {

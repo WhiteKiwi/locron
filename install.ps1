@@ -433,7 +433,7 @@ function Assert-LocronZipCatalog([byte[]]$Bytes) {
 
 function Get-LocronArchiveFiles([byte[]]$Bytes, [string]$Tag, [string]$Target) {
     Assert-LocronZipCatalog $Bytes
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Add-Type -AssemblyName System.IO.Compression
     $memory = [IO.MemoryStream]::new($Bytes, $false)
     $archive = [IO.Compression.ZipArchive]::new($memory, [IO.Compression.ZipArchiveMode]::Read)
     try {
