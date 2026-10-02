@@ -178,6 +178,10 @@ fn now_us() -> i64 {
 
 /// Best-effort wake hint to a running daemon; the command is already durable
 /// when the socket is unavailable, so failures are ignored.
+#[cfg(not(unix))]
+fn send_wake(_paths: &StatePaths) {}
+
+#[cfg(unix)]
 fn send_wake(paths: &StatePaths) {
     use std::os::unix::net::UnixDatagram;
     let _ = UnixDatagram::unbound().and_then(|socket| {
@@ -1949,6 +1953,9 @@ fn changed_field_paths(before: &Value, after: &Value) -> Vec<String> {
 /// Warnings about the definition's environment file permissions, mirroring
 /// the CLI's `environment_warnings`.
 fn environment_warnings(environment: &locron_core::target::Environment) -> Vec<String> {
+    #[cfg(not(unix))]
+    let _ = environment;
+    #[cfg(unix)]
     let Some(path) = &environment.file else {
         return Vec::new();
     };

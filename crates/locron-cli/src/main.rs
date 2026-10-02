@@ -3631,6 +3631,20 @@ async fn daemon(paths: StatePaths) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(unix))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the staged wake adapter preserves the fallible Unix port until Windows IPC is implemented"
+)]
+fn bind_wake_socket(
+    _paths: &StatePaths,
+    _wake: Arc<tokio::sync::Notify>,
+) -> Result<tokio::task::JoinHandle<()>> {
+    tracing::warn!("local wake adapter pending; safety reconciliation remains active");
+    Ok(tokio::spawn(async {}))
+}
+
+#[cfg(unix)]
 fn bind_wake_socket(
     paths: &StatePaths,
     wake: Arc<tokio::sync::Notify>,
@@ -3664,6 +3678,10 @@ fn bind_wake_socket(
     }))
 }
 
+#[cfg(not(unix))]
+pub(crate) fn send_wake(_paths: &StatePaths) {}
+
+#[cfg(unix)]
 pub(crate) fn send_wake(paths: &StatePaths) {
     use std::os::unix::net::UnixDatagram;
     let result = UnixDatagram::unbound().and_then(|socket| {
@@ -4418,6 +4436,9 @@ pub(crate) fn validate_metadata(
 }
 
 pub(crate) fn environment_warnings(environment: &Environment) -> Vec<&'static str> {
+    #[cfg(not(unix))]
+    let _ = environment;
+    #[cfg(unix)]
     let Some(path) = &environment.file else {
         return Vec::new();
     };
