@@ -948,6 +948,12 @@ so the downloaded same-revision CLI and test artifacts can run on a standard-use
 production CLI never reads this override. Native CI also runs the registered-dashboard unit
 contracts after the actual lifecycle suite, keeping the established job names and deadlines.
 
+Portable CLI composition unit fixtures create a private child state directory and use a real
+native executable plus an absolute fixture working directory. A self-spawned Rust unit target
+returns the same failure status as the Unix shell fixture, preserving the durable completion /
+response-loss and retry-deadline contracts without requiring a Unix shell on Windows. Path-list
+normalization tests construct the platform delimiter and assert each resolved entry separately.
+
 ### Change order and verification
 
 1. Review SPEC, source-backed FINDINGS, these decisions and Project drafts; freeze the minimum

@@ -5836,6 +5836,73 @@ mod tests {
     use clap::CommandFactory;
     use std::sync::atomic::{AtomicI64, AtomicU64};
 
+    struct PrivateTempDir {
+        root: PathBuf,
+        _temporary: tempfile::TempDir,
+    }
+
+    impl PrivateTempDir {
+        fn new() -> Self {
+            let temporary = tempfile::tempdir().unwrap();
+            let guard = locron_core::filesystem::DirectoryGuard::private(
+                &temporary.path().join("private CLI fixture"),
+            )
+            .unwrap();
+            Self {
+                root: guard.normalized_path().to_path_buf(),
+                _temporary: temporary,
+            }
+        }
+
+        fn path(&self) -> &Path {
+            &self.root
+        }
+    }
+
+    fn fixture_executable() -> String {
+        #[cfg(windows)]
+        {
+            std::env::current_exe()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        }
+        #[cfg(not(windows))]
+        {
+            "/usr/bin/true".into()
+        }
+    }
+
+    fn retry_failure_target() -> Target {
+        #[cfg(windows)]
+        {
+            Target::Process {
+                executable: fixture_executable(),
+                args: vec![
+                    "--exact".into(),
+                    "tests::windows_retry_target_fixture".into(),
+                    "--nocapture".into(),
+                    "--test-threads=1".into(),
+                ],
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            Target::Process {
+                executable: "/bin/sh".into(),
+                args: vec!["-c".into(), "exit 7".into()],
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_retry_target_fixture() {
+        if std::env::var("WINDOWS_RETRY_FIXTURE").as_deref() == Ok("1") {
+            std::process::exit(7);
+        }
+    }
+
     #[test]
     fn every_argument_of_every_command_has_a_description() {
         assert_command_descriptions(&Cli::command());
@@ -5971,7 +6038,7 @@ mod tests {
 
     #[tokio::test]
     async fn catch_up_limit_one_thousand_materializes_compactly_and_admits_oldest_first() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
         let job_id = JobId::new().to_string();
@@ -5981,10 +6048,10 @@ mod tests {
                 anchor: Timestamp::UNIX_EPOCH,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: fixture_executable(),
                 args: Vec::new(),
             },
-            cwd: PathBuf::from("/tmp"),
+            cwd: temp.path().into(),
             environment: Environment::default(),
             policy: locron_core::policy::ExecutionPolicy {
                 missed_run: MissedRunPolicy::All,
@@ -6110,7 +6177,7 @@ mod tests {
 
     #[tokio::test]
     async fn injected_clock_handles_recovery_reenable_and_backward_wall_move() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
         let job_id = JobId::new().to_string();
@@ -6120,10 +6187,10 @@ mod tests {
                 anchor: Timestamp::UNIX_EPOCH,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: fixture_executable(),
                 args: Vec::new(),
             },
-            cwd: PathBuf::from("/tmp"),
+            cwd: temp.path().into(),
             environment: Environment::default(),
             policy: locron_core::policy::ExecutionPolicy {
                 missed_run: MissedRunPolicy::Latest,
@@ -6172,7 +6239,7 @@ mod tests {
 
     #[tokio::test]
     async fn injected_local_timezone_change_recalculates_without_duplicates() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let cursor: Timestamp = "2026-08-20T00:00:00Z".parse().unwrap();
         let first_now: Timestamp = "2026-08-21T10:00:00Z".parse().unwrap();
@@ -6184,10 +6251,10 @@ mod tests {
                 timezone: ScheduleTimeZone::Local,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: fixture_executable(),
                 args: Vec::new(),
             },
-            cwd: PathBuf::from("/tmp"),
+            cwd: temp.path().into(),
             environment: Environment::default(),
             policy: locron_core::policy::ExecutionPolicy {
                 missed_run: MissedRunPolicy::All,
@@ -6240,7 +6307,7 @@ mod tests {
 
     #[tokio::test]
     async fn real_store_completion_command_survives_applied_then_response_lost() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
         let definition = JobDefinition {
@@ -6248,12 +6315,12 @@ mod tests {
                 interval: "1h".parse().unwrap(),
                 anchor: Timestamp::UNIX_EPOCH,
             },
-            target: Target::Process {
-                executable: "/bin/sh".into(),
-                args: vec!["-c".into(), "exit 7".into()],
-            },
+            target: retry_failure_target(),
             cwd: temp.path().into(),
-            environment: Environment::default(),
+            environment: Environment {
+                values: BTreeMap::from([("WINDOWS_RETRY_FIXTURE".into(), "1".into())]),
+                ..Environment::default()
+            },
             policy: locron_core::policy::ExecutionPolicy {
                 retries: 1,
                 ..Default::default()
@@ -6315,7 +6382,7 @@ mod tests {
 
     #[tokio::test]
     async fn durable_retry_remains_eligible_beyond_original_start_deadline() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
         let job_id = JobId::new().to_string();
@@ -6325,7 +6392,7 @@ mod tests {
                 anchor: Timestamp::UNIX_EPOCH,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: fixture_executable(),
                 args: Vec::new(),
             },
             cwd: temp.path().into(),
@@ -6472,10 +6539,15 @@ mod tests {
 
     #[test]
     fn process_executable_and_path_list_normalize_against_registration_context() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let target = TargetArgs {
             cwd: Some(temp.path().to_path_buf()),
-            path: Some(format!("./tools{}../bin", std::path::MAIN_SEPARATOR)),
+            path: Some(
+                std::env::join_paths([Path::new("./tools"), Path::new("../bin")])
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
             command: vec!["./scripts/task".into()],
             ..TargetArgs::default()
         };
@@ -6495,19 +6567,22 @@ mod tests {
             panic!("expected process target");
         };
         assert_eq!(PathBuf::from(executable), temp.path().join("scripts/task"));
-        assert!(
-            definition
-                .environment
-                .path
-                .as_deref()
-                .is_some_and(|path| Path::new(path).is_absolute())
+        let path_entries = std::env::split_paths(definition.environment.path.as_ref().unwrap())
+            .collect::<Vec<_>>();
+        let registration_cwd = std::env::current_dir().unwrap();
+        assert_eq!(
+            path_entries,
+            [
+                registration_cwd.join("tools"),
+                registration_cwd.parent().unwrap().join("bin")
+            ]
         );
     }
 
     #[test]
     fn delete_after_run_requires_one_time_schedule_and_is_snapshotted() {
         let target = TargetArgs {
-            command: vec!["/usr/bin/true".into()],
+            command: vec![fixture_executable()],
             ..TargetArgs::default()
         };
         let (definition, _) = normalize_definition(
@@ -6790,8 +6865,9 @@ mod tests {
             ImportSource::Path(path) => assert_eq!(path, Path::new("backup.json")),
             ImportSource::Url(_) => panic!("relative name classified as URL"),
         }
-        match import_source(Path::new("/tmp/backup.json")).unwrap() {
-            ImportSource::Path(path) => assert_eq!(path, Path::new("/tmp/backup.json")),
+        let absolute_path = std::env::current_dir().unwrap().join("backup.json");
+        match import_source(&absolute_path).unwrap() {
+            ImportSource::Path(path) => assert_eq!(path, absolute_path),
             ImportSource::Url(_) => panic!("absolute path classified as URL"),
         }
         // A colon in a name without `://` is a path, not a scheme.
