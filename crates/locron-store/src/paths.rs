@@ -103,7 +103,7 @@ fn platform_default() -> Result<PathBuf, StoreError> {
     {
         // KnownFolder discovery avoids trusting HOME/XDG or a mutable LocalAppData value.
         let value = locron_core::windows::run_script_json(
-            "[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData) | ConvertTo-Json -Compress",
+            "[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData) | & $locronToJson -Compress",
             &serde_json::json!({}),
         )?;
         let path = value

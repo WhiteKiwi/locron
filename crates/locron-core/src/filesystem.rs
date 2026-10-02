@@ -648,7 +648,7 @@ mod tests {
             $acl = [IO.Directory]::GetAccessControl([string]$request.path);
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
             [IO.Directory]::SetAccessControl([string]$request.path, $acl);
-            @{changed=$true} | ConvertTo-Json -Compress
+            @{changed=$true} | & $locronToJson -Compress
         ", &json!({"path": root})).unwrap();
         assert!(!is_private(&root, true).unwrap());
         assert!(DirectoryGuard::private(&root).is_err());
@@ -676,13 +676,13 @@ mod tests {
         let link = temporary.path().join("junction");
         fs::create_dir(&target).unwrap();
         crate::windows::run_script_json(
-            "New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null; @{created=$true} | ConvertTo-Json -Compress",
+            "New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null; @{created=$true} | & $locronToJson -Compress",
             &json!({"link": link, "target": target}),
         ).unwrap();
         let result = DirectoryGuard::private(&link.join("private"));
         // Remove only the junction, never its target, before temporary cleanup.
         crate::windows::run_script_json(
-            "[IO.Directory]::Delete([string]$request.link); @{removed=$true} | ConvertTo-Json -Compress",
+            "[IO.Directory]::Delete([string]$request.link); @{removed=$true} | & $locronToJson -Compress",
             &json!({"link": link}),
         ).unwrap();
         assert!(result.is_err());
@@ -703,7 +703,7 @@ mod tests {
             $acl = [IO.File]::GetAccessControl([string]$request.path);
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
             [IO.File]::SetAccessControl([string]$request.path, $acl);
-            @{changed=$true} | ConvertTo-Json -Compress
+            @{changed=$true} | & $locronToJson -Compress
         ", &json!({"path": path})).unwrap();
         assert!(!is_private(&path, false).unwrap());
         assert!(open_private(&path, OpenOptions::new().write(true).truncate(true)).is_err());
