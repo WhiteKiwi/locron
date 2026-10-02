@@ -1952,6 +1952,13 @@ explicit concurrent admission, cold-call, deadline and cleanup assertions unchan
 the first call, retry or skip a timeout, add helper slots, or extend the production 30-second budget.
 Verify: the same reviewed revision passes every distribution assertion once on native x64/ARM64,
 with zero ignored tests and the existing concurrency/deadline gates still exercised separately.
+The stock PowerShell archive parser and ZIP fixture explicitly load System.IO.Compression before
+using ZipArchive/ZipArchiveMode. Their stream APIs do not need FileSystem extension methods;
+loading that separate assembly alone is not a reliable type-loading contract in a fresh 5.1
+session. Use Add-Type's existing-assembly parameter, without source compilation or an execution
+policy change. Verify the complete existing installer fixture in the native x64/ARM64 stock 5.1
+no-profile CI session; retain its malformed archive and status refusals unchanged. Do not infer
+bootstrap or native lifecycle completion from this archive fixture.
 
 WinGet uses WhiteKiwi.locron, user-scoped ZIP/portable installers and the same immutable ZIP hashes,
 with architecture-specific nested executable paths and the locron command alias. The receipt-free

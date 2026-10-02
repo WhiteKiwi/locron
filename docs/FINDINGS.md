@@ -4188,3 +4188,26 @@ concurrency/deadline gates remain separate required evidence.
 
 Evidence: [exact x64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37064979742/job/111030476464),
 [exact ARM64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37064979742/job/111030476465).
+
+### Stock PowerShell ZIP assembly loading (2026-10-03)
+
+The exact PR #44 run at d34aaad passed all 45 native distribution assertions on both architectures
+with no ignored tests. Its next stock PowerShell 5.1 fixture step failed before archive assertions:
+New-ZipFixture loaded only System.IO.Compression.FileSystem, then could not resolve ZipArchive.
+The installer parser has the same load statement and must be corrected with the fixture.
+
+Microsoft's .NET Framework API reference places ZipArchive and ZipArchiveMode in
+System.IO.Compression.dll. FileSystem provides ZipFile and filesystem extension APIs; our two
+consumers use only archive/entry streams. Explicitly load the defining System.IO.Compression
+assembly before constructing those types in each consumer. Do not rely on an incidental dependency
+load or a prior profile/session. This loads an existing framework assembly, without compiling
+source, downloading a runtime or changing execution policy.
+
+Verify in the existing native x64/ARM64 stock 5.1 CI step: a fresh no-profile session constructs
+the fixture ZIP and runs every existing positive and negative archive/status assertion. AST checks
+are supplemental; fixture execution and actual bootstrap qualification remain distinct gates.
+
+Sources: [ZipArchive definition and extension separation](https://learn.microsoft.com/en-us/dotnet/api/system.io.compression.ziparchive?view=netframework-4.8.1),
+[ZipArchiveMode assembly](https://learn.microsoft.com/en-us/dotnet/api/system.io.compression.ziparchivemode?view=netframework-4.8.1),
+[Windows PowerShell 5.1 Add-Type assembly parameter](https://github.com/MicrosoftDocs/PowerShell-Docs/blob/main/reference/5.1/Microsoft.PowerShell.Utility/Add-Type.md),
+[exact native package run](https://github.com/WhiteKiwi/locron/actions/runs/37068595779).
