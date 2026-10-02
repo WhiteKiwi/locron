@@ -2,11 +2,13 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$PSModuleAutoLoadingPreference = 'None'
+Microsoft.PowerShell.Core\Import-Module -Name ($PSHOME + '\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -Cmdlet ConvertFrom-Json,ConvertTo-Json -Function @() -Alias @()
 
 while ($null -ne ($line = [Console]::In.ReadLine())) {
     try {
         if ([Text.Encoding]::UTF8.GetByteCount($line) -gt 65536) { throw 'filesystem request too large' }
-        $request = $line | ConvertFrom-Json
+        $request = $line | Microsoft.PowerShell.Utility\ConvertFrom-Json
         $names = @($request.PSObject.Properties.Name)
         if ($names.Count -ne 4 -or ($names | Where-Object { $_ -notin @('version', 'id', 'operation', 'path') })) {
             throw 'invalid filesystem request fields'
@@ -55,7 +57,7 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             }
             default { throw 'unknown filesystem operation' }
         }
-        [Console]::Out.WriteLine((@{version=1; id=$request.id; pid=$PID; result=$result} | ConvertTo-Json -Compress -Depth 6))
+        [Console]::Out.WriteLine((@{version=1; id=$request.id; pid=$PID; result=$result} | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress -Depth 6))
         [Console]::Out.Flush()
     } catch {
         [Console]::Error.WriteLine($_.Exception.Message)

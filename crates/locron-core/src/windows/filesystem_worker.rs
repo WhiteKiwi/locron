@@ -149,6 +149,8 @@ impl ChildPhases {
         let phase = match line {
             b"locron-fs-phase:source-entry" => "child-source-entry",
             b"locron-fs-phase:encoding-ready" => "child-encoding-ready",
+            b"locron-fs-phase:utility-import-start" => "child-utility-import-start",
+            b"locron-fs-phase:utility-import-ready" => "child-utility-import-ready",
             b"locron-fs-phase:input-line" => "child-input-line",
             b"locron-fs-phase:json-parsed" => "child-json-parsed",
             b"locron-fs-phase:sid-resolved" => "child-sid-resolved",
@@ -179,16 +181,26 @@ impl ChildPhases {
 #[cfg(test)]
 fn instrumented_source() -> String {
     let mut source = format!("{}\n{SOURCE}", phase_token("source-entry"));
+    let import = r"Microsoft.PowerShell.Core\Import-Module -Name ($PSHOME + '\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -Cmdlet ConvertFrom-Json,ConvertTo-Json -Function @() -Alias @()";
+    assert_eq!(source.matches(import).count(), 1);
+    source = source.replace(
+        import,
+        &format!("{}\n{import}", phase_token("utility-import-start")),
+    );
     for (anchor, phase) in [
         (
             "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)",
             "encoding-ready",
         ),
+        (import, "utility-import-ready"),
         (
             "while ($null -ne ($line = [Console]::In.ReadLine())) {",
             "input-line",
         ),
-        ("$request = $line | ConvertFrom-Json", "json-parsed"),
+        (
+            r"$request = $line | Microsoft.PowerShell.Utility\ConvertFrom-Json",
+            "json-parsed",
+        ),
         (
             "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User",
             "sid-resolved",
@@ -198,7 +210,7 @@ fn instrumented_source() -> String {
         assert_eq!(source.matches(anchor).count(), 1);
         source = source.replace(anchor, &format!("{anchor}\n{}", phase_token(phase)));
     }
-    let serialize = "(@{version=1; id=$request.id; pid=$PID; result=$result} | ConvertTo-Json -Compress -Depth 6)";
+    let serialize = r"(@{version=1; id=$request.id; pid=$PID; result=$result} | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress -Depth 6)";
     let anchor = format!("[Console]::Out.WriteLine({serialize})");
     assert_eq!(source.matches(&anchor).count(), 1);
     source.replace(
@@ -772,6 +784,8 @@ mod tests {
         for phase in [
             "source-entry",
             "encoding-ready",
+            "utility-import-start",
+            "utility-import-ready",
             "input-line",
             "json-parsed",
             "sid-resolved",
@@ -999,6 +1013,14 @@ mod tests {
 
     fn run_isolated_fixture(mode: &str, confirmation: &str) {
         let temporary = tempfile::tempdir().unwrap();
+        let hostile_modules = temporary.path().join("hostile modules");
+        let forged_utility = hostile_modules.join("Microsoft.PowerShell.Utility");
+        std::fs::create_dir_all(&forged_utility).unwrap();
+        std::fs::write(
+            forged_utility.join("Microsoft.PowerShell.Utility.psm1"),
+            "throw 'filesystem worker loaded an inherited module'",
+        )
+        .unwrap();
         let stdout = temporary.path().join("stdout.txt");
         let stderr = temporary.path().join("stderr.txt");
         let mut child = FixtureChild(
@@ -1009,6 +1031,7 @@ mod tests {
                     "--nocapture",
                 ])
                 .env("LOCRON_FIXED_WORKER_FIXTURE", mode)
+                .env("PSModulePath", &hostile_modules)
                 .creation_flags(0x0800_0000)
                 .stdin(Stdio::null())
                 .stdout(std::fs::File::create(&stdout).unwrap())
@@ -1125,6 +1148,8 @@ mod tests {
             &[
                 "child-source-entry",
                 "child-encoding-ready",
+                "child-utility-import-start",
+                "child-utility-import-ready",
                 "child-input-line",
                 "child-json-parsed",
                 "child-sid-resolved",
