@@ -89,10 +89,54 @@ impl DerefMut for GuardedFile {
     }
 }
 
-/// Opens a managed data file only after private parent and no-follow leaf checks.
+/// Opens an existing managed data file after private parent and no-follow checks.
+/// Creation flags are cleared; use [`create_private_new`] for a missing file.
 pub fn open_private(path: &Path, options: &mut OpenOptions) -> io::Result<GuardedFile> {
     let guard = DirectoryGuard::private(parent(path)?)?;
+    options.create(false).create_new(false);
     open_with_guard(path, options, guard, true)
+}
+
+/// Atomically creates an empty private file without replacing any existing object.
+/// The returned read/write handle and parent guard are validated before caller data is written.
+pub fn create_private_new(path: &Path) -> io::Result<GuardedFile> {
+    let guard = DirectoryGuard::private(parent(path)?)?;
+    #[cfg(windows)]
+    {
+        let path = guard
+            .normalized_path()
+            .join(path.file_name().ok_or_else(|| unsafe_path(path))?);
+        crate::windows::create_private_file(&path)?;
+        open_with_guard(
+            &path,
+            OpenOptions::new().read(true).write(true),
+            guard,
+            true,
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        open_with_guard(
+            path,
+            OpenOptions::new().read(true).write(true).create_new(true),
+            guard,
+            true,
+        )
+    }
+}
+
+/// Opens or atomically creates a permanent private read/write file, preserving existing bytes.
+/// A creation race reopens and validates the existing object instead of repairing it.
+pub fn open_private_or_create(path: &Path) -> io::Result<GuardedFile> {
+    match open_private(path, OpenOptions::new().read(true).write(true)) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => match create_private_new(path) {
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                open_private(path, OpenOptions::new().read(true).write(true))
+            }
+            result => result,
+        },
+        result => result,
+    }
 }
 
 /// Opens a user-selected input without traversing a reparse point or symlink.
@@ -108,6 +152,12 @@ fn open_with_guard(
     guard: DirectoryGuard,
     private: bool,
 ) -> io::Result<GuardedFile> {
+    #[cfg(windows)]
+    let guarded_path = guard
+        .normalized_path()
+        .join(path.file_name().ok_or_else(|| unsafe_path(path))?);
+    #[cfg(windows)]
+    let path = guarded_path.as_path();
     #[cfg(windows)]
     windows::file_options(options);
     #[cfg(unix)]
@@ -369,7 +419,14 @@ mod windows {
         if !normalized.is_absolute() {
             return Err(unsafe_path(path));
         }
-        Ok(normalized)
+        match normalized.components().next() {
+            Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_)) => {
+                let mut verbatim = std::ffi::OsString::from(r"\\?\");
+                verbatim.push(normalized.as_os_str());
+                Ok(PathBuf::from(verbatim))
+            }
+            _ => Ok(normalized),
+        }
     }
 
     fn directory_handle(path: &Path, repair: bool) -> io::Result<File> {
@@ -574,8 +631,7 @@ mod tests {
         let guard = DirectoryGuard::private(&root).unwrap();
         assert!(is_private(&root, true).unwrap());
         let path = root.join("secret.txt");
-        let mut file =
-            open_private(&path, OpenOptions::new().write(true).create_new(true)).unwrap();
+        let mut file = create_private_new(&path).unwrap();
         use std::io::Write;
         file.write_all(b"private").unwrap();
         drop(file);
@@ -639,7 +695,11 @@ mod tests {
         let root = temporary.path().join("private");
         let _guard = DirectoryGuard::private(&root).unwrap();
         let path = root.join("foreign-access.txt");
-        fs::write(&path, b"preserve").unwrap();
+        use std::io::Write;
+        create_private_new(&path)
+            .unwrap()
+            .write_all(b"preserve")
+            .unwrap();
         crate::windows::run_script_json(r#"
             $acl = Get-Acl -LiteralPath ([string]$request.path);
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
@@ -658,7 +718,11 @@ mod tests {
         let _guard = DirectoryGuard::private(&root).unwrap();
         let source = root.join("output.partial");
         let destination = root.join("output.log");
-        fs::write(&source, b"captured").unwrap();
+        use std::io::Write;
+        create_private_new(&source)
+            .unwrap()
+            .write_all(b"captured")
+            .unwrap();
         let reader = open_private(&source, OpenOptions::new().read(true)).unwrap();
         let start = std::time::Instant::now();
         let error =
@@ -671,5 +735,29 @@ mod tests {
         drop(reader);
         rename_private(&source, &destination).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"captured");
+    }
+
+    #[test]
+    fn explicit_creation_refuses_existing_bytes_and_supports_long_unicode_paths() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary
+            .path()
+            .join("private")
+            .join("a".repeat(120))
+            .join("b".repeat(120))
+            .join("긴 경로");
+        let guard = DirectoryGuard::private(&root).unwrap();
+        let path = guard.normalized_path().join("secret.txt");
+        assert!(path.as_os_str().len() > 260);
+        let mut file = create_private_new(&path).unwrap();
+        use std::io::Write;
+        file.write_all(b"preserve").unwrap();
+        drop(file);
+        assert!(is_private(&path, false).unwrap());
+        assert_eq!(
+            create_private_new(&path).unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"preserve");
     }
 }

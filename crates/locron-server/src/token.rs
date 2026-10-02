@@ -109,10 +109,7 @@ fn write_atomic_0600(path: &PathBuf, contents: &str) -> io::Result<()> {
         random_hex_32()
     ));
     {
-        let mut file = locron_core::filesystem::open_private(
-            &temporary,
-            fs::OpenOptions::new().write(true).create_new(true),
-        )?;
+        let mut file = locron_core::filesystem::create_private_new(&temporary)?;
         file.write_all(contents.as_bytes())?;
         file.sync_all()?;
     }

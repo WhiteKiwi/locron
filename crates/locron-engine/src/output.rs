@@ -79,16 +79,9 @@ impl OutputWriter {
     /// Creates a new private partial file and writes its format header.
     pub async fn create(path: impl AsRef<Path>, limit: u64) -> io::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
         let creation_path = path.clone();
         let (file, guard) = tokio::task::spawn_blocking(move || {
-            locron_core::filesystem::open_private(&creation_path, &mut options)
+            locron_core::filesystem::create_private_new(&creation_path)
                 .map(locron_core::filesystem::GuardedFile::into_parts)
         })
         .await

@@ -55,15 +55,7 @@ impl DaemonLock {
         if let Some(parent) = path.parent() {
             crate::paths::ensure_private_directory(parent)?;
         }
-        let (mut file, guard) = locron_core::filesystem::open_private(
-            path,
-            OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .read(true)
-                .write(true),
-        )?
-        .into_parts();
+        let (mut file, guard) = locron_core::filesystem::open_private_or_create(path)?.into_parts();
         set_owner_only(path, false)?;
         file.try_lock().map_err(|error| match error {
             std::fs::TryLockError::WouldBlock => StoreError::DaemonAlreadyRunning,
@@ -84,10 +76,7 @@ impl DaemonLock {
                 metadata: metadata.clone(),
                 service_mode,
             };
-            let mut owner = locron_core::filesystem::open_private(
-                &temporary,
-                OpenOptions::new().write(true).create_new(true),
-            )?;
+            let mut owner = locron_core::filesystem::create_private_new(&temporary)?;
             owner.write_all(&serde_json::to_vec(&role)?)?;
             owner.sync_all()?;
             drop(owner);
@@ -149,14 +138,7 @@ impl DaemonLock {
     /// Proves the lock is free without holding it, failing with
     /// [`StoreError::MigrationRequiresDaemonRestart`] when it is held.
     pub fn try_prove_free(path: &Path) -> StoreResult<()> {
-        let file = locron_core::filesystem::open_private(
-            path,
-            OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .read(true)
-                .write(true),
-        )?;
+        let file = locron_core::filesystem::open_private_or_create(path)?;
         set_owner_only(path, false)?;
         file.try_lock().map_err(|error| match error {
             std::fs::TryLockError::WouldBlock => StoreError::MigrationRequiresDaemonRestart,

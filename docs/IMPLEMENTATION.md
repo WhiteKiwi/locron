@@ -138,6 +138,22 @@ creation. Paths/options arrive as structured stdin JSON, never interpolated sour
 absolute stock PowerShell with -NoProfile -NonInteractive and a reviewed encoded script; do not
 require pwsh or change execution policy. Existing roots require ownership/descriptor validation.
 
+Create missing managed files through the stock .NET FileStream CreateNew/FileSecurity constructor
+with an explicit current-SID owner and protected SID/SYSTEM DACL. Elevated tokens can otherwise
+assign Administrators as the default owner even beneath a private parent. Keep the guarded parent
+live through empty-file creation and subsequent Rust no-follow handle/ACL readback, before any
+caller writes data. Use its canonical verbatim parent path for the .NET adapter, including long
+paths. Report existing-file races from the IOException's numeric Win32 HResult; never repair or
+truncate the raced-in file. Lock creation explicitly opens or creates, while sensitive output/
+token/database creation remains CreateNew. Existing-file opens never infer creation from options.
+Remove inherited PSModulePath only for the stock adapter, allowing PowerShell 5.1 to discover its
+own built-in modules instead of loading incompatible PowerShell 7 modules from the calling shell.
+Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
+descriptor and validate them again after configuration/migration, before accepting application
+operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable
+open precreates missing sidecars again. Read-only validation uses the actual supplied database
+filename and its sidecars, and performs final readback without changing the file-creation contract.
+
 Use Windows-only windows-permissions =0.2.4 explicit GetSecurityInfo/SetSecurityInfo wrappers with
 SE_FILE_OBJECT, Owner/Dacl and ProtectedDacl flags; avoid the audited-buggy convenience trait.
 Safe Windows File open flags permit no-follow handle readback and directory guards. Reject every

@@ -74,6 +74,7 @@ async fn run_adapter(
     let deadline = tokio::time::Instant::now() + timeout;
     let mut child = tokio::process::Command::new(executable)
         .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+        .env_remove("PSModulePath")
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW; no execution-policy changes.
         .kill_on_drop(true)
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
@@ -204,9 +205,51 @@ pub(crate) fn create_private_directory(path: &std::path::Path) -> io::Result<()>
         [System.IO.DirectoryInfo]::new([string]$request.path).Create($acl);
         @{created=$true} | ConvertTo-Json -Compress
     ",
-        &json!({"path": path}),
+        &json!({"path": adapter_path(path)?}),
     )?;
     Ok(())
+}
+
+pub(crate) fn create_private_file(path: &std::path::Path) -> io::Result<()> {
+    let result = run_script_json(
+        r"
+        $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User;
+        $acl = [Security.AccessControl.FileSecurity]::new();
+        $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true, $false);
+        foreach ($principal in @($sid, [Security.Principal.SecurityIdentifier]::new('S-1-5-18'))) {
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($principal, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.AccessControlType]::Allow));
+        }
+        try {
+            $file = [IO.FileStream]::new([string]$request.path, [IO.FileMode]::CreateNew, [Security.AccessControl.FileSystemRights]::FullControl, [IO.FileShare]::ReadWrite, 4096, [IO.FileOptions]::None, $acl);
+            $file.Dispose();
+            @{created=$true} | ConvertTo-Json -Compress
+        } catch {
+            $cause = $_.Exception;
+            while ($cause.InnerException) { $cause = $cause.InnerException; }
+            $code = $cause.HResult -band 65535;
+            if (($cause -is [IO.IOException]) -and ($code -in @(80, 183))) {
+                @{created=$false; win32_error=$code} | ConvertTo-Json -Compress
+            } else { throw; }
+        }
+        ",
+        &json!({"path": adapter_path(path)?}),
+    )?;
+    if result["created"].as_bool() == Some(true) {
+        return Ok(());
+    }
+    match result["win32_error"].as_i64() {
+        Some(code @ (80 | 183)) => Err(io::Error::from_raw_os_error(code as i32)),
+        _ => Err(io::Error::other("invalid private file creation result")),
+    }
+}
+
+fn adapter_path(path: &std::path::Path) -> io::Result<&str> {
+    path.to_str().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "stock Windows adapters require a Unicode path",
+        )
+    })
 }
 
 #[cfg(test)]

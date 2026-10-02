@@ -25,30 +25,32 @@ type AdmissionRow = (String, String, String, i64, String, Option<i64>);
 const MAINTENANCE_BATCH_LIMIT: usize = 100;
 
 #[cfg(windows)]
-fn validate_sqlite_files(paths: &StatePaths, create: bool) -> std::io::Result<bool> {
-    use locron_core::filesystem::open_private;
+fn validate_sqlite_files(database: &Path, create: bool) -> std::io::Result<bool> {
+    use locron_core::filesystem::{create_private_new, open_private};
     use std::fs::OpenOptions;
     use std::io::ErrorKind;
 
-    let fresh = match open_private(&paths.database, OpenOptions::new().read(true)) {
+    let fresh = match open_private(database, OpenOptions::new().read(true)) {
         Ok(file) => {
             drop(file);
             false
         }
         Err(error) if error.kind() == ErrorKind::NotFound && create => {
             // Creation races fail closed instead of opening a raced-in path.
-            drop(open_private(
-                &paths.database,
-                OpenOptions::new().read(true).write(true).create_new(true),
-            )?);
+            drop(create_private_new(database)?);
             true
         }
         Err(error) => return Err(error),
     };
     for suffix in ["-wal", "-shm"] {
-        let path = paths.root.join(format!("state.db{suffix}"));
+        let mut path = database.as_os_str().to_os_string();
+        path.push(suffix);
+        let path = std::path::PathBuf::from(path);
         match open_private(&path, OpenOptions::new().read(true)) {
             Ok(file) => drop(file),
+            Err(error) if error.kind() == ErrorKind::NotFound && create => {
+                drop(create_private_new(&path)?);
+            }
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
@@ -681,7 +683,7 @@ impl Store {
         #[cfg(windows)]
         let state_guard = paths.guard()?;
         #[cfg(windows)]
-        let fresh = validate_sqlite_files(&paths, true)?;
+        let fresh = validate_sqlite_files(&paths.database, true)?;
         let mut connection = Connection::open(&paths.database)?;
         configure(&connection)?;
         migrate(&mut connection, binary_version, now_us)?;
@@ -689,6 +691,8 @@ impl Store {
         if fresh {
             connection.execute("UPDATE settings SET execution_path=?1 WHERE singleton=1 AND execution_path='/usr/local/bin:/usr/bin:/bin' AND updated_at_us=0", [locron_core::execution::default_execution_path()])?;
         }
+        #[cfg(windows)]
+        validate_sqlite_files(&paths.database, false)?;
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
@@ -701,14 +705,22 @@ impl Store {
     /// running migrations or touching the daemon lock. The store's state
     /// paths are derived from the database file's parent directory.
     pub fn open_read_only(path: &Path) -> StoreResult<Self> {
-        let paths = StatePaths::new(path.parent().unwrap_or(Path::new(".")).to_path_buf());
+        let mut paths = StatePaths::new(
+            path.parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or(Path::new("."))
+                .to_path_buf(),
+        );
+        paths.database = path.to_path_buf();
         #[cfg(windows)]
         let state_guard = paths.guard()?;
         #[cfg(windows)]
-        validate_sqlite_files(&paths, false)?;
+        validate_sqlite_files(path, false)?;
         let connection =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         configure_read_only(&connection)?;
+        #[cfg(windows)]
+        validate_sqlite_files(path, false)?;
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
@@ -3491,6 +3503,48 @@ mod tests {
         let temp = private_tempdir();
         let store = Store::open(StatePaths::new(temp.path().into()), "test", 1).unwrap();
         (temp, store)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sqlite_database_and_sidecars_have_explicit_private_owners_on_reopen() {
+        let (temp, store) = store();
+        let paths = store.paths().clone();
+        for name in ["state.db", "state.db-wal", "state.db-shm"] {
+            assert!(locron_core::filesystem::is_private(&temp.path().join(name), false).unwrap());
+        }
+        drop(store);
+        let reopened = Store::open(paths, "test", 2).unwrap();
+        for name in ["state.db", "state.db-wal", "state.db-shm"] {
+            assert!(locron_core::filesystem::is_private(&temp.path().join(name), false).unwrap());
+        }
+        drop(reopened);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_only_database_validation_uses_the_supplied_filename() {
+        let (temp, store) = store();
+        let source_path = store.paths().database.clone();
+        drop(store);
+        let backup_root = temp.path().join("backup");
+        let _guard = locron_core::filesystem::DirectoryGuard::private(&backup_root).unwrap();
+        let backup = backup_root.join("snapshot.db");
+        let mut source = locron_core::filesystem::open_private(
+            &source_path,
+            std::fs::OpenOptions::new().read(true),
+        )
+        .unwrap();
+        let mut destination = locron_core::filesystem::create_private_new(&backup).unwrap();
+        std::io::copy(&mut *source, &mut *destination).unwrap();
+        destination.sync_all().unwrap();
+        drop((source, destination));
+        for name in ["snapshot.db-wal", "snapshot.db-shm"] {
+            drop(locron_core::filesystem::create_private_new(&backup_root.join(name)).unwrap());
+        }
+        let read_only = Store::open_read_only(&backup).unwrap();
+        assert_eq!(read_only.paths().database, backup);
+        assert!(!backup_root.join("state.db").exists());
     }
     fn create(store: &Store, id: &str, name: &str) {
         store

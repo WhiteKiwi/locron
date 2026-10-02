@@ -56,15 +56,7 @@ pub struct FrameWriter {
 impl FrameWriter {
     /// Creates a new frame file with the magic header, failing if it exists.
     pub fn create(path: &Path) -> io::Result<Self> {
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let (mut file, guard) =
-            locron_core::filesystem::open_private(path, &mut options)?.into_parts();
+        let (mut file, guard) = locron_core::filesystem::create_private_new(path)?.into_parts();
         file.write_all(MAGIC)?;
         Ok(Self {
             file,

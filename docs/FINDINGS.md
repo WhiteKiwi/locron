@@ -2813,6 +2813,17 @@ Sources: [TaskFolder registration and flags](https://learn.microsoft.com/en-us/w
 
 ### Recommended design order and remaining proof
 
+Hosted native tests found an elevated token's default file owner can be Administrators despite
+an explicitly private SID-owned parent. Development retains the strict owner check and selects
+the .NET Framework FileStream CreateNew constructor with FileSecurity to set owner/DACL atomically.
+A standard-user stock PowerShell 5.1 fixture created a 355-character verbatim Unicode file path,
+read back the current SID owner and protected SID/SYSTEM-only DACL, and observed numeric Win32
+error 80 on duplicate creation. It cleaned only its owned empty files and directories. This proves
+the adapter's long-path/descriptor/duplicate behavior; elevated Rust and SQLite acceptance remains
+required. The fixed stock adapter clears inherited PSModulePath so PowerShell 7's module paths do
+not cause PowerShell 5.1 to autoload incompatible ACL modules on hosted CI.
+Source: [FileStream with FileSecurity](https://learn.microsoft.com/en-us/dotnet/api/system.io.filestream.-ctor?view=netframework-4.8.1#system-io-filestream-ctor(system-string-system-io-filemode-system-security-accesscontrol-filesystemrights-system-io-fileshare-system-int32-system-io-fileoptions-system-security-accesscontrol-filesecurity)).
+
 Windows file sharing without FILE_SHARE_DELETE prevents concurrent rename until the reader
 closes its handle. Output readers currently collect one snapshot and close before the next poll.
 Development therefore retains the strict leaf sharing policy and selects a five-second retry
