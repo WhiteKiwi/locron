@@ -1944,9 +1944,24 @@ names under retained guards; never save arbitrary paths or task source. Changed 
 uninstall companions are bounded retention facts, not authorized leaf entries.
 Pure journal validation binds every frame to the protected original request, immutable inventory
 and snapshot, checks consecutive sequence and permitted phase/leaf transitions, and rejects unknown
-names or changed original facts. It cannot establish live ownership or completion. Capacity counts
-all fixed nullable keys, the longest reachable enum spellings, both future created/rollback full
-identities per leaf, every repeated typed service slot, and the future package path/key/version
+names or changed original facts. It cannot establish live ownership or completion.
+
+Derive the initial existing-operation envelope through a read-only factory from retained Bootstrap,
+Standalone/Removal and canonical Payloads proofs plus the real service snapshot. Re-read complete
+identities and lengths from those exact retained file handles, require their normalized paths to
+match the logical inventory, and bind the raw protected original request digest rather than a
+reserialized request. Preserve every proof guard through backup and confirmed quiescence. The
+factory neither creates a journal nor proves the helper's mapped image or a complete activation
+budget. Recovery validates the original protected context and existing journal; it never rebuilds
+an accepted snapshot from a newly replaced receipt or assumes the original executable still exists.
+Verify that a real retained ownership proof produces the expected exact logical inventory; mismatched
+paths/full identities/lengths or a recovery request refuse without effects. Different formatting of
+the protected original JSON must bind its actual bytes, and a replaced receipt must not reconstruct
+the old accepted snapshot. The caller retains the real service snapshot guards; the factory's
+serialized output alone cannot authorize quiescence or replacement.
+
+Capacity counts all fixed nullable keys, the longest reachable enum spellings, both future
+created/rollback full identities per leaf, every repeated typed service slot, and the future package path/key/version
 bound before journal creation. Fresh installation additionally requires the service owner's real
 typed registration/root rollback record and complete callback plan; the existing-installation
 record cannot authorize fresh role creation or substitute null for that missing authority.
