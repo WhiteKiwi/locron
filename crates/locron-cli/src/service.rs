@@ -931,9 +931,9 @@ pub(crate) fn supervised_lifetimes(
                 let parsed = uuid::Uuid::parse_str(value).map_err(|_| {
                     ServiceError::Io("service lifetime must be a canonical UUID".into())
                 })?;
-                if parsed.hyphenated().to_string() != *value {
+                if parsed.is_nil() || parsed.hyphenated().to_string() != *value {
                     return Err(ServiceError::Io(
-                        "service lifetime must be a lowercase canonical UUID".into(),
+                        "service lifetime must be a nonzero lowercase canonical UUID".into(),
                     ));
                 }
             }
@@ -960,9 +960,9 @@ pub(crate) fn validate_supervisor(
 ) -> Result<locron_core::filesystem::DirectoryGuard, ServiceError> {
     let parsed = uuid::Uuid::parse_str(lifetime)
         .map_err(|_| ServiceError::Io("supervisor lifetime must be a canonical UUID".into()))?;
-    if parsed.hyphenated().to_string() != lifetime {
+    if parsed.is_nil() || parsed.hyphenated().to_string() != lifetime {
         return Err(ServiceError::Io(
-            "supervisor lifetime must be a lowercase canonical UUID".into(),
+            "supervisor lifetime must be a nonzero lowercase canonical UUID".into(),
         ));
     }
     let guard = locron_core::filesystem::DirectoryGuard::existing_private(&paths.root)
@@ -2156,6 +2156,16 @@ mod windows_dashboard_tests {
             (true, None, Some(worker.clone())),
             (
                 true,
+                Some(uuid::Uuid::nil().to_string()),
+                Some(worker.clone()),
+            ),
+            (
+                true,
+                Some(parent.clone()),
+                Some(uuid::Uuid::nil().to_string()),
+            ),
+            (
+                true,
                 Some("018F3F74-8D70-7CC0-98A2-EEF43F17EAB4".into()),
                 Some(worker.clone()),
             ),
@@ -2164,6 +2174,10 @@ mod windows_dashboard_tests {
             assert!(supervised_lifetimes(service_mode, supervisor, child).is_err());
             assert!(!paths.root.exists());
         }
+        assert!(
+            validate_supervisor(&paths, Target::Dashboard, &uuid::Uuid::nil().to_string()).is_err()
+        );
+        assert!(!paths.root.exists());
         assert!(
             owned_dashboard(
                 paths.clone(),
