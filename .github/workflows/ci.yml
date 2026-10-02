@@ -199,7 +199,13 @@ jobs:
       - name: Build native executable with static CRT
         env:
           RUSTFLAGS: '-C target-feature=+crt-static'
-        run: cargo build --release --locked -p locron --target '${{ matrix.target }}'
+        shell: powershell
+        run: |
+          $compiler = rustc -vV
+          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
+          if ($compiler -cnotcontains 'host: ${{ matrix.target }}') { throw 'package target must equal native rustc host' }
+          cargo build --release --locked -p locron --target '${{ matrix.target }}'
+          if ($LASTEXITCODE -ne 0) { throw 'native release build failed' }
       - name: Package and verify current-version ZIP without developer PATH
         shell: powershell
         run: |

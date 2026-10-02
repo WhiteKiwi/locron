@@ -2,8 +2,11 @@
 """Hermetic Windows distribution boundaries; no installation, tasks or publication."""
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -158,6 +161,17 @@ class WindowsDistributionTests(unittest.TestCase):
             environment = windows.system_environment()
             self.assertNotIn("compiler-and-sdk-path", environment["PATH"])
             self.assertEqual(windows.os.environ["PATH"], "compiler-and-sdk-path")
+
+    def test_validation_cli_produces_machine_readable_package_facts(self):
+        archive = self.package(output="cli-json")
+        result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/windows_release.py"),
+                                 "validate", TAG, TARGET, str(archive)], capture_output=True,
+                                text=True, check=True, timeout=30)
+        facts = json.loads(result.stdout)
+        self.assertEqual(facts["target"], TARGET)
+        self.assertIs(facts["unsigned"], True)
+        self.assertEqual(facts["version"], "0.10.0")
+        self.assertEqual(facts["binary_sha256"], hashlib.sha256(self.binary.read_bytes()).hexdigest())
 
 
 if __name__ == "__main__":

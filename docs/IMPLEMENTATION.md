@@ -217,6 +217,7 @@ build intent and direct dependencies; clean Windows 11 acceptance remains requir
 runtime behavior without Visual Studio, a Rust toolchain or separately installed VC redistributables.
 PR CI builds both native Windows release targets with this configuration, packages the current
 workspace version as a test input, validates the actual ZIP and retains import/hash/toolchain facts.
+The rustc host triple must equal the selected target before building either native package.
 Branch names never select release publication inventory, and this job creates no tag or release.
 This choice follows the [Rust linkage reference](https://doc.rust-lang.org/reference/linkage.html),
 [Cargo flag scoping](https://doc.rust-lang.org/cargo/reference/config.html#buildrustflags),
