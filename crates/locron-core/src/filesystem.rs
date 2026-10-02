@@ -645,9 +645,9 @@ mod tests {
         let root = temporary.path().join("owned");
         drop(DirectoryGuard::private(&root).unwrap());
         crate::windows::run_script_json(r"
-            $acl = Get-Acl -LiteralPath ([string]$request.path);
+            $acl = [IO.Directory]::GetAccessControl([string]$request.path);
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
-            Set-Acl -LiteralPath ([string]$request.path) -AclObject $acl;
+            [IO.Directory]::SetAccessControl([string]$request.path, $acl);
             @{changed=$true} | ConvertTo-Json -Compress
         ", &json!({"path": root})).unwrap();
         assert!(!is_private(&root, true).unwrap());
@@ -700,9 +700,9 @@ mod tests {
             .write_all(b"preserve")
             .unwrap();
         crate::windows::run_script_json(r"
-            $acl = Get-Acl -LiteralPath ([string]$request.path);
+            $acl = [IO.File]::GetAccessControl([string]$request.path);
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
-            Set-Acl -LiteralPath ([string]$request.path) -AclObject $acl;
+            [IO.File]::SetAccessControl([string]$request.path, $acl);
             @{changed=$true} | ConvertTo-Json -Compress
         ", &json!({"path": path})).unwrap();
         assert!(!is_private(&path, false).unwrap());
