@@ -148,6 +148,13 @@ truncate the raced-in file. Lock creation explicitly opens or creates, while sen
 token/database creation remains CreateNew. Existing-file opens never infer creation from options.
 Remove inherited PSModulePath only for the stock adapter, allowing PowerShell 5.1 to discover its
 own built-in modules instead of loading incompatible PowerShell 7 modules from the calling shell.
+Bound stock adapter concurrency to two owned workers per process. A single thirty-second deadline
+starts at API entry and includes permit wait, runtime/process startup and all input/output work;
+permit saturation fails under that deadline rather than spawning more cold PowerShell processes.
+Serialize first SID discovery under the same finite budget and share its verified cached result.
+Keep the existing kill/reap cleanup bound, input/output limits and failure semantics. Native tests
+must still exercise startup/script stalls and saturated permits; do not extend the deadline or
+reduce privacy coverage to mask ARM64 cold-start contention.
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable

@@ -2821,6 +2821,16 @@ Source: [Windows PowerShell 5.1 executable parameters](https://learn.microsoft.c
 
 ### Recommended design order and remaining proof
 
+The first native ARM64 core run at PR #41 head `2f5516e` failed four initial private-directory
+fixtures together about thirty seconds after test launch. The failures precede private-file
+creation; x64 stable and pinned MSRV core/store runs succeeded. Current first SID discovery is a
+racy cache get/query/set, allowing concurrent callers to start separate cold PowerShell processes.
+Cold-start contention is a plausible cause, rather than a proved filesystem failure. Development
+selects two bounded adapter permits and one finite SID initializer, with the unchanged thirty-second
+deadline measured from API entry including queue wait. Saturated-queue and startup/termination
+tests remain required; a fresh native ARM64 run must establish whether this resolves the failure.
+Evidence: [native ARM64 job](https://github.com/WhiteKiwi/locron/actions/runs/37021167379/job/110884313590).
+
 Hosted native tests found an elevated token's default file owner can be Administrators despite
 an explicitly private SID-owned parent. Development retains the strict owner check and selects
 the .NET Framework FileStream CreateNew constructor with FileSecurity to set owner/DACL atomically.
