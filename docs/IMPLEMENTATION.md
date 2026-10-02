@@ -937,6 +937,17 @@ an untrusted local TLS peer is a retryable transport failure. Bounded native IPC
 wake/cooperative control, malformed frames, idle/nonreading clients, first-instance collisions,
 role/lifetime separation and listener teardown while preserving durable reconciliation.
 
+Separate headless CLI fixtures verify registered dashboard control against actual process exit
+and a subsequently free dashboard lock, with both an active SSE stream and incomplete HTTP
+headers/body. A gated native job publishes a heartbeat before and after dashboard exit; the
+manual daemon retains its original lifetime and the durable run has no cancellation request.
+Only after these observations does the fixture release the job's gate and confirm success.
+Capture bounded startup JSON without exposing its token value and retain/reap every owned child.
+An explicit absolute LOCRON_TEST_BINARY override belongs only to the integration-test harness,
+so the downloaded same-revision CLI and test artifacts can run on a standard-user host. The
+production CLI never reads this override. Native CI also runs the registered-dashboard unit
+contracts after the actual lifecycle suite, keeping the established job names and deadlines.
+
 ### Change order and verification
 
 1. Review SPEC, source-backed FINDINGS, these decisions and Project drafts; freeze the minimum
