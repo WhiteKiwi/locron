@@ -326,25 +326,28 @@ fn wait_for_reply(
     deadline: Instant,
 ) -> io::Result<Value> {
     match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(result) => {
-            if result.is_ok() {
-                remaining(deadline)?;
-            }
-            result
-        }
+        Ok(result) => refuse_late_success(result, deadline),
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             Err(io::Error::other("filesystem worker stopped"))
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
             cancelled.store(true, Ordering::Release);
             // The operation already expired. Wait only for its separately bounded owned cleanup.
-            receiver.recv_timeout(CLEANUP).unwrap_or_else(|_| {
+            let result = receiver.recv_timeout(CLEANUP).unwrap_or_else(|_| {
                 Err(io::Error::other(
                     "filesystem worker cleanup remains unconfirmed",
                 ))
-            })
+            });
+            refuse_late_success(result, deadline)
         }
     }
+}
+
+fn refuse_late_success(result: io::Result<Value>, deadline: Instant) -> io::Result<Value> {
+    if result.is_ok() {
+        remaining(deadline)?;
+    }
+    result
 }
 
 fn enqueue(sender: &queue::Sender<Request>, mut request: Request) -> io::Result<()> {
@@ -492,8 +495,18 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
         }
         let _ = request.reply.send(result);
     }
-    if let Some(owned) = worker.as_mut() {
-        let _ = owned.cleanup().await;
+    if !quarantine
+        && let Some(owned) = worker.as_mut()
+        && owned.cleanup().await.is_err()
+    {
+        quarantine = true;
+    }
+    if quarantine || quarantined_spawn.is_some() {
+        // Even a private/fixture channel EOF cannot release uncertain native ownership.
+        // This owner retains its child/Job/stock handles; process exit closes them in the kernel.
+        loop {
+            std::thread::park();
+        }
     }
 }
 
@@ -965,6 +978,39 @@ mod tests {
                     .to_string(),
                 "bad fixed reply"
             );
+        }
+    }
+
+    #[test]
+    fn success_delivered_only_after_timeout_is_refused_during_cleanup_receive() {
+        for success in [true, false] {
+            let (reply, receiver) = mpsc::sync_channel(1);
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let observed = Arc::clone(&cancelled);
+            let deadline = Instant::now() + Duration::from_millis(40);
+            let delivery = std::thread::spawn(move || {
+                let last = deadline + CLEANUP;
+                while !observed.load(Ordering::Acquire) {
+                    assert!(Instant::now() < last, "fixture must observe caller timeout");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                let result = if success {
+                    Ok(json!({"computed_before_delivery": true}))
+                } else {
+                    Err(io::Error::other("owned cleanup reported failure"))
+                };
+                reply.send(result).unwrap();
+            });
+            let error = wait_for_reply(&receiver, &cancelled, deadline).unwrap_err();
+            assert!(cancelled.load(Ordering::Acquire));
+            if success {
+                assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+            } else {
+                assert_eq!(error.to_string(), "owned cleanup reported failure");
+            }
+            if delivery.is_finished() {
+                delivery.join().unwrap();
+            }
         }
     }
 
