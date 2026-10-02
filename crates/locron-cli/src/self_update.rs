@@ -49,6 +49,10 @@ mod windows_replacement;
 #[path = "windows_journal.rs"]
 mod windows_journal;
 
+#[cfg(all(windows, test))]
+#[path = "windows_ownership.rs"]
+mod windows_ownership;
+
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";
