@@ -11,6 +11,27 @@ use locron_store::{AttemptCompletion, DaemonLock, StatePaths, Store};
 use predicates::prelude::*;
 use uuid::Uuid;
 
+#[cfg(unix)]
+fn startup_owner_matches_pid(path: &std::path::Path, pid: u32) -> bool {
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut bytes = Vec::new();
+    if file.take(16 * 1024 + 1).read_to_end(&mut bytes).is_err() || bytes.len() > 16 * 1024 {
+        return false;
+    }
+    serde_json::from_slice::<locron_store::LockMetadata>(&bytes)
+        .is_ok_and(|metadata| metadata.pid == pid)
+}
+
+#[cfg(windows)]
+fn startup_owner_matches_pid(path: &std::path::Path, pid: u32) -> bool {
+    DaemonLock::read_role_metadata(path)
+        .ok()
+        .flatten()
+        .is_some_and(|owner| owner.metadata.pid == pid)
+}
+
 fn locron(state: &tempfile::TempDir) -> Command {
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("locron"));
     command.arg("--state-dir").arg(state.path());
@@ -58,11 +79,7 @@ fn start_daemon(state: &tempfile::TempDir) -> Child {
                 startup_diagnostics(&mut diagnostics)
             );
         }
-        if DaemonLock::read_role_metadata(&lock_path)
-            .ok()
-            .flatten()
-            .is_some_and(|owner| owner.metadata.pid == daemon.id())
-        {
+        if startup_owner_matches_pid(&lock_path, daemon.id()) {
             assert!(
                 DaemonLock::try_prove_free(&lock_path).is_err(),
                 "daemon published ownership without holding the lock"

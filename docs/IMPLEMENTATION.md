@@ -1231,6 +1231,12 @@ attempt_history and service_lifetime. Apply this same passive PID/liveness contr
 helpers, retaining owned-child cleanup and bounded startup stderr before reporting a failure.
 Keep their real command, output and graceful-exit assertions under the original deadlines.
 
+The general CLI startup helper must also use a plain bounded existing-file metadata read on
+Unix: the production private-file helper retains its original parent-creation/permission behavior
+there and is inappropriate for a passive fixture observer. Windows keeps the protected owner
+sidecar because exclusive byte-range locking prevents reading the live lock bytes. Both branches
+require the expected live child PID; retain the actual-lock ownership assertion after readiness.
+
 ## Second feedback and v0.9.6 signed macOS release (2026-09-30)
 
 Implement the reviewed SPEC amendments with FINDINGS §42 as the evidence record. The reporter
