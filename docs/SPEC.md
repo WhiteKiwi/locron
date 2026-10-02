@@ -578,10 +578,24 @@ Store distribution remain outside this milestone.
 - Local wake notifications are restricted to the owning account and state instance. IPC failure
   retains periodic durable reconciliation and never becomes a correctness prerequisite.
 - The initial distribution uses immutable unsigned x64/ARM64 ZIPs from the canonical HTTPS GitHub
-  release, SHA-256 verification, user-scoped PowerShell installation and WinGet ownership. Code
-  signing is a deferred follow-up and cannot block the first milestone. Checksum checks are not
+  release, SHA-256 verification, native user-scoped installation, an optional PowerShell frontend
+  and WinGet ownership. Code signing is a deferred follow-up and cannot block the first milestone.
+  Checksum checks are not
   independent publisher authentication. SmartScreen warnings and policy-blocked configurations
   are documented; installation/update does not automatically disable Windows protections.
+- Windows standalone installation and offline removal are available through native commands
+  without loading an unsigned PowerShell script or changing execution policy. The installation
+  default is the current user's ordinary local application location with the daemon enabled;
+  dashboard and persistent PATH changes are opt-in. Declining services disables both roles, and
+  selecting a dashboard while declining services is an explicit argument error. Owned interrupted
+  standalone operations can be recovered by operation UUID before ordinary state discovery.
+  The optional script route requires an existing operator policy that permits that script.
+- WinGet's portable channel installs package files and its command alias; it does not automatically
+  install services or invoke lifecycle hooks. Users explicitly configure services through the
+  package executable. A native maintenance procedure records and quiesces exact owned
+  registrations before package upgrade/removal and restores prior enabled states after a verified
+  upgrade. The standalone installer and updater never adopt package-owned files. Pending native
+  handoffs are distinguishable from confirmed installation, preparation, removal or update.
 - Standalone updates positively verify ownership, source, digest, version and architecture; safely
   coordinate owned executable holders and automatic restarts before replacement; preserve rollback,
   enabled/disabled registration state and durable jobs/history; and report confirmed completion

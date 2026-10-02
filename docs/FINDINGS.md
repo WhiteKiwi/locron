@@ -4034,3 +4034,28 @@ Sources: [.NET Framework user-environment implementation](https://github.com/mic
 [explicit registry value kinds](https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.registrykey.setvalue?view=netframework-4.8.1),
 [Environment change notification](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-settingchange),
 [audited winsafe SendMessageTimeout](https://docs.rs/crate/winsafe/0.0.29/source/src/user/handles/hwnd.rs).
+
+### Unsigned first install under stock script policy (2026-10-03)
+
+Microsoft documents that Restricted permits individual commands but blocks script files.
+RemoteSigned can also block unsigned downloaded scripts with Zone.Identifier until the operator
+selectively unblocks that reviewed asset; Unblock-File does not change execution policy and
+cannot make Restricted execute scripts. AllSigned and organizational policy can impose additional
+restrictions. This host's stock PowerShell 5.1 policy refused the test .ps1 source; source AST
+parsing succeeds, but that is not installer execution evidence.
+
+The selected route adds native Windows-only install, uninstall and UUID recovery commands to the
+same binary, sharing the strict verifier, protected request, fixed OS adapters and helper engine.
+It executes compiled procedures and does not load arbitrary .ps1 contents, select Bypass or
+change user/machine policy. It therefore removes the unsigned-script prerequisite for native
+installation while continuing to respect native executable controls. Keep the .ps1 assets as an
+optional frontend with the actual policy prerequisite stated. Test the native route on clean
+standard-user Windows 11 x64/ARM64 under Restricted before announcing support.
+The same native maintenance/status frontend supplies the already selected portable WinGet
+quiesce/restore procedure. Portable manifests execute no script/native lifecycle hook; first
+package installation has manual service configuration, and package upgrade/removal requires
+confirmed maintenance rather than assuming automatic task behavior.
+
+Sources: [PowerShell 5.1 execution policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1),
+[selective file unblocking](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/unblock-file?view=powershell-5.1),
+[organizational policy precedence](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-executionpolicy?view=powershell-5.1).

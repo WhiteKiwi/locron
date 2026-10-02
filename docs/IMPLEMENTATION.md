@@ -1669,6 +1669,31 @@ destinations are refused. Uninstall requires this receipt, quiesces only exact o
 removes only receipt-listed unchanged files and an installer-inserted PATH entry, and retains state.
 Standalone and WinGet locations coexist; neither installer adopts the other's files.
 
+Provide Windows-only native locron install and locron uninstall commands for the default
+Restricted script-policy case. Native install accepts --version, --install-directory,
+--no-service, --dashboard and --add-to-path with the same standalone defaults. --no-service
+disables both roles and conflicts with --dashboard before any state/download/task effects.
+Native uninstall accepts --install-directory, defaults to the running receipt-owned directory
+when present and otherwise the ordinary standalone directory, and needs no network. Native
+locron install --operation UUID is recovery only and conflicts with all new-install options.
+Dispatch these commands before ordinary StatePaths discovery; their shared operation engine
+opens state only after ownership/source validation and only for requested role registration.
+The native frontend downloads and verifies canonical release bytes, writes the same protected
+request and runs the same independently verified helper as the script frontend. It never loads
+downloaded/retained .ps1 code or uses Invoke-Expression; fixed compiled stock OS adapters remain
+the only PowerShell procedures. Unix CLI/help stays unchanged and the public asset count stays 14.
+The optional script frontend must describe its actual execution-policy prerequisite: Restricted
+blocks .ps1, RemoteSigned can require operator-selected unblocking of that reviewed asset, and
+AllSigned or organizational policy can refuse it. Do not add automatic policy changes, a process
+bypass flag, script-content command injection or protection disabling to either frontend.
+If any native caller maps the installation being changed, use the same truthful pending
+handoff as self-update: acceptance reports pending=true, updated=false, operation_id and
+status_file, and never claims completed removal or prepared maintenance. Native operation output
+also carries phase and prepared so status cannot confuse file installation with task preparation.
+An independently extracted native executable can wait for confirmed work against a different
+destination; its frontend still handles pending when exact file identity shows the same mapped
+object. Reading an owned operation's status reports its phase without mutating state.
+
 The Windows receipt keeps the sibling filename .locron-install-receipt-v1 and uses the strict
 locron.install/windows-v1 JSON schema. Its six listed payloads are the four exact ZIP members,
 uninstall.ps1 and .locron-installer.ps1 (the canonical install.ps1 release asset, retained to share
@@ -1719,6 +1744,23 @@ registrations before the operator runs winget uninstall. The helper request sche
 locron.windows-operation/v1; installer, updater, uninstaller and maintenance share this internal
 entrypoint and serializable validated lifecycle record. Missing, foreign or interrupted records
 are explicit refusal/recovery cases. No new release asset or arbitrary manifest hook is introduced.
+Expose the same maintenance engine without unsigned script loading through Windows-only
+locron maintenance prepare|complete|remove|status. Prepare/Remove require --executable with an exact
+registered WinGet binary and create a fresh operation. Complete requires --operation UUID and
+--executable with the newly active registered package binary; Status requires only --operation
+UUID. Dispatch before default state discovery. WinGet install owns only its package/alias and
+does not enable the daemon or dashboard: users opt in through the existing service install and
+dashboard enable commands of that package executable. Standalone locron install and self-update
+refuse this package location. Before winget upgrade/uninstall, maintenance must report confirmed
+prepared/removed, not merely pending acceptance. After upgrade, Complete restores only the
+recorded prior enabled states against the verified new package path. Ordinary native status
+uses the strict protected request/status protocol for both standalone and package operations.
+WinGet Prepare/Remove confirms mapped-holder exit through a separate existing-only source-policy
+exclusive read/write/DELETE/share0 gate. Its owner must be the current SID, trusted SYSTEM/Admin
+permissions and other read/execute may remain, and foreign mutation is refused under retained
+existing ancestry guards. It never repairs package ownership/DACLs or writes/deletes package
+bytes. The strict protected private gate remains mandatory for standalone replacement; the
+ordinary read-owned source guard alone cannot prove a mapped executable has exited.
 Use Windows-only zip =8.6.0 (MSRV 1.88) with only deflate-flate2, reusing the workspace's Rust
 flate2 backend. Read exact inventory members with bounded sizes into memory, reject encrypted,
 special/reparse/duplicate members and never use a generic path-extract operation. Persist all
@@ -1767,7 +1809,8 @@ recording leaves an unrecognized leaf that recovery explicitly refuses; it canno
 adopted by filename, empty length or matching bytes. A retained verified helper and backups remain
 available even when the installed executable is absent or incomplete.
 
-Recover standalone operations through install.ps1 -Operation UUID, without -Maintenance; this
+Recover standalone operations through locron install --operation UUID or, where script policy
+permits it, install.ps1 -Operation UUID without -Maintenance; this
 uses the protected original request, verified retained helper and durable journal, and reports a
 confirmed rollback or completion, or an actionable refusal. Recovery never treats a partial status
 file as authorization. Restore exact prior enabled/disabled registrations only after a verified

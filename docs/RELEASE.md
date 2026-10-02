@@ -27,6 +27,11 @@ adapter, all mapped holders, competing entries and every durable backup/delete/c
 phase on both architectures. It must prove verified rollback or an explicit disabled-task refusal
 with preserved backups after interruption, including ambiguous deletion errors and an unrecorded
 fresh leaf. A successful handoff alone never satisfies the confirmed-update gate.
+First-install acceptance exercises the native install/uninstall/recovery frontend under stock
+Restricted script policy, with the machine's executable protections intact. The optional unsigned
+.ps1 frontend has an explicit policy prerequisite; checkout execution on a permissive hosted
+image alone is not clean-machine installer proof. Neither frontend changes execution policy or
+loads downloaded script contents as commands.
 
 Maintainers generate proposed WinGet manifests from final ZIPs and their complete published
 checksum inventory, then validate them on Windows:
@@ -47,6 +52,13 @@ tasks disabled; Complete validates current SID/package/source/path/architecture/
 before restoring prior enabled states. Interrupted or mismatched operations fail with recovery
 instructions and cannot reactivate an unverified executable. Remove touches only owned exact
 registrations. This does not add a fifteenth release asset or manifest lifecycle hook.
+Native maintenance prepare|complete|remove|status exposes the same procedure under Restricted
+script policy. Package installation itself has no automatic services; service configuration is
+explicit, and native acceptance proves confirmed preparation/removal before winget mutates files.
+Submit reviewed per-app manifests to microsoft/winget-pkgs through an isolated WhiteKiwi fork
+branch after immutable release/hash/native qualification and official validation. Track repository
+acceptance and the live catalog separately from PR creation. A maintainer contribution agreement
+is an external human gate and is never accepted by an agent.
 Signing is a separate future milestone and must not be described as authentication for these ZIPs.
 
 ## 1. Versioning Policy
