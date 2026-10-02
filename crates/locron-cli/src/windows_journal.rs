@@ -4,6 +4,7 @@
 //! record and live identity checks; this codec never authorizes or replays effects.
 
 use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::marker::PhantomData;
 use std::path::Path;
 
 use anyhow::{Result, ensure};
@@ -47,6 +48,54 @@ struct Chain<R> {
     records: Vec<R>,
     last_digest: [u8; 32],
     byte_len: usize,
+}
+
+/// A pure, typed reservation made before any journal/backup/staging creation.
+/// The engine supplies a complete worst-case record and its total forward plus
+/// rollback callback count. Encoding bounds include every repeated field.
+pub(super) struct Reservation<R> {
+    frames: usize,
+    maximum_frame_bytes: usize,
+    _record: PhantomData<fn() -> R>,
+}
+
+pub(super) fn preflight<R: Serialize>(
+    worst_case_record: &R,
+    frames: usize,
+) -> Result<Reservation<R>> {
+    let (bytes, _) = frame(worst_case_record, [0; 32])?;
+    check_budget(0, 0, frames, bytes.len())?;
+    Ok(Reservation {
+        frames,
+        maximum_frame_bytes: bytes.len(),
+        _record: PhantomData,
+    })
+}
+
+fn check_budget(
+    existing_frames: usize,
+    existing_bytes: usize,
+    frames: usize,
+    maximum_frame_bytes: usize,
+) -> Result<()> {
+    ensure!(
+        frames > 0 && (OVERHEAD + 1..=FRAME_LIMIT).contains(&maximum_frame_bytes),
+        "invalid complete-operation reservation"
+    );
+    ensure!(
+        existing_frames
+            .checked_add(frames)
+            .is_some_and(|count| count <= FRAME_COUNT),
+        "complete operation exceeds the journal frame budget"
+    );
+    let size = frames
+        .checked_mul(maximum_frame_bytes)
+        .and_then(|size| existing_bytes.checked_add(size));
+    ensure!(
+        size.is_some_and(|size| size <= JOURNAL_LIMIT),
+        "complete operation exceeds the journal byte budget"
+    );
+    Ok(())
 }
 
 impl<R> Default for Chain<R> {
@@ -134,14 +183,16 @@ pub(super) struct Journal<R> {
     file: GuardedFile,
     chain: Chain<R>,
     poisoned: bool,
+    reservation: Option<Reservation<R>>,
 }
 
 impl<R: Serialize + DeserializeOwned> Journal<R> {
-    pub(super) fn create(path: &Path) -> Result<Self> {
+    pub(super) fn create(path: &Path, reservation: Reservation<R>) -> Result<Self> {
         Ok(Self {
             file: create_private_new_exclusive(path)?,
             chain: Chain::default(),
             poisoned: false,
+            reservation: Some(reservation),
         })
     }
 
@@ -168,6 +219,8 @@ impl<R: Serialize + DeserializeOwned> Journal<R> {
             file,
             chain,
             poisoned: false,
+            // A recovered operation must preflight its complete remaining path.
+            reservation: None,
         })
     }
 
@@ -177,27 +230,15 @@ impl<R: Serialize + DeserializeOwned> Journal<R> {
 
     /// Reserve the complete forward and rollback write budget before the first effect.
     /// A record/binding set that cannot fit refuses before disabling a task.
-    pub(super) fn reserve(&self, frames: usize, maximum_frame_bytes: usize) -> Result<()> {
+    pub(super) fn reserve(&mut self, reservation: Reservation<R>) -> Result<()> {
         ensure!(!self.poisoned, "journal write outcome is uncertain");
-        ensure!(
-            (OVERHEAD + 1..=FRAME_LIMIT).contains(&maximum_frame_bytes),
-            "invalid reserved frame bound"
-        );
-        ensure!(
-            self.chain
-                .records
-                .len()
-                .checked_add(frames)
-                .is_some_and(|count| count <= FRAME_COUNT),
-            "complete operation exceeds the journal frame budget"
-        );
-        let size = frames
-            .checked_mul(maximum_frame_bytes)
-            .and_then(|size| self.chain.byte_len.checked_add(size));
-        ensure!(
-            size.is_some_and(|size| size <= JOURNAL_LIMIT),
-            "complete operation exceeds the journal byte budget"
-        );
+        check_budget(
+            self.chain.records.len(),
+            self.chain.byte_len,
+            reservation.frames,
+            reservation.maximum_frame_bytes,
+        )?;
+        self.reservation = Some(reservation);
         Ok(())
     }
 
@@ -209,7 +250,16 @@ impl<R: Serialize + DeserializeOwned> Journal<R> {
         ensure!(!self.poisoned, "journal write outcome is uncertain");
         validate(&record, self.chain.records.last())?;
         let (bytes, digest) = frame(&record, self.chain.last_digest)?;
-        self.reserve(1, bytes.len())?;
+        let reservation = self
+            .reservation
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("complete remaining operation is not reserved"))?;
+        ensure!(
+            reservation.frames > 0 && bytes.len() <= reservation.maximum_frame_bytes,
+            "journal append exceeds its preflight reservation"
+        );
+        let remaining_frames = reservation.frames - 1;
+        let maximum_frame_bytes = reservation.maximum_frame_bytes;
         // No external object may be adopted as a journal merely by its filename.
         // The retained share0 handle prevents competing writes/deletes here.
         let result = (|| -> Result<()> {
@@ -234,6 +284,11 @@ impl<R: Serialize + DeserializeOwned> Journal<R> {
         self.chain.byte_len += bytes.len();
         self.chain.last_digest = digest;
         self.chain.records.push(record);
+        self.reservation = Some(Reservation {
+            frames: remaining_frames,
+            maximum_frame_bytes,
+            _record: PhantomData,
+        });
         Ok(())
     }
 }
@@ -363,11 +418,15 @@ mod tests {
             .unwrap();
         locron_core::filesystem::restrict_owned(root.path(), true).unwrap();
         let path = root.path().join("journal.bin");
-        let mut journal: Journal<Record> = Journal::create(&path).unwrap();
-        assert!(journal.reserve(FRAME_COUNT + 1, FRAME_LIMIT).is_err());
-        assert!(journal.reserve(1, FRAME_LIMIT + 1).is_err());
+        let worst_case = record(999);
+        assert!(preflight(&worst_case, FRAME_COUNT + 1).is_err());
+        let mut oversized = record(0);
+        oversized.padding = "x".repeat(FRAME_LIMIT);
+        assert!(preflight(&oversized, 1).is_err());
+        assert!(!path.exists());
+        let budget = preflight(&worst_case, 4).unwrap();
+        let mut journal: Journal<Record> = Journal::create(&path, budget).unwrap();
         assert!(journal.last_record().is_none());
-        journal.reserve(4, 1024).unwrap();
         journal.append(record(0), validate).unwrap();
         journal.append(record(1), validate).unwrap();
         assert_eq!(journal.last_record().unwrap().sequence, 1);
@@ -376,17 +435,57 @@ mod tests {
         let mut journal = Journal::<Record>::open(&path, validate).unwrap();
         assert_eq!(journal.last_record().unwrap().sequence, 1);
         let length = journal.file.metadata().unwrap().len();
+        assert!(journal.append(record(2), validate).is_err());
+        assert_eq!(journal.file.metadata().unwrap().len(), length);
+        assert!(!journal.poisoned);
+        assert!(
+            journal
+                .reserve(preflight(&worst_case, FRAME_COUNT).unwrap())
+                .is_err()
+        );
+        journal.reserve(preflight(&worst_case, 4).unwrap()).unwrap();
+        let length = journal.file.metadata().unwrap().len();
         journal.file.set_len(length - 1).unwrap();
         journal.file.sync_all().unwrap();
         assert!(journal.append(record(2), validate).is_err());
         assert!(journal.poisoned);
-        assert!(journal.reserve(1, 1024).is_err());
+        assert!(journal.reserve(preflight(&worst_case, 1).unwrap()).is_err());
         assert!(journal.append(record(2), validate).is_err());
         drop(journal);
         assert!(Journal::<Record>::open(&path, validate).is_err());
         let empty = root.path().join("empty.bin");
-        drop(Journal::<Record>::create(&empty).unwrap());
+        drop(Journal::<Record>::create(&empty, preflight(&worst_case, 1).unwrap()).unwrap());
         assert!(Journal::<Record>::open(&empty, validate).is_err());
-        assert!(Journal::<Record>::create(&path).is_err());
+        assert!(Journal::<Record>::create(&path, preflight(&worst_case, 1).unwrap()).is_err());
+    }
+
+    #[test]
+    fn preflight_counts_encoded_full_records_and_append_consumes_its_budget() {
+        let mut worst_case = record(999);
+        // Encoding the complete future record counts escaped bytes too.
+        worst_case.padding = "\\\n".repeat(FRAME_LIMIT / 4);
+        assert!(preflight(&worst_case, 1).is_err());
+        worst_case.padding.clear();
+        assert!(preflight(&worst_case, 0).is_err());
+        assert!(preflight(&worst_case, usize::MAX).is_err());
+        let root = tempfile::Builder::new()
+            .prefix("locron-reservation-fixture-")
+            .tempdir()
+            .unwrap();
+        locron_core::filesystem::restrict_owned(root.path(), true).unwrap();
+        let path = root.path().join("journal.bin");
+        let mut journal = Journal::create(&path, preflight(&worst_case, 1).unwrap()).unwrap();
+        journal.append(record(0), validate).unwrap();
+        let length = journal.file.metadata().unwrap().len();
+        assert!(journal.append(record(1), validate).is_err());
+        assert_eq!(journal.file.metadata().unwrap().len(), length);
+        assert_eq!(journal.last_record().unwrap().sequence, 0);
+        assert!(!journal.poisoned);
+        journal.reserve(preflight(&worst_case, 2).unwrap()).unwrap();
+        let mut larger = record(1);
+        larger.padding = "a field absent from the worst-case record".to_owned();
+        assert!(journal.append(larger, validate).is_err());
+        assert_eq!(journal.file.metadata().unwrap().len(), length);
+        assert_eq!(journal.last_record().unwrap().sequence, 0);
     }
 }
