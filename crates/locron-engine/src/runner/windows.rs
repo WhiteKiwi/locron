@@ -359,6 +359,7 @@ pub(super) async fn run_process(
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use crate::runner::{Runner, RunnerFailureKind, TargetSpec};
     use std::io::Write;
     use std::path::{Path, PathBuf};
 
