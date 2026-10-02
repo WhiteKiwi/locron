@@ -195,6 +195,8 @@ jobs:
         run: sh scripts/test-render-homebrew-formula.sh
       - name: Test signing, immutable release and updater boundaries
         run: python3 -B scripts/test-release-scripts.py
+      - name: Test Windows archive and versioned release boundaries
+        run: python3 -B scripts/test-windows-distribution.py
       - name: Check release checksum filenames
         run: sh scripts/test-generate-release-checksums.sh
       - name: Refuse unsupported platforms and musl

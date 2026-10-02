@@ -7,6 +7,7 @@ import struct
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import zipfile
 
 import windows_release as windows
@@ -32,6 +33,21 @@ def executable(machine=0x8664, signed=False):
     struct.pack_into("<I", binary, 260, 16)
     if signed:
         struct.pack_into("<II", binary, 296, 480, 32)
+    return bytes(binary)
+
+
+def imported_executable(dll, delayed=False):
+    binary = bytearray(executable()) + bytearray(512)
+    # One raw-backed section, with an import descriptor and a terminated DLL name.
+    struct.pack_into("<IIII", binary, 400, 512, 0x1000, 512, 512)
+    if delayed:
+        struct.pack_into("<II", binary, 368, 0x1000, 64)
+        struct.pack_into("<II", binary, 512, 1, 0x1080)
+    else:
+        struct.pack_into("<II", binary, 272, 0x1000, 40)
+        struct.pack_into("<I", binary, 524, 0x1080)
+    name = dll.encode("ascii") + b"\0"
+    binary[640:640 + len(name)] = name
     return bytes(binary)
 
 
@@ -117,6 +133,31 @@ class WindowsDistributionTests(unittest.TestCase):
         (directory / "unexpected").write_text("x")
         with self.assertRaises(ValueError):
             assets.validate_inputs(TAG, directory, self.root / "install.sh")
+
+    def test_normal_and_delayed_dependencies_refuse_non_stock_runtime(self):
+        for delayed in (False, True):
+            self.assertEqual(windows.pe_imports(imported_executable("KERNEL32.dll", delayed)), ["kernel32.dll"])
+            for dll in ("VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "MSVCP140.dll", "ucrtbased.dll",
+                        "libssl-3.dll", "private.dll", "../kernel32.dll"):
+                with self.subTest(delayed=delayed, dll=dll), self.assertRaises(ValueError):
+                    windows.pe_imports(imported_executable(dll, delayed))
+        binary = bytearray(imported_executable("kernel32.dll"))
+        struct.pack_into("<I", binary, 524, 0x9000)
+        with self.assertRaises(ValueError):
+            windows.pe_imports(binary)
+        binary = bytearray(imported_executable("kernel32.dll", True))
+        struct.pack_into("<I", binary, 512, 0)
+        with self.assertRaises(ValueError):
+            windows.pe_imports(binary)
+        self.binary.write_bytes(imported_executable("MSVCP140.dll"))
+        with self.assertRaises(ValueError):
+            self.package(output="redistributable")
+
+    def test_child_version_check_removes_developer_path(self):
+        with patch.dict(windows.os.environ, {"SystemRoot": r"C:\Windows", "PATH": "compiler-and-sdk-path"}):
+            environment = windows.system_environment()
+            self.assertNotIn("compiler-and-sdk-path", environment["PATH"])
+            self.assertEqual(windows.os.environ["PATH"], "compiler-and-sdk-path")
 
 
 if __name__ == "__main__":

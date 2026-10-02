@@ -205,6 +205,21 @@ Check final PE architecture, executable version and absent certificate table bef
 SHA256SUMS retains bare names and covers all payload archives/packages; installer assets are
 separately included in immutable publication digest verification. No historical asset is rewritten.
 
+Windows release builds use Rust 1.94, windows-2025 for x64 and windows-11-arm for ARM64, explicitly
+select their native MSVC target and set
+RUSTFLAGS=-C target-feature=+crt-static. The explicit --target keeps this flag off host build scripts
+and procedural macros. The locked cc 1.4.4, bundled libsqlite3-sys 0.38.2, ring 0.17.14 and
+aws-lc-sys 0.44.0 build scripts propagate that choice to their C/C++ compilation. Check both normal
+and delayed PE imports against a finite Windows system-DLL allowlist; reject Visual C++
+redistributable DLLs, debug runtimes and other application DLLs. Run the packaged executable's
+version check with only Windows system directories in its child PATH. These gates verify the
+build intent and direct dependencies; clean Windows 11 acceptance remains required to prove
+runtime behavior without Visual Studio, a Rust toolchain or separately installed VC redistributables.
+This choice follows the [Rust linkage reference](https://doc.rust-lang.org/reference/linkage.html),
+[Cargo flag scoping](https://doc.rust-lang.org/cargo/reference/config.html#buildrustflags),
+[Microsoft CRT redistribution guidance](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170)
+and [PE import format](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format).
+
 The standalone Windows default executable is LocalAppData\\Programs\\locron\\locron.exe. The
 installer accepts -Version, -InstallDirectory, -NoService, -Dashboard and -AddToPath. It starts the
 daemon by default, enables the dashboard only when explicitly requested, and changes only the
