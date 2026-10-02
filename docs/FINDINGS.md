@@ -4059,3 +4059,22 @@ confirmed maintenance rather than assuming automatic task behavior.
 Sources: [PowerShell 5.1 execution policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1),
 [selective file unblocking](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/unblock-file?view=powershell-5.1),
 [organizational policy precedence](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-executionpolicy?view=powershell-5.1).
+
+### Portable WinGet automatic-upgrade limitation (2026-10-03)
+
+Schema 1.12 documents RequireExplicitUpgrade as identifying packages that upgrade themselves;
+it excludes them from upgrade --all by default. Locron deliberately refuses self-update for
+WinGet-owned files, so that field cannot truthfully describe this channel merely because task
+maintenance requires an explicit workflow. Do not change the proposed manifest to assert it
+without a supporting community policy decision. Official WinGet documentation says upgrade --all
+attempts available updates and has no Locron Prepare/Complete hook.
+
+An enabled daemon/dashboard attached to a portable package therefore needs the explicit reviewed
+maintenance procedure. Unattended upgrade tools and upgrade --all do not perform it and cannot
+be advertised as supported with those roles enabled. Prefer the standalone channel when integrated
+service lifecycle/self-update is required. This limitation remains a channel-promotion review
+item; no automatic safety, pin, self-updating flag or hook is inferred from manifest validation.
+The native installer work can proceed independently without changing the portable format.
+
+Sources: [schema 1.12 RequireExplicitUpgrade meaning](https://github.com/microsoft/winget-pkgs/blob/master/doc/manifest/schema/1.12.0/installer.md#fields),
+[WinGet upgrade-all behavior](https://learn.microsoft.com/en-us/windows/package-manager/winget/upgrade#upgrade---all).

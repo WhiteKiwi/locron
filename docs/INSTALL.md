@@ -115,6 +115,11 @@ removed. Native maintenance acceptance must pass before this channel is advertis
 Where script policy permits, install.ps1 -Maintenance Prepare|Complete|Remove supplies the same
 procedure with -Executable and -Operation. Neither WinGet manifests nor a private package server
 automatically perform these task operations; submissions target the community winget-pkgs catalog.
+Unattended upgrade tools and winget upgrade --all do not perform Prepare/Complete. Automatic
+package upgrades with enabled daemon/dashboard registrations are outside this portable channel's
+supported procedure. Use the explicit maintenance workflow and exclude this package from those
+unattended tools, or choose the standalone channel for integrated service updates. The proposed
+manifest does not label the WinGet package as self-updating or promise automatic service hooks.
 
 Downloads use canonical HTTPS assets from `WhiteKiwi/locron`. Archive checksums detect changed
 or corrupted bytes; they provide no independent publisher authentication. The unsigned first

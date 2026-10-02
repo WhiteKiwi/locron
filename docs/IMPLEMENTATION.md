@@ -1761,6 +1761,12 @@ permissions and other read/execute may remain, and foreign mutation is refused u
 existing ancestry guards. It never repairs package ownership/DACLs or writes/deletes package
 bytes. The strict protected private gate remains mandatory for standalone replacement; the
 ordinary read-owned source guard alone cannot prove a mapped executable has exited.
+Automatic WinGet upgrade tools and upgrade --all cannot run the required task procedure; enabled
+role installations require explicit maintenance and exclusion from those tools. Prefer standalone
+installation for integrated service updates. RequireExplicitUpgrade is documented for self-updating
+packages, whereas this package refuses self-update; do not assert that field merely to hide this
+lifecycle limitation. Review this restriction before channel promotion rather than claiming all
+unattended package paths are safe. The current manifest format remains portable.
 Use Windows-only zip =8.6.0 (MSRV 1.88) with only deflate-flate2, reusing the workspace's Rust
 flate2 backend. Read exact inventory members with bounded sizes into memory, reject encrypted,
 special/reparse/duplicate members and never use a generic path-extract operation. Persist all
