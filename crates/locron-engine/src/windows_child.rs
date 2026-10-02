@@ -14,10 +14,13 @@ use process_wrap::tokio::{
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use win32job::{ExtendedLimitInfo, Job};
 
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const CREATE_SUSPENDED: u32 = 0x0000_0004;
+
 /// Explicit console-window policy composed with temporary suspended creation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChildWindow {
-    /// Start a console executable without attaching or creating a console window.
+    /// Start a console executable without opening a visible console window.
     Hidden,
     /// Preserve the runner's existing default window inheritance policy.
     Inherit,
@@ -26,7 +29,7 @@ pub enum ChildWindow {
 fn creation_flags(window: ChildWindow) -> CreationFlags {
     let mut flags = CreationFlags(Default::default());
     flags.0.0 = match window {
-        ChildWindow::Hidden => 0x0800_0000, // CREATE_NO_WINDOW
+        ChildWindow::Hidden => CREATE_NO_WINDOW,
         ChildWindow::Inherit => 0,
     };
     flags
@@ -113,6 +116,8 @@ pub struct OwnedChild {
     job: Arc<Job>,
     pid: Option<u32>,
     root_status: Option<ExitStatus>,
+    #[cfg(test)]
+    creation_flags_at_spawn: u32,
 }
 
 impl OwnedChild {
@@ -136,9 +141,13 @@ impl OwnedChild {
         );
         let created = AtomicBool::new(false);
         let mut pid = None;
+        let user_flags = creation_flags(window);
+        let native_flags = user_flags.0.0 | CREATE_SUSPENDED;
+        #[cfg(test)]
+        let mut creation_flags_at_spawn = 0;
         let mut wrapped = CommandWrap::from(command);
         wrapped
-            .wrap(creation_flags(window))
+            .wrap(user_flags)
             .wrap(KillOnDrop)
             .wrap(JobObject)
             .wrap(Enroll {
@@ -147,6 +156,13 @@ impl OwnedChild {
             });
         let child = wrapped
             .spawn_with(|command| {
+                // This is the final safe setter after every wrapper's pre_spawn hook. Keep
+                // the logical wrapper unsuspended so JobObject resumes after both Jobs enroll.
+                command.creation_flags(native_flags);
+                #[cfg(test)]
+                {
+                    creation_flags_at_spawn = native_flags;
+                }
                 let child = command.spawn()?;
                 pid = child.id();
                 created.store(true, Ordering::Release);
@@ -170,6 +186,8 @@ impl OwnedChild {
             job,
             pid,
             root_status: None,
+            #[cfg(test)]
+            creation_flags_at_spawn,
         })
     }
 
@@ -242,7 +260,10 @@ pub(crate) fn retain_fixture_descendant(
 
 #[cfg(test)]
 mod tests {
-    use super::{ChildWindow, OwnedChild, SpawnFailure, creation_flags, retain_fixture_descendant};
+    use super::{
+        CREATE_NO_WINDOW, CREATE_SUSPENDED, ChildWindow, OwnedChild, SpawnFailure, creation_flags,
+        retain_fixture_descendant,
+    };
     use std::io::Write as _;
     use std::os::windows::io::OwnedHandle;
     use std::path::{Path, PathBuf};
@@ -351,24 +372,59 @@ mod tests {
         }
     }
 
+    async fn direct_console(root: &Path, flags: u32) -> Vec<u8> {
+        let mut command = command(root, "console");
+        command.creation_flags(flags).kill_on_drop(true);
+        let mut child = command.spawn().unwrap();
+        let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            status.success(),
+            "direct console control did not exit successfully"
+        );
+        std::fs::read(root.join("console")).unwrap()
+    }
+
     #[tokio::test]
     async fn owned_child_preserves_exit_status_and_hidden_console_policy() {
         let root = FixtureRoot::new();
-        assert_eq!(creation_flags(ChildWindow::Hidden).0.0, 0x0800_0000);
+        let windowless_root = FixtureRoot::new();
+        let detached_root = FixtureRoot::new();
+        let windowless_console = direct_console(&windowless_root.path, CREATE_NO_WINDOW).await;
+        let detached_console = direct_console(&detached_root.path, 0x0000_0008).await;
+        assert_eq!(windowless_console, b"yes");
+        assert_eq!(detached_console, b"no");
+        assert_eq!(creation_flags(ChildWindow::Hidden).0.0, CREATE_NO_WINDOW);
         assert_eq!(creation_flags(ChildWindow::Inherit).0.0, 0);
         let mut child =
             OwnedChild::spawn(command(&root.path, "console"), ChildWindow::Hidden).unwrap();
+        assert_eq!(
+            child.creation_flags_at_spawn,
+            CREATE_NO_WINDOW | CREATE_SUSPENDED
+        );
+        assert_eq!(
+            child.creation_flags_at_spawn & (0x0000_0010 | 0x0000_0008),
+            0
+        );
         assert!(child.id().is_some());
         let status = child
             .confirm_exit_until(Instant::now() + Duration::from_secs(5))
             .await
             .unwrap();
         assert!(status.success());
-        assert_eq!(std::fs::read(root.path.join("console")).unwrap(), b"no");
+        // CREATE_NO_WINDOW has an invisible private console, unlike DETACHED_PROCESS.
+        // The device probe qualifies that distinction; the final mask qualifies policy.
+        assert_eq!(
+            std::fs::read(root.path.join("console")).unwrap(),
+            windowless_console
+        );
         assert!(child.tree_empty().unwrap());
         assert_eq!(child.try_wait().unwrap(), Some(status));
         let mut nonzero =
             OwnedChild::spawn(command(&root.path, "nonzero"), ChildWindow::Inherit).unwrap();
+        assert_eq!(nonzero.creation_flags_at_spawn, CREATE_SUSPENDED);
         assert_eq!(
             nonzero
                 .confirm_exit_until(Instant::now() + Duration::from_secs(5))
