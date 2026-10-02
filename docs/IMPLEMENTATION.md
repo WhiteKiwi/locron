@@ -1823,6 +1823,28 @@ file as authorization. Restore exact prior enabled/disabled registrations only a
 working binary and receipt exist, recording registration warnings separately from confirmed binary
 replacement. Interrupted operations must be recovered or explicitly refused before a later update;
 neither a stale request nor a task-state transition implies completion. No reboot replacement.
+
+The write-ahead journal is one retained private read/write/DELETE/share0 journal.bin handle,
+not a sequence of path-based replacements. Append frames consisting of a little-endian length,
+the previous frame's SHA-256 (zero for the first), typed UTF-8 JSON and the current frame's SHA-256
+over length, previous digest and JSON. Limit a complete frame to 128 KiB, the journal to 16 MiB
+and 128 frames; validate the whole bounded chain before recovery. Each locron.windows-journal/v1
+frame repeats the operation UUID, SID, original request digest, monotonic sequence, the exact
+accepted/quiescing/replacing/restoring/completed/prepared/removed/failed/rolled_back phase enum,
+verified backup inventory and full original/created volume-and-file identities. Use the actual
+service::ServiceRestoreRecord type for all-task lifecycle state, including its strict version,
+original task fingerprints and confirmed quiescence; arbitrary JSON and saved task source cannot
+authorize task effects. The first flushed frame contains the complete original lifecycle snapshot
+and durable verified backups before any disable/delete; later frames record each delete intent
+and every newly created identity before bytes are written. sync_all must succeed before the next
+effect. Frame/size exhaustion, flush uncertainty, a truncated/corrupt tail or an unknown created
+identity is an explicit refusal with backups retained and no replay inferred from status. Recovery
+validates live guards, recorded identities and typed lifecycle state before any resumed mutation.
+status.json is an advisory projection written through its exact guarded handle; a partial status
+is never an authorization source or evidence of completion. Helper acceptance still requires a
+validated protected original request and durable accepted state; final updated=true requires the
+confirmed binary/receipt and restoration boundary.
+
 Native safe-crate, ACL, mapped-holder, competing-leaf and crash-phase fixtures on both architectures
 must pass before this candidate adapter enables support; the x64 OS primitive rehearsal in FINDINGS
 is narrower evidence. Write-through and sync_all provide OS flush guarantees, not an unconditional
