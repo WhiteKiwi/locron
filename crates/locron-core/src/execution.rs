@@ -22,20 +22,35 @@ pub fn effective_environment(
         let content =
             std::fs::read_to_string(file).map_err(|error| format!("environment file: {error}"))?;
         #[cfg(windows)]
-        let content = {
-            use std::io::Read;
-            let mut input = crate::filesystem::open_read_no_follow(file)
-                .map_err(|error| format!("environment file: {error}"))?;
-            let mut content = String::new();
-            input
-                .read_to_string(&mut content)
-                .map_err(|error| format!("environment file: {error}"))?;
-            content
-        };
+        let content = String::from_utf8(
+            read_input_file(file).map_err(|error| format!("environment file: {error}"))?,
+        )
+        .map_err(|error| format!("environment file: {error}"))?;
         apply_environment_layer(&mut environment, &parse_environment_file(&content)?)?;
     }
     apply_environment_layer(&mut environment, &job.values)?;
     Ok(environment)
+}
+
+/// Reads one user-selected input while Windows no-follow guards remain retained.
+pub fn read_input_file(path: &Path) -> std::io::Result<Vec<u8>> {
+    #[cfg(not(windows))]
+    {
+        std::fs::read(path)
+    }
+    #[cfg(windows)]
+    {
+        use std::io::Read;
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()?.join(path)
+        };
+        let mut file = crate::filesystem::open_read_no_follow(&absolute)?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
 }
 
 /// Canonical key used to compare and merge environment names on this platform.

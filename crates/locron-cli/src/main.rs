@@ -3170,7 +3170,8 @@ fn export_job(job: JobRecord, mode: ValuesMode) -> Result<ExportJob> {
 }
 
 fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDocument> {
-    let bytes = std::fs::read(path).context("cannot read import document")?;
+    let bytes =
+        locron_core::execution::read_input_file(path).context("cannot read import document")?;
     parse_import_bytes(&bytes, accept_plaintext)
 }
 
@@ -3526,25 +3527,28 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
     }
     let checks = store.integrity_check()?;
     let dashboard = service::dashboard_doctor_facts(Some(paths.root.clone()))?;
+    let wake = locron_core::notification::wake_facts(&paths.root);
     if format == Format::Human {
         render_doctor_human(paths, &settings, &resolutions, &checks, &dashboard);
     } else {
-        render(
-            format,
-            "doctor",
-            json!({
-                "state_dir":paths.root,
-                "database":paths.database,
-                "daemon_running":!daemon_lock_free(paths),
-                "wake_socket":paths.wake_socket.exists(),
-                "execution_path":settings.execution_path,
-                "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
-                "process_resolution":resolutions,
-                "dashboard":dashboard,
-                "checks":checks
-            }),
-            &[],
-        );
+        let data = json!({
+            "state_dir":paths.root,
+            "database":paths.database,
+            "daemon_running":!daemon_lock_free(paths),
+            "wake_socket":wake.socket_present,
+            "execution_path":settings.execution_path,
+            "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
+            "process_resolution":resolutions,
+            "dashboard":dashboard,
+            "checks":checks
+        });
+        #[cfg(windows)]
+        let data = {
+            let mut data = data;
+            data["wake"] = serde_json::to_value(wake)?;
+            data
+        };
+        render(format, "doctor", data, &[]);
     }
     Ok(())
 }
@@ -4284,7 +4288,8 @@ pub(crate) fn engine_target(
                 body: match (&http.body, &http.body_file) {
                     (Some(body), None) => Some(body.clone()),
                     (None, Some(path)) => Some(
-                        std::fs::read(path).map_err(|error| format!("HTTP body file: {error}"))?,
+                        locron_core::execution::read_input_file(path)
+                            .map_err(|error| format!("HTTP body file: {error}"))?,
                     ),
                     (None, None) => None,
                     (Some(_), Some(_)) => return Err("conflicting HTTP body sources".into()),
@@ -5325,6 +5330,9 @@ fn render_doctor_human(
     } else {
         println!("ok   daemon: running");
     }
+    #[cfg(windows)]
+    println!("info local wake: named pipe (availability is unprobed)");
+    #[cfg(unix)]
     if paths.wake_socket.exists() {
         println!("ok   wake socket: {}", paths.wake_socket.display());
     } else {

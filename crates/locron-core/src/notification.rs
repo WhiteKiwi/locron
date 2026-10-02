@@ -10,6 +10,37 @@ pub const SHUTDOWN_MESSAGE: &[u8] = b"locron-stop/v1\n";
 /// Acknowledges consumption, never actual role exit or target completion.
 pub const ACK_MESSAGE: &[u8] = b"locron-ack/v1\n";
 
+/// Passive transport facts shared by CLI, API and MCP diagnostics.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct WakeFacts {
+    /// Platform transport, independent of endpoint availability.
+    pub transport: &'static str,
+    /// Legacy Unix filesystem-presence fact; named pipes have no socket file.
+    pub socket_present: Option<bool>,
+    /// Diagnostics never send a hint to claim endpoint availability.
+    pub availability: &'static str,
+}
+
+/// Reports facts without creating state, connecting to a peer or delivering a hint.
+#[must_use]
+pub fn wake_facts(root: &Path) -> WakeFacts {
+    WakeFacts {
+        transport: if cfg!(windows) {
+            "named_pipe"
+        } else if cfg!(unix) {
+            "unix_datagram"
+        } else {
+            "unsupported"
+        },
+        socket_present: if cfg!(unix) {
+            Some(root.join("wake.sock").exists())
+        } else {
+            None
+        },
+        availability: "unprobed",
+    }
+}
+
 /// Sends an already-durable command's best-effort wake hint.
 pub fn send_wake(root: &Path) -> io::Result<()> {
     #[cfg(unix)]
@@ -187,6 +218,28 @@ fn send_message(name: &str, message: &'static [u8]) -> io::Result<()> {
         })?
         .join()
         .map_err(|_| io::Error::other("local hint worker failed"))?
+}
+
+#[cfg(test)]
+mod passive_tests {
+    #[test]
+    fn diagnostic_facts_never_create_missing_state() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("missing");
+        let facts = super::wake_facts(&root);
+        assert_eq!(facts.availability, "unprobed");
+        assert!(!root.exists());
+        #[cfg(windows)]
+        {
+            assert_eq!(facts.transport, "named_pipe");
+            assert_eq!(facts.socket_present, None);
+        }
+        #[cfg(unix)]
+        {
+            assert_eq!(facts.transport, "unix_datagram");
+            assert_eq!(facts.socket_present, Some(false));
+        }
+    }
 }
 
 #[cfg(all(test, windows))]

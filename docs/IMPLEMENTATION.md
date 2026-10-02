@@ -119,6 +119,13 @@ and one outer quote pair; cmd's /S parser strips that pair and receives the orig
 Do not apply C-runtime argv escaping to that command tail. Other executable arguments continue
 through the ordinary argv serializer; the persisted executable/args snapshot format is unchanged.
 
+Windows user-selected import/body/environment inputs use the same no-follow read helper with
+retained ancestor/leaf guards until bytes have been read; relative CLI input paths resolve against
+the current directory. Existing Unix reads retain their established behavior. Diagnostics share
+transport facts: Unix wake_socket keeps its filesystem-presence boolean, while Windows reports
+named_pipe, no filesystem socket, and unprobed availability. A diagnostics read never sends a hint
+or creates a pipe/state directory just to claim availability.
+
 ### Race-free process-tree supervision
 
 Use Windows-only process-wrap =10.0.1 with tokio1/job-object/kill-on-drop, plus win32job =2.0.3.

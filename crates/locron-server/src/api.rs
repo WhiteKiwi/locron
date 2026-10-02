@@ -1888,16 +1888,24 @@ pub(crate) async fn diagnostics(State(state): State<AppState>) -> Response {
                 }
             }
         }
-        Ok(json!({
+        let wake = locron_core::notification::wake_facts(&paths.root);
+        let data = json!({
             "state_dir": paths.root,
             "database": paths.database,
             "daemon_running": daemon_running(&paths),
-            "wake_socket": paths.wake_socket.exists(),
+            "wake_socket": wake.socket_present,
             "execution_path": settings.execution_path,
             "global_environment_names": settings.environment.keys().cloned().collect::<Vec<_>>(),
             "process_resolution": resolutions,
             "checks": checks,
-        }))
+        });
+        #[cfg(windows)]
+        let data = {
+            let mut data = data;
+            data["wake"] = serde_json::to_value(wake).map_err(StoreError::Json)?;
+            data
+        };
+        Ok(data)
     })
     .await;
     respond(result, &[])

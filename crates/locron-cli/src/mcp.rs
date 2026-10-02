@@ -1576,16 +1576,24 @@ fn tool_doctor(paths: &StatePaths) -> Result<Value> {
             })),
         }
     }
-    Ok(json!({
+    let wake = locron_core::notification::wake_facts(&paths.root);
+    let data = json!({
         "state_dir": paths.root,
         "database": paths.database,
         "daemon_running": !daemon_lock_free(paths),
-        "wake_socket": paths.wake_socket.exists(),
+        "wake_socket": wake.socket_present,
         "execution_path": settings.execution_path,
         "global_environment_names": settings.environment.keys().collect::<Vec<_>>(),
         "process_resolution": resolutions,
         "checks": store.integrity_check()?
-    }))
+    });
+    #[cfg(windows)]
+    let data = {
+        let mut data = data;
+        data["wake"] = serde_json::to_value(wake)?;
+        data
+    };
+    Ok(data)
 }
 
 fn handle_resources_list() -> Value {
