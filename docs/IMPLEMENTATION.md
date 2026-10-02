@@ -225,6 +225,14 @@ New files inherit only from validated private parents; inspect existing files be
 sensitive contents. Shared core primitives let store, engine output and server token enforce the
 same rule without reversing the workspace dependency graph. doctor reports measured ACL facts.
 
+Windows existing-file observers use existing-only private parent guards. In particular,
+open_private, role-sidecar reads, missing-file deletion and read-only SQLite validation may
+return absence but never create a state root, lock, database or sidecar while observing it.
+Explicit private-directory/CreateNew/permanent-lock creation remains in the owning writable
+composition path. Preserve Unix permission/open semantics. Native fixtures inspect an initially
+absent root before and after each passive operation, verify NotFound/None/idempotent deletion,
+and prove that the separate writable first-run path still creates correctly owned state.
+
 During the build-foundation stage, unimplemented Windows permission changes fail with an explicit
 unsupported-capability error, and permission diagnostics report `unsupported`. Compilation alone
 must never turn a no-op permission adapter or a numeric placeholder into an owner-only fact.

@@ -2742,6 +2742,14 @@ Sources: [interprocess manifest](https://github.com/kotauskas/interprocess/blob/
 [Microsoft named-pipe ACL/instance rights](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
 [Microsoft pipe creation flags](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-createnamedpipew).
 
+### Passive missing-state observation (2026-10-03)
+
+A fresh-state source audit found that Windows open_private cleared file creation flags but still
+called DirectoryGuard::private for its parent. A role-sidecar or read-only observer could thus
+create directories while reporting no file. Require existing-only guards at Windows observer
+boundaries and retain explicit creation in writable/owning paths. Tests must inspect absence
+without preinitializing the root; existing populated fixtures do not prove this property.
+
 ### Measured ARM64 stock PowerShell bootstrap (2026-10-03)
 
 PR41 head 70fe31d run 37031019704, ARM64 job 110917557150, still failed eight cold fixtures after
