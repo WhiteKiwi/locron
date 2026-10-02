@@ -34,6 +34,11 @@ use serde_json::{Value, json};
 
 use crate::{Format, render};
 
+#[cfg(windows)]
+mod windows_supervisor;
+#[cfg(windows)]
+pub(crate) use windows_supervisor::supervise;
+
 /// launchd label of the registered daemon (kept on all test builds so the
 /// plist template tests run everywhere).
 #[cfg(any(target_os = "macos", test))]
@@ -74,6 +79,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// file, service arguments, and deferral behavior; the two registrations are
 /// independent and never touch each other.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(windows, derive(clap::ValueEnum))]
 pub(crate) enum Target {
     /// The scheduler daemon (`locron daemon run`).
     Daemon,
@@ -297,6 +303,13 @@ pub(crate) enum ServiceCommand {
     Uninstall,
     #[command(about = "Report the daemon service registration state", after_help = SERVICE_STATUS_HELP)]
     Status,
+    /// Internal registered-role owner; public service commands keep their existing behavior.
+    #[cfg(windows)]
+    #[command(hide = true)]
+    Supervise {
+        #[arg(long, value_enum)]
+        role: Target,
+    },
 }
 
 /// Everything a backend needs to register the running binary as a service.
@@ -628,6 +641,13 @@ pub(crate) fn execute(
     command: ServiceCommand,
     format: Format,
 ) -> Result<()> {
+    #[cfg(windows)]
+    if matches!(command, ServiceCommand::Supervise { .. }) {
+        return Err(ServiceError::Io(
+            "the internal supervisor requires asynchronous dispatch".into(),
+        )
+        .into());
+    }
     let port = select_port()?;
     let ctx = ServiceContext::new(state_dir, Target::Daemon)?;
     match command {
@@ -643,6 +663,8 @@ pub(crate) fn execute(
             let outcome = status(&ctx, port.as_ref())?;
             render_status(format, Target::Daemon, "service status", &outcome);
         }
+        #[cfg(windows)]
+        ServiceCommand::Supervise { .. } => unreachable!("handled before manager discovery"),
     }
     Ok(())
 }
