@@ -435,6 +435,7 @@ mod windows {
     const FILE_SHARE_WRITE: u32 = 2;
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const FILE_FLAG_WRITE_THROUGH: u32 = 0x8000_0000;
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
     const FILE_ATTRIBUTE_READONLY: u32 = 1;
     const DELETE: u32 = 0x0001_0000;
@@ -631,7 +632,9 @@ mod windows {
                 GENERIC_READ_WRITE | DELETE | READ_CONTROL | FILE_READ_ATTRIBUTES
             })
             .share_mode(0)
-            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+            .custom_flags(
+                FILE_FLAG_OPEN_REPARSE_POINT | if create { FILE_FLAG_WRITE_THROUGH } else { 0 },
+            );
         if create {
             options.create_new(true);
         }
