@@ -260,9 +260,9 @@ pub fn resolve_executable(
             })
             .collect()
     };
-    for candidate in candidates {
-        #[cfg(windows)]
-        {
+    #[cfg(windows)]
+    {
+        for candidate in candidates {
             let mut names = vec![candidate.clone()];
             if candidate.extension().is_none() {
                 let extensions = environment_value(environment, "PATHEXT")
@@ -290,12 +290,12 @@ pub fn resolve_executable(
                 }
             }
         }
-        #[cfg(not(windows))]
-        if candidate.is_file() {
-            return Some(candidate);
-        }
+        None
     }
-    None
+    #[cfg(not(windows))]
+    {
+        candidates.into_iter().find(|candidate| candidate.is_file())
+    }
 }
 
 #[cfg(test)]

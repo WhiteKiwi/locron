@@ -23,8 +23,8 @@ use base64::Engine as _;
 use clap::{ArgAction, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use locron_core::command::{CompletionAction, JobDefinition};
 use locron_core::execution::{
-    default_shell, environment_value, is_reserved_environment_name, minimal_environment,
-    shell_arguments, validate_direct_executable,
+    default_shell, environment_value, is_reserved_environment_name, shell_arguments,
+    validate_direct_executable,
 };
 use locron_core::policy::{BackoffMode, MissedRunPolicy, OverlapPolicy};
 use locron_core::ports::{Clock, TimeZoneResolver};
@@ -4325,9 +4325,6 @@ fn resolve_attempt_executable(
         .to_str()
         .map(str::to_owned)
         .ok_or_else(|| "resolved executable path is not valid UTF-8".to_string())
-}
-fn minimal_env() -> BTreeMap<String, String> {
-    minimal_environment()
 }
 fn parse_method(value: &str) -> Result<HttpMethod> {
     match value.to_ascii_uppercase().as_str() {

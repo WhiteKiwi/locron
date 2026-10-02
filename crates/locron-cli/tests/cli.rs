@@ -1,6 +1,6 @@
 //! End-to-end command contract tests.
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -42,27 +42,39 @@ fn timestamp_after(duration: Duration) -> String {
 }
 
 fn start_daemon(state: &tempfile::TempDir) -> Child {
+    let mut diagnostics = tempfile::tempfile().unwrap();
     let mut daemon = locron(state)
         .args(["daemon", "run"])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(diagnostics.try_clone().unwrap()))
         .spawn()
         .unwrap();
     let lock_path = state.path().join("daemon.lock");
     let deadline = Instant::now() + Duration::from_secs(5);
     while DaemonLock::try_prove_free(&lock_path).is_ok() && Instant::now() < deadline {
-        assert_eq!(
-            daemon.try_wait().unwrap(),
-            None,
-            "daemon exited during startup"
-        );
+        if let Some(status) = daemon.try_wait().unwrap() {
+            panic!(
+                "daemon exited during startup ({status}): {}",
+                startup_diagnostics(&mut diagnostics)
+            );
+        }
         thread::sleep(Duration::from_millis(20));
     }
     assert!(
         DaemonLock::try_prove_free(&lock_path).is_err(),
-        "daemon did not acquire its durable lock"
+        "daemon did not acquire its durable lock: {}",
+        startup_diagnostics(&mut diagnostics),
     );
     daemon
+}
+
+fn startup_diagnostics(file: &mut std::fs::File) -> String {
+    file.seek(SeekFrom::Start(0)).unwrap();
+    let mut diagnostics = String::new();
+    file.take(64 * 1024)
+        .read_to_string(&mut diagnostics)
+        .unwrap();
+    diagnostics
 }
 
 fn stream_records(output: &[u8]) -> Vec<serde_json::Value> {
