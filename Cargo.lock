@@ -1300,6 +1300,7 @@ dependencies = [
  "url",
  "uuid",
  "win32job",
+ "winapi-util",
  "windows-permissions",
 ]
 

@@ -29,6 +29,7 @@ sha2.workspace = true
 tokio.workspace = true
 windows-permissions = "=0.2.4"
 win32job.workspace = true
+winapi-util = "=0.1.11"
 
 [dev-dependencies]
 proptest.workspace = true

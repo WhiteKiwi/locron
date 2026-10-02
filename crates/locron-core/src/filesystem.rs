@@ -179,6 +179,24 @@ pub fn read_owned_executable(path: &Path) -> io::Result<GuardedFile> {
     windows::read_owned_executable(path, guard)
 }
 
+/// Opens an existing private replacement leaf without sharing read, write or delete access.
+/// The existing-only parent, protected descriptor and single-link object remain guarded.
+/// This gate refuses mapped images; it never truncates or repairs an existing object.
+#[cfg(windows)]
+pub fn open_private_exclusive(path: &Path) -> io::Result<GuardedFile> {
+    let guard = DirectoryGuard::existing_private(parent(path)?)?;
+    windows::exclusive_file(path, guard, false)
+}
+
+/// Creates a new exclusive private replacement leaf and initializes its exact empty handle.
+/// No caller bytes are written before explicit owner/protected-DACL readback succeeds.
+/// Initialization failure leaves an unrecognized leaf for explicit refusal/recovery.
+#[cfg(windows)]
+pub fn create_private_new_exclusive(path: &Path) -> io::Result<GuardedFile> {
+    let guard = DirectoryGuard::existing_private(parent(path)?)?;
+    windows::exclusive_file(path, guard, true)
+}
+
 /// The complete Windows filesystem object identity, including the full 128-bit file ID.
 #[cfg(windows)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -418,6 +436,9 @@ mod windows {
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    const FILE_ATTRIBUTE_READONLY: u32 = 1;
+    const DELETE: u32 = 0x0001_0000;
+    const GENERIC_READ_WRITE: u32 = 0xc000_0000;
     const FULL_CONTROL: u32 = 0x001f_01ff;
     const SYSTEM_SID: &str = "S-1-5-18";
     const ADMIN_SID: &str = "S-1-5-32-544";
@@ -572,18 +593,80 @@ mod windows {
             system |= principal == SYSTEM_SID;
         }
         let protected = if directory {
-            let sddl = wrappers::ConvertSecurityDescriptorToStringSecurityDescriptor(
-                &descriptor,
-                SecurityInformation::Dacl,
-            )?;
-            sddl.to_string_lossy()
-                .strip_prefix("D:")
-                .and_then(|sddl| sddl.split('(').next())
-                .is_some_and(|flags| flags.contains('P'))
+            protected_descriptor(&descriptor)?
         } else {
             true
         };
         Ok(user && system && protected)
+    }
+
+    fn protected_descriptor(descriptor: &SecurityDescriptor) -> io::Result<bool> {
+        let sddl = wrappers::ConvertSecurityDescriptorToStringSecurityDescriptor(
+            descriptor,
+            SecurityInformation::Dacl,
+        )?;
+        Ok(sddl
+            .to_string_lossy()
+            .strip_prefix("D:")
+            .and_then(|sddl| sddl.split('(').next())
+            .is_some_and(|flags| flags.contains('P')))
+    }
+
+    pub(super) fn exclusive_file(
+        path: &Path,
+        guard: DirectoryGuard,
+        create: bool,
+    ) -> io::Result<GuardedFile> {
+        let path = guard
+            .normalized_path()
+            .join(path.file_name().ok_or_else(|| unsafe_path(path))?);
+        let mut options = OpenOptions::new();
+        options
+            .read(true)
+            .write(true)
+            .access_mode(if create {
+                // The exact newly created empty object needs owner/DACL initialization access.
+                FULL_CONTROL
+            } else {
+                GENERIC_READ_WRITE | DELETE | READ_CONTROL | FILE_READ_ATTRIBUTES
+            })
+            .share_mode(0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        if create {
+            options.create_new(true);
+        }
+        let mut file = options.open(&path)?;
+        reject_reparse(&file, &path)?;
+        if !file.metadata()?.is_file() {
+            return Err(unsafe_path(&path));
+        }
+        if create {
+            let sid = crate::windows::current_user_sid()?;
+            let security: LocalBox<SecurityDescriptor> =
+                format!("O:{sid}D:P(A;;FA;;;{sid})(A;;FA;;;SY)").parse()?;
+            wrappers::SetSecurityInfo(
+                &mut file,
+                SeObjectType::SE_FILE_OBJECT,
+                SecurityInformation::Owner
+                    | SecurityInformation::Dacl
+                    | SecurityInformation::ProtectedDacl,
+                security.owner(),
+                None,
+                security.dacl(),
+                None,
+            )?;
+        }
+        verify_private(&file, &path, false)?;
+        if !protected_descriptor(&descriptor(&file)?)? {
+            return Err(unsafe_path(&path));
+        }
+        let information = winapi_util::file::information(&file)?;
+        if information.file_attributes() & u64::from(FILE_ATTRIBUTE_READONLY) != 0
+            || information.number_of_links() != 1
+        {
+            return Err(unsafe_path(&path));
+        }
+        Ok(GuardedFile { file, guard, path })
     }
 
     pub(super) fn verify_private(file: &File, path: &Path, directory: bool) -> io::Result<()> {
@@ -749,6 +832,194 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::io::Write;
+    use std::process::{Child, Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    struct OwnedFixtureChild(Child);
+
+    impl OwnedFixtureChild {
+        fn wait_until(&mut self, deadline: Instant) -> std::process::ExitStatus {
+            loop {
+                if let Some(status) = self.0.try_wait().unwrap() {
+                    return status;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "owned fixture child did not exit"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+
+    impl Drop for OwnedFixtureChild {
+        fn drop(&mut self) {
+            if self.0.try_wait().is_ok_and(|status| status.is_some()) {
+                return;
+            }
+            let _ = self.0.kill();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < deadline {
+                if self.0.try_wait().is_ok_and(|status| status.is_some()) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+
+    #[test]
+    fn exclusive_creation_initializes_owner_before_bytes_and_preserves_existing_leaf() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let path = root.join("replacement.exe");
+        let mut gate = create_private_new_exclusive(&path).unwrap();
+        assert_eq!(gate.metadata().unwrap().len(), 0);
+        assert_eq!(
+            winapi_util::file::information(&*gate)
+                .unwrap()
+                .number_of_links(),
+            1
+        );
+        let identity = file_identity(&gate).unwrap();
+        assert_eq!(File::open(&path).unwrap_err().raw_os_error(), Some(32));
+        gate.write_all(b"verified replacement").unwrap();
+        gate.sync_all().unwrap();
+        drop(gate);
+        assert!(is_private(&path, false).unwrap());
+        assert_eq!(
+            create_private_new_exclusive(&path).unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        let mut gate = open_private_exclusive(&path).unwrap();
+        assert_eq!(file_identity(&gate).unwrap(), identity);
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut *gate, &mut bytes).unwrap();
+        assert_eq!(bytes, b"verified replacement");
+    }
+
+    #[test]
+    fn exclusive_existing_refuses_readonly_and_multiple_links_without_mutation() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let path = root.join("replacement.exe");
+        let alias = root.join("alias.exe");
+        create_private_new_exclusive(&path)
+            .unwrap()
+            .write_all(b"original")
+            .unwrap();
+        fs::hard_link(&path, &alias).unwrap();
+        assert_eq!(
+            open_private_exclusive(&path).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+        assert_eq!(fs::read(&alias).unwrap(), b"original");
+        fs::remove_file(&alias).unwrap();
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions.clone()).unwrap();
+        assert!(open_private_exclusive(&path).is_err());
+        assert!(fs::metadata(&path).unwrap().permissions().readonly());
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+        // Reset only the test-owned attribute so temporary-directory cleanup remains possible.
+        permissions.set_readonly(false);
+        fs::set_permissions(&path, permissions).unwrap();
+    }
+
+    #[test]
+    fn exclusive_gate_refuses_mapped_image_and_blocks_new_launch_and_path_mutation() {
+        use std::os::windows::process::CommandExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let executable = root.join("owned-command.exe");
+        let stock = crate::windows::stock_powershell()
+            .unwrap()
+            .ancestors()
+            .nth(3)
+            .unwrap()
+            .join("cmd.exe");
+        let mut source = File::open(stock).unwrap();
+        let mut gate = create_private_new_exclusive(&executable).unwrap();
+        std::io::copy(&mut source, &mut *gate).unwrap();
+        gate.sync_all().unwrap();
+        drop(gate);
+        let mut child = OwnedFixtureChild(
+            Command::new(&executable)
+                .args(["/D", "/Q", "/C", "set /p LOCRON_EXCLUSIVE_FIXTURE="])
+                .creation_flags(0x0800_0000)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        assert!(child.0.try_wait().unwrap().is_none());
+        assert_eq!(
+            open_private_exclusive(&executable)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        child
+            .0
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"owned\r\n")
+            .unwrap();
+        assert!(
+            child
+                .wait_until(Instant::now() + Duration::from_secs(5))
+                .success()
+        );
+        let gate = open_private_exclusive(&executable).unwrap();
+        assert!(file_identity(&gate).is_ok());
+        for options in [
+            OpenOptions::new().read(true),
+            OpenOptions::new().write(true),
+        ] {
+            assert_eq!(
+                options.open(&executable).unwrap_err().raw_os_error(),
+                Some(32)
+            );
+        }
+        assert_eq!(
+            fs::rename(&executable, root.join("moved.exe"))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        assert_eq!(
+            Command::new(&executable)
+                .args(["/D", "/Q", "/C", "exit 0"])
+                .creation_flags(0x0800_0000)
+                .spawn()
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        drop(gate);
+        let mut relaunched = OwnedFixtureChild(
+            Command::new(&executable)
+                .args(["/D", "/Q", "/C", "exit 0"])
+                .creation_flags(0x0800_0000)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        assert!(
+            relaunched
+                .wait_until(Instant::now() + Duration::from_secs(5))
+                .success()
+        );
+    }
 
     #[test]
     fn existing_private_guard_refuses_missing_root_without_creation() {
