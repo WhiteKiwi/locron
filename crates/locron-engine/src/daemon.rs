@@ -613,16 +613,16 @@ mod tests {
             }
         }
 
-        fn process(temp: &TestRoot, script: String) -> Self {
+        fn process(temp: &TestRoot, script: &str) -> Self {
             #[cfg(unix)]
             let target = crate::runner::ProcessSpec {
                 executable: "/bin/sh".into(),
-                args: vec!["-c".into(), script],
+                args: vec!["-c".into(), script.into()],
                 cwd: temp.path().into(),
                 env: BTreeMap::new(),
             };
             #[cfg(windows)]
-            let target = crate::runner::native_fixture_spec(temp.path(), &script);
+            let target = crate::runner::native_fixture_spec(temp.path(), script);
             let store = Self::empty();
             *store.attempt.lock().unwrap() = Some(AdmittedAttempt {
                 run_id: "shutdown-run".into(),
@@ -1187,10 +1187,10 @@ mod tests {
         #[cfg(unix)]
         let store = Arc::new(ShutdownStore::process(
             &temp,
-            "trap 'printf term > term' TERM; sleep 0.05; printf done > done".into(),
+            "trap 'printf term > term' TERM; sleep 0.05; printf done > done",
         ));
         #[cfg(windows)]
-        let store = Arc::new(ShutdownStore::process(&temp, "natural".into()));
+        let store = Arc::new(ShutdownStore::process(&temp, "natural"));
         let daemon = Daemon::new(
             Arc::clone(&store),
             Runner::new(crate::runner::RunnerConfig {
@@ -1233,11 +1233,10 @@ mod tests {
         #[cfg(unix)]
         let store = Arc::new(ShutdownStore::process(
             &temp,
-            "trap 'printf term > term; exit 0' TERM; printf ready > ready; while :; do :; done"
-                .into(),
+            "trap 'printf term > term; exit 0' TERM; printf ready > ready; while :; do :; done",
         ));
         #[cfg(windows)]
-        let store = Arc::new(ShutdownStore::process(&temp, "leaf".into()));
+        let store = Arc::new(ShutdownStore::process(&temp, "leaf"));
         let daemon = Daemon::new(
             Arc::clone(&store),
             Runner::new(crate::runner::RunnerConfig {
