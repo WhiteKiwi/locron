@@ -1682,6 +1682,15 @@ potential user-owned entry. This receipt is Windows-only; the existing Unix rece
 unchanged. Operation status uses locron.windows-status/v1 with operation_id, SID, canonical
 executable, phase, current/new version, updated, prepared and warnings; the status file alone
 cannot authorize changes, and is read only after validating its protected operation request.
+The strict receipt fields are schema, sid, channel, directory, executable, target, version,
+archive_url, archive_sha256, binary_sha256, files (the six bare names mapped to hashes), and
+user_path (null or before/after values). Status uses schema, operation_id, sid, executable, phase,
+current_version, new_version, updated, prepared and warnings. Unknown fields or filename inventories
+are refused. The uninstall.ps1 asset accepts -InstallDirectory; an installed copy defaults to its
+own receipt-bearing directory and a downloaded copy to the ordinary standalone directory.
+Validate the receipt and listed retained-installer hash before sharing that bootstrap, retain
+the helper's verified read handle across launch/wait, and require no network for owned removal.
+Malformed, missing or modified executable/bootstrap ownership evidence is a refusal.
 
 Keep the release inventory unchanged by placing WinGet maintenance in install.ps1:
 -Maintenance Prepare|Complete|Remove with -Executable and -Operation selects that explicit flow.

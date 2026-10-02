@@ -34,6 +34,14 @@ not recorded before the interruption, remains untouched and produces an explicit
 The operation's verified backup is retained for operator recovery; a failed deletion is never
 assumed to have left the old executable in place.
 
+Planned standalone removal uses `uninstall.ps1 -InstallDirectory <owned directory>`. When invoked
+from its installed copy, the default is that copy's receipt-bearing directory; a separately
+downloaded copy defaults to LocalAppData\Programs\locron. It validates the private receipt and the
+listed hash of the retained `.locron-installer.ps1` before loading that shared bootstrap, and copies
+the still-verified owned executable to the private helper directory. Modified bootstrap/helper
+bytes refuse removal. This owned-installation removal path needs no network download, preserves
+durable state and uses the same journal, quiescence and recovery checks as an update.
+
 WinGet's proposed identifier is `WhiteKiwi.locron`; availability and community repository
 acceptance remain release gates. Its ZIP/portable manifests point at the same immutable GitHub
 ZIPs, final SHA-256 values and architecture-specific executable paths. Portable manifests cannot
