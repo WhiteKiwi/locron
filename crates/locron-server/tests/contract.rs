@@ -2,8 +2,8 @@
 //! application commands, on an ephemeral port with a temp state directory.
 //!
 //! The suite exercises the real server (manually spawned `axum::serve` on a
-//! port-0 listener, because `locron_server::serve` awaits ctrl_c), with the
-//! token file written directly into the temp state root. Every request is
+//! port-0 listener, because `locron_server::serve` awaits ctrl_c), with a
+//! private managed child and a token created through the production primitive. Every request is
 //! token-authenticated (`Authorization: token <t>`), which is also the CSRF
 //! exemption path; the envelope schema, CLI-category-to-status mapping, and
 //! redaction parity are asserted throughout.
@@ -11,7 +11,6 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use axum::Router;
 use futures_util::StreamExt;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
@@ -29,15 +28,15 @@ struct TestServer {
     token: String,
     client: reqwest::Client,
     paths: StatePaths,
+    task: tokio::task::JoinHandle<()>,
     _temp: TempDir,
 }
 
 fn spawn_server() -> TestServer {
     let temp = tempfile::tempdir().expect("tempdir");
-    let paths = StatePaths::new(temp.path().to_path_buf());
+    let paths = StatePaths::new(temp.path().join("private"));
     paths.ensure().expect("state layout");
-    let token = "a".repeat(64);
-    std::fs::write(paths.root.join("dashboard.token"), &token).expect("token file");
+    let token = locron_server::token::ensure(&paths).expect("private token file");
     let listener = std::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
         .expect("bind ephemeral port");
     listener.set_nonblocking(true).expect("nonblocking");
@@ -48,16 +47,67 @@ fn spawn_server() -> TestServer {
         token: token.clone(),
         bound_port: port,
     };
-    let app: Router = router(state);
-    tokio::spawn(async move {
+    let app = router(state);
+    let task = tokio::spawn(async move {
         axum::serve(listener, app).await.expect("server task");
     });
     TestServer {
         base: format!("http://127.0.0.1:{port}"),
         token,
-        client: reqwest::Client::new(),
+        client: reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("loopback client"),
         paths,
+        task,
         _temp: temp,
+    }
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+fn fixture_executable() -> String {
+    #[cfg(unix)]
+    {
+        "/bin/echo".into()
+    }
+    #[cfg(windows)]
+    {
+        std::env::current_exe()
+            .expect("native executable")
+            .to_str()
+            .expect("Unicode fixture")
+            .to_owned()
+    }
+}
+
+fn resolved_fixture_executable() -> String {
+    #[cfg(unix)]
+    {
+        fixture_executable()
+    }
+    #[cfg(windows)]
+    {
+        std::fs::canonicalize(fixture_executable())
+            .expect("native executable identity")
+            .to_str()
+            .expect("Unicode fixture")
+            .to_owned()
+    }
+}
+
+fn fixture_cwd() -> std::path::PathBuf {
+    #[cfg(unix)]
+    {
+        "/tmp".into()
+    }
+    #[cfg(windows)]
+    {
+        std::env::current_dir().expect("absolute native working directory")
     }
 }
 
@@ -134,6 +184,11 @@ fn body_text(body: &Value) -> String {
 
 /// A minimal valid process-target definition, with optional secrets.
 fn definition(executable: &str, env_token: bool, header_secret: bool, body_secret: bool) -> Value {
+    let executable = if executable == "/bin/echo" {
+        fixture_executable()
+    } else {
+        executable.to_owned()
+    };
     let mut headers = serde_json::Map::new();
     if header_secret {
         headers.insert(
@@ -159,7 +214,7 @@ fn definition(executable: &str, env_token: bool, header_secret: bool, body_secre
     json!({
         "schedule": {"kind": "cron", "expression": "* * * * *", "timezone": {"mode": "local"}},
         "target": target,
-        "cwd": "/tmp",
+        "cwd": fixture_cwd(),
         "environment": {"values": environment},
         "policy": {
             "overlap": "skip",
@@ -259,17 +314,12 @@ async fn job_crud_round_trip() {
     let id = created["id"].as_str().expect("id").to_owned();
     assert_eq!(created["name"], json!("alpha"));
     assert!(created["enabled"].as_bool().expect("enabled"));
-    assert!(
-        !created["definition_json"]
-            .as_str()
-            .expect("definition")
-            .contains("*/bin/echo")
-    );
-    assert!(
-        created["definition_json"]
-            .as_str()
-            .expect("definition")
-            .contains("/bin/echo")
+    let stored_definition: Value =
+        serde_json::from_str(created["definition_json"].as_str().expect("definition"))
+            .expect("stored definition");
+    assert_eq!(
+        stored_definition["target"]["executable"],
+        json!(fixture_executable())
     );
 
     // List.
@@ -1238,7 +1288,7 @@ async fn settings_surface() {
     assert_eq!(settings["global_concurrency"], json!(16));
     assert_eq!(
         settings["execution_path"],
-        json!("/usr/local/bin:/usr/bin:/bin")
+        json!(locron_core::execution::default_execution_path())
     );
     assert_eq!(settings["environment"], json!({}));
 
@@ -1353,6 +1403,61 @@ async fn settings_surface() {
     assert_eq!(data(&settings)["environment"], json!({}));
 }
 
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread")]
+async fn windows_environment_case_rules_and_failures_preserve_redaction() {
+    let server = spawn_server();
+    let (status, body) = server
+        .put(
+            "/api/v1/settings/environment.fixture",
+            Some(json!({"value":"private-first-value"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["action"], "created");
+    let (status, body) = server
+        .put(
+            "/api/v1/settings/environment.FIXTURE",
+            Some(json!({"value":"private-replacement-value"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(data(&body)["action"], "replaced");
+    let (_, body) = server.get("/api/v1/settings").await;
+    assert_eq!(
+        data(&body)["environment"],
+        json!({"FIXTURE":{"configured":true,"value_redacted":true}})
+    );
+    assert!(!body_text(&body).contains("private-first-value"));
+    assert!(!body_text(&body).contains("private-replacement-value"));
+
+    for values in [
+        json!({"Token":"collision-secret-one","TOKEN":"collision-secret-two"}),
+        json!({"lOcRoN_SECRET":"reserved-secret-value"}),
+    ] {
+        let mut definition = definition("/bin/echo", false, false, false);
+        definition["environment"]["values"] = values;
+        let (status, body) = server
+            .post(
+                "/api/v1/jobs",
+                Some(create_body("invalid environment", &definition)),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["error"]["code"], "invalid_request");
+        for secret in [
+            "collision-secret-one",
+            "collision-secret-two",
+            "reserved-secret-value",
+        ] {
+            assert!(
+                !body_text(&body).contains(secret),
+                "failed validation leaked {secret}"
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // History pagination and the 1000-run cap warning
 // ---------------------------------------------------------------------------
@@ -1429,7 +1534,8 @@ async fn logs_frames() {
 
     // No daemon runs in tests: write the final output artifact directly.
     let output_dir = server.paths.outputs.join(&run_id);
-    std::fs::create_dir_all(&output_dir).expect("output dir");
+    let _output_guard =
+        locron_core::filesystem::DirectoryGuard::private(&output_dir).expect("private output dir");
     let mut writer = FrameWriter::create(&output_dir.join("1.log")).expect("create");
     writer
         .write(FrameChannel::Stdout, 100, b"hello")
@@ -1515,11 +1621,9 @@ async fn diagnostics_facts() {
             .ends_with("state.db")
     );
     assert!(facts["checks"].is_array(), "checks is an array: {facts}");
-    assert!(
-        facts["execution_path"]
-            .as_str()
-            .expect("path")
-            .contains("/usr/bin")
+    assert_eq!(
+        facts["execution_path"],
+        json!(locron_core::execution::default_execution_path())
     );
     assert_eq!(facts["global_environment_names"], json!(["GREETING"]));
     let resolutions = facts["process_resolution"].as_array().expect("resolutions");
@@ -1533,7 +1637,7 @@ async fn diagnostics_facts() {
     assert_eq!(by_name("resolved")["status"], json!("resolved"));
     assert_eq!(
         by_name("resolved")["resolved_executable"],
-        json!("/bin/echo")
+        json!(resolved_fixture_executable())
     );
     assert_eq!(by_name("missing")["status"], json!("unresolved"));
     assert_eq!(
@@ -1786,7 +1890,8 @@ async fn sse_stream_live_run_events() {
 
     // Live frames arrive from the in-progress partial artifact.
     let output_dir = server.paths.outputs.join(&run_id);
-    std::fs::create_dir_all(&output_dir).expect("output dir");
+    let _output_guard =
+        locron_core::filesystem::DirectoryGuard::private(&output_dir).expect("private output dir");
     let mut writer = FrameWriter::create(&output_dir.join("1.partial")).expect("partial create");
     writer
         .write(FrameChannel::Stdout, 100, b"hello")
@@ -1932,7 +2037,8 @@ async fn sse_stream_reconnect_idempotent() {
         .expect("admission");
     assert_eq!(admission.attempts[0].attempt_number, 1);
     let output_dir = server.paths.outputs.join(&run_id);
-    std::fs::create_dir_all(&output_dir).expect("output dir");
+    let _output_guard =
+        locron_core::filesystem::DirectoryGuard::private(&output_dir).expect("private output dir");
     let mut writer = FrameWriter::create(&output_dir.join("1.log")).expect("create");
     writer
         .write(FrameChannel::Stdout, 42, b"final")
@@ -2011,7 +2117,8 @@ async fn sse_output_keys_sequence_by_attempt() {
     let first = store.admit(&lifetime, now, 64).expect("first admission");
     assert_eq!(first.attempts[0].attempt_number, 1);
     let output_dir = server.paths.outputs.join(&run_id);
-    std::fs::create_dir_all(&output_dir).expect("output dir");
+    let _output_guard =
+        locron_core::filesystem::DirectoryGuard::private(&output_dir).expect("private output dir");
     let mut first_output = FrameWriter::create(&output_dir.join("1.log")).expect("first output");
     first_output
         .write(FrameChannel::Stdout, 10, b"first")

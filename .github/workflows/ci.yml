@@ -93,6 +93,10 @@ jobs:
         run: cargo build -p locron --locked
       - name: Verify actual registered daemon lifetimes
         run: cargo test -p locron --test windows_lifecycle --locked
+      - name: Verify native MCP stdio contracts
+        run: cargo test -p locron --test mcp --locked
+      - name: Verify native HTTP API and stream contracts
+        run: cargo test -p locron-server --test contract --locked
       - name: Record native artifact evidence
         shell: pwsh
         run: |
@@ -120,6 +124,8 @@ jobs:
             target/debug/deps/locron_engine-*.exe
             target/debug/deps/locron_server-*.exe
             target/debug/deps/windows_lifecycle-*.exe
+            target/debug/deps/mcp-*.exe
+            target/debug/deps/contract-*.exe
             windows-native-evidence.json
             windows-native-sha256.txt
 
@@ -141,7 +147,7 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --locked -- -D warnings
       - run: cargo clippy -p locron-core -p locron-store -p locron-engine -p locron-server --lib --tests --locked -- -D warnings
-      - run: cargo clippy -p locron --test windows_lifecycle --locked -- -D warnings
+      - run: cargo clippy -p locron --test windows_lifecycle --test mcp --locked -- -D warnings
 
   test:
     name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
