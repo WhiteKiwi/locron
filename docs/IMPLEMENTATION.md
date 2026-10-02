@@ -249,6 +249,33 @@ revealing private input, while unknown stderr content is never promoted into dia
 three-second confirmed cleanup; token retention stays bounded and failed queued work is not
 replayed. Use these facts to review the next implementation choice before changing production.
 
+The measured first request now reaches input-line receipt in about 3.1 seconds but never reaches
+the JSON-parse completion token before thirty seconds. Command discovery, module import and the
+first JSON invocation still share that unmeasured interval; do not label autoload the proven cause.
+Select a narrow fixed-worker binding change: disable module autoload in this child session and
+explicitly import only ConvertFrom-Json/ConvertTo-Json cmdlets from the absolute stock Utility
+manifest under the running stock host's PSHOME. Import no exported functions or aliases, qualify
+both JSON calls with Microsoft.PowerShell.Utility, and retain the same stock converters and
+parameters. No request value chooses a module, assembly, function or source. Keep inherited
+PSModulePath removal, NoProfile/NonInteractive, the existing execution-policy behavior and all
+descriptor operations; policy/import failure is a visible refusal rather than a bypass.
+
+Add test-only fixed before/after-import phase tokens to the existing bounded stderr facts. Import
+is inside the first caller's original thirty-second cold budget, not a warm-up or separate startup
+allowance. The existing input-line/JSON/SID/reply tokens locate any remaining first invocation gap.
+Stock Utility is the same OS module previously selected by autoload; read-only inspection of this
+host's 5.1 manifest confirms both JSON cmdlets and its stock nested binary/script modules. This
+binding choice removes module search from request processing but is not yet a performance proof.
+
+Verify: (1) the original unwarmed x64/ARM64/MSRV cold gate completes or reports the last import/
+JSON phase under the unchanged thirty-second operation and three-second confirmed cleanup bounds;
+later successful probes cannot turn a failed gate into acceptance. (2) an isolated actual worker
+uses the fixed stock converters despite hostile inherited module paths, preserves Unicode/percent/
+hash paths and strict reply frames, and emits ordered bounded import/SID/CreateNew phases.
+(3) malformed input, output caps and timed-out creation still refuse without executing request
+source, increasing children, replaying a mutation or changing execution policy. Native evidence
+must establish whether the measured ARM64 delay is resolved before marking the privacy gate done.
+
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable

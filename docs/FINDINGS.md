@@ -2810,6 +2810,27 @@ Do not infer a production fix, warm the original gate, or replay a timed-out mut
 later successful fixtures or stock bootstrap probe.
 Evidence: [first SID exchange and confirmed cleanup](https://github.com/WhiteKiwi/locron/actions/runs/37041311097/job/110951832994).
 
+PR41 head cebdfe4/run 37044222227 narrows the real first SID gap further. Its child spawned at
+49 ms and input flushed at 50 ms; fixed source entry arrived at 3,097 ms, encoding at 3,114 ms,
+and the actual input line at 3,123 ms. No JSON-parse completion arrived before the thirty-second
+timeout, and owned cleanup completed at 30,041 ms. The source's first unqualified ConvertFrom-Json
+therefore contains the remaining gap, including command discovery/import and converter activation.
+This does not yet prove which component is slow.
+Evidence: [actual first JSON-stage timeout](https://github.com/WhiteKiwi/locron/actions/runs/37044222227/job/110961511069).
+
+Windows PowerShell 5.1 documents automatic import on first command use, its session-local None
+preference, explicit module-file imports and cmdlet/function/alias import restrictions. Qualified
+command names select the intended module. Select an absolute PSHOME stock Utility manifest import
+with only its two JSON cmdlets, disable autoload in the child and qualify those two calls; the
+converter implementation and JSON parameters remain unchanged. Static before/after-import tokens
+will distinguish module initialization from the remaining converter gap without extra budget.
+Read-only inspection of this host's stock manifest confirms the JSON exports and stock nested
+binary/script modules; it is not native execution or ARM64 performance evidence. The inference
+that avoiding discovery helps the cold failure remains a hypothesis until the original CI gate.
+Sources: [5.1 module-autoload preference](https://raw.githubusercontent.com/MicrosoftDocs/PowerShell-Docs/main/reference/5.1/Microsoft.PowerShell.Core/About/about_Preference_Variables.md#psmoduleautoloadingpreference),
+[5.1 explicit/restricted imports](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/import-module?view=powershell-5.1),
+[5.1 command qualification](https://raw.githubusercontent.com/MicrosoftDocs/PowerShell-Docs/main/reference/5.1/Microsoft.PowerShell.Core/About/about_Command_Precedence.md#use-module-qualified-names).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
