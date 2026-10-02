@@ -3627,14 +3627,47 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
 }
 
 async fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {
+    let lifetime = SchedulerLifetimeId::new().to_string();
+    let cancellation = CancellationToken::new();
+    #[cfg(windows)]
+    if service_mode {
+        let activation = RegisteredDaemonActivation::acquire(&paths, cancellation.clone())?;
+        let result = async {
+            let Some(lock) =
+                wait_for_registered_daemon_lock(&paths, &lifetime, &cancellation).await?
+            else {
+                return Ok(());
+            };
+            daemon_with_lock(paths, service_mode, lifetime, cancellation, Some(lock)).await
+        }
+        .await;
+        // Retain this identity through waiting and running, with no maintenance handover gap.
+        activation.close().await;
+        return result;
+    }
+    #[cfg(windows)]
+    let lock = Some(acquire_daemon_role_lock(&paths, &lifetime, false)?);
+    #[cfg(not(windows))]
+    let lock = None;
+    daemon_with_lock(paths, service_mode, lifetime, cancellation, lock).await
+}
+
+async fn daemon_with_lock(
+    paths: StatePaths,
+    service_mode: bool,
+    lifetime: String,
+    cancellation: CancellationToken,
+    lock: Option<locron_store::DaemonLock>,
+) -> Result<()> {
+    if cancellation.is_cancelled() {
+        return Ok(());
+    }
     let store = Arc::new(Store::open(
         paths.clone(),
         env!("CARGO_PKG_VERSION"),
         now_us(),
     )?);
-    let lifetime = SchedulerLifetimeId::new().to_string();
     let global_concurrency = usize::try_from(store.settings()?.global_concurrency)?;
-    let cancellation = CancellationToken::new();
     let adapter = Arc::new(StoreAdapter {
         store,
         lifetime,
@@ -3650,7 +3683,7 @@ async fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {
         #[cfg(windows)]
         cancellation: cancellation.clone(),
         control_task: Mutex::new(None),
-        lock: Mutex::new(None),
+        lock: Mutex::new(lock),
     });
     let daemon = Daemon::new(
         Arc::clone(&adapter),
@@ -3675,6 +3708,114 @@ async fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {
         .map_err(|_| anyhow!("lock mutex poisoned"))?
         .take();
     result.map_err(Into::into)
+}
+
+#[cfg(windows)]
+fn acquire_daemon_role_lock(
+    paths: &StatePaths,
+    lifetime: &str,
+    service_mode: bool,
+) -> locron_store::StoreResult<locron_store::DaemonLock> {
+    locron_store::DaemonLock::acquire_role(
+        &paths.daemon_lock,
+        &LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: lifetime.to_owned(),
+            started_at_us: now_us(),
+            binary_version: env!("CARGO_PKG_VERSION").into(),
+        },
+        service_mode,
+    )
+}
+
+#[cfg(windows)]
+async fn wait_for_registered_daemon_lock(
+    paths: &StatePaths,
+    lifetime: &str,
+    cancellation: &CancellationToken,
+) -> Result<Option<locron_store::DaemonLock>> {
+    let mut waiting = false;
+    loop {
+        if cancellation.is_cancelled() {
+            return Ok(None);
+        }
+        match acquire_daemon_role_lock(paths, lifetime, true) {
+            Ok(lock) => {
+                if cancellation.is_cancelled() {
+                    return Ok(None);
+                }
+                return Ok(Some(lock));
+            }
+            Err(StoreError::DaemonAlreadyRunning) => {
+                if !waiting {
+                    tracing::info!(
+                        state_dir = %paths.root.display(),
+                        "registered daemon waits for the existing scheduler owner"
+                    );
+                    waiting = true;
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => return Ok(None),
+            () = tokio::time::sleep(Duration::from_millis(200)) => {},
+        }
+    }
+}
+
+#[cfg(windows)]
+struct RegisteredDaemonActivation {
+    lock: locron_store::DaemonLock,
+    control: tokio::task::JoinHandle<()>,
+    signal: tokio::task::JoinHandle<()>,
+}
+
+#[cfg(windows)]
+impl RegisteredDaemonActivation {
+    fn acquire(paths: &StatePaths, cancellation: CancellationToken) -> Result<Self> {
+        let lifetime = Uuid::now_v7().to_string();
+        let lock = locron_store::DaemonLock::acquire_role(
+            &paths.daemon_activation_lock,
+            &LockMetadata {
+                pid: std::process::id(),
+                lifetime_id: lifetime.clone(),
+                started_at_us: now_us(),
+                binary_version: env!("CARGO_PKG_VERSION").into(),
+            },
+            true,
+        )?;
+        let control = locron_engine::ipc::bind_role_control(
+            &paths.root,
+            "daemon-activation",
+            &lifetime,
+            cancellation.clone(),
+        )?;
+        let signal = tokio::spawn(async move {
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => cancellation.cancel(),
+                Err(error) => {
+                    tracing::warn!(%error, "console shutdown unavailable; registered activation control remains active");
+                    std::future::pending::<()>().await;
+                }
+            }
+        });
+        Ok(Self {
+            lock,
+            control,
+            signal,
+        })
+    }
+
+    async fn close(self) {
+        // The actual daemon role and wake/control listeners have already exited at this point.
+        for task in [self.control, self.signal] {
+            task.abort();
+            let _ = task.await;
+        }
+        drop(self.lock);
+    }
 }
 
 #[cfg(windows)]
@@ -3842,13 +3983,19 @@ impl DaemonStore for StoreAdapter {
             started_at_us: self.now_us(),
             binary_version: env!("CARGO_PKG_VERSION").into(),
         };
-        let lock = locron_store::DaemonLock::acquire_role(
-            &self.paths.daemon_lock,
-            &metadata,
-            self.service_mode,
-        )
-        .map_err(|error| error.to_string())?;
-        *self.lock.lock().map_err(|_| "lock mutex poisoned")? = Some(lock);
+        {
+            let mut owned = self.lock.lock().map_err(|_| "lock mutex poisoned")?;
+            if owned.is_none() {
+                *owned = Some(
+                    locron_store::DaemonLock::acquire_role(
+                        &self.paths.daemon_lock,
+                        &metadata,
+                        self.service_mode,
+                    )
+                    .map_err(|error| error.to_string())?,
+                );
+            }
+        }
         let wake = self
             .wake
             .lock()

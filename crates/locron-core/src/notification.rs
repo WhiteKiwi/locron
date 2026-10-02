@@ -146,7 +146,7 @@ pub fn endpoint_name_guarded(
     role: &str,
     lifetime: Option<&str>,
 ) -> io::Result<String> {
-    if !matches!(role, "wake" | "daemon" | "dashboard")
+    if !matches!(role, "wake" | "daemon" | "dashboard" | "daemon-activation")
         || lifetime.is_some_and(|value| uuid::Uuid::parse_str(value).is_err())
         || role != "wake" && lifetime.is_none()
         || role == "wake" && lifetime.is_some()
@@ -302,8 +302,12 @@ mod tests {
         let wake = endpoint_name_guarded(&guard, "wake", None).unwrap();
         let daemon = endpoint_name_guarded(&guard, "daemon", Some(&lifetime)).unwrap();
         let dashboard = endpoint_name_guarded(&guard, "dashboard", Some(&lifetime)).unwrap();
+        let activation =
+            endpoint_name_guarded(&guard, "daemon-activation", Some(&lifetime)).unwrap();
         assert_ne!(wake, daemon);
         assert_ne!(daemon, dashboard);
+        assert_ne!(daemon, activation);
+        assert_ne!(dashboard, activation);
         assert_eq!(
             daemon,
             endpoint_name_guarded(&guard, "daemon", Some(&lifetime.to_uppercase())).unwrap()
@@ -315,6 +319,7 @@ mod tests {
         );
         assert!(endpoint_name_guarded(&guard, "wake", Some(&lifetime)).is_err());
         assert!(endpoint_name_guarded(&guard, "daemon", None).is_err());
+        assert!(endpoint_name_guarded(&guard, "daemon-activation", None).is_err());
         assert!(endpoint_name_guarded(&guard, "daemon", Some("malformed")).is_err());
         assert!(endpoint_name_guarded(&guard, "job", Some(&lifetime)).is_err());
     }

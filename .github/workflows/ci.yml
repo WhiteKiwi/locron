@@ -91,6 +91,8 @@ jobs:
         run: ./.github/scripts/windows-adapter-diagnostic.ps1
       - name: Build the native CLI for isolated Windows acceptance
         run: cargo build -p locron --locked
+      - name: Verify actual registered daemon lifetimes
+        run: cargo test -p locron --test windows_lifecycle --locked
       - name: Record native artifact evidence
         shell: pwsh
         run: |
@@ -116,6 +118,8 @@ jobs:
             target/debug/deps/locron_core-*.exe
             target/debug/deps/locron_store-*.exe
             target/debug/deps/locron_engine-*.exe
+            target/debug/deps/locron_server-*.exe
+            target/debug/deps/windows_lifecycle-*.exe
             windows-native-evidence.json
             windows-native-sha256.txt
 
@@ -136,7 +140,8 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --locked -- -D warnings
-      - run: cargo clippy -p locron-core -p locron-store -p locron-engine --lib --tests --locked -- -D warnings
+      - run: cargo clippy -p locron-core -p locron-store -p locron-engine -p locron-server --lib --tests --locked -- -D warnings
+      - run: cargo clippy -p locron --test windows_lifecycle --locked -- -D warnings
 
   test:
     name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
