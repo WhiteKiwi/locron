@@ -72,8 +72,36 @@ jobs:
           if ($hostTriple -ne '${{ matrix.platform }}') { throw "Wrong native toolchain: $hostTriple" }
       - name: Compile staged Windows workspace
         run: cargo check --workspace --locked
-      - name: Verify portable domain scheduling
-        run: 'cargo test -p locron-core --lib --locked -- schedule::'
+      - name: Verify all core and durable store contracts
+        run: cargo test -p locron-core -p locron-store --lib --locked
+      - name: Build the native CLI for isolated Windows acceptance
+        run: cargo build -p locron --locked
+      - name: Record native artifact evidence
+        shell: pwsh
+        run: |
+          $facts = @{
+            revision = '${{ github.sha }}'
+            runnerImage = '${{ matrix.os }}'
+            nativeTarget = '${{ matrix.platform }}'
+            rust = '${{ matrix.rust }}'
+            compiler = (rustc -vV | Out-String)
+            windows = (Get-ComputerInfo -Property WindowsProductName, WindowsVersion, OsArchitecture | Out-String)
+            account = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+            elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          }
+          $facts | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath windows-native-evidence.json -Encoding utf8
+          Get-FileHash -Algorithm SHA256 -LiteralPath target/debug/locron.exe | Format-List | Out-File -FilePath windows-native-sha256.txt -Encoding utf8
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-native-${{ matrix.platform }}-rust-${{ matrix.rust }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            target/debug/locron.exe
+            target/debug/deps/locron_core-*.exe
+            target/debug/deps/locron_store-*.exe
+            windows-native-evidence.json
+            windows-native-sha256.txt
 
   windows-lint-foundation:
     name: Windows lint foundation / Rust 1.98.0
@@ -92,6 +120,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --locked -- -D warnings
+      - run: cargo clippy -p locron-core -p locron-store --lib --tests --locked -- -D warnings
 
   test:
     name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
