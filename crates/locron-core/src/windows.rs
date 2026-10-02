@@ -19,6 +19,8 @@ static ADAPTER_WORKERS: WorkerPermits = WorkerPermits::new(1);
 static SID_INITIALIZER: WorkerPermits = WorkerPermits::new(1);
 
 mod filesystem_worker;
+#[cfg(test)]
+mod generic_trace;
 
 /// Only short counter updates run while this mutex is held; never process or I/O work.
 struct WorkerPermits {
@@ -138,7 +140,14 @@ fn run_script_with_deadline(
 ) -> io::Result<Value> {
     let request = prepare_adapter(script, input)?;
     // Queue on the caller, before creating a thread/process. Queue time consumes the same budget.
+    #[cfg(not(test))]
     let permit = ADAPTER_WORKERS.acquire(deadline)?;
+    #[cfg(test)]
+    let permit = ADAPTER_WORKERS
+        .acquire(deadline)
+        .inspect_err(|_| request.trace.report("permit-failed"))?;
+    #[cfg(test)]
+    request.trace.record("permit-acquired", 0);
     run_adapter_worker(request, deadline, permit)
 }
 
@@ -146,9 +155,13 @@ struct AdapterRequest {
     executable: PathBuf,
     encoded: String,
     input: Vec<u8>,
+    #[cfg(test)]
+    trace: std::sync::Arc<generic_trace::Trace>,
 }
 
 fn prepare_adapter(script: &'static str, input: &Value) -> io::Result<AdapterRequest> {
+    #[cfg(test)]
+    let trace = std::sync::Arc::new(generic_trace::Trace::new());
     let request = serde_json::to_vec(input).map_err(io::Error::other)?;
     if request.len() > 64 * 1024 {
         return Err(io::Error::new(
@@ -157,9 +170,12 @@ fn prepare_adapter(script: &'static str, input: &Value) -> io::Result<AdapterReq
         ));
     }
     let executable = stock_powershell()?;
+    #[cfg(not(test))]
     let source = format!(
         "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); try {{ $request = [Console]::In.ReadToEnd() | ConvertFrom-Json; {script} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}"
     );
+    #[cfg(test)]
+    let source = generic_trace::source(script);
     let encoded = base64::engine::general_purpose::STANDARD.encode(
         source
             .encode_utf16()
@@ -170,6 +186,8 @@ fn prepare_adapter(script: &'static str, input: &Value) -> io::Result<AdapterReq
         executable,
         encoded,
         input: request,
+        #[cfg(test)]
+        trace,
     })
 }
 
@@ -178,12 +196,16 @@ fn run_adapter_worker(
     deadline: Instant,
     permit: WorkerPermit<'static>,
 ) -> io::Result<Value> {
+    #[cfg(test)]
+    let trace = std::sync::Arc::clone(&request.trace);
     // A dedicated thread permits callers already inside Tokio; no async type crosses this API.
-    std::thread::Builder::new()
+    let result = std::thread::Builder::new()
         .name("locron-windows-adapter".to_owned())
         .spawn(move || {
             // Keep the permit until all owned child/pipe cleanup completes, including errors.
             let _permit = permit;
+            #[cfg(test)]
+            request.trace.record("worker-entered", 0);
             remaining(deadline)?;
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -193,10 +215,17 @@ fn run_adapter_worker(
                     request.encoded,
                     request.input,
                     deadline,
+                    #[cfg(test)]
+                    request.trace,
                 ))
         })?
         .join()
-        .map_err(|_| io::Error::other("Windows adapter worker failed"))?
+        .map_err(|_| io::Error::other("Windows adapter worker failed"))?;
+    #[cfg(test)]
+    if result.is_err() {
+        trace.report("caller-failed");
+    }
+    result
 }
 
 async fn run_adapter(
@@ -204,6 +233,7 @@ async fn run_adapter(
     encoded: String,
     request: Vec<u8>,
     deadline: Instant,
+    #[cfg(test)] trace: std::sync::Arc<generic_trace::Trace>,
 ) -> io::Result<Value> {
     use tokio::io::AsyncWriteExt;
 
@@ -215,6 +245,8 @@ async fn run_adapter(
         .creation_flags(0x0800_0000) // CREATE_NO_WINDOW; no execution-policy changes.
         .kill_on_drop(true)
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    #[cfg(test)]
+    trace.record("spawn-complete", child.id().unwrap_or_default());
     let mut stdin = child
         .stdin
         .take()
@@ -227,9 +259,25 @@ async fn run_adapter(
         .stderr
         .take()
         .ok_or_else(|| io::Error::other("missing adapter stderr"))?;
+    #[cfg(not(test))]
     let mut writer = tokio::spawn(async move { stdin.write_all(&request).await });
+    #[cfg(test)]
+    let writer_trace = std::sync::Arc::clone(&trace);
+    #[cfg(test)]
+    let mut writer = tokio::spawn(async move {
+        stdin.write_all(&request).await?;
+        writer_trace.record("input-written", 0);
+        Ok::<_, io::Error>(())
+    });
     let mut output = tokio::spawn(capture_output(stdout));
+    #[cfg(not(test))]
     let mut errors = tokio::spawn(capture_output(stderr));
+    #[cfg(test)]
+    let mut errors = tokio::spawn(generic_trace::capture_stderr(
+        stderr,
+        std::sync::Arc::clone(&trace),
+        OUTPUT_LIMIT,
+    ));
     let operation = tokio::time::timeout_at(deadline, async {
         let ((), output, errors, status) = tokio::try_join!(
             async { (&mut writer).await.map_err(io::Error::other)? },
@@ -266,6 +314,8 @@ async fn run_adapter(
                     "could not confirm Windows adapter termination",
                 ));
             }
+            #[cfg(test)]
+            trace.record("cleanup-confirmed", 0);
             return match failed {
                 Ok(Err(error)) => Err(error),
                 Err(_) => Err(io::Error::new(
@@ -276,6 +326,8 @@ async fn run_adapter(
             };
         }
     };
+    #[cfg(test)]
+    trace.record("root-completed", 0);
     if !status.success() {
         return Err(io::Error::other(format!(
             "stock Windows adapter failed: {}",
@@ -374,6 +426,32 @@ fn adapter_path(path: &std::path::Path) -> io::Result<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn actual_generic_adapter_emits_ordered_child_phases_without_rendering_input() {
+        let request = prepare_adapter(
+            "@{echo=[string]$request.echo}|ConvertTo-Json -Compress",
+            &json!({"echo":"fixture 日本語 % #"}),
+        )
+        .unwrap();
+        let trace = std::sync::Arc::clone(&request.trace);
+        let deadline = Instant::now() + ADAPTER_TIMEOUT;
+        let permit = ADAPTER_WORKERS.acquire(deadline).unwrap();
+        let result = run_adapter_worker(request, deadline, permit).unwrap();
+        assert_eq!(result["echo"], "fixture 日本語 % #");
+        assert_eq!(
+            trace.child_phases(),
+            [
+                "source-entry",
+                "encoding-ready",
+                "input-complete",
+                "json-start",
+                "json-parsed",
+                "caller-start",
+                "caller-complete"
+            ]
+        );
+    }
 
     #[test]
     fn saturated_permits_use_the_original_deadline_and_release_on_drop() {
