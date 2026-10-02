@@ -156,6 +156,11 @@ Keep input/output limits and failure semantics; owned kill/reap cleanup may add 
 three-second termination-confirmation bound after the operation deadline. Native tests
 must still exercise startup/script stalls and saturated permits; do not extend the deadline or
 reduce privacy coverage to mask ARM64 cold-start contention.
+An output reader that reaches the maximum plus one byte fails the operation immediately and
+enters the same owned kill/reap cleanup. Do not wait for normal child exit before enforcing the
+output cap: a child blocked on its output pipe would otherwise consume a complete adapter permit
+deadline and starve independent state calls. Native fixtures must prove prompt output-cap refusal
+and confirmed cleanup, independently of startup timeout and saturated-queue acceptance.
 A bounded stock-adapter entry point accepts a caller's remaining duration, capped at the same
 thirty-second operation maximum. Service polling uses the remaining shared lifecycle deadline;
 a fresh adapter invocation cannot silently restart the complete shutdown budget.

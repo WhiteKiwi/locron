@@ -2833,6 +2833,18 @@ child's exact exit code 17 after its two-second wait; the driver deleted only th
 fixture. This establishes waiting/exit propagation, not Locron daemon-lock ownership. Failure
 restart is tested separately before that behavior can be claimed.
 
+The subsequent native restart probe did not observe a second run within eighty seconds after a
+demand-started waiting launcher returned exit 17. Two further uniquely named time-triggered tasks
+likewise propagated exit 17 and E_FAIL (-2147467259), respectively, without a restart in that
+bound. Each task was disabled and deleted after marker verification. Changing the trigger or
+returning a failing HRESULT did not establish unexpected-role-exit restart. Microsoft's protocol
+specification describes RestartOnFailure in terms of unmet start conditions or failure to start
+an action, a narrower description than the general API overview. Keep native action-launch retry
+settings, but do not claim they supervise ordinary completed role exits. A reviewed owned retry
+supervisor/cancellation lifetime and actual-role-exit diagnostics remain prerequisites; a bare
+PowerShell sleep loop would leave an uncontrolled gap after the child's activation lock exits.
+Source: [MS-TSCH RestartOnFailure](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tsch/2ff4aa5a-7bc4-449f-bbb1-27475645867f).
+
 ### Recommended design order and remaining proof
 
 The first native ARM64 core run at PR #41 head `2f5516e` failed four initial private-directory
@@ -2844,6 +2856,18 @@ selects two bounded adapter permits and one finite SID initializer, with the unc
 deadline measured from API entry including queue wait. Saturated-queue and startup/termination
 tests remain required; a fresh native ARM64 run must establish whether this resolves the failure.
 Evidence: [native ARM64 job](https://github.com/WhiteKiwi/locron/actions/runs/37021167379/job/110884313590).
+
+The next native ARM64 run at head `960a446` retained timeouts after bounded permits and the single
+SID initializer were introduced; six filesystem fixtures and the script-entry marker fixture
+failed. The output-limit fixture passed only after thirty seconds. Source audit found that the
+reader returned an oversized successful buffer and enforced its limit only after waiting for
+the child to exit. That consumes a complete permit while an output-blocked child remains alive,
+so development selects immediate reader failure and the existing confirmed kill/reap cleanup.
+It does not establish that this is the only ARM64 cause. Post-gate bounded stock PowerShell
+diagnostics separately measure PE/process architecture, version/SID bootstrap and small/60k UTF-8
+stdin/EOF round trips without warming the original cold-start tests. Operation deadlines and
+privacy coverage remain unchanged.
+Evidence: [subsequent native ARM64 job](https://github.com/WhiteKiwi/locron/actions/runs/37027297548/job/110905081384).
 
 Hosted native tests found an elevated token's default file owner can be Administrators despite
 an explicitly private SID-owned parent. Development retains the strict owner check and selects
