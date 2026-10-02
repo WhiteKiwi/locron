@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FUNCTIONS = (
     "Get-LocronSid", "ConvertTo-LocronPath", "Assert-LocronDescriptor",
     "Assert-LocronDirectory", "Read-LocronPrivateFile", "Get-LocronSha256",
-    "ConvertFrom-LocronJson", "Assert-LocronFields", "Read-LocronReceipt", "Get-LocronTarget",
+    "ConvertFrom-LocronJson", "Assert-LocronFields", "Assert-LocronUserPath", "Read-LocronReceipt", "Get-LocronTarget",
 )
 HEADER = """#requires -Version 5.1
 <#

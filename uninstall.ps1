@@ -168,6 +168,28 @@ function Assert-LocronFields($Value, [string[]]$Fields) {
     }
 }
 
+function Assert-LocronUserPath($Record, [string]$Directory) {
+    Assert-LocronFields $Record @('before', 'after', 'before_kind', 'after_kind')
+    $directory = ConvertTo-LocronPath $Directory
+    if ($Record.after -isnot [string] -or $Record.after_kind -isnot [string] -or
+        $Record.after_kind -cnotin @('String', 'ExpandString') -or
+        (($null -eq $Record.before) -ne ($null -eq $Record.before_kind)) -or
+        ($null -ne $Record.before -and ($Record.before -isnot [string] -or
+            $Record.before_kind -isnot [string] -or $Record.before_kind -cnotin @('String', 'ExpandString'))) -or
+        $directory.Contains(';') -or $Record.after.IndexOf([char]0) -ge 0 -or
+        ($null -ne $Record.before -and $Record.before.IndexOf([char]0) -ge 0)) { throw 'invalid receipt PATH record' }
+    $kind = if ($null -eq $Record.before_kind) { 'String' } else { $Record.before_kind }
+    if ($Record.after_kind -cne $kind -or ($kind -ceq 'ExpandString' -and $directory.Contains('%'))) {
+        throw 'PATH insertion changed kind or would expand the literal directory'
+    }
+    $expected = $directory
+    if ($null -ne $Record.before -and $Record.before.Length -gt 0) {
+        $separator = if ($Record.before.EndsWith(';')) { '' } else { ';' }
+        $expected = $Record.before + $separator + $directory
+    }
+    if ($Record.after -cne $expected) { throw 'PATH record is not one literal installer insertion' }
+}
+
 function Read-LocronReceipt([string]$Directory) {
     $full = Assert-LocronDirectory $Directory $true
     $receipt = ConvertFrom-LocronJson (Read-LocronPrivateFile ([IO.Path]::Combine($full, '.locron-install-receipt-v1')))
@@ -193,11 +215,7 @@ function Read-LocronReceipt([string]$Directory) {
     }
     if ($receipt.files.'locron.exe' -cne $receipt.binary_sha256) { throw 'receipt executable digests disagree' }
     if ($null -ne $receipt.user_path) {
-        Assert-LocronFields $receipt.user_path @('before', 'after', 'before_kind', 'after_kind')
-        if ($receipt.user_path.after -isnot [string] -or $receipt.user_path.after_kind -cnotin @('String', 'ExpandString') -or
-            (($null -eq $receipt.user_path.before) -ne ($null -eq $receipt.user_path.before_kind)) -or
-            ($null -ne $receipt.user_path.before -and ($receipt.user_path.before -isnot [string] -or
-                $receipt.user_path.before_kind -cnotin @('String', 'ExpandString')))) { throw 'invalid receipt PATH record' }
+        Assert-LocronUserPath $receipt.user_path $receipt.directory
     }
     $receipt
 }

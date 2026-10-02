@@ -165,6 +165,30 @@ Assert-Refused { Assert-LocronStatus ([pscustomobject]$recoveryStatus) $statusRe
 Assert-Refused { Assert-LocronStatus ([pscustomobject]$recoveryStatus) $statusRequest 'install' } 'recovery cannot substitute removal for installation'
 Assert-Refused { Assert-LocronStatus ([pscustomobject]$recoveryStatus) $statusRequest 'maintenance_remove' } 'recovery cannot adopt a package operation'
 
+$pathDirectory = 'C:\test-only\locron'
+foreach ($record in @(
+    [ordered]@{ before = $null; before_kind = $null; after = $pathDirectory; after_kind = 'String' },
+    [ordered]@{ before = ''; before_kind = 'String'; after = $pathDirectory; after_kind = 'String' },
+    [ordered]@{ before = '%USERPROFILE%\bin'; before_kind = 'ExpandString'; after = "%USERPROFILE%\bin;$pathDirectory"; after_kind = 'ExpandString' },
+    [ordered]@{ before = 'C:\other;'; before_kind = 'String'; after = "C:\other;$pathDirectory"; after_kind = 'String' }
+)) { Assert-LocronUserPath ([pscustomobject]$record) $pathDirectory }
+foreach ($record in @(
+    [ordered]@{ before = $null; before_kind = $null; after = $pathDirectory; after_kind = 'ExpandString' },
+    [ordered]@{ before = '%USERPROFILE%\bin'; before_kind = 'ExpandString'; after = $pathDirectory; after_kind = 'ExpandString' },
+    [ordered]@{ before = ''; before_kind = 'ExpandString'; after = $pathDirectory; after_kind = 'String' },
+    [ordered]@{ before = ''; before_kind = 'String'; after = $pathDirectory; after_kind = @('String') },
+    [ordered]@{ before = 1; before_kind = 'String'; after = $pathDirectory; after_kind = 'String' },
+    [ordered]@{ before = "a$([char]0)b"; before_kind = 'String'; after = "a$([char]0)b;$pathDirectory"; after_kind = 'String' }
+)) { Assert-Refused { Assert-LocronUserPath ([pscustomobject]$record) $pathDirectory } 'PATH receipt derivation/type refusal' }
+$percentDirectory = 'C:\literal%name\locron'
+$percentRecord = [pscustomobject]@{ before = $null; before_kind = $null; after = $percentDirectory; after_kind = 'String' }
+Assert-LocronUserPath $percentRecord $percentDirectory
+$percentRecord.before = ''; $percentRecord.before_kind = 'ExpandString'; $percentRecord.after_kind = 'ExpandString'
+Assert-Refused { Assert-LocronUserPath $percentRecord $percentDirectory } 'percent literal cannot use expandable PATH'
+$semicolonDirectory = 'C:\a;b'
+$semicolonRecord = [pscustomobject]@{ before = $null; before_kind = $null; after = $semicolonDirectory; after_kind = 'String' }
+Assert-Refused { Assert-LocronUserPath $semicolonRecord $semicolonDirectory } 'semicolon cannot be one PATH field'
+
 $packageLocation = 'C:\test-only\WinGet\Packages\fixture'
 $packagePath = [IO.Path]::Combine($packageLocation, "locron-$tag-$target", 'locron.exe')
 $packageEntry = [ordered]@{ key = 'test-only-registration'; package_id = 'WhiteKiwi.locron'; installer_type = 'portable'
