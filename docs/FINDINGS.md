@@ -3289,6 +3289,23 @@ private fixtures while making the two real three-by-sixty-second exhaustion poli
 serially. Keep all existing operation deadlines, child/Job proof, fault assertions and required
 status names; record the actual test count and results for the exact revision.
 
+#### Hash-bound bundled license checkout
+
+Native revision f8b785465d2d2b2b419d3b576529552d76b77f66 failed the unchanged official-font
+license assertion with SHA-256 1dc6255c3f36ba15736d427a9ee527608a297797255369926ca6952ecc7a781c
+instead of 2b2da563e79400b61818402ca9f26a73d52468268b7fc715e92143c1e799737e.
+Both embedded and frontend-dist OFL.txt paths have committed blob
+0ba7f7cae3f9a6bda533889c836687097e956443: 4384 bytes, 93 LF and no CRLF. The Windows
+checkout with core.autocrlf=true produces 4477 bytes; its exact CRLF projection has the failed
+digest. This proves a checkout conversion, without changing the frozen upstream license pin.
+
+Git documents that unspecified line endings follow core.autocrlf/platform behavior, while
+`text eol=lf` preserves index LF on checkout. Select those attributes for the two exact OFL.txt
+paths used by embedded assets and frontend output. Leave font/license source blobs, the expected
+digest and other repository paths unchanged; verify attribute resolution and byte identity under
+Windows checkout conversion before repeating the original native provenance assertion.
+Source: [Git text and eol checkout attributes](https://git-scm.com/docs/gitattributes#_checking_out_and_checking_in).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development

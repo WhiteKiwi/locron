@@ -1097,6 +1097,18 @@ retry cancellation, private stdout/stderr, diagnostic refusal and the new-manual
 Record exact revision/runner/toolchain and the service test count/results; failed native
 compilation, an empty filter or a package-only pass cannot satisfy this qualification.
 
+The bundled font license has a frozen byte digest. Apply `text eol=lf` only to
+`crates/locron-server/assets/fonts/OFL.txt` and
+`crates/locron-server/frontend/dist/fonts/OFL.txt` in repository attributes, so native Windows
+checkout preserves the already committed LF bytes before embedding/building. Keep the existing
+license digest, upstream provenance, font binaries and license blob unchanged; broader repository
+normalization is outside this correction.
+
+Verify both exact paths report the selected attributes and retain the original blob/digest in a
+checkout with core.autocrlf=true. The unchanged official-font/license/provenance assertion must
+pass on native x64, ARM64 and MSRV; record native results without accepting a normalized runtime
+digest or removing the original source pin.
+
 Windows registration uses the shared full-file-identity/SID digest for role-specific task names.
 
 ### Phase-scoped Task Scheduler transport and persistence ownership
