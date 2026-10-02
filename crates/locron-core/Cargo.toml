@@ -24,7 +24,6 @@ uuid.workspace = true
 base64.workspace = true
 file-id = "=0.2.3"
 process-wrap.workspace = true
-file-id = "=0.2.3"
 sha2.workspace = true
 tokio.workspace = true
 windows-permissions = "=0.2.4"
