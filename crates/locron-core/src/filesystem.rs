@@ -182,6 +182,16 @@ pub fn read_owned_executable(path: &Path) -> io::Result<GuardedFile> {
     windows::read_owned_executable(path, guard)
 }
 
+/// Exclusively guards an existing package executable to prove mapped holders are gone.
+/// Permits trusted SYSTEM/Administrators rights and other accounts' read/execute rights.
+/// This proof gate never creates, repairs or writes package bytes; callers release it
+/// before handing mutation to the package manager. Standalone replacement stays private.
+#[cfg(windows)]
+pub fn open_owned_executable_exclusive(path: &Path) -> io::Result<GuardedFile> {
+    let guard = DirectoryGuard::ancestors(parent(path)?)?;
+    windows::owned_executable_exclusive(path, guard)
+}
+
 /// Opens an existing private replacement leaf without sharing read, write or delete access.
 /// The existing-only parent, protected descriptor and single-link object remain guarded.
 /// This gate refuses mapped images; it never truncates or repairs an existing object.
@@ -738,42 +748,71 @@ mod windows {
             .share_mode(FILE_SHARE_READ)
             .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(&path)?;
-        reject_reparse(&file, &path)?;
-        if !file.metadata()?.is_file() {
+        verify_owned_executable(&file, &path)?;
+        Ok(GuardedFile { file, guard, path })
+    }
+
+    pub(super) fn owned_executable_exclusive(
+        path: &Path,
+        guard: DirectoryGuard,
+    ) -> io::Result<GuardedFile> {
+        let path = guard
+            .normalized_path()
+            .join(path.file_name().ok_or_else(|| unsafe_path(path))?);
+        let file = OpenOptions::new()
+            .access_mode(GENERIC_READ_WRITE | DELETE | READ_CONTROL | FILE_READ_ATTRIBUTES)
+            .share_mode(0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(&path)?;
+        verify_owned_executable(&file, &path)?;
+        let information = winapi_util::file::information(&file)?;
+        if information.file_attributes() & u64::from(FILE_ATTRIBUTE_READONLY) != 0
+            || information.number_of_links() != 1
+        {
             return Err(unsafe_path(&path));
         }
+        let file = GuardedFile { file, guard, path };
+        super::file_identity(&file)?;
+        Ok(file)
+    }
+
+    fn verify_owned_executable(file: &File, path: &Path) -> io::Result<()> {
+        reject_reparse(file, path)?;
+        if !file.metadata()?.is_file() {
+            return Err(unsafe_path(path));
+        }
         let sid = crate::windows::current_user_sid()?;
-        let descriptor = descriptor(&file)?;
+        let descriptor = descriptor(file)?;
         if descriptor
             .owner()
             .is_none_or(|owner| owner.to_string() != sid)
         {
-            return Err(unsafe_path(&path));
+            return Err(unsafe_path(path));
         }
-        let acl = descriptor.dacl().ok_or_else(|| unsafe_path(&path))?;
+        let acl = descriptor.dacl().ok_or_else(|| unsafe_path(path))?;
         for index in 0..acl.len() {
-            let ace = acl.get_ace(index).ok_or_else(|| unsafe_path(&path))?;
+            let ace = acl.get_ace(index).ok_or_else(|| unsafe_path(path))?;
             if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
                 continue;
             }
             if ace.ace_type() != AceType::ACCESS_ALLOWED_ACE_TYPE {
-                return Err(unsafe_path(&path));
+                return Err(unsafe_path(path));
             }
             // Inherit-only entries do not grant rights on this file object.
             if ace.flags().bits() & 0x08 != 0 {
                 continue;
             }
-            let principal = ace.sid().ok_or_else(|| unsafe_path(&path))?.to_string();
+            let principal = ace.sid().ok_or_else(|| unsafe_path(path))?.to_string();
             if principal != sid
                 && principal != SYSTEM_SID
                 && principal != ADMIN_SID
                 // Generic write/all and file write/append/EA/attributes/delete/control rights.
                 && ace.mask().bits() & 0x500D_0156 != 0
             {
-                return Err(unsafe_path(&path));
+                return Err(unsafe_path(path));
             }
         }
-        Ok(GuardedFile { file, guard, path })
+        Ok(())
     }
 
     pub(super) fn restrict_owned(path: &Path, directory: bool) -> io::Result<()> {
@@ -841,6 +880,16 @@ mod tests {
     use std::io::Write;
     use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
+    use windows_permissions::constants::{SeObjectType, SecurityInformation};
+    use windows_permissions::wrappers;
+
+    fn fixture_descriptor(file: &File) -> std::ffi::OsString {
+        let information = SecurityInformation::Owner | SecurityInformation::Dacl;
+        let descriptor =
+            wrappers::GetSecurityInfo(file, SeObjectType::SE_FILE_OBJECT, information).unwrap();
+        wrappers::ConvertSecurityDescriptorToStringSecurityDescriptor(&descriptor, information)
+            .unwrap()
+    }
 
     #[test]
     fn passive_file_observers_leave_an_absent_parent_absent() {
@@ -942,6 +991,10 @@ mod tests {
             open_private_exclusive(&path).unwrap_err().kind(),
             io::ErrorKind::PermissionDenied
         );
+        assert_eq!(
+            open_owned_executable_exclusive(&path).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
         assert_eq!(fs::read(&path).unwrap(), b"original");
         assert_eq!(fs::read(&alias).unwrap(), b"original");
         fs::remove_file(&alias).unwrap();
@@ -949,6 +1002,7 @@ mod tests {
         permissions.set_readonly(true);
         fs::set_permissions(&path, permissions.clone()).unwrap();
         assert!(open_private_exclusive(&path).is_err());
+        assert!(open_owned_executable_exclusive(&path).is_err());
         assert!(fs::metadata(&path).unwrap().permissions().readonly());
         assert_eq!(fs::read(&path).unwrap(), b"original");
         // Reset only the test-owned attribute so temporary-directory cleanup remains possible.
@@ -992,6 +1046,12 @@ mod tests {
                 .raw_os_error(),
             Some(32)
         );
+        assert_eq!(
+            open_owned_executable_exclusive(&executable)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
         child
             .0
             .stdin
@@ -1004,33 +1064,45 @@ mod tests {
                 .wait_until(Instant::now() + Duration::from_secs(5))
                 .success()
         );
-        let gate = open_private_exclusive(&executable).unwrap();
-        assert!(file_identity(&gate).is_ok());
-        for options in [
-            OpenOptions::new().read(true),
-            OpenOptions::new().write(true),
-        ] {
+        let bytes = fs::read(&executable).unwrap();
+        let descriptor = fixture_descriptor(&File::open(&executable).unwrap());
+        let gate_functions: [fn(&Path) -> io::Result<GuardedFile>; 2] =
+            [open_private_exclusive, open_owned_executable_exclusive];
+        for open_gate in gate_functions {
+            let gate = open_gate(&executable).unwrap();
+            assert!(file_identity(&gate).is_ok());
+            assert_eq!(fixture_descriptor(&gate), descriptor);
+            for options in [
+                OpenOptions::new().read(true),
+                OpenOptions::new().write(true),
+            ] {
+                assert_eq!(
+                    options.open(&executable).unwrap_err().raw_os_error(),
+                    Some(32)
+                );
+            }
             assert_eq!(
-                options.open(&executable).unwrap_err().raw_os_error(),
+                fs::rename(&executable, root.join("moved.exe"))
+                    .unwrap_err()
+                    .raw_os_error(),
                 Some(32)
             );
+            assert_eq!(
+                Command::new(&executable)
+                    .args(["/D", "/Q", "/C", "exit 0"])
+                    .creation_flags(0x0800_0000)
+                    .spawn()
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(32)
+            );
+            drop(gate);
+            assert_eq!(fs::read(&executable).unwrap(), bytes);
+            assert_eq!(
+                fixture_descriptor(&File::open(&executable).unwrap()),
+                descriptor
+            );
         }
-        assert_eq!(
-            fs::rename(&executable, root.join("moved.exe"))
-                .unwrap_err()
-                .raw_os_error(),
-            Some(32)
-        );
-        assert_eq!(
-            Command::new(&executable)
-                .args(["/D", "/Q", "/C", "exit 0"])
-                .creation_flags(0x0800_0000)
-                .spawn()
-                .unwrap_err()
-                .raw_os_error(),
-            Some(32)
-        );
-        drop(gate);
         let mut relaunched = OwnedFixtureChild(
             Command::new(&executable)
                 .args(["/D", "/Q", "/C", "exit 0"])
@@ -1055,6 +1127,13 @@ mod tests {
         let root = missing_parent.join("private");
         assert_eq!(
             DirectoryGuard::existing_private(&root).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(!missing_parent.exists());
+        assert_eq!(
+            open_owned_executable_exclusive(&root.join("missing.exe"))
+                .unwrap_err()
+                .kind(),
             io::ErrorKind::NotFound
         );
         assert!(!missing_parent.exists());
@@ -1083,6 +1162,7 @@ mod tests {
         ).unwrap();
         assert!(!is_private(&path, false).unwrap());
         let source = read_owned_executable(&path).unwrap();
+        let descriptor = fixture_descriptor(&source);
         assert_eq!(fs::read(source.normalized_path()).unwrap(), b"package");
         assert_eq!(
             OpenOptions::new()
@@ -1098,6 +1178,12 @@ mod tests {
             Some(32)
         );
         drop(source);
+        let gate = open_owned_executable_exclusive(&path).unwrap();
+        assert_eq!(fixture_descriptor(&gate), descriptor);
+        assert_eq!(File::open(&path).unwrap_err().raw_os_error(), Some(32));
+        drop(gate);
+        assert_eq!(fs::read(&path).unwrap(), b"package");
+        assert_eq!(fixture_descriptor(&File::open(&path).unwrap()), descriptor);
         fs::rename(&path, &moved).unwrap();
     }
 
@@ -1133,6 +1219,14 @@ mod tests {
                 io::ErrorKind::PermissionDenied,
                 "{right}"
             );
+            let descriptor = fixture_descriptor(&File::open(&path).unwrap());
+            assert_eq!(
+                open_owned_executable_exclusive(&path).unwrap_err().kind(),
+                io::ErrorKind::PermissionDenied,
+                "{right}"
+            );
+            assert_eq!(fixture_descriptor(&File::open(&path).unwrap()), descriptor);
+            assert_eq!(fs::metadata(&path).unwrap().len(), 0);
         }
     }
 
