@@ -103,6 +103,14 @@ impl Trace {
             .map(|(phase, _, _)| *phase)
             .collect()
     }
+
+    pub(super) fn has_stage(&self, expected: &str) -> bool {
+        self.stages
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(phase, _, _)| *phase == expected)
+    }
 }
 
 pub(super) async fn capture_stderr(

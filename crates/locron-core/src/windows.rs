@@ -26,6 +26,8 @@ pub use stock::{StockAdapterGuard, StockModuleSet};
 pub const STOCK_JSON_BOOTSTRAP: &str = include_str!("windows/stock_json.ps1");
 #[cfg(test)]
 mod generic_trace;
+#[cfg(test)]
+mod loader_tests;
 
 /// Only short counter updates run while this mutex is held; never process or I/O work.
 struct WorkerPermits {
@@ -161,6 +163,8 @@ struct AdapterRequest {
     input: Vec<u8>,
     #[cfg(test)]
     trace: std::sync::Arc<generic_trace::Trace>,
+    #[cfg(test)]
+    guard_stall: Option<stock::GuardStall>,
 }
 
 fn prepare_adapter(script: &'static str, input: &Value) -> io::Result<AdapterRequest> {
@@ -190,6 +194,8 @@ fn prepare_adapter(script: &'static str, input: &Value) -> io::Result<AdapterReq
         input: request,
         #[cfg(test)]
         trace,
+        #[cfg(test)]
+        guard_stall: None,
     })
 }
 
@@ -209,10 +215,23 @@ fn run_adapter_worker(
             let _permit = permit;
             #[cfg(test)]
             request.trace.record("worker-entered", 0);
-            let guard = match StockAdapterGuard::acquire_until(
-                StockModuleSet::UtilityAndManagement,
-                deadline,
-            ) {
+            #[cfg(not(test))]
+            let guarded =
+                StockAdapterGuard::acquire_until(StockModuleSet::UtilityAndManagement, deadline);
+            #[cfg(test)]
+            let mut request = request;
+            #[cfg(test)]
+            let guarded = match request.guard_stall.take() {
+                Some(stall) => StockAdapterGuard::acquire_with_stall_until(
+                    StockModuleSet::UtilityAndManagement,
+                    deadline,
+                    stall,
+                ),
+                None => {
+                    StockAdapterGuard::acquire_until(StockModuleSet::UtilityAndManagement, deadline)
+                }
+            };
+            let guard = match guarded {
                 Ok(guard) => guard,
                 Err(error) => {
                     let _ = reply.send(Err(error));

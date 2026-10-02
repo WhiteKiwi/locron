@@ -81,6 +81,21 @@ impl StockAdapterGuard {
         })
     }
 
+    #[cfg(test)]
+    pub(super) fn acquire_with_stall_until(
+        modules: StockModuleSet,
+        deadline: Instant,
+        mut stall: GuardStall,
+    ) -> io::Result<Self> {
+        use std::io::Read;
+        let guard = Self::acquire_until(modules, deadline)?;
+        checked(deadline, || {
+            stall.entered.try_send(()).map_err(io::Error::other)?;
+            stall.reader.read_exact(&mut [0_u8; 1])
+        })?;
+        Ok(guard)
+    }
+
     /// Exact retained executable. Keep this complete guard through child/Job/I/O cleanup.
     #[must_use]
     pub fn executable(&self) -> &Path {
@@ -98,6 +113,12 @@ impl StockAdapterGuard {
     pub fn management(&self) -> Option<&Path> {
         self.management.as_ref().map(|file| file.path.as_path())
     }
+}
+
+#[cfg(test)]
+pub(super) struct GuardStall {
+    pub(super) reader: std::io::PipeReader,
+    pub(super) entered: std::sync::mpsc::SyncSender<()>,
 }
 
 fn library_path(root: &Path, suffix: &str) -> PathBuf {
