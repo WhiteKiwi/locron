@@ -263,6 +263,22 @@ WhiteKiwi.locron --exact. WinGet cannot run arbitrary portable-install hooks, so
 require the documented explicit service-disable/upgrade-or-remove/service-refresh procedure;
 durable state is preserved. Generate reviewable manifests from final local or downloaded canonical
 release assets and validate with winget validate; submission/publication remains parent-owned.
+Use the three-file WinGet 1.12 manifest schema (version, en-US default locale and installer), with
+MinimumOSVersion=10.0.22000.0. WinGet portable manifests ignore Scope and emit validation warnings
+when it is supplied. Omit that unsupported field and require --scope user in the documented
+install/upgrade procedure; do not claim the manifest enforces per-user scope. This is verified with
+winget 1.29.380 and follows Microsoft's
+[portable scope contract](https://github.com/microsoft/winget-cli/blob/master/doc/specs/%23182%20-%20Support%20for%20installation%20of%20portable%20standalone%20apps.md).
+Generation refuses pre-Windows tags, mismatched ZIPs/checksums and
+an existing output directory. WhiteKiwi.locron remains a proposed identifier until availability and
+community submission acceptance are verified. Managed ownership is read from the 64-bit view of
+HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall: WinGetPackageIdentifier,
+WinGetInstallerType=portable, a nonempty WinGetSourceIdentifier and InstallLocation must bind the
+canonical selected executable. For older single-file portable registrations, TargetFullPath is
+also an exact-path binding. ZIP registrations use their registered InstallLocation and versioned
+relative executable path; a package-looking directory name alone is insufficient. This uses
+[WinGet's ARP source](https://github.com/microsoft/winget-cli/blob/master/src/AppInstallerCommonCore/PortableARPEntry.cpp)
+and [portable installer source](https://github.com/microsoft/winget-cli/blob/master/src/AppInstallerCLICore/PortableInstaller.cpp).
 
 ### Change order and verification
 

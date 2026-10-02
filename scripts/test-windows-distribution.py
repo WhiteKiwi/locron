@@ -19,6 +19,12 @@ ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("release_assets", ROOT / "scripts/release-assets.py")
 assets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(assets)
+spec = importlib.util.spec_from_file_location("winget_manifest", ROOT / "scripts/render-winget-manifest.py")
+winget_manifest = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(winget_manifest)
+WINGET_VALIDATE = "--winget-validate" in sys.argv
+if WINGET_VALIDATE:
+    sys.argv.remove("--winget-validate")
 TAG = "v0.10.0"
 TARGET = "x86_64-pc-windows-msvc"
 
@@ -172,6 +178,38 @@ class WindowsDistributionTests(unittest.TestCase):
         self.assertIs(facts["unsigned"], True)
         self.assertEqual(facts["version"], "0.10.0")
         self.assertEqual(facts["binary_sha256"], hashlib.sha256(self.binary.read_bytes()).hexdigest())
+
+    def test_winget_manifests_bind_final_architecture_paths_and_zip_bytes(self):
+        self.package(output="winget-inputs")
+        self.binary.write_bytes(executable(0xAA64))
+        self.package("aarch64-pc-windows-msvc", output="winget-inputs")
+        directory = self.root / "winget-inputs"
+        sums = {name: assets.sha(directory / name) if name.endswith(".zip") else "ab" * 32
+                for name in assets.expected_assets(TAG)}
+        checksum_file = directory / "SHA256SUMS.txt"
+        checksum_file.write_text("".join(f"{digest}  {name}\n" for name, digest in sorted(sums.items())), encoding="utf-8")
+        output = winget_manifest.render(TAG, directory, self.root / "manifests")
+        self.assertEqual(len(list(output.glob("*.yaml"))), 3)
+        installer = (output / "WhiteKiwi.locron.installer.yaml").read_text(encoding="utf-8")
+        self.assertNotIn("Scope:", installer)  # Portable scope comes from the documented CLI flag.
+        self.assertIn("MinimumOSVersion: 10.0.22000.0\n", installer)
+        for target in windows.TARGETS:
+            name = f"locron-{TAG}-{target}.zip"
+            self.assertIn(f"InstallerSha256: {sums[name].upper()}", installer)
+            self.assertIn(f"InstallerUrl: https://github.com/WhiteKiwi/locron/releases/download/{TAG}/{name}", installer)
+            self.assertIn(f"RelativeFilePath: locron-{TAG}-{target}/locron.exe", installer)
+        if WINGET_VALIDATE:
+            subprocess.run(["winget", "validate", "--manifest", str(output), "--disable-interactivity"],
+                           check=True, timeout=120)
+        with self.assertRaises(FileExistsError):
+            winget_manifest.render(TAG, directory, output)
+        with self.assertRaises(ValueError):
+            winget_manifest.render("v0.9.6", directory, self.root / "old-manifests")
+        sums[f"locron-{TAG}-{TARGET}.zip"] = "00" * 32
+        checksum_file.write_text("".join(f"{digest}  {name}\n" for name, digest in sorted(sums.items())), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            winget_manifest.render(TAG, directory, self.root / "bad-manifests")
+        self.assertFalse((self.root / "bad-manifests").exists())
 
 
 if __name__ == "__main__":

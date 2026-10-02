@@ -6,6 +6,38 @@ This document defines the official versioning, release, CI/CD, packaging, and di
 
 ---
 
+## Planned Windows distribution gates
+
+The Windows support milestone adds native x64/ARM64 ZIPs starting at `v0.10.0`. Earlier releases
+retain their exact historical Unix asset inventories. A Windows release adds exactly the two
+`*-pc-windows-msvc.zip` archives, `install.ps1` and `uninstall.ps1`; the ZIP contains its exact
+version/target directory with `locron.exe`, `README.md`, `LICENSE-MIT` and `LICENSE-APACHE`.
+`SHA256SUMS.txt` covers the final payload archives/packages with bare filenames. Immutable
+publication additionally checks the installer asset digests; reruns never replace changed bytes.
+
+The first Windows release is unsigned. Windows signing remains a deferred milestone; existing
+macOS signing/notarization remains required.
+Windows release builds use Rust 1.94 and explicit native MSVC targets with `crt-static`; PR CI
+verifies native compiler identity, PE architecture, no certificate table, normal/delayed system
+DLL imports and `--version` with system-only PATH. Native package verification is retained as an
+artifact. Clean Windows 11 standard-user install/run/update/uninstall gates are still required;
+hosted images alone cannot prove absence of separately installed redistributables.
+
+Maintainers generate proposed WinGet manifests from final ZIPs and their complete published
+checksum inventory, then validate them on Windows:
+
+```powershell
+python -B scripts/render-winget-manifest.py v0.10.0 final-release-inputs winget-manifests --validate
+```
+
+This creates three reviewable schema 1.12 manifests and performs no package install or submission.
+The identifier `WhiteKiwi.locron` remains proposed until namespace availability and community
+acceptance are verified. Final canonical HTTPS URLs, ZIP hashes, native architectures, minimum
+Windows 11 version and relative executable paths must agree. WinGet portable manifests cannot
+enforce user scope; the channel procedure supplies `--scope user`. Package ownership and the
+task maintenance procedure must pass native upgrade/removal acceptance before channel promotion.
+Signing is a separate future milestone and must not be described as authentication for these ZIPs.
+
 ## 1. Versioning Policy
 
 `locron` adheres strictly to **Semantic Versioning 2.0.0** (`MAJOR.MINOR.PATCH`):
