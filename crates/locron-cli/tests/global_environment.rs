@@ -2,12 +2,14 @@
 
 //! End-to-end global environment and executable-resolution contracts.
 
+use std::io::Read as _;
+use std::ops::{Deref, DerefMut};
 use std::os::unix::fs::PermissionsExt;
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use locron_store::{DaemonLock, Store};
+use locron_store::{LockMetadata, Store};
 
 fn locron(state: &tempfile::TempDir) -> Command {
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("locron"));
@@ -25,20 +27,98 @@ fn successful_output(command: &mut Command) -> std::process::Output {
     output
 }
 
-fn start_daemon(state: &tempfile::TempDir) -> Child {
-    let mut child = locron(state)
+struct Daemon(Child);
+
+impl Deref for Daemon {
+    type Target = Child;
+
+    fn deref(&self) -> &Child {
+        &self.0
+    }
+}
+
+impl DerefMut for Daemon {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.0
+    }
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        if self.0.try_wait().is_ok_and(|status| status.is_some()) {
+            return;
+        }
+        let _ = self.0.kill();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if self.0.try_wait().is_ok_and(|status| status.is_some()) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+
+fn lock_metadata_matches_pid(path: &std::path::Path, pid: u32) -> bool {
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut bytes = Vec::new();
+    if file.take(16 * 1024 + 1).read_to_end(&mut bytes).is_err() || bytes.len() > 16 * 1024 {
+        return false;
+    }
+    serde_json::from_slice::<LockMetadata>(&bytes).is_ok_and(|metadata| metadata.pid == pid)
+}
+
+fn startup_diagnostic(stderr: &tempfile::NamedTempFile) -> String {
+    const LIMIT: usize = 8192;
+    let mut bytes = Vec::new();
+    stderr
+        .reopen()
+        .unwrap()
+        .take((LIMIT + 1) as u64)
+        .read_to_end(&mut bytes)
+        .unwrap();
+    let truncated = bytes.len() > LIMIT;
+    bytes.truncate(LIMIT);
+    let mut diagnostic = String::from_utf8_lossy(&bytes).into_owned();
+    if truncated {
+        diagnostic.push_str("\n[stderr truncated]");
+    }
+    diagnostic
+}
+
+fn start_daemon(state: &tempfile::TempDir) -> Daemon {
+    let stderr = tempfile::NamedTempFile::new().unwrap();
+    let child = locron(state)
         .args(["daemon", "run"])
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(stderr.reopen().unwrap())
         .spawn()
         .expect("start daemon");
+    // Establish cleanup before observing so a failed startup assertion reaps this child.
+    let mut daemon = Daemon(child);
+    let lock_path = state.path().join("daemon.lock");
     let deadline = Instant::now() + Duration::from_secs(5);
-    while DaemonLock::try_prove_free(&state.path().join("daemon.lock")).is_ok() {
-        assert!(Instant::now() < deadline, "daemon did not acquire its lock");
-        assert!(child.try_wait().unwrap().is_none(), "daemon exited early");
+    loop {
+        if let Some(status) = daemon.try_wait().unwrap() {
+            panic!(
+                "daemon exited during startup ({status}): {}",
+                startup_diagnostic(&stderr)
+            );
+        }
+        if lock_metadata_matches_pid(&lock_path, daemon.id())
+            && daemon.try_wait().unwrap().is_none()
+        {
+            return daemon;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "daemon did not publish its metadata: {}",
+            startup_diagnostic(&stderr)
+        );
         thread::sleep(Duration::from_millis(20));
     }
-    child
 }
 
 #[test]
