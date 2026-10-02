@@ -114,7 +114,7 @@ fn platform_default() -> Result<PathBuf, StoreError> {
         if !path.is_absolute() {
             return Err(StoreError::StateDirectoryUnavailable);
         }
-        return Ok(path.join("locron"));
+        Ok(path.join("locron"))
     }
     #[cfg(not(windows))]
     {
@@ -148,7 +148,7 @@ pub(crate) fn ensure_private_directory(path: &Path) -> Result<(), StoreError> {
     #[cfg(windows)]
     {
         locron_core::filesystem::DirectoryGuard::private(path)?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(windows))]
     {

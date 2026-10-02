@@ -98,7 +98,7 @@ fn valid_token(token: &str) -> bool {
     token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn write_atomic_0600(path: &PathBuf, contents: &str) -> io::Result<()> {
+fn write_atomic_0600(path: &std::path::Path, contents: &str) -> io::Result<()> {
     let root = path.parent().expect("token path always has a parent");
     let _guard = locron_core::filesystem::DirectoryGuard::private(root)?;
     let temporary = root.join(format!(
