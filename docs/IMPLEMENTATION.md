@@ -1573,6 +1573,20 @@ effect, callback count or ownership authority and never replace live existing-on
 The persistence plan exposes that maximum record byte count and finite callback ceilings for R
 frozen roles: quiesce <=4R+2, restore <=4R+2, remove <=2R+2. These include per-effect intent/result,
 forced-stop facts and initial/terminal records; retries/polling do not append unbounded snapshots.
+
+Qualify the accepted pure record ABI before admitting its pending effectful provider. In the
+intermediate integration, compile windows_record only under Windows test configuration and omit
+its production reexports; normal CLI builds gain no unused provider or synthetic consumer.
+Run its strict decode, complete-capacity, exact-origin/full-ID and one-step successor fixtures
+through the serial native service unit harness on x64, ARM64 and Windows MSRV. Add an actual
+private owned-file binding fixture using retained existing no-follow guards and the complete
+volume/file identity, then strictly round-trip a zero-role snapshot for the verified current SID.
+Assert the real phase/quiesced readbacks on the existing forward walks; do not suppress unused
+code or add throwaway production calls. Verify normal production lint has no record exposure,
+the native record filter actually runs every pure fixture and the owned binding distinguishes
+equal bytes on a different object. Qualification of these pure facts never claims COM effects,
+activation, fresh registration, rollback or live ownership; production wiring awaits those consumers.
+
 Distribution must reserve all repeated service records, frame overhead, file/receipt/inventory
 transitions and the worst rollback path against 128 frames/16 MiB before any task, registry or
 file mutation. Reserve the actual validated remaining path again at recovery entry. Failure to
