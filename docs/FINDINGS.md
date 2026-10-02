@@ -3344,6 +3344,37 @@ inside spawn_with after wrapper pre_spawn hooks. Core's local factory should pre
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject
 policy unsuspended for resume after both enrollments. Capture the mask at real spawn rather than
 treating a configured wrapper or CONOUT$ device availability as complete visibility evidence.
+### Task Scheduler phase transport and callback bounds (2026-10-03)
+
+Measured stock PowerShell starts can consume about twenty-two seconds on hosted ARM64 even for
+small structured input. Reopening a helper per semantic read/disable/poll cannot preserve a
+shared thirty-second lifecycle budget. Select a phase-scoped fixed COM dispatch child, holding
+the existing generic permit only during that phase and closing it before updater PATH/WinGet
+generic reads. A persistent filesystem child uses the other existing slot; this does not create
+a third stock helper or change the fixed filesystem/generic source contracts.
+
+Rust std::io::pipe is stable since 1.87 and supplies safe child Stdio ends within the 1.94 MSRV.
+Its read/write operations can block and EOF requires every writer copy to close. Therefore the
+approved engine OwnedChild can retain native Job ownership while three fixed I/O workers handle
+the external pipe ends; no mutable child escape is necessary. EOF or a completed pipe write is
+not a root/descendant exit fact. A synchronous journal callback can also block, so the selected
+phase driver requires an owned Send+'static callback and quarantines unfinished I/O/guard/Job
+ownership at the deadline rather than claiming cancellation or waiting indefinitely to join.
+
+Scheduler generates a distinct RunningTask.InstanceGuid for each activation, and RunningTask.Stop
+stops that instance. Its object is not an exclusive registration lock: validate the current-SID
+security descriptor and semantic definition before each effect and reconcile a timed-out RPC as
+uncertain. GetInstances is limited by caller security context, consistent with current-SID/LUA
+registrations but not proof of all privileged tasks. Only fixed-name owned registrations are
+in scope; engine PID and missing collection entries alone never prove Locron role exit.
+
+Sources: [Rust 1.94 pipe implementation](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/io/pipe.rs),
+[safe anonymous pipe contract](https://doc.rust-lang.org/std/io/fn.pipe.html),
+[task-instance identity](https://learn.microsoft.com/en-us/windows/win32/taskschd/runningtask-instanceguid),
+[exact instance Stop](https://learn.microsoft.com/en-us/windows/win32/taskschd/runningtask-stop),
+[instance visibility](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-getinstances),
+[task security descriptor](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-getsecuritydescriptor),
+[CreateProcessW command-line limit](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw).
 
 Select the same fixed stock Windows PowerShell 5.1 adapter using the supported scripting COM
 interface `New-Object -ComObject Schedule.Service`, `Connect()`, `NewTask(0)`, root-folder
@@ -3421,8 +3452,9 @@ likewise propagated exit 17 and E_FAIL (-2147467259), respectively, without a re
 bound. Each task was disabled and deleted after marker verification. Changing the trigger or
 returning a failing HRESULT did not establish unexpected-role-exit restart. Microsoft's protocol
 specification describes RestartOnFailure in terms of unmet start conditions or failure to start
-an action, a narrower description than the general API overview. Keep native action-launch retry
-settings, but do not claim they supervise ordinary completed role exits. A reviewed owned retry
+an action, a narrower description than the general API overview. The later one-owner corrective
+contract above supersedes the initial native action-launch retry settings with Count=0; neither
+probe proves ordinary completed role retries. A reviewed owned retry
 supervisor/cancellation lifetime and actual-role-exit diagnostics remain prerequisites; a bare
 PowerShell sleep loop would leave an uncontrolled gap after the child's activation lock exits.
 Source: [MS-TSCH RestartOnFailure](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tsch/2ff4aa5a-7bc4-449f-bbb1-27475645867f).

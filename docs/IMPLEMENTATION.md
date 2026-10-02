@@ -843,11 +843,12 @@ and lifecycle completion still requires the corresponding daemon/dashboard lock 
 
 Use stock PowerShell Schedule.Service COM with structured inputs/output, deterministic SID/state/
 role task names, current SID LogonTrigger, INTERACTIVE_TOKEN, LUA, no password, and create/update
-registration. Set PT0S execution limit, no battery/idle/network gates, IgnoreNew, and bounded
-RestartOnFailure (three retries, PT1M). Definitions use absolute ExecAction path and correctly
+registration. Set PT0S execution limit, no battery/idle/network gates, IgnoreNew, and disabled
+RestartOnFailure (Count=0/no interval); the reviewed native owner supplies three PT1M retries.
+Definitions use absolute ExecAction path and correctly
 escaped state/role arguments. Read semantic settings/status rather than localized schtasks text.
 Preserve enabled/disabled role state on refresh; run roles directly or use a fixed hidden launcher
-that waits and propagates exit status so restart works. Task.Stop is a documented hard fallback
+that waits and propagates the exact exit status. Task.Stop is a documented hard fallback
 after cooperative timeout, with kill-on-close/recovery behavior, not graceful-drain evidence.
 
 Registered `daemon run --service-mode` first acquires the private daemon.activation.lock and its
@@ -1021,6 +1022,85 @@ owned locks/processes exit while disabled registrations stay disabled. Actual Sc
 exit/PID and task state must not be confused with daemon ownership or graceful exit.
 
 Windows registration uses the shared full-file-identity/SID digest for role-specific task names.
+
+### Phase-scoped Task Scheduler transport and persistence ownership
+
+Use one explicit owned Schedule.Service session per snapshot, quiesce, restore or remove phase.
+Each session runs one fixed stock PowerShell 5.1 dispatch loop, not a new process per COM call.
+Do not cache it globally or retain it across updater registry/PATH/WinGet work. Snapshot closes
+and confirms its helper before returning the pure preflight input; quiesce closes before returning
+QuiescedServices; restore/remove open fresh sessions and close before returning. State-root guards
+and frozen semantic registration facts remain live independently of that transport. Registration
+guards mean current-SID ACL proof plus a complete semantic compare before each effect; COM has
+no exclusive registration handle, and holding an old COM object is not replacement protection.
+
+The core Windows adapter exposes a narrow ScriptWorkerPermit acquired against the phase's
+absolute deadline. Hold the existing single generic permit throughout COM helper ownership,
+including confirmed cleanup or quarantine; never acquire another generic permit from that owner.
+This retains the ceiling of one filesystem child plus one generic-or-COM child per CLI process.
+All non-COM generic reads happen before opening or after confirmed session close. Journal callbacks
+perform typed serialization and Rust private-handle writes only, with no PowerShell/COM/registry
+calls. Filesystem dispatch uses its separate slot and remains available. An unconfirmed session
+refuses the phase and retains its permit/guards; it does not continue to final PATH/WinGet reads.
+
+Reuse the engine's approved OwnedChild with ChildWindow::Hidden, exact stock executable and
+NoLogo/NoProfile/NonInteractive/EncodedCommand; remove PSModulePath, change no execution policy.
+Configure the child Stdio with safe std::io::pipe child ends, available before the Rust 1.94 MSRV.
+No raw mutable child or newly public output-pipe capability is needed. The phase owner retains
+the suspended-before-resume Job and confirmed spawn result before sending private requests.
+Three fixed I/O threads own the parent stdin/stdout/stderr ends. Each has a finite channel; one
+command is active at a time, input is at most 64 KiB, each output frame and total diagnostic stderr
+are at most 128 KiB. Read/write concurrently, recognize the cap at limit+1 without EOF, and never
+spawn a waiting thread per request. A single phase worker owns the native child/Job and the exact
+state/executable guards through close. Pipe EOF is not root/tree proof; join only finished I/O
+workers after actual root reaping plus an empty Job, within the remaining phase deadline.
+
+The fixed COM script uses only reviewed selectors for inventory/read/create/refresh/enable/run/
+stop-exact-instance/delete and structured version/monotonic-ID/owned-PID input/replies. Reject
+unknown fields/selectors, mismatched IDs/PIDs, malformed or oversized frames and unexpected extra
+replies. Caller paths and task arguments are data; only compiled fixed source reaches EncodedCommand.
+The new loop uses the already selected absolute stock Utility import and qualified JSON commands
+with module autoload disabled; it does not change the existing generic adapter's unqualified
+converter or assert Restricted-policy acceptance. A stock policy refusal remains explicit, with
+no fallback, policy change or mutation replay. Check every task's current owner/protected ACL,
+complete expected semantic definition and enabled transition immediately before its effect.
+Task registration/start/stop timeout can leave a Scheduler effect in flight outside the helper
+Job; saved intent and live readback determine recovery, never automatic replay or fabricated exit.
+
+Capture one absolute thirty-second caller deadline at phase entry, including admission, cold
+guard/SID verification, spawn, callback persistence, COM requests, role-control/lock observations
+and session teardown. Core permit admission and every request accept that existing deadline,
+with no fresh timeout per action. Before each new native or I/O operation and after every ready
+response, check cancellation/expiry. The caller driver refuses at expiry without joining an
+unfinished owned worker. That worker quarantines its retained guard/Job/permit, sends no next
+mutation or callback after a late completion, and never treats emergency Job close as confirmed
+cleanup. This is a bounded refusal; already queued COM/file I/O may still complete later.
+
+The persistence callback is owned, Send + 'static, and moves into this phase worker; an arbitrary
+borrowed synchronous callback cannot be made time-bounded by an outer timer. Distribution supplies
+an owned journal writer or an Arc to its serialized writer, and on an unconfirmed phase returns
+pending/refusal without blocking on that writer, appending another frame, or attempting rollback
+behind still-live guards. Normal phase completion returns only after all admitted callbacks and
+owned helper teardown are confirmed. Preserve the already frozen complete-record/count capacity
+plan and before-effect intent/result ordering. No additional retry/failure callbacks are admitted
+past expiry, and no background phase may start another helper or task after refusal.
+
+Before creating or changing any task, validate the exact encoded action's Windows command-line
+length against the native 32,767-UTF-16-unit ceiling, including executable and terminator. The
+4,096-unit maintenance path ceiling does not promise that every pair of maximum-sized paths can
+fit the nested transport; an oversized complete action refuses with zero task effects.
+
+Verify: (1) actual cold COM inventory plus multiple semantic reads reuse one owned PID under one
+entry budget; concurrent generic use remains within the two-child ceiling, and snapshot/quiesce/
+restore closure permits subsequent real registry/PATH reads without self-deadlock. (2) stalled
+startup/stdin/output/COM/callback and a ready response crossing expiry refuse under one deadline,
+retain quarantine, send no later effect/callback and never replay a mutation. Wrong-ID/extra/
+oversized frames and abrupt parent exit preserve Job containment and honest pending recovery.
+(3) private Unicode/quote/backslash paths round-trip exact argv, action length overflow refuses
+before task creation, changed task definitions/ACLs refuse before effects, and forced stopping
+addresses only the unchanged RunningTask.InstanceGuid. Confirm actual role/activation locks and
+task-instance exit independently; instance state, engine PID or helper EOF cannot substitute.
+
 Select a fixed hidden stock PowerShell 5.1 launcher: `-EncodedCommand` carries only static source,
 and `-EncodedArguments` carries a serialized CLIXML array containing one base64 JSON request.
 The launcher validates the current SID and uses ProcessStartInfo with UseShellExecute=false,
