@@ -660,7 +660,8 @@ mod windows {
             )?;
         }
         verify_private(&file, &path, false)?;
-        if !protected_descriptor(&descriptor(&file)?)? {
+        let security = descriptor(&file)?;
+        if !protected_descriptor(&security)? {
             return Err(unsafe_path(&path));
         }
         let information = winapi_util::file::information(&file)?;
