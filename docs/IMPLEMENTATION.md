@@ -1940,6 +1940,11 @@ Native safe-crate, ACL, mapped-holder, competing-leaf and crash-phase fixtures o
 must pass before this candidate adapter enables support; the x64 OS primitive rehearsal in FINDINGS
 is narrower evidence. Write-through and sync_all provide OS flush guarantees, not an unconditional
 promise against storage hardware or filesystem failure.
+Distribution filesystem fixtures retain a unique disposable TempDir only as a cleanup container.
+Guard its existing ancestry, create a private child through DirectoryGuard::private, retain the
+child guard and use its normalized_path for every fixture object. Assert the actual current-SID
+owner/protected descriptor through is_private before exercising the operation. Do not assume the
+container's inherited owner, repair that container, or weaken production checks for runner paths.
 
 WinGet uses WhiteKiwi.locron, user-scoped ZIP/portable installers and the same immutable ZIP hashes,
 with architecture-specific nested executable paths and the locron command alias. The receipt-free

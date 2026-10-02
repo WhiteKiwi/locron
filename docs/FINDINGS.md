@@ -4145,3 +4145,24 @@ a differently configured shell before exposing the native commands.
 
 Sources: [literal and expandable registry value kinds](https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.registryvaluekind?view=netframework-4.8.1),
 [locked clap argument value provenance](https://github.com/clap-rs/clap/blob/13f2db5072d600c11d8d6298e4e9ba53ffc6c1ab/clap_builder/src/parser/matches/value_source.rs).
+
+### Native distribution fixture root ownership (2026-10-03)
+
+The exact PR #44 package run at eff2c19 built both native archives, then failed thirteen
+distribution fixture setups on each architecture at restrict_owned(temp.path(), true).
+The failure paths used RUNNER~1, but the logs did not establish that spelling as the cause.
+The source explicitly refuses repair when the object's owner is not the current SID; a
+disposable TempDir's inherited ownership is therefore not an acceptable setup assumption.
+These failures preceded journal, bootstrap, source-ownership and replacement assertions.
+
+Use the existing core fixture approach: retain a unique TempDir for cleanup, guard its existing
+ancestry, create a missing private child through DirectoryGuard::private, and use that child's
+normalized_path for all test objects. Retain the child guard and assert is_private(path, true),
+which verifies the actual current-SID owner and protected private descriptor. Do not repair or
+adopt the inherited TempDir, loosen production ownership/ancestry predicates or bypass a guard.
+This corrects fixture setup; all mapped-image, backup, unknown-leaf and crash checks still need
+actual native execution on both architectures.
+
+Evidence: [x64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37058613767/job/111009366048),
+[ARM64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37058613767/job/111009366093),
+[reviewed core guard and native private-root fixture](https://github.com/WhiteKiwi/locron/blob/eff2c19b78ddc9c7f80848c76e7eb4eee56e3b76/crates/locron-core/src/filesystem.rs).
