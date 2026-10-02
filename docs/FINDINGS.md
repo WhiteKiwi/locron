@@ -2851,6 +2851,37 @@ Sources: [File ACL read](https://learn.microsoft.com/en-us/dotnet/api/system.io.
 [Directory ACL read](https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.getaccesscontrol?view=netframework-4.8.1),
 [Directory ACL write](https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.setaccesscontrol?view=netframework-4.8.1).
 
+### Generic adapter failure visibility (2026-10-03)
+
+The exact PR41 c919530/run 37053606277 ARM64 core gate still passes 69/70 after the two
+compiled .NET ACL-fixture setup changes. That result does not establish a Security-module cause
+or resolve the separate generic adapter. Fixed-worker cold SID and concurrent first-use gates
+pass on this revision. The generic adapter still reads EOF and calls unqualified ConvertFrom-Json;
+its caller scripts generally call unqualified ConvertTo-Json, unlike the explicitly bound fixed
+filesystem dispatcher. Stock startup, JSON command discovery/binding and the caller operation
+remain separate possible delays until this actual adapter reports fixed child phases.
+
+PR43 cb5074a/run 37055608817 has a different mapping fixture failure on all three native rows
+(90/91 core tests pass). The x64 job 110999439152 reports NotFound at filesystem.rs:998. Direct
+line-number inspection of this exact commit places that assertion at marker.unwrap(); the release
+write is line 996, but its independent result and temporary ancestry must also be retained. The
+fixture currently asserts its marker before inspecting its joined helper result, so the hosted
+log does not disclose whether setup failed, timed out, or never created the marker. Do not label
+this a generic timeout or a mapped-file protection failure from that assertion alone.
+
+PowerShell 5.1 documents explicit module-path imports, restricted imported member sets and
+module-qualified command lookup. The existing Utility manifest includes a nested .psm1 as well
+as its binary module; Cmdlet/Function filters do not prove that Restricted can load the manifest.
+Audit a generic converter binding separately from its measured phase cause, keep all existing
+static caller commands working, and require hosted process-only stricter-policy/forged-module
+fixtures before claiming that the native installation path works under Restricted. No production
+policy change, bypass, warm-up or local rejected rehearsal is permitted.
+
+Sources: [PR41 ARM64 failure](https://github.com/WhiteKiwi/locron/actions/runs/37053606277/job/110992744736),
+[PR43 x64 mapping fixture](https://github.com/WhiteKiwi/locron/actions/runs/37055608817/job/110999439152),
+[PowerShell 5.1 Import-Module](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/import-module?view=powershell-5.1),
+[PowerShell execution policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development

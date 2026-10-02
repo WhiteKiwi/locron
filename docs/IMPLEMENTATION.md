@@ -291,6 +291,31 @@ repair, then has real current-SID/SYSTEM privacy. (3) real generic startup/stall
 fixed-worker cold/concurrent phase tests still execute without a warm-up, retry, skipped test or
 budget increase; setup failure stays a visible failure rather than a passing privacy assertion.
 
+Instrument the actual generic adapter separately from the fixed filesystem dispatcher. Add only
+cfg(test) fixed child tokens for source entry, encoding, complete stdin read, JSON conversion
+entry/completion, caller entry/completion and catch. Retain a bounded recognized-token trace while
+stderr is read, and report it on actual adapter failure even when timeout cancels its pipe task.
+Do not render request/SID/path/payload values or promote unknown stderr into phase facts. Preserve
+production source/JSON binding, the per-entry thirty-second deadline, separate three-second owned
+cleanup, 64 KiB input and 128 KiB per-output bounds, permit accounting and original cold ordering.
+Explicit stock Utility binding is a researched next candidate, not a measured generic root cause
+or an approved production switch in this diagnostic step. A stricter-policy candidate must be
+tested only in an owned hosted child; production and host policy remain unchanged.
+
+The mapping fixture must attempt release and join its helper before any assertion, preserve the
+independent marker, release, helper and test-owned ancestry observations, and inspect the joined
+helper error before an absent-marker assertion can hide it. Stop waiting when the helper already
+exited; this shortens failure reporting without changing either adapter budget or mapped-handle
+acceptance. Never turn a missing marker into a passing mapped-file assertion.
+
+Verify: (1) original native ARM64 broad-file cold failure now identifies the actual generic child
+phase under the same thirty-plus-three bound without warming/replaying state creation. (2) the
+mapping fixture reports its actual setup/stall error and independent temporary-parent status after
+owned cleanup, or proves a writable mapping still rejects the stable read gate after the original
+FileStream closes. (3) isolated successful generic calls emit ordered fixed phases, malformed/
+oversized/stalled calls keep both caps and confirmed cleanup, and hostile module paths/stricter
+policy remain explicit pending acceptance until an actual reviewed binding fixture proves them.
+
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable
