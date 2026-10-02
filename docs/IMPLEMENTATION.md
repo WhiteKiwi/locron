@@ -644,6 +644,50 @@ composition path. Preserve Unix permission/open semantics. Native fixtures inspe
 absent root before and after each passive operation, verify NotFound/None/idempotent deletion,
 and prove that the separate writable first-run path still creates correctly owned state.
 
+Read-only SQLite needs a retained leaf boundary in addition to existing-only directory guards:
+SQLITE_OPEN_READ_ONLY alone may create WAL/SHM in a writable private directory. On Windows,
+first try a narrow open_private_read_stable helper using an existing private parent and regular
+no-reparse file, GENERIC_READ and FILE_SHARE_READ only. Validate the private descriptor on that
+exact retained handle; deny existing/future database write and delete sharing, with no repair.
+Only explicit native sharing violations permit the live-read fallback; ownership, path and
+other errors stay immediate. A complete existing validated WAL/SHM pair also selects ordinary
+WAL reads even when the stable main-file open succeeds. When that stable handle succeeds and WAL,
+SHM and rollback journal
+are all absent under the guarded root, hold it for the whole read connection and use immutable=1.
+This is a closed-database choice backed by the live write exclusion, not a way to ignore committed
+WAL data. A present journal or incomplete sidecar pair is never discarded or treated as immutable.
+
+For an active database, retain existing private no-delete-sharing read handles for the database,
+WAL and SHM while permitting ordinary writer access. Require both sidecars to exist and validate
+their current-SID/private descriptors before SQLite opens. Refuse a missing/unsafe sidecar rather
+than creating, preinitializing or taking it over; callers can retry through their normal flow.
+Open ordinary read-only SQLite with locking/change detection and the existing five-second busy
+timeout, retaining its ability to see later WAL commits. Keep all retained leaves until after
+SQLite closes so the last writer cannot unlink/recreate a sidecar in the validation/open gap.
+Ordinary SQLite shared-memory bookkeeping can still modify existing SHM bytes; the passive
+contract is no state/sidecar creation, deletion, permission repair or migration. Retention can
+leave the already existing WAL/SHM for a later writable close to clean up. Native proof must
+confirm durable writer close and accurate reads across that transition before acceptance.
+
+Enable SQLITE_OPEN_URI only for an internally constructed immutable URI. Percent-encode every
+byte of the exact guarded UTF-8 Windows path after file:, including the verbatim prefix; append
+only fixed mode=ro&immutable=1 parameters and select the bundled win32-longpath VFS explicitly.
+Reject NUL or non-UTF-8 paths rather than changing their identity. The audited bundled URI parser
+decodes escaped bytes directly without treating escaped query characters as options; the native
+Windows long-path VFS preserves that filename through its wide-character open. Validate SQLite's
+reported database filename against the retained full object identity before admitting reads.
+Keep this adapter Windows-only and preserve Unix connection semantics and immutable migrations.
+
+Native Verify: (1) a closed database with no sidecars, including a greater-than-260-character
+Unicode/percent/hash path, returns the committed rows and remains free of WAL/SHM/journal creation;
+new writable opens and a preexisting writable mapping refuse the stable gate until its release.
+(2) an ordinary live reader sees uncheckpointed and later committed WAL rows; concurrent final
+writer close cannot replace sidecar identities/owners, closes durably, and a subsequent writable
+open/close cleans up the retained original sidecars after reader release. (3) missing roots,
+partial/foreign-owned/broad sidecars and close/open races either produce accurate committed rows
+under the verified boundary or refuse without state/ACL mutation; no immutable live fallback or
+unexpected sidecar recreation is accepted. Record these as native evidence, not source-only proof.
+
 During the build-foundation stage, unimplemented Windows permission changes fail with an explicit
 unsupported-capability error, and permission diagnostics report `unsupported`. Compilation alone
 must never turn a no-op permission adapter or a numeric placeholder into an owner-only fact.

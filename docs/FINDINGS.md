@@ -3076,6 +3076,40 @@ period on every supported backend. Keep production cutoff overflow refusal uncha
 
 Source: [Rust 1.94 Windows SystemTime checked conversion](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/pal/windows/time.rs).
 
+### Existing-only read-only SQLite boundary (2026-10-03)
+
+SQLite documents that a read-only WAL connection is possible when both sidecars already exist,
+when its directory permits their creation, or when the database is immutable. Therefore merely
+omitting SQLITE_OPEN_CREATE does not establish a no-sidecar-creation observer. WAL can contain
+committed data absent from the main file, and the last connection normally checkpoints and
+removes WAL/SHM. Immutable connections skip locking/change detection and can return incorrect
+results if their file changes. A retained write-excluding main-file gate plus confirmed absence
+of every journal is needed before choosing immutable; live reads must retain validated existing
+sidecars and continue normal WAL locking. These are implementation inferences from the documented
+behavior, with native concurrent close/write evidence still required.
+Sources: [SQLite read-only WAL and lifecycle](https://sqlite.org/wal.html#read_only_databases),
+[immutable URI behavior](https://sqlite.org/uri.html).
+
+The exact cached libsqlite3-sys 0.38.2 bundle is SQLite 3.53.2. Inspection of its sqlite3.c finds
+sqlite3ParseUri decoding percent escapes into filename bytes before VFS admission; escaped query
+characters remain filename bytes, while an escaped NUL can terminate the pathname. winOpen uses
+GENERIC_READ for read-only files and FILE_SHARE_READ|FILE_SHARE_WRITE; win32-longpath is registered
+with the wide Windows open and longer pathname bound. Native winFullPathname keeps the verbatim
+prefix outside its separate Cygwin branch. Preserve the exact guarded UTF-8 filename by encoding
+every byte in the internal file: URI, reject NUL/non-UTF-8, and select that bundled VFS. A general
+URL conversion that drops the verbatim prefix does not prove the greater-than-260-character path.
+Sources: cached libsqlite3-sys 0.38.2 sqlite3/sqlite3.c, sqlite3ParseUri/winOpen/winFullPathname/
+winLongPathVfs; [SQLite URI options and UTF-8 decoding](https://sqlite.org/uri.html).
+
+CreateFile sharing rules allow a retained read handle to exclude subsequent write/delete opens;
+an incompatible existing writer or mapping must refuse it. SQLite's normal WAL close path ignores
+the unlink return after checkpoint, so retained no-delete sidecar handles may leave existing
+files for a later writable cleanup. This does not prove native durability by inspection: test
+actual commit visibility, final writer close, sidecar identities, and subsequent cleanup before
+claiming a passive read-only path. No missing sidecar is automatically repaired for a reader.
+Sources: [CreateFileW sharing rules](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+cached bundled sqlite3.c sqlite3WalClose/winShmUnmap.
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
