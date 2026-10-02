@@ -1834,7 +1834,17 @@ accepted/quiescing/replacing/restoring/completed/prepared/removed/failed/rolled_
 verified backup inventory and full original/created volume-and-file identities. Use the actual
 service::ServiceRestoreRecord type for all-task lifecycle state, including its strict version,
 original task fingerprints and confirmed quiescence; arbitrary JSON and saved task source cannot
-authorize task effects. The first flushed frame contains the complete original lifecycle snapshot
+authorize task effects. Preflight the complete serialized original lifecycle snapshot and reserve
+the worst-case frame count and bytes for all quiesce callbacks, forward file/receipt/registration
+transitions and rollback before any task, registry or file mutation. Count encoded frame overhead
+and repeated snapshot/inventory fields, using bounded maximum representations for not-yet-created
+identities and other future fields. A reservation must cover the entire operation, not only its
+next append or successful path. An oversized snapshot or unprovable remaining budget refuses with
+zero effects; do not raise limits, truncate the snapshot or begin disabling tasks to discover its
+size. The service adapter's 256-binding limit is a ceiling, not a promise that every such inventory
+fits this distribution journal. Revalidate and reserve against the actual validated record at
+each resumed-operation entry before another effect. The first flushed frame contains the complete
+original lifecycle snapshot
 and durable verified backups before any disable/delete; later frames record each delete intent
 and every newly created identity before bytes are written. sync_all must succeed before the next
 effect. Frame/size exhaustion, flush uncertainty, a truncated/corrupt tail or an unknown created
