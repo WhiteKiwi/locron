@@ -57,6 +57,10 @@ mod windows_ownership;
 #[path = "windows_bootstrap.rs"]
 mod windows_bootstrap;
 
+#[cfg(all(windows, test))]
+#[path = "windows_package_ownership.rs"]
+mod windows_package_ownership;
+
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";
