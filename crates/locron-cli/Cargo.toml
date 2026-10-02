@@ -43,6 +43,9 @@ unicode-width = "0.2"
 url.workspace = true
 uuid.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
+
 [dev-dependencies]
 assert_cmd = "2.1"
 predicates = "3.1"

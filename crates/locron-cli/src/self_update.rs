@@ -23,6 +23,12 @@ use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+// The native verifier is exercised before the Windows helper is integrated.
+// Keep the existing updater inaccessible to Windows installations in this slice.
+#[cfg(all(windows, test))]
+#[path = "windows_package.rs"]
+mod windows_package;
+
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";
