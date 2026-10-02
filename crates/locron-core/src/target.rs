@@ -436,21 +436,28 @@ mod tests {
 
     #[test]
     fn process_and_shell_reject_nul_before_persistence() {
-        assert!(
+        assert_eq!(
             Target::Process {
-                executable: "/usr/bin/printf".into(),
+                executable: std::env::current_exe()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
                 args: vec!["bad\0argument".into()],
             }
             .validate()
-            .is_err()
+            .unwrap_err()
+            .code,
+            "invalid_argument_vector"
         );
-        assert!(
+        assert_eq!(
             Target::Shell {
                 command: "bad\0command".into(),
-                shell: "/bin/sh".into(),
+                shell: crate::execution::default_shell().unwrap(),
             }
             .validate()
-            .is_err()
+            .unwrap_err()
+            .code,
+            "invalid_shell"
         );
     }
 }
