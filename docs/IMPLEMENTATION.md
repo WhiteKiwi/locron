@@ -1240,6 +1240,18 @@ raw stdout/stderr, immediate descendant creation, root-first exit, cancellation,
 kill-on-close without Git Bash or an installed scripting runtime. Signal-number/Unix process-group
 assertions remain Unix-specific; equivalent Windows tests prove owned Job tree behavior.
 
+Intentional native orphan/crash fixtures transfer each spawned descendant's process handle with
+the safe `From<std::process::Child> for OwnedHandle` conversion into a shared test-only helper,
+capturing its PID first when the fixture needs a marker. Retain the typed handle during the
+intended fixture phase; ordinary scope exit closes that handle without waiting or terminating,
+and abrupt parent exit lets Windows close it. Do not add a waiter, kill-on-drop helper, raw-handle
+leak or lint exemption: those would alter the root-first/abandonment scenario or obscure ownership.
+Ordinary tree/branch fixtures still wait normally. Verify the existing native contracts: a reaped
+root with a live descendant cannot confirm completion, releasing that descendant allows success,
+hard stop confirms root plus empty Job and stops its heartbeat, and runner cancellation/timeout/
+kill-on-close preserve whole-tree termination. Native lint and the x64/ARM64/MSRV suites must pass
+with the same assertions and deadlines.
+
 The TLS trust fixture uses the already-locked tokio-rustls =0.26.4 with an explicit AWS-LC provider
 and repository test-only self-signed DER certificate/key. It never installs a certificate into a
 trust store, invokes external OpenSSL, or changes production trust policy. All architectures verify

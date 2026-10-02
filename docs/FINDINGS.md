@@ -2649,6 +2649,19 @@ Sources: [process-wrap v10.0.1 manifest](https://github.com/watchexec/process-wr
 [job inheritance, breakaway, kill-on-close and WMI exception](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
 [nested process-list semantics](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_process_id_list).
 
+### Intentional native descendant handle ownership (2026-10-03)
+
+The pinned Rust 1.94 standard library has a safe `From<std::process::Child> for OwnedHandle`
+implementation, stable since Rust 1.63. It consumes the child and transfers its Windows process
+handle without waiting or terminating. `OwnedHandle::drop` closes the handle with `CloseHandle`;
+it does not kill or reap a process. This permits test-only root-first/crash fixtures to retain
+typed ownership while preserving their deliberate live descendants. Capture the PID before the
+transfer when required; external retained Job/root observations remain the completion authority.
+Normal fixtures still wait, and no workspace unsafe code or MSRV change is required. Native
+behavior and lint acceptance remain pending after the reported fixture lint failures.
+Sources: [Rust 1.94 Windows process-handle conversion](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/process.rs),
+[Rust 1.94 owned-handle drop](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/io/handle.rs).
+
 ### Private filesystem creation, handle-based ACLs and reparse checks
 
 Use a fixed stock Windows PowerShell 5.1 adapter for initial private-directory creation. Obtain
