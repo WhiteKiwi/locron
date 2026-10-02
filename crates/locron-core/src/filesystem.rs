@@ -987,17 +987,30 @@ mod tests {
                 &input,
             )
         });
-        while !entered.exists() && Instant::now() < deadline {
+        while !entered.exists() && !worker.is_finished() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
         // Always release and join the owned adapter before asserting its observations.
         let marker = fs::read_to_string(&entered);
         let gate = open_private_read_stable(&path);
-        fs::write(&release, b"release").unwrap();
-        let result = worker.join().unwrap();
+        let ancestry = (
+            temporary.path().is_dir(),
+            path.parent().unwrap().is_dir(),
+            path.is_file(),
+            release.parent().unwrap().is_dir(),
+        );
+        let released = fs::write(&release, b"release");
+        let result = worker.join();
+        let result = result.unwrap_or_else(|_| {
+            panic!("mapping helper panicked after release attempt; ancestry={ancestry:?}, release={released:?}, marker={marker:?}");
+        });
+        let result = result.unwrap_or_else(|error| {
+            panic!("mapping helper failed after release/join: {error}; ancestry={ancestry:?}, release={released:?}, marker={marker:?}");
+        });
+        released.unwrap();
         assert_eq!(marker.unwrap(), "original-handle-closed");
         assert_eq!(gate.unwrap_err().raw_os_error(), Some(32));
-        assert_eq!(result.unwrap()["closed"], true);
+        assert_eq!(result["closed"], true);
         assert!(open_private_read_stable(&path).is_ok());
         assert_eq!(&fs::read(&path).unwrap()[..6], b"mapped");
     }
