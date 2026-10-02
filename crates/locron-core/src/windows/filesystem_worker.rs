@@ -708,7 +708,9 @@ mod tests {
     fn queued_expired_request_is_not_sent_and_failures_wake_every_pending_caller() {
         let (sender, mut receiver) = queue::channel(16);
         let mut expired = fixture_request("sid");
-        expired.deadline = Instant::now() - Duration::from_millis(1);
+        expired.deadline = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .expect("fixture monotonic clock has an earlier instant");
         assert_eq!(
             enqueue(&sender, expired).unwrap_err().kind(),
             io::ErrorKind::TimedOut
