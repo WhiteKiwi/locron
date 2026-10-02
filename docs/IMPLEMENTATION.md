@@ -671,6 +671,8 @@ directory-fsync guarantee. Native maintenance fixtures use private managed child
 partial-tail repair, already-renamed/missing recovery, protection of live attempts, retention and
 pending-prune restart, canonical orphan deletion, unsafe-object refusal and bounded reader sharing.
 Run the full maintenance harness on native x64/ARM64/MSRV as well as the existing Unix suite.
+Age orphan fixtures with the observed clock plus two hours, preserving their grace/budget
+assertions without requesting a SystemTime value beyond the Windows representation.
 
 ### Wake, cooperative role control and Task Scheduler
 

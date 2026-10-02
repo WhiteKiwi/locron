@@ -3022,6 +3022,13 @@ Sources: [Rust 1.94 Windows filesystem source](https://github.com/rust-lang/rust
 [CreateFile directory handle requirements](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 [FlushFileBuffers access and volume-flush requirements](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
 
+The old orphan fixtures used i64::MAX/2 epoch microseconds to age files. Rust 1.94's Windows
+SystemTime adds durations as checked signed 100-nanosecond intervals; that fixture timestamp
+cannot be represented. Use the actual fixture clock plus two hours to cross the one-hour grace
+period on every supported backend. Keep production cutoff overflow refusal unchanged.
+
+Source: [Rust 1.94 Windows SystemTime checked conversion](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/pal/windows/time.rs).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
