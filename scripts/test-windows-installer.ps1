@@ -1,0 +1,220 @@
+#requires -Version 5.1
+<# Test-owned fixtures only: no network, live registrations, installs or PATH edits. #>
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+$repository = Split-Path -Parent $PSScriptRoot
+. (Join-Path $repository 'install.ps1')
+
+function Assert-True([bool]$Condition, [string]$Message) {
+    if (-not $Condition) { throw "fixture failed: $Message" }
+}
+function Assert-Refused([ScriptBlock]$Action, [string]$Message) {
+    $refused = $false
+    try { $null = & $Action } catch { $refused = $true }
+    Assert-True $refused $Message
+}
+function Copy-FixtureMetadata($Source) {
+    $copy = [ordered]@{}
+    foreach ($entry in $Source.GetEnumerator()) { $copy[$entry.Key] = $entry.Value }
+    $copy
+}
+function New-PeFixture([int]$Machine = 0x8664, [bool]$Signed = $false) {
+    $bytes = [byte[]]::new(512)
+    $bytes[0] = 0x4d; $bytes[1] = 0x5a
+    [BitConverter]::GetBytes([uint32]128).CopyTo($bytes, 60)
+    [BitConverter]::GetBytes([uint32]0x4550).CopyTo($bytes, 128)
+    [BitConverter]::GetBytes([uint16]$Machine).CopyTo($bytes, 132)
+    [BitConverter]::GetBytes([uint16]1).CopyTo($bytes, 134)
+    [BitConverter]::GetBytes([uint16]240).CopyTo($bytes, 148)
+    [BitConverter]::GetBytes([uint16]0x22).CopyTo($bytes, 150)
+    [BitConverter]::GetBytes([uint16]0x20b).CopyTo($bytes, 152)
+    [BitConverter]::GetBytes([uint32]16).CopyTo($bytes, 260)
+    if ($Signed) { [BitConverter]::GetBytes([uint64]32).CopyTo($bytes, 296) }
+    return ,$bytes
+}
+function New-ZipFixture([string]$Extra = '', [string]$WrongName = '') {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $memory = [IO.MemoryStream]::new()
+    $zip = [IO.Compression.ZipArchive]::new($memory, [IO.Compression.ZipArchiveMode]::Create, $true)
+    try {
+        foreach ($file in @('locron.exe', 'README.md', 'LICENSE-MIT', 'LICENSE-APACHE')) {
+            $name = "locron-v0.10.0-x86_64-pc-windows-msvc/$file"
+            if ($file -ceq 'README.md' -and $WrongName) { $name = $WrongName }
+            $entry = $zip.CreateEntry($name)
+            $stream = $entry.Open()
+            try {
+                $bytes = if ($file -ceq 'locron.exe') { New-PeFixture } else { [Text.Encoding]::UTF8.GetBytes('fixture') }
+                $stream.Write($bytes, 0, $bytes.Length)
+            } finally { $stream.Dispose() }
+        }
+        if ($Extra) { $null = $zip.CreateEntry($Extra) }
+    } finally { $zip.Dispose() }
+    try { return ,$memory.ToArray() } finally { $memory.Dispose() }
+}
+
+$tag = 'v0.10.0'
+$target = 'x86_64-pc-windows-msvc'
+Assert-LocronPe (New-PeFixture) $target
+Assert-LocronPe (New-PeFixture 0xaa64) 'aarch64-pc-windows-msvc'
+Assert-Refused { Assert-LocronPe (New-PeFixture 0x14c) $target } '32-bit executable'
+Assert-Refused { Assert-LocronPe (New-PeFixture 0xaa64) $target } 'wrong native architecture'
+Assert-Refused { Assert-LocronPe (New-PeFixture 0x8664 $true) $target } 'signed initial release'
+Assert-Refused { Assert-LocronPe ([byte[]]::new(12)) $target } 'truncated executable'
+$truncatedSection = New-PeFixture
+[BitConverter]::GetBytes([uint32]100).CopyTo($truncatedSection, 408)
+[BitConverter]::GetBytes([uint32]500).CopyTo($truncatedSection, 412)
+Assert-Refused { Assert-LocronPe $truncatedSection $target } 'section spans outside the executable'
+$archive = New-ZipFixture
+$files = Get-LocronArchiveFiles $archive $tag $target
+Assert-True ($files.Count -eq 4) 'exact ZIP members'
+$localConflict = [byte[]]$archive.Clone()
+$localConflict[30] = [byte][char]'x'
+Assert-Refused { Get-LocronArchiveFiles $localConflict $tag $target } 'conflicting local/central paths'
+$descriptor = [byte[]]$archive.Clone()
+$descriptor[6] = 8
+Assert-Refused { Get-LocronArchiveFiles $descriptor $tag $target } 'data descriptors are refused'
+$trailer = [byte[]]::new($archive.Length + 1)
+$archive.CopyTo($trailer, 0)
+Assert-Refused { Get-LocronArchiveFiles $trailer $tag $target } 'unexpected archive trailer'
+$prefix = [byte[]]::new($archive.Length + 1)
+$archive.CopyTo($prefix, 1)
+Assert-Refused { Get-LocronArchiveFiles $prefix $tag $target } 'unexpected archive prefix'
+foreach ($name in @('../outside', '/outside', 'C:/outside', 'dir\outside',
+    'locron-v0.10.0-x86_64-pc-windows-msvc/README.MD')) {
+    Assert-Refused { Get-LocronArchiveFiles (New-ZipFixture '' $name) $tag $target } 'unsafe member name'
+}
+Assert-Refused { Get-LocronArchiveFiles (New-ZipFixture 'extra') $tag $target } 'extra member'
+Assert-Refused { Get-LocronArchiveFiles $archive 'v0.10.1' $target } 'wrong version directory'
+Assert-Refused { Get-LocronArchiveFiles $archive $tag 'aarch64-pc-windows-msvc' } 'wrong target directory'
+$hash = 'ab' * 32
+$name = 'archive.zip'
+$sums = [Text.Encoding]::UTF8.GetBytes("$hash  $name`n")
+Assert-True ((Get-LocronChecksum $sums $name) -ceq $hash) 'exact checksum'
+Assert-Refused { Get-LocronChecksum ([Text.Encoding]::UTF8.GetBytes("$hash  $name`n$hash  $name`n")) $name } 'duplicate checksum'
+Assert-Refused { Get-LocronChecksum ([Text.Encoding]::UTF8.GetBytes("$hash  ../$name`n")) $name } 'checksum path traversal'
+Assert-Refused { Get-LocronChecksum ([Text.Encoding]::UTF8.GetBytes("$hash  ..`n")) '..' } 'checksum dot component'
+$inventory = @(Get-LocronPayloadInventory $tag)
+Assert-True ($inventory.Count -eq 10) 'exact version-aware Windows payload inventory'
+$completeSums = [Text.Encoding]::UTF8.GetBytes((($inventory | ForEach-Object { "$hash  $_" }) -join "`n") + "`n")
+Assert-True ((Get-LocronChecksum $completeSums $inventory[8] $tag) -ceq $hash) 'complete exact payload checksum inventory'
+$wrongCaseSums = [Text.Encoding]::UTF8.GetBytes([Text.Encoding]::UTF8.GetString($completeSums).Replace('apple-darwin', 'APPLE-DARWIN'))
+Assert-Refused { Get-LocronChecksum $wrongCaseSums $inventory[8] $tag } 'case-mutated unselected checksum payload'
+Assert-Refused { Get-LocronHttps 'http://github.com/WhiteKiwi/locron' } 'HTTP transport'
+Assert-Refused { Get-LocronHttps 'https://example.com/locron' } 'foreign transport'
+foreach ($path in @('relative', '\\server\share\locron', 'C:\locron:stream', 'C:\locron.', 'C:\CON\locron')) {
+    Assert-Refused { ConvertTo-LocronPath $path } 'ambiguous path'
+}
+
+$metadata = ConvertFrom-LocronJson ([Text.Encoding]::UTF8.GetBytes('{"schema":"test","nested":{"value":1}}'))
+Assert-LocronFields $metadata @('schema', 'nested')
+Assert-Refused { Assert-LocronFields $metadata @('schema') } 'unknown JSON field'
+foreach ($json in @('{"schema":1,"schema":2}', '{"schema":1,"Schema":2}',
+    '{"schema":1,"sch\u0065ma":2}', '{"files":{"a":1,"a":2}}', '{"schema":"unterminated}',
+    '{"schema":1/* } { */,"schema":2}', '{schema:1,schema:2}', "{'schema':1,'schema':2}")) {
+    Assert-Refused { ConvertFrom-LocronJson ([Text.Encoding]::UTF8.GetBytes($json)) } 'duplicate/malformed JSON metadata'
+}
+Assert-Refused { ConvertFrom-LocronJson ([byte[]]@(0xff)) } 'invalid metadata UTF-8'
+
+$packageLocation = 'C:\test-only\WinGet\Packages\fixture'
+$packagePath = [IO.Path]::Combine($packageLocation, "locron-$tag-$target", 'locron.exe')
+$packageEntry = [ordered]@{ key = 'test-only-registration'; package_id = 'WhiteKiwi.locron'; installer_type = 'portable'
+    source_id = 'test-only-source'; version = '0.10.0'; install_location = $packageLocation; legacy_path = '' }
+$selected = Select-LocronPackageBinding $packagePath $target @($packageEntry)
+Assert-True ($selected.source_id -ceq 'test-only-source') 'exact portable package/source/path binding'
+Assert-Refused { Select-LocronPackageBinding 'C:\test-only\unowned\locron.exe' $target @($packageEntry) } 'unregistered executable path'
+Assert-Refused { Select-LocronPackageBinding $packagePath $target @($packageEntry, $packageEntry) } 'duplicate package registration'
+$wrongPackage = Copy-FixtureMetadata $packageEntry
+$wrongPackage.package_id = 'Other.Package'
+Assert-Refused { Select-LocronPackageBinding $packagePath $target @($wrongPackage) } 'foreign package identifier'
+$missingSource = Copy-FixtureMetadata $packageEntry
+$missingSource.source_id = ''
+Assert-Refused { Select-LocronPackageBinding $packagePath $target @($missingSource) } 'missing source identifier'
+$oldPackage = Copy-FixtureMetadata $packageEntry
+$oldPackage.legacy_path = [IO.Path]::Combine($packageLocation, 'locron.exe')
+$null = Select-LocronPackageBinding $oldPackage.legacy_path $target @($oldPackage)
+$escapedLegacy = Copy-FixtureMetadata $packageEntry
+$escapedLegacy.legacy_path = 'C:\test-only\foreign\locron.exe'
+Assert-Refused { Select-LocronPackageBinding $escapedLegacy.legacy_path $target @($escapedLegacy) } 'legacy target cannot escape its registered package location'
+
+$sourceDescriptor = [Security.AccessControl.FileSecurity]::new()
+$sourceDescriptor.SetOwner([Security.Principal.SecurityIdentifier]::new((Get-LocronSid)))
+$sourceDescriptor.SetAccessRuleProtection($true, $false)
+$sourceDescriptor.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+    [Security.Principal.SecurityIdentifier]::new((Get-LocronSid)),
+    [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.AccessControlType]::Allow))
+$sourceDescriptor.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+    [Security.Principal.SecurityIdentifier]::new('S-1-1-0'),
+    [Security.AccessControl.FileSystemRights]::ReadAndExecute, [Security.AccessControl.AccessControlType]::Allow))
+Assert-LocronOwnedSourceDescriptor $sourceDescriptor
+Assert-Refused { Assert-LocronDescriptor $sourceDescriptor $true $false } 'package read permissions do not authorize private helper storage'
+$sourceDescriptor.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+    [Security.Principal.SecurityIdentifier]::new('S-1-1-0'),
+    [Security.AccessControl.FileSystemRights]::AppendData, [Security.AccessControl.AccessControlType]::Allow))
+Assert-Refused { Assert-LocronOwnedSourceDescriptor $sourceDescriptor } 'foreign source-file mutation'
+
+$ancestorDescriptor = [Security.AccessControl.DirectorySecurity]::new()
+$ancestorDescriptor.SetOwner([Security.Principal.SecurityIdentifier]::new((Get-LocronSid)))
+$ancestorDescriptor.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+    [Security.Principal.SecurityIdentifier]::new('S-1-3-0'),
+    [Security.AccessControl.FileSystemRights]::FullControl,
+    [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',
+    [Security.AccessControl.PropagationFlags]::InheritOnly, [Security.AccessControl.AccessControlType]::Allow))
+Assert-LocronDescriptor $ancestorDescriptor $false $true
+
+$expectedRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($env:TEMP, 'locron-distribution-fixture-' + [Guid]::NewGuid().ToString('D')))
+$fixtureRoot = $null
+$junction = $null
+try {
+    $fixtureRoot = New-LocronPrivateDirectory $expectedRoot
+    Assert-True ($fixtureRoot -ceq $expectedRoot) 'private root identity'
+    $path = [IO.Path]::Combine($fixtureRoot, ('Unicode spaces ' + [char]0xd55c + [char]0xae00 + '.txt'))
+    $bytes = [Text.Encoding]::UTF8.GetBytes('protected fixture')
+    Write-LocronPrivateFile $path $bytes
+    Assert-True ((Get-LocronSha256 (Read-LocronPrivateFile $path)) -ceq (Get-LocronSha256 $bytes)) 'private read/write'
+    Assert-Refused { Write-LocronPrivateFile $path $bytes } 'no replacement of existing files'
+    $nativeTarget = Get-LocronTarget
+    $receiptFiles = [ordered]@{}
+    foreach ($file in @('locron.exe', 'README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'uninstall.ps1', '.locron-installer.ps1')) {
+        $receiptFiles[$file] = $hash
+    }
+    $receipt = [ordered]@{ schema = 'locron.install/windows-v1'; sid = Get-LocronSid; channel = 'standalone'
+        directory = $fixtureRoot; executable = [IO.Path]::Combine($fixtureRoot, 'locron.exe')
+        target = $nativeTarget; version = '0.10.0'
+        archive_url = "https://github.com/WhiteKiwi/locron/releases/download/v0.10.0/locron-v0.10.0-$nativeTarget.zip"
+        archive_sha256 = $hash; binary_sha256 = $hash; files = $receiptFiles; user_path = $null }
+    Write-LocronPrivateFile ([IO.Path]::Combine($fixtureRoot, '.locron-install-receipt-v1')) ([Text.Encoding]::UTF8.GetBytes(
+        ($receipt | ConvertTo-Json -Depth 6 -Compress)))
+    $owned = Read-LocronReceipt $fixtureRoot
+    Assert-True ($owned.executable -ceq $receipt.executable) 'strict owned installation receipt'
+    $foreignReceiptRoot = New-LocronPrivateDirectory ([IO.Path]::Combine($fixtureRoot, 'foreign-receipt'))
+    Write-LocronPrivateFile ([IO.Path]::Combine($foreignReceiptRoot, '.locron-install-receipt-v1')) ([Text.Encoding]::UTF8.GetBytes(
+        ($receipt | ConvertTo-Json -Depth 6 -Compress)))
+    Assert-Refused { Read-LocronReceipt $foreignReceiptRoot } 'receipt cannot authorize a different directory'
+    $broad = [Security.AccessControl.DirectorySecurity]::new()
+    $broad.SetOwner([Security.Principal.SecurityIdentifier]::new((Get-LocronSid)))
+    $broad.SetAccessRuleProtection($true, $false)
+    $broad.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new(
+        [Security.Principal.SecurityIdentifier]::new('S-1-1-0'),
+        [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.AccessControlType]::Allow))
+    Assert-Refused { Assert-LocronDescriptor $broad $true $true } 'broad private DACL'
+    $foreign = [Security.AccessControl.DirectorySecurity]::new()
+    $foreign.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-18'))
+    Assert-Refused { Assert-LocronDescriptor $foreign $true $true } 'foreign private ownership'
+    $targetDirectory = New-LocronPrivateDirectory ([IO.Path]::Combine($fixtureRoot, 'target'))
+    $junction = [IO.Path]::Combine($fixtureRoot, 'junction')
+    $null = New-Item -ItemType Junction -Path $junction -Target $targetDirectory
+    Assert-Refused { Assert-LocronDirectory $junction $true } 'reparse directory'
+    [IO.DirectoryInfo]::new($junction).Delete()
+    $junction = $null
+} finally {
+    if ($junction) { [IO.DirectoryInfo]::new($junction).Delete() }
+    if ($fixtureRoot) {
+        $resolved = [IO.Path]::GetFullPath($fixtureRoot)
+        if ($resolved -cne $expectedRoot -or [IO.Path]::GetDirectoryName($resolved) -cne [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\')) {
+            throw 'refusing fixture cleanup outside its exact test-owned directory'
+        }
+        $null = Assert-LocronDirectory $resolved $true
+        Remove-Item -LiteralPath $resolved -Recurse -Force
+    }
+}
+Write-Output 'Windows installer private-path/archive/source fixtures passed; no installation or live state changed.'
