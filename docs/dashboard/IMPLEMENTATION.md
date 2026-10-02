@@ -544,19 +544,21 @@ single-user local application needs. Reusable boundaries include Shell, Field, C
 DurationInput, ByteSizeInput, InstantInput, SecretKeyValueEditor, SearchInput, DataTable,
 Pagination, InlineFeedback, ConfirmDialog, and schedule/policy sections.
 
-Node and npm are development/CI dependencies only. Exact versions and the npm lock are committed.
-The frontend gate installs with `npm ci`, runs strict `tsc --noEmit`, runs deterministic unit and
-component tests, and produces a Vite `dist` without source maps or runtime external URLs. The
-complete dist tree is committed and a clean build compares its file list and SHA-256 values. Rust
-embeds only dist and never invokes npm from Cargo. Asset tests follow the built index references,
-verify MIME and font provenance, reject remote assets, and keep only stable semantic markers rather
-than asserting minified implementation strings. The server crate's existing internal workspace
-dependencies are intentionally path-only and therefore make standalone `cargo package` manifest
-verification inapplicable without a separate publication-policy change. `cargo package --list`
-proves the dist inclusion and node_modules exclusion; a clean `cargo install --path` of the actual
-CLI package, with no frontend command in the build graph, plus the embedded-handler tests proves
-that Node is unnecessary for an end user. This keeps package publication policy outside the
-dashboard change while testing the same Rust embed consumed by release builds.
+This React build supersedes the earlier vanilla viewer's no-Node development/CI assumptions.
+Node and pnpm are development/CI dependencies only. The frontend pins Node `24.21.0` and pnpm
+`10.34.6` in mise and the manifest, with the imported dependency graph in `pnpm-lock.yaml`.
+The frontend gate installs with `pnpm install --frozen-lockfile --ignore-scripts`, runs strict
+`pnpm typecheck` and deterministic unit/component tests, and produces a Vite `dist` without
+source maps or runtime external URLs. The complete dist tree is committed and a clean build
+compares its file list and SHA-256 values. Rust embeds only dist and never invokes Node or pnpm
+from Cargo. Asset tests follow the built index references, verify MIME and font provenance,
+reject remote assets, and keep only stable semantic markers rather than asserting minified
+implementation strings. The current workspace publication policy uses path dependencies with
+exact package versions. `cargo package --list` proves dist inclusion and node_modules exclusion;
+the Rust 1.94 source-package CI gate verifies all workspace archives and rehearses publication
+with a dry run. Cargo consumes the committed bundle without running a frontend command, and
+embedded-handler tests verify the assets consumed by source installations and release builds.
+Node remains unnecessary for an end user; this tooling change does not alter publication policy.
 
 The vanilla application remains the executable contract reference during migration. Pure behavior
 ports first: envelope/session handling, signal refresh, theme resolution, exact duration/size
