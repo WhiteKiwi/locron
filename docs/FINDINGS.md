@@ -4104,3 +4104,21 @@ before supported maintenance is promoted.
 
 Sources: [Windows path character rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
 [pinned serde_json UTF-8 fragments and escape table](https://docs.rs/crate/serde_json/1.0.151/source/src/ser.rs).
+
+### Native portable ownership registry references (2026-10-03)
+
+WinGet's official PortableARPEntry source selects the HKCU 64-bit uninstall view for user scope,
+including ARM64. It records WinGetPackageIdentifier, WinGetInstallerType, WinGetSourceIdentifier,
+DisplayVersion and InstallLocation as string values. TargetFullPath is the legacy single-file
+reference; indexed ZIP installations can omit it. The existing selected nested ZIP path therefore
+remains the exact expected location rather than an alias or a recursive executable search.
+
+The native maintenance verifier can read these fixed values through the reviewed stock registry
+adapter without creating a key. Retain existing trusted-owner/no-reparse location and immutable
+source-file guards, repeat the canonical path bound and compare the actual executable against
+the complete canonical release/archive digest. Registry metadata alone never authorizes task
+effects; revalidate its exact reference before lifecycle mutation. This verifies the already
+selected ownership contract, without changing manifest format or assuming a WinGet hook.
+
+Sources: [WinGet user-scope view and exact value names](https://github.com/microsoft/winget-cli/blob/b0f6209cc58841c19e432325b127ab3c33a8f6f8/src/AppInstallerCommonCore/PortableARPEntry.cpp),
+[portable archive index and legacy target behavior](https://github.com/microsoft/winget-cli/blob/b0f6209cc58841c19e432325b127ab3c33a8f6f8/src/AppInstallerCLICore/PortableInstaller.cpp).
