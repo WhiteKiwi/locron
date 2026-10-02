@@ -35,6 +35,88 @@ struct Request {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     reply: mpsc::SyncSender<io::Result<Value>>,
+    #[cfg(test)]
+    diagnostic: Arc<Diagnostic>,
+}
+
+#[cfg(test)]
+static DIAGNOSTIC_HISTORY: std::sync::Mutex<
+    std::collections::VecDeque<(String, &'static str, DiagnosticStage)>,
+> = std::sync::Mutex::new(std::collections::VecDeque::new());
+
+#[cfg(test)]
+struct Diagnostic {
+    id: String,
+    operation: &'static str,
+    entered: Instant,
+    deadline: Instant,
+    stages: std::sync::Mutex<std::collections::VecDeque<DiagnosticStage>>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy)]
+struct DiagnosticStage {
+    phase: &'static str,
+    pid: u32,
+    elapsed_ms: u128,
+    remaining_ms: u128,
+}
+
+#[cfg(test)]
+impl Diagnostic {
+    fn new(id: String, operation: &'static str, entered: Instant, deadline: Instant) -> Self {
+        Self {
+            id,
+            operation,
+            entered,
+            deadline,
+            stages: std::sync::Mutex::new(std::collections::VecDeque::with_capacity(12)),
+        }
+    }
+
+    fn record(&self, phase: &'static str, pid: u32) {
+        let now = Instant::now();
+        let stage = DiagnosticStage {
+            phase,
+            pid,
+            elapsed_ms: now.duration_since(self.entered).as_millis(),
+            remaining_ms: self.deadline.saturating_duration_since(now).as_millis(),
+        };
+        if let Ok(mut stages) = self.stages.try_lock() {
+            if stages.len() == 12 {
+                stages.pop_front();
+            }
+            stages.push_back(stage);
+        }
+        if let Ok(mut history) = DIAGNOSTIC_HISTORY.try_lock() {
+            if history.len() == 48 {
+                history.pop_front();
+            }
+            history.push_back((self.id.clone(), self.operation, stage));
+        }
+    }
+
+    fn emit(&self) {
+        if let Ok(history) = DIAGNOSTIC_HISTORY.try_lock() {
+            for (id, operation, stage) in &*history {
+                if id != &self.id {
+                    Self::emit_stage(id, operation, stage);
+                }
+            }
+        }
+        if let Ok(stages) = self.stages.try_lock() {
+            for stage in &*stages {
+                Self::emit_stage(&self.id, self.operation, stage);
+            }
+        }
+    }
+
+    fn emit_stage(id: &str, operation: &str, stage: &DiagnosticStage) {
+        eprintln!(
+            "filesystem-stage request={id} operation={operation} phase={} pid={} elapsed_ms={} remaining_ms={}",
+            stage.phase, stage.pid, stage.elapsed_ms, stage.remaining_ms
+        );
+    }
 }
 
 /// The public caller supplies no source; selectors are a private fixed allowlist.
@@ -43,6 +125,8 @@ pub(super) fn request(
     path: Option<&str>,
     deadline: Instant,
 ) -> io::Result<Value> {
+    #[cfg(test)]
+    let entered = Instant::now();
     remaining(deadline)?;
     if !matches!(operation, "sid" | "create_directory" | "create_file") {
         return Err(io::Error::new(
@@ -71,6 +155,10 @@ pub(super) fn request(
         .map_err(copy_error)?;
     let (reply, receiver) = mpsc::sync_channel(1);
     let cancelled = Arc::new(AtomicBool::new(false));
+    #[cfg(test)]
+    let diagnostic = Arc::new(Diagnostic::new(id.clone(), operation, entered, deadline));
+    #[cfg(test)]
+    diagnostic.record("entry", 0);
     let request = Request {
         id,
         operation,
@@ -78,9 +166,20 @@ pub(super) fn request(
         deadline,
         cancelled: Arc::clone(&cancelled),
         reply,
+        #[cfg(test)]
+        diagnostic: Arc::clone(&diagnostic),
     };
-    enqueue(sender, request)?;
-    wait_for_reply(&receiver, &cancelled, deadline)
+    let result = enqueue(sender, request).and_then(|()| {
+        #[cfg(test)]
+        diagnostic.record("queue-admitted", 0);
+        wait_for_reply(&receiver, &cancelled, deadline)
+    });
+    #[cfg(test)]
+    if result.is_err() {
+        diagnostic.record("caller-error", 0);
+        diagnostic.emit();
+    }
+    result
 }
 
 fn wait_for_reply(
@@ -171,24 +270,38 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
             receiver.recv().await
         };
         let Some(request) = request else { break };
+        #[cfg(test)]
+        request.diagnostic.record("dispatch-received", 0);
         if quarantine {
+            #[cfg(test)]
+            request.diagnostic.record("quarantined", 0);
             let _ = request.reply.send(Err(io::Error::other(
                 "filesystem worker termination remains unconfirmed",
             )));
             continue;
         }
         if let Err(error) = remaining(request.deadline) {
+            #[cfg(test)]
+            request
+                .diagnostic
+                .record("deadline-expired-before-spawn", 0);
             let _ = request.reply.send(Err(error));
             continue;
         }
         if worker.is_none() {
+            #[cfg(test)]
+            request.diagnostic.record("spawn-start", 0);
             match Worker::spawn() {
                 Ok(owned) => {
                     #[cfg(test)]
                     LAST_PID.store(owned.pid, Ordering::Release);
+                    #[cfg(test)]
+                    request.diagnostic.record("spawn-complete", owned.pid);
                     worker = Some(owned);
                 }
                 Err((uncertain, error)) => {
+                    #[cfg(test)]
+                    request.diagnostic.record("spawn-refused", 0);
                     quarantine = uncertain;
                     fail_queued(&mut receiver, &error);
                     let _ = request.reply.send(Err(error));
@@ -203,12 +316,20 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
             .await;
         if let Err(error) = &result {
             let owned = worker.as_mut().expect("owned worker");
+            #[cfg(test)]
+            request.diagnostic.record("exchange-refused", owned.pid);
+            #[cfg(test)]
+            request.diagnostic.record("cleanup-start", owned.pid);
             if let Err(cleanup) = owned.cleanup().await {
+                #[cfg(test)]
+                request.diagnostic.record("cleanup-unconfirmed", owned.pid);
                 quarantine = true;
                 fail_queued(&mut receiver, &cleanup);
                 let _ = request.reply.send(Err(cleanup));
                 continue;
             }
+            #[cfg(test)]
+            request.diagnostic.record("cleanup-confirmed", owned.pid);
             worker = None;
             fail_queued(&mut receiver, error);
         }
@@ -225,6 +346,8 @@ fn fail_queued(receiver: &mut queue::Receiver<Request>, error: &io::Error) {
         let Ok(request) = receiver.try_recv() else {
             break;
         };
+        #[cfg(test)]
+        request.diagnostic.record("queue-invalidated", 0);
         let _ = request.reply.send(Err(copy_error(error)));
     }
 }
@@ -350,7 +473,11 @@ impl Worker {
                 result = async {
                     stdin.write_all(&request.bytes).await?;
                     stdin.flush().await?;
+                    #[cfg(test)]
+                    request.diagnostic.record("input-flushed", *pid);
                     let bytes = read_frame(stdout).await?;
+                    #[cfg(test)]
+                    request.diagnostic.record("reply-received", *pid);
                     validate_frame(&bytes, request, *pid)
                 } => result,
                 result = stderr => {
@@ -503,13 +630,21 @@ mod tests {
 
     fn fixture_request(operation: &'static str) -> Request {
         let (reply, _) = mpsc::sync_channel(1);
+        let entered = Instant::now();
+        let deadline = entered + Duration::from_secs(30);
         Request {
             id: "1".to_owned(),
             operation,
             bytes: Vec::new(),
-            deadline: Instant::now() + Duration::from_secs(30),
+            deadline,
             cancelled: Arc::new(AtomicBool::new(false)),
             reply,
+            diagnostic: Arc::new(Diagnostic::new(
+                "1".to_owned(),
+                operation,
+                entered,
+                deadline,
+            )),
         }
     }
 
