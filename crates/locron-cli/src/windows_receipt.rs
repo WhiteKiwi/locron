@@ -167,11 +167,17 @@ pub(super) fn local_path(path: &str) -> Result<String> {
         );
         let stem = component.split('.').next().unwrap_or_default();
         let stem = stem.to_ascii_uppercase();
+        let serial_device = stem
+            .strip_prefix("COM")
+            .or_else(|| stem.strip_prefix("LPT"))
+            .is_some_and(|suffix| {
+                suffix.chars().count() == 1
+                    && suffix
+                        .chars()
+                        .all(|digit| matches!(digit, '1'..='9' | '¹' | '²' | '³'))
+            });
         ensure!(
-            !matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-                && !(stem.len() == 4
-                    && (stem.starts_with("COM") || stem.starts_with("LPT"))
-                    && matches!(stem.as_bytes()[3], b'1'..=b'9')),
+            !matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") && !serial_device,
             "reserved Windows path component"
         );
     }
@@ -391,6 +397,7 @@ mod tests {
             r"C:\test:stream",
             r"C:\test.\locron.exe",
             r"C:\CON\locron.exe",
+            r"C:\COM¹\locron.exe",
             r"C:\a\..\b",
             r"C:\a?\locron.exe",
         ] {
