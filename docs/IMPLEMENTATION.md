@@ -226,6 +226,29 @@ The first failing cold state fixture must expose these facts without an earlier 
 production source, request framing, mutation no-replay rule and original thirty/three-second
 bounds unchanged. Verify that native failure output identifies the last completed stage; use the
 same x64/ARM64/MSRV cold gates and distinguish post-gate startup measurements from that request.
+
+The next exact ARM64 run located the first failure in the SID exchange: spawning the owned child
+and flushing its input took 49 ms, but no reply arrived before the original thirty-second
+deadline. The fixed PowerShell source contains no Add-Type or dynamically compiled C# helper.
+The current parent-side stages cannot distinguish stock host/source initialization, Console
+encoding and ReadLine, first JSON cmdlet activation, SID lookup, or reply serialization. Before
+changing any production operation, add test-only static child-phase tokens on stderr at source
+entry, encoding completion, input-line receipt, JSON parse completion, SID completion and reply
+serialization/flush. Select these tokens only from fixed source at compile time; no caller data,
+SID, path, payload or exception text enters a token. Preserve the existing stderr capture cap and
+early failure, collect at most sixteen timestamped recognized tokens per owned child, and attach
+only those tokens to the existing failure diagnostics. These timestamps mean parent receipt,
+not a claimed child CPU measurement. Production source, framing and deadlines remain unchanged.
+
+Verify: (1) the actual first failing request runs without warm-up or replay and distinguishes the
+last completed child phase from the already measured input flush; absence of the source-entry
+token remains an unresolved host/source bootstrap gap. (2) native successful SID and create
+requests produce the expected ordered fixed phases without contaminating stdout frames or
+revealing private input, while unknown stderr content is never promoted into diagnostic facts.
+(3) capture-limit and timeout fixtures still fail promptly under thirty seconds plus the separate
+three-second confirmed cleanup; token retention stays bounded and failed queued work is not
+replayed. Use these facts to review the next implementation choice before changing production.
+
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable

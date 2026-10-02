@@ -2797,6 +2797,19 @@ real dispatch path, without path/SID/payload values, warm-up, new deadlines or m
 Do not call the failed cold acceptance transiently successful from later bootstrap performance.
 Evidence: [exact native ARM64 worker run](https://github.com/WhiteKiwi/locron/actions/runs/37038880251/job/110943792703).
 
+The real-request diagnostics in PR41 head a6f0189/run 37041311097 identify the first stalled
+operation as SID discovery, rather than the later CreateNew call that reports its failure.
+ARM64 child PID 8688 spawned at 48 ms and input was flushed at 49 ms; no reply arrived by
+30,004 ms, and owned root-plus-Job cleanup was confirmed at 30,052 ms. This rules out caller
+queue and process creation latency in that request, while leaving the fixed PowerShell host,
+source initialization and request body unlocated. Inspection of filesystem_worker.ps1 confirms
+there is no Add-Type or dynamic C# compilation. Its first stages are Console encoding setup,
+ReadLine, ConvertFrom-Json, WindowsIdentity.User and JSON reply serialization. Select bounded
+test-only fixed phase tokens on stderr to locate the gap before replacing any of those stages.
+Do not infer a production fix, warm the original gate, or replay a timed-out mutation from the
+later successful fixtures or stock bootstrap probe.
+Evidence: [first SID exchange and confirmed cleanup](https://github.com/WhiteKiwi/locron/actions/runs/37041311097/job/110951832994).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
