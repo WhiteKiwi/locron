@@ -231,10 +231,20 @@ impl OwnedChild {
     }
 }
 
+// Intentional orphan fixtures keep ownership without waiting or terminating. Their stdio is
+// inherited/null, so consuming Child drops no captured pipes; the retained Job owns cleanup.
+#[cfg(test)]
+pub(crate) fn retain_fixture_descendant(
+    child: std::process::Child,
+) -> (u32, std::os::windows::io::OwnedHandle) {
+    (child.id(), std::os::windows::io::OwnedHandle::from(child))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ChildWindow, OwnedChild, SpawnFailure, creation_flags};
+    use super::{ChildWindow, OwnedChild, SpawnFailure, creation_flags, retain_fixture_descendant};
     use std::io::Write as _;
+    use std::os::windows::io::OwnedHandle;
     use std::path::{Path, PathBuf};
     use std::process::Stdio;
     use std::time::{Duration, Instant};
@@ -274,8 +284,8 @@ mod tests {
         command
     }
 
-    fn grandchild(root: &Path, mode: &str) -> std::process::Child {
-        std::process::Command::new(std::env::current_exe().unwrap())
+    fn grandchild(root: &Path, mode: &str) -> (u32, OwnedHandle) {
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", FIXTURE, "--nocapture", "--test-threads=1"])
             .env(MODE, mode)
             .env(ROOT, root)
@@ -283,7 +293,8 @@ mod tests {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .unwrap()
+            .unwrap();
+        retain_fixture_descendant(child)
     }
 
     #[test]
@@ -296,8 +307,8 @@ mod tests {
             "zero" => std::fs::write(root.join("started"), b"started").unwrap(),
             "nonzero" => std::process::exit(7),
             "root-first" => {
-                let child = grandchild(&root, "await-release");
-                std::fs::write(root.join("descendant.pid"), child.id().to_string()).unwrap();
+                let (pid, _descendant) = grandchild(&root, "await-release");
+                std::fs::write(root.join("descendant.pid"), pid.to_string()).unwrap();
                 std::process::exit(0);
             }
             "await-release" => {
@@ -307,7 +318,7 @@ mod tests {
                 std::fs::write(root.join("descendant-finished"), b"finished").unwrap();
             }
             "tree" => {
-                let _child = grandchild(&root, "heartbeat");
+                let (_, _descendant) = grandchild(&root, "heartbeat");
                 std::fs::write(root.join("started"), b"started").unwrap();
                 std::thread::sleep(Duration::from_secs(30));
             }

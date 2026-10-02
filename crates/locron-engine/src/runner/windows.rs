@@ -409,10 +409,14 @@ pub(super) mod tests {
                 let _ = fixture_child(&root, "leaf").spawn().unwrap().wait();
             }
             "root-exits" => {
-                let _ = fixture_child(&root, "leaf").spawn().unwrap();
+                let (_, _descendant) = crate::windows_child::retain_fixture_descendant(
+                    fixture_child(&root, "leaf").spawn().unwrap(),
+                );
             }
             "root-short" => {
-                let _ = fixture_child(&root, "leaf-short").spawn().unwrap();
+                let (_, _descendant) = crate::windows_child::retain_fixture_descendant(
+                    fixture_child(&root, "leaf-short").spawn().unwrap(),
+                );
             }
             "leaf" | "leaf-short" => {
                 std::fs::write(root.join("leaf-ready"), std::process::id().to_string()).unwrap();
