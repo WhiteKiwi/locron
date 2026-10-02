@@ -308,6 +308,90 @@ pub fn rename_private(source: &Path, destination: &Path) -> io::Result<()> {
     }
 }
 
+/// Renames an existing Windows private file within the caller's absolute budget.
+/// Only sharing violations are retried; absent parents are never created.
+/// A native operation finishing after expiry is uncertain, even if it succeeded.
+/// Uncancellable calls must remain owned by the caller's quarantine worker.
+#[cfg(windows)]
+pub fn rename_private_until(
+    source: &Path,
+    destination: &Path,
+    deadline: std::time::Instant,
+) -> io::Result<()> {
+    loop {
+        ensure_rename_deadline(deadline)?;
+        match rename_private_attempt_until(source, destination, deadline) {
+            Err(error) if matches!(error.raw_os_error(), Some(32 | 33)) => {
+                ensure_rename_deadline(deadline)?;
+                std::thread::sleep(
+                    deadline
+                        .saturating_duration_since(std::time::Instant::now())
+                        .min(std::time::Duration::from_millis(25)),
+                );
+            }
+            result => return result,
+        }
+    }
+}
+
+#[cfg(windows)]
+fn ensure_rename_deadline(deadline: std::time::Instant) -> io::Result<()> {
+    if std::time::Instant::now() >= deadline {
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "private rename deadline elapsed; an admitted native operation may have completed",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn rename_operation_until<T>(
+    deadline: std::time::Instant,
+    operation: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
+    ensure_rename_deadline(deadline)?;
+    let result = operation();
+    ensure_rename_deadline(deadline)?;
+    result
+}
+
+#[cfg(windows)]
+fn rename_private_attempt_until(
+    source: &Path,
+    destination: &Path,
+    deadline: std::time::Instant,
+) -> io::Result<()> {
+    let source_file = rename_operation_until(deadline, || {
+        open_private(source, OpenOptions::new().read(true))
+    })?;
+    let guarded_source = source_file.normalized_path().to_owned();
+    let destination_guard = rename_operation_until(deadline, || {
+        DirectoryGuard::existing_private(parent(destination)?)
+    })?;
+    let guarded_destination = destination_guard.normalized_path().join(
+        destination
+            .file_name()
+            .ok_or_else(|| unsafe_path(destination))?,
+    );
+    match rename_operation_until(deadline, || {
+        open_private(&guarded_destination, OpenOptions::new().read(true))
+    }) {
+        Ok(file) => drop(file),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let (source_file, source_guard) = source_file.into_parts();
+    // Keep both directory chains, releasing only the leaf that would deny rename itself.
+    drop(source_file);
+    let result = rename_operation_until(deadline, || {
+        fs::rename(&guarded_source, &guarded_destination)
+    });
+    drop((source_guard, destination_guard));
+    result
+}
+
 #[cfg(windows)]
 fn rename_private_bounded(
     source: &Path,
@@ -1491,6 +1575,97 @@ mod tests {
         drop(reader);
         rename_private(&source, &destination).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"captured");
+    }
+
+    #[test]
+    fn caller_deadline_rename_waits_only_for_the_held_reader() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let source = root.join("caller.partial");
+        let destination = root.join("caller.log");
+        create_private_new(&source)
+            .unwrap()
+            .write_all(b"complete captured bytes")
+            .unwrap();
+        let reader = open_private(&source, OpenOptions::new().read(true)).unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            drop(reader);
+        });
+        let result = rename_private_until(
+            &source,
+            &destination,
+            Instant::now() + Duration::from_secs(1),
+        );
+        release.join().unwrap();
+        result.unwrap();
+        assert!(!source.exists());
+        assert_eq!(fs::read(&destination).unwrap(), b"complete captured bytes");
+    }
+
+    #[test]
+    fn caller_deadline_rename_preserves_a_partial_and_never_creates_missing_parents() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let source = root.join("caller.partial");
+        let destination = root.join("caller.log");
+        create_private_new(&source)
+            .unwrap()
+            .write_all(b"captured")
+            .unwrap();
+        let reader = open_private(&source, OpenOptions::new().read(true)).unwrap();
+        let entered = Instant::now();
+        let error =
+            rename_private_until(&source, &destination, entered + Duration::from_millis(80))
+                .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(entered.elapsed() < Duration::from_secs(1));
+        assert!(!destination.exists());
+        assert_eq!(fs::read(&source).unwrap(), b"captured");
+        drop(reader);
+        let absent = root.join("absent").join("caller.log");
+        assert_eq!(
+            rename_private_until(&source, &absent, Instant::now() + Duration::from_secs(1))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(!absent.parent().unwrap().exists());
+        assert_eq!(fs::read(&source).unwrap(), b"captured");
+    }
+
+    #[test]
+    fn expired_caller_deadline_never_admits_a_native_rename() {
+        let temporary = tempfile::tempdir().unwrap();
+        let absent = temporary.path().join("absent");
+        let expired = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+        assert_eq!(
+            rename_private_until(&absent.join("source"), &absent.join("destination"), expired)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert!(!absent.exists());
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let source = root.join("caller.partial");
+        let destination = root.join("caller.log");
+        create_private_new(&source)
+            .unwrap()
+            .write_all(b"captured")
+            .unwrap();
+        assert_eq!(
+            rename_private_until(&source, &destination, expired)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert_eq!(fs::read(&source).unwrap(), b"captured");
+        assert!(!destination.exists());
     }
 
     #[test]
