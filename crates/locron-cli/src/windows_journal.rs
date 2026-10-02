@@ -63,11 +63,59 @@ pub(super) fn preflight<R: Serialize>(
     worst_case_record: &R,
     frames: usize,
 ) -> Result<Reservation<R>> {
+    preflight_with_growth(worst_case_record, frames, 0)
+}
+
+/// Checked growth for complete serde object slots, including fixed-key null slots.
+/// The engine supplies the actual ServiceRestoreRecord and its validated provider
+/// maximum. This size helper neither constructs nor authorizes a service record.
+pub(super) fn object_growth<T: Serialize>(
+    slot: Option<&T>,
+    maximum_object_bytes: usize,
+    repetitions: usize,
+) -> Result<usize> {
+    ensure!(
+        repetitions > 0 && maximum_object_bytes <= FRAME_LIMIT - OVERHEAD,
+        "invalid complete object-slot reservation"
+    );
+    let baseline = if let Some(object) = slot {
+        let mut bounded = BoundedPayload::default();
+        serde_json::to_writer(&mut bounded, object)?;
+        ensure!(
+            bounded.0.first() == Some(&b'{') && bounded.0.last() == Some(&b'}'),
+            "future object slots must contain serde objects, not escaped strings"
+        );
+        bounded.0.len()
+    } else {
+        // The concrete outer schema always emits the optional key and null.
+        // Field names, punctuation and all other future outer values belong in
+        // the already bounded outer representation, not in this slot delta.
+        4
+    };
+    let growth = maximum_object_bytes
+        .checked_sub(baseline)
+        .and_then(|growth| growth.checked_mul(repetitions))
+        .ok_or_else(|| anyhow::anyhow!("unproven/overflowing complete object-slot growth"))?;
+    Ok(growth)
+}
+
+/// Every repeated slot and future outer-field maximum must already be proven by
+/// the concrete typed caller. Additional growth covers its complete remaining
+/// forward and rollback path; actual appends retain the same strict reservation.
+pub(super) fn preflight_with_growth<R: Serialize>(
+    worst_case_record: &R,
+    frames: usize,
+    additional_payload_bytes: usize,
+) -> Result<Reservation<R>> {
     let (bytes, _) = frame(worst_case_record, [0; 32])?;
-    check_budget(0, 0, frames, bytes.len())?;
+    let maximum_frame_bytes = bytes
+        .len()
+        .checked_add(additional_payload_bytes)
+        .ok_or_else(|| anyhow::anyhow!("complete outer journal representation overflows"))?;
+    check_budget(0, 0, frames, maximum_frame_bytes)?;
     Ok(Reservation {
         frames,
-        maximum_frame_bytes: bytes.len(),
+        maximum_frame_bytes,
         _record: PhantomData,
     })
 }
@@ -299,6 +347,77 @@ mod tests {
 
     use super::super::windows_protocol::Phase;
     use super::*;
+
+    #[derive(Clone, Serialize)]
+    struct ObjectSlot {
+        future_path: String,
+        fingerprint: String,
+    }
+
+    #[derive(Serialize)]
+    struct ObjectEnvelope {
+        original: ObjectSlot,
+        current: Option<ObjectSlot>,
+        outer_maximum: String,
+    }
+
+    #[test]
+    fn complete_object_growth_counts_each_slot_null_and_json_encoding_before_effects() {
+        let baseline = ObjectSlot {
+            future_path: r"\\?\C:\owned\locron.exe".into(),
+            fingerprint: "f".repeat(64),
+        };
+        let future = ObjectSlot {
+            future_path: format!(r"\\?\C:\{}", "界".repeat(4096 - 7)),
+            fingerprint: "f".repeat(64),
+        };
+        let maximum = serde_json::to_vec(&future).unwrap().len();
+        let outer = ObjectEnvelope {
+            original: baseline.clone(),
+            current: None,
+            outer_maximum: "all separately bounded future outer values".into(),
+        };
+        let growth = object_growth(Some(&baseline), maximum, 1)
+            .unwrap()
+            .checked_add(object_growth::<ObjectSlot>(None, maximum, 1).unwrap())
+            .unwrap();
+        let reservation = preflight_with_growth(&outer, 12, growth).unwrap();
+        let future_outer = ObjectEnvelope {
+            original: future.clone(),
+            current: Some(future),
+            outer_maximum: outer.outer_maximum,
+        };
+        let (actual, _) = frame(&future_outer, [0; 32]).unwrap();
+        assert_eq!(actual.len(), reservation.maximum_frame_bytes);
+        assert_eq!(reservation.frames, 12);
+        assert_eq!(
+            object_growth(Some(&baseline), maximum, 2).unwrap(),
+            object_growth(Some(&baseline), maximum, 1).unwrap() * 2
+        );
+        let escaped = serde_json::to_string(&baseline).unwrap();
+        assert!(object_growth(Some(&escaped), maximum, 1).is_err());
+    }
+
+    #[test]
+    fn missing_slot_bound_overflow_and_complete_frame_budget_refuse_without_creation() {
+        let record = record(0);
+        let (actual, _) = frame(&record, [0; 32]).unwrap();
+        let maximum_growth = FRAME_LIMIT - actual.len();
+        let exact = preflight_with_growth(&record, FRAME_COUNT, maximum_growth).unwrap();
+        assert_eq!(exact.maximum_frame_bytes, FRAME_LIMIT);
+        assert!(preflight_with_growth(&record, 1, maximum_growth + 1).is_err());
+        assert!(preflight_with_growth(&record, 1, usize::MAX).is_err());
+        assert!(preflight_with_growth(&record, FRAME_COUNT + 1, 0).is_err());
+        assert!(object_growth::<ObjectSlot>(None, 3, 1).is_err());
+        assert!(object_growth::<ObjectSlot>(None, 10, usize::MAX).is_err());
+        assert!(object_growth::<ObjectSlot>(None, FRAME_LIMIT, 1).is_err());
+        assert!(object_growth::<ObjectSlot>(None, 10, 0).is_err());
+        let object = ObjectSlot {
+            future_path: "complete baseline".into(),
+            fingerprint: "f".repeat(64),
+        };
+        assert!(object_growth(Some(&object), 4, 1).is_err());
+    }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
