@@ -15,6 +15,8 @@ pub struct StatePaths {
     pub database: PathBuf,
     /// Daemon exclusive-lock file.
     pub daemon_lock: PathBuf,
+    /// Registered daemon activation lifetime, including waiting for a manual daemon.
+    pub daemon_activation_lock: PathBuf,
     /// Dashboard lifetime lock, independent of scheduler ownership.
     pub dashboard_lock: PathBuf,
     /// Socket used to wake a running daemon.
@@ -44,6 +46,7 @@ impl StatePaths {
         Self {
             database: root.join("state.db"),
             daemon_lock: root.join("daemon.lock"),
+            daemon_activation_lock: root.join("daemon.activation.lock"),
             dashboard_lock: root.join("dashboard.lock"),
             wake_socket: root.join("wake.sock"),
             outputs: root.join("outputs"),
