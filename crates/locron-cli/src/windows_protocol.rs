@@ -14,9 +14,15 @@ pub(super) const MAINTENANCE_PATH_JSON_BYTES: usize = MAINTENANCE_PATH_UNITS * 3
 
 /// Syntax/size qualification only; live canonical guards must repeat this check.
 pub(super) fn maintenance_path(path: &str) -> Result<String> {
+    // Path comparison strips this prefix, but canonical guards/journals can
+    // retain it. Its four UTF-16 units still consume the finite path budget.
+    let prefix_units = if path.starts_with(r"\\?\") { 4 } else { 0 };
     let path = local_path(path)?;
     ensure!(
-        path.encode_utf16().count() <= MAINTENANCE_PATH_UNITS,
+        path.encode_utf16()
+            .count()
+            .checked_add(prefix_units)
+            .is_some_and(|units| units <= MAINTENANCE_PATH_UNITS),
         "normalized maintenance path exceeds 4096 UTF-16 code units"
     );
     Ok(path)
@@ -384,15 +390,19 @@ mod tests {
             let normalized = maintenance_path(&path).unwrap();
             assert_eq!(normalized.encode_utf16().count(), MAINTENANCE_PATH_UNITS);
             assert!(serde_json::to_vec(&normalized).unwrap().len() <= MAINTENANCE_PATH_JSON_BYTES);
-            assert_eq!(
-                maintenance_path(&format!(r"\\?\{path}")).unwrap(),
-                normalized
-            );
+            assert!(maintenance_path(&format!(r"\\?\{path}")).is_err());
             assert_eq!(maintenance_path(&format!("{path}\\")).unwrap(), normalized);
             assert!(maintenance_path(&format!("{path}a")).is_err());
         }
         assert!(maintenance_path("C:\\bad\npath").is_err());
         assert!(maintenance_path("C:\\bad\"path").is_err());
+        let drive = format!("C:\\{}", "\u{800}".repeat(MAINTENANCE_PATH_UNITS - 7));
+        assert_eq!(drive.encode_utf16().count(), 4092);
+        let canonical = format!(r"\\?\{drive}");
+        assert_eq!(canonical.encode_utf16().count(), MAINTENANCE_PATH_UNITS);
+        assert_eq!(maintenance_path(&canonical).unwrap(), drive);
+        assert!(serde_json::to_vec(&canonical).unwrap().len() <= MAINTENANCE_PATH_JSON_BYTES);
+        assert!(maintenance_path(&format!("{canonical}a")).is_err());
     }
 
     fn request() -> Value {

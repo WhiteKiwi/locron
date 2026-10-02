@@ -4084,8 +4084,10 @@ Sources: [schema 1.12 RequireExplicitUpgrade meaning](https://github.com/microso
 WinGet Complete selects the newly registered executable after an external package upgrade, so
 Prepare cannot reserve only the old path's length. The selected maintenance scope caps both the
 normalized executable and registered location at 4,096 UTF-16 code units. Repeat the check on the
-actual guarded canonical paths; this string bound never grants ownership. Runtime and state-path
-handling are unchanged. A larger new package location refuses Complete before restoration, leaving
+actual guarded canonical paths, including their supported verbatim transport prefix. The four-unit
+prefix leaves at most 4,092 normalized drive-path units; it cannot be stripped from capacity checks
+merely because path comparison strips it. This string bound never grants ownership. Runtime and
+state-path handling are unchanged. A larger new package location refuses Complete before restoration, leaving
 owned tasks disabled and the protected journal available.
 
 For the native JSON encoding, each allowed BMP character takes at most three UTF-8 bytes per

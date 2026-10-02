@@ -1760,8 +1760,10 @@ locron.windows-operation/v1; installer, updater, uninstaller and maintenance sha
 entrypoint and serializable validated lifecycle record. Missing, foreign or interrupted records
 are explicit refusal/recovery cases. No new release asset or arbitrary manifest hook is introduced.
 Validate the exact normalized package executable and registered location at no more than 4,096
-UTF-16 code units each. Apply the bound after ordinary local-drive normalization and again to the
-live canonical guarded paths; a request spelling cannot substitute for the guarded identity.
+UTF-16 code units each, counting the supported verbatim transport prefix when present. Apply the
+bound after local-drive normalization and again to the live canonical guarded representation;
+stripping a prefix for path comparison does not remove it from this capacity count. A request
+spelling cannot substitute for the guarded identity.
 Prepare reserves each future Complete path at 12,288 encoded UTF-8/JSON bytes plus two string
 quotes. Allowed BMP characters require at most three bytes per UTF-16 unit; supplementary pairs
 require four bytes per two units and escaped backslashes require two. Controls and quotes are

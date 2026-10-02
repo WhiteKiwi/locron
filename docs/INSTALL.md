@@ -114,7 +114,8 @@ package/source registration, canonical executable path, version, architecture an
 release digest, then restores the recorded enabled states. An interrupted or failed Complete can
 be retried with the same UUID and a valid package executable. Recovery reactivates only a
 verified binary; a mismatched/stale path remains disabled with an explicit recovery error.
-Maintenance accepts normalized executable and package-location paths up to 4,096 UTF-16 code units.
+Maintenance accepts normalized executable and package-location paths up to 4,096 UTF-16 code units,
+including any supported verbatim prefix in the guarded canonical representation.
 A larger new path refuses Complete and retains disabled tasks and the protected recovery record.
 Before removal, use `locron maintenance remove --executable $wingetExecutable` and wait for
 phase=removed, then

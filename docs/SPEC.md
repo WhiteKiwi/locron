@@ -599,7 +599,8 @@ Store distribution remain outside this milestone.
   upgrade. The standalone installer and updater never adopt package-owned files. Pending native
   handoffs are distinguishable from confirmed installation, preparation, removal or update.
   Maintenance bounds each normalized package executable and registered location to 4,096 UTF-16
-  code units so preparation can reserve recovery capacity before changing tasks or files. An
+  code units including any supported transport prefix in the actual canonical representation,
+  so preparation can reserve recovery capacity before changing tasks or files. An
   oversized new location refuses completion and retains disabled tasks and the protected recovery
   record. This distribution limit does not change runtime or state-path support.
 - Standalone updates positively verify ownership, source, digest, version and architecture; safely
