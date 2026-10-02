@@ -4078,3 +4078,27 @@ The native installer work can proceed independently without changing the portabl
 
 Sources: [schema 1.12 RequireExplicitUpgrade meaning](https://github.com/microsoft/winget-pkgs/blob/master/doc/manifest/schema/1.12.0/installer.md#fields),
 [WinGet upgrade-all behavior](https://learn.microsoft.com/en-us/windows/package-manager/winget/upgrade#upgrade---all).
+
+### Bound the future package path before preparing maintenance (2026-10-03)
+
+WinGet Complete selects the newly registered executable after an external package upgrade, so
+Prepare cannot reserve only the old path's length. The selected maintenance scope caps both the
+normalized executable and registered location at 4,096 UTF-16 code units. Repeat the check on the
+actual guarded canonical paths; this string bound never grants ownership. Runtime and state-path
+handling are unchanged. A larger new package location refuses Complete before restoration, leaving
+owned tasks disabled and the protected journal available.
+
+For the native JSON encoding, each allowed BMP character takes at most three UTF-8 bytes per
+UTF-16 unit, each supplementary character takes four bytes per surrogate pair, and an escaped
+backslash takes two bytes. Local path validation rejects controls and quotes. Thus 12,288 bytes
+plus string quotes is a conservative bound per future path. Preparation must count every repeated
+path, full typed service snapshot, cumulative forced-stop fact and callback/rollback frame before
+any effects. The 128 KiB frame/16 MiB/128-frame limits and 256-binding service ceiling are retained;
+an oversized inventory refuses with zero effects rather than truncating recovery authority.
+
+This is a distribution reservation decision, not a claim that Windows has a 4,096-unit path limit.
+Native boundary fixtures must verify normalization, UTF-16 counting, JSON escaping and refusal
+before supported maintenance is promoted.
+
+Sources: [Windows path character rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
+[pinned serde_json UTF-8 fragments and escape table](https://docs.rs/crate/serde_json/1.0.151/source/src/ser.rs).

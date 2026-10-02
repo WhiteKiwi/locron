@@ -108,6 +108,8 @@ package/source registration, canonical executable path, version, architecture an
 release digest, then restores the recorded enabled states. An interrupted or failed Complete can
 be retried with the same UUID and a valid package executable. Recovery reactivates only a
 verified binary; a mismatched/stale path remains disabled with an explicit recovery error.
+Maintenance accepts normalized executable and package-location paths up to 4,096 UTF-16 code units.
+A larger new path refuses Complete and retains disabled tasks and the protected recovery record.
 Before removal, use `locron maintenance remove --executable $wingetExecutable` and wait for
 phase=removed, then
 `winget uninstall --id WhiteKiwi.locron --exact --scope user`; only exact owned registrations are
@@ -115,6 +117,7 @@ removed. Native maintenance acceptance must pass before this channel is advertis
 Where script policy permits, install.ps1 -Maintenance Prepare|Complete|Remove supplies the same
 procedure with -Executable and -Operation. Neither WinGet manifests nor a private package server
 automatically perform these task operations; submissions target the community winget-pkgs catalog.
+The shared release/submission sequence is recorded in [WINDOWS_DISTRIBUTION](WINDOWS_DISTRIBUTION.md).
 Unattended upgrade tools and winget upgrade --all do not perform Prepare/Complete. Automatic
 package upgrades with enabled daemon/dashboard registrations are outside this portable channel's
 supported procedure. Use the explicit maintenance workflow and exclude this package from those
