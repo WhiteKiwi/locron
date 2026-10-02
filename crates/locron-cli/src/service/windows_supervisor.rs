@@ -1635,7 +1635,9 @@ mod tests {
         assert_eq!(polls.load(Ordering::SeqCst), 1);
         assert!(
             budget
-                .operation(|| panic!("expired response admitted another operation"))
+                .operation(|| -> Result<(), Failure> {
+                    panic!("expired response admitted another operation")
+                })
                 .is_err()
         );
     }
