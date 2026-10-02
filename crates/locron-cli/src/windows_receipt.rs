@@ -37,7 +37,7 @@ pub(super) struct UserPath {
 }
 
 impl UserPath {
-    fn validate(&self, directory: &str) -> Result<()> {
+    pub(super) fn validate(&self, directory: &str) -> Result<()> {
         ensure!(
             self.before.is_some() == self.before_kind.is_some(),
             "PATH record confuses an absent and present value"
@@ -52,7 +52,27 @@ impl UserPath {
                 .is_none_or(|value| !value.contains('\0')),
             "PATH record contains a NUL"
         );
+        ensure!(
+            self.after_kind == self.before_kind.unwrap_or(PathKind::String),
+            "PATH insertion changed the original registry kind"
+        );
+        ensure!(
+            self.after_kind != PathKind::ExpandString || !directory.contains('%'),
+            "literal installation directory would expand in PATH"
+        );
+        ensure!(
+            self.after == appended_path(self.before.as_deref(), directory),
+            "PATH record is not one literal installer insertion"
+        );
         Ok(())
+    }
+}
+
+pub(super) fn appended_path(before: Option<&str>, directory: &str) -> String {
+    match before.filter(|value| !value.is_empty()) {
+        None => directory.to_owned(),
+        Some(value) if value.ends_with(';') => format!("{value}{directory}"),
+        Some(value) => format!("{value};{directory}"),
     }
 }
 
@@ -368,11 +388,16 @@ mod tests {
             (json!(r"%USERPROFILE%\bin"), json!("ExpandString")),
         ] {
             let mut value = receipt();
+            let kind = if before_kind.is_null() {
+                json!("String")
+            } else {
+                before_kind.clone()
+            };
+            let after = appended_path(before.as_str(), DIRECTORY);
             value["user_path"] = json!({"before": before, "before_kind": before_kind,
-                "after": DIRECTORY, "after_kind": "ExpandString"});
+                "after": after, "after_kind": kind});
             let parsed = parse(&value).unwrap();
             let path = parsed.user_path.unwrap();
-            assert_eq!(path.after_kind, PathKind::ExpandString);
             assert_eq!(serde_json::to_value(path).unwrap(), value["user_path"]);
         }
         for changed in [
@@ -380,6 +405,9 @@ mod tests {
             json!({"before": "", "before_kind": null, "after": DIRECTORY, "after_kind": "String"}),
             json!({"before": "", "before_kind": "String", "after": DIRECTORY, "after_kind": "Binary"}),
             json!({"before": "", "before_kind": "String", "after": 1, "after_kind": "String"}),
+            json!({"before": null, "before_kind": null, "after": DIRECTORY, "after_kind": "ExpandString"}),
+            json!({"before": "%USERPROFILE%\\bin", "before_kind": "ExpandString", "after": DIRECTORY, "after_kind": "ExpandString"}),
+            json!({"before": "", "before_kind": "ExpandString", "after": DIRECTORY, "after_kind": "String"}),
         ] {
             let mut value = receipt();
             value["user_path"] = changed;
