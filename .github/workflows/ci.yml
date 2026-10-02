@@ -97,6 +97,8 @@ jobs:
         run: cargo test -p locron --bin locron --locked -- service::windows_dashboard_tests
       - name: Verify guarded Windows output pruning
         run: cargo test -p locron --bin locron --locked -- tests::windows_prune_tests
+      - name: Verify all output maintenance and recovery contracts
+        run: cargo test -p locron --bin locron --locked -- maintenance::tests
       - name: Verify native MCP stdio contracts
         run: cargo test -p locron --test mcp --locked
       - name: Verify native HTTP API and stream contracts
