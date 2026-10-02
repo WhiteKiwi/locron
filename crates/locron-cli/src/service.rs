@@ -910,14 +910,12 @@ async fn foreground_serve(
     let cancellation = tokio_util::sync::CancellationToken::new();
     #[cfg(windows)]
     let control = if service_mode {
-        Some(
-            locron_engine::ipc::bind_role_control(
-                &paths.root,
-                "dashboard",
-                &metadata.lifetime_id,
-                cancellation.clone(),
-            )?,
-        )
+        Some(locron_engine::ipc::bind_role_control(
+            &paths.root,
+            "dashboard",
+            &metadata.lifetime_id,
+            cancellation.clone(),
+        )?)
     } else {
         None
     };
