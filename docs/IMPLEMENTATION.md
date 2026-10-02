@@ -1181,6 +1181,14 @@ Verify: tampering with SID, either full-ID component, path/root/name, original e
 definition or role order refuses the comparison; valid forward progress/future fields preserve
 the same origin without independently authorizing a filesystem or task operation.
 
+Also expose the pure ServiceRestoreRecord::matches_previous_identity(&FileIdentity) boundary.
+Compare both full volume/file components of the frozen previous binding with distribution's
+typed original executable inventory identity, without exposing mutable wire fields. Two
+individually valid records do not establish that they refer to the same original executable.
+Verify: the exact original identity matches; identical bytes or path paired with a different
+volume or any different file-ID bit refuses. This comparison performs no I/O and does not
+authorize replacement, restoration or any task effect.
+
 The persistence plan exposes that maximum record byte count and finite callback ceilings for R
 frozen roles: quiesce <=4R+2, restore <=4R+2, remove <=2R+2. These include per-effect intent/result,
 forced-stop facts and initial/terminal records; retries/polling do not append unbounded snapshots.
