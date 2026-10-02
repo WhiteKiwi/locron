@@ -1066,7 +1066,7 @@ mod tests {
                     if ($null -ne $mapping) { $mapping.Dispose() }
                     $stream.Dispose();
                 }
-                @{closed=$true} | ConvertTo-Json -Compress
+                @{closed=$true} | & $locronToJson -Compress
             ",
                 &input,
             )
@@ -1368,7 +1368,7 @@ mod tests {
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'ReadAndExecute', 'Allow'))
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'), 'FullControl', 'Allow'))
             $file.SetAccessControl($acl)
-            @{changed=$true} | ConvertTo-Json -Compress
+            @{changed=$true} | & $locronToJson -Compress
             ",
             &json!({"path": path}),
         ).unwrap();
@@ -1422,7 +1422,7 @@ mod tests {
                 $acl = $file.GetAccessControl()
                 $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), [Security.AccessControl.FileSystemRights][Enum]::Parse([Security.AccessControl.FileSystemRights], [string]$request.right), 'Allow'))
                 $file.SetAccessControl($acl)
-                @{changed=$true} | ConvertTo-Json -Compress
+                @{changed=$true} | & $locronToJson -Compress
                 ",
                 &json!({"path": path, "right": right}),
             ).unwrap();

@@ -3877,7 +3877,7 @@ mod tests {
             $acl = [IO.File]::GetAccessControl([string]$request.path);
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
             [IO.File]::SetAccessControl([string]$request.path, $acl);
-            @{changed=$true} | ConvertTo-Json -Compress
+            @{changed=$true} | & $locronToJson -Compress
         ", &serde_json::json!({"path": wal})).unwrap();
         assert!(!locron_core::filesystem::is_private(&wal, false).unwrap());
         assert!(Store::open_read_only(&paths.database).is_err());
