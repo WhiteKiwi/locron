@@ -551,12 +551,25 @@ async fn capture_output(stream: impl tokio::io::AsyncRead + Unpin) -> io::Result
 
 /// Returns the actual current token's SID, independent of username environment text.
 pub fn current_user_sid() -> io::Result<String> {
-    cached_sid(
-        &USER_SID,
-        &SID_INITIALIZER,
-        Instant::now() + ADAPTER_TIMEOUT,
-        query_sid,
-    )
+    let deadline = Instant::now() + ADAPTER_TIMEOUT;
+    if let Ok(sid) = cached_current_user_sid() {
+        return Ok(sid);
+    }
+    cached_sid(&USER_SID, &SID_INITIALIZER, deadline, query_sid)
+}
+
+/// Returns only an already verified SID, without starting or waiting for its initializer.
+pub(crate) fn cached_current_user_sid() -> io::Result<String> {
+    cached_verified_sid(&USER_SID)
+}
+
+fn cached_verified_sid(cache: &OnceLock<String>) -> io::Result<String> {
+    cache.get().cloned().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotConnected,
+            "verified Windows SID is not cached",
+        )
+    })
 }
 
 /// Returns the verified token SID within an existing caller deadline, capped at thirty seconds.
@@ -766,6 +779,34 @@ mod tests {
                 "caller-complete"
             ]
         );
+    }
+
+    #[test]
+    fn cached_sid_lookup_does_not_wait_for_an_initializer() {
+        let cache = OnceLock::new();
+        let entered = std::sync::Barrier::new(2);
+        let (release, released) = std::sync::mpsc::channel();
+        let result = std::thread::scope(|scope| {
+            let cache_ref = &cache;
+            let entered_ref = &entered;
+            let initializer = scope.spawn(move || {
+                cache_ref.get_or_init(|| {
+                    entered_ref.wait();
+                    released
+                        .recv_timeout(Duration::from_secs(3))
+                        .expect("cached-only lookup must not wait for initialization");
+                    "S-1-5-21-1234".to_owned()
+                });
+            });
+            entered.wait();
+            let result = cached_verified_sid(&cache);
+            // Always release the owned fixture thread before checking the result.
+            let _ = release.send(());
+            initializer.join().unwrap();
+            result
+        });
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotConnected);
+        assert_eq!(cached_verified_sid(&cache).unwrap(), "S-1-5-21-1234");
     }
 
     #[test]
