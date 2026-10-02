@@ -167,6 +167,32 @@ impl Drop for DaemonLock {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn missing_role_observation_does_not_create_its_state_root() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("absent");
+        let path = root.join("daemon.lock");
+        assert_eq!(DaemonLock::read_role_metadata(&path).unwrap(), None);
+        assert!(!root.exists());
+        let metadata = LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: uuid::Uuid::now_v7().to_string(),
+            started_at_us: 1,
+            binary_version: "test".into(),
+        };
+        let lock = DaemonLock::acquire_role(&path, &metadata, true).unwrap();
+        assert!(locron_core::filesystem::is_private(&root, true).unwrap());
+        assert_eq!(
+            DaemonLock::read_role_metadata(&path)
+                .unwrap()
+                .unwrap()
+                .metadata,
+            metadata
+        );
+        drop(lock);
+    }
+
     #[test]
     fn ownership_observer_does_not_read_windows_locked_bytes() {
         let temporary = tempfile::tempdir().unwrap();

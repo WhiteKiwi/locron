@@ -713,7 +713,7 @@ impl Store {
         );
         paths.database = path.to_path_buf();
         #[cfg(windows)]
-        let state_guard = paths.guard()?;
+        let state_guard = locron_core::filesystem::DirectoryGuard::existing_private(&paths.root)?;
         #[cfg(windows)]
         validate_sqlite_files(path, false)?;
         let connection =
@@ -3503,6 +3503,23 @@ mod tests {
         let temp = private_tempdir();
         let store = Store::open(StatePaths::new(temp.path().into()), "test", 1).unwrap();
         (temp, store)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_only_observation_leaves_a_missing_state_root_absent() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("absent");
+        let database = root.join("state.db");
+        assert!(matches!(
+            Store::open_read_only(&database),
+            Err(StoreError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound
+        ));
+        assert!(!root.exists());
+        let store = Store::open(StatePaths::new(root.clone()), "test", 1).unwrap();
+        assert!(locron_core::filesystem::is_private(&root, true).unwrap());
+        assert!(locron_core::filesystem::is_private(&database, false).unwrap());
+        drop(store);
     }
 
     #[cfg(windows)]

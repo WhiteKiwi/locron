@@ -116,6 +116,9 @@ impl DerefMut for GuardedFile {
 /// Opens an existing managed data file after private parent and no-follow checks.
 /// Creation flags are cleared; use [`create_private_new`] for a missing file.
 pub fn open_private(path: &Path, options: &mut OpenOptions) -> io::Result<GuardedFile> {
+    #[cfg(windows)]
+    let guard = DirectoryGuard::existing_private(parent(path)?)?;
+    #[cfg(not(windows))]
     let guard = DirectoryGuard::private(parent(path)?)?;
     options.create(false).create_new(false);
     open_with_guard(path, options, guard, true)
@@ -838,6 +841,26 @@ mod tests {
     use std::io::Write;
     use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn passive_file_observers_leave_an_absent_parent_absent() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("absent");
+        let path = root.join("nested").join("secret.txt");
+        let error = open_private(&path, OpenOptions::new().read(true).create(true)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(!root.exists());
+        assert_eq!(
+            open_read_no_follow(&path).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(!root.exists());
+        remove_private_file(&path).unwrap();
+        assert!(!root.exists());
+        drop(open_private_or_create(&path).unwrap());
+        assert!(is_private(path.parent().unwrap(), true).unwrap());
+        assert!(is_private(&path, false).unwrap());
+    }
 
     struct OwnedFixtureChild(Child);
 
