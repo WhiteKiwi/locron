@@ -961,10 +961,11 @@ restores their exact enabled flags. Changed definitions/roots/SIDs fail closed; 
 disabled. Missing registrations are not silently recreated from a stale record.
 
 Freeze the CLI-private Windows maintenance protocol as snapshot_executable_roles(executable),
-ServiceSnapshot::restore_record(), quiesce_roles(snapshot, persist),
+ServiceSnapshot::{restore_record,persistence_plan}(), quiesce_roles(snapshot, persist),
 QuiescedServices::restore_record(), recover_quiesced(record, persist),
-restore_roles(quiesced, new_executable), restore_record(record, new_executable) and
-remove_roles(quiesced). The persist callback receives a typed ServiceRestoreRecord and returns
+ServiceRestoreRecord::persistence_plan(), restore_roles(quiesced, new_executable, persist),
+restore_record(record, new_executable, persist) and remove_roles(quiesced, persist).
+The persist callback receives a typed ServiceRestoreRecord and returns
 ServiceError on a failed private-journal write. Invoke it with the complete original snapshot
 before disabling the first task; callback failure changes nothing. Persist confirmed quiescence
 and each explicit forced-stop fact before releasing the old executable read guard. Consuming the
@@ -973,7 +974,7 @@ old executable guard only after actual all-task exit, so it cannot collide with 
 exclusive replacement gate.
 
 ServiceRestoreRecord uses a deny-unknown-fields versioned schema: current SID, previous absolute
-executable, its full volume/file identity, prior roles, confirmed-quiescent flag and bounded
+executable, its full volume/file identity, prior roles, explicit phase and bounded
 explicit forced Task instance identities. Each role stores its fixed daemon/dashboard selector,
 existing root, shared full instance digest, deterministic task name, original enabled flag and
 semantic definition fingerprint. Encode full identities and SHA-256 fingerprints as fixed-width
@@ -981,15 +982,38 @@ lowercase hexadecimal strings to preserve every bit through JSON/PowerShell. Bou
 at 256 distinct registered bindings and refuse overflow before mutation. Records contain no
 arbitrary executable source, command template or role arguments.
 
+Maintenance records admit only normalized UTF-8 local Windows paths of at most 4,096 UTF-16 units,
+including prefixes/separators. Refuse control and forbidden filename characters in normal
+components, unsupported prefixes, relative components or overflow before effects. The bound for
+a future valid executable path's JSON representation is 3*4096+2 bytes, preserving Unicode and
+greater-than-260-character paths without increasing journal limits. Compute the maximum serialized
+record from the complete frozen snapshot plus the bounded future binding/definition, progress
+and forced-instance fields; refuse if it cannot fit the 128 KiB private-record limit.
+
+The persistence plan exposes that maximum record byte count and finite callback ceilings for R
+frozen roles: quiesce <=4R+2, restore <=4R+2, remove <=2R+2. These include per-effect intent/result,
+forced-stop facts and initial/terminal records; retries/polling do not append unbounded snapshots.
+Distribution must reserve all repeated service records, frame overhead, file/receipt/inventory
+transitions and the worst rollback path against 128 frames/16 MiB before any task, registry or
+file mutation. Reserve the actual validated remaining path again at recovery entry. Failure to
+prove the complete budget refuses with zero effects; initial callback success alone is not a
+reservation. The 256-binding inventory limit is only a ceiling, not a promise that it fits.
+
 An interrupted unconfirmed record can resume disabling/quiescing only after reconstructing all
 existing root guards and matching the old executable object plus unchanged definitions; an
-originally disabled role must still be disabled. Confirmed records require all old registrations
-to remain disabled/stopped before the first replacement or removal. Restoration receives a new
-executable already verified by distribution's receipt/package proof, then preflights every
-registration against either its exact original fingerprint or the exact newly generated fixed
-definition for that verified executable. Accept the latter only as idempotent recovery of this
-same restore; it cannot be an arbitrary journal definition. Preserve original enabled flags and
-refuse a missing/changed root, SID, registration or unexpected enable transition before any
+originally disabled role must still be disabled. A confirmed quiescent record reconstructs
+existing roots/task guards and requires old definitions disabled/stopped without reopening the
+old executable: postreplacement/WinGet Complete may legitimately find it absent or replaced.
+Restoration retains the new executable already verified by distribution's protected receipt/
+package proof, validates its full object and all existing registrations, then flushes a typed
+Restoring intent with that new binding before refreshing any task. Only this phase plus fresh
+verified new bytes admits an exact deterministic new definition or its original enabled flag as
+idempotent recovery. A merely quiescent record requires original disabled definitions and cannot
+adopt an unexplained new action. Never treat saved journal source as a task definition.
+Removal likewise records exact per-role delete intent before the effect; only that recorded
+intent permits an absent prior task during removal recovery, and no missing task is recreated.
+Preserve original enabled flags and refuse a missing/changed root, SID, registration outside
+that exact removal intent, or unexpected enable transition before any
 write. This permits recovery after a completed per-role refresh without adopting unrelated tasks.
 
 Native Verify: (1) failed initial persistence leaves every task/enabled flag/process unchanged,
@@ -998,6 +1022,11 @@ and simulated abrupt helper exit after each disable resumes from the frozen orig
 before task or state/journal creation. (3) two roots with both enabled and disabled roles quiesce
 before the old executable guard releases; restore across a changed versioned path, including an
 interrupted one-role refresh, returns every original enabled flag without creating missing roles.
+Also verify confirmed recovery with a genuinely absent old executable, new-definition refusal
+outside Restoring, failed restore-intent persistence with zero refreshes, 4,096/4,097-unit Unicode
+path boundaries, worst future-path serialization and oversized full forward/rollback reservations
+with zero disables/registry writes/file replacements. Callback observations must remain within
+the published ceilings through graceful, forced and interrupted recovery paths.
 
 The package flow composes these same APIs through the existing installer maintenance modes:
 Prepare snapshots/quiesces all bindings for one verified executable and journals an operation UUID;

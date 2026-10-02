@@ -577,6 +577,10 @@ Store distribution remain outside this milestone.
   coordinate owned executable holders and automatic restarts before replacement; preserve rollback,
   enabled/disabled registration state and durable jobs/history; and report confirmed completion
   only after replacement succeeds. Remaining unowned holders produce an actionable bounded refusal.
+- Windows install/update/package maintenance accepts recorded normalized local paths of at most
+  4,096 UTF-16 units. Longer or unsupported paths and an oversized recovery snapshot refuse before
+  stopping services or changing installation state; Unicode and paths beyond 260 characters remain
+  supported within that bound. Ordinary job/runtime state access keeps its existing path contract.
 - Completion requires the same reviewed revision to pass native x64/ARM64 CI and standard-user
   Windows 11 install/run/update/uninstall acceptance without a Rust/Visual Studio/Git Bash/pwsh
   dependency, including descendants, permissions, reboot/login, stock shells and security policy.

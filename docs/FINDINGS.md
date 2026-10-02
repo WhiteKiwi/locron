@@ -3110,6 +3110,21 @@ claiming a passive read-only path. No missing sidecar is automatically repaired 
 Sources: [CreateFileW sharing rules](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 cached bundled sqlite3.c sqlite3WalClose/winShmUnmap.
 
+### Maintenance journal path bound (2026-10-03)
+
+Maintenance needs a finite bound for a future WinGet Complete executable path before Prepare can
+reserve its entire private journal. Select 4,096 UTF-16 units per normalized recorded local path.
+Validate normal components against Windows' forbidden filename characters and control range,
+while retaining structural drive/verbatim prefixes and separators. Valid UTF-8 scalars consume
+at most three JSON content bytes per UTF-16 unit; separators escape to two, supplementary scalars
+use four bytes for two units, and forbidden quotes/controls cannot require six-byte escapes.
+The conservative future path bound is therefore 12,290 bytes including JSON quotes. This is a
+selected maintenance limit, not a Windows filesystem limit or a runtime-state path restriction.
+Use the actual complete snapshot plus bounded future restore/forced-stop fields to preflight
+record size and all repeated forward/rollback callbacks before the first task disable. A 256-role
+inventory ceiling alone cannot prove a 128 KiB record/128-frame/16 MiB journal will fit.
+Source: [Windows filename character rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#naming-conventions).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
