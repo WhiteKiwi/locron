@@ -152,6 +152,23 @@ suspended native child cannot be independently recovered after a wrapper failure
 never become proof of tree exit. After confirmed empty-tree/root exit, output drain has its own
 finite grace deadline; leaked external pipe holders cannot indefinitely retain an attempt.
 
+The shared Windows engine factory is windows_child::OwnedChild::spawn(Command, ChildWindow),
+with Hidden/Inherit policies and no mutable native-child escape. Exact argv, environment, cwd
+and stdio remain caller-owned inputs; raw creation_flags on that Command are unsupported.
+Register CreationFlags through the audited wrapper: Hidden selects CREATE_NO_WINDOW and Inherit
+selects zero, then JobObject adds its temporary suspension. The runner selects Inherit to keep
+its current behavior. Expose id, cached root try_wait, authoritative tree_empty, start_kill and
+async confirm_exit_until/terminate_until accepting one std::time::Instant deadline. Only the
+runner can take stdout/stderr through crate-private accessors. Confirmation polls both root
+reaping and retained-Job emptiness, never the completion-port wrapper's wait result.
+SpawnFailure::NotStarted carries the pre-spawn error; ExecutionMayHaveStarted carries the error
+and SpawnContainment retaining the independent kill-on-close Job. Wrapper failure has lost the
+root-wait capability, so even an empty retained Job cannot confirm that root exit. Keep that
+guard through refusal/quarantine and never retry the uncertain child. Dropping it is emergency
+kernel containment, not a successful cleanup result. Native fixtures preserve suspended enrollment,
+uncertain refusal, immediate descendants, root-before-descendant exit, one absolute stop budget,
+and headless policy through wrapper composition.
+
 ### Private state and guarded filesystem access
 
 Use a fixed stock PowerShell 5.1/.NET DirectoryInfo.Create(DirectorySecurity) adapter to create

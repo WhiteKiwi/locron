@@ -2623,14 +2623,29 @@ This boundary supervises processes in the owned jobs. Job Objects are not a sand
 same-account target code which delegates work to an unrelated service/WMI process. Do not
 advertise cancellation of all work performed anywhere on the machine as a Job Object guarantee.
 
+The shared OwnedChild factory source audit confirms process-wrap 10.0.1 JobObject::pre_spawn
+overwrites a Command's raw creation_flags and reads only the public CreationFlags wrapper.
+Therefore Hidden/Inherit must set that wrapper's inferred public flag newtype, preserving
+CREATE_NO_WINDOW through temporary suspension without adding raw Windows bindings. The existing
+runner has no raw creation_flags and retains Inherit behavior. generic_wrap::spawn_inner loses
+the original native Child on a post_spawn or wrap_child error; no root ExitStatus can then be
+recovered from the safe Job query. An uncertain spawn carries a retained independent Job guard
+and refuses replay even if its process list later empties. Ordinary successful children retain
+their root try_wait capability and require it together with Job emptiness under one supplied deadline.
+This factory encapsulates the same reviewed enrollment hook; it exposes no native mutable child
+or process-wrap wrapper chain. Native hidden fixtures can safely test console-device availability
+by opening CONOUT$, while wrapper policy assertions check the explicit CREATE_NO_WINDOW value.
+
 Sources: [process-wrap v10.0.1 manifest](https://github.com/watchexec/process-wrap/blob/v10.0.1/Cargo.toml),
 [hook ordering](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/generic_wrap.rs),
 [suspension/assignment](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/tokio/job_object.rs),
 [Windows job operations and wait implementation](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/windows.rs),
 [kill-on-drop hook](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/tokio/kill_on_drop.rs),
+[creation flag composition](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/tokio/creation_flags.rs),
 [win32job ownership](https://github.com/ohadravid/win32job-rs/blob/17080e2a29ea244bb4e58400dc27739075b2fbc8/src/job.rs),
 [win32job process-list query](https://github.com/ohadravid/win32job-rs/blob/17080e2a29ea244bb4e58400dc27739075b2fbc8/src/query.rs),
 [Microsoft suspended creation](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags),
+[console-device handles independent of stdio redirection](https://learn.microsoft.com/en-us/windows/console/console-handles),
 [job inheritance, breakaway, kill-on-close and WMI exception](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
 [nested process-list semantics](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_process_id_list).
 
