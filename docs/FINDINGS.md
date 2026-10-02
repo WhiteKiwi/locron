@@ -2831,6 +2831,26 @@ Sources: [5.1 module-autoload preference](https://raw.githubusercontent.com/Micr
 [5.1 explicit/restricted imports](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/import-module?view=powershell-5.1),
 [5.1 command qualification](https://raw.githubusercontent.com/MicrosoftDocs/PowerShell-Docs/main/reference/5.1/Microsoft.PowerShell.Core/About/about_Command_Precedence.md#use-module-qualified-names).
 
+PR41 f476fc3/run 37049957470 passes 69 of 70 native ARM64 core fixtures. The remaining broad-file
+test reaches its generic run_script_json ACL setup after private SID/directory/CreateNew succeeded,
+then fails at that separate Get-Acl/Set-Acl exchange's original thirty-second timeout. The fixed
+worker's cold concurrent and ordered phase fixtures pass. Post-gate stock probes still take
+23,240/22,660/22,738 ms, so neither that later success nor first-SID evidence identifies the
+generic child's stalled JSON or security-module stage.
+Evidence: [actual broad-file setup failure and post-gate probes](https://github.com/WhiteKiwi/locron/actions/runs/37049957470/job/110980584946).
+
+The broad-file/root fixtures only need to add an Everyone Read ACE to a disposable owned object.
+Use .NET Framework File/Directory GetAccessControl and SetAccessControl for that deliberate setup,
+avoiding the unrelated PowerShell Security module's Get-Acl/Set-Acl discovery. This retains an
+independent platform ACL operation and the same real descriptor, repair/refusal and original-byte
+assertions; generic JSON conversion, child budgets and production ACL adapters remain separate.
+This choice does not claim the generic adapter's cold startup or restrictive-policy behavior is
+resolved. Native acceptance and generic lifecycle tests remain required.
+Sources: [File ACL read](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.getaccesscontrol?view=netframework-4.8.1),
+[File ACL write](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.setaccesscontrol?view=netframework-4.8.1),
+[Directory ACL read](https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.getaccesscontrol?view=netframework-4.8.1),
+[Directory ACL write](https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.setaccesscontrol?view=netframework-4.8.1).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development

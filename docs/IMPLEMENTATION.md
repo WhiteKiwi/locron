@@ -276,6 +276,21 @@ hash paths and strict reply frames, and emits ordered bounded import/SID/CreateN
 source, increasing children, replaying a mutation or changing execution policy. Native evidence
 must establish whether the measured ARM64 delay is resolved before marking the privacy gate done.
 
+The measured remaining ARM64 broad-file failure is its separate generic ACL-fixture setup, after
+private creation succeeded. Change only the two broad file/root setup scripts to the compiled
+.NET Framework File/Directory GetAccessControl and SetAccessControl methods; preserve the same
+Everyone Read ACE, JSON input/output and original generic thirty-second plus three-second bounds.
+Avoid importing the unrelated PowerShell Security module for a test-owned ACL mutation. Do not
+change production worker framing, JSON binding, deadlines, cold gate ordering or host policy.
+This is a fixture dependency correction; generic cold-stage/policy acceptance is still pending.
+
+Verify: (1) native ARM64/x64/MSRV original cold core suites run unchanged and the deliberately
+broad file fails private validation before truncation with all original bytes intact. (2) the
+owned broad directory still refuses ordinary private adoption, remains broad until explicit
+repair, then has real current-SID/SYSTEM privacy. (3) real generic startup/stall/output-bound and
+fixed-worker cold/concurrent phase tests still execute without a warm-up, retry, skipped test or
+budget increase; setup failure stays a visible failure rather than a passing privacy assertion.
+
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable
