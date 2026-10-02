@@ -18,7 +18,9 @@ use tokio::sync::mpsc as queue;
 use tokio::task::JoinHandle;
 use win32job::{ExtendedLimitInfo, Job};
 
-use super::{OUTPUT_LIMIT, capture_output, remaining, stock_powershell};
+#[cfg(not(test))]
+use super::capture_output;
+use super::{OUTPUT_LIMIT, remaining, stock_powershell};
 
 const CLEANUP: Duration = Duration::from_secs(3);
 const IDLE: Duration = Duration::from_secs(60);
@@ -51,6 +53,7 @@ struct Diagnostic {
     entered: Instant,
     deadline: Instant,
     stages: std::sync::Mutex<std::collections::VecDeque<DiagnosticStage>>,
+    child_stages: std::sync::Mutex<std::collections::VecDeque<DiagnosticStage>>,
 }
 
 #[cfg(test)]
@@ -71,19 +74,28 @@ impl Diagnostic {
             entered,
             deadline,
             stages: std::sync::Mutex::new(std::collections::VecDeque::with_capacity(12)),
+            child_stages: std::sync::Mutex::new(std::collections::VecDeque::with_capacity(16)),
         }
     }
 
     fn record(&self, phase: &'static str, pid: u32) {
-        let now = Instant::now();
+        self.record_at(phase, pid, Instant::now());
+    }
+
+    fn record_at(&self, phase: &'static str, pid: u32, now: Instant) {
         let stage = DiagnosticStage {
             phase,
             pid,
             elapsed_ms: now.duration_since(self.entered).as_millis(),
             remaining_ms: self.deadline.saturating_duration_since(now).as_millis(),
         };
-        if let Ok(mut stages) = self.stages.try_lock() {
-            if stages.len() == 12 {
+        let (target, capacity) = if phase.starts_with("child-") {
+            (&self.child_stages, 16)
+        } else {
+            (&self.stages, 12)
+        };
+        if let Ok(mut stages) = target.try_lock() {
+            if stages.len() == capacity {
                 stages.pop_front();
             }
             stages.push_back(stage);
@@ -109,6 +121,11 @@ impl Diagnostic {
                 Self::emit_stage(&self.id, self.operation, stage);
             }
         }
+        if let Ok(stages) = self.child_stages.try_lock() {
+            for stage in &*stages {
+                Self::emit_stage(&self.id, self.operation, stage);
+            }
+        }
     }
 
     fn emit_stage(id: &str, operation: &str, stage: &DiagnosticStage) {
@@ -116,6 +133,112 @@ impl Diagnostic {
             "filesystem-stage request={id} operation={operation} phase={} pid={} elapsed_ms={} remaining_ms={}",
             stage.phase, stage.pid, stage.elapsed_ms, stage.remaining_ms
         );
+    }
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct ChildPhases(std::sync::Mutex<std::collections::VecDeque<(&'static str, Instant)>>);
+
+#[cfg(test)]
+impl ChildPhases {
+    fn observe(&self, bytes: &[u8]) {
+        let line = bytes.strip_suffix(b"\r").unwrap_or(bytes);
+        let phase = match line {
+            b"locron-fs-phase:source-entry" => "child-source-entry",
+            b"locron-fs-phase:encoding-ready" => "child-encoding-ready",
+            b"locron-fs-phase:input-line" => "child-input-line",
+            b"locron-fs-phase:json-parsed" => "child-json-parsed",
+            b"locron-fs-phase:sid-resolved" => "child-sid-resolved",
+            b"locron-fs-phase:reply-serialized" => "child-reply-serialized",
+            b"locron-fs-phase:reply-flushed" => "child-reply-flushed",
+            _ => return,
+        };
+        if let Ok(mut phases) = self.0.try_lock() {
+            if phases.len() == 16 {
+                phases.pop_front();
+            }
+            phases.push_back((phase, Instant::now()));
+        }
+    }
+
+    fn attach(&self, diagnostic: &Diagnostic, pid: u32) {
+        if let Ok(phases) = self.0.try_lock() {
+            for (phase, received) in &*phases {
+                if *received >= diagnostic.entered {
+                    diagnostic.record_at(phase, pid, *received);
+                }
+            }
+        }
+    }
+}
+
+/// Instrument only fixed source in test builds; caller data never selects executable text.
+#[cfg(test)]
+fn instrumented_source() -> String {
+    let mut source = format!("{}\n{SOURCE}", phase_token("source-entry"));
+    for (anchor, phase) in [
+        (
+            "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)",
+            "encoding-ready",
+        ),
+        (
+            "while ($null -ne ($line = [Console]::In.ReadLine())) {",
+            "input-line",
+        ),
+        ("$request = $line | ConvertFrom-Json", "json-parsed"),
+        (
+            "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User",
+            "sid-resolved",
+        ),
+        ("[Console]::Out.Flush()", "reply-flushed"),
+    ] {
+        assert_eq!(source.matches(anchor).count(), 1);
+        source = source.replace(anchor, &format!("{anchor}\n{}", phase_token(phase)));
+    }
+    let serialize = "(@{version=1; id=$request.id; pid=$PID; result=$result} | ConvertTo-Json -Compress -Depth 6)";
+    let anchor = format!("[Console]::Out.WriteLine({serialize})");
+    assert_eq!(source.matches(&anchor).count(), 1);
+    source.replace(
+        &anchor,
+        &format!(
+            "$reply = {serialize}\n{}\n[Console]::Out.WriteLine($reply)",
+            phase_token("reply-serialized")
+        ),
+    )
+}
+
+#[cfg(test)]
+fn phase_token(phase: &str) -> String {
+    format!("[Console]::Error.WriteLine('locron-fs-phase:{phase}'); [Console]::Error.Flush()")
+}
+
+#[cfg(test)]
+async fn capture_diagnostic_stderr(
+    mut stream: impl tokio::io::AsyncRead + Unpin,
+    phases: Arc<ChildPhases>,
+) -> io::Result<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+    let mut bytes = Vec::new();
+    let mut scanned = 0;
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let room = usize::try_from(OUTPUT_LIMIT + 1).expect("small capture limit") - bytes.len();
+        let capacity = room.min(buffer.len());
+        let count = stream.read(&mut buffer[..capacity]).await?;
+        if count == 0 {
+            return Ok(bytes);
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+        if bytes.len() > OUTPUT_LIMIT as usize {
+            return Err(io::Error::other(
+                "Windows adapter exceeded its output limit",
+            ));
+        }
+        while let Some(newline) = bytes[scanned..].iter().position(|byte| *byte == b'\n') {
+            phases.observe(&bytes[scanned..scanned + newline]);
+            scanned += newline + 1;
+        }
     }
 }
 
@@ -322,12 +445,16 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
             request.diagnostic.record("cleanup-start", owned.pid);
             if let Err(cleanup) = owned.cleanup().await {
                 #[cfg(test)]
+                owned.phases.attach(&request.diagnostic, owned.pid);
+                #[cfg(test)]
                 request.diagnostic.record("cleanup-unconfirmed", owned.pid);
                 quarantine = true;
                 fail_queued(&mut receiver, &cleanup);
                 let _ = request.reply.send(Err(cleanup));
                 continue;
             }
+            #[cfg(test)]
+            owned.phases.attach(&request.diagnostic, owned.pid);
             #[cfg(test)]
             request.diagnostic.record("cleanup-confirmed", owned.pid);
             worker = None;
@@ -384,6 +511,8 @@ struct Worker {
     stdout: BufReader<ChildStdout>,
     stderr: JoinHandle<io::Result<Vec<u8>>>,
     pid: u32,
+    #[cfg(test)]
+    phases: Arc<ChildPhases>,
 }
 
 fn hidden_creation_flags() -> CreationFlags {
@@ -395,8 +524,12 @@ fn hidden_creation_flags() -> CreationFlags {
 impl Worker {
     fn spawn() -> Result<Self, (bool, io::Error)> {
         let executable = stock_powershell().map_err(|error| (false, error))?;
+        #[cfg(not(test))]
+        let source = SOURCE;
+        #[cfg(test)]
+        let source = instrumented_source();
         let encoded = base64::engine::general_purpose::STANDARD.encode(
-            SOURCE
+            source
                 .encode_utf16()
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>(),
@@ -448,13 +581,21 @@ impl Worker {
             .stderr()
             .take()
             .ok_or_else(|| (true, io::Error::other("filesystem child has no stderr")))?;
+        #[cfg(test)]
+        let phases = Arc::new(ChildPhases::default());
+        #[cfg(test)]
+        let errors = tokio::spawn(capture_diagnostic_stderr(stderr, Arc::clone(&phases)));
+        #[cfg(not(test))]
+        let errors = tokio::spawn(capture_output(stderr));
         Ok(Self {
             child,
             job,
             stdin,
             stdout: BufReader::new(stdout),
-            stderr: tokio::spawn(capture_output(stderr)),
+            stderr: errors,
             pid,
+            #[cfg(test)]
+            phases,
         })
     }
 
@@ -618,6 +759,81 @@ mod tests {
     use std::io::Read;
     use std::os::windows::process::CommandExt;
     use std::process::{Child, Command as StdCommand, Stdio};
+
+    #[test]
+    fn fixed_phase_source_and_observations_are_bounded_and_do_not_render_inputs() {
+        let source = instrumented_source();
+        for phase in [
+            "source-entry",
+            "encoding-ready",
+            "input-line",
+            "json-parsed",
+            "sid-resolved",
+            "reply-serialized",
+            "reply-flushed",
+        ] {
+            assert_eq!(source.matches(&phase_token(phase)).count(), 1);
+        }
+        let phases = ChildPhases::default();
+        phases.observe(b"unrecognized private stderr");
+        phases.observe(b"locron-fs-phase:sid-resolved private suffix");
+        assert!(phases.0.lock().unwrap().is_empty());
+        for _ in 0..32 {
+            phases.observe(b"locron-fs-phase:sid-resolved\r");
+        }
+        assert_eq!(phases.0.lock().unwrap().len(), 16);
+        let request = fixture_request("sid");
+        let before_entry = request
+            .diagnostic
+            .entered
+            .checked_sub(Duration::from_millis(1))
+            .expect("fixture clock has an earlier instant");
+        for (_, received) in phases.0.lock().unwrap().iter_mut() {
+            *received = before_entry;
+        }
+        phases.attach(&request.diagnostic, 42);
+        // Old phases precede this new request and cannot be attributed to its exchange.
+        assert!(request.diagnostic.child_stages.lock().unwrap().is_empty());
+        phases.observe(b"locron-fs-phase:reply-flushed");
+        phases.attach(&request.diagnostic, 42);
+        let observed = request.diagnostic.child_stages.lock().unwrap();
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].phase, "child-reply-flushed");
+        assert_eq!(observed[0].pid, 42);
+    }
+
+    #[tokio::test]
+    async fn diagnostic_stderr_preserves_bytes_and_fails_at_limit_without_eof() {
+        use tokio::io::AsyncWriteExt;
+        let phases = Arc::new(ChildPhases::default());
+        let input = b"locron-fs-phase:input-line\r\nunknown\nlocron-fs-phase:json-parsed\n";
+        let bytes = capture_diagnostic_stderr(&input[..], Arc::clone(&phases))
+            .await
+            .unwrap();
+        assert_eq!(bytes, input);
+        {
+            let observed = phases.0.lock().unwrap();
+            assert_eq!(observed.len(), 2);
+            assert_eq!(observed[0].0, "child-input-line");
+            assert_eq!(observed[1].0, "child-json-parsed");
+        }
+        let limit = usize::try_from(OUTPUT_LIMIT + 1).unwrap();
+        let (reader, mut writer) = tokio::io::duplex(limit);
+        writer.write_all(&vec![b'x'; limit]).await.unwrap();
+        let error = tokio::time::timeout(
+            Duration::from_secs(1),
+            capture_diagnostic_stderr(reader, Arc::clone(&phases)),
+        )
+        .await
+        .expect("limit must fail before the open writer reaches EOF")
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Windows adapter exceeded its output limit"
+        );
+        assert_eq!(phases.0.lock().unwrap().len(), 2);
+        drop(writer);
+    }
 
     #[test]
     fn job_wrapper_keeps_hidden_flags_without_explicit_suspension() {
