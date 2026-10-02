@@ -809,20 +809,25 @@ runtime startup, and pass that absolute value through the exchange. Reuse the re
 state guard and windows::cached_current_user_sid(), a crate-private OnceLock::get-only accessor
 which never starts or waits for SID initialization and refuses when no verified SID is cached.
 Runtime owns the notification implementation; filesystem development owns that cached accessor.
-Check expiry before naming/spawn, after runtime startup, before each pipe-open attempt, before
-writing the frame and before its final consumption receipt, in addition to timeout_at. This
-prevents an already-ready future from committing late control after the shared thirty-second
-shutdown budget. No new guard, directory, SID adapter or detached worker is created on this path.
+Check expiry before naming/spawn, after runtime startup and before each pipe-open attempt. Gate
+every actual poll of the frame read/write futures, including a final consumption receipt which
+was previously Pending; check the clock again when an I/O future returns Ready. Keep timeout_at
+alongside those gates because Tokio polls the inner future before its timer. An expired poll
+must never initiate another receipt write. An OS write queued before expiry can still complete
+later, so a timeout means uncertain delivery, never proof of no shutdown dispatch or permission
+to replay. No new guard, directory, SID adapter or detached worker is created on this path.
 Join the short-lived worker on every result. Delivery acknowledgement still never proves exit.
 The existing ordinary request_shutdown and wake sender keep their current behavior.
 
 Native Verify: (1) a past caller deadline refuses before worker/connection creation; the
 cached-only accessor refuses a fresh empty cache without an initializer or filesystem request.
 (2) a stalled acknowledgement consumes at most the remaining caller budget and cleanup leaves
-no background sender; saturated endpoints cannot reset that budget across retries. (3) ready
-exchange boundaries which cross the deadline never write the final receipt or dispatch shutdown;
-an on-time exchange cancels only the exact registered role lifetime and still requires actual
-lock/process exit confirmation.
+no background sender; saturated endpoints cannot reset that budget across retries. (3) a receipt
+future returning Pending before expiry is not polled again when made ready after expiry; a ready
+acknowledgement crossing the deadline never initiates a receipt. An on-time exchange cancels only
+the exact registered role lifetime and still requires actual lock/process exit confirmation.
+Keep timeout diagnostics consistent with potentially queued delivery rather than claiming an
+absence of shutdown from the client's clock.
 
 Headless Windows roles retain cooperative control when console Ctrl-C registration is unavailable;
 that diagnostic alone cannot terminate a registered dashboard before its control future runs.

@@ -3140,6 +3140,23 @@ record size and all repeated forward/rollback callbacks before the first task di
 inventory ceiling alone cannot prove a 128 KiB record/128-frame/16 MiB journal will fit.
 Source: [Windows filename character rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#naming-conventions).
 
+### Guarded control deadline polling (2026-10-03)
+
+The locked Tokio 1.53.1 timeout future polls its inner future before checking the timer. A
+one-time clock check before awaiting a receipt therefore cannot prevent a previously Pending
+write from being polled when it becomes ready after the deadline. Select an expiry gate on each
+actual read/write future poll, plus a post-Ready check and the same absolute timeout_at. A native
+deterministic fixture must make the receipt Pending, advance past its deadline and make it ready,
+then prove no later receipt poll or new write occurs. A second fixture crosses expiry while
+consuming an already-ready acknowledgement and must never initiate the receipt.
+
+These gates prevent new client I/O initiation after expiry; they cannot retract a write already
+queued to the operating system. Timeout therefore leaves delivery uncertain and does not prove
+the server did not dispatch shutdown. Exact-lifetime cancellation and actual lock/process exit
+remain necessary; neither timeout nor acknowledgement authorizes replay or replacement.
+
+Source: [locked Tokio timeout polling order](https://github.com/tokio-rs/tokio/blob/75fef53d0a8590c2d1dbb63672aa7b7d1ef51155/tokio/src/time/timeout.rs#L211).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
