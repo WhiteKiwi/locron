@@ -864,6 +864,13 @@ After owned teardown, supervisor exhaustion returns the final actual child exit 
 static PowerShell launcher propagates it. Infrastructure/fact-write failures return a distinct
 failure with retained diagnostics, never a fabricated child outcome or successful registration.
 
+The hidden supervisor entry dispatches before ordinary state opening and awaits the service's
+`Result<i32, ServiceError>` teardown result. An `Ok` code reaches the process boundary unchanged,
+including a genuine child exit of 70. An `Err` is wrapped as a dedicated supervisor infrastructure
+failure and exits 70 with an explicit machine error category; private runtime facts retain the
+typed cause that distinguishes it from child completion. Preserve existing public service error
+codes (unsupported 2, managed 3, command/I/O 5) and unrelated generic error handling.
+
 Native Verify: (1) invalid/missing/stale parent and child lifetimes refuse without creating state;
 manual ownership survives registered waiting, exact cancellation stops the waiter, and manual
 exit admits the registered daemon with a new actual owner. (2) suspended enrollment, failed/uncertain
