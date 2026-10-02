@@ -192,6 +192,15 @@ static-cache or thread destructors and Tokio kill_on_drop alone are not this cra
 Spawn/enrollment/resume or cleanup uncertainty remains an explicit failure, never a successful
 creation fact or an automatic replay. No private data is sent to an unconfirmed child.
 
+Enable process-wrap's pinned creation-flags feature and supply CREATE_NO_WINDOW through its
+CreationFlags wrapper, rather than only calling Tokio Command::creation_flags. JobObject's
+pre_spawn derives its flags from that wrapper and otherwise overwrites the raw command flags.
+The reviewed wrapper preserves CREATE_NO_WINDOW while adding temporary CREATE_SUSPENDED;
+the existing post_spawn enrollment still precedes resume and private request input. Verify the
+registered flag bits and JobObject wrapper in a unit fixture, and retain the native fixed-worker
+reply/owned-cleanup fixtures. Source inspection proves the composed creation flags; a headless
+runner's lack of a visible console alone does not prove CREATE_NO_WINDOW.
+
 Native cold gates remain before the diagnostic probes, with no warm-up step. Fixtures retain the
 production thirty-second maximum for a real stock process and report startup separately from
 the script phase. A script-entered marker proves timeout cleanup after actual entry; an
