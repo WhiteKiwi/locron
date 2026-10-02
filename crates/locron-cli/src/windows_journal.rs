@@ -531,11 +531,7 @@ mod tests {
 
     #[test]
     fn guarded_flush_roundtrip_reserves_before_effect_and_refuses_unknown_existing_journal() {
-        let root = tempfile::Builder::new()
-            .prefix("locron-journal-fixture-")
-            .tempdir()
-            .unwrap();
-        locron_core::filesystem::restrict_owned(root.path(), true).unwrap();
+        let root = super::super::windows_fixture::PrivateFixture::new("locron-journal-fixture-");
         let path = root.path().join("journal.bin");
         let worst_case = record(999);
         assert!(preflight(&worst_case, FRAME_COUNT + 1).is_err());
@@ -587,11 +583,8 @@ mod tests {
         worst_case.padding.clear();
         assert!(preflight(&worst_case, 0).is_err());
         assert!(preflight(&worst_case, usize::MAX).is_err());
-        let root = tempfile::Builder::new()
-            .prefix("locron-reservation-fixture-")
-            .tempdir()
-            .unwrap();
-        locron_core::filesystem::restrict_owned(root.path(), true).unwrap();
+        let root =
+            super::super::windows_fixture::PrivateFixture::new("locron-reservation-fixture-");
         let path = root.path().join("journal.bin");
         let mut journal = Journal::create(&path, preflight(&worst_case, 1).unwrap()).unwrap();
         journal.append(record(0), validate).unwrap();

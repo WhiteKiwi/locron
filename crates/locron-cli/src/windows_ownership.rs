@@ -184,13 +184,8 @@ mod tests {
         file.sync_all().unwrap();
     }
 
-    fn fixture() -> (tempfile::TempDir, Value) {
-        let root = tempfile::Builder::new()
-            .prefix("locron-ownership-fixture-")
-            .tempdir()
-            .unwrap();
-        // Repair is restricted to this new test-owned temporary directory.
-        locron_core::filesystem::restrict_owned(root.path(), true).unwrap();
+    fn fixture() -> (super::super::windows_fixture::PrivateFixture, Value) {
+        let root = super::super::windows_fixture::PrivateFixture::new("locron-ownership-fixture-");
         let guard = DirectoryGuard::existing_private(root.path()).unwrap();
         let directory = guard.normalized_path().to_str().unwrap().to_owned();
         let mut files = BTreeMap::new();

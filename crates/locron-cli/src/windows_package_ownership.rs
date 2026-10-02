@@ -393,11 +393,8 @@ mod tests {
 
     #[test]
     fn source_refusal_preserves_test_owned_bytes_and_does_not_create_missing_ancestry() {
-        let temp = tempfile::Builder::new()
-            .prefix("locron-package-source-fixture-")
-            .tempdir()
-            .unwrap();
-        locron_core::filesystem::restrict_owned(temp.path(), true).unwrap();
+        let temp =
+            super::super::windows_fixture::PrivateFixture::new("locron-package-source-fixture-");
         let guard = DirectoryGuard::existing_private(temp.path()).unwrap();
         let missing = temp.path().join("absent").join("locron.exe");
         assert!(read_source(&missing, native_target().unwrap()).is_err());

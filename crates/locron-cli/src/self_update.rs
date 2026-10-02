@@ -69,6 +69,10 @@ mod windows_path;
 #[path = "windows_payloads.rs"]
 mod windows_payloads;
 
+#[cfg(all(windows, test))]
+#[path = "windows_fixture.rs"]
+mod windows_fixture;
+
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";

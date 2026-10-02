@@ -226,12 +226,13 @@ mod tests {
         file.sync_all().unwrap();
     }
 
-    fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf, Value) {
-        let temp = tempfile::Builder::new()
-            .prefix("locron-bootstrap-fixture-")
-            .tempdir()
-            .unwrap();
-        locron_core::filesystem::restrict_owned(temp.path(), true).unwrap();
+    fn fixture() -> (
+        super::super::windows_fixture::PrivateFixture,
+        PathBuf,
+        PathBuf,
+        Value,
+    ) {
+        let temp = super::super::windows_fixture::PrivateFixture::new("locron-bootstrap-fixture-");
         let root = temp.path().join("operations");
         let directory = root.join(ID);
         let guard = DirectoryGuard::private(&directory).unwrap();

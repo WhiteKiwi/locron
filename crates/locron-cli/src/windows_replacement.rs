@@ -12,20 +12,14 @@ mod tests {
     use fs_at::os::windows::FileExt;
     use locron_core::filesystem::{
         DirectoryGuard, GuardedFile, create_private_new_exclusive, file_identity,
-        open_private_exclusive, restrict_owned,
+        open_private_exclusive,
     };
 
     use super::super::sha256_hex;
+    use super::super::windows_fixture::PrivateFixture;
 
-    fn private_root() -> tempfile::TempDir {
-        let root = tempfile::Builder::new()
-            .prefix("locron-replacement-fixture-")
-            .tempdir()
-            .unwrap();
-        // This is explicit repair of this test's own newly created directory,
-        // never automatic repair of an operator-selected installation.
-        restrict_owned(root.path(), true).unwrap();
-        root
+    fn private_root() -> PrivateFixture {
+        PrivateFixture::new("locron-replacement-fixture-")
     }
 
     fn new_file(path: &Path, bytes: &[u8]) -> GuardedFile {
