@@ -801,6 +801,29 @@ connect/write/ack deadline and joined cleanup; it never nests block_on inside a 
 or leaves a background writer/flush thread. Engine owns the asynchronous named-pipe
 listener and role-control cancellation adapter. Server uses the core sender without gaining an
 engine dependency; CLI composes engine listeners after acquiring the owning lifetime lock.
+
+Maintenance and the registered supervisor use the Windows-only synchronous
+notification::request_shutdown_guarded_until(&DirectoryGuard, role, lifetime, std::time::Instant).
+Capture min(caller deadline, API-entry plus 200ms) once, before endpoint naming, worker spawn or
+runtime startup, and pass that absolute value through the exchange. Reuse the retained existing
+state guard and windows::cached_current_user_sid(), a crate-private OnceLock::get-only accessor
+which never starts or waits for SID initialization and refuses when no verified SID is cached.
+Runtime owns the notification implementation; filesystem development owns that cached accessor.
+Check expiry before naming/spawn, after runtime startup, before each pipe-open attempt, before
+writing the frame and before its final consumption receipt, in addition to timeout_at. This
+prevents an already-ready future from committing late control after the shared thirty-second
+shutdown budget. No new guard, directory, SID adapter or detached worker is created on this path.
+Join the short-lived worker on every result. Delivery acknowledgement still never proves exit.
+The existing ordinary request_shutdown and wake sender keep their current behavior.
+
+Native Verify: (1) a past caller deadline refuses before worker/connection creation; the
+cached-only accessor refuses a fresh empty cache without an initializer or filesystem request.
+(2) a stalled acknowledgement consumes at most the remaining caller budget and cleanup leaves
+no background sender; saturated endpoints cannot reset that budget across retries. (3) ready
+exchange boundaries which cross the deadline never write the final receipt or dispatch shutdown;
+an on-time exchange cancels only the exact registered role lifetime and still requires actual
+lock/process exit confirmation.
+
 Headless Windows roles retain cooperative control when console Ctrl-C registration is unavailable;
 that diagnostic alone cannot terminate a registered dashboard before its control future runs.
 Dashboard shutdown publishes a private watch signal to close live SSE responses, then stops new

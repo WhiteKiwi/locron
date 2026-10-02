@@ -2831,6 +2831,21 @@ warm-up, test retry or passing cleanup fact from destructor/PID disappearance is
 
 ### Local named pipes with creation-time security
 
+Maintenance control must consume its caller's remaining shutdown budget instead of starting a
+new two-hundred-millisecond exchange after endpoint naming or runtime startup. The exact pinned
+Tokio 1.53.1 timeout implementation polls the inner future before its timer; an immediately ready
+exchange therefore needs explicit expiry checks as well as timeout_at. Check before opening the
+pipe, writing the frame and writing the final consumption receipt. A receipt after the deadline
+could otherwise dispatch a shutdown after maintenance already reported refusal.
+
+Every successful Windows directory guard already queries and verifies the current SID. Still,
+the deadline-aware path should use a separate cached-only SID accessor: OnceLock::get does not
+wait for an initializer, and absence must refuse without starting a filesystem worker. This
+makes the no-new-adapter boundary explicit even if guard construction later changes. Existing
+ordinary wake/control senders retain their behavior.
+Sources: [pinned Tokio timeout polling](https://github.com/tokio-rs/tokio/blob/75fef53d0a8590c2d1dbb63672aa7b7d1ef51155/tokio/src/time/timeout.rs#L211),
+[nonblocking OnceLock lookup](https://doc.rust-lang.org/std/sync/struct.OnceLock.html#method.get).
+
 Select target-specific `interprocess = "=2.4.4"` with its `tokio` feature and a safe widestring
 constructor for SDDL input. It declares Rust 1.75. Its Windows safe
 `SecurityDescriptor::deserialize(&U16CStr)` and
