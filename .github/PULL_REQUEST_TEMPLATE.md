@@ -9,11 +9,11 @@ fix, the planning documents change before the code does.
 
 <!-- One or two sentences. What behavior is different after this pull request? -->
 
-Closes #
+<!-- Link the relevant private Project draft for maintainer execution work and summarize public review context. External bug-fix PRs may link or close an existing repository issue. -->
 
 ## Why
 
-<!-- The problem being solved. Link the issue or the planning document where it was agreed. -->
+<!-- The problem being solved. Link the Project draft, external bug issue, or public planning document where it was agreed. -->
 
 ## Verification
 
@@ -37,7 +37,8 @@ describe how you reproduced the bug before fixing it.
 
 - [ ] `docs/SPEC.md` updated, or this change is within the existing frozen scope
 - [ ] `docs/IMPLEMENTATION.md` reflects the approach actually taken
-- [ ] `docs/TODO.md` status is current, with a `Verify` entry for each step
+- [ ] Relevant Project draft Status/evidence is current, with concrete `Verify` criteria for each step
+- [ ] Public review context is included when the linked execution Project is private
 - [ ] User-facing docs updated (`docs/CLI.md`, `docs/OPERATOR.md`, `README.md`) if the surface moved
 
 ## Notes for the reviewer

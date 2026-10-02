@@ -6,9 +6,75 @@ This document plans the first program milestone against the frozen behavior in `
 
 Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, the official platform matrix, the four-crate dependency direction, one `locron` binary, and an engine-owned daemon entered through `locron daemon run`. Those decisions are not Draft.
 
-> **Review state:** milestone-1 implementation choices are accepted. Update this document and `docs/TODO.md` before deviating in code. A change to observable behavior or scope updates `docs/SPEC.md` first; a change to durable component boundaries or invariants updates `docs/ARCHITECTURE.md` first. Reviewed CLI and storage contracts live in `docs/CLI.md` and `docs/STORAGE.md`.
+> **Review state:** milestone-1 implementation choices are accepted. Update this document and the relevant Project draft tickets before deviating in code. A change to observable behavior or scope updates `docs/SPEC.md` first; a change to durable component boundaries or invariants updates `docs/ARCHITECTURE.md` first. Reviewed CLI and storage contracts live in `docs/CLI.md` and `docs/STORAGE.md`.
 
 `docs/FINDINGS.md` preserves the research path and does not override the frozen specification. In particular, v1 has no `queue-one` overlap policy and global concurrency defaults to 16, not 4.
+
+## Project-only execution tracking migration (2026-10-02)
+
+This is an administrative workflow change within the unchanged product specification. FINDINGS
+§45 establishes the frozen source and the Project API constraints. Move execution scope, ordered
+tasks, Verify criteria, evidence and progress to a private `locron` GitHub Project owned by
+WhiteKiwi and linked to WhiteKiwi/locron. Product contracts, design decisions and durable research
+remain repository documents. New execution tasks are Project-only drafts; the public bug-reporting
+issue tracker remains available to external contributors.
+
+Use the original `docs/TODO.md` at `93b4144cc5f9d056609e3f88e37e9451ea2ad506`, SHA-256
+`aeaf61423326384d4e38709da731e764029777c6bf808c4d06403372b6ee9d52`, as the migration inventory:
+69 items, 68 checked and one unchecked, across 15 phases. Newly added administrative migration
+steps are not part of that frozen inventory. Leave the existing TODO archive and inactive BACKLOG
+ideas as historical/deferred material, and do not close the remaining hosted cache verification.
+
+The parent owns GitHub mutations and PR publication. The development sub-session owns the scoped
+documentation cutover and a private, reviewable one-off migration helper. No production code,
+workflow, version, published release, installed service or scheduled job changes belong here.
+
+1. Freeze and review the migration contract and source inventory.
+   **Verify:** source bytes/hash and the 69/68/1 inventory agree; every source item has Verify;
+   research resolves draft/item identity, field updates, duplicate prevention and live references.
+2. Build a deterministic manifest and review the complete plan before destination writes.
+   **Verify:** Legacy IDs `LOCRON-TODO-001` through `LOCRON-TODO-069`, source order 1–69 and immutable
+   source-line links are unique. Bodies retain exact source item text and any shared phase preface.
+   Join wrapped titles for display; use a word-boundary abbreviation of at most 240 characters
+   when needed for readability, retaining the complete original title and requirements in the body.
+3. Create and configure the private destination and migrate the frozen items.
+   **Verify:** Project identity, repository link, Todo/In Progress/Done options, Phase, Legacy ID
+   and Source order fields are read back. Active, History and All tasks views separate unfinished
+   and completed work. Sequential acknowledged writes preserve item/content IDs in private
+   checkpoints; an uncertain response stops writes and requires readback rather than blind retry.
+4. Verify the entire remote migration before changing repository authority.
+   **Verify:** pagination is exhausted; exactly 69 unique unarchived DraftIssue items have matching
+   manifest title/body/phase/order/Legacy ID, with 68 Done, one Todo and zero In Progress. Repository
+   issue inventory and closed issue #4 are unchanged. Store a static acceptance receipt and mapping.
+5. Cut over the maintainer workflow without losing historical evidence.
+   **Verify:** `docs/planning/TODO-2026-10-02.md` is byte-identical to the frozen source;
+   `docs/PROJECTS.md` records workflow and static source-to-draft mapping; `docs/TODO.md` is only a
+   pointer and contains no live checklist. AGENTS, contributor/PR guidance and document maps agree
+   on Project authority. Historical archive bodies remain unchanged and BACKLOG stays inactive.
+6. Review and publish the documentation-only pull request.
+   **Verify:** scoped diff, local Markdown links, source snapshot/mapping and remote acceptance
+   checks pass; no product source or runtime state changes are staged. Commit/push the exact
+   reviewed files, attach the opened PR and report its hosted checks. PR merge is a later action.
+
+### Verified migration evidence
+
+Steps 1–4 passed before the repository authority cutover: the parent created private Project
+[WhiteKiwi/locron #4](https://github.com/users/WhiteKiwi/projects/4), configured the three table views
+and metadata fields, and verified all 69 unarchived DraftIssue rows through exhausted paginated
+readback. Exact manifest titles/bodies, phase context, Legacy IDs, source order, and the original
+68 Done/one Todo status distribution matched. Repository issue #4 and the full issue inventory
+remained unchanged. The private helper's nine deterministic fixtures passed, including uncertain
+writes, acknowledged-ID recovery when list results lag, null-node refusal, and pagination.
+
+The source snapshot, static 69-ticket map, authority references, local links, and archive/BACKLOG
+body-preservation checks passed for step 5: 69 mapping rows retain 68 Done/one Todo, the pointer
+has no checkboxes, and all 50 local Markdown targets in the changed documents exist. The snapshot
+SHA-256 matched and `git diff --check` passed. The parent owns documentation-only PR publication;
+publication and hosted-check evidence is recorded on the migration PR. The requested deliverable
+is an opened PR; merging it requires a later instruction.
+The historical Done states preserve their existing evidence rather than asserting that all past
+checks were rerun during migration. Future tickets require Verify evidence and any explicitly
+required merge/publication before Done; see [`PROJECTS.md`](PROJECTS.md).
 
 ## Acceptance startup observer correction before v0.9.6 tagging (2026-09-30)
 
@@ -709,7 +775,7 @@ Implementation deviations, all confined to `locron` and confined to human branch
 
 ## Change plan
 
-The plan is restricted to this repository. Before an implementation deviation, update `docs/IMPLEMENTATION.md` and `docs/TODO.md`; update `docs/ARCHITECTURE.md` first when the durable structure or invariant changes.
+The plan is restricted to this repository. Before an implementation deviation, update `docs/IMPLEMENTATION.md` and the relevant Project draft tickets; update `docs/ARCHITECTURE.md` first when the durable structure or invariant changes.
 
 1. Keep the reviewed decisions in this document, `docs/CLI.md`, and `docs/STORAGE.md` synchronized before implementation deviations.
 2. Create the edition-2024, resolver-3 virtual workspace with the four accepted crates, `rust-version = "1.94"`, one `locron` binary, workspace lint/profile/dependency policy, and CI on Rust 1.94 plus latest stable.
@@ -1293,7 +1359,11 @@ bindings for all five packages to `WhiteKiwi/locron` + `release.yml` + `crates-i
 ordinary immutable tag. The tag job observes all versions already present and performs the same
 registry-install verification without trying to overwrite them. Later tags use OIDC only.
 
-### Documentation and TODO compaction
+### Documentation and TODO compaction (historical; superseded 2026-10-02)
+
+The following compaction policy records the former repository-checklist workflow. Execution tasks
+now live in Project-only drafts; see [`PROJECTS.md`](PROJECTS.md). Preserve the archived source and
+evidence, but do not resume a live TODO checklist or move new completed Project tasks into it.
 
 README and installation/release documentation list the prebuilt installer and Homebrew before
 `cargo install --locked locron`, explain the Rust 1.94 source-build requirement, distinguish Cargo

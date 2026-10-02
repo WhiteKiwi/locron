@@ -2369,3 +2369,173 @@ IDs/names/sizes/digests/update timestamps agree with the baseline. No owner inst
 service registration, or global background-item database reset was performed. The same-name two-row
 observation is consistent with the two independently registered services; the release reduces
 identical plist writes and supplies distribution identity without combining those services.
+
+
+## 45. Project-only task migration research (2026-10-02)
+
+### Frozen source and current inventory
+
+The parent froze `docs/TODO.md` from base `93b4144cc5f9d056609e3f88e37e9451ea2ad506`
+before migration planning. The private `TODO.source.md` snapshot SHA-256 is
+`aeaf61423326384d4e38709da731e764029777c6bf808c4d06403372b6ee9d52`.
+Read-only verification found the live file byte-identical to that snapshot: 713 lines,
+69 top-level checklist items across 15 phases, 68 complete and one open, no nested checkboxes,
+and a Verify entry for every item. Preserve this original inventory independently of later
+administrative planning notes; do not accidentally migrate newly appended migration steps.
+
+| Phase | Original items | Open |
+| --- | ---: | ---: |
+| Acceptance startup observer correction before v0.9.6 tagging | 3 | 0 |
+| Second feedback and v0.9.6 signed macOS release | 8 | 0 |
+| v0.9.5 feedback correction release | 5 | 0 |
+| First feedback triage | 5 | 0 |
+| v0.9.4 security patch release | 5 | 0 |
+| Rustls advisory remediation | 3 | 0 |
+| v0.9.3 patch release | 3 | 0 |
+| Active dashboard run detail live following | 4 | 0 |
+| CI toolchain and cache optimization | 6 | 1 |
+| Deterministic dashboard port-policy verification | 3 | 0 |
+| README information architecture refresh | 3 | 0 |
+| v0.9.2 patch release | 4 | 0 |
+| Dashboard lifecycle human output and stale detail recovery | 3 | 0 |
+| v0.9.1 patch release | 4 | 0 |
+| crates.io source installation and trusted publication | 10 | 0 |
+
+The sole open item is source order 41 at line 433, “Restrict Rust cache creation to the default
+branch without disabling useful dependency and target restoration.” Preserve it as Todo: source
+configuration alone is not its hosted restore-only evidence. The crates.io phase also has a shared
+introductory authorization/release-context paragraph before its first item; retain it for all ten
+items. Multiline title continuations and all Verify, Evidence, local/hosted evidence, commands,
+run IDs and links must survive. The parent measured a longest fully joined title of 368 characters;
+if an API title limit requires abbreviation, document a deterministic display-title rule and retain
+the exact full source item in its body. Do not silently truncate requirements.
+
+Read-only GraphQL inventory found two existing owner Projects, both private, with no title `locron`.
+The requested destination is a new private `locron` Project owned by WhiteKiwi and linked to
+WhiteKiwi/locron. Repository issue #4 remains CLOSED with its original human-output title and URL;
+no issue creation, deletion, conversion or status change belongs to this migration.
+
+### Draft content and Project item identity
+
+[GitHub's draft-item documentation](https://docs.github.com/en/issues/planning-and-tracking-with-projects/managing-items-in-your-project/adding-items-to-your-project)
+confirms that draft issues live only in a Project and support title/body/custom fields. Repository,
+labels and milestones require conversion to a repository issue. Link the Project itself to Locron;
+do not convert drafts or populate their repository field. A Project row's Status is separate from
+its draft content type. Use Todo, In Progress and Done, mapping the original one open item to Todo
+and 68 checked items to Done, with no In Progress migration items.
+
+Read-only GitHub GraphQL schema introspection confirms distinct `DraftIssue.id` and
+`ProjectV2Item.id`. Draft IDs commonly use `DI_`; item IDs commonly use `PVTI_`. Treat both as opaque
+Node IDs: content edits target the draft ID, while custom-field/status/position updates target the
+Project item ID. Record both from readback, never derive one from the other. ProjectV2Item supplies
+`fullDatabaseId` as BigInt; `databaseId` is deprecated for its 32-bit limit. Store the full identifier
+without lossy JavaScript-number conversion. DraftIssue has no URL field in the checked schema;
+use the canonical Project URL and a verified item deep link based on its full database identifier,
+not a guessed Issue URL or a decoded Node ID. UI deep-link behavior remains a readback check.
+
+[GitHub's Projects API guide](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects)
+shows the draft creation mutation and separate field-update operation. Create drafts using
+`addProjectV2DraftIssue`, retain its returned Project item, and fetch its draft content. Read actual
+field/option IDs before updates rather than assuming default Status IDs. Use Phase (full original
+heading), Legacy ID (stable unique source key) and Source order (1–69) for deterministic traceability.
+
+### Drift-free migration and uncertain mutations
+
+Build a deterministic manifest from the frozen snapshot, not the changing live checklist. Each
+record should retain source order/phase/status, original title and exact item block, relevant phase
+context, immutable source commit/line reference, payload hash and planned metadata. Preserve all
+original item bytes in ticket bodies or an explicitly marked original-source block. If title
+normalization is needed, compare against the manifest's display title while retaining its full
+original content. Source order reconstructs the old sequence regardless of default Project sorting.
+Legacy IDs must be unique and present in the initial body as well as the eventual custom field.
+
+The checked mutation input has `clientMutationId` but no documented idempotency-key guarantee.
+Do not treat an echoed client ID as deduplication. After an uncertain create response, pause writes
+and page through destination drafts, including archived items, looking for that exact body marker
+and matching payload before retrying. One match recovers its IDs; multiple matches or mismatched
+content require reconciliation, not another create or automatic deletion. Record each acknowledged
+item/field update in a private checkpoint. A failed later field update must resume updates on the
+existing item rather than create a replacement. Apply the same no-blind-retry rule to Project
+creation by reading owner Projects and confirming intended identity first.
+
+Before changing repository authority, perform fresh paginated GraphQL readback of all rows and
+custom field values: exactly 69 unique original Legacy IDs, all DraftIssue content, source order
+1–69, exact phase and manifest title/body/hash agreement, 68 Done/one Todo/zero In Progress, and
+no unintended archive state. Confirm destination title/owner/private visibility and repository
+link. Verify pagination is exhausted, not merely that the first page count looks right. Read back
+issue #4 and repository issue inventory to establish no issue mutation. Partial migration or a
+verification mismatch must leave the old checklist authority intact.
+
+### Documentation cutover and historical preservation
+
+Only after complete readback should repository instructions declare Project draft tickets the
+execution/progress authority. `docs/TODO.md` can become a concise migration pointer with the
+canonical private Project link, source commit/hash and inventory; it must not retain a parallel
+live checklist. Preserve `docs/TODO-archive.md` historical sections and their old commands/links
+verbatim. A small clearly separated present-day notice can explain that its former live-TODO
+reference is historical. Keep BACKLOG's inactive ideas and content out of this migration.
+
+Live-reference changes are needed in AGENTS.md's core read order, planning steps and Progress
+section; CONTRIBUTING.md's planning table, completion rule and automatic issue-first advice;
+IMPLEMENTATION.md's authority paragraph and active deviation rule; ARCHITECTURE.md's document map;
+STATUS.md's progress-authority sentence; and BACKLOG.md's activation guidance. Older implementation
+sections explicitly prescribing live TODO compaction should be marked historical/superseded rather
+than silently rewritten as though they originally used Projects. Dashboard implementation's old
+TODO references describe completed work; qualify them as historical when needed. README has no
+TODO link, but its contribution section is an appropriate short discoverability pointer to the
+new task workflow. Research and historical evidence references need not be mechanically replaced.
+
+The private Project will be unavailable to readers without permission. State that explicitly and
+keep public product requirements/architecture and historical source evidence available in the
+repository. Future maintainers must review relevant Project drafts after SPEC/FINDINGS/IMPLEMENTATION,
+record concrete Verify criteria for multi-step work, and mark Done only after verification.
+This administrative migration does not change Locron product behavior, tests, release channels,
+or runtime state. Parent-owned external creation/readback and PR publication follow plan review;
+this research session changed only this findings section.
+
+
+Parent plan clarification: keep external contributor bug reports on the existing repository issue
+tracker; draft-only applies to maintainer execution tasks, not a ban on public bug reports. Update
+`.github/PULL_REQUEST_TEMPLATE.md` so implementation PRs refer to relevant Project drafts while
+external bug-fix PRs can still refer to repository issues. The selected local layout is a workflow
+and static legacy-to-draft map in `docs/PROJECTS.md`, a byte-identical source snapshot in
+`docs/planning/TODO-2026-10-02.md`, and a pointer/management guide in `docs/TODO.md`. Put archival
+context outside the snapshot file so its required SHA-256 remains exact. Update only the archive
+introduction's present-day pointer; preserve its historical body. Keep public source requirements
+and static migration references readable while making private Project access limitations explicit.
+An optional migration helper belongs in the parent's private work directory, with parent review
+and execution of mutations; it is not a new shipped Locron feature or public operational script.
+
+
+### Verified migration and documentation cutover (2026-10-02)
+
+The parent created private Project `PVT_kwHOAe6fwM4BlcwN`, number 4, owned by WhiteKiwi and linked
+to WhiteKiwi/locron. Fresh exhaustive page-size-25 readback verified 69 unique unarchived DraftIssue
+items, exact deterministic manifest title/body content, all phase/Legacy ID/source-order fields,
+and 68 Done/one Todo/zero In Progress. The three TABLE_LAYOUT views are Active (number 1,
+`-status:Done`), History (number 2, `status:Done`), and All tasks (number 3, no filter). Repository
+issue #4 and the complete native issue inventory retained their baseline identities and state.
+
+The private helper records acknowledged IDs and field updates with fsynced checkpoints; a known
+Project item ID is recovered by direct node readback when list visibility lags. Missing known
+nodes, foreign entries, content drift and uncertain mutations stop further writes. Nine offline
+fixtures passed, including those recovery/refusal cases and multi-page/full-width ID handling.
+The acceptance receipt and mapping stay in the parent's private migration work directory; the
+repository contains only the workflow, static 69-ticket link map and byte-identical source snapshot.
+
+Five display titles were abbreviated at a word boundary to at most 240 characters for readability,
+not an asserted API limit. Full original blocks, all Verify/Evidence text and the shared phase
+preface remain in draft bodies. Historical Done states preserve original records; they do not claim
+new execution of past checks. `LOCRON-TODO-041` remains Todo. Archive and BACKLOG historical bodies
+remain unchanged; only their present-day intros point to the new execution authority. Item links
+use read-back fullDatabaseId values; the API verification did not test browser navigation for each
+private deep link. Public source links and the Project/view links provide traceable alternatives.
+
+
+The documentation cutover's local gate passed: byte-identical frozen snapshot with the recorded
+SHA-256; archive and BACKLOG bodies unchanged after their first section heading; 69 static mapping
+rows matching the acceptance receipt and immutable source links; no checklist in the TODO pointer;
+50 existing local Markdown targets; documentation-only file scope; and `git diff --check`.
+The private helper suite passed all nine fixtures again after migration. The parent owns PR
+publication; publication and hosted-check evidence is recorded on the migration PR. No Rust tests
+were rerun for this documentation-only diff.
