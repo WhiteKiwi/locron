@@ -159,6 +159,39 @@ no untrusted control/delete/reparse-mutation grants on any retained ancestor. Cr
 unrelated sibling alone does not grant mutation of the guarded existing chain. The current SID
 does not bypass these checks, avoiding the cold SID/bootstrap dependency cycle.
 
+Construct the stock guard only inside the already admitted finite owner worker. Caller admission
+updates only the existing permit counter; it performs no native path, descriptor or identity I/O.
+Each native guard operation has explicit pre/post checks against the original API-entry deadline.
+The generic result driver replaces its unconditional thread join with a deadline-bounded channel
+receive, rejects a late ready result, and joins only an already finished worker. The filesystem
+owner and COM phase owner follow the same boundary. A blocked native guard operation retains its
+slot and every partially acquired handle in quarantine; its caller returns within the existing
+thirty-second operation plus three-second owned-cleanup allowance. When that operation eventually
+returns, the owner checks expiry before any next guard operation, process spawn or private input.
+There is no second admitted child, replay, or successful ownership fact behind that refusal.
+
+Transfer the complete stock guard into the exact child owner before spawn. It remains live through
+the filesystem worker's sixty-second idle interval, generic/COM exchanges, and root/Job/pipe cleanup.
+Confirmed cleanup releases it; uncertain cleanup retains it with the child/Job/permit in quarantine.
+The generic adapter currently spawns a Tokio child without a Job and cannot claim abrupt-parent
+containment from kill_on_drop. Select the same pinned safe Core-local suspended Job enrollment
+pattern already used by the filesystem worker, including CreationFlags, process-wrap JobObject
+and a separate win32job kill-on-close handle. Both Job enrollments precede resume and private input;
+Core gains no Engine dependency. Generic cleanup requires the reaped root, authoritative retained
+Job emptiness and finished pipe workers within its existing three seconds. A spawn failure that
+lost root-wait capability retains its independent Job/guard/slot without treating empty Job state
+as a root-exit proof. Parent kernel handle closure supplies emergency containment, never a reported
+graceful exit or permission to replay an uncertain child.
+
+Verify this boundary with an isolated actual native guard-phase stall: after retaining real
+no-follow stock ancestor/leaf handles, a cfg(test)-only anonymous-pipe ReadFile blocks the owner
+until the test releases its owned pipe. The driver must time out, retain that slot/handles and
+refuse another admission; releasing the pipe after expiry must produce no subsequent spawn/input
+marker. This exercises real blocking native I/O inside guard ownership, not a claim that the
+security-descriptor API itself was forced to hang. A separate owned parent-crash helper must prove
+the actual generic PowerShell child's kernel Job termination and stopped heartbeat; Drop or an
+unjoined worker alone is insufficient evidence. No fixture warms the original cold gate.
+
 Pass only these retained canonical library paths as child environment data. Static bootstrap
 loads/imports the exact binary, verifies its full assembly identity and actual loaded location,
 and validates each retained JSON CmdletInfo's implementing assembly/type against that binary.

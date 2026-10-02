@@ -2928,6 +2928,23 @@ SID exemption. Retained no-reparse/no-write/no-delete handles plus handle-bound 
 must establish the binary location before assembly import; a GAC directory suffix, module name,
 strong-name token or post-load path string alone does not establish file ownership/privacy.
 
+Native file opens, handle-bound descriptor reads and identity queries can themselves block.
+Adding them before the existing generic driver's unconditional join would invalidate the entry
+deadline even if every child pipe is timed. Run them in the admitted finite owner and retain
+partial guards/permit on a stalled operation; the caller only receives a bounded result and never
+joins an unfinished owner. Explicit post-operation expiry checks prevent a late guard result from
+starting a child. The selected stall fixture uses an actual blocking anonymous-pipe read inside
+this native guard phase; it does not fabricate a stalled GetSecurityInfo result.
+
+The generic adapter's current Tokio kill_on_drop is weaker than kernel crash containment: process
+exit does not guarantee Rust destructors run. Reuse the reviewed Core filesystem worker's pinned
+process-wrap/win32job suspended-enrollment pattern before importing stock binaries or sending
+private input. The retained independent kill-on-close Job must span guard ownership, running/idle
+child and confirmed cleanup; root-wait loss remains quarantined even when the Job later empties.
+The official [Job Objects contract](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+describes kill-on-close termination when the final Job handle closes. Native parent-crash evidence
+is still pending and cannot be inferred from kill_on_drop or a successful normal-child exit.
+
 Select the same fixed stock Windows PowerShell 5.1 adapter using the supported scripting COM
 interface `New-Object -ComObject Schedule.Service`, `Connect()`, `NewTask(0)`, root-folder
 `RegisterTaskDefinition` and typed task properties. This avoids unsafe COM in Rust and avoids
