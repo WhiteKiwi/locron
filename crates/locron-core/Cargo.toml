@@ -22,8 +22,10 @@ uuid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 base64.workspace = true
+process-wrap.workspace = true
 tokio.workspace = true
 windows-permissions = "=0.2.4"
+win32job.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

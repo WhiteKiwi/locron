@@ -7,13 +7,18 @@ use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, TryLockError};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
 const ADAPTER_TIMEOUT: Duration = Duration::from_secs(30);
 const OUTPUT_LIMIT: u64 = 128 * 1024;
 static USER_SID: OnceLock<String> = OnceLock::new();
-static ADAPTER_WORKERS: WorkerPermits = WorkerPermits::new(2);
+// One generic child plus the separate single fixed filesystem child, including idle retention.
+static ADAPTER_WORKERS: WorkerPermits = WorkerPermits::new(1);
 static SID_INITIALIZER: WorkerPermits = WorkerPermits::new(1);
+
+mod filesystem_worker;
 
 /// Only short counter updates run while this mutex is held; never process or I/O work.
 struct WorkerPermits {
@@ -324,11 +329,7 @@ fn cached_sid(
 }
 
 fn query_sid(deadline: Instant) -> io::Result<String> {
-    let result = run_script_with_deadline(
-        "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value | ConvertTo-Json -Compress",
-        &json!({}),
-        deadline,
-    )?;
+    let result = filesystem_worker::request("sid", None, deadline)?;
     let sid = result
         .as_str()
         .filter(|sid| {
@@ -344,48 +345,14 @@ fn query_sid(deadline: Instant) -> io::Result<String> {
 }
 
 pub(crate) fn create_private_directory(path: &std::path::Path) -> io::Result<()> {
-    run_script_json(
-        r"
-        $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User;
-        $acl = [System.Security.AccessControl.DirectorySecurity]::new();
-        $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true, $false);
-        $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit';
-        foreach ($principal in @($sid, [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'))) {
-            $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($principal, [System.Security.AccessControl.FileSystemRights]::FullControl, $inherit, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow);
-            $acl.AddAccessRule($rule);
-        }
-        [System.IO.DirectoryInfo]::new([string]$request.path).Create($acl);
-        @{created=$true} | ConvertTo-Json -Compress
-    ",
-        &json!({"path": adapter_path(path)?}),
-    )?;
+    let deadline = Instant::now() + ADAPTER_TIMEOUT;
+    filesystem_worker::request("create_directory", Some(adapter_path(path)?), deadline)?;
     Ok(())
 }
 
 pub(crate) fn create_private_file(path: &std::path::Path) -> io::Result<()> {
-    let result = run_script_json(
-        r"
-        $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User;
-        $acl = [Security.AccessControl.FileSecurity]::new();
-        $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true, $false);
-        foreach ($principal in @($sid, [Security.Principal.SecurityIdentifier]::new('S-1-5-18'))) {
-            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($principal, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.AccessControlType]::Allow));
-        }
-        try {
-            $file = [IO.FileStream]::new([string]$request.path, [IO.FileMode]::CreateNew, [Security.AccessControl.FileSystemRights]::FullControl, [IO.FileShare]::ReadWrite, 4096, [IO.FileOptions]::None, $acl);
-            $file.Dispose();
-            @{created=$true} | ConvertTo-Json -Compress
-        } catch {
-            $cause = $_.Exception;
-            while ($cause.InnerException) { $cause = $cause.InnerException; }
-            $code = $cause.HResult -band 65535;
-            if (($cause -is [IO.IOException]) -and ($code -in @(80, 183))) {
-                @{created=$false; win32_error=$code} | ConvertTo-Json -Compress
-            } else { throw; }
-        }
-        ",
-        &json!({"path": adapter_path(path)?}),
-    )?;
+    let deadline = Instant::now() + ADAPTER_TIMEOUT;
+    let result = filesystem_worker::request("create_file", Some(adapter_path(path)?), deadline)?;
     if result["created"].as_bool() == Some(true) {
         return Ok(());
     }
@@ -546,33 +513,44 @@ mod tests {
             .acquire(Instant::now() + ADAPTER_TIMEOUT)
             .unwrap();
         let started = Instant::now();
-        let error =
-            run_adapter_worker(request, started + Duration::from_secs(5), permit).unwrap_err();
+        let error = run_adapter_worker(request, started + ADAPTER_TIMEOUT, permit).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert_eq!(std::fs::read_to_string(&marker).unwrap(), "entered");
-        assert!(started.elapsed() < Duration::from_secs(9));
+        assert!(started.elapsed() < ADAPTER_TIMEOUT + Duration::from_secs(3));
     }
 
     #[test]
     fn adapter_output_is_bounded() {
         for script in [
-            "[Console]::Write(('x' * 200000)); [Threading.Thread]::Sleep(60000)",
-            "[Console]::Error.Write(('x' * 200000)); [Threading.Thread]::Sleep(60000)",
+            "[IO.File]::WriteAllText([string]$request.marker, 'entered'); [Console]::Write(('x' * 200000)); [Threading.Thread]::Sleep(60000)",
+            "[IO.File]::WriteAllText([string]$request.marker, 'entered'); [Console]::Error.Write(('x' * 200000)); [Threading.Thread]::Sleep(60000)",
         ] {
-            let request = prepare_adapter(script, &json!({})).unwrap();
+            let temporary = tempfile::tempdir().unwrap();
+            let marker = temporary.path().join("owned-output-phase.txt");
+            let request = prepare_adapter(script, &json!({"marker": marker})).unwrap();
             // Queue admission is covered separately. Measure the owned child's cap and cleanup.
             let permit = ADAPTER_WORKERS
                 .acquire(Instant::now() + ADAPTER_TIMEOUT)
                 .unwrap();
             let started = Instant::now();
-            let error =
-                run_adapter_worker(request, started + Duration::from_secs(10), permit).unwrap_err();
+            let error = run_adapter_worker(request, started + ADAPTER_TIMEOUT, permit).unwrap_err();
             assert_eq!(error.kind(), io::ErrorKind::Other);
             assert_eq!(
                 error.to_string(),
                 "Windows adapter exceeded its output limit"
             );
-            assert!(started.elapsed() < Duration::from_secs(13));
+            assert_eq!(std::fs::read_to_string(&marker).unwrap(), "entered");
+            assert!(started.elapsed() < ADAPTER_TIMEOUT + Duration::from_secs(3));
+            // Measure refusal/cleanup after real script entry, independently of stock bootstrap.
+            assert!(
+                std::fs::metadata(&marker)
+                    .unwrap()
+                    .modified()
+                    .unwrap()
+                    .elapsed()
+                    .unwrap()
+                    < Duration::from_secs(5)
+            );
         }
     }
 }
