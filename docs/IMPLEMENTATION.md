@@ -219,6 +219,26 @@ Management module for the reviewed junction/registry callers. The fixed filesyst
 need only Utility. Import no manifest, script module, format/type file, alias or function and
 change no policy. Binding/location/descriptor/policy refusal is explicit with no fallback.
 
+Native Win32 guard paths and Framework assembly loader paths have an explicit separate boundary.
+Continue opening/retaining the exact canonical verbatim native files and every ancestor. Before
+exposing a library to LoadFrom, derive an absolute local DOS spelling with native separators;
+refuse URI/UNC/device/stream, dot/parent, trailing-dot/space and other normalization-sensitive
+components. Query that spelling's full HighRes identity under the already retained native chain
+and require exact equality. This conversion and native query occur in the existing finite owned
+worker, with pre/post gates against its original entry deadline and no late spawn or unconditional
+join. Library environment getters return only this verified Framework spelling; the executable
+getter keeps the native spelling. Bootstrap refuses a verbatim/relative/URI library argument
+before LoadFrom and retains the full assembly, loaded-location and CmdletInfo checks.
+
+Verify: (1) pure namespace fixtures round-trip canonical Unicode/space/percent/hash paths and
+reject ambiguous components, devices, UNC/URI and verbatim loader input without a search fallback.
+(2) the actual stock guard probes compare both complete identities for each converted library,
+retain replacement-denying handles, and preserve refusal/quarantine on a native stall. (3) the
+original cold generic JSON, fixed SID/CreateNew and existing x64/ARM64/MSRV native core fixtures
+load the guarded binaries under their unchanged thirty/three-second bounds. Restricted, forged-
+module and abrupt-parent proof remain independent gates; this namespace correction cannot claim
+their completion.
+
 The fixed Task Scheduler waiting launcher also avoids a JSON/module bootstrap before Rust can
 guard its state. Keep its one generated CLIXML/base64 argument value, but encode a versioned,
 length-delimited UTF-8 record containing only SID, exact executable, state root and fixed role.

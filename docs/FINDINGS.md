@@ -2917,6 +2917,24 @@ sharing, full-identity, deadline or owned-worker boundary changes. Sources:
 [Win32 file namespaces](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
 [Rust Windows prefixes](https://doc.rust-lang.org/std/path/enum.Prefix.html).
 
+At corrected path head d615b120, native stock guard/identity probes pass, but the actual generic
+and fixed filesystem children fail during Assembly.LoadFrom before JSON binding. The error names
+file:// followed by the verbatim local path as a missing assembly. Framework's reference source
+sets LoadFrom's argument as CodeBase, then VerifyCodeBase treats any leading two backslashes as a
+file URI rather than a local DOS path. Prefix removal after LoadFrom is too late. This isolates
+the next loader boundary; native correction remains required and does not establish policy proof.
+Sources: [Framework assembly binding](https://raw.githubusercontent.com/microsoft/referencesource/main/mscorlib/system/reflection/assembly.cs),
+[Assembly.LoadFrom](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.assembly.loadfrom?view=netframework-4.8.1).
+
+Keep verbatim native stock guard paths and handles. Derive a separate canonical absolute DOS
+library path only after those handles are retained, refuse components that ordinary Windows path
+normalization could reinterpret (including trailing dots/spaces, devices and alternate streams),
+and require the converted path's full high-resolution volume/file ID to equal the retained native
+identity. Run this query inside the same admitted finite owner with pre/post deadline checks;
+stalled or late results retain the original quarantine boundary. Only the verified library path
+reaches Framework LoadFrom. No UNC/URI search, manifest import, policy change or trust fallback is
+selected. The stock executable and all managed state/install long-path behavior remain unchanged.
+
 Exact head 608ab19's ARM64 native job 111026239366 entered the actual generic script at about
 210 ms and its JSON conversion at 219 ms, but never reached json-parsed before the original
 30-second deadline; owned cleanup finished at 30.042 seconds. The preceding 4887 trace measured
