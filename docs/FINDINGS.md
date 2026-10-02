@@ -1368,6 +1368,15 @@ Settings review/discard and theme locality; Diagnostics health loading; desktop/
 error/warning logs. Destructive Remove and long-running/cancellation scenarios remain covered by the
 automated server/CLI contract suites rather than mutating the user's live review fixture.
 
+### Independent Jobs facts test readiness (2026-10-03)
+
+The PR43 frontend gate failed the complete-collection fixture while synchronously reading its
+four `succeeded` facts. Jobs publishes collection data first; a separate effect then joins preview
+and latest-run requests before publishing facts. The two-result status therefore proves only
+collection readiness. Await the existing four-facts assertion with waitFor, preserving the
+disabled-preview, filtering and desktop/mobile assertions; production behavior does not change.
+Evidence: [failed frontend gate](https://github.com/WhiteKiwi/locron/actions/runs/37036692807/job/110936539289).
+
 ## 31. Linux-only dashboard service compilation regression (2026-08-25)
 
 The v0.8.0 preparation commit `7fcb716` passed the complete local macOS battery, but that evidence

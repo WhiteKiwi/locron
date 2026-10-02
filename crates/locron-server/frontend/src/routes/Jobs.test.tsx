@@ -143,7 +143,7 @@ describe("complete enabled and disabled Jobs collection", () => {
     expect(screen.getAllByText("api-heartbeat")).toHaveLength(2);
     expect(screen.getAllByRole("link", { name: /api-heartbeat.*view job details/ })).toHaveLength(2);
     expect(screen.getAllByText("disabled — not scheduled")).toHaveLength(2);
-    expect(screen.getAllByText(/succeeded ·/)).toHaveLength(4);
+    await waitFor(() => expect(screen.getAllByText(/succeeded ·/)).toHaveLength(4));
     expect(get.mock.calls.some(([path]) => path === "/api/v1/jobs/job-disabled/preview?count=1")).toBe(false);
     expect(get.mock.calls.some(([path]) => path === "/api/v1/jobs/job-enabled/preview?count=1")).toBe(true);
 
