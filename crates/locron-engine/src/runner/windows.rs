@@ -2,53 +2,23 @@
 
 use std::io;
 use std::process::Stdio;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
 use std::time::{Duration, Instant};
 
-use process_wrap::tokio::{ChildWrapper, CommandWrap, CommandWrapper, JobObject, KillOnDrop};
 use tokio::io::AsyncReadExt;
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio::sync::mpsc;
-use win32job::{ExtendedLimitInfo, Job};
 
 use crate::output::{Channel, OutputWriter};
+use crate::windows_child::{ChildWindow, OwnedChild, SpawnFailure};
 
 use super::{
     AttemptContext, ExecutionOutcome, OutcomeKind, ProcessSpec, RunnerConfig, RunnerError,
     finalize_configuration_failure, simple_outcome,
 };
 
-#[derive(Debug)]
-struct Enroll {
-    job: Arc<Job>,
-    created: Arc<AtomicBool>,
-}
-
-impl CommandWrapper for Enroll {
-    fn post_spawn(
-        &mut self,
-        _command: &mut Command,
-        child: &mut Child,
-        _core: &CommandWrap,
-    ) -> io::Result<()> {
-        self.created.store(true, Ordering::Release);
-        let handle = child
-            .raw_handle()
-            .ok_or_else(|| io::Error::other("suspended child has no process handle"))?;
-        if let Err(error) = self.job.assign_process(handle as isize) {
-            let _ = child.start_kill();
-            return Err(io::Error::other(error));
-        }
-        Ok(())
-    }
-}
-
-fn tree_empty(job: &Job, errors: &mut Vec<String>) -> bool {
-    match job.query_process_id_list() {
-        Ok(processes) => processes.is_empty(),
+fn tree_empty(child: &OwnedChild, errors: &mut Vec<String>) -> bool {
+    match child.tree_empty() {
+        Ok(empty) => empty,
         Err(error) => {
             if errors.len() < 8 {
                 errors.push(format!("owned job process query: {error}"));
@@ -58,7 +28,7 @@ fn tree_empty(job: &Job, errors: &mut Vec<String>) -> bool {
     }
 }
 
-fn force_stop(child: &mut dyn ChildWrapper, errors: &mut Vec<String>) {
+fn force_stop(child: &mut OwnedChild, errors: &mut Vec<String>) {
     if let Err(error) = child.start_kill()
         && errors.len() < 8
     {
@@ -66,20 +36,9 @@ fn force_stop(child: &mut dyn ChildWrapper, errors: &mut Vec<String>) {
     }
 }
 
-async fn cleanup(child: &mut dyn ChildWrapper, job: &Job, grace: Duration) {
-    let mut errors = Vec::new();
-    force_stop(child, &mut errors);
-    let deadline = Instant::now() + grace;
-    loop {
-        let reaped = child.try_wait().is_ok_and(|status| status.is_some());
-        if tree_empty(job, &mut errors) && reaped {
-            return;
-        }
-        if Instant::now() >= deadline {
-            tracing::error!(details = ?errors, "owned Windows tree cleanup remains unconfirmed");
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+async fn cleanup(child: &mut OwnedChild, grace: Duration) {
+    if let Err(error) = child.terminate_until(Instant::now() + grace).await {
+        tracing::error!(%error, "owned Windows tree cleanup remains unconfirmed");
     }
 }
 
@@ -139,21 +98,6 @@ pub(super) async fn run_process(
     if let Err(reason) = locron_core::execution::validate_direct_executable(&executable) {
         return finalize_configuration_failure(writer, context, start, &reason).await;
     }
-    let mut limits = ExtendedLimitInfo::default();
-    limits.limit_kill_on_job_close();
-    let job = match Job::create_with_limit_info(&limits) {
-        Ok(job) => Arc::new(job),
-        Err(error) => {
-            return finalize_configuration_failure(
-                writer,
-                context,
-                start,
-                &format!("cannot create owned process job: {error}"),
-            )
-            .await;
-        }
-    };
-    let created = Arc::new(AtomicBool::new(false));
     let mut command = Command::new(&executable);
     let cmd_shell = executable
         .file_stem()
@@ -178,18 +122,16 @@ pub(super) async fn run_process(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut wrapped = CommandWrap::from(command);
-    wrapped.wrap(KillOnDrop).wrap(JobObject).wrap(Enroll {
-        job: Arc::clone(&job),
-        created: Arc::clone(&created),
-    });
-    let mut child = match wrapped.spawn() {
+    let mut child = match OwnedChild::spawn(command, ChildWindow::Inherit) {
         Ok(child) => child,
-        Err(error) if !created.load(Ordering::Acquire) => {
+        Err(SpawnFailure::NotStarted(error)) => {
             return finalize_configuration_failure(writer, context, start, &error.to_string())
                 .await;
         }
-        Err(error) => {
+        Err(SpawnFailure::ExecutionMayHaveStarted {
+            error,
+            containment: _containment,
+        }) => {
             let stats = writer
                 .finalize(&context.final_output)
                 .await
@@ -203,8 +145,8 @@ pub(super) async fn run_process(
         }
     };
     crate::test_crash_boundary("after-spawn").await;
-    let stdout = child.stdout().take().expect("piped stdout");
-    let stderr = child.stderr().take().expect("piped stderr");
+    let stdout = child.take_stdout().expect("piped stdout");
+    let stderr = child.take_stderr().expect("piped stderr");
     let (sender, mut receiver) = mpsc::channel(32);
     let stdout_task = tokio::spawn(read_stream(stdout, Channel::Stdout, sender.clone()));
     let stderr_task = tokio::spawn(read_stream(stderr, Channel::Stderr, sender));
@@ -233,7 +175,7 @@ pub(super) async fn run_process(
                         Err(error) => { infrastructure_error = Some(error); break; }
                     }
                 }
-                let empty = tree_empty(&job, &mut errors);
+                let empty = tree_empty(&child, &mut errors);
                 if empty && result.is_some() { break; }
                 if termination.is_none() && context.timeout.is_some_and(|timeout| start.elapsed() >= timeout) {
                     termination = Some(OutcomeKind::TimedOut);
@@ -245,7 +187,7 @@ pub(super) async fn run_process(
                         termination = Some(OutcomeKind::Failed);
                         reason = Some("root exited while descendants outlived the bounded natural drain".to_owned());
                     }
-                    force_stop(child.as_mut(), &mut errors);
+                    force_stop(&mut child, &mut errors);
                     forced = true;
                     stop_at = Some(Instant::now() + grace);
                 }
@@ -267,7 +209,7 @@ pub(super) async fn run_process(
         stdout_task.abort();
         stderr_task.abort();
         drop(receiver);
-        cleanup(child.as_mut(), &job, grace).await;
+        cleanup(&mut child, grace).await;
         return Err(RunnerError::ExecutionInfrastructure(error));
     }
     if confirmation_failed {
@@ -291,7 +233,7 @@ pub(super) async fn run_process(
                 stdout_task.abort();
                 stderr_task.abort();
                 drop(receiver);
-                cleanup(child.as_mut(), &job, grace).await;
+                cleanup(&mut child, grace).await;
                 return Err(RunnerError::ExecutionInfrastructure(error));
             }
             Err(_) => {
@@ -307,7 +249,7 @@ pub(super) async fn run_process(
     let stats = match writer.finalize(&context.final_output).await {
         Ok(stats) => stats,
         Err(error) => {
-            cleanup(child.as_mut(), &job, grace).await;
+            cleanup(&mut child, grace).await;
             return Err(RunnerError::ExecutionInfrastructure(error));
         }
     };

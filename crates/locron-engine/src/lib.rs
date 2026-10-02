@@ -6,6 +6,8 @@ pub mod daemon;
 pub mod ipc;
 pub mod output;
 pub mod runner;
+#[cfg(windows)]
+pub mod windows_child;
 
 pub use daemon::{CompletionError, Daemon, DaemonConfig, DaemonStore, TickResult};
 pub use output::{Channel, Frame, OutputStats, OutputWriter, read_frames, repair_partial};
