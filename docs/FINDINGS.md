@@ -2883,6 +2883,7 @@ worker protocol faults and parent-crash cases in exact test subprocesses; failur
 invalidate queued work in that process and must not contaminate unrelated state fixtures.
 Other library harnesses retain normal parallelism. This is test scheduling for deliberate owned
 failures, not a cold-start workaround or a larger production deadline.
+
 The implementation audit selects Windows-only `file-id =0.2.3` (MIT OR Apache-2.0, declared
 Rust 1.77). Its exact registry source exposes safe `get_high_res_file_id(path)`, opens a
 backup-semantics access-zero file, then queries `GetFileInformationByHandleEx(FileIdInfo)`.
