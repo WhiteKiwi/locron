@@ -960,6 +960,45 @@ before the first write, then binds only prior registered roles to the new verifi
 restores their exact enabled flags. Changed definitions/roots/SIDs fail closed; disabled roles stay
 disabled. Missing registrations are not silently recreated from a stale record.
 
+Freeze the CLI-private Windows maintenance protocol as snapshot_executable_roles(executable),
+ServiceSnapshot::restore_record(), quiesce_roles(snapshot, persist),
+QuiescedServices::restore_record(), recover_quiesced(record, persist),
+restore_roles(quiesced, new_executable), restore_record(record, new_executable) and
+remove_roles(quiesced). The persist callback receives a typed ServiceRestoreRecord and returns
+ServiceError on a failed private-journal write. Invoke it with the complete original snapshot
+before disabling the first task; callback failure changes nothing. Persist confirmed quiescence
+and each explicit forced-stop fact before releasing the old executable read guard. Consuming the
+live snapshot retains state-root and registration guards in QuiescedServices but releases that
+old executable guard only after actual all-task exit, so it cannot collide with the updater's
+exclusive replacement gate.
+
+ServiceRestoreRecord uses a deny-unknown-fields versioned schema: current SID, previous absolute
+executable, its full volume/file identity, prior roles, confirmed-quiescent flag and bounded
+explicit forced Task instance identities. Each role stores its fixed daemon/dashboard selector,
+existing root, shared full instance digest, deterministic task name, original enabled flag and
+semantic definition fingerprint. Encode full identities and SHA-256 fingerprints as fixed-width
+lowercase hexadecimal strings to preserve every bit through JSON/PowerShell. Bound the inventory
+at 256 distinct registered bindings and refuse overflow before mutation. Records contain no
+arbitrary executable source, command template or role arguments.
+
+An interrupted unconfirmed record can resume disabling/quiescing only after reconstructing all
+existing root guards and matching the old executable object plus unchanged definitions; an
+originally disabled role must still be disabled. Confirmed records require all old registrations
+to remain disabled/stopped before the first replacement or removal. Restoration receives a new
+executable already verified by distribution's receipt/package proof, then preflights every
+registration against either its exact original fingerprint or the exact newly generated fixed
+definition for that verified executable. Accept the latter only as idempotent recovery of this
+same restore; it cannot be an arbitrary journal definition. Preserve original enabled flags and
+refuse a missing/changed root, SID, registration or unexpected enable transition before any
+write. This permits recovery after a completed per-role refresh without adopting unrelated tasks.
+
+Native Verify: (1) failed initial persistence leaves every task/enabled flag/process unchanged,
+and simulated abrupt helper exit after each disable resumes from the frozen original flags.
+(2) missing/replaced roots, foreign SID, changed task action and unexpected enabling refuse
+before task or state/journal creation. (3) two roots with both enabled and disabled roles quiesce
+before the old executable guard releases; restore across a changed versioned path, including an
+interrupted one-role refresh, returns every original enabled flag without creating missing roles.
+
 The package flow composes these same APIs through the existing installer maintenance modes:
 Prepare snapshots/quiesces all bindings for one verified executable and journals an operation UUID;
 Complete validates the installed package and restores prior registrations; Remove quiesces and
