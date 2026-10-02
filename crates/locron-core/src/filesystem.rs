@@ -124,6 +124,14 @@ pub fn open_private(path: &Path, options: &mut OpenOptions) -> io::Result<Guarde
     open_with_guard(path, options, guard, true)
 }
 
+/// Retains an existing private read handle that excludes concurrent write/delete access.
+/// Sharing violations are explicit; this never repairs or creates a managed object.
+#[cfg(windows)]
+pub fn open_private_read_stable(path: &Path) -> io::Result<GuardedFile> {
+    let guard = DirectoryGuard::existing_private(parent(path)?)?;
+    windows::read_private_stable(path, guard)
+}
+
 /// Atomically creates an empty private file without replacing any existing object.
 /// The returned read/write handle and parent guard are validated before caller data is written.
 pub fn create_private_new(path: &Path) -> io::Result<GuardedFile> {
@@ -752,6 +760,26 @@ mod windows {
         Ok(GuardedFile { file, guard, path })
     }
 
+    pub(super) fn read_private_stable(
+        path: &Path,
+        guard: DirectoryGuard,
+    ) -> io::Result<GuardedFile> {
+        let path = guard
+            .normalized_path()
+            .join(path.file_name().ok_or_else(|| unsafe_path(path))?);
+        let file = OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(&path)?;
+        reject_reparse(&file, &path)?;
+        if !file.metadata()?.is_file() {
+            return Err(unsafe_path(&path));
+        }
+        verify_private(&file, &path, false)?;
+        Ok(GuardedFile { file, guard, path })
+    }
+
     pub(super) fn owned_executable_exclusive(
         path: &Path,
         guard: DirectoryGuard,
@@ -889,6 +917,89 @@ mod tests {
             wrappers::GetSecurityInfo(file, SeObjectType::SE_FILE_OBJECT, information).unwrap();
         wrappers::ConvertSecurityDescriptorToStringSecurityDescriptor(&descriptor, information)
             .unwrap()
+    }
+
+    #[test]
+    fn stable_private_reader_excludes_writes_and_never_creates_a_parent() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("absent").join("database.db");
+        assert_eq!(
+            open_private_read_stable(&path).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(!path.parent().unwrap().exists());
+        let path = temporary.path().join("private").join("database.db");
+        create_private_new(&path)
+            .unwrap()
+            .write_all(b"closed")
+            .unwrap();
+        let writer = open_private(&path, OpenOptions::new().read(true).write(true)).unwrap();
+        assert_eq!(
+            open_private_read_stable(&path).unwrap_err().raw_os_error(),
+            Some(32)
+        );
+        drop(writer);
+        let reader = open_private_read_stable(&path).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"closed");
+        assert_eq!(
+            open_private(&path, OpenOptions::new().write(true))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        assert_eq!(fs::remove_file(&path).unwrap_err().raw_os_error(), Some(32));
+        drop(reader);
+        assert!(open_private(&path, OpenOptions::new().write(true)).is_ok());
+    }
+
+    #[test]
+    fn writable_mapping_refuses_stable_gate_after_original_file_handle_closes() {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("private").join("mapped.db");
+        let mut file = create_private_new(&path).unwrap();
+        file.set_len(4096).unwrap();
+        file.write_all(b"mapped").unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        let entered = temporary.path().join("mapping-entered");
+        let release = temporary.path().join("mapping-release");
+        let input = json!({"path": path, "entered": entered, "release": release});
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let worker = std::thread::spawn(move || {
+            crate::windows::run_script_json(
+                r"
+                $stream = [IO.File]::Open([string]$request.path, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::ReadWrite);
+                $mapping = $null;
+                $view = $null;
+                try {
+                    $mapping = [IO.MemoryMappedFiles.MemoryMappedFile]::CreateFromFile($stream, $null, 0, [IO.MemoryMappedFiles.MemoryMappedFileAccess]::ReadWrite, [IO.HandleInheritability]::None, $true);
+                    $view = $mapping.CreateViewAccessor();
+                    $stream.Dispose();
+                    [IO.File]::WriteAllText([string]$request.entered, 'original-handle-closed');
+                    while (-not [IO.File]::Exists([string]$request.release)) { [Threading.Thread]::Sleep(10) }
+                } finally {
+                    if ($null -ne $view) { $view.Dispose() }
+                    if ($null -ne $mapping) { $mapping.Dispose() }
+                    $stream.Dispose();
+                }
+                @{closed=$true} | ConvertTo-Json -Compress
+            ",
+                &input,
+            )
+        });
+        while !entered.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // Always release and join the owned adapter before asserting its observations.
+        let marker = fs::read_to_string(&entered);
+        let gate = open_private_read_stable(&path);
+        fs::write(&release, b"release").unwrap();
+        let result = worker.join().unwrap();
+        assert_eq!(marker.unwrap(), "original-handle-closed");
+        assert_eq!(gate.unwrap_err().raw_os_error(), Some(32));
+        assert_eq!(result.unwrap()["closed"], true);
+        assert!(open_private_read_stable(&path).is_ok());
+        assert_eq!(&fs::read(&path).unwrap()[..6], b"mapped");
     }
 
     #[test]
