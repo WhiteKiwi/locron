@@ -1,0 +1,392 @@
+//! Bounded durable framing. Only a caller-selected validated Rust record can be decoded.
+//!
+//! The operation engine supplies its concrete ServiceRestoreRecord-containing
+//! record and live identity checks; this codec never authorizes or replays effects.
+
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::Path;
+
+use anyhow::{Result, ensure};
+use locron_core::filesystem::{GuardedFile, create_private_new_exclusive, open_private_exclusive};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use sha2::{Digest, Sha256};
+
+const FRAME_LIMIT: usize = 128 * 1024;
+const JOURNAL_LIMIT: usize = 16 * 1024 * 1024;
+const FRAME_COUNT: usize = 128;
+const HEADER: usize = 4 + 32;
+const OVERHEAD: usize = HEADER + 32;
+
+#[derive(Default)]
+struct BoundedPayload(Vec<u8>);
+
+impl Write for BoundedPayload {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self
+            .0
+            .len()
+            .checked_add(bytes.len())
+            .is_none_or(|size| size > FRAME_LIMIT - OVERHEAD)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "journal payload exceeds its finite bound",
+            ));
+        }
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+struct Chain<R> {
+    records: Vec<R>,
+    last_digest: [u8; 32],
+    byte_len: usize,
+}
+
+impl<R> Default for Chain<R> {
+    fn default() -> Self {
+        Self {
+            records: Vec::new(),
+            last_digest: [0; 32],
+            byte_len: 0,
+        }
+    }
+}
+
+fn frame<R: Serialize>(record: &R, previous: [u8; 32]) -> Result<(Vec<u8>, [u8; 32])> {
+    let mut bounded = BoundedPayload::default();
+    serde_json::to_writer(&mut bounded, record)?;
+    let payload = bounded.0;
+    let length = payload
+        .len()
+        .checked_add(OVERHEAD)
+        .ok_or_else(|| anyhow::anyhow!("journal frame size overflow"))?;
+    ensure!(
+        length <= FRAME_LIMIT,
+        "journal frame exceeds its finite bound"
+    );
+    let mut bytes = Vec::with_capacity(length);
+    bytes.extend_from_slice(&(u32::try_from(length)?).to_le_bytes());
+    bytes.extend_from_slice(&previous);
+    bytes.extend_from_slice(&payload);
+    let digest: [u8; 32] = Sha256::digest(&bytes).into();
+    bytes.extend_from_slice(&digest);
+    Ok((bytes, digest))
+}
+
+fn decode<R: DeserializeOwned>(
+    bytes: &[u8],
+    mut validate: impl FnMut(&R, Option<&R>) -> Result<()>,
+) -> Result<Chain<R>> {
+    ensure!(
+        bytes.len() <= JOURNAL_LIMIT,
+        "journal exceeds its finite byte bound"
+    );
+    let mut chain = Chain::default();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        ensure!(
+            chain.records.len() < FRAME_COUNT,
+            "journal exceeds its finite frame count"
+        );
+        let length = bytes
+            .get(offset..offset + 4)
+            .ok_or_else(|| anyhow::anyhow!("journal has a partial frame length"))?;
+        let length = u32::from_le_bytes(length.try_into()?) as usize;
+        ensure!(
+            (OVERHEAD + 1..=FRAME_LIMIT).contains(&length),
+            "invalid journal frame length"
+        );
+        let end = offset
+            .checked_add(length)
+            .ok_or_else(|| anyhow::anyhow!("journal frame offset overflow"))?;
+        let bytes = bytes
+            .get(offset..end)
+            .ok_or_else(|| anyhow::anyhow!("journal has a partial final frame"))?;
+        ensure!(
+            bytes[4..HEADER] == chain.last_digest,
+            "journal digest chain is broken"
+        );
+        let digest_start = length - 32;
+        let digest: [u8; 32] = Sha256::digest(&bytes[..digest_start]).into();
+        ensure!(
+            bytes[digest_start..] == digest,
+            "journal frame checksum differs"
+        );
+        let record: R = serde_json::from_slice(&bytes[HEADER..digest_start])?;
+        validate(&record, chain.records.last())?;
+        chain.records.push(record);
+        chain.last_digest = digest;
+        offset = end;
+    }
+    chain.byte_len = offset;
+    Ok(chain)
+}
+
+/// Owns the exact private exclusive journal handle throughout one operation.
+pub(super) struct Journal<R> {
+    file: GuardedFile,
+    chain: Chain<R>,
+    poisoned: bool,
+}
+
+impl<R: Serialize + DeserializeOwned> Journal<R> {
+    pub(super) fn create(path: &Path) -> Result<Self> {
+        Ok(Self {
+            file: create_private_new_exclusive(path)?,
+            chain: Chain::default(),
+            poisoned: false,
+        })
+    }
+
+    pub(super) fn open(
+        path: &Path,
+        validate: impl FnMut(&R, Option<&R>) -> Result<()>,
+    ) -> Result<Self> {
+        let mut file = open_private_exclusive(path)?;
+        let size = file.metadata()?.len();
+        ensure!(
+            size > 0 && size <= JOURNAL_LIMIT as u64,
+            "empty/oversized existing journal refuses recovery"
+        );
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut *file)
+            .take(JOURNAL_LIMIT as u64 + 1)
+            .read_to_end(&mut bytes)?;
+        ensure!(
+            bytes.len() as u64 == size,
+            "journal changed while it was read"
+        );
+        let chain = decode(&bytes, validate)?;
+        Ok(Self {
+            file,
+            chain,
+            poisoned: false,
+        })
+    }
+
+    pub(super) fn last_record(&self) -> Option<&R> {
+        self.chain.records.last()
+    }
+
+    /// Reserve the complete forward and rollback write budget before the first effect.
+    /// A record/binding set that cannot fit refuses before disabling a task.
+    pub(super) fn reserve(&self, frames: usize, maximum_frame_bytes: usize) -> Result<()> {
+        ensure!(!self.poisoned, "journal write outcome is uncertain");
+        ensure!(
+            (OVERHEAD + 1..=FRAME_LIMIT).contains(&maximum_frame_bytes),
+            "invalid reserved frame bound"
+        );
+        ensure!(
+            self.chain
+                .records
+                .len()
+                .checked_add(frames)
+                .is_some_and(|count| count <= FRAME_COUNT),
+            "complete operation exceeds the journal frame budget"
+        );
+        let size = frames
+            .checked_mul(maximum_frame_bytes)
+            .and_then(|size| self.chain.byte_len.checked_add(size));
+        ensure!(
+            size.is_some_and(|size| size <= JOURNAL_LIMIT),
+            "complete operation exceeds the journal byte budget"
+        );
+        Ok(())
+    }
+
+    pub(super) fn append(
+        &mut self,
+        record: R,
+        mut validate: impl FnMut(&R, Option<&R>) -> Result<()>,
+    ) -> Result<()> {
+        ensure!(!self.poisoned, "journal write outcome is uncertain");
+        validate(&record, self.chain.records.last())?;
+        let (bytes, digest) = frame(&record, self.chain.last_digest)?;
+        self.reserve(1, bytes.len())?;
+        // No external object may be adopted as a journal merely by its filename.
+        // The retained share0 handle prevents competing writes/deletes here.
+        let result = (|| -> Result<()> {
+            ensure!(
+                self.file.metadata()?.len() == self.chain.byte_len as u64,
+                "journal length differs from its known durable chain"
+            );
+            ensure!(
+                self.file.seek(SeekFrom::End(0))? == self.chain.byte_len as u64,
+                "journal append position differs"
+            );
+            self.file.write_all(&bytes)?;
+            self.file.sync_all()?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.poisoned = true;
+            return Err(error.context(
+                "journal write/flush is uncertain; retain backups and refuse further effects",
+            ));
+        }
+        self.chain.byte_len += bytes.len();
+        self.chain.last_digest = digest;
+        self.chain.records.push(record);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Deserialize;
+
+    use super::super::windows_protocol::Phase;
+    use super::*;
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Record {
+        schema: String,
+        operation_id: String,
+        sid: String,
+        request_sha256: String,
+        sequence: u32,
+        phase: Phase,
+        padding: String,
+    }
+
+    fn record(sequence: u32) -> Record {
+        Record {
+            schema: "locron.windows-journal/v1".to_owned(),
+            operation_id: "e41c210d-c98d-47fb-9975-a5af66d01346".to_owned(),
+            sid: "S-1-5-21-1-2-3-1001".to_owned(),
+            request_sha256: "ab".repeat(32),
+            sequence,
+            phase: if sequence == 0 {
+                Phase::Accepted
+            } else {
+                Phase::Quiescing
+            },
+            padding: String::new(),
+        }
+    }
+
+    fn validate(record: &Record, previous: Option<&Record>) -> Result<()> {
+        ensure!(
+            record.schema == "locron.windows-journal/v1"
+                && record.sid == "S-1-5-21-1-2-3-1001"
+                && record.operation_id == "e41c210d-c98d-47fb-9975-a5af66d01346"
+                && record.request_sha256 == "ab".repeat(32),
+            "foreign journal authority"
+        );
+        ensure!(
+            record.sequence == previous.map_or(0, |previous| previous.sequence + 1),
+            "journal sequence differs"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn complete_typed_chain_refuses_corrupt_or_partial_frames() {
+        let (first, hash) = frame(&record(0), [0; 32]).unwrap();
+        let (second, _) = frame(&record(1), hash).unwrap();
+        let bytes = [first.as_slice(), second.as_slice()].concat();
+        let decoded = decode(&bytes, validate).unwrap();
+        assert_eq!(decoded.records.len(), 2);
+        assert_eq!(decoded.records[1].sequence, 1);
+        for cut in first.len() + 1..bytes.len() {
+            assert!(
+                decode::<Record>(&bytes[..cut], validate).is_err(),
+                "partial tail at {cut}"
+            );
+        }
+        for offset in [
+            first.len(),
+            first.len() + 4,
+            first.len() + HEADER + 20,
+            bytes.len() - 1,
+        ] {
+            let mut changed = bytes.clone();
+            changed[offset] ^= 1;
+            assert!(
+                decode::<Record>(&changed, validate).is_err(),
+                "corruption at {offset}"
+            );
+        }
+        let mut other = record(1);
+        other.operation_id = "other-operation".to_owned();
+        let (graft, _) = frame(&other, hash).unwrap();
+        assert!(
+            decode::<Record>(&[first.as_slice(), graft.as_slice()].concat(), validate).is_err()
+        );
+    }
+
+    #[test]
+    fn typed_records_and_all_finite_bounds_are_required() {
+        let value = serde_json::to_string(&record(0)).unwrap();
+        for changed in [
+            value.replacen("\"schema\":", "\"unknown\":1,\"schema\":", 1),
+            value.replacen("\"schema\":", "\"schema\":\"duplicate\",\"schema\":", 1),
+            value.replace("\"accepted\"", "\"invented-phase\""),
+        ] {
+            // Serialize a raw malformed record only to exercise the typed decoder.
+            let payload = changed.as_bytes();
+            let size = payload.len() + OVERHEAD;
+            let mut bytes = (size as u32).to_le_bytes().to_vec();
+            bytes.extend_from_slice(&[0; 32]);
+            bytes.extend_from_slice(payload);
+            let digest: [u8; 32] = Sha256::digest(&bytes).into();
+            bytes.extend_from_slice(&digest);
+            assert!(decode::<Record>(&bytes, validate).is_err());
+        }
+        let mut oversized = record(0);
+        oversized.padding = "x".repeat(FRAME_LIMIT);
+        assert!(frame(&oversized, [0; 32]).is_err());
+        assert!(decode::<Record>(&vec![0; JOURNAL_LIMIT + 1], validate).is_err());
+        let mut bytes = Vec::new();
+        let mut hash = [0; 32];
+        for sequence in 0..=FRAME_COUNT {
+            let (entry, next) = frame(&record(sequence as u32), hash).unwrap();
+            bytes.extend_from_slice(&entry);
+            hash = next;
+        }
+        assert!(decode::<Record>(&bytes, validate).is_err());
+    }
+
+    #[test]
+    fn guarded_flush_roundtrip_reserves_before_effect_and_refuses_unknown_existing_journal() {
+        let root = tempfile::Builder::new()
+            .prefix("locron-journal-fixture-")
+            .tempdir()
+            .unwrap();
+        locron_core::filesystem::restrict_owned(root.path(), true).unwrap();
+        let path = root.path().join("journal.bin");
+        let mut journal: Journal<Record> = Journal::create(&path).unwrap();
+        assert!(journal.reserve(FRAME_COUNT + 1, FRAME_LIMIT).is_err());
+        assert!(journal.reserve(1, FRAME_LIMIT + 1).is_err());
+        assert!(journal.last_record().is_none());
+        journal.reserve(4, 1024).unwrap();
+        journal.append(record(0), validate).unwrap();
+        journal.append(record(1), validate).unwrap();
+        assert_eq!(journal.last_record().unwrap().sequence, 1);
+        assert!(journal.append(record(3), validate).is_err());
+        drop(journal);
+        let mut journal = Journal::<Record>::open(&path, validate).unwrap();
+        assert_eq!(journal.last_record().unwrap().sequence, 1);
+        let length = journal.file.metadata().unwrap().len();
+        journal.file.set_len(length - 1).unwrap();
+        journal.file.sync_all().unwrap();
+        assert!(journal.append(record(2), validate).is_err());
+        assert!(journal.poisoned);
+        assert!(journal.reserve(1, 1024).is_err());
+        assert!(journal.append(record(2), validate).is_err());
+        drop(journal);
+        assert!(Journal::<Record>::open(&path, validate).is_err());
+        let empty = root.path().join("empty.bin");
+        drop(Journal::<Record>::create(&empty).unwrap());
+        assert!(Journal::<Record>::open(&empty, validate).is_err());
+        assert!(Journal::<Record>::create(&path).is_err());
+    }
+}
