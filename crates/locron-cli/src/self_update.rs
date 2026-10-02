@@ -77,6 +77,10 @@ mod windows_fixture;
 #[path = "windows_transaction.rs"]
 mod windows_transaction;
 
+#[cfg(all(windows, test))]
+#[path = "windows_preparation.rs"]
+mod windows_preparation;
+
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";
