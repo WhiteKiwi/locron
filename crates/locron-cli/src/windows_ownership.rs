@@ -33,6 +33,27 @@ pub(super) struct Standalone {
     pub files: BTreeMap<String, VerifiedFile>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Retention {
+    Changed,
+    Unverifiable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct RetainedPayload {
+    pub name: String,
+    pub reason: Retention,
+}
+
+/// Removal never acquires authority over a changed or unverifiable companion.
+pub(super) struct Removal {
+    pub directory: DirectoryGuard,
+    pub receipt: Receipt,
+    pub receipt_file: VerifiedFile,
+    pub files: BTreeMap<String, VerifiedFile>,
+    pub retained: Vec<RetainedPayload>,
+}
+
 /// Select the actual binary architecture, never a request-supplied architecture.
 pub(super) fn native_target() -> Result<&'static str> {
     match std::env::consts::ARCH {
@@ -74,8 +95,7 @@ pub(super) fn immutable_private(path: &Path, limit: usize) -> Result<(VerifiedFi
     ))
 }
 
-/// Verify existing standalone ownership with no filesystem/registry/task writes.
-pub(super) fn verify(directory: &Path) -> Result<Standalone> {
+fn owned_receipt(directory: &Path) -> Result<(DirectoryGuard, Receipt, VerifiedFile)> {
     let directory = DirectoryGuard::existing_private(directory)?;
     let root = directory.normalized_path();
     let (receipt_file, bytes) = immutable_private(&root.join(RECEIPT), RECEIPT_LIMIT)?;
@@ -87,6 +107,13 @@ pub(super) fn verify(directory: &Path) -> Result<Standalone> {
             .ok_or_else(|| anyhow::anyhow!("standalone directory is not Unicode"))?,
         native_target()?,
     )?;
+    Ok((directory, receipt, receipt_file))
+}
+
+/// Verify existing standalone ownership with no filesystem/registry/task writes.
+pub(super) fn verify(directory: &Path) -> Result<Standalone> {
+    let (directory, receipt, receipt_file) = owned_receipt(directory)?;
+    let root = directory.normalized_path();
     let mut files = BTreeMap::new();
     for name in PAYLOADS {
         let (file, _) = immutable_private(&root.join(name), PAYLOAD_LIMIT)?;
@@ -101,6 +128,43 @@ pub(super) fn verify(directory: &Path) -> Result<Standalone> {
         receipt,
         receipt_file,
         files,
+    })
+}
+
+/// Qualify only unchanged listed files for later removal; no file is changed here.
+/// The protected receipt and original executable remain mandatory exact proofs.
+pub(super) fn verify_removal(directory: &Path) -> Result<Removal> {
+    let (directory, receipt, receipt_file) = owned_receipt(directory)?;
+    let root = directory.normalized_path();
+    let (binary, _) = immutable_private(&root.join("locron.exe"), PAYLOAD_LIMIT)?;
+    ensure!(
+        binary.sha256 == receipt.binary_sha256,
+        "removal requires the exact receipt-owned executable"
+    );
+    let mut files = BTreeMap::from([("locron.exe".to_owned(), binary)]);
+    let mut retained = Vec::new();
+    for name in PAYLOADS.into_iter().filter(|name| *name != "locron.exe") {
+        let reason = match immutable_private(&root.join(name), PAYLOAD_LIMIT) {
+            Ok((file, _)) if receipt.files.get(name) == Some(&file.sha256) => {
+                files.insert(name.to_owned(), file);
+                continue;
+            }
+            Ok(_) => Retention::Changed,
+            // A missing, foreign, locked, nonregular or unreadable entry grants
+            // no deletion/repair authority. Leave it entirely to the operator.
+            Err(_) => Retention::Unverifiable,
+        };
+        retained.push(RetainedPayload {
+            name: name.to_owned(),
+            reason,
+        });
+    }
+    Ok(Removal {
+        directory,
+        receipt,
+        receipt_file,
+        files,
+        retained,
     })
 }
 
@@ -197,6 +261,7 @@ mod tests {
             changed[field] = value;
             fs::write(&path, serde_json::to_vec(&changed).unwrap()).unwrap();
             assert!(verify(root.path()).is_err(), "{field}");
+            assert!(verify_removal(root.path()).is_err(), "{field}");
             assert_eq!(
                 serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),
                 changed
@@ -212,5 +277,68 @@ mod tests {
         let missing = root.path().join("missing-directory");
         assert!(verify(&missing).is_err());
         assert!(!missing.exists());
+    }
+
+    #[test]
+    fn removal_retains_changed_missing_and_unverifiable_companions_without_effects() {
+        let (root, _) = fixture();
+        let changed = root.path().join("README.md");
+        fs::write(&changed, b"operator changes").unwrap();
+        let missing = root.path().join("LICENSE-MIT");
+        fs::remove_file(&missing).unwrap();
+        let locked_path = root.path().join("LICENSE-APACHE");
+        let locked = locron_core::filesystem::open_private_exclusive(&locked_path).unwrap();
+        let marker = root.path().join("unlisted-marker.txt");
+        fs::write(&marker, b"unowned").unwrap();
+
+        let proof = verify_removal(root.path()).unwrap();
+        assert_eq!(proof.files.len(), 3);
+        assert_eq!(proof.retained.len(), 3);
+        assert!(proof.retained.contains(&RetainedPayload {
+            name: "README.md".into(),
+            reason: Retention::Changed,
+        }));
+        for name in ["LICENSE-MIT", "LICENSE-APACHE"] {
+            assert!(proof.retained.contains(&RetainedPayload {
+                name: name.into(),
+                reason: Retention::Unverifiable,
+            }));
+        }
+        assert_eq!(proof.receipt.version, "0.10.0");
+        assert_eq!(
+            proof.directory.normalized_path(),
+            proof.receipt_file.file.normalized_path().parent().unwrap()
+        );
+        for file in proof.files.values() {
+            assert!(
+                OpenOptions::new()
+                    .write(true)
+                    .open(file.file.normalized_path())
+                    .is_err()
+            );
+        }
+        assert_eq!(fs::read(&changed).unwrap(), b"operator changes");
+        assert!(!missing.exists());
+        assert_eq!(fs::read(&marker).unwrap(), b"unowned");
+        drop(locked);
+        assert_eq!(
+            fs::read(&locked_path).unwrap(),
+            b"immutable test-owned LICENSE-APACHE"
+        );
+        drop(proof);
+        assert!(!root.path().join("journal.bin").exists());
+        assert!(!root.path().join("status.json").exists());
+    }
+
+    #[test]
+    fn removal_refuses_a_changed_original_executable_and_missing_receipt() {
+        let (root, _) = fixture();
+        let binary = root.path().join("locron.exe");
+        fs::write(&binary, b"foreign binary bytes").unwrap();
+        assert!(verify_removal(root.path()).is_err());
+        assert_eq!(fs::read(&binary).unwrap(), b"foreign binary bytes");
+        fs::remove_file(root.path().join(RECEIPT)).unwrap();
+        assert!(verify_removal(root.path()).is_err());
+        assert!(!root.path().join(RECEIPT).exists());
     }
 }
