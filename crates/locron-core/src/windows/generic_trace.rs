@@ -25,7 +25,7 @@ pub(super) fn source(script: &str) -> String {
     // Only test builds split the existing EOF/JSON pipeline to observe its boundaries.
     // Input, converter selection, caller source and normal catch remain unchanged.
     format!(
-        "{} $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); {} try {{ $locronInput = [Console]::In.ReadToEnd(); {} {} $request = $locronInput | ConvertFrom-Json; {} {} {script} {} }} catch {{ {} [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
+        "{} $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); {} try {{ $locronInput = [Console]::In.ReadToEnd(); {} {} $request = $locronInput | ConvertFrom-Json; {} {} {script}\n; {} }} catch {{ {} [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
         token("source-entry"),
         token("encoding-ready"),
         token("input-complete"),
@@ -152,6 +152,15 @@ mod tests {
         }
         assert!(actual.contains("$locronInput | ConvertFrom-Json"));
         assert!(!actual.contains("Import-Module"));
+        assert!(actual.contains(&format!(
+            "ConvertTo-Json -Compress\n; {}",
+            token("caller-complete")
+        )));
+        let commented = source("Invoke-Fixture # caller ends with a line comment");
+        assert!(commented.contains(&format!(
+            "# caller ends with a line comment\n; {}",
+            token("caller-complete")
+        )));
     }
 
     #[tokio::test]
