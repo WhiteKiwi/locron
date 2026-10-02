@@ -121,7 +121,7 @@ impl Fixture {
         let run = Command::new(cli_executable())
             .arg("--state-dir")
             .arg(&self.paths.root)
-            .args(["--json", "run", name, "--force"])
+            .args(["--json", "run", name])
             .output()
             .expect("queue native target");
         assert!(
