@@ -2903,6 +2903,31 @@ and confirm OS lock release after orderly exit/crash.
 Sources: [pinned Rust 1.94 Windows lock implementation](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs#L431),
 [LockFileEx mandatory range semantics](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex).
 
+### Measured generic JSON binding and binary-only candidate (2026-10-03)
+
+Exact head 608ab19's ARM64 native job 111026239366 entered the actual generic script at about
+210 ms and its JSON conversion at 219 ms, but never reached json-parsed before the original
+30-second deadline; owned cleanup finished at 30.042 seconds. The preceding 4887 trace measured
+another first conversion returning only near 22.09 seconds. The statement-separator correction
+removed the diagnostic parser/argument error; the remaining delay is actual unqualified converter
+binding, not a filesystem ACL call or an increased/deferred queue budget.
+
+Read-only inspection confirms the Windows PowerShell 5.1 Utility manifest names both a binary
+DLL and Utility.psm1 in NestedModules. Restricting its exported functions does not prove that
+the nested script was never loaded. Microsoft's Import-Module documentation permits an explicit
+DLL filename or Assembly input and says those import only that file/assembly's members. Restricted
+policy blocks psm1 and configuration script files. Select guarded explicit binary imports as a
+candidate; native cold timing and policy acceptance still need proof. Sources:
+[Import-Module 5.1](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/import-module?view=powershell-5.1),
+[execution policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1).
+
+The selected stock library guard cannot depend on current_user_sid: it is also needed before
+the first filesystem SID request. Its trust policy is therefore the existing Windows servicing
+boundary of SYSTEM, Administrators and TrustedInstaller ownership/mutation only, with no current-
+SID exemption. Retained no-reparse/no-write/no-delete handles plus handle-bound descriptor checks
+must establish the binary location before assembly import; a GAC directory suffix, module name,
+strong-name token or post-load path string alone does not establish file ownership/privacy.
+
 Select the same fixed stock Windows PowerShell 5.1 adapter using the supported scripting COM
 interface `New-Object -ComObject Schedule.Service`, `Connect()`, `NewTask(0)`, root-folder
 `RegisterTaskDefinition` and typed task properties. This avoids unsafe COM in Rust and avoids

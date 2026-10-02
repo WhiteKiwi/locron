@@ -148,6 +148,45 @@ truncate the raced-in file. Lock creation explicitly opens or creates, while sen
 token/database creation remains CreateNew. Existing-file opens never infer creation from options.
 Remove inherited PSModulePath only for the stock adapter, allowing PowerShell 5.1 to discover its
 own built-in modules instead of loading incompatible PowerShell 7 modules from the calling shell.
+Use one shared binary-only stock JSON bootstrap in the generic adapter, fixed filesystem worker
+and phase-scoped COM worker. Before spawn, a SID-independent native core StockAdapterGuard retains
+the exact stock PowerShell executable and selected GAC library files plus every ancestor through
+owned cleanup/idle/quarantine. Build their absolute paths only from the absolute Windows root and
+fixed Windows PowerShell 5.1/.NET Framework identities; no module search, cwd fallback or repair.
+Require SYSTEM/Administrators/TrustedInstaller owner, no untrusted effective write/append/EA/
+attributes/delete/WRITE_DAC/WRITE_OWNER/generic write/all grants on each library/executable, and
+no untrusted control/delete/reparse-mutation grants on any retained ancestor. Creation of an
+unrelated sibling alone does not grant mutation of the guarded existing chain. The current SID
+does not bypass these checks, avoiding the cold SID/bootstrap dependency cycle.
+
+Pass only these retained canonical library paths as child environment data. Static bootstrap
+loads/imports the exact binary, verifies its full assembly identity and actual loaded location,
+and validates each retained JSON CmdletInfo's implementing assembly/type against that binary.
+Use the returned command objects for both JSON directions; never rediscover them by a module
+name. Disable module autoload and remove inherited PSModulePath. Import binary Utility cmdlets
+for already reviewed generic callers (including Add-Type/Start-Sleep), plus the guarded binary
+Management module for the reviewed junction/registry callers. The fixed filesystem/COM loops
+need only Utility. Import no manifest, script module, format/type file, alias or function and
+change no policy. Binding/location/descriptor/policy refusal is explicit with no fallback.
+
+The fixed Task Scheduler waiting launcher also avoids a JSON/module bootstrap before Rust can
+guard its state. Keep its one generated CLIXML/base64 argument value, but encode a versioned,
+length-delimited UTF-8 record containing only SID, exact executable, state root and fixed role.
+Static .NET BinaryReader with throwing UTF-8 decoding enforces lengths, protocol, no trailing
+bytes and the fixed role before ProcessStartInfo; Rust readback accepts only the identical generated
+representation. No data becomes executable source. This replaces the earlier base64-JSON payload
+choice without changing exact argv, waiting/exit propagation or the original enabled flags.
+
+Preserve the one-filesystem plus one-generic/COM child ceiling, original per-entry 30-second
+budget and three-second owned adapter cleanup, with no warm-up or mutation retry. Verify:
+(1) the original cold native x64/ARM64/MSRV core gate and actual first generic JSON request pass;
+static phases show binary binding/conversion inside the unchanged budget. (2) forged user module
+paths/cwd/name collisions and foreign-mutable/reparse stock candidates refuse or cannot execute
+their marker; retained library/ancestor handles block replacement while the child is live.
+(3) isolated actual children under process-only Restricted retain the inherited host policy and
+round-trip generic JSON, filesystem SID/CreateNew, COM inventory and launcher exact Unicode/
+quote/backslash argv; native wait/exit, caps, wrong-frame and parent-exit containment remain tested.
+
 Bound stock adapter concurrency to two owned workers per process. A single thirty-second deadline
 starts at API entry and includes permit wait, runtime/process startup and all input/output work;
 permit saturation fails under that deadline rather than spawning more cold PowerShell processes.
