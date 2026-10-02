@@ -1,14 +1,110 @@
 //! Canonical immutable release identity for the native Windows frontend.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 use anyhow::{Result, ensure};
 use serde::Deserialize;
 use url::Url;
 
+use super::sha256_hex;
 use super::windows_receipt::{stable_version, valid_hash};
 
 const RELEASE_BASE: &str = "https://github.com/WhiteKiwi/locron/releases/download";
+const API: &str = "https://api.github.com/repos/WhiteKiwi/locron/releases";
+const DOWNLOAD_LIMIT: usize = 64 * 1024 * 1024;
+
+/// The native frontend cannot redirect its release origin through update environment variables.
+pub(super) struct Remote {
+    client: reqwest::Client,
+}
+
+impl Remote {
+    pub(super) fn new() -> Result<Self> {
+        let client = reqwest::Client::builder()
+            .user_agent(format!(
+                "locron/{} Windows distribution",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .https_only(true)
+            .connect_timeout(Duration::from_secs(30))
+            .read_timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(120))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= 6 || !transport_allowed(attempt.url()) {
+                    attempt.error("release redirect exceeds the bounded canonical HTTPS transport")
+                } else {
+                    attempt.follow()
+                }
+            }))
+            .build()?;
+        Ok(Self { client })
+    }
+
+    pub(super) async fn release(&self, selected: Option<&str>) -> Result<Release> {
+        let suffix = if let Some(version) = selected {
+            stable_version(version)?;
+            format!("tags/v{version}")
+        } else {
+            "latest".to_owned()
+        };
+        let bytes = self
+            .download(&format!("{API}/{suffix}"), 1024 * 1024)
+            .await?;
+        Release::parse(&bytes, selected)
+    }
+
+    pub(super) async fn asset(&self, release: &Release, name: &str) -> Result<Vec<u8>> {
+        let url = release.asset_url(name)?;
+        let bytes = self.download(&url, DOWNLOAD_LIMIT).await?;
+        ensure!(
+            release.digests.get(name) == Some(&sha256_hex(&bytes)),
+            "release asset bytes differ from the final published digest"
+        );
+        Ok(bytes)
+    }
+
+    async fn download(&self, url: &str, limit: usize) -> Result<Vec<u8>> {
+        ensure!(
+            (1..=DOWNLOAD_LIMIT).contains(&limit),
+            "invalid download byte bound"
+        );
+        let url = Url::parse(url)?;
+        ensure!(
+            transport_allowed(&url),
+            "release download is outside canonical HTTPS transport"
+        );
+        let mut response = self.client.get(url).send().await?;
+        ensure!(
+            response.status() == reqwest::StatusCode::OK,
+            "canonical release returned HTTP {}",
+            response.status()
+        );
+        ensure!(
+            response
+                .content_length()
+                .is_none_or(|size| size <= limit as u64),
+            "release exceeds its advertised byte bound"
+        );
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            extend_bounded(&mut bytes, &chunk, limit)?;
+        }
+        Ok(bytes)
+    }
+}
+
+fn extend_bounded(bytes: &mut Vec<u8>, chunk: &[u8], limit: usize) -> Result<()> {
+    ensure!(
+        bytes
+            .len()
+            .checked_add(chunk.len())
+            .is_some_and(|size| size <= limit),
+        "release stream exceeds its byte bound"
+    );
+    bytes.extend_from_slice(chunk);
+    Ok(())
+}
 
 #[derive(Debug, Deserialize)]
 struct Metadata {
@@ -297,5 +393,36 @@ mod tests {
         ] {
             assert!(!transport_allowed(&Url::parse(url).unwrap()), "{url}");
         }
+    }
+
+    #[tokio::test]
+    async fn native_download_refuses_invalid_origin_version_and_inventory_before_network() {
+        let remote = Remote::new().unwrap();
+        for url in [
+            "http://github.com/WhiteKiwi/locron",
+            "https://github.com.evil.example/file",
+            "file:///C:/locron.exe",
+        ] {
+            assert!(remote.download(url, 1024).await.is_err());
+        }
+        assert!(
+            remote
+                .download("https://github.com/WhiteKiwi/locron", 0)
+                .await
+                .is_err()
+        );
+        assert!(remote.release(Some("0.9.6")).await.is_err());
+        assert!(remote.release(Some("../../latest")).await.is_err());
+        let release = parse(&metadata("0.10.0")).unwrap();
+        assert!(remote.asset(&release, "../locron.exe").await.is_err());
+    }
+
+    #[test]
+    fn streamed_byte_bound_preserves_data_on_refused_extra_chunk() {
+        let mut bytes = b"first".to_vec();
+        extend_bounded(&mut bytes, b"two", 8).unwrap();
+        assert_eq!(bytes, b"firsttwo");
+        assert!(extend_bounded(&mut bytes, b"X", 8).is_err());
+        assert_eq!(bytes, b"firsttwo");
     }
 }
