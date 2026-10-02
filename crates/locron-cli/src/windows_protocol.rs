@@ -9,6 +9,18 @@ use super::windows_receipt::{
 };
 
 const LIMIT: usize = 128 * 1024;
+pub(super) const MAINTENANCE_PATH_UNITS: usize = 4096;
+pub(super) const MAINTENANCE_PATH_JSON_BYTES: usize = MAINTENANCE_PATH_UNITS * 3 + 2;
+
+/// Syntax/size qualification only; live canonical guards must repeat this check.
+pub(super) fn maintenance_path(path: &str) -> Result<String> {
+    let path = local_path(path)?;
+    ensure!(
+        path.encode_utf16().count() <= MAINTENANCE_PATH_UNITS,
+        "normalized maintenance path exceeds 4096 UTF-16 code units"
+    );
+    Ok(path)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -78,7 +90,8 @@ impl PackageBinding {
         );
         stable_version(&self.version)?;
         native_target(&self.target)?;
-        let location = local_path(&self.install_location)?;
+        let location = maintenance_path(&self.install_location)?;
+        maintenance_path(&self.executable)?;
         let nested = format!(
             "{location}\\locron-v{}-{}\\locron.exe",
             self.version, self.target
@@ -358,6 +371,30 @@ mod tests {
     const TARGET: &str = "x86_64-pc-windows-msvc";
     const OPERATION: &str = "e41c210d-c98d-47fb-9975-a5af66d01346";
 
+    #[test]
+    fn maintenance_path_normalizes_before_utf16_cap_and_proves_json_reservation() {
+        let ascii = format!("C:\\{}", "a".repeat(MAINTENANCE_PATH_UNITS - 3));
+        let bmp = format!("C:\\{}", "\u{800}".repeat(MAINTENANCE_PATH_UNITS - 3));
+        let paired = format!(
+            "C:\\{}x",
+            "\u{1f680}".repeat((MAINTENANCE_PATH_UNITS - 4) / 2)
+        );
+        let escaped = format!("C:\\{}a", "a\\".repeat((MAINTENANCE_PATH_UNITS - 4) / 2));
+        for path in [ascii, bmp, paired, escaped] {
+            let normalized = maintenance_path(&path).unwrap();
+            assert_eq!(normalized.encode_utf16().count(), MAINTENANCE_PATH_UNITS);
+            assert!(serde_json::to_vec(&normalized).unwrap().len() <= MAINTENANCE_PATH_JSON_BYTES);
+            assert_eq!(
+                maintenance_path(&format!(r"\\?\{path}")).unwrap(),
+                normalized
+            );
+            assert_eq!(maintenance_path(&format!("{path}\\")).unwrap(), normalized);
+            assert!(maintenance_path(&format!("{path}a")).is_err());
+        }
+        assert!(maintenance_path("C:\\bad\npath").is_err());
+        assert!(maintenance_path("C:\\bad\"path").is_err());
+    }
+
     fn request() -> Value {
         json!({
             "schema": "locron.windows-operation/v1", "operation_id": OPERATION,
@@ -434,6 +471,15 @@ mod tests {
             "binary_sha256": "ef".repeat(32), "archive_sha256": "ab".repeat(32),
         });
         assert!(parse(&value).is_ok());
+        for units in [MAINTENANCE_PATH_UNITS, MAINTENANCE_PATH_UNITS + 1] {
+            let location = format!("C:\\{}", "a".repeat(units - 3));
+            let executable = format!("{location}\\locron-v0.10.0-{TARGET}\\locron.exe");
+            let mut changed = value.clone();
+            changed["executable"] = json!(executable);
+            changed["package"]["install_location"] = json!(location);
+            changed["package"]["executable"] = changed["executable"].clone();
+            assert!(parse(&changed).is_err(), "over-limit executable/location");
+        }
         for (field, bad) in [
             ("source_id", json!("")),
             ("package_id", json!("Other.locron")),
