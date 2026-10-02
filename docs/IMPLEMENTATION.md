@@ -102,6 +102,10 @@ nix/Unix imports target-specific and bring native Windows x64/ARM64 CI alongside
 Use LocalAppData for default machine-local state. Retain explicit state overrides, file-lock
 ownership and SQLite WAL semantics; path strings never imply safe ownership by themselves.
 
+Historical migration SQL/checksums stay immutable. Only a newly created Windows database receives
+the captured Windows execution PATH after migration, guarded by its untouched default/zero-update
+settings state; existing configured PATH values are preserved on reopen.
+
 Shared environment/path helpers normalize Windows environment keys case-insensitively, reject
 same-layer collisions and reserved-name variants, and apply precedence consistently across CLI,
 dashboard and MCP. Resolve executables against effective PATH/PATHEXT; recognize drive/UNC and
@@ -148,6 +152,16 @@ During the build-foundation stage, unimplemented Windows permission changes fail
 unsupported-capability error, and permission diagnostics report `unsupported`. Compilation alone
 must never turn a no-op permission adapter or a numeric placeholder into an owner-only fact.
 
+Managed directories and data files accept only the current SID as owner and only current-SID/
+SYSTEM allow entries; existing broad descriptors are refused rather than silently tightened. A
+test that begins with an ordinary temporary directory creates a private managed child. Ancestor
+directories may have trusted current-user, SYSTEM, Administrators or Windows TrustedInstaller
+ownership. Retained no-delete/no-write-sharing handles protect even foreign-writable ancestors;
+an incompatible existing handle is an actionable refusal, never a reason to drop the guard.
+Resolve relative state overrides lexically against the current directory before opening guards;
+reject drive-relative/root-relative ambiguity and network state roots. Canonicalize identity only
+after every component has passed no-reparse handle inspection and the guards remain live.
+
 ### Wake, cooperative role control and Task Scheduler
 
 Use Windows-only interprocess =2.4.4 with tokio, safe SDDL SecurityDescriptor deserialization and
@@ -163,10 +177,16 @@ requests to that role's existing cancellation token. Lifecycle coordination firs
 task activation, requests stop, and waits for confirmed role/lock exit. A failed request/remaining
 holder is an actionable bounded failure; task-state alone cannot report graceful completion.
 
-Keep core free of async-runtime types: it shares normalized user/state endpoint identity, fixed
+Keep core free of public async-runtime types: it shares normalized user/state endpoint identity, fixed
 message framing and a bounded synchronous hint sender. Engine owns the asynchronous named-pipe
 listener and role-control cancellation adapter. Server uses the core sender without gaining an
 engine dependency; CLI composes engine listeners after acquiring the owning lifetime lock.
+
+Windows role locks retain actual OS byte-range ownership and publish a separate private, atomic
+owner sidecar containing diagnostic lifetime identity and whether the process is a registered
+service. This keeps observers from trying to read bytes covered by the Windows lock. The sidecar
+never proves ownership or authorizes PID killing: control validates the exact live lifetime,
+and lifecycle completion still requires the corresponding daemon/dashboard lock to be free.
 
 Use stock PowerShell Schedule.Service COM with structured inputs/output, deterministic SID/state/
 role task names, current SID LogonTrigger, INTERACTIVE_TOKEN, LUA, no password, and create/update

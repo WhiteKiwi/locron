@@ -10,7 +10,7 @@ mod output;
 mod paths;
 mod store;
 
-pub use lock::{DaemonLock, LockMetadata};
+pub use lock::{DaemonLock, LockMetadata, RoleLockMetadata};
 pub use migration::{APPLICATION_ID, LATEST_SCHEMA_VERSION};
 pub use output::{
     FRAME_HEADER_LEN, Frame, FrameChannel, FrameReader, FrameWriter, MAX_FRAME_PAYLOAD,

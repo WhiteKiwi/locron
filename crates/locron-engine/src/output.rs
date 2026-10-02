@@ -69,6 +69,7 @@ pub struct OutputStats {
 pub struct OutputWriter {
     path: PathBuf,
     file: BufWriter<tokio::fs::File>,
+    _guard: locron_core::filesystem::DirectoryGuard,
     next_sequence: u64,
     limit: u64,
     stats: OutputStats,
@@ -78,20 +79,26 @@ impl OutputWriter {
     /// Creates a new private partial file and writes its format header.
     pub async fn create(path: impl AsRef<Path>, limit: u64) -> io::Result<Self> {
         let path = path.as_ref().to_path_buf();
-        if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        let mut options = tokio::fs::OpenOptions::new();
+        let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
         {
+            use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let mut file = BufWriter::new(options.open(&path).await?);
+        let creation_path = path.clone();
+        let (file, guard) = tokio::task::spawn_blocking(move || {
+            locron_core::filesystem::open_private(&creation_path, &mut options)
+                .map(locron_core::filesystem::GuardedFile::into_parts)
+        })
+        .await
+        .map_err(io::Error::other)??;
+        let mut file = BufWriter::new(tokio::fs::File::from_std(file));
         file.write_all(MAGIC).await?;
         Ok(Self {
             path,
             file,
+            _guard: guard,
             next_sequence: 0,
             limit,
             stats: OutputStats {
@@ -164,7 +171,13 @@ impl OutputWriter {
         self.file.flush().await?;
         self.file.get_ref().sync_all().await?;
         drop(self.file);
-        tokio::fs::rename(&self.path, final_path).await?;
+        let source = self.path;
+        let destination = final_path.as_ref().to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            locron_core::filesystem::rename_private(&source, &destination)
+        })
+        .await
+        .map_err(io::Error::other)??;
         Ok(self.stats)
     }
 
@@ -182,16 +195,19 @@ impl OutputWriter {
 
 /// Reads and validates all complete frames in a file.
 pub fn read_frames(path: impl AsRef<Path>) -> io::Result<Vec<Frame>> {
-    let mut file = std::fs::File::open(path)?;
+    let mut file = locron_core::filesystem::open_private(
+        path.as_ref(),
+        std::fs::OpenOptions::new().read(true),
+    )?;
     read_valid_frames(&mut file).map(|(frames, _)| frames)
 }
 
 /// Truncates an interrupted file after the last complete valid frame.
 pub fn repair_partial(path: impl AsRef<Path>) -> io::Result<OutputStats> {
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)?;
+    let mut file = locron_core::filesystem::open_private(
+        path.as_ref(),
+        std::fs::OpenOptions::new().read(true).write(true),
+    )?;
     let (frames, valid_len) = read_valid_frames(&mut file)?;
     file.set_len(valid_len)?;
     file.sync_all()?;
@@ -253,11 +269,32 @@ fn read_valid_frames(file: &mut std::fs::File) -> io::Result<(Vec<Frame>, u64)> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PrivateTempDir {
+        _temporary: tempfile::TempDir,
+        path: std::path::PathBuf,
+    }
+
+    impl PrivateTempDir {
+        fn path(&self) -> &std::path::Path {
+            &self.path
+        }
+    }
+
+    fn private_tempdir() -> PrivateTempDir {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("private");
+        locron_core::filesystem::DirectoryGuard::private(&path).unwrap();
+        PrivateTempDir {
+            _temporary: temporary,
+            path,
+        }
+    }
     use std::io::Write;
 
     #[tokio::test]
     async fn preserves_interleaving_and_binary_bytes() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let partial = temp.path().join("a.partial");
         let final_path = temp.path().join("a.log");
         let mut writer = OutputWriter::create(&partial, 100).await.unwrap();
@@ -278,7 +315,7 @@ mod tests {
 
     #[tokio::test]
     async fn truncates_capture_but_accounts_discarded_bytes() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let partial = temp.path().join("a.partial");
         let final_path = temp.path().join("a.log");
         let mut writer = OutputWriter::create(&partial, 3).await.unwrap();
@@ -295,7 +332,7 @@ mod tests {
 
     #[tokio::test]
     async fn repairs_incomplete_tail() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let partial = temp.path().join("a.partial");
         let mut writer = OutputWriter::create(&partial, 100).await.unwrap();
         writer

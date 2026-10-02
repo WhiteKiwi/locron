@@ -8,7 +8,7 @@
 //! responses.
 
 use std::fs;
-use std::io::{self, ErrorKind, Write};
+use std::io::{self, ErrorKind, Read, Write};
 use std::path::PathBuf;
 
 use locron_store::StatePaths;
@@ -47,7 +47,14 @@ pub fn random_hex_32() -> String {
 /// `ensure_private_directory` posture) and the file is written atomically with 0600 permissions.
 pub fn ensure(paths: &StatePaths) -> io::Result<String> {
     let path = token_path(paths);
-    match fs::read_to_string(&path) {
+    let read = || -> io::Result<String> {
+        let mut file =
+            locron_core::filesystem::open_private(&path, fs::OpenOptions::new().read(true))?;
+        let mut contents = String::new();
+        (&mut *file).take(4096).read_to_string(&mut contents)?;
+        Ok(contents)
+    };
+    match read() {
         Ok(contents) => {
             let token = contents.trim();
             if valid_token(token) {
@@ -80,7 +87,7 @@ pub fn regenerate(paths: &StatePaths) -> io::Result<String> {
 
 /// Removes the token file (`disable` semantics); a missing file is not an error.
 pub fn remove(paths: &StatePaths) -> io::Result<()> {
-    match fs::remove_file(token_path(paths)) {
+    match locron_core::filesystem::remove_private_file(&token_path(paths)) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
@@ -93,55 +100,27 @@ fn valid_token(token: &str) -> bool {
 
 fn write_atomic_0600(path: &PathBuf, contents: &str) -> io::Result<()> {
     let root = path.parent().expect("token path always has a parent");
-    match fs::symlink_metadata(root) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidInput,
-                    format!(
-                        "state directory is not a real directory: {}",
-                        root.display()
-                    ),
-                ));
-            }
-        }
-        Err(error) if error.kind() == ErrorKind::NotFound => fs::create_dir_all(root)?,
-        Err(error) => return Err(error),
-    }
+    let _guard = locron_core::filesystem::DirectoryGuard::private(root)?;
     let temporary = root.join(format!(
-        "{}.tmp",
+        "{}.{}.tmp",
         path.file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("token")
+            .unwrap_or("token"),
+        random_hex_32()
     ));
     {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&temporary)?;
-        set_owner_only(&temporary)?;
+        let mut file = locron_core::filesystem::open_private(
+            &temporary,
+            fs::OpenOptions::new().write(true).create_new(true),
+        )?;
         file.write_all(contents.as_bytes())?;
         file.sync_all()?;
     }
-    fs::rename(&temporary, path)?;
+    if let Err(error) = locron_core::filesystem::rename_private(&temporary, path) {
+        let _ = locron_core::filesystem::remove_private_file(&temporary);
+        return Err(error);
+    }
     Ok(())
-}
-
-fn set_owner_only(path: &std::path::Path) -> io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        Err(io::Error::new(
-            ErrorKind::Unsupported,
-            "private token permission enforcement is not implemented on this platform",
-        ))
-    }
 }
 
 #[cfg(test)]
@@ -150,7 +129,8 @@ mod tests {
 
     fn temp_paths() -> (tempfile::TempDir, StatePaths) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let paths = StatePaths::new(dir.path().to_path_buf());
+        let paths = StatePaths::new(dir.path().join("private"));
+        paths.ensure().expect("private test root");
         (dir, paths)
     }
 

@@ -745,11 +745,21 @@ fn token_facts(paths: &StatePaths) -> Result<Value, ServiceError> {
                     "world_readable"
                 }
             };
-            #[cfg(not(unix))]
+            #[cfg(windows)]
+            let permissions = if locron_core::filesystem::is_private(&path, false)
+                .map_err(|error| ServiceError::Io(format!("cannot inspect token ACL: {error}")))?
+            {
+                "owner_only"
+            } else {
+                "unsafe_acl"
+            };
+            #[cfg(not(any(unix, windows)))]
             let permissions = {
                 let _ = metadata;
                 "unsupported"
             };
+            #[cfg(windows)]
+            let _ = metadata;
             Ok(json!({
                 "present": true,
                 "permissions": permissions,

@@ -2744,6 +2744,25 @@ Sources: [interprocess manifest](https://github.com/kotauskas/interprocess/blob/
 
 ### Task Scheduler and cooperative lifecycle
 
+#### Windows role-lock diagnostic refinement during development
+
+Rust 1.94's Windows `File::try_lock` calls `LockFileEx` at offset zero with both length words set
+to `u32::MAX`, exclusive and fail-immediately flags. This covers diagnostic bytes in the permanent
+lock file. Microsoft's remarks explain that another process, and even another handle opened by
+the owner, cannot read the exclusively locked region. Unix advisory-lock observer behavior cannot
+therefore be carried over by simply reading the same lock file on Windows.
+
+Keep the permanent lock as the sole ownership proof. Publish diagnostic `LockMetadata` plus an
+explicit registered-service marker in a private atomic sidecar while ownership is held. A bounded
+no-follow observer reads that sidecar, and a separately secured endpoint validates the exact live
+role/lifetime before accepting shutdown. Stale sidecar contents never authorize PID signalling
+or prove liveness; service/update completion still waits for actual corresponding role-lock exit.
+Native tests must read the observer metadata while the lock remains held, refuse a second owner,
+and confirm OS lock release after orderly exit/crash.
+
+Sources: [pinned Rust 1.94 Windows lock implementation](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs#L431),
+[LockFileEx mandatory range semantics](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex).
+
 Select the same fixed stock Windows PowerShell 5.1 adapter using the supported scripting COM
 interface `New-Object -ComObject Schedule.Service`, `Connect()`, `NewTask(0)`, root-folder
 `RegisterTaskDefinition` and typed task properties. This avoids unsafe COM in Rust and avoids

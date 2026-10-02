@@ -49,6 +49,7 @@ pub struct OutputRepair {
 /// Appends an owner-only, framed output stream to a newly created file.
 pub struct FrameWriter {
     file: File,
+    _guard: locron_core::filesystem::DirectoryGuard,
     sequence: u64,
     physical: u64,
 }
@@ -62,10 +63,12 @@ impl FrameWriter {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let mut file = options.open(path)?;
+        let (mut file, guard) =
+            locron_core::filesystem::open_private(path, &mut options)?.into_parts();
         file.write_all(MAGIC)?;
         Ok(Self {
             file,
+            _guard: guard,
             sequence: 0,
             physical: MAGIC.len() as u64,
         })
@@ -110,13 +113,16 @@ impl FrameWriter {
 /// Reads back a framed stream produced by [`FrameWriter`].
 pub struct FrameReader {
     file: File,
+    _guard: locron_core::filesystem::DirectoryGuard,
     next: u64,
     valid: u64,
 }
 impl FrameReader {
     /// Opens a frame file and validates its magic header.
     pub fn open(path: &Path) -> io::Result<Self> {
-        let mut file = File::open(path)?;
+        let (mut file, guard) =
+            locron_core::filesystem::open_private(path, OpenOptions::new().read(true))?
+                .into_parts();
         let mut magic = [0; 8];
         file.read_exact(&mut magic)?;
         if &magic != MAGIC {
@@ -127,6 +133,7 @@ impl FrameReader {
         }
         Ok(Self {
             file,
+            _guard: guard,
             next: 0,
             valid: 8,
         })
@@ -178,7 +185,9 @@ impl FrameReader {
 
 /// Truncates a partial frame file to its last complete frame and reports the repair.
 pub fn repair_partial(path: &Path) -> io::Result<OutputRepair> {
-    let original = std::fs::metadata(path)?.len();
+    let original = locron_core::filesystem::open_private(path, OpenOptions::new().read(true))?
+        .metadata()?
+        .len();
     let mut reader = FrameReader::open(path)?;
     let mut repair = OutputRepair {
         physical_bytes: 8,
@@ -191,7 +200,7 @@ pub fn repair_partial(path: &Path) -> io::Result<OutputRepair> {
     }
     repair.tail_removed = original.saturating_sub(repair.physical_bytes);
     drop(reader);
-    let file = OpenOptions::new().write(true).open(path)?;
+    let file = locron_core::filesystem::open_private(path, OpenOptions::new().write(true))?;
     file.set_len(repair.physical_bytes)?;
     file.sync_all()?;
     Ok(repair)
@@ -200,9 +209,30 @@ pub fn repair_partial(path: &Path) -> io::Result<OutputRepair> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PrivateTempDir {
+        _temporary: tempfile::TempDir,
+        path: std::path::PathBuf,
+    }
+
+    impl PrivateTempDir {
+        fn path(&self) -> &std::path::Path {
+            &self.path
+        }
+    }
+
+    fn private_tempdir() -> PrivateTempDir {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("private");
+        locron_core::filesystem::DirectoryGuard::private(&path).unwrap();
+        PrivateTempDir {
+            _temporary: temporary,
+            path,
+        }
+    }
     #[test]
     fn corrupt_tail_is_removed() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let path = temp.path().join("x.partial");
         let mut writer = FrameWriter::create(&path).unwrap();
         writer.write(FrameChannel::Stdout, 1, b"ok").unwrap();
