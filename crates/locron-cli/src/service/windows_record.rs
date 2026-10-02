@@ -425,6 +425,219 @@ impl ServiceRestoreRecord {
         self.previous.volume == format!("{:016x}", identity.volume_serial_number)
             && self.previous.file == format!("{:032x}", identity.file_id)
     }
+
+    /// Accepts only an unchanged observation or one exact forward journal transition.
+    /// Native ownership/readback and effect authorization remain separate requirements.
+    pub(crate) fn validate_successor(&self, previous: &Self) -> Result<(), ServiceError> {
+        previous.validate_for_sid(&previous.sid)?;
+        self.validate_for_sid(&previous.sid)?;
+        previous.validate_transition_shape()?;
+        self.validate_transition_shape()?;
+        if !self.same_original(previous) {
+            return Err(invalid("service transition changed its frozen origin"));
+        }
+        if self == previous {
+            return Ok(());
+        }
+        let entering_restore =
+            previous.phase == RestorePhase::Quiescent && self.phase == RestorePhase::Restoring;
+        if !entering_restore
+            && (self.next != previous.next
+                || self
+                    .roles
+                    .iter()
+                    .zip(&previous.roles)
+                    .any(|(next, prior)| next.future_definition != prior.future_definition))
+        {
+            return Err(invalid("service transition rebound a future definition"));
+        }
+        let same_progress = self
+            .roles
+            .iter()
+            .zip(&previous.roles)
+            .all(|(next, prior)| next.progress == prior.progress);
+        if self.forced != previous.forced {
+            if self.phase != RestorePhase::Quiescing
+                || previous.phase != RestorePhase::Quiescing
+                || !same_progress
+                || !self.all_progress(RoleProgress::Disabled)
+            {
+                return Err(invalid(
+                    "forced fact changed outside an all-disabled observation",
+                ));
+            }
+            return self.validate_forced_successor(previous);
+        }
+        let permitted = match (previous.phase, self.phase) {
+            (RestorePhase::Snapshot, RestorePhase::Quiescing) => self.ordered_progress_step(
+                previous,
+                &[(RoleProgress::Original, RoleProgress::DisableIntent)],
+                RoleProgress::Disabled,
+                RoleProgress::Original,
+            ),
+            (RestorePhase::Snapshot, RestorePhase::Quiescent) => self.roles.is_empty(),
+            (RestorePhase::Quiescing, RestorePhase::Quiescing) => self.ordered_progress_step(
+                previous,
+                &[
+                    (RoleProgress::Original, RoleProgress::DisableIntent),
+                    (RoleProgress::DisableIntent, RoleProgress::Disabled),
+                ],
+                RoleProgress::Disabled,
+                RoleProgress::Original,
+            ),
+            (RestorePhase::Quiescing, RestorePhase::Quiescent) => {
+                same_progress && self.all_progress(RoleProgress::Disabled)
+            }
+            (RestorePhase::Quiescent, RestorePhase::Restoring | RestorePhase::Removing) => {
+                same_progress && self.all_progress(RoleProgress::Disabled)
+            }
+            (RestorePhase::Restoring, RestorePhase::Restoring) => self.ordered_progress_step(
+                previous,
+                &[
+                    (RoleProgress::Disabled, RoleProgress::RefreshIntent),
+                    (RoleProgress::RefreshIntent, RoleProgress::Refreshed),
+                    (RoleProgress::Refreshed, RoleProgress::EnableIntent),
+                    (RoleProgress::EnableIntent, RoleProgress::Restored),
+                ],
+                RoleProgress::Restored,
+                RoleProgress::Disabled,
+            ),
+            (RestorePhase::Restoring, RestorePhase::Restored) => {
+                same_progress && self.all_progress(RoleProgress::Restored)
+            }
+            (RestorePhase::Removing, RestorePhase::Removing) => self.ordered_progress_step(
+                previous,
+                &[
+                    (RoleProgress::Disabled, RoleProgress::DeleteIntent),
+                    (RoleProgress::DeleteIntent, RoleProgress::Removed),
+                ],
+                RoleProgress::Removed,
+                RoleProgress::Disabled,
+            ),
+            (RestorePhase::Removing, RestorePhase::Removed) => {
+                same_progress && self.all_progress(RoleProgress::Removed)
+            }
+            _ => false,
+        };
+        if permitted {
+            Ok(())
+        } else {
+            Err(invalid("service transition is not one exact forward step"))
+        }
+    }
+
+    fn all_progress(&self, progress: RoleProgress) -> bool {
+        self.roles.iter().all(|role| role.progress == progress)
+    }
+
+    fn validate_transition_shape(&self) -> Result<(), ServiceError> {
+        let ordered = match self.phase {
+            RestorePhase::Quiescing => {
+                !self.roles.is_empty()
+                    && !self.all_progress(RoleProgress::Original)
+                    && self.ordered_progress_shape(
+                        RoleProgress::Disabled,
+                        RoleProgress::Original,
+                        &[RoleProgress::Original, RoleProgress::DisableIntent],
+                    )
+                    && (self.forced.is_empty() || self.all_progress(RoleProgress::Disabled))
+            }
+            RestorePhase::Restoring => self.ordered_progress_shape(
+                RoleProgress::Restored,
+                RoleProgress::Disabled,
+                &[
+                    RoleProgress::Disabled,
+                    RoleProgress::RefreshIntent,
+                    RoleProgress::Refreshed,
+                    RoleProgress::EnableIntent,
+                ],
+            ),
+            RestorePhase::Removing => self.ordered_progress_shape(
+                RoleProgress::Removed,
+                RoleProgress::Disabled,
+                &[RoleProgress::Disabled, RoleProgress::DeleteIntent],
+            ),
+            _ => true,
+        };
+        if ordered {
+            Ok(())
+        } else {
+            Err(invalid(
+                "service progress is not an ordered reachable state",
+            ))
+        }
+    }
+
+    fn ordered_progress_shape(
+        &self,
+        prefix: RoleProgress,
+        suffix: RoleProgress,
+        active: &[RoleProgress],
+    ) -> bool {
+        let mut roles = self.roles.iter().skip_while(|role| role.progress == prefix);
+        roles.next().is_none_or(|role| {
+            active.contains(&role.progress) && roles.all(|role| role.progress == suffix)
+        })
+    }
+
+    fn ordered_progress_step(
+        &self,
+        previous: &Self,
+        edges: &[(RoleProgress, RoleProgress)],
+        prefix: RoleProgress,
+        suffix: RoleProgress,
+    ) -> bool {
+        let mut differences = self
+            .roles
+            .iter()
+            .zip(&previous.roles)
+            .enumerate()
+            .filter(|(_, (next, prior))| next.progress != prior.progress);
+        let Some((index, (next, prior))) = differences.next() else {
+            return false;
+        };
+        differences.next().is_none()
+            && edges.contains(&(prior.progress, next.progress))
+            && self.roles[..index]
+                .iter()
+                .all(|role| role.progress == prefix)
+            && self.roles[index + 1..]
+                .iter()
+                .all(|role| role.progress == suffix)
+    }
+
+    fn validate_forced_successor(&self, previous: &Self) -> Result<(), ServiceError> {
+        let appended = self.forced.len() == previous.forced.len() + 1
+            && self.forced[..previous.forced.len()] == previous.forced
+            && self
+                .forced
+                .last()
+                .is_some_and(|fact| fact.phase == ForcedPhase::StopRequested);
+        if appended {
+            return Ok(());
+        }
+        let mut confirmations = 0;
+        if self.forced.len() == previous.forced.len() {
+            for (next, prior) in self.forced.iter().zip(&previous.forced) {
+                if next.role_index != prior.role_index || next.instance != prior.instance {
+                    return Err(invalid("forced fact rebound its ordered role or GUID"));
+                }
+                if next.phase != prior.phase {
+                    if prior.phase != ForcedPhase::StopRequested
+                        || next.phase != ForcedPhase::ExitConfirmed
+                    {
+                        return Err(invalid("forced fact rewound its exit confirmation"));
+                    }
+                    confirmations += 1;
+                }
+            }
+        }
+        if confirmations == 1 {
+            Ok(())
+        } else {
+            Err(invalid("forced facts require one append or confirmation"))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -436,6 +649,196 @@ mod tests {
     use crate::service::Target;
 
     const SID: &str = "S-1-5-21-1-2-3-1001";
+
+    fn push_state(
+        states: &mut Vec<ServiceRestoreRecord>,
+        update: impl FnOnce(&mut ServiceRestoreRecord),
+    ) {
+        let previous = states.last().unwrap();
+        let mut next = previous.clone();
+        update(&mut next);
+        next.validate_successor(previous).unwrap();
+        next.validate_successor(&next).unwrap();
+        states.push(next);
+    }
+
+    fn restore_walk() -> Vec<ServiceRestoreRecord> {
+        let mut states = vec![record(2)];
+        for index in 0..2 {
+            push_state(&mut states, |next| {
+                next.phase = RestorePhase::Quiescing;
+                next.roles[index].progress = RoleProgress::DisableIntent;
+            });
+            push_state(&mut states, |next| {
+                next.roles[index].progress = RoleProgress::Disabled
+            });
+        }
+        for index in 0..2 {
+            push_state(&mut states, |next| {
+                next.forced.push(ForcedInstance {
+                    role_index: index,
+                    instance: uuid::Uuid::now_v7().to_string(),
+                    phase: ForcedPhase::StopRequested,
+                })
+            });
+            push_state(&mut states, |next| {
+                next.forced[usize::from(index)].phase = ForcedPhase::ExitConfirmed;
+            });
+        }
+        push_state(&mut states, |next| next.phase = RestorePhase::Quiescent);
+        push_state(&mut states, |next| {
+            next.phase = RestorePhase::Restoring;
+            next.next = Some(ExecutableBinding {
+                path: r"C:\new\locron.exe".into(),
+                volume: "e".repeat(16),
+                file: "e".repeat(32),
+            });
+            for role in &mut next.roles {
+                role.future_definition = Some("e".repeat(64));
+            }
+        });
+        for index in 0..2 {
+            for progress in [
+                RoleProgress::RefreshIntent,
+                RoleProgress::Refreshed,
+                RoleProgress::EnableIntent,
+                RoleProgress::Restored,
+            ] {
+                push_state(&mut states, |next| next.roles[index].progress = progress);
+            }
+        }
+        push_state(&mut states, |next| next.phase = RestorePhase::Restored);
+        states
+    }
+
+    #[test]
+    fn successors_permit_only_single_forward_edges_and_unchanged_recovery_observations() {
+        let states = restore_walk();
+        for (prior_index, previous) in states.iter().enumerate() {
+            for (next_index, next) in states.iter().enumerate() {
+                assert_eq!(
+                    next.validate_successor(previous).is_ok(),
+                    next_index == prior_index || next_index == prior_index + 1,
+                    "unexpected edge {prior_index}->{next_index}"
+                );
+            }
+        }
+        let quiescent = states
+            .iter()
+            .find(|state| state.phase == RestorePhase::Quiescent)
+            .unwrap();
+        let mut removal = vec![quiescent.clone()];
+        push_state(&mut removal, |next| next.phase = RestorePhase::Removing);
+        for index in 0..2 {
+            push_state(&mut removal, |next| {
+                next.roles[index].progress = RoleProgress::DeleteIntent
+            });
+            push_state(&mut removal, |next| {
+                next.roles[index].progress = RoleProgress::Removed
+            });
+        }
+        push_state(&mut removal, |next| next.phase = RestorePhase::Removed);
+        for (prior_index, previous) in removal.iter().enumerate() {
+            for (next_index, next) in removal.iter().enumerate() {
+                assert_eq!(
+                    next.validate_successor(previous).is_ok(),
+                    next_index == prior_index || next_index == prior_index + 1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn zero_role_restore_and_remove_preserve_exact_phase_boundaries() {
+        let mut states = vec![record(0)];
+        push_state(&mut states, |next| next.phase = RestorePhase::Quiescent);
+        let quiescent = states.last().unwrap().clone();
+        push_state(&mut states, |next| {
+            next.phase = RestorePhase::Restoring;
+            next.next = Some(next.previous.clone());
+        });
+        push_state(&mut states, |next| next.phase = RestorePhase::Restored);
+        let mut removal = vec![quiescent];
+        push_state(&mut removal, |next| next.phase = RestorePhase::Removing);
+        push_state(&mut removal, |next| next.phase = RestorePhase::Removed);
+        assert!(
+            states
+                .last()
+                .unwrap()
+                .validate_successor(&states[0])
+                .is_err()
+        );
+        assert!(
+            removal
+                .last()
+                .unwrap()
+                .validate_successor(&removal[0])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn successors_refuse_valid_future_rebinding_and_forced_fact_rewrites() {
+        let states = restore_walk();
+        let restoring = states
+            .iter()
+            .find(|state| state.phase == RestorePhase::Restoring)
+            .unwrap();
+        let changes: [fn(&mut ServiceRestoreRecord); 7] = [
+            |value| value.next.as_mut().unwrap().path = r"C:\different\locron.exe".into(),
+            |value| value.next.as_mut().unwrap().volume = "d".repeat(16),
+            |value| value.next.as_mut().unwrap().file = "d".repeat(32),
+            |value| value.roles[0].future_definition = Some("d".repeat(64)),
+            |value| {
+                value.forced.pop().unwrap();
+            },
+            |value| value.forced[0].instance = uuid::Uuid::now_v7().to_string(),
+            |value| value.forced.swap(0, 1),
+        ];
+        for change in changes {
+            let mut next = restoring.clone();
+            change(&mut next);
+            next.validate_for_sid(SID).unwrap();
+            assert!(next.same_original(restoring));
+            assert!(next.validate_successor(restoring).is_err());
+        }
+        let mut pending = restoring.clone();
+        pending.phase = RestorePhase::Quiescing;
+        pending.next = None;
+        for role in &mut pending.roles {
+            role.future_definition = None;
+        }
+        for fact in &mut pending.forced {
+            fact.phase = ForcedPhase::StopRequested;
+        }
+        pending.validate_for_sid(SID).unwrap();
+        let mut batched = pending.clone();
+        for fact in &mut batched.forced {
+            fact.phase = ForcedPhase::ExitConfirmed;
+        }
+        assert!(batched.validate_successor(&pending).is_err());
+        let mut cleared = restoring.clone();
+        cleared.next = None;
+        assert!(cleared.validate_successor(restoring).is_err());
+    }
+
+    #[test]
+    fn unchanged_parse_valid_but_unreachable_role_order_is_refused() {
+        let mut unordered = record(2);
+        unordered.phase = RestorePhase::Quiescing;
+        unordered.roles[1].progress = RoleProgress::DisableIntent;
+        unordered.validate_for_sid(SID).unwrap();
+        assert!(unordered.validate_successor(&unordered).is_err());
+        unordered.roles[0].progress = RoleProgress::DisableIntent;
+        unordered.roles[1].progress = RoleProgress::Original;
+        unordered.forced.push(ForcedInstance {
+            role_index: 0,
+            instance: uuid::Uuid::now_v7().to_string(),
+            phase: ForcedPhase::StopRequested,
+        });
+        unordered.validate_for_sid(SID).unwrap();
+        assert!(unordered.validate_successor(&unordered).is_err());
+    }
 
     #[test]
     fn frozen_origin_refuses_each_tampered_original_field_and_role_order() {
