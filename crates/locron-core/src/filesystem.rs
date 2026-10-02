@@ -1117,6 +1117,10 @@ mod tests {
         assert!(fs::metadata(&path).unwrap().permissions().readonly());
         assert_eq!(fs::read(&path).unwrap(), b"original");
         // Reset only the test-owned attribute so temporary-directory cleanup remains possible.
+        #[expect(
+            clippy::permissions_set_readonly_false,
+            reason = "This Windows-only fixture clears FILE_ATTRIBUTE_READONLY on its verified private leaf; the owner/DACL is unchanged."
+        )]
         permissions.set_readonly(false);
         fs::set_permissions(&path, permissions).unwrap();
     }
