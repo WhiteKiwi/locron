@@ -2539,3 +2539,268 @@ rows matching the acceptance receipt and immutable source links; no checklist in
 The private helper suite passed all nine fixtures again after migration. The parent owns PR
 publication; publication and hosted-check evidence is recorded on the migration PR. No Rust tests
 were rerun for this documentation-only diff.
+
+## 46. Native Windows 11 adapters and safety boundaries (2026-10-02)
+
+### Scope and evidence boundary
+
+This research follows the Windows amendment in SPEC. It selects feasible interfaces for Rust
+1.94 while retaining `unsafe_code = "forbid"` in every Locron workspace crate. The first Windows
+release is unsigned; Authenticode onboarding and publisher pinning are deferred and are not
+preconditions for these runtime choices. Execution tasks and verification evidence belong in the
+private Locron Project, not in a second repository checklist.
+
+Evidence consists of Microsoft/Rust documentation, inspection of the dependency source identified
+below, and read-only reflection confirming that stock Windows PowerShell 5.1 exposes
+`DirectoryInfo.Create(DirectorySecurity)`. This is interface/source feasibility, not a claim that
+the Windows implementation has compiled or passed standard-user acceptance. The parent installed
+an isolated Rust 1.94 toolchain; this host still lacks a usable MSVC/SDK linker. Native x64/ARM64
+compilation and behavioral evidence must come from Windows runners and clean Windows 11 accounts.
+
+Cargo's workspace lints apply to workspace members which inherit them. Safe dependency APIs may
+encapsulate unsafe OS calls without weakening Locron's lint. Do not add a workspace FFI module,
+disable the lint, or infer that raw `windows`/`windows-sys` bindings are safe wrappers.
+Source: [Cargo workspace lints](https://doc.rust-lang.org/cargo/reference/workspaces.html#the-lints-table).
+
+### Process ownership before target execution
+
+Select `process-wrap = "=10.0.1"` with `default-features = false` and `tokio1`, `job-object`,
+`kill-on-drop` features, plus target-specific `win32job = "=2.0.3"`. `process-wrap` declares
+Rust 1.87 and uses stable Tokio/Windows interfaces. `win32job`'s inspected source uses edition
+2021 and stable APIs, but declares no MSRV; the locked dependency graph still needs a Rust 1.94
+gate. Pin the reviewed versions initially and review updates rather than assuming their future
+MSRV policy matches Locron's.
+
+`process-wrap` does not expose or accept an externally supplied Job handle. Its actual safe
+composition point is `process_wrap::tokio::CommandWrapper::post_spawn(&mut Command, &mut Child,
+&CommandWrap)`. Create and retain a separate `win32job::Job` for each attempt, configure
+`ExtendedLimitInfo::limit_kill_on_job_close()`, and implement this hook entirely in safe Locron
+code: obtain `tokio::process::Child::raw_handle()`, require `Some`, and call
+`Job::assign_process(handle as isize)`. Add the dependency's `JobObject` and `KillOnDrop` wrappers
+to the command. No `BorrowedHandle::borrow_raw`, raw-handle ownership conversion, or unsafe block
+is needed in Locron.
+
+The ordering is material: all `pre_spawn` hooks run first; `JobObject` adds `CREATE_SUSPENDED`;
+the native child is created; all `post_spawn` hooks run while it remains suspended; only then
+`JobObject::wrap_child` assigns its internal nested job and resumes the child. Thus the separately
+retained Locron job owns the attempt before target code can run, including a child which spawns
+grandchildren immediately. `KillOnDrop` enables native child cleanup if a post-spawn hook fails
+and kill-on-close for the dependency's job. On a Locron enrollment failure, call `start_kill`,
+never resume, and preserve/report cleanup uncertainty rather than claiming a completed spawn.
+Windows 11 supports nested jobs, including an inherited outer job from Task Scheduler; any
+incompatible inherited-job configuration must fail closed, not silently run outside ownership.
+
+Use the safe wrapped child's `start_kill()` for the dependency's `TerminateJobObject` operation,
+but use the separately retained job's `query_process_id_list()` to confirm the tree is empty.
+Do not treat `process-wrap`'s `wait()` or `try_wait()` as authoritative tree-exit confirmation:
+its inspected `wait_on_job` returns after a completion-port message without checking that it is
+`JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO`, and `try_wait` ultimately returns the immediate child's
+status. A root exit, pipe EOF, or successful termination request alone is insufficient.
+Poll the owned job under a bounded confirmation deadline; an error remains unconfirmed and uses
+Locron's existing quarantine/outcome rules. The inspected `win32job` query has a fixed buffer for
+approximately 1024 process IDs and returns an error if that is insufficient; never translate this
+error into an empty tree. Its list includes processes in child jobs. Keep both job handles alive
+through confirmation and output finalization, with neither breakaway limit enabled.
+
+This boundary supervises processes in the owned jobs. Job Objects are not a sandbox against
+same-account target code which delegates work to an unrelated service/WMI process. Do not
+advertise cancellation of all work performed anywhere on the machine as a Job Object guarantee.
+
+Sources: [process-wrap v10.0.1 manifest](https://github.com/watchexec/process-wrap/blob/v10.0.1/Cargo.toml),
+[hook ordering](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/generic_wrap.rs),
+[suspension/assignment](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/tokio/job_object.rs),
+[Windows job operations and wait implementation](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/windows.rs),
+[kill-on-drop hook](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/tokio/kill_on_drop.rs),
+[win32job ownership](https://github.com/ohadravid/win32job-rs/blob/17080e2a29ea244bb4e58400dc27739075b2fbc8/src/job.rs),
+[win32job process-list query](https://github.com/ohadravid/win32job-rs/blob/17080e2a29ea244bb4e58400dc27739075b2fbc8/src/query.rs),
+[Microsoft suspended creation](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags),
+[job inheritance, breakaway, kill-on-close and WMI exception](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+[nested process-list semantics](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_process_id_list).
+
+### Private filesystem creation, handle-based ACLs and reparse checks
+
+Use a fixed stock Windows PowerShell 5.1 adapter for initial private-directory creation. Obtain
+the current SID from `[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value`, not
+from mutable USERNAME/USERPROFILE text. Build `DirectorySecurity`, set its owner to that SID,
+call `SetAccessRuleProtection(true, false)`, and add only that SID and LocalSystem with FullControl
+and ObjectInherit/ContainerInherit. Call `DirectoryInfo.Create(DirectorySecurity)` on one missing
+component at a time beneath a validated existing parent. Microsoft documents this overload as
+creation with security already applied; creating a broadly inherited directory and repairing it
+afterward would create an exposure interval. The overload does nothing to an existing directory,
+so existing roots require separate ownership/ACL validation before use.
+
+The inspected `windows-permissions` APIs read/set existing object security; no atomic directory
+creation interface was established there. A `cap-primitives` creation path with a caller-supplied
+Windows descriptor has not been verified. Check a purely safe Rust alternative in the first
+development step if it reduces the adapter cost, but require the same creation-time DACL and
+anchored no-reparse guarantees. The concrete fallback above is available meanwhile; this
+remaining alternative check does not block platform compilation foundations.
+
+The equivalent directory SDDL is `O:<sid>D:P(A;OICI;FA;;;<sid>)(A;OICI;FA;;;SY)`; protected file
+SDDL omits the inheritance flags. Do not grant Everyone, Authenticated Users or Builtin Users.
+Do not read or write a token/database/output in a foreign-owned root. Refuse filesystems which
+cannot supply and enforce the required DACL rather than returning success from a no-op branch.
+
+For handle-bound readback and existing-file ACL repair, select target-specific
+`windows-permissions = "=0.2.4"` and its explicit safe
+`wrappers::GetSecurityInfo(&File, SeObjectType::SE_FILE_OBJECT, Owner | Dacl)` and
+`wrappers::SetSecurityInfo(&mut File, SE_FILE_OBJECT, Dacl | ProtectedDacl, None, None,
+Some(dacl), None)` APIs. An SDDL string parses safely to `LocalBox<SecurityDescriptor>`; its
+`owner()` and `dacl()` expose borrowed safe objects. Inspect/read back only Owner/Dacl information,
+not SACLs requiring additional privilege. Use explicit wrappers, not the `WindowsSecure`
+convenience trait: inspected trait methods pass `SE_UNKNOWN_OBJECT_TYPE`, and its handle
+`set_multiple` incorrectly derives DACL/SACL flag presence from the group argument. The explicit
+wrappers avoid those defects, allow the correct object type and protected-DACL flag, and have
+source-visible error returns. The crate is old, depends on winapi 0.3.9, and has no MSRV claim;
+pinning, Rust 1.94 compilation and native ACL tests remain required before acceptance.
+
+Use stable safe `std::os::windows::fs::OpenOptionsExt::{access_mode, share_mode, custom_flags}`
+and `MetadataExt::file_attributes` to open and inspect directories/files. Directory guards need
+`FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT`; reject
+`FILE_ATTRIBUTE_REPARSE_POINT` for every traversed managed component, including junctions, rather
+than relying only on `file_type().is_symlink()`. Final-component no-follow does not protect a
+parent path. Open the chain from an anchored local drive, retain guards while accessing children,
+and omit FILE_SHARE_DELETE so a validated ancestor cannot be renamed beneath the operation.
+Where another user could modify a directory, omit FILE_SHARE_WRITE as well to prevent a
+write-access reparse-point mutation; refuse sharing/ownership conflicts. This guarded-chain
+approach is an inference from documented CreateFile sharing/reparse semantics and must be tested
+with adversarial ancestor replacement. Do not claim a separate metadata check closes a race.
+
+New data files can inherit from an already private, guarded parent; validate existing files via
+their own no-follow handles before reading or writing sensitive contents. Keep the root/managed
+directory guards through SQLite's path-based opens (including WAL/SHM), output creation and
+finalization. A conservative implementation may refuse unsafe overrides and unusual reparse
+layouts; it must not normalize by following them first. Permission diagnostics must inspect the
+actual descriptor and distinguish valid, unsafe and unreadable states.
+
+For a custom state root, validate and guard each existing ancestor, then create each missing
+managed component with the private descriptor and open/read back that component before advancing.
+If creation races with an existing component, inspect that actual component and refuse foreign
+ownership or unsafe ACL/reparse state; success from Create or an already-exists result is not
+validation. Do not read secrets first or blindly take ownership to repair an override. Object and
+container inheritance supplies owner+SYSTEM rights to new files/subdirectories under a verified
+private parent; validate the resulting owner/DACL and use protected descriptors when explicitly
+repairing an already-owned object. Test both new default roots and nested custom roots, including
+creation races, unsupported filesystems, inherited broad grants and ancestor junction mutation.
+
+Keep these common path/ACL/guard primitives in `locron-core`, shared by store, engine output and
+server-token callers, without adding a sixth crate or putting service/job execution there. The
+stock PowerShell directory-create operation is a narrowly scoped internal filesystem adapter;
+Task Scheduler registration/control stays in CLI. Each caller must hold the returned guard for
+the entire sensitive operation rather than treating successful initialization as permanent
+proof that a path remains safe.
+
+The PowerShell adapter should be a fixed reviewed script invoked through the absolute stock
+`System32\WindowsPowerShell\v1.0\powershell.exe` with `-NoProfile -NonInteractive` and a fixed
+encoded command. Supply paths/options as structured stdin JSON; never interpolate them into
+PowerShell source, invoke a PATH-resolved PowerShell, require pwsh, use `-ExecutionPolicy Bypass`,
+or modify policy. Return structured JSON plus a bounded nonzero failure for unavailable/policy
+blocked adapters. Use native safe wrappers for ordinary file reads/writes, reserving fixed
+PowerShell operations for private-directory creation and Task Scheduler management. Those
+filesystem and Task Scheduler interfaces remain separate and do not accept arbitrary commands.
+
+Sources: [atomic DirectoryInfo creation](https://learn.microsoft.com/en-us/dotnet/api/system.io.directoryinfo.create?view=netframework-4.7.2),
+[inheritance protection](https://learn.microsoft.com/en-us/dotnet/api/system.security.accesscontrol.objectsecurity.setaccessruleprotection),
+[explicit GetSecurityInfo wrapper](https://github.com/danieldulaney/windows-permissions-rs/blob/8740e4efbd88dd01046ad9c169894f3a52eb6e2c/src/wrappers/get_security_info.rs),
+[explicit SetSecurityInfo wrapper](https://github.com/danieldulaney/windows-permissions-rs/blob/8740e4efbd88dd01046ad9c169894f3a52eb6e2c/src/wrappers/set_security_info.rs),
+[safe SDDL/security-descriptor APIs](https://github.com/danieldulaney/windows-permissions-rs/blob/8740e4efbd88dd01046ad9c169894f3a52eb6e2c/src/structures/sd.rs),
+[convenience-trait limitations](https://github.com/danieldulaney/windows-permissions-rs/blob/8740e4efbd88dd01046ad9c169894f3a52eb6e2c/src/windows_secure.rs),
+[Rust safe open flags](https://doc.rust-lang.org/std/os/windows/fs/trait.OpenOptionsExt.html),
+[CreateFile flags and sharing lifetime](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[reparse-point mutation](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_set_reparse_point).
+
+### Local named pipes with creation-time security
+
+Select target-specific `interprocess = "=2.4.4"` with its `tokio` feature and a safe widestring
+constructor for SDDL input. It declares Rust 1.75. Its Windows safe
+`SecurityDescriptor::deserialize(&U16CStr)` and
+`PipeListenerOptions::new().path(name).security_descriptor(Some(sd)).accept_remote(false)`
+allow a user+SYSTEM DACL to be supplied at creation, without Tokio's unsafe
+`create_with_security_attributes_raw` call in workspace code. Use a receive-only byte listener
+for bounded versioned wake messages, non-inheritable handles and an explicit finite client/read
+timeout. The source creates the first instance with `FILE_FLAG_FIRST_PIPE_INSTANCE`, subsequent
+instances without that flag, and applies `PIPE_REJECT_REMOTE_CLIENTS` when remote acceptance is
+false. Do not set instance_limit to 1: this API allocates a replacement listener instance during
+accept, and its documentation says that limit breaks accept.
+
+Derive the stable pipe identity from the verified account SID and the normalized, guarded state
+root, e.g. a versioned prefix plus a digest of both. Two users and two roots must never share a
+name. Use an explicit protected descriptor allowing only that SID and SYSTEM. Full pipe rights
+to the owner are acceptable for this same-account boundary; do not accidentally grant generic
+write to broader principals, since it includes permission to create pipe instances. All payloads
+remain untrusted hints with size/version checks. A first-instance collision is a refused wake
+endpoint with durable reconciliation fallback, not permission to attach to an existing server.
+Client opens must be bounded and must not enable server impersonation unnecessarily. Establish
+the daemon's owner lock before binding and retain a server instance while accepting clients so
+the name cannot disappear between connections. The separate authenticated lifecycle-control
+message described below must not be interpreted from an ordinary wake hint.
+
+Sources: [interprocess manifest](https://github.com/kotauskas/interprocess/blob/2.4.4/Cargo.toml),
+[safe descriptor deserialization](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/security_descriptor/owned.rs),
+[listener options](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/listener/options.rs),
+[first-instance, remote rejection and descriptor application](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/listener/create_instance.rs),
+[Microsoft named-pipe ACL/instance rights](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
+[Microsoft pipe creation flags](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-createnamedpipew).
+
+### Task Scheduler and cooperative lifecycle
+
+Select the same fixed stock Windows PowerShell 5.1 adapter using the supported scripting COM
+interface `New-Object -ComObject Schedule.Service`, `Connect()`, `NewTask(0)`, root-folder
+`RegisterTaskDefinition` and typed task properties. This avoids unsafe COM in Rust and avoids
+localized schtasks output. Use deterministic account/state/role task names; separate daemon and
+dashboard definitions; current verified SID; LogonTrigger with that UserId; LogonType 3
+(`TASK_LOGON_INTERACTIVE_TOKEN`); RunLevel 0 (`TASK_RUNLEVEL_LUA`); registration flags 6
+(`TASK_CREATE_OR_UPDATE`); no password. Supply a task DACL retaining SYSTEM access. The creator
+can manage their own tasks without admin under this registration type. Verify this on a real
+standard account; an elevated hosted runner is not evidence of that product guarantee.
+
+Set ExecutionTimeLimit to `PT0S`, DisallowStartIfOnBatteries and StopIfGoingOnBatteries to false,
+RunOnlyIfIdle and RunOnlyIfNetworkAvailable to false, and no idle-stop condition. Use
+MultipleInstances IgnoreNew and an explicit bounded RestartCount/RestartInterval, initially three
+restarts at `PT1M`. The default duration is 72 hours and default battery settings can prohibit or
+stop the daemon. Interactive-token operation includes a locked logged-in session; signed-out
+operation is outside SPEC. Do not substitute S4U, which has documented network/encrypted-file
+limitations. New login restarts ordinary durable reconciliation/missed-run recovery; task
+StartWhenAvailable is not itself proof of logon or durable catch-up behavior.
+
+Generate inspectable definitions with absolute ExecAction.Path, correctly escaped arguments,
+explicit working directory and role/state identity. Read status as structured COM facts and
+compare semantic definitions before refresh. Do not use IRunningTask.EnginePID as the Locron
+process PID. Preserve enabled/disabled state across refresh and update. If log capture needs a
+launcher, it must use CreateNoWindow, keep the Task Scheduler action alive until the real role
+exits, propagate its exit status and preserve direct argv; do not register a fire-and-forget
+launcher whose successful exit prevents failure restart.
+
+`RegisteredTask.Stop(0)` stops immediately and is not Locron's graceful drain protocol. For
+refresh/uninstall/update, disable automatic activation first, send an explicit authenticated
+role/lifetime Shutdown request over a separately secured control endpoint, and have the role
+cancel the existing CancellationToken/shutdown future. Wait for actual lifetime/daemon-lock exit
+under a bounded deadline before task deletion/replacement, then restore the prior registration
+state when appropriate. Task Stop is only the hard fallback after the cooperative deadline; it
+does not justify declaring descendants stopped. Each attempt's kill-on-close ownership and
+subsequent durable recovery remain necessary for forced termination or sign-out. Control
+delivery failure is observable; neither a wake hint nor a task-state transition alone confirms
+a completed graceful stop.
+
+Sources: [TaskFolder registration and flags](https://learn.microsoft.com/en-us/windows/win32/taskschd/taskfolder-registertaskdefinition),
+[non-admin own-account security context](https://learn.microsoft.com/en-us/windows/win32/taskschd/security-contexts-for-running-tasks),
+[logon types](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/ne-taskschd-task_logon_type),
+[settings defaults](https://learn.microsoft.com/en-us/windows/win32/taskschd/taskschedulerschema-settingstype-complextype),
+[execution limit](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-executiontimelimit),
+[restart parameters](https://learn.microsoft.com/en-us/windows/win32/taskschd/taskschedulerschema-restartonfailure-settingstype-element),
+[ExecAction](https://learn.microsoft.com/en-us/windows/win32/taskschd/execaction),
+[engine PID semantics](https://learn.microsoft.com/en-us/windows/win32/taskschd/runningtask-enginepid),
+[immediate Stop and caller rights](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-stop).
+
+### Recommended design order and remaining proof
+
+First freeze and compile the version-pinned safe interfaces, including the suspended post-spawn
+enrollment and independent job query; then add guarded private state and descriptor readback;
+then construct the account/state-isolated wake/control pipes; finally add Task Scheduler lifecycle
+on top of the verified shutdown path. The existing Unix implementations remain separate target
+backends, not broad test skips. Runtime acceptance must include immediate grandchildren, parent
+exit with descendants alive, hard kill and daemon crash, failed enrollment/query, ancestor
+junction swaps, a second user's read/write attempts, pipe occupation/remote rejection, clean
+standard-account registration, battery/locked-session operation and graceful shutdown with active
+work. This research has not performed those tests; Project drafts must name and later record
+their verification evidence before the platform is advertised as supported.

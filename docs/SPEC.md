@@ -26,7 +26,7 @@ evidence must be preserved; creating repository issues is outside this migration
 
 ## Goal
 
-Build a local-first job scheduler that lets one user register, inspect, run, and manage scheduled work consistently on macOS and Linux.
+Build a local-first job scheduler that lets one user register, inspect, run, and manage scheduled work consistently on macOS, Linux and the planned Windows 11 platform.
 
 The product should retain the simplicity of cron while making execution behavior observable and explicit. A user should be able to understand what was scheduled, when it was expected to run, whether it actually ran, and why it did not run without consulting operating-system-specific scheduler files or logs.
 
@@ -51,7 +51,7 @@ Documentation examples must reflect commands and human output that exist in the 
 - Predictable: missed schedules, overlapping runs, timeouts, retries, and manual triggers have documented behavior.
 - Observable: every attempted, skipped, cancelled, or interrupted run can be explained.
 - Safe by default: concurrency and retry behavior must not create accidental duplicate work.
-- Portable: the same user-facing behavior is available on supported macOS and Linux systems.
+- Portable: the same user-facing behavior is available on supported platforms under their explicit OS contracts.
 - Independently useful: the command-line scheduler is complete without a web viewer, MCP integration, or desktop application.
 
 ## Completion Criteria
@@ -79,7 +79,7 @@ The first program milestone is complete when all of the following can be observe
 
 ## In Scope
 
-- Per-user operation on macOS and Linux.
+- Per-user operation on macOS and Linux, with Windows 11 added by the Windows support amendment.
 - One local machine and one user account per scheduler instance.
 - Calendar schedules using standard five-field cron expressions.
 - Fixed intervals with second-level duration units.
@@ -267,7 +267,7 @@ Jobs using `skip` or `replace` have an effective per-job concurrency of one. Job
 
 Direct process execution is the default process target. The executable and each argument are stored as an explicit argument vector and are not interpreted for pipelines, redirection, globbing, variable substitution, command chaining, or home-directory expansion.
 
-Shell execution is a distinct, explicitly requested target. It stores one command string and defaults to predictable POSIX shell execution rather than implicitly selecting the registering terminal's shell or interactive configuration. A job or global setting may select another absolute shell executable.
+Shell execution is a distinct, explicitly requested target. It stores one command string and defaults to predictable platform shell execution: POSIX shell on macOS/Linux and cmd.exe on Windows, rather than implicitly selecting the registering terminal's shell or interactive configuration. A job or global setting may select another absolute shell executable under the platform's invocation contract.
 
 The default working directory is the absolute current directory at registration. An explicitly supplied working directory is expanded and normalized at registration. A missing working directory at execution is a non-retryable configuration failure.
 
@@ -301,9 +301,9 @@ Attempt timeout covers the complete HTTP request. Transport and name-resolution 
 
 Run lifecycle distinguishes queued, starting, running, and retry-wait states from terminal success, failure, timeout, cancellation, overlap skip, concurrency skip, and interrupted-unknown outcomes.
 
-Each attempt has a 60-second timeout by default. A job may select another duration or explicitly remove the timeout. Process and shell attempts run in their own process group. Timeout, cancellation, and overlap replacement signal the process group for graceful termination, wait five seconds by default, and then force termination if necessary. Completion is not reported until termination is confirmed. A descendant that deliberately escapes the process group is outside the portable guarantee.
+Each attempt has a 60-second timeout by default. A job may select another duration or explicitly remove the timeout. Process and shell attempts run in their own process-tree boundary: a process group on Unix and an owned Job Object on Windows. Timeout, cancellation, and overlap replacement request bounded cooperative termination where supported, wait five seconds by default, and then force termination if necessary. Completion is not reported until tree termination is confirmed. A Unix descendant that deliberately escapes the process group is outside that platform's guarantee; the Windows boundary is established before target code executes.
 
-On normal scheduler termination, new admission stops and active attempts receive 30 seconds by default to finish naturally. Remaining process groups then follow the ordinary graceful and forced termination sequence. Confirmed termination is cancellation; an unconfirmed outcome is interrupted-unknown.
+On normal scheduler termination, new admission stops and active attempts receive 30 seconds by default to finish naturally. Remaining process trees then follow the ordinary platform termination sequence. Confirmed termination is cancellation; an unconfirmed outcome is interrupted-unknown.
 
 A run and its scheduled occurrence identity are durable before process or HTTP execution begins. After an unclean scheduler lifetime ends, every stale non-terminal attempt owned by that lifetime becomes `interrupted_unknown`. The scheduler does not infer success, failure, or cancellation; does not automatically retry the unknown outcome; and does not reattach to or signal a stale recorded process identity after restart.
 
@@ -537,7 +537,56 @@ Observable completion criteria:
 - This host's installed binary, real jobs/services, unrelated background records, signing keys,
   and existing released tags/assets stay intact.
 
+## Windows 11 support amendment (2026-10-02)
+
+The next platform milestone adds native Windows 11 x64 and ARM64 per-user operation alongside
+the existing macOS/Linux product. This amendment defines planned completion criteria; Windows
+is advertised as supported only after the reviewed implementation, native CI, distribution and
+clean-machine acceptance pass. Windows Server, x86, system-wide services, MSI/MSIX and Microsoft
+Store distribution remain outside this milestone.
+
+- CLI, daemon, dashboard, MCP, process targets, shell targets and HTTP targets share the existing
+  durable scheduling, redaction, dry-run, retry, recovery and output contracts on both architectures.
+- Default state is machine-local under the current user's LocalAppData. Explicit state overrides
+  remain supported. State, tokens, receipts and captured output are private to the owning account;
+  unsafe reparse-point traversal is rejected and diagnostics report actual permission facts.
+- Direct processes retain explicit argv semantics. Windows shell execution defaults to cmd.exe;
+  explicitly selected PowerShell/pwsh and POSIX shells use their documented invocation semantics.
+  Batch targets are explicitly shell execution, not silently interpreted direct-process arguments.
+- Executable resolution uses the effective configured PATH/PATHEXT and working directory, supports
+  spaces and Unicode, and records the selected absolute executable. Windows environment names are
+  case-insensitive; ambiguous case-colliding names in one configuration layer are rejected, later
+  layers override earlier layers, and reserved LOCRON_* names cannot be overridden in any case.
+- Every process attempt belongs to an owned process-tree boundary before it can execute target
+  code. Cancellation, timeout, replacement and shutdown confirm the entire tree has stopped before
+  reporting a confirmed outcome. Cooperative stopping is bounded when available; hard stopping
+  retains the existing quarantine and interrupted-unknown behavior when confirmation fails.
+- Daemon and dashboard startup registration uses the current interactive user's login session,
+  least privilege and no stored password. The daemon runs while the user is logged in, including
+  a locked session; signed-out execution is outside this milestone. Registrations impose no
+  arbitrary execution-duration, battery, idle or network-availability stop condition, restart
+  unexpected failures with a bounded policy, and can be installed/refreshed/removed without admin.
+- Local wake notifications are restricted to the owning account and state instance. IPC failure
+  retains periodic durable reconciliation and never becomes a correctness prerequisite.
+- The initial distribution uses immutable unsigned x64/ARM64 ZIPs from the canonical HTTPS GitHub
+  release, SHA-256 verification, user-scoped PowerShell installation and WinGet ownership. Code
+  signing is a deferred follow-up and cannot block the first milestone. Checksum checks are not
+  independent publisher authentication. SmartScreen warnings and policy-blocked configurations
+  are documented; installation/update does not automatically disable Windows protections.
+- Standalone updates positively verify ownership, source, digest, version and architecture; safely
+  coordinate owned executable holders and automatic restarts before replacement; preserve rollback,
+  enabled/disabled registration state and durable jobs/history; and report confirmed completion
+  only after replacement succeeds. Remaining unowned holders produce an actionable bounded refusal.
+- Completion requires the same reviewed revision to pass native x64/ARM64 CI and standard-user
+  Windows 11 install/run/update/uninstall acceptance without a Rust/Visual Studio/Git Bash/pwsh
+  dependency, including descendants, permissions, reboot/login, stock shells and security policy.
+
+Research must validate safe process-tree, ACL, named-pipe and Task Scheduler adapters under the
+existing Rust/MSRV and unsafe-code constraints before these implementation choices are frozen.
+
 ## Open Questions
 
-Research resolves the second-feedback questions in FINDINGS §42. Implementation choices and
-their trade-offs are recorded separately from this frozen product specification.
+Research resolves the second-feedback questions in FINDINGS §42 and records safe Windows adapter
+feasibility in §46. Native compilation, adversarial behavior and clean-account acceptance remain
+verification gates rather than assumed support. Implementation choices and their trade-offs are
+recorded separately from this product specification.

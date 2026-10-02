@@ -3,14 +3,18 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use locron_core::CoreError;
 use locron_core::ports::ExecutorPort;
+#[cfg(unix)]
 use nix::errno::Errno;
+#[cfg(unix)]
 use nix::sys::signal::{Signal, kill, killpg};
+#[cfg(unix)]
 use nix::unistd::Pid;
 use reqwest::header::{
     AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, COOKIE, HeaderMap, HeaderName, HeaderValue,
@@ -19,8 +23,11 @@ use reqwest::header::{
 use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+#[cfg(unix)]
 use tokio::io::AsyncReadExt;
+#[cfg(unix)]
 use tokio::process::{Child, Command};
+#[cfg(unix)]
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -224,6 +231,24 @@ impl Runner {
         Ok(outcome)
     }
 
+    #[cfg(not(unix))]
+    async fn run_process(
+        &self,
+        _spec: &ProcessSpec,
+        context: &AttemptContext,
+        writer: OutputWriter,
+        start: Instant,
+    ) -> Result<ExecutionOutcome, RunnerError> {
+        finalize_configuration_failure(
+            writer,
+            context,
+            start,
+            "process execution is pending the owned Windows Job Object adapter",
+        )
+        .await
+    }
+
+    #[cfg(unix)]
     async fn run_process(
         &self,
         spec: &ProcessSpec,
@@ -702,6 +727,7 @@ enum HttpRunError {
     Request(reqwest::Error),
 }
 
+#[cfg(unix)]
 async fn read_stream<R: tokio::io::AsyncRead + Unpin>(
     mut input: R,
     channel: Channel,
@@ -724,6 +750,7 @@ async fn read_stream<R: tokio::io::AsyncRead + Unpin>(
     }
 }
 
+#[cfg(unix)]
 async fn terminate_after_output_failure(
     child: &mut Child,
     pid: Option<Pid>,
@@ -759,6 +786,7 @@ async fn terminate_after_output_failure(
     }
 }
 
+#[cfg(unix)]
 async fn wait_for_group_exit(
     child: &mut Child,
     pid: Option<Pid>,
@@ -794,6 +822,7 @@ async fn wait_for_group_exit(
     }
 }
 
+#[cfg(unix)]
 fn signal_group(pid: Option<Pid>, signal: Signal) -> Result<(), Errno> {
     let Some(pid) = pid else {
         return Err(Errno::ESRCH);
@@ -801,6 +830,7 @@ fn signal_group(pid: Option<Pid>, signal: Signal) -> Result<(), Errno> {
     killpg(pid, signal)
 }
 
+#[cfg(unix)]
 fn observe_group_absence(pid: Option<Pid>, errors: &mut Vec<String>) -> bool {
     let Some(pid) = pid else {
         return false;
@@ -815,6 +845,7 @@ fn observe_group_absence(pid: Option<Pid>, errors: &mut Vec<String>) -> bool {
     }
 }
 
+#[cfg(unix)]
 fn record_signal_result(errors: &mut Vec<String>, signal: Signal, result: Result<(), Errno>) {
     if let Err(error) = result
         && error != Errno::ESRCH
@@ -823,10 +854,12 @@ fn record_signal_result(errors: &mut Vec<String>, signal: Signal, result: Result
     }
 }
 
+#[cfg(unix)]
 fn signal_delivered_or_absent(result: Result<(), Errno>) -> bool {
     matches!(result, Ok(()) | Err(Errno::ESRCH))
 }
 
+#[cfg(unix)]
 fn termination_confirmation_reason(errors: &[String]) -> String {
     if errors.is_empty() {
         "termination confirmation failed after TERM and KILL deadlines".into()

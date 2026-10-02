@@ -139,7 +139,10 @@ pub(crate) fn set_owner_only(path: &Path, directory: bool) -> io::Result<()> {
     #[cfg(not(unix))]
     {
         let _ = (path, directory);
-        Ok(())
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "private filesystem permission enforcement is not implemented on this platform",
+        ))
     }
 }
 
