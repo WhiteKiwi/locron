@@ -2940,6 +2940,28 @@ Sources: [pinned synchronous listener reset](https://github.com/kotauskas/interp
 [safe Tokio handle conversion](https://github.com/kotauskas/interprocess/blob/e27f397daebff9054f8e2f7b3dc034bae36b2867/src/os/windows/named_pipe/tokio/stream/impl/handle.rs),
 [ConnectNamedPipe reset contract](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe).
 
+#### Accepted-peer conversion must not release listener ownership
+
+The later native malformed-frame failure still reports FILE_NOT_FOUND at the next client open.
+Source audit of interprocess 2.4.4 identifies a separate lifecycle bug in the hybrid adapter:
+the synchronous accept creates and retains the replacement listening instance before returning
+the accepted stream, but the adapter's conversion-error branch breaks its loop and drops that
+already-replenished listener. A peer may close between acceptance, switching wait mode, safe
+handle transfer, pipe-flag query and Tokio registration; the exact native conversion stage must
+remain diagnostic evidence rather than be guessed from the next client's absent endpoint.
+
+Reject and close only the failed accepted handle, log its exact stage/native cause, then yield
+under the existing five-millisecond accept policy. Retain the original protected listening
+instance and guard until explicit cancellation/abort/await teardown. This admits new independent
+peers; it does not retry the failed peer, rebind a name or conceal a true listener accept failure.
+Verify an actual peer close precisely between accept/conversion on an owned current-thread
+fixture, listener liveness plus collision refusal after every malformed peer, subsequent exact
+wake/control delivery and final name/guard release. Existing 200 ms payload and caller budgets
+are unchanged.
+
+Sources: [replacement before accepted-handle handoff](https://github.com/kotauskas/interprocess/blob/e27f397daebff9054f8e2f7b3dc034bae36b2867/src/os/windows/named_pipe/listener.rs#L59),
+[owned conversion stages and failure handles](https://github.com/kotauskas/interprocess/blob/e27f397daebff9054f8e2f7b3dc034bae36b2867/src/os/windows/named_pipe/tokio/stream/impl/handle.rs#L18).
+
 ### Passive missing-state observation (2026-10-03)
 
 A fresh-state source audit found that Windows open_private cleared file creation flags but still

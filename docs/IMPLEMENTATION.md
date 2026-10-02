@@ -778,12 +778,22 @@ stored instance and creates its replacement before returning the accepted stream
 continuous name ownership and first-instance collision protection. Change only that accepted
 stream to blocking wait mode and move its handle through the safe OwnedHandle and Tokio
 DuplexPipeStream conversions; all payload I/O remains asynchronous with the original 200 ms
-deadline. A genuine accept or conversion failure remains explicit and fails the endpoint closed;
-no FILE_NOT_FOUND client retry or full name rebind is used. Aborting and awaiting the listener
+deadline. A genuine listener accept failure remains explicit and fails the endpoint closed.
+After accept has replenished the protected listening instance, a conversion failure rejects
+only that accepted handle. Preserve the original listener, retained state/role lifetime and
+collision refusal; log the exact wait-mode/ownership-transfer/Tokio conversion stage and native
+cause. Yield five milliseconds before the next accept so a disconnected-peer storm cannot
+starve cancellation. Do not retry conversion of that handle, connect to another owner, rebuild
+the endpoint or start a new payload deadline. No FILE_NOT_FOUND client retry or full name rebind
+is used. Aborting and awaiting the listener
 task releases both accepted and listening handles before the lifetime lock drops. Native fixtures
 open/drop a peer synchronously before the listener's first poll, prove another bind is still
 refused, then deliver valid wake and exact-lifetime control. Existing malformed, idle, nonreading,
-remote, collision and teardown assertions remain mandatory.
+remote, collision and teardown assertions remain mandatory. Add an owned current-thread native
+fixture that closes a connected peer after acceptance but before conversion, then proves the
+same listener remains alive and collision-protected and delivers a fresh valid wake/control.
+For each malformed-frame peer, assert listener liveness and duplicate-bind refusal before the
+next open; preserve the exact never-as-wake and subsequent valid-message assertions.
 
 Shared notification::instance_identity(root) and instance_identity_guarded(DirectoryGuard) return
 the lowercase SHA-256 hex of the fixed locron-instance/v1 domain, SID length (LE32)/UTF-8 bytes,
