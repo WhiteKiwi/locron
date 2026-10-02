@@ -146,8 +146,16 @@ pub fn endpoint_name_guarded(
     role: &str,
     lifetime: Option<&str>,
 ) -> io::Result<String> {
+    let lifetime = lifetime
+        .map(uuid::Uuid::parse_str)
+        .transpose()
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid role/lifetime endpoint",
+            )
+        })?;
     if !matches!(role, "wake" | "daemon" | "dashboard" | "daemon-activation")
-        || lifetime.is_some_and(|value| uuid::Uuid::parse_str(value).is_err())
         || role != "wake" && lifetime.is_none()
         || role == "wake" && lifetime.is_some()
     {
@@ -157,12 +165,7 @@ pub fn endpoint_name_guarded(
         ));
     }
     let identity = instance_identity_guarded(guard)?;
-    let lifetime = lifetime.map(|value| {
-        uuid::Uuid::parse_str(value)
-            .expect("validated lifetime")
-            .simple()
-            .to_string()
-    });
+    let lifetime = lifetime.map(|value| value.simple().to_string());
     Ok(match lifetime {
         Some(lifetime) => format!(r"\\.\pipe\locron-v1-{identity}-{role}-{lifetime}"),
         None => format!(r"\\.\pipe\locron-v1-{identity}-{role}"),

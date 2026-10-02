@@ -299,16 +299,15 @@ where
         Ok(())
     })
     .await;
-    match drained {
-        Ok(result) => result,
-        Err(_) => {
-            tasks.abort_all();
-            while tasks.join_next().await.is_some() {}
-            Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "dashboard connection drain exceeded its deadline",
-            ))
-        }
+    if let Ok(result) = drained {
+        result
+    } else {
+        tasks.abort_all();
+        while tasks.join_next().await.is_some() {}
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "dashboard connection drain exceeded its deadline",
+        ))
     }
 }
 
@@ -993,16 +992,15 @@ mod shutdown_tests {
         async fn shutdown(&mut self, deadline: Duration) -> io::Result<()> {
             self.stop.take().expect("owned stop sender").send(()).ok();
             let mut task = self.task.take().expect("owned server task");
-            match tokio::time::timeout(deadline, &mut task).await {
-                Ok(result) => result.expect("server task did not panic"),
-                Err(_) => {
-                    task.abort();
-                    let _ = task.await;
-                    Err(io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "dashboard fixture exceeded its outer deadline",
-                    ))
-                }
+            if let Ok(result) = tokio::time::timeout(deadline, &mut task).await {
+                result.expect("server task did not panic")
+            } else {
+                task.abort();
+                let _ = task.await;
+                Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "dashboard fixture exceeded its outer deadline",
+                ))
             }
         }
     }
