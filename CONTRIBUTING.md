@@ -24,22 +24,30 @@ only then write code:
 | 1 | [`docs/SPEC.md`](docs/SPEC.md) | Goal, observable completion criteria, scope, open product questions | Filenames, modules, tables, implementation steps |
 | 2 | [`docs/FINDINGS.md`](docs/FINDINGS.md) | Research evidence that resolves the spec's open questions | Conclusions without supporting evidence |
 | 3 | [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) | Architecture, data flow, trade-offs, edge cases, change order, verification strategy | — |
-| 4 | [`docs/TODO.md`](docs/TODO.md) | Phased checklist; every step of a three-or-more-step plan carries a concrete `Verify` entry | Steps marked done before their verification passed |
+| 4 | [Project drafts](https://github.com/users/WhiteKiwi/projects/4) ([workflow](docs/PROJECTS.md)) | Maintainer execution scope, phased tasks, Verify criteria, evidence, and Status | Tasks marked Done before verification passed |
 
-Three rules follow from this:
+These rules follow from this:
 
 - If a decision changes while you are implementing, **update the planning document first**, then
   change the code. Never implement first and reconcile the documents afterward.
 - `docs/SPEC.md` is frozen for the current milestone. Editing it means you are proposing a
   product-scope or behavior change — say so explicitly in the issue or pull request.
-- A `docs/TODO.md` step is complete only after its `Verify` entry actually succeeded.
+- A Project draft is Done only after its `Verify` criteria succeed, evidence is recorded, and any
+  PR merge or publication required by that ticket is complete. An opened PR is sufficient when
+  that is the requested deliverable. Maintainer execution tasks stay Project-only drafts; do not
+  convert them into repository issues.
+- The execution Project is private; the repository and its product/design documents remain public.
+  Contributors without access can report bugs or discuss proposals on the public issue tracker
+  and summarize relevant context in their pull request. `docs/TODO.md` is only a pointer; historical
+  evidence stays available in the repository.
 
 **Small changes do not need a planning cycle.** A typo, a broken link, a build fix for a new
 platform, a dependency bump, or a one-line bug fix that does not change documented behavior — open
 the pull request directly.
 
-If you are unsure which side of that line your change falls on, **open an issue first and ask**.
-That costs one round trip; a rejected 800-line pull request costs an afternoon.
+If the scope is unclear, maintainers record the context and request review in the relevant Project
+draft. External contributors can ask through a public bug or proposal-discussion issue before
+starting a substantial change.
 
 ---
 

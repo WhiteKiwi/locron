@@ -19,6 +19,11 @@ Amended 2026-08-25: crates.io source installation is added as an optional Rust-u
 Amended 2026-08-25: terminal-width fitting extends from the human `list` table to the human `history` table.
 Amended 2026-08-25: dashboard lifecycle output and stale dashboard detail routes receive complete human-readable fallbacks.
 
+Repository workflow note (2026-10-02): execution planning and progress move to Project-only draft
+tickets. This administrative migration changes no Locron product behavior, platform support, or
+release scope. Existing task requirements, verification criteria, completion states, and historical
+evidence must be preserved; creating repository issues is outside this migration.
+
 ## Goal
 
 Build a local-first job scheduler that lets one user register, inspect, run, and manage scheduled work consistently on macOS and Linux.

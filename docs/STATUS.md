@@ -3,8 +3,9 @@
 ## Purpose
 
 This is the evidence report for the current implementation. It does not weaken the frozen
-requirements in `SPEC.md`. `TODO.md` remains the progress checklist and `ACCEPTANCE.md` maps every
-completion criterion to exact automated evidence.
+requirements in `SPEC.md`. The private [Locron Project](https://github.com/users/WhiteKiwi/projects/4)
+owns execution tasks and progress; `PROJECTS.md` describes its workflow and `TODO.md` is only a
+pointer. `ACCEPTANCE.md` maps every completion criterion to exact automated evidence.
 
 ## Verified implementation
 

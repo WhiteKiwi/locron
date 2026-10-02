@@ -1,10 +1,12 @@
 # locron Backlog
 
 This document preserves deferred ideas that are not active commitments or implementation TODOs.
-Move an item back to `docs/TODO.md` only after deciding to pursue it and completing the repository's
+Activate an item as a Project-only draft in the private [Locron Project](https://github.com/users/WhiteKiwi/projects/4)
+only after deciding to pursue it and completing the repository's
 planning workflow: update `docs/SPEC.md` when observable product behavior or scope changes, record
-research in `docs/FINDINGS.md` when needed, then review `docs/IMPLEMENTATION.md` and add a verified
-implementation checklist to `docs/TODO.md` before changing code.
+research in `docs/FINDINGS.md` when needed, then review `docs/IMPLEMENTATION.md` and add
+execution tasks with concrete Verify criteria to the Project before changing code. See
+[`PROJECTS.md`](PROJECTS.md). Keep these inactive ideas out of the execution Project until selected.
 
 ## README demo screencast
 

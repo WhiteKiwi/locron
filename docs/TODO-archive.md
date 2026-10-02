@@ -1,10 +1,10 @@
 # locron Completed Backlog Archive
 
-Sections below were completed and moved here from `docs/TODO.md` on 2026-08-24 to keep the live
-checklist to open and recent work. They are preserved verbatim as evidence history (verification
-reports and CI run IDs); `docs/TODO.md` remains the active work list. One open item from the
-archived installer backlog is carried forward in `docs/TODO.md` under "Carried open items from
-archived backlogs".
+Sections below were completed and moved from `docs/TODO.md` on 2026-08-24. The historical body,
+including verification criteria, implementation reports, and CI run IDs, remains unchanged.
+Execution tasks and progress now live in the private [Locron Project](https://github.com/users/WhiteKiwi/projects/4).
+See [`PROJECTS.md`](PROJECTS.md) for the workflow and the 2026-10-02 migration; `TODO.md` is only a
+pointer. Old TODO references below describe the earlier workflow rather than a current live list.
 
 ## 1. Close implementation decisions
 
