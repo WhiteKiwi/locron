@@ -399,6 +399,22 @@ impl ServiceRestoreRecord {
         Path::new(&self.previous.path)
     }
 
+    /// Reads the future path only; validate account/phase and live guarded bytes separately.
+    pub(crate) fn next_path(&self) -> Option<&Path> {
+        self.next.as_ref().map(|binding| Path::new(&binding.path))
+    }
+
+    /// Compares every future volume/file identity bit without granting effect authority.
+    pub(crate) fn matches_next_identity(
+        &self,
+        identity: &locron_core::filesystem::FileIdentity,
+    ) -> bool {
+        self.next.as_ref().is_some_and(|binding| {
+            binding.volume == format!("{:016x}", identity.volume_serial_number)
+                && binding.file == format!("{:032x}", identity.file_id)
+        })
+    }
+
     /// Compares the complete ordered frozen origin, independently of recovery progress.
     /// This pure equality check never validates a transition or proves live ownership.
     pub(crate) fn same_original(&self, other: &Self) -> bool {
@@ -649,6 +665,43 @@ mod tests {
     use crate::service::Target;
 
     const SID: &str = "S-1-5-21-1-2-3-1001";
+
+    #[test]
+    fn future_readbacks_preserve_none_path_and_all_identity_bits() {
+        let original = record(1);
+        let mut identity = locron_core::filesystem::FileIdentity {
+            volume_serial_number: u64::MAX,
+            file_id: u128::MAX,
+        };
+        original.validate_for_sid(SID).unwrap();
+        assert_eq!(original.next_path(), None);
+        assert!(!original.matches_next_identity(&identity));
+        let mut next = original.clone();
+        next.phase = RestorePhase::Restoring;
+        next.next = Some(ExecutableBinding {
+            path: r"\\?\C:\new 子\locron.exe".into(),
+            volume: "f".repeat(16),
+            file: "f".repeat(32),
+        });
+        next.roles[0].progress = RoleProgress::Disabled;
+        next.roles[0].future_definition = Some("f".repeat(64));
+        next.validate_for_sid(SID).unwrap();
+        assert_eq!(
+            next.next_path(),
+            Some(std::path::Path::new(r"\\?\C:\new 子\locron.exe"))
+        );
+        assert_ne!(next.next_path(), Some(original.previous_path()));
+        assert!(next.matches_next_identity(&identity));
+        for bit in [0, 63] {
+            identity.volume_serial_number = u64::MAX ^ (1 << bit);
+            assert!(!next.matches_next_identity(&identity));
+        }
+        identity.volume_serial_number = u64::MAX;
+        for bit in [0, 127] {
+            identity.file_id = u128::MAX ^ (1 << bit);
+            assert!(!next.matches_next_identity(&identity));
+        }
+    }
 
     fn push_state(
         states: &mut Vec<ServiceRestoreRecord>,
