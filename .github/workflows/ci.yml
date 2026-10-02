@@ -278,7 +278,7 @@ jobs:
           RUSTFLAGS: '-C target-feature=+crt-static'
         shell: powershell
         run: |
-          cargo test --locked -p locron --bin locron --target '${{ matrix.target }}' self_update::windows_
+          cargo test --locked -p locron --bin locron --target '${{ matrix.target }}' self_update::windows_ -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { throw 'native Windows distribution contract fixtures failed' }
       - name: Verify stock PowerShell installer bootstrap
         shell: powershell
