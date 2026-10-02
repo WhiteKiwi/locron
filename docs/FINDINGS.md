@@ -4012,3 +4012,25 @@ Sources: [fs_at version metadata](https://docs.rs/crate/fs_at/0.2.1),
 [audited cap-primitives path rename](https://github.com/bytecodealliance/cap-std/blob/main/cap-primitives/src/windows/fs/rename_unchecked.rs),
 [audited atomic-write-file path rename](https://github.com/andreacorbellini/rust-atomic-write-file/blob/master/src/imp/generic.rs),
 [audited renamore path rename](https://github.com/indianakernick/renamore/blob/master/src/windows.rs).
+
+### Preserve the raw per-user PATH and its registry kind (2026-10-03)
+
+The .NET Framework user-environment getter reads Registry.GetValue with its default expansion
+behavior, while its setter uses Registry.SetValue without an explicit kind. A REG_EXPAND_SZ PATH
+containing `%USERPROFILE%` can therefore be expanded and rewritten as REG_SZ. Recording only the
+returned string cannot restore the original persistent value. Stock RegistryKey.GetValue with
+DoNotExpandEnvironmentNames, GetValueKind and SetValue with the recorded String/ExpandString kind
+provide a safe interface for exact raw-value preservation. Missing and empty values are distinct.
+Rollback also compares the current raw value and kind with the recorded result before restoring.
+
+Windows documents an Environment WM_SETTINGCHANGE broadcast for immediate shell notification.
+The audited winsafe 0.0.29 SendMessageTimeout entry point is explicitly unsafe, so it is not a
+usable call site under this workspace's unsafe_code=forbid policy. No additional native adapter
+is required for the optional persistent PATH edit: report that the new value applies after the
+next sign-in, without changing process PATH or claiming immediate shell propagation.
+
+Sources: [.NET Framework user-environment implementation](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/environment.cs),
+[unexpanded registry reads](https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.registryvalueoptions?view=netframework-4.8.1),
+[explicit registry value kinds](https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.registrykey.setvalue?view=netframework-4.8.1),
+[Environment change notification](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-settingchange),
+[audited winsafe SendMessageTimeout](https://docs.rs/crate/winsafe/0.0.29/source/src/user/handles/hwnd.rs).

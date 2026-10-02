@@ -1675,17 +1675,25 @@ uninstall.ps1 and .locron-installer.ps1 (the canonical install.ps1 release asset
 the verified bootstrap with removal). Every listed file has a SHA-256; the receipt binds its own
 canonical directory, executable, SID and standalone channel. It never grants ownership through
 filename alone. Uninstall may retain a modified listed file with an explicit warning, and removes
-the directory only when it is empty. For an opt-in user PATH insertion, record the complete prior
-and resulting user PATH values. Restore that prior value only while the current value still equals
-the recorded result; retain a subsequently edited PATH with a warning instead of deleting a
-potential user-owned entry. This receipt is Windows-only; the existing Unix receipt bytes remain
+the directory only when it is empty. For an opt-in user PATH insertion, read HKCU\\Environment's
+raw PATH without expanding variables and record both complete prior/resulting values and their
+REG_SZ or REG_EXPAND_SZ kinds; a missing prior value remains distinguishable from an empty one.
+Restore that prior value and kind only while both current raw value and kind equal the recorded
+result; retain a subsequently edited PATH with a warning instead of deleting a potential user-owned
+entry. A selected install directory containing a semicolon cannot be represented unambiguously
+in PATH and refuses the opt-in insertion. Use stock RegistryKey operations rather than the
+.NET user-environment getter/setter, which expands values and loses the original registry kind.
+The installer does not synthesize an unaudited native broadcast adapter: it reports that persistent
+PATH changes are available after the next sign-in, and does not claim to change running processes.
+This receipt is Windows-only; the existing Unix receipt bytes remain
 unchanged. Operation status uses locron.windows-status/v1 with operation_id, SID, canonical
 executable, phase, current/new version, updated, prepared and warnings; the status file alone
 cannot authorize changes, and is read only after validating its protected operation request.
 The strict receipt fields are schema, sid, channel, directory, executable, target, version,
 archive_url, archive_sha256, binary_sha256, files (the six bare names mapped to hashes), and
-user_path (null or before/after values). Status uses schema, operation_id, sid, executable, phase,
-current_version, new_version, updated, prepared and warnings. Unknown fields or filename inventories
+user_path (null or before/after values plus before_kind/after_kind, where a missing before value/kind
+is null and non-null kinds are String or ExpandString). Status uses schema, operation_id, sid,
+executable, phase, current_version, new_version, updated, prepared and warnings. Unknown fields or filename inventories
 are refused. The uninstall.ps1 asset accepts -InstallDirectory; an installed copy defaults to its
 own receipt-bearing directory and a downloaded copy to the ordinary standalone directory.
 Validate the receipt and listed retained-installer hash before sharing that bootstrap, retain

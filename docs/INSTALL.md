@@ -19,7 +19,9 @@ The standalone PowerShell 5.1 installer is planned to install into
 `$env:LOCALAPPDATA\Programs\locron`, start the per-user daemon and leave the dashboard disabled
 unless explicitly requested. Its documented switches are `-Version`, `-InstallDirectory`,
 `-NoService`, `-Dashboard` and `-AddToPath`. PATH changes are opt-in and affect only the user's
-persistent PATH; open terminals may require a restart. Protected ownership receipts authorize
+persistent PATH. It preserves unexpanded variables and the registry value's original format;
+the change is available after the next sign-in and does not change running processes. Protected
+ownership receipts authorize
 updates/removal of that exact executable. Uninstall retains durable state and removes only
 unchanged installer-owned files, exact owned task registrations and a PATH entry the installer
 inserted. Standalone and package-manager installations use separate locations.
