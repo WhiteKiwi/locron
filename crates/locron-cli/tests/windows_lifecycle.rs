@@ -227,7 +227,8 @@ impl Fixture {
     fn wait_initialized_store(&self, process: &mut NativeProcess) {
         let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            if let Ok(store) = Store::open_read_only(&self.paths.database)
+            if self.paths.database.is_file()
+                && let Ok(store) = Store::open_read_only(&self.paths.database)
                 && let Ok(settings) = store.settings()
             {
                 assert_eq!(
@@ -335,10 +336,13 @@ impl NativeProcess {
                     self.stderr()
                 );
             }
-            if let Some(owner) = DaemonLock::read_role_metadata(lock)
-                .ok()
-                .flatten()
-                .filter(|owner| owner.metadata.pid == self.child.id())
+            // This readiness hint cannot create the first-run state being observed.
+            // The guarded read and expected child PID remain the ownership check.
+            if DaemonLock::owner_sidecar(lock).is_file()
+                && let Some(owner) = DaemonLock::read_role_metadata(lock)
+                    .ok()
+                    .flatten()
+                    .filter(|owner| owner.metadata.pid == self.child.id())
             {
                 return owner;
             }

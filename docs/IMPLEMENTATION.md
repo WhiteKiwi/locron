@@ -682,6 +682,10 @@ hint/control lookups fail without recreating an old root. Native tests call iden
 wake and exact-lifetime stop with an absent private-child path and assert both refusal and that
 the path remains absent; first-run CLI activation and dashboard tests continue proving explicit
 creation and cross-binary identity on existing roots.
+First-run test observers wait for an existing owner sidecar or database before calling their
+guarded readers. These filesystem-presence checks are passive readiness hints only: expected
+child PID, bounded metadata reads and authoritative locks still establish role ownership. The
+test harness must never create the state it is proving the CLI creates.
 
 Separate secured control endpoints bind role/lifetime identity and deliver only graceful shutdown
 requests to that role's existing cancellation token. Lifecycle coordination first disables automatic
