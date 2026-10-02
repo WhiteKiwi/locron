@@ -486,7 +486,45 @@ function Get-LocronOperationDirectory([Guid]$Id, [bool]$Create = $true) {
     if ($Create) { New-LocronPrivateDirectory $root } else { Assert-LocronDirectory $root $true }
 }
 
-function Invoke-LocronHelper([string]$Directory, $Request, [byte[]]$Helper, [bool]$Reuse = $false) {
+function Assert-LocronStatus($Status, $Request, [string]$RecoveryKind = '') {
+    Assert-LocronFields $Status @('schema', 'operation_id', 'sid', 'executable', 'phase', 'current_version', 'new_version', 'updated', 'prepared', 'warnings')
+    foreach ($field in @('schema', 'operation_id', 'sid', 'executable', 'phase', 'current_version', 'new_version')) {
+        if ($Status.$field -isnot [string]) { throw 'locron helper status has an invalid string field' }
+    }
+    if ($Status.updated -isnot [bool] -or $Status.prepared -isnot [bool] -or
+        $Status.warnings -isnot [Array] -or $Status.warnings.Count -gt 64) { throw 'locron helper status has invalid result types' }
+    foreach ($warning in $Status.warnings) {
+        if ($warning -isnot [string] -or $warning.Length -gt 2048 -or $warning.IndexOf([char]0) -ge 0) { throw 'locron helper status has an invalid warning' }
+    }
+    if ($Status.schema -cne 'locron.windows-status/v1' -or $Status.operation_id -cne $Request.operation_id -or
+        $Status.sid -cne $Request.sid -or -not [StringComparer]::OrdinalIgnoreCase.Equals(
+            (ConvertTo-LocronPath $Status.executable), (ConvertTo-LocronPath $Request.executable))) { throw 'locron helper status differs from its owned request' }
+    $kind = $Request.kind
+    if ($kind -ceq 'recover') {
+        if ($RecoveryKind -cnotin @('install', 'self_update', 'uninstall')) { throw 'recovery requires the protected original operation kind' }
+        $kind = $RecoveryKind
+    } elseif ($RecoveryKind) { throw 'a non-recovery request cannot override its result kind' }
+    $phase = ''; $updated = $false; $prepared = $false
+    switch -CaseSensitive ($kind) {
+        'install' { $phase = 'completed'; $updated = $true }
+        'self_update' { $phase = 'completed'; $updated = $true }
+        'uninstall' { $phase = 'removed' }
+        'maintenance_prepare' { $phase = 'prepared'; $prepared = $true }
+        'maintenance_complete' { $phase = 'completed' }
+        'maintenance_remove' { $phase = 'removed' }
+        default { throw 'unsupported operation result kind' }
+    }
+    if ($Status.phase -cne $phase -or $Status.updated -ne $updated -or $Status.prepared -ne $prepared) { throw 'locron helper did not confirm this exact requested operation' }
+    if ($Status.new_version -cne $Request.version -or $Status.new_version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
+        [Version]$Status.new_version -lt [Version]'0.10.0') { throw 'locron helper status differs from the selected Windows release' }
+    if ($Status.current_version) {
+        if ($Status.current_version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' -or
+            [Version]$Status.current_version -lt [Version]'0.10.0') { throw 'locron helper status has an invalid prior version' }
+    } elseif ($kind -cne 'install') { throw 'this operation requires its confirmed prior version' }
+    if ($kind -cin @('uninstall', 'maintenance_prepare', 'maintenance_remove') -and $Status.current_version -cne $Request.version) { throw 'locron helper status differs from the owned prior release' }
+}
+
+function Invoke-LocronHelper([string]$Directory, $Request, [byte[]]$Helper, [bool]$Reuse = $false, [string]$RecoveryKind = '') {
     $path = [IO.Path]::Combine($Directory, 'locron-helper.exe')
     if ($Reuse) {
         if ((Get-LocronSha256 (Read-LocronPrivateFile $path)) -cne $Request.helper_sha256) { throw 'retained operation helper changed' }
@@ -515,11 +553,7 @@ function Invoke-LocronHelper([string]$Directory, $Request, [byte[]]$Helper, [boo
         if ($LASTEXITCODE -ne 0) { throw "locron operation failed; retained recovery request: $requestPath" }
     } finally { $helperGuard.Dispose() }
     $status = ConvertFrom-LocronJson (Read-LocronPrivateFile ([IO.Path]::Combine($Directory, 'status.json')))
-    Assert-LocronFields $status @('schema', 'operation_id', 'sid', 'executable', 'phase', 'current_version', 'new_version', 'updated', 'prepared', 'warnings')
-    if ($status.schema -cne 'locron.windows-status/v1' -or $status.operation_id -cne $Request.operation_id -or
-        $status.sid -cne $Request.sid -or -not [StringComparer]::OrdinalIgnoreCase.Equals(
-            (ConvertTo-LocronPath $status.executable), (ConvertTo-LocronPath $Request.executable)) -or
-        $status.phase -notin @('completed', 'prepared', 'removed')) { throw 'locron helper did not confirm the requested operation' }
+    Assert-LocronStatus $status $Request $RecoveryKind
     $status
 }
 
@@ -692,7 +726,7 @@ function Invoke-LocronRecovery([string[]]$ProvidedOptions = @()) {
         archive_sha256 = $initial.archive_sha256; helper_sha256 = $initial.helper_sha256; caller_pid = $null
         no_service = $false; dashboard = $false; add_to_path = $false; state_root = $null
     }
-    Invoke-LocronHelper $directory $request $null $true
+    Invoke-LocronHelper $directory $request $null $true $initial.kind
 }
 
 function Invoke-LocronInstall([string[]]$ProvidedOptions = @()) {

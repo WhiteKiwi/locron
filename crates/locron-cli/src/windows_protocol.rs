@@ -291,6 +291,11 @@ impl Status {
         );
         if !status.current_version.is_empty() {
             stable_version(&status.current_version)?;
+        } else {
+            ensure!(
+                request.kind == Kind::Install,
+                "operation has no confirmed prior version"
+            );
         }
         stable_version(&status.new_version)?;
         ensure!(
@@ -300,10 +305,7 @@ impl Status {
         ensure!(
             status.updated
                 == (status.phase == Phase::Completed
-                    && matches!(
-                        request.kind,
-                        Kind::Install | Kind::SelfUpdate | Kind::Recover
-                    )),
+                    && matches!(request.kind, Kind::Install | Kind::SelfUpdate)),
             "status fabricates or hides confirmed replacement"
         );
         ensure!(
@@ -319,6 +321,23 @@ impl Status {
                 || matches!(request.kind, Kind::Uninstall | Kind::MaintenanceRemove),
             "operation cannot report unrelated removal"
         );
+        ensure!(
+            status.phase != Phase::Completed
+                || matches!(
+                    request.kind,
+                    Kind::Install | Kind::SelfUpdate | Kind::MaintenanceComplete
+                ),
+            "operation cannot report unrelated completion"
+        );
+        if matches!(
+            request.kind,
+            Kind::Uninstall | Kind::MaintenancePrepare | Kind::MaintenanceRemove
+        ) {
+            ensure!(
+                status.current_version == request.version,
+                "status differs from its owned prior release"
+            );
+        }
         ensure!(
             status.warnings.len() <= 64
                 && status.warnings.iter().all(|warning| {
@@ -479,5 +498,69 @@ mod tests {
         let mut changed = value;
         changed["executable"] = json!(r"C:\other\locron.exe");
         assert!(Status::parse(&serde_json::to_vec(&changed).unwrap(), &request).is_err());
+    }
+
+    #[test]
+    fn terminal_result_is_bound_to_each_exact_operation_kind() {
+        let initial = parse(&request()).unwrap();
+        for (kind, expected_phase, updated, prepared) in [
+            (Kind::Install, Phase::Completed, true, false),
+            (Kind::SelfUpdate, Phase::Completed, true, false),
+            (Kind::Uninstall, Phase::Removed, false, false),
+            (Kind::MaintenancePrepare, Phase::Prepared, false, true),
+            (Kind::MaintenanceComplete, Phase::Completed, false, false),
+            (Kind::MaintenanceRemove, Phase::Removed, false, false),
+        ] {
+            let mut request = initial.clone();
+            request.kind = kind;
+            for phase in [Phase::Completed, Phase::Prepared, Phase::Removed] {
+                let status = Status {
+                    schema: "locron.windows-status/v1".to_owned(),
+                    operation_id: request.operation_id,
+                    sid: request.sid.clone(),
+                    executable: request.executable.clone(),
+                    phase,
+                    current_version: "0.10.0".to_owned(),
+                    new_version: "0.10.0".to_owned(),
+                    updated,
+                    prepared,
+                    warnings: vec![],
+                };
+                assert_eq!(
+                    Status::parse(&serde_json::to_vec(&status).unwrap(), &request).is_ok(),
+                    phase == expected_phase,
+                    "{kind:?}/{phase:?}"
+                );
+                if phase == expected_phase {
+                    let mut changed = status.clone();
+                    changed.updated = !updated;
+                    assert!(
+                        Status::parse(&serde_json::to_vec(&changed).unwrap(), &request).is_err()
+                    );
+                    let mut changed = status;
+                    changed.prepared = !prepared;
+                    assert!(
+                        Status::parse(&serde_json::to_vec(&changed).unwrap(), &request).is_err()
+                    );
+                }
+            }
+        }
+        // Recovery results are checked against the protected original request.
+        // The supplemental trigger alone cannot select a terminal operation kind.
+        let mut request = initial;
+        request.kind = Kind::Recover;
+        let status = Status {
+            schema: "locron.windows-status/v1".to_owned(),
+            operation_id: request.operation_id,
+            sid: request.sid.clone(),
+            executable: request.executable.clone(),
+            phase: Phase::Removed,
+            current_version: "0.10.0".to_owned(),
+            new_version: "0.10.0".to_owned(),
+            updated: false,
+            prepared: false,
+            warnings: vec![],
+        };
+        assert!(Status::parse(&serde_json::to_vec(&status).unwrap(), &request).is_err());
     }
 }

@@ -115,6 +115,56 @@ foreach ($json in @('{"schema":1,"schema":2}', '{"schema":1,"Schema":2}',
 }
 Assert-Refused { ConvertFrom-LocronJson ([byte[]]@(0xff)) } 'invalid metadata UTF-8'
 
+$statusRequest = [ordered]@{ operation_id = 'e41c210d-c98d-47fb-9975-a5af66d01346'; sid = 'test-owned-SID'
+    executable = 'C:\test-only\locron.exe'; version = '0.10.0'; kind = 'install' }
+foreach ($kind in @('install', 'self_update', 'uninstall', 'maintenance_prepare', 'maintenance_complete', 'maintenance_remove')) {
+    $statusRequest.kind = $kind
+    $expectedPhase = switch -CaseSensitive ($kind) {
+        'install' { 'completed' }; 'self_update' { 'completed' }; 'maintenance_complete' { 'completed' }
+        'uninstall' { 'removed' }; 'maintenance_remove' { 'removed' }; 'maintenance_prepare' { 'prepared' }
+    }
+    $statusValue = [ordered]@{ schema = 'locron.windows-status/v1'; operation_id = $statusRequest.operation_id
+        sid = $statusRequest.sid; executable = $statusRequest.executable; phase = $expectedPhase
+        current_version = '0.10.0'; new_version = '0.10.0'; updated = ($kind -cin @('install', 'self_update'))
+        prepared = ($kind -ceq 'maintenance_prepare'); warnings = @() }
+    Assert-LocronStatus ([pscustomobject]$statusValue) $statusRequest
+    foreach ($phase in @('completed', 'prepared', 'removed', 'accepted', 'failed', 'rolled_back')) {
+        if ($phase -ceq $expectedPhase) { continue }
+        $changed = Copy-FixtureMetadata $statusValue; $changed.phase = $phase
+        Assert-Refused { Assert-LocronStatus ([pscustomobject]$changed) $statusRequest } "wrong phase $kind/$phase"
+    }
+    foreach ($field in @('updated', 'prepared')) {
+        $changed = Copy-FixtureMetadata $statusValue; $changed[$field] = -not $changed[$field]
+        Assert-Refused { Assert-LocronStatus ([pscustomobject]$changed) $statusRequest } 'wrong terminal result boolean'
+        $changed[$field] = 'false'
+        Assert-Refused { Assert-LocronStatus ([pscustomobject]$changed) $statusRequest } 'coercible boolean string'
+    }
+    foreach ($field in @('phase', 'current_version', 'new_version', 'executable')) {
+        $changed = Copy-FixtureMetadata $statusValue; $changed[$field] = 1
+        Assert-Refused { Assert-LocronStatus ([pscustomobject]$changed) $statusRequest } 'non-string result metadata'
+    }
+    foreach ($warnings in @('string-instead-of-array', @($null), @(1))) {
+        $changed = Copy-FixtureMetadata $statusValue; $changed.warnings = $warnings
+        Assert-Refused { Assert-LocronStatus ([pscustomobject]$changed) $statusRequest } 'invalid warning inventory'
+    }
+    $changed = Copy-FixtureMetadata $statusValue; $changed.new_version = '0.10.1'
+    Assert-Refused { Assert-LocronStatus ([pscustomobject]$changed) $statusRequest } 'different selected release'
+    $changed = Copy-FixtureMetadata $statusValue; $changed.current_version = '0.9.6'
+    Assert-Refused { Assert-LocronStatus ([pscustomobject]$changed) $statusRequest } 'prior release predates Windows support'
+    if ($kind -cne 'install') {
+        $changed = Copy-FixtureMetadata $statusValue; $changed.current_version = ''
+        Assert-Refused { Assert-LocronStatus ([pscustomobject]$changed) $statusRequest } 'missing confirmed prior release'
+    }
+}
+$statusRequest.kind = 'recover'
+$recoveryStatus = [ordered]@{ schema = 'locron.windows-status/v1'; operation_id = $statusRequest.operation_id
+    sid = $statusRequest.sid; executable = $statusRequest.executable; phase = 'removed'
+    current_version = '0.10.0'; new_version = '0.10.0'; updated = $false; prepared = $false; warnings = @() }
+Assert-LocronStatus ([pscustomobject]$recoveryStatus) $statusRequest 'uninstall'
+Assert-Refused { Assert-LocronStatus ([pscustomobject]$recoveryStatus) $statusRequest } 'recovery without protected original kind'
+Assert-Refused { Assert-LocronStatus ([pscustomobject]$recoveryStatus) $statusRequest 'install' } 'recovery cannot substitute removal for installation'
+Assert-Refused { Assert-LocronStatus ([pscustomobject]$recoveryStatus) $statusRequest 'maintenance_remove' } 'recovery cannot adopt a package operation'
+
 $packageLocation = 'C:\test-only\WinGet\Packages\fixture'
 $packagePath = [IO.Path]::Combine($packageLocation, "locron-$tag-$target", 'locron.exe')
 $packageEntry = [ordered]@{ key = 'test-only-registration'; package_id = 'WhiteKiwi.locron'; installer_type = 'portable'
