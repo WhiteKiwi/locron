@@ -162,6 +162,13 @@ Resolve relative state overrides lexically against the current directory before 
 reject drive-relative/root-relative ambiguity and network state roots. Canonicalize identity only
 after every component has passed no-reparse handle inspection and the guards remain live.
 
+Managed file readers retain no-delete sharing. Dashboard/CLI follow reads release their handles
+after each frame snapshot, but a concurrent snapshot can briefly prevent Windows finalization.
+Retry only native sharing violations for at most five seconds, validating source and destination
+again on each guarded rename attempt. Keep all other failures immediate. A reader held beyond
+that bound leaves the synced partial intact and reports a real infrastructure failure for normal
+recovery; never claim finalization or discard captured bytes when the rename has not succeeded.
+
 ### Wake, cooperative role control and Task Scheduler
 
 Use Windows-only interprocess =2.4.4 with tokio, safe SDDL SecurityDescriptor deserialization and

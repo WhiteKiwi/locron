@@ -248,4 +248,51 @@ mod tests {
         assert_eq!(repair.frames, 1);
         assert_eq!(repair.tail_removed, 6);
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn active_frame_reader_releases_guarded_finalization_without_losing_bytes() {
+        let temp = private_tempdir();
+        let partial = temp.path().join("live.partial");
+        let final_path = temp.path().join("live.log");
+        let mut writer = FrameWriter::create(&partial).unwrap();
+        writer
+            .write(FrameChannel::Stdout, 1, b"live output")
+            .unwrap();
+        writer.sync().unwrap();
+        drop(writer);
+        let mut reader = FrameReader::open(&partial).unwrap();
+        assert_eq!(
+            reader.next_frame().unwrap().unwrap().payload,
+            b"live output"
+        );
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let source = partial.clone();
+        let destination = final_path.clone();
+        let finalization = std::thread::spawn(move || {
+            sender
+                .send(locron_core::filesystem::rename_private(
+                    &source,
+                    &destination,
+                ))
+                .unwrap();
+        });
+        assert!(matches!(
+            receiver.recv_timeout(std::time::Duration::from_millis(100)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        drop(reader);
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        finalization.join().unwrap();
+        assert!(!partial.exists());
+        let mut finalized = FrameReader::open(&final_path).unwrap();
+        assert_eq!(
+            finalized.next_frame().unwrap().unwrap().payload,
+            b"live output"
+        );
+        assert!(finalized.next_frame().unwrap().is_none());
+    }
 }

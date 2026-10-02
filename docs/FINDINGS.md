@@ -2813,6 +2813,14 @@ Sources: [TaskFolder registration and flags](https://learn.microsoft.com/en-us/w
 
 ### Recommended design order and remaining proof
 
+Windows file sharing without FILE_SHARE_DELETE prevents concurrent rename until the reader
+closes its handle. Output readers currently collect one snapshot and close before the next poll.
+Development therefore retains the strict leaf sharing policy and selects a five-second retry
+only for native sharing violations, revalidating both guarded paths each time. A persistent
+holder leaves the synced partial recoverable and the failure observable. Native acceptance
+must hold a framed-output reader across finalization and verify bytes after reader release.
+Source: [CreateFileW sharing and rename semantics](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
+
 First freeze and compile the version-pinned safe interfaces, including the suspended post-spawn
 enrollment and independent job query; then add guarded private state and descriptor readback;
 then construct the account/state-isolated wake/control pipes; finally add Task Scheduler lifecycle

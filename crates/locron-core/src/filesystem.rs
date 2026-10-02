@@ -135,7 +135,41 @@ fn open_with_guard(
 }
 
 /// Renames a private managed file while both directory chains remain guarded.
+/// Windows sharing violations are retried for at most five seconds, allowing
+/// concurrent short-lived output snapshots to release their no-delete handles.
 pub fn rename_private(source: &Path, destination: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        rename_private_bounded(source, destination, std::time::Duration::from_secs(5))
+    }
+    #[cfg(not(windows))]
+    {
+        rename_private_once(source, destination)
+    }
+}
+
+#[cfg(windows)]
+fn rename_private_bounded(
+    source: &Path,
+    destination: &Path,
+    timeout: std::time::Duration,
+) -> io::Result<()> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match rename_private_once(source, destination) {
+            Err(error) if matches!(error.raw_os_error(), Some(32 | 33)) => {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    return Err(error);
+                }
+                std::thread::sleep(remaining.min(std::time::Duration::from_millis(25)));
+            }
+            result => return result,
+        }
+    }
+}
+
+fn rename_private_once(source: &Path, destination: &Path) -> io::Result<()> {
     let source_file = open_private(source, OpenOptions::new().read(true))?;
     let (source_file, source_guard) = source_file.into_parts();
     drop(source_file);
@@ -615,5 +649,27 @@ mod tests {
         assert!(!is_private(&path, false).unwrap());
         assert!(open_private(&path, OpenOptions::new().write(true).truncate(true)).is_err());
         assert_eq!(fs::read(&path).unwrap(), b"preserve");
+    }
+
+    #[test]
+    fn persistent_reader_bounds_rename_failure_and_preserves_source() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let source = root.join("output.partial");
+        let destination = root.join("output.log");
+        fs::write(&source, b"captured").unwrap();
+        let reader = open_private(&source, OpenOptions::new().read(true)).unwrap();
+        let start = std::time::Instant::now();
+        let error =
+            rename_private_bounded(&source, &destination, std::time::Duration::from_millis(100))
+                .unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(32));
+        assert!(start.elapsed() < std::time::Duration::from_secs(2));
+        assert!(!destination.exists());
+        assert_eq!(fs::read(&source).unwrap(), b"captured");
+        drop(reader);
+        rename_private(&source, &destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"captured");
     }
 }

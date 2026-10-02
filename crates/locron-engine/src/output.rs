@@ -351,4 +351,35 @@ mod tests {
         assert_eq!(stats.retained_bytes, 2);
         assert_eq!(read_frames(partial).unwrap().len(), 1);
     }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn finalization_waits_for_active_output_reader_and_retains_frames() {
+        let temp = private_tempdir();
+        let partial = temp.path().join("active.partial");
+        let final_path = temp.path().join("active.log");
+        let mut writer = OutputWriter::create(&partial, 100).await.unwrap();
+        writer
+            .write(Channel::Stdout, Duration::ZERO, b"captured while reading")
+            .await
+            .unwrap();
+        writer.flush().await.unwrap();
+        let mut reader =
+            locron_core::filesystem::open_private(&partial, std::fs::OpenOptions::new().read(true))
+                .unwrap();
+        assert_eq!(read_valid_frames(&mut reader).unwrap().0.len(), 1);
+        let destination = final_path.clone();
+        let finalization = tokio::spawn(async move { writer.finalize(destination).await });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(!finalization.is_finished());
+        assert!(partial.exists());
+        drop(reader);
+        let stats = finalization.await.unwrap().unwrap();
+        assert_eq!(stats.retained_bytes, 22);
+        assert!(!partial.exists());
+        assert_eq!(
+            read_frames(&final_path).unwrap()[0].payload,
+            b"captured while reading"
+        );
+    }
 }
