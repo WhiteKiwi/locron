@@ -4239,3 +4239,53 @@ Sources: [Run behavior](https://learn.microsoft.com/en-us/windows/win32/taskschd
 [enabled registration property](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-enabled),
 [instance security visibility](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-getinstances),
 [reviewed directory guard interfaces](https://github.com/WhiteKiwi/locron/blob/cb5074a711a80dbf66bf04d64d8edbbb94006684/crates/locron-core/src/filesystem.rs).
+
+### Mapped-helper qualification through a guarded launch (2026-10-03)
+
+Rust current_exe returns a path and documents rename/security limitations. Microsoft
+QueryFullProcessImageName and GetMappedFileName likewise return names, not a file handle or full
+volume/file identity. Reopening such a name and hashing the current leaf cannot retrospectively
+identify an image loaded before a rename or replacement. Bootstrap's retained helper proof is
+therefore necessary but not independently sufficient to qualify its already running image.
+
+CreateFile sharing restrictions remain in force while the handle is open; FILE_SHARE_DELETE
+permits rename as well as deletion. The reviewed immutable leaf and all ancestor guards retain
+FILE_SHARE_READ without write/delete sharing. CreateProcess with an explicit application path
+selects that executable, and Rust 1.94's native Command implementation passes its resolved absolute
+.exe path as lpApplicationName. The selected inference is conditional on retaining those exact
+guards from before CreateProcess through acquisition of overlapping child guards and qualification:
+the path cannot change to a different object during that interval. This is a launch proof, not a
+new API that retrieves a mapped image's file ID. CreateProcess success precedes initialization and
+does not establish child readiness or operation acceptance.
+
+The stock Framework Process.MainModule identifies the module used to start the local process;
+its FileName is a path, can be unavailable during initialization or truncated, and MainModule can
+throw on unsupported bitness or process exit. A fixed bounded stock .NET query supplies readback
+without new Rust FFI. Bracket its PID lookup with live checks on the original native Child and
+retain that Child/lease throughout; exit or uncertainty refuses, preventing a reused PID from
+authorizing a different process. Require normalized-path and exact retained-object agreement.
+Actual native x64/ARM64 behavior, including the stock adapter's architecture, remains unverified
+for this new gate. No query failure is permission to fall back to current_exe alone.
+
+Rust 1.94's raw attribute-list spawning remains unstable, so arbitrary inherited handle-list
+transfer is not selected. Stable native piped stdio plus a private four-frame qualification
+exchange keeps the parent lease alive until overlapping child protection is confirmed. The
+already locked winapi-util 0.1.11 safe file::typ accepts Stdin/Stdout and reports disk/character/pipe
+types; it does not distinguish or authenticate a pipe's peer. Live qualification tokens therefore
+come only from the native launch owner and its actual Child/channel, never deserialized metadata.
+The repository's existing SECURITY account boundary excludes arbitrary same-account code/debugger
+control. No unsigned publisher authentication, retrospective proof for a manually started broker,
+service snapshot authority or completed operation is inferred from this plan.
+
+Sources: [Rust current_exe](https://doc.rust-lang.org/std/env/fn.current_exe.html),
+[image-name query](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew),
+[mapped-file name](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmappedfilenamew),
+[sharing/rename contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[explicit executable and initialization](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw),
+[pinned Rust 1.94 native spawn](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/process/windows.rs),
+[Framework main module](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.mainmodule?view=netframework-4.8.1),
+[process-handle/PID lifetime](https://learn.microsoft.com/en-us/windows/win32/procthread/process-handles-and-identifiers),
+[module name/truncation](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.processmodule.filename?view=netframework-4.8.1),
+[pinned unstable attribute API](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/process.rs),
+[safe handle-type source](https://github.com/BurntSushi/winapi-util/blob/0.1.11/src/file.rs),
+[existing account boundary](../SECURITY.md#out-of-scope).

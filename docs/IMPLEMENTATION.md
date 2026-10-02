@@ -1960,6 +1960,70 @@ the protected original JSON must bind its actual bytes, and a replaced receipt m
 the old accepted snapshot. The caller retains the real service snapshot guards; the factory's
 serialized output alone cannot authorize quiescence or replacement.
 
+Mapped-helper qualification is a separate read-only launch gate. A private LaunchLease retains the
+positively selected helper's complete byte digest, full volume/file identity, immutable leaf and
+all ancestor guards before launching its absolute .exe path through native Command. Its selection
+comes from retained standalone/removal ownership or canonical payload proof, never only from the
+request's helper_sha256. The lease also retains the protected original request and its raw digest.
+Keep these guards through qualification and acquire overlapping Bootstrap guards in the child;
+there must be no interval in which either the leaf or an ancestor can be renamed, deleted or
+opened for conflicting writes. A newly copied helper must match its recorded created identity
+after reopening the immutable read gate. Matching bytes at a substituted object do not suffice.
+
+Use the actual returned std::process::Child, not a caller-supplied PID, as the launch owner. After
+child readiness, query Process.GetProcessById(child.id()).MainModule.FileName through a fixed
+stock .NET script with run_script_json_bounded and the qualification phase's remaining budget.
+Require the original Child.try_wait to report live both before and after this readback, validate
+the normalized module path and reopen it under the still-held ancestry guards to compare its full
+identity with the selected helper. A missing/truncated/mismatched name, process exit, unsupported
+cross-bitness query or adapter error refuses qualification. The name query supplies a consistency
+check; the pre-launch guard interval is what connects the mapped image to the selected file.
+Neither current_exe, a reopened path/hash, an arbitrary process lookup nor Bootstrap alone proves
+that interval. No new raw FFI or runtime source compilation is required.
+
+Freeze a private locron.windows-helper-launch/v1 Challenge -> Ready -> Permit -> Qualified
+exchange on the native parent's actual piped stdin/stdout. Each strict, deny-unknown frame is at
+most 4 KiB, with four frames/16 KiB total, and binds the operation UUID, fresh session UUID, raw
+original/current-request SHA-256 and helper's full identity/digest; Ready additionally binds the
+actual child PID and a child-generated fresh UUID echoed by Permit/Qualified, preventing saved
+frames from satisfying a new exchange. Encode full identities as fixed 16/32-character hex strings,
+not lossy JSON numbers. No paths, task source or effect instructions come from this channel.
+Use the already locked Windows-only winapi-util =0.1.11 safe file::typ on stdin/stdout to reject ordinary console
+or disk channels; pipe type alone is not authentication. The parent constructs nonserializable
+QualifiedLaunch only after real launch/readback/overlap checks; the child constructs its private
+QualifiedBootstrap only through that exchange while retaining Bootstrap. Request/status JSON,
+saved Qualified frames and a command-line flag cannot reconstruct either live proof. Apply one
+30-second qualification deadline including cold adapter admission/readback and channel I/O,
+followed only by the existing bounded owned-child cleanup. Refusal/uncertain cleanup retains the
+lease in its owner until exit is confirmed; it cannot enter the operation engine or release an
+unknown child's protection to perform effects. This follows the existing user-account security
+boundary and does not claim protection against arbitrary code or debugger control as that user.
+The narrow private ABI is LaunchLease::spawn -> PendingLaunch, PendingLaunch::qualify ->
+QualifiedLaunch, and qualify_child(Bootstrap) -> QualifiedBootstrap; the latter owns its Bootstrap.
+These tokens have private constructors and no Serialize/Deserialize/Clone implementation.
+The initial qualification fixture consumer stops there; none of these functions takes, creates
+or casts a ServiceSnapshot, and none can dispatch the future operation engine.
+
+The existing hidden helper entry and optional PowerShell route first enter a native read-only
+broker. It validates launch context and uses this same guarded native launch; an already running
+broker cannot qualify its own mapped image. A child-mode dispatch is an internal selector, not
+authority, and refuses an absent/invalid exchange before operation effects. Final helper acceptance
+remains separate: Qualified does not create a journal, write operation status, report pending/updated or
+authorize task/PATH/file mutations. Recovery additionally needs the validated protected original
+journal context; it must not derive helper/source authority from the current replaced receipt.
+Keep this gate and the accepted preparation/model modules test-only until their real consumers
+are reviewed together with the provider's live snapshot, activation and fresh-registration APIs.
+Use a test-only ServiceRestoreRecord reexport only with those actual test consumers; do not
+manufacture ServiceSnapshot casts, unused production exports or allow(dead_code) to enable them.
+
+Verify on native x64/ARM64 using a real copied test executable and unique private fixture roots:
+the guarded launch passes once, concurrent leaf/ancestor replacement and conflicting writes are
+refused across readiness/guard overlap, changed created full identity or original request bytes
+refuse, a wrong actual image/missing module/process exit or broken/stale/oversized channel refuses,
+and cold deadline/owned cleanup stays bounded. Assert no installed-target/state/task/PATH/journal
+mutation in every qualification fixture. Release executable qualification, actual helper
+acceptance, complete lifecycle effects and clean Windows 11 acceptance remain separate gates.
+
 Capacity counts all fixed nullable keys, the longest reachable enum spellings, both future
 created/rollback full identities per leaf, every repeated typed service slot, and the future package path/key/version
 bound before journal creation. Fresh installation additionally requires the service owner's real
