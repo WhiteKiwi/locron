@@ -155,8 +155,16 @@ pub fn endpoint_name_guarded(
                 "invalid role/lifetime endpoint",
             )
         })?;
-    if !matches!(role, "wake" | "daemon" | "dashboard" | "daemon-activation")
-        || role != "wake" && lifetime.is_none()
+    if !matches!(
+        role,
+        "wake"
+            | "daemon"
+            | "dashboard"
+            | "daemon-activation"
+            | "dashboard-activation"
+            | "daemon-worker"
+            | "dashboard-worker"
+    ) || role != "wake" && lifetime.is_none()
         || role == "wake" && lifetime.is_some()
     {
         return Err(io::Error::new(
@@ -337,6 +345,14 @@ mod tests {
         assert_ne!(daemon, dashboard);
         assert_ne!(daemon, activation);
         assert_ne!(dashboard, activation);
+        let mut names =
+            std::collections::BTreeSet::from([wake, daemon.clone(), dashboard, activation]);
+        for role in ["dashboard-activation", "daemon-worker", "dashboard-worker"] {
+            assert!(names.insert(endpoint_name_guarded(&guard, role, Some(&lifetime)).unwrap()));
+            assert!(endpoint_name_guarded(&guard, role, None).is_err());
+            assert!(endpoint_name_guarded(&guard, role, Some("malformed")).is_err());
+        }
+        assert_eq!(names.len(), 7);
         assert_eq!(
             daemon,
             endpoint_name_guarded(&guard, "daemon", Some(&lifetime.to_uppercase())).unwrap()
