@@ -397,6 +397,7 @@ mod tests {
         receipt_polls: usize,
         receipt_ready: bool,
         ack_crosses: Option<Instant>,
+        receipt_crosses: Option<Instant>,
     }
 
     struct FixtureWire(Arc<Mutex<WireState>>);
@@ -424,13 +425,21 @@ mod tests {
             buffer: &[u8],
         ) -> Poll<io::Result<usize>> {
             let mut state = self.0.lock().unwrap();
-            if buffer == [0xff] {
+            let crossing = if buffer == [0xff] {
                 state.receipt_polls += 1;
                 if !state.receipt_ready {
                     return Poll::Pending;
                 }
-            }
+                state.receipt_crosses.take()
+            } else {
+                None
+            };
             state.written.extend_from_slice(buffer);
+            drop(state);
+            if let Some(deadline) = crossing {
+                // A pre-expiry I/O poll can queue the byte before returning after expiry.
+                sleep_past(deadline);
+            }
             Poll::Ready(Ok(buffer.len()))
         }
 
@@ -538,6 +547,33 @@ mod tests {
         assert_eq!(state.receipt_polls, 1);
         assert_eq!(state.written[0], SHUTDOWN_MESSAGE.len() as u8);
         assert_eq!(&state.written[1..], SHUTDOWN_MESSAGE);
+    }
+
+    #[test]
+    fn pre_expiry_queued_receipt_can_be_followed_by_uncertain_timeout() {
+        let runtime = client_runtime().unwrap();
+        let _entered = runtime.enter();
+        let deadline = Instant::now() + CLIENT_TIMEOUT;
+        let state = Arc::new(Mutex::new(WireState {
+            receipt_ready: true,
+            receipt_crosses: Some(deadline),
+            ..WireState::default()
+        }));
+        let mut wire = FixtureWire(Arc::clone(&state));
+        let mut exchange = std::pin::pin!(tokio::time::timeout_at(
+            tokio::time::Instant::from_std(deadline),
+            exchange_frame(&mut wire, SHUTDOWN_MESSAGE, Some(deadline)),
+        ));
+        let mut context = Context::from_waker(std::task::Waker::noop());
+        let Poll::Ready(Ok(Err(error))) = exchange.as_mut().poll(&mut context) else {
+            panic!("post-Ready expiry did not classify queued delivery as uncertain");
+        };
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(error.to_string().contains("uncertain"));
+        let state = state.lock().unwrap();
+        assert_eq!(state.receipt_polls, 1);
+        assert_eq!(state.written.last(), Some(&0xff));
+        assert_eq!(&state.written[1..state.written.len() - 1], SHUTDOWN_MESSAGE);
     }
 
     #[test]
