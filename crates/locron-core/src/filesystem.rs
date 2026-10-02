@@ -768,7 +768,6 @@ mod tests {
         let root = temporary.path().join("private");
         let _guard = DirectoryGuard::private(&root).unwrap();
         let path = root.join("package.exe");
-        use std::io::Write;
         create_private_new(&path)
             .unwrap()
             .write_all(b"package")
@@ -847,7 +846,6 @@ mod tests {
         let source = root.join("source.exe");
         let alias = root.join("alias.exe");
         let different = root.join("different.exe");
-        use std::io::Write;
         create_private_new(&source)
             .unwrap()
             .write_all(b"same")
