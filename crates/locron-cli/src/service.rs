@@ -896,6 +896,57 @@ async fn foreground_serve(
     format: Format,
 ) -> Result<()> {
     let paths = serve_paths(state_dir)?;
+    #[cfg(windows)]
+    let metadata = locron_store::LockMetadata {
+        pid: std::process::id(),
+        lifetime_id: uuid::Uuid::now_v7().to_string(),
+        started_at_us: crate::now_us(),
+        binary_version: env!("CARGO_PKG_VERSION").to_owned(),
+    };
+    #[cfg(windows)]
+    let lock = DaemonLock::acquire_role(&paths.dashboard_lock, &metadata, service_mode)
+        .map_err(|error| ServiceError::Io(format!("cannot own the dashboard lifetime: {error}")))?;
+    #[cfg(windows)]
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    #[cfg(windows)]
+    let control = if service_mode {
+        Some(
+            locron_engine::ipc::bind_role_control(
+                &paths.root,
+                "dashboard",
+                &metadata.lifetime_id,
+                cancellation.clone(),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    #[cfg(windows)]
+    let shutdown = cancellation.cancelled_owned();
+    #[cfg(not(windows))]
+    let shutdown = std::future::pending();
+    let result = serve_dashboard(paths, port_arg, bind_arg, service_mode, format, shutdown).await;
+    #[cfg(windows)]
+    {
+        // Confirm listener teardown before releasing the identity that authorizes role control.
+        if let Some(control) = control {
+            control.abort();
+            let _ = control.await;
+        }
+        drop(lock);
+    }
+    result
+}
+
+async fn serve_dashboard(
+    paths: StatePaths,
+    port_arg: Option<u16>,
+    bind_arg: Option<String>,
+    service_mode: bool,
+    format: Format,
+    shutdown: impl std::future::Future<Output = ()> + Send,
+) -> Result<()> {
     let bind = parse_bind(bind_arg.as_deref()).map_err(|message| anyhow!(message))?;
     let config = Config {
         bind,
@@ -941,7 +992,7 @@ async fn foreground_serve(
             );
         }
     }
-    locron_server::serve(bound, paths)
+    locron_server::serve_until(bound, paths, shutdown)
         .await
         .map_err(|error| ServiceError::Io(format!("the dashboard server failed: {error}")))?;
     Ok(())
@@ -1884,6 +1935,119 @@ impl ServicePort for FakeServicePort {
             executable: None,
             session_available: inner.session,
         })
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_dashboard_tests {
+    use super::foreground_serve;
+    use crate::Format;
+    use locron_store::{DaemonLock, StatePaths, StoreError};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn registered_dashboard_control_waits_for_actual_lifetime_exit() {
+        let temporary = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temporary.path().join("private"));
+        let observer = async {
+            let metadata = tokio::time::timeout(Duration::from_secs(30), async {
+                loop {
+                    if let Some(owner) =
+                        DaemonLock::read_role_metadata(&paths.dashboard_lock).unwrap()
+                    {
+                        break owner;
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(metadata.service_mode);
+            assert!(matches!(
+                DaemonLock::try_prove_free(&paths.dashboard_lock),
+                Err(StoreError::MigrationRequiresDaemonRestart)
+            ));
+            assert!(
+                foreground_serve(
+                    Some(paths.root.clone()),
+                    Some(0),
+                    Some("127.0.0.1".into()),
+                    true,
+                    Format::Json
+                )
+                .await
+                .is_err()
+            );
+            assert_eq!(
+                DaemonLock::read_role_metadata(&paths.dashboard_lock)
+                    .unwrap()
+                    .unwrap(),
+                metadata
+            );
+            let root = paths.root.clone();
+            let lifetime = metadata.metadata.lifetime_id;
+            tokio::time::timeout(Duration::from_secs(30), async move {
+                loop {
+                    let root = root.clone();
+                    let lifetime = lifetime.clone();
+                    let delivered = tokio::task::spawn_blocking(move || {
+                        locron_core::notification::request_shutdown(&root, "dashboard", &lifetime)
+                    })
+                    .await
+                    .unwrap();
+                    if delivered.is_ok() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            })
+            .await
+            .unwrap();
+        };
+        let serving = foreground_serve(
+            Some(paths.root.clone()),
+            Some(0),
+            Some("127.0.0.1".into()),
+            true,
+            Format::Json,
+        );
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(45), async {
+            tokio::join!(serving, observer)
+        })
+        .await
+        .unwrap();
+        result.unwrap();
+        assert!(
+            DaemonLock::read_role_metadata(&paths.dashboard_lock)
+                .unwrap()
+                .is_none()
+        );
+        DaemonLock::try_prove_free(&paths.dashboard_lock).unwrap();
+    }
+
+    #[tokio::test]
+    async fn dashboard_startup_failure_releases_its_lifetime() {
+        let temporary = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temporary.path().join("private"));
+        let occupied = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        assert!(
+            foreground_serve(
+                Some(paths.root.clone()),
+                Some(port),
+                Some("127.0.0.1".into()),
+                true,
+                Format::Json
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            DaemonLock::read_role_metadata(&paths.dashboard_lock)
+                .unwrap()
+                .is_none()
+        );
+        DaemonLock::try_prove_free(&paths.dashboard_lock).unwrap();
     }
 }
 
