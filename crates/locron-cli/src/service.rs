@@ -734,15 +734,22 @@ fn token_facts(paths: &StatePaths) -> Result<Value, ServiceError> {
     match std::fs::metadata(&path) {
         Ok(metadata) => {
             #[cfg(unix)]
-            let mode = {
+            let permissions = {
                 use std::os::unix::fs::PermissionsExt;
-                metadata.permissions().mode() & 0o777
+                if metadata.permissions().mode() & 0o077 == 0 {
+                    "owner_only"
+                } else {
+                    "world_readable"
+                }
             };
             #[cfg(not(unix))]
-            let mode = 0o600;
+            let permissions = {
+                let _ = metadata;
+                "unsupported"
+            };
             Ok(json!({
                 "present": true,
-                "permissions": if mode.trailing_zeros() >= 6 { "owner_only" } else { "world_readable" },
+                "permissions": permissions,
             }))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

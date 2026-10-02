@@ -74,6 +74,10 @@ New files inherit only from validated private parents; inspect existing files be
 sensitive contents. Shared core primitives let store, engine output and server token enforce the
 same rule without reversing the workspace dependency graph. doctor reports measured ACL facts.
 
+During the build-foundation stage, unimplemented Windows permission changes fail with an explicit
+unsupported-capability error, and permission diagnostics report `unsupported`. Compilation alone
+must never turn a no-op permission adapter or a numeric placeholder into an owner-only fact.
+
 ### Wake, cooperative role control and Task Scheduler
 
 Use Windows-only interprocess =2.4.4 with tokio, safe SDDL SecurityDescriptor deserialization and
