@@ -921,6 +921,12 @@ with no execution possible, retry at most three times in the same combined four-
 each after a cancellable sixty-second wait. Privacy, diagnostic/infrastructure failure and
 ExecutionMayHaveStarted refuse without automatic replay. Never retry a still-mapped/unconfirmed old worker or
 replay an uncertain spawn. Exit zero or cooperative cancellation ends the registration lifetime.
+Eligible known-not-started retry requires the factory's typed NotStarted and only NotFound,
+Interrupted or WouldBlock after the retained program/root/privacy/log prechecks succeeded.
+PermissionDenied, InvalidInput, Other, Job setup, control and diagnostic failures refuse even
+when no native child exists. Keep separate bounded completed and not_started fact entries, with
+their combined count at most four. Exhausted NotStarted is infrastructure failure 70, without
+inventing a child exit code; actual child i32 statuses remain unchanged.
 During shutdown, cancel the exact worker endpoint once its PID/UUID/held lease match this owned
 child, including manual-owner waiting. Forward cancellation while startup establishes that lease;
 wait for actual child/tree/role/worker lease exit under one thirty-second budget. A remaining

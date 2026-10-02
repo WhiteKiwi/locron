@@ -3203,6 +3203,16 @@ Sources: [Scheduler restart count](https://learn.microsoft.com/en-us/windows/win
 [Rust bounded channel receive](https://doc.rust-lang.org/1.94.0/std/sync/mpsc/struct.Receiver.html#method.recv_timeout),
 [Rust nonblocking join observation](https://doc.rust-lang.org/1.94.0/std/thread/struct.JoinHandle.html#method.is_finished).
 
+The inspected OwnedChild factory constructs its independent Job before native command spawn and
+maps Job-creation failures to io::Error::other. Therefore NotStarted alone is not a launch-retry
+classification. Development selects only typed NotStarted with NotFound, Interrupted or WouldBlock
+after all retained program/root/privacy/log prechecks; PermissionDenied, InvalidInput, Other and
+all Job/control/diagnostic failures remain refusal. The four-start limit combines known-not-started
+and actual completed attempts. Final known-not-started exhaustion has its own bounded private facts
+and infrastructure 70, never a fabricated completed child code.
+Sources: [reviewed independent Job creation](https://github.com/ohadravid/win32job-rs/blob/17080e2a29ea244bb4e58400dc27739075b2fbc8/src/job.rs),
+[Rust 1.94 I/O error kinds](https://doc.rust-lang.org/1.94.0/std/io/enum.ErrorKind.html).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
