@@ -1669,6 +1669,20 @@ destinations are refused. Uninstall requires this receipt, quiesces only exact o
 removes only receipt-listed unchanged files and an installer-inserted PATH entry, and retains state.
 Standalone and WinGet locations coexist; neither installer adopts the other's files.
 
+The Windows receipt keeps the sibling filename .locron-install-receipt-v1 and uses the strict
+locron.install/windows-v1 JSON schema. Its six listed payloads are the four exact ZIP members,
+uninstall.ps1 and .locron-installer.ps1 (the canonical install.ps1 release asset, retained to share
+the verified bootstrap with removal). Every listed file has a SHA-256; the receipt binds its own
+canonical directory, executable, SID and standalone channel. It never grants ownership through
+filename alone. Uninstall may retain a modified listed file with an explicit warning, and removes
+the directory only when it is empty. For an opt-in user PATH insertion, record the complete prior
+and resulting user PATH values. Restore that prior value only while the current value still equals
+the recorded result; retain a subsequently edited PATH with a warning instead of deleting a
+potential user-owned entry. This receipt is Windows-only; the existing Unix receipt bytes remain
+unchanged. Operation status uses locron.windows-status/v1 with operation_id, SID, canonical
+executable, phase, current/new version, updated, prepared and warnings; the status file alone
+cannot authorize changes, and is read only after validating its protected operation request.
+
 Keep the release inventory unchanged by placing WinGet maintenance in install.ps1:
 -Maintenance Prepare|Complete|Remove with -Executable and -Operation selects that explicit flow.
 Prepare copies the verified existing package executable as the hidden helper into the protected
