@@ -34,12 +34,12 @@ use serde_json::{Value, json};
 
 use crate::{Format, render};
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 mod windows_record;
 #[cfg(windows)]
 mod windows_supervisor;
-#[cfg(windows)]
-pub(crate) use windows_record::{ServicePersistencePlan, ServiceRestoreRecord};
+#[cfg(all(windows, test))]
+pub(crate) use windows_record::ServiceRestoreRecord;
 #[cfg(windows)]
 pub(crate) use windows_supervisor::supervise;
 

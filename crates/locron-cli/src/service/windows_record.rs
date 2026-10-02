@@ -658,6 +658,12 @@ impl ServiceRestoreRecord {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
+    use locron_core::filesystem::{
+        DirectoryGuard, create_private_new, file_identity, read_owned_executable,
+    };
+
     use super::{
         ExecutableBinding, ForcedInstance, ForcedPhase, RestorePhase, RestoreRole, RoleProgress,
         ServiceRestoreRecord, task_name, validate_path,
@@ -665,6 +671,48 @@ mod tests {
     use crate::service::Target;
 
     const SID: &str = "S-1-5-21-1-2-3-1001";
+
+    #[test]
+    fn retained_native_binding_round_trips_current_account_and_complete_identity() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(temporary.path())
+            .unwrap()
+            .join("private");
+        let _root = DirectoryGuard::private(&root).unwrap();
+        let original = root.join("original 子.exe");
+        let equal_bytes = root.join("different 子.exe");
+        for path in [&original, &equal_bytes] {
+            let mut file = create_private_new(path).unwrap();
+            file.write_all(b"same-owned-bytes").unwrap();
+            file.sync_all().unwrap();
+        }
+        let original = read_owned_executable(&original).unwrap();
+        let other = read_owned_executable(&equal_bytes).unwrap();
+        let identity = file_identity(&original).unwrap();
+        let other_identity = file_identity(&other).unwrap();
+        let sid = locron_core::windows::current_user_sid().unwrap();
+        let snapshot = ServiceRestoreRecord::snapshot(
+            sid.clone(),
+            ExecutableBinding::guarded(&original).unwrap(),
+            Vec::new(),
+        )
+        .unwrap();
+        let encoded = serde_json::to_vec(&snapshot).unwrap();
+        let decoded: ServiceRestoreRecord = serde_json::from_slice(&encoded).unwrap();
+        decoded.validate_for_sid(&sid).unwrap();
+        decoded.validate_successor(&snapshot).unwrap();
+        assert_eq!(decoded.previous_path(), original.normalized_path());
+        assert!(decoded.matches_previous_identity(&identity));
+        assert!(!decoded.matches_previous_identity(&other_identity));
+        assert_eq!(
+            std::fs::read(original.normalized_path()).unwrap(),
+            std::fs::read(other.normalized_path()).unwrap()
+        );
+        assert_eq!(decoded.phase(), "snapshot");
+        assert!(!decoded.is_quiesced());
+        assert!(decoded.next_path().is_none());
+        assert!(encoded.len() <= decoded.persistence_plan().unwrap().max_record_bytes);
+    }
 
     #[test]
     fn future_readbacks_preserve_none_path_and_all_identity_bits() {
@@ -767,6 +815,38 @@ mod tests {
     #[test]
     fn successors_permit_only_single_forward_edges_and_unchanged_recovery_observations() {
         let states = restore_walk();
+        let expected_phases = [
+            "snapshot",
+            "quiescing",
+            "quiescing",
+            "quiescing",
+            "quiescing",
+            "quiescing",
+            "quiescing",
+            "quiescing",
+            "quiescing",
+            "quiescent",
+            "restoring",
+            "restoring",
+            "restoring",
+            "restoring",
+            "restoring",
+            "restoring",
+            "restoring",
+            "restoring",
+            "restoring",
+            "restored",
+        ];
+        assert_eq!(
+            states
+                .iter()
+                .map(ServiceRestoreRecord::phase)
+                .collect::<Vec<_>>(),
+            expected_phases
+        );
+        for (index, state) in states.iter().enumerate() {
+            assert_eq!(state.is_quiesced(), index == 9);
+        }
         for (prior_index, previous) in states.iter().enumerate() {
             for (next_index, next) in states.iter().enumerate() {
                 assert_eq!(
@@ -791,6 +871,22 @@ mod tests {
             });
         }
         push_state(&mut removal, |next| next.phase = RestorePhase::Removed);
+        assert!(removal.iter().all(ServiceRestoreRecord::is_quiesced));
+        assert_eq!(
+            removal
+                .iter()
+                .map(ServiceRestoreRecord::phase)
+                .collect::<Vec<_>>(),
+            [
+                "quiescent",
+                "removing",
+                "removing",
+                "removing",
+                "removing",
+                "removing",
+                "removed"
+            ]
+        );
         for (prior_index, previous) in removal.iter().enumerate() {
             for (next_index, next) in removal.iter().enumerate() {
                 assert_eq!(
