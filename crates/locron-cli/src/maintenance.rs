@@ -602,6 +602,10 @@ mod tests {
         file.sync_all().unwrap();
     }
 
+    fn orphan_pass_time() -> i64 {
+        i64::try_from(UNIX_EPOCH.elapsed().unwrap().as_micros()).unwrap() + 2 * 60 * 60 * 1_000_000
+    }
+
     fn admit_one(store: &Store, run_id: &str) -> String {
         let job_id = uuid::Uuid::from_u128(1).to_string();
         store
@@ -817,7 +821,7 @@ mod tests {
         }
         fs::create_dir(directory.join("unexpected")).unwrap();
 
-        let report = maintain(&store, &paths, "no-lifetime", i64::MAX / 2).unwrap();
+        let report = maintain(&store, &paths, "no-lifetime", orphan_pass_time()).unwrap();
 
         assert_eq!(report.actions, MAX_ACTIONS);
         assert_eq!(report.orphans_removed, MAX_ACTIONS);
@@ -852,7 +856,7 @@ mod tests {
         // The owning daemon dies; the restarted daemon recovers the
         // referenced partial and removes the unreferenced 2.log.
         let restarted = restart_lifetime(&store, 9);
-        let report = maintain(&store, &paths, &restarted, i64::MAX / 2).unwrap();
+        let report = maintain(&store, &paths, &restarted, orphan_pass_time()).unwrap();
 
         assert_eq!(report.outputs_recovered, 1);
         assert_eq!(report.orphans_removed, 1);
@@ -874,7 +878,7 @@ mod tests {
         let link = directory.join("1.log");
         symlink(&target, &link).unwrap();
 
-        let report = maintain(&store, &paths, "no-lifetime", i64::MAX / 2).unwrap();
+        let report = maintain(&store, &paths, "no-lifetime", orphan_pass_time()).unwrap();
 
         assert_eq!(report.orphans_removed, 0);
         assert!(
@@ -884,5 +888,233 @@ mod tests {
                 .is_symlink()
         );
         assert_eq!(fs::read(target).unwrap(), b"keep");
+    }
+
+    #[cfg(windows)]
+    mod windows_contracts {
+        use std::path::PathBuf;
+        use std::sync::{Arc, mpsc};
+        use std::time::{Duration, Instant};
+
+        use super::*;
+
+        fn partial_fixture(
+            run_id: &str,
+        ) -> (tempfile::TempDir, StatePaths, Store, String, PathBuf) {
+            let (temporary, paths, store) = open_store();
+            admit_one(&store, run_id);
+            let partial = paths.partial_output(run_id, 1).unwrap();
+            let mut writer = FrameWriter::create(&partial).unwrap();
+            writer
+                .write(FrameChannel::Stdout, 1, b"recover me")
+                .unwrap();
+            writer.sync().unwrap();
+            drop(writer);
+            let lifetime = restart_lifetime(&store, 9);
+            (temporary, paths, store, lifetime, partial)
+        }
+
+        fn add_world_read(path: &Path) {
+            locron_core::windows::run_script_json(
+                r"$acl=Get-Acl -LiteralPath ([string]$request.path);
+                $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'),'Read','Allow'));
+                Set-Acl -LiteralPath ([string]$request.path) -AclObject $acl;
+                @{changed=$true} | ConvertTo-Json -Compress",
+                &serde_json::json!({"path":path}),
+            )
+            .unwrap();
+        }
+
+        fn junction(link: &Path, target: &Path) {
+            locron_core::windows::run_script_json(
+                "New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null; @{created=$true} | ConvertTo-Json -Compress",
+                &serde_json::json!({"link":link,"target":target}),
+            )
+            .unwrap();
+        }
+
+        #[test]
+        fn missing_output_root_is_not_recreated_by_maintenance() {
+            let (_temporary, paths, store) = open_store();
+            fs::remove_dir(&paths.outputs).unwrap();
+
+            assert!(maintain(&store, &paths, "no-lifetime", 10).is_err());
+            assert!(!paths.outputs.exists());
+            assert!(maintain(&store, &paths, "no-lifetime", 11).is_err());
+            assert!(!paths.outputs.exists());
+        }
+
+        #[test]
+        fn recovery_waits_for_an_owned_reader_and_preserves_frames() {
+            let run_id = uuid::Uuid::from_u128(22).to_string();
+            let (_temporary, paths, store, lifetime, partial) = partial_fixture(&run_id);
+            let final_path = paths.final_output(&run_id, 1).unwrap();
+            let mut reader = FrameReader::open(&partial).unwrap();
+            assert_eq!(reader.next_frame().unwrap().unwrap().payload, b"recover me");
+            assert!(matches!(
+                fs::rename(&partial, &final_path)
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(32 | 33)
+            ));
+            let store = Arc::new(store);
+            let maintenance_store = store.clone();
+            let maintenance_paths = paths.clone();
+            let maintenance_lifetime = lifetime.clone();
+            let (sender, receiver) = mpsc::channel();
+            let recovery = std::thread::spawn(move || {
+                sender
+                    .send(maintain(
+                        &maintenance_store,
+                        &maintenance_paths,
+                        &maintenance_lifetime,
+                        10,
+                    ))
+                    .unwrap();
+            });
+            assert!(matches!(
+                receiver.recv_timeout(Duration::from_millis(150)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ));
+            drop(reader);
+            let report = receiver
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .unwrap();
+            recovery.join().unwrap();
+
+            assert_eq!(report.outputs_recovered, 1);
+            assert!(!partial.exists());
+            assert!(
+                store
+                    .referenced_partial_artifacts(10, &lifetime)
+                    .unwrap()
+                    .is_empty()
+            );
+            let mut finalized = FrameReader::open(&final_path).unwrap();
+            assert_eq!(
+                finalized.next_frame().unwrap().unwrap().payload,
+                b"recover me"
+            );
+            assert!(finalized.next_frame().unwrap().is_none());
+        }
+
+        #[test]
+        fn reader_sharing_timeout_keeps_recovery_pending_until_a_later_pass() {
+            let run_id = uuid::Uuid::from_u128(23).to_string();
+            let (_temporary, paths, store, lifetime, partial) = partial_fixture(&run_id);
+            let final_path = paths.final_output(&run_id, 1).unwrap();
+            let reader = FrameReader::open(&partial).unwrap();
+            assert!(matches!(
+                fs::rename(&partial, &final_path)
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(32 | 33)
+            ));
+            let started = Instant::now();
+            assert!(maintain(&store, &paths, &lifetime, 10).is_err());
+            let elapsed = started.elapsed();
+            assert!(
+                elapsed >= Duration::from_millis(4500),
+                "elapsed={elapsed:?}"
+            );
+            assert!(elapsed < Duration::from_secs(8), "elapsed={elapsed:?}");
+            assert!(partial.is_file());
+            assert!(!final_path.exists());
+            assert_eq!(
+                store
+                    .referenced_partial_artifacts(10, &lifetime)
+                    .unwrap()
+                    .len(),
+                1
+            );
+            drop(reader);
+
+            let report = maintain(&store, &paths, &lifetime, 11).unwrap();
+
+            assert_eq!(report.outputs_recovered, 1);
+            assert!(!partial.exists());
+            let mut finalized = FrameReader::open(&final_path).unwrap();
+            assert_eq!(
+                finalized.next_frame().unwrap().unwrap().payload,
+                b"recover me"
+            );
+            assert!(finalized.next_frame().unwrap().is_none());
+        }
+
+        // Descriptor and junction setup uses the one generic adapter sequentially;
+        // the other cases exercise actual filesystem sharing without that adapter.
+        #[test]
+        fn unsafe_objects_preserve_recovery_prunes_and_unrelated_targets() {
+            for unsafe_parent in [false, true] {
+                let run_id = uuid::Uuid::from_u128(24).to_string();
+                let (_temporary, paths, store, lifetime, partial) = partial_fixture(&run_id);
+                let original = fs::read(&partial).unwrap();
+                let directory = partial.parent().unwrap();
+                let unsafe_path = if unsafe_parent { directory } else { &partial };
+                add_world_read(unsafe_path);
+                assert!(!locron_core::filesystem::is_private(unsafe_path, unsafe_parent).unwrap());
+
+                assert!(maintain(&store, &paths, &lifetime, 10).is_err());
+
+                assert_eq!(fs::read(&partial).unwrap(), original);
+                assert!(!paths.final_output(&run_id, 1).unwrap().exists());
+                assert_eq!(
+                    store
+                        .referenced_partial_artifacts(10, &lifetime)
+                        .unwrap()
+                        .len(),
+                    1
+                );
+                assert!(!locron_core::filesystem::is_private(unsafe_path, unsafe_parent).unwrap());
+            }
+
+            let run_id = uuid::Uuid::from_u128(25).to_string();
+            let (_temporary, paths, store, lifetime, _partial) = partial_fixture(&run_id);
+            maintain(&store, &paths, &lifetime, 10).unwrap();
+            let final_path = paths.final_output(&run_id, 1).unwrap();
+            let original = fs::read(&final_path).unwrap();
+            let output = store.output_retention_candidates(1).unwrap().remove(0);
+            store.mark_output_prune_pending(&output, 11).unwrap();
+            add_world_read(&final_path);
+
+            assert!(maintain(&store, &paths, &lifetime, 12).is_err());
+
+            assert_eq!(fs::read(&final_path).unwrap(), original);
+            assert_eq!(store.pending_output_prunes(1).unwrap().len(), 1);
+            drop(store);
+            let store = Store::open(paths.clone(), "test", 13).unwrap();
+            assert_eq!(store.pending_output_prunes(1).unwrap().len(), 1);
+            drop(store);
+
+            let (temporary, paths, store) = open_store();
+            let target = temporary.path().join("outside private target");
+            locron_core::filesystem::DirectoryGuard::private(&target).unwrap();
+            let target_file = target.join("1.log");
+            write_private(&target_file, b"keep target");
+            let directory_link = paths
+                .output_directory(&uuid::Uuid::from_u128(26).to_string())
+                .unwrap();
+            junction(&directory_link, &target);
+            let directory = paths
+                .output_directory(&uuid::Uuid::from_u128(27).to_string())
+                .unwrap();
+            locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
+            let leaf_link = directory.join("1.log");
+            junction(&leaf_link, &target);
+            let broad_leaf = directory.join("2.log");
+            write_private(&broad_leaf, b"keep broad leaf");
+            add_world_read(&broad_leaf);
+
+            let result = maintain(&store, &paths, "no-lifetime", orphan_pass_time());
+            // Remove only these exact fixture junctions before temporary-tree cleanup.
+            fs::remove_dir(&leaf_link).unwrap();
+            fs::remove_dir(&directory_link).unwrap();
+            let report = result.unwrap();
+
+            assert_eq!(report.orphans_removed, 0);
+            assert_eq!(fs::read(target_file).unwrap(), b"keep target");
+            assert_eq!(fs::read(broad_leaf).unwrap(), b"keep broad leaf");
+        }
     }
 }
