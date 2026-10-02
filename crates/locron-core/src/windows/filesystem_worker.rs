@@ -155,18 +155,17 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
     let mut quarantine = false;
     loop {
         let request = if worker.is_some() && !quarantine {
-            match tokio::time::timeout(IDLE, receiver.recv()).await {
-                Ok(request) => request,
-                Err(_) => {
-                    if let Some(owned) = worker.as_mut() {
-                        if owned.cleanup().await.is_ok() {
-                            worker = None;
-                        } else {
-                            quarantine = true;
-                        }
+            if let Ok(request) = tokio::time::timeout(IDLE, receiver.recv()).await {
+                request
+            } else {
+                if let Some(owned) = worker.as_mut() {
+                    if owned.cleanup().await.is_ok() {
+                        worker = None;
+                    } else {
+                        quarantine = true;
                     }
-                    continue;
                 }
+                continue;
             }
         } else {
             receiver.recv().await
@@ -382,18 +381,17 @@ impl Worker {
                 .query_process_id_list()
                 .is_ok_and(|processes| processes.is_empty());
             if reaped && empty {
-                if !self.stderr.is_finished() {
-                    if tokio::time::timeout_at(
+                if !self.stderr.is_finished()
+                    && tokio::time::timeout_at(
                         tokio::time::Instant::from_std(deadline),
                         &mut self.stderr,
                     )
                     .await
                     .is_err()
-                    {
-                        return Err(io::Error::other(
-                            "filesystem pipe cleanup remains unconfirmed",
-                        ));
-                    }
+                {
+                    return Err(io::Error::other(
+                        "filesystem pipe cleanup remains unconfirmed",
+                    ));
                 }
                 return Ok(());
             }
