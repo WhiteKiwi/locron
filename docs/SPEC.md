@@ -564,8 +564,11 @@ Store distribution remain outside this milestone.
 - Daemon and dashboard startup registration uses the current interactive user's login session,
   least privilege and no stored password. The daemon runs while the user is logged in, including
   a locked session; signed-out execution is outside this milestone. Registrations impose no
-  arbitrary execution-duration, battery, idle or network-availability stop condition, restart
-  unexpected failures with a bounded policy, and can be installed/refreshed/removed without admin.
+  arbitrary execution-duration, battery, idle or network-availability stop condition and can be
+  installed/refreshed/removed without admin. One activation admits at most four role starts, with
+  one-minute waits before the three eligible retries. A known failure before execution or a
+  confirmed nonzero role exit may consume that budget. Privacy, infrastructure and unconfirmed
+  cleanup failures stop explicitly; a new activation requires operator action or the next logon.
 - Local wake notifications are restricted to the owning account and state instance. IPC failure
   retains periodic durable reconciliation and never becomes a correctness prerequisite.
 - The initial distribution uses immutable unsigned x64/ARM64 ZIPs from the canonical HTTPS GitHub

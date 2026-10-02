@@ -3170,6 +3170,39 @@ remain necessary; neither timeout nor acknowledgement authorizes replay or repla
 
 Source: [locked Tokio timeout polling order](https://github.com/tokio-rs/tokio/blob/75fef53d0a8590c2d1dbb63672aa7b7d1ef51155/tokio/src/time/timeout.rs#L211).
 
+### Registered supervisor deadline and retry ownership refinement (2026-10-03)
+
+Review of the initial supervisor source found a real deadline gap: repeated private native file
+observations, transition writes, sync_all and the independent five-second rename-sharing retry
+were synchronous outside the supplied shutdown budget. Cached verified SID and retained existing
+root guards mean these paths normally do not start another filesystem PowerShell query, but that
+fact cannot bound a native file operation. A timeout around an uncancellable blocking operation
+also cannot retract an already initiated write or prove thread/process/lock exit.
+
+Select one runtime-owned native lifecycle/I/O worker with a finite request slot and retained state,
+executable, activation and child/Job ownership. The driver waits only for the caller's remaining
+absolute deadline; the worker checks the same deadline before each new operation and after replies.
+On timeout, close admission and quarantine the worker/ownership, without joining an unfinished
+thread or starting another cleanup/fact-write budget. Late I/O completion remains uncertain. An
+error cannot authorize replacement, another child start or a claim of graceful exit. This design
+uses safe owned Rust handles and channels rather than treating a synchronous syscall as cancellable.
+
+RestartCount is the number of Scheduler task restarts, not a typed Locron child-outcome policy.
+Keeping Count=3 around a native four-start supervisor can restart that entire loop. The observed
+positive role exit which did not restart does not prove all exit codes behave that way. Select
+one owner: disable Scheduler RestartOnFailure (read back Count=0 and no restart interval) and let
+the retained native supervisor own the four-start budget. Preserve genuine final child codes,
+including negative Windows statuses and genuine child 70, in both exit facts and launcher
+propagation; infrastructure 70 remains a different typed private cause. A known NotStarted spawn
+may retry within the same total four-start budget; execution/cleanup uncertainty never may.
+An action which cannot launch the native owner fails visibly and does not create an independent
+SDK retry budget. The next logon or explicit activation is a new lifetime.
+
+Sources: [Scheduler restart count](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-restartcount),
+[Scheduler restart interval](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-restartinterval),
+[Rust bounded channel receive](https://doc.rust-lang.org/1.94.0/std/sync/mpsc/struct.Receiver.html#method.recv_timeout),
+[Rust nonblocking join observation](https://doc.rust-lang.org/1.94.0/std/thread/struct.JoinHandle.html#method.is_finished).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development

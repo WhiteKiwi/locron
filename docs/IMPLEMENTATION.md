@@ -870,8 +870,9 @@ guarded observer/inventory/quiescence. No new public product role or CLI command
 
 ### Registered Windows role supervisor
 
-Native Scheduler RestartOnFailure settings remain configured for action-launch failure, but the
-measured completed-role exits did not restart. The fixed hidden PowerShell launcher therefore
+The earlier Count=3 Scheduler restart candidate is superseded: read back RestartCount=0 with
+no restart interval. Scheduler never restarts the entire native owner's four-start policy.
+The fixed hidden PowerShell launcher
 waits for a native Locron supervisor; Rust owns ordinary daemon/dashboard failure retries and
 private exit facts. Introduce only the hidden Windows entry `service supervise --role daemon` or
 `service supervise --role dashboard`, with the existing global state directory. Registration uses
@@ -914,8 +915,10 @@ Runtime owns this shared process factory and main/worker flag composition; servi
 supervisor, dashboard worker composition and guarded registration/quiescence; store owns paths
 and existing-only probe. Core adds only the fixed role allowlist, without public async types.
 
-After a genuine nonzero child exit and confirmed complete tree exit, retry at most three times,
-each after a cancellable sixty-second wait. Never retry a still-mapped/unconfirmed old worker or
+After a genuine nonzero child exit and confirmed complete tree exit, or a typed NotStarted spawn
+with no execution possible, retry at most three times in the same combined four-start budget,
+each after a cancellable sixty-second wait. Privacy, diagnostic/infrastructure failure and
+ExecutionMayHaveStarted refuse without automatic replay. Never retry a still-mapped/unconfirmed old worker or
 replay an uncertain spawn. Exit zero or cooperative cancellation ends the registration lifetime.
 During shutdown, cancel the exact worker endpoint once its PID/UUID/held lease match this owned
 child, including manual-owner waiting. Forward cancellation while startup establishes that lease;
@@ -938,10 +941,61 @@ failure with retained diagnostics, never a fabricated child outcome or successfu
 
 The hidden supervisor entry dispatches before ordinary state opening and awaits the service's
 `Result<i32, ServiceError>` teardown result. An `Ok` code reaches the process boundary unchanged,
-including a genuine child exit of 70. An `Err` is wrapped as a dedicated supervisor infrastructure
-failure and exits 70 with an explicit machine error category; private runtime facts retain the
-typed cause that distinguishes it from child completion. Preserve existing public service error
-codes (unsupported 2, managed 3, command/I/O 5) and unrelated generic error handling.
+including a genuine child exit of 70 or a negative status. Every `Err` reaches direct process exit
+70 without the public renderer or a join of unfinished quarantined work. Private runtime facts
+retain the typed cause that distinguishes infrastructure refusal from child completion. Preserve
+existing public service error codes (unsupported 2, managed 3, command/I/O 5) and unrelated generic
+error handling; invalid Clap arguments still exit 2 before this hidden dispatch.
+
+Move all potentially blocking native child/Job observations and private file operations to one
+runtime-owned worker per registered activation. This worker owns the guarded root/executable,
+activation lease and exact child/uncertain Job, with one finite command slot; it is not a
+per-observation detached thread or a second PowerShell adapter. Keep the secured cancellation
+listener on the main async runtime. Startup uses a bounded entry request; cancellation captures
+one absolute thirty-second deadline before the first stopping observation or fact/log flush.
+Propagate it through queue admission, handle read/probe/re-read, native wait/Job query, exact
+shutdown delivery, role/worker lease confirmation, diagnostics, sync and listener teardown.
+Check expiry before new operations and after responses, including already-ready responses.
+
+Retain permanent lock handles and validated sidecar handles once the exact child PID/UUID owns
+them. Re-read that retained metadata around the nonblocking actual-lock probe; an unrelated
+manual role's sidecar is never retained across its exit, because doing so could obstruct the
+next child's atomic sidecar publication. Missing startup leaves are observed under the retained
+existing root; they never trigger directory creation or a fresh SID initialization. Handle
+opens/readback still verify the actual private descriptor and no-reparse identity.
+
+The driver awaits each worker response only within the remaining caller deadline. If a native
+operation remains in flight at expiry, close worker admission and quarantine its retained root,
+executable, activation and child/Job ownership. Do not join an unfinished worker, replay its
+operation, claim cancellation/exit, start a replacement child, or schedule a post-deadline error
+write. Already-queued writes may complete later; uncertainty stays an explicit infrastructure
+failure. The dedicated hidden CLI exits 70 without a blocking renderer after expiry; process
+exit closes its owned handles, and kernel Job containment is emergency cleanup, never proof.
+A still-live in-process fixture keeps the quarantined ownership until its blocked worker exits,
+so another activation/replacement remains refused. Normal completion confirms worker response,
+real root plus empty Job, role/worker lease exit and listener teardown before releasing activation.
+
+Preserve registered child stdout and stderr in current-SID/SYSTEM-only service.daemon.log or
+service.dashboard.log under the retained state root. Initialize/open append handles before
+spawning, pass safe cloned handles as exact child Stdio, and retain their guards through child
+tree exit; registered output is not discarded. Runtime facts and log sync/rename are owned worker
+operations under the same deadline. Never invoke the independent five-second rename retry on
+the shutdown path; any retry uses only its remaining absolute budget. Failed/uncertain diagnostic
+persistence cannot fabricate an actual child outcome. At most four attempt facts distinguish
+actual completed exits from known-not-started attempts and infrastructure/refusal causes.
+
+Verify: (1) actual native fixtures stall the owned I/O operation before metadata read, during
+fact/rename/sync and at a ready response crossing expiry; each caller refuses under one budget,
+keeps quarantined guards/Job, sends no late/replayed control, and launches no later child. Normal
+release proves exact owned locks/tree/listeners exit; manual ownership remains unchanged.
+(2) four genuine role exits with three real sixty-second waits preserve every actual code,
+including child 70 and negative status, with no descendant overlap. Read back Count=0 and observe
+no fifth child/whole-supervisor SDK restart beyond the former restart interval. A known NotStarted
+uses the same four-start ceiling; uncertain spawn and infrastructure failure never retry.
+(3) startup/wait/running/retry cancellation and fact-write failure share the one deadline; bounded
+stdout/stderr marker fixtures prove logs survive successful and failed roles privately, while
+exhaustion and infrastructure 70 remain distinct. This supersedes the initial source's synchronous
+deadline/fact behavior before publication or registration consumers.
 
 Native Verify: (1) invalid/missing/stale parent and child lifetimes refuse without creating state;
 manual ownership survives registered waiting, exact cancellation stops the waiter, and manual
