@@ -138,12 +138,13 @@ mod tests {
         assert!(valid_token(&first));
         let second = ensure(&paths).expect("reuse");
         assert_eq!(first, second, "an existing token must be reused");
-        let metadata = fs::metadata(token_path(&paths)).expect("token file");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            let metadata = fs::metadata(token_path(&paths)).expect("token file");
             assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
         }
+        assert!(locron_core::filesystem::is_private(&token_path(&paths), false).unwrap());
         assert_eq!(fs::read_to_string(token_path(&paths)).unwrap(), first);
     }
 
@@ -161,7 +162,10 @@ mod tests {
     #[test]
     fn corrupt_token_file_is_rejected() {
         let (_dir, paths) = temp_paths();
-        fs::write(token_path(&paths), "not-a-token").expect("write");
-        assert!(ensure(&paths).is_err());
+        locron_core::filesystem::create_private_new(&token_path(&paths))
+            .expect("private token file")
+            .write_all(b"not-a-token")
+            .expect("write");
+        assert_eq!(ensure(&paths).unwrap_err().kind(), ErrorKind::InvalidData);
     }
 }
