@@ -2989,6 +2989,14 @@ Sources: [PR41 ARM64 failure](https://github.com/WhiteKiwi/locron/actions/runs/3
 [PowerShell 5.1 Import-Module](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/import-module?view=powershell-5.1),
 [PowerShell execution policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1).
 
+The portable test-only TLS fixture reuses locked tokio-rustls 0.26.4 (MIT OR Apache-2.0,
+Rust 1.71) and rustls 0.23.45. Audited published source provides safe TlsAcceptor::from/accept and
+ServerConfig::builder_with_provider/with_single_cert; an explicit AWS-LC provider reuses the
+existing reqwest graph and avoids platform OpenSSL executable assumptions. Embedded certificate
+and PKCS#8 key bytes belong only to tests and are never added to an operating-system trust store.
+Source: [tokio-rustls published manifest](https://docs.rs/crate/tokio-rustls/0.26.4/source/Cargo.toml),
+[TLS acceptor API](https://docs.rs/tokio-rustls/0.26.4/tokio_rustls/struct.TlsAcceptor.html).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development

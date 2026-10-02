@@ -36,6 +36,8 @@ use crate::output::{Channel, OutputStats, OutputWriter};
 
 #[cfg(windows)]
 mod windows;
+#[cfg(all(test, windows))]
+pub(crate) use windows::tests::fixture_spec as native_fixture_spec;
 
 /// Direct or explicit-shell process configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -954,6 +956,32 @@ pub fn resolve_executable(executable: &str, cwd: &Path, path: Option<&String>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    use tokio::io::AsyncReadExt;
+
+    struct TestRoot {
+        _temporary: tempfile::TempDir,
+        root: PathBuf,
+    }
+
+    impl TestRoot {
+        fn path(&self) -> &Path {
+            &self.root
+        }
+    }
+
+    fn test_root() -> TestRoot {
+        let temporary = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let root = temporary.path().join("private");
+        #[cfg(not(windows))]
+        let root = temporary.path().to_path_buf();
+        let _guard = locron_core::filesystem::DirectoryGuard::private(&root).unwrap();
+        TestRoot {
+            _temporary: temporary,
+            root,
+        }
+    }
 
     async fn read_request(stream: &mut tokio::net::TcpStream) -> Vec<u8> {
         let mut request = Vec::new();
@@ -1022,7 +1050,7 @@ mod tests {
                 .await
                 .unwrap();
         });
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let target = TargetSpec::Http(HttpSpec {
             method: method.into(),
             url: format!("http://{source_address}/start").parse().unwrap(),
@@ -1042,7 +1070,7 @@ mod tests {
         (outcome, request)
     }
 
-    fn context(temp: &tempfile::TempDir) -> AttemptContext {
+    fn context(temp: &TestRoot) -> AttemptContext {
         AttemptContext {
             run_id: "run".into(),
             attempt: 1,
@@ -1056,13 +1084,13 @@ mod tests {
 
     #[tokio::test]
     async fn core_executor_port_maps_runner_failures_to_execution_errors() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         std::fs::write(temp.path().join("blocked-parent"), b"not a directory").unwrap();
         let mut attempt = context(&temp);
         attempt.partial_output = temp.path().join("blocked-parent/attempt.partial");
         let request = ExecutionRequest {
             target: TargetSpec::Process(ProcessSpec {
-                executable: "/usr/bin/true".into(),
+                executable: std::env::current_exe().unwrap().display().to_string(),
                 args: Vec::new(),
                 cwd: temp.path().into(),
                 env: BTreeMap::new(),
@@ -1078,9 +1106,10 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn post_spawn_output_failure_terminates_and_reaps_the_process_group() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let pid_file = temp.path().join("grandchild.pid");
         let attempt = context(&temp);
         std::fs::create_dir(&attempt.final_output).unwrap();
@@ -1128,6 +1157,7 @@ mod tests {
         assert!(gone, "spawned process-group member survived output failure");
     }
 
+    #[cfg(unix)]
     #[test]
     fn injected_signal_results_distinguish_already_gone_from_unconfirmed_failure() {
         let mut errors = Vec::new();
@@ -1139,6 +1169,7 @@ mod tests {
         assert!(reason.contains("EPERM"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn sigkill_delivery_accepts_an_absent_group_but_not_permission_failure() {
         assert!(signal_delivered_or_absent(Ok(())));
@@ -1148,13 +1179,16 @@ mod tests {
 
     #[tokio::test]
     async fn process_preserves_argv_and_streams_output() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
+        #[cfg(unix)]
         let spec = ProcessSpec {
             executable: "/bin/sh".into(),
             args: vec!["-c".into(), "printf 'hello'; printf 'bad' >&2".into()],
             cwd: temp.path().into(),
             env: BTreeMap::new(),
         };
+        #[cfg(windows)]
+        let spec = windows::tests::fixture_spec(temp.path(), "echo");
         let outcome = Runner::new(RunnerConfig::default())
             .unwrap()
             .execute(&TargetSpec::Process(spec), &context(&temp))
@@ -1162,24 +1196,30 @@ mod tests {
             .unwrap();
         assert_eq!(outcome.kind, OutcomeKind::Succeeded);
         let frames = crate::output::read_frames(temp.path().join("1.log")).unwrap();
-        assert!(
-            frames
-                .iter()
-                .any(|frame| frame.channel == Channel::Stdout && frame.payload == b"hello")
-        );
-        assert!(
-            frames
-                .iter()
-                .any(|frame| frame.channel == Channel::Stderr && frame.payload == b"bad")
-        );
+        let stdout = frames
+            .iter()
+            .filter(|frame| frame.channel == Channel::Stdout)
+            .flat_map(|frame| frame.payload.iter().copied())
+            .collect::<Vec<_>>();
+        let stderr = frames
+            .iter()
+            .filter(|frame| frame.channel == Channel::Stderr)
+            .flat_map(|frame| frame.payload.iter().copied())
+            .collect::<Vec<_>>();
+        #[cfg(unix)]
+        assert_eq!(stdout, b"hello");
+        #[cfg(windows)]
+        assert!(stdout.ends_with(b"hello"));
+        assert_eq!(stderr, b"bad");
     }
 
     #[tokio::test]
     async fn noisy_process_output_is_drained_and_truncated() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let mut context = context(&temp);
         context.output_limit = 4 * 1024;
         context.timeout = Some(Duration::from_secs(5));
+        #[cfg(unix)]
         let spec = ProcessSpec {
             executable: "/bin/sh".into(),
             args: vec![
@@ -1189,6 +1229,8 @@ mod tests {
             cwd: temp.path().into(),
             env: BTreeMap::new(),
         };
+        #[cfg(windows)]
+        let spec = windows::tests::fixture_spec(temp.path(), "noisy");
         let outcome = Runner::new(RunnerConfig::default())
             .unwrap()
             .execute(&TargetSpec::Process(spec), &context)
@@ -1196,7 +1238,10 @@ mod tests {
             .unwrap();
         assert_eq!(outcome.kind, OutcomeKind::Succeeded);
         assert_eq!(outcome.output.retained_bytes, 4 * 1024);
+        #[cfg(unix)]
         assert_eq!(outcome.output.discarded_bytes, 60 * 1024);
+        #[cfg(windows)]
+        assert!((60 * 1024..61 * 1024).contains(&outcome.output.discarded_bytes));
         assert!(outcome.output.truncated);
         let retained = crate::output::read_frames(temp.path().join("1.log"))
             .unwrap()
@@ -1208,7 +1253,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_executable_is_a_finalized_configuration_outcome() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let spec = ProcessSpec {
             executable: "definitely-not-a-locron-test-executable".into(),
             args: Vec::new(),
@@ -1228,9 +1273,9 @@ mod tests {
 
     #[tokio::test]
     async fn missing_working_directory_is_a_finalized_configuration_outcome() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let spec = ProcessSpec {
-            executable: "/usr/bin/true".into(),
+            executable: std::env::current_exe().unwrap().display().to_string(),
             args: Vec::new(),
             cwd: temp.path().join("removed"),
             env: BTreeMap::new(),
@@ -1248,17 +1293,20 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_is_explicit() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let mut context = context(&temp);
         context.timeout = Some(Duration::from_millis(20));
+        #[cfg(unix)]
         let spec = ProcessSpec {
             executable: "/bin/sh".into(),
             args: vec!["-c".into(), "sleep 2".into()],
             cwd: temp.path().into(),
             env: BTreeMap::new(),
         };
+        #[cfg(windows)]
+        let spec = windows::tests::fixture_spec(temp.path(), "sleep");
         let runner = Runner::new(RunnerConfig {
-            termination_grace: Duration::from_millis(10),
+            termination_grace: Duration::from_millis(if cfg!(windows) { 250 } else { 10 }),
             ..RunnerConfig::default()
         })
         .unwrap();
@@ -1269,9 +1317,10 @@ mod tests {
         assert_eq!(outcome.kind, OutcomeKind::TimedOut);
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn cancellation_kills_a_live_process_grandchild() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let child_script = temp.path().join("child.sh");
         let grandchild_script = temp.path().join("grandchild.sh");
         let ready = temp.path().join("grandchild-ready");
@@ -1341,7 +1390,7 @@ mod tests {
             .unwrap();
             request
         });
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let body_path = temp.path().join("request.body");
         std::fs::write(&body_path, b"materialized payload").unwrap();
         let body = std::fs::read(&body_path).unwrap();
@@ -1380,7 +1429,7 @@ mod tests {
             .await
             .unwrap();
         });
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let target = TargetSpec::Http(HttpSpec {
             method: "GET".into(),
             url: format!("http://{address}/failure").parse().unwrap(),
@@ -1419,7 +1468,7 @@ mod tests {
             .unwrap();
             tokio::time::sleep(Duration::from_millis(250)).await;
         });
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let mut context = context(&temp);
         context.timeout = Some(Duration::from_millis(100));
         let target = TargetSpec::Http(HttpSpec {
@@ -1453,67 +1502,32 @@ mod tests {
 
     #[tokio::test]
     async fn untrusted_local_tls_certificate_is_a_retryable_transport_failure() {
-        let temp = tempfile::tempdir().unwrap();
-        let certificate = temp.path().join("certificate.pem");
-        let private_key = temp.path().join("private-key.pem");
-        let generated = std::process::Command::new("openssl")
-            .args([
-                "req",
-                "-x509",
-                "-newkey",
-                "rsa:2048",
-                "-nodes",
-                "-keyout",
-                private_key.to_str().unwrap(),
-                "-out",
-                certificate.to_str().unwrap(),
-                "-days",
-                "1",
-                "-subj",
-                "/CN=localhost",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .expect("openssl is required for the local TLS fixture");
-        assert!(generated.success());
-
-        let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = reservation.local_addr().unwrap();
-        drop(reservation);
-        let port = address.port().to_string();
-        let mut server = Command::new("openssl");
-        server
-            .args([
-                "s_server",
-                "-accept",
-                &port,
-                "-cert",
-                certificate.to_str().unwrap(),
-                "-key",
-                private_key.to_str().unwrap(),
-                "-www",
-                "-quiet",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        let mut server = server.spawn().unwrap();
-        let mut listening = false;
-        for _ in 0..100 {
-            match tokio::net::TcpStream::connect(address).await {
-                Ok(stream) => {
-                    drop(stream);
-                    listening = true;
-                    break;
-                }
-                Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
-            }
-        }
-        assert!(listening, "local TLS fixture did not start");
-
+        use tokio_rustls::TlsAcceptor;
+        use tokio_rustls::rustls::{
+            ServerConfig,
+            pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer},
+        };
+        let certificate =
+            CertificateDer::from(include_bytes!("../tests/fixtures/untrusted-local.der").to_vec());
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+            include_bytes!("../tests/fixtures/untrusted-local-key.der").to_vec(),
+        ));
+        let config = ServerConfig::builder_with_provider(std::sync::Arc::new(
+            tokio_rustls::rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(vec![certificate], key)
+        .unwrap();
+        let acceptor = TlsAcceptor::from(std::sync::Arc::new(config));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let fixture = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            acceptor.accept(stream).await
+        });
+        let temp = test_root();
         let target = TargetSpec::Http(HttpSpec {
             method: "GET".into(),
             url: format!("https://localhost:{}/", address.port())
@@ -1529,8 +1543,14 @@ mod tests {
             .execute(&target, &context(&temp))
             .await
             .unwrap();
-        server.start_kill().unwrap();
-        server.wait().await.unwrap();
+        let handshake = tokio::time::timeout(Duration::from_secs(5), fixture)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            handshake.is_err(),
+            "the client trusted a test-only self-signed peer"
+        );
         assert_eq!(outcome.kind, OutcomeKind::FailedRetryable);
         assert_eq!(outcome.http_status, None);
         assert!(outcome.reason.starts_with("HTTP transport error:"));
@@ -1567,7 +1587,7 @@ mod tests {
                 .await
                 .unwrap();
         });
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let target = TargetSpec::Http(HttpSpec {
             method: "GET".into(),
             url: format!("http://{source_address}/start").parse().unwrap(),

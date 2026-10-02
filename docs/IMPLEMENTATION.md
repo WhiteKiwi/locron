@@ -915,6 +915,21 @@ retained handle without taking ownership or silently repairing the package. Help
 standalone destination paths keep their stricter current-SID/SYSTEM-only private policy. Native
 tests must preserve permitted package read access and refuse broad write/delete/control rights.
 
+### Native runtime fixtures
+
+Keep portable process/output/HTTP behavior under native Windows tests, with a private managed
+child of each temporary fixture root. A self-spawned native Rust test fixture exercises exact argv,
+raw stdout/stderr, immediate descendant creation, root-first exit, cancellation, timeout and
+kill-on-close without Git Bash or an installed scripting runtime. Signal-number/Unix process-group
+assertions remain Unix-specific; equivalent Windows tests prove owned Job tree behavior.
+
+The TLS trust fixture uses the already-locked tokio-rustls =0.26.4 with an explicit AWS-LC provider
+and repository test-only self-signed DER certificate/key. It never installs a certificate into a
+trust store, invokes external OpenSSL, or changes production trust policy. All architectures verify
+an untrusted local TLS peer is a retryable transport failure. Bounded native IPC tests cover valid
+wake/cooperative control, malformed frames, idle/nonreading clients, first-instance collisions,
+role/lifetime separation and listener teardown while preserving durable reconciliation.
+
 ### Change order and verification
 
 1. Review SPEC, source-backed FINDINGS, these decisions and Project drafts; freeze the minimum
