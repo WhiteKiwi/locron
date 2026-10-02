@@ -42,7 +42,7 @@ pub(super) fn native_target() -> Result<&'static str> {
     }
 }
 
-fn immutable_private(path: &Path, limit: usize) -> Result<(VerifiedFile, Vec<u8>)> {
+pub(super) fn immutable_private(path: &Path, limit: usize) -> Result<(VerifiedFile, Vec<u8>)> {
     // This READ-only gate prevents competing writes and leaf replacement. The
     // additional strict check excludes the broader package-source descriptor.
     let mut file = read_owned_executable(path)?;
