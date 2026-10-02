@@ -1,0 +1,33 @@
+name: Temporary pnpm lockfile migration
+
+on:
+  push:
+    branches:
+      - chore/mise-pnpm-toolchain
+    paths:
+      - .github/workflows/migrate-pnpm-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: chore/mise-pnpm-toolchain
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          working_directory: crates/locron-server/frontend
+      - name: Import npm lockfile
+        working-directory: crates/locron-server/frontend
+        run: pnpm import
+      - name: Commit pnpm lockfile
+        run: |
+          git rm crates/locron-server/frontend/package-lock.json
+          git add crates/locron-server/frontend/pnpm-lock.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: migrate lockfile to pnpm"
+          git push origin HEAD:chore/mise-pnpm-toolchain
