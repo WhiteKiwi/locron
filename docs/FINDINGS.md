@@ -2819,6 +2819,14 @@ trailing backslash without source interpolation. This proves argument transport 
 ownership, role exit propagation and crash restart still require native integrated acceptance.
 Source: [Windows PowerShell 5.1 executable parameters](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
 
+A disposable native registration probe on this host returned elevated=false and successfully
+created/read/deleted one uniquely named disabled task. Readback confirmed INTERACTIVE_TOKEN/LUA,
+PT0S, three PT1M retries, IgnoreNew, disabled battery/idle/network gates, and a protected
+current-SID/SYSTEM-only task DACL with full-control mask 0x1f01ff. It did not execute a Locron role
+or alter an existing task. Principal/logon-trigger readback returned account names despite SID
+inputs, establishing that semantic identity comparison must resolve those names to actual SIDs.
+This proves standard-user registration/readback only, not running-role ownership or restart.
+
 ### Recommended design order and remaining proof
 
 The first native ARM64 core run at PR #41 head `2f5516e` failed four initial private-directory
@@ -2849,6 +2857,16 @@ only for native sharing violations, revalidating both guarded paths each time. A
 holder leaves the synced partial recoverable and the failure observable. Native acceptance
 must hold a framed-output reader across finalization and verify bytes after reader release.
 Source: [CreateFileW sharing and rename semantics](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
+
+Updater replacement needs a separate read/write, delete-only-sharing file gate. Microsoft's
+CreateFile sharing contract permits delete/rename under that flag and exempts attribute-only
+queries from sharing restrictions. Consequently a retained gate can exclude read/write/launch
+without by itself proving a subsequent path-based rename moved that exact file. Exact source
+handle rename uses SetFileInformationByHandle with appropriate access, but the reviewed ACL/file
+identity helpers do not expose a safe borrowed-handle rename. Adapter selection and adversarial
+native proof remain open; no unsafe workspace shim or unreviewed replacement fallback is selected.
+Sources: [CreateFileW sharing contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle).
 
 First freeze and compile the version-pinned safe interfaces, including the suspended post-spawn
 enrollment and independent job query; then add guarded private state and descriptor readback;

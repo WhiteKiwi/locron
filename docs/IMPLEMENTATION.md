@@ -152,7 +152,8 @@ Bound stock adapter concurrency to two owned workers per process. A single thirt
 starts at API entry and includes permit wait, runtime/process startup and all input/output work;
 permit saturation fails under that deadline rather than spawning more cold PowerShell processes.
 Serialize first SID discovery under the same finite budget and share its verified cached result.
-Keep the existing kill/reap cleanup bound, input/output limits and failure semantics. Native tests
+Keep input/output limits and failure semantics; owned kill/reap cleanup may add its existing
+three-second termination-confirmation bound after the operation deadline. Native tests
 must still exercise startup/script stalls and saturated permits; do not extend the deadline or
 reduce privacy coverage to mask ARM64 cold-start contention.
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
@@ -235,7 +236,9 @@ CreateNoWindow=true, exact escaped Windows argv and an explicit working director
 the role and returns that role's exit code. The wrapper's PID is never the role's PID. This
 keeps paths/data out of executable source and avoids a separate installed script or policy change.
 Readback compares semantic principal/trigger/power/restart/action fields and retains a disabled
-registration on refresh. Cooperative failure first waits under the shutdown deadline; Task.Stop
+registration on refresh. COM may return account names after SID-based registration, so translate
+actual principal/logon-trigger account identifiers to SIDs before semantic comparison; environment
+username text never proves account identity. Cooperative failure first waits under the shutdown deadline; Task.Stop
 then targets only the validated owned registration with the unchanged registered-service lifetime.
 After this hard fallback, actual role-lock exit is still required and forced completion is
 reported explicitly; unowned/manual holders remain a bounded refusal or registration deferral.
@@ -401,6 +404,18 @@ also an exact-path binding. ZIP registrations use their registered InstallLocati
 relative executable path; a package-looking directory name alone is insufficient. This uses
 [WinGet's ARP source](https://github.com/microsoft/winget-cli/blob/master/src/AppInstallerCommonCore/PortableARPEntry.cpp)
 and [portable installer source](https://github.com/microsoft/winget-cli/blob/master/src/AppInstallerCLICore/PortableInstaller.cpp).
+
+The replacement adapter must retain a narrow exclusive read/write gate opened without reparse
+traversal, with handle-bound current-SID/private-DACL validation inside a guarded parent. Existing
+mapped holders must refuse this gate, and new launch/read/write attempts must remain refused
+while it lives. Retain the exact handle and parent guards through the selected replacement and
+rollback; reopening it through ordinary shared private-file helpers would collide with the gate.
+Delete sharing alone does not prevent another same-SID rename, so path-based rename cannot be
+presented as exact-handle identity proof. The selected adapter must use an audited safe API;
+workspace unsafe code, dynamic P/Invoke, in-place replacement and optimistic success are refused.
+Native adversarial tests must prove mapped-holder refusal, blocked new launch, competing-leaf
+refusal and rollback under the live gate. The concrete recovery design also remains subject to
+the documented native crash-phase gates.
 
 ### Change order and verification
 
