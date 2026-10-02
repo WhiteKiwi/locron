@@ -114,6 +114,11 @@ Build shell snapshots by explicit family: cmd.exe /D /S /C, PowerShell/pwsh -NoP
 -NonInteractive -Command, and POSIX shells -c. Unknown ambiguous Windows shell families produce
 an actionable configuration failure. Persist absolute selected executables before spawn.
 
+For the cmd /D /S /C snapshot, construct the final command tail with Windows CommandExt::raw_arg
+and one outer quote pair; cmd's /S parser strips that pair and receives the original command text.
+Do not apply C-runtime argv escaping to that command tail. Other executable arguments continue
+through the ordinary argv serializer; the persisted executable/args snapshot format is unchanged.
+
 ### Race-free process-tree supervision
 
 Use Windows-only process-wrap =10.0.1 with tokio1/job-object/kill-on-drop, plus win32job =2.0.3.
@@ -126,9 +131,19 @@ The root child and output streams are not tree-exit evidence. Query the retained
 list under a bounded deadline on completion, timeout, cancellation, replacement and output-error
 cleanup. Query errors or capacity overflow remain unconfirmed and retain existing quarantine/
 interrupted-unknown rules. Do not rely on process-wrap's completion-port wait as proof of an empty
-tree. Keep handles through confirmation/finalization so daemon crash triggers kill-on-close.
+tree. The safe ChildWrapper::try_wait supplies only the root status; do not use its unsafe mutable
+native-child accessor. Keep handles through confirmation/finalization so daemon crash triggers kill-on-close.
 Use ordinary bounded natural completion/drain; hard tree termination is explicit where Windows
 has no generic cooperative target signal. Keep Unix signal-group behavior in its existing backend.
+
+On root exit, permit descendants the configured termination-grace window to finish naturally;
+if they outlive it, stop the owned tree and classify the attempt as a non-retryable failure rather
+than reporting the root's zero status as complete success. Cancellation and timeout similarly
+permit bounded natural exit before hard termination, without claiming a delivered generic signal.
+Post-spawn enrollment/resume failures preserve an unconfirmed termination outcome because the
+suspended native child cannot be independently recovered after a wrapper failure. Query failures
+never become proof of tree exit. After confirmed empty-tree/root exit, output drain has its own
+finite grace deadline; leaked external pipe holders cannot indefinitely retain an attempt.
 
 ### Private state and guarded filesystem access
 
@@ -631,20 +646,44 @@ recovery; never claim finalization or discard captured bytes when the rename has
 Use Windows-only interprocess =2.4.4 with tokio, safe SDDL SecurityDescriptor deserialization and
 PipeListenerOptions security_descriptor/accept_remote(false). The audited source establishes the
 first-instance flag and remote rejection; do not use instance_limit=1 because accept creates a
-replacement listener. Derive names from verified SID + normalized guarded state + endpoint role.
+replacement listener. Derive names from verified SID + guarded directory file identity + endpoint role.
 Owner/SYSTEM-only descriptors apply at creation. Both CLI and dashboard notification senders use
-the same bounded versioned-hint backend; bind after the owner lock and retain reconciliation on
+the same bounded versioned-hint backend with a fixed length prefix and consumption acknowledgement;
+the duplex pipe carries no other responses. Dispatch control only after the client consumes and
+confirms the acknowledgement, so immediate idle-role shutdown cannot abort its own reply.
+A drop guard always clears the pipe's flush obligation,
+including listener abort during acknowledgement; accepted-client cleanup never creates an
+unbounded FlushFileBuffers worker. Bind after the owner lock and retain reconciliation on
 absent/busy/occupied endpoints. Bound reads and avoid unnecessary server impersonation.
+
+Shared notification::instance_identity(root) and instance_identity_guarded(DirectoryGuard) return
+the lowercase SHA-256 hex of the fixed locron-instance/v1 domain, SID length (LE32)/UTF-8 bytes,
+volume serial (LE64) and full file ID (LE128). Windows-only file-id =0.2.3 supplies its reviewed
+get_high_res_file_id safe API. Query the normalized path while the complete no-write/no-delete
+directory guard remains retained; reject an unsupported query instead of using its low-resolution
+fallback. No path text, Unicode folding, DefaultHasher or Rust enum/hash representation enters
+the digest. Scheduler task names use this shared identity to avoid duplicate alias registrations.
+Pipe names add an explicit protocol version, role and canonical UUID lifetime for control roles;
+wake has no lifetime. Listener construction derives its name from the same guard it retains.
 
 Separate secured control endpoints bind role/lifetime identity and deliver only graceful shutdown
 requests to that role's existing cancellation token. Lifecycle coordination first disables automatic
 task activation, requests stop, and waits for confirmed role/lock exit. A failed request/remaining
 holder is an actionable bounded failure; task-state alone cannot report graceful completion.
 
-Keep core free of public async-runtime types: it shares normalized user/state endpoint identity, fixed
-message framing and a bounded synchronous hint sender. Engine owns the asynchronous named-pipe
+Keep core's public boundary free of async-runtime types: it shares normalized user/state endpoint
+identity, fixed message framing and a bounded synchronous hint sender. Its Windows client uses
+Tokio ClientOptions with identification-only SQOS, rather than interprocess's default impersonation
+capability. One short-lived current-thread runtime executes on a dedicated worker, with a finite
+connect/write/ack deadline and joined cleanup; it never nests block_on inside a caller's runtime
+or leaves a background writer/flush thread. Engine owns the asynchronous named-pipe
 listener and role-control cancellation adapter. Server uses the core sender without gaining an
 engine dependency; CLI composes engine listeners after acquiring the owning lifetime lock.
+Headless Windows roles retain cooperative control when console Ctrl-C registration is unavailable;
+that diagnostic alone cannot terminate a registered dashboard before its control future runs.
+Dashboard shutdown publishes a private watch signal to close live SSE responses, then stops new
+connections and drains finite HTTP work. A bounded connection-drain deadline aborts remaining
+HTTP tasks; this affects only dashboard transport and never cancels durable scheduler jobs.
 
 Windows role locks retain actual OS byte-range ownership and publish a separate private, atomic
 owner sidecar containing diagnostic lifetime identity and whether the process is a registered

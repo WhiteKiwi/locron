@@ -21,8 +21,8 @@ use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 
-use axum::Router;
 use axum::routing::{get, post, put};
+use axum::{Extension, Router};
 use locron_store::StatePaths;
 use tokio::net::TcpListener;
 
@@ -253,36 +253,83 @@ pub fn router(state: AppState) -> Router {
 /// The token file is read (or generated on first use) before listening. All blocking store work
 /// happens per request; this function only runs the HTTP stack.
 pub async fn serve(bound: BoundServer, paths: StatePaths) -> io::Result<()> {
+    serve_until(bound, paths, std::future::pending()).await
+}
+
+/// Runs the HTTP stack until Ctrl-C or composition-owned cooperative shutdown.
+///
+/// The supplied future owns no scheduler lifetime and carries no application command.
+pub async fn serve_until<F>(bound: BoundServer, paths: StatePaths, shutdown: F) -> io::Result<()>
+where
+    F: std::future::Future<Output = ()> + Send,
+{
     let token = token::ensure(&paths)?;
     let state = AppState {
         paths,
         token,
         bound_port: bound.port,
     };
-    let app = router(state);
-    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let app = router(state).layer(Extension(shutdown_rx));
     let mut tasks = tokio::task::JoinSet::new();
     for listener in bound.listeners {
         let app = app.clone();
-        let mut shutdown_rx = shutdown_tx.subscribe();
+        let shutdown_rx = shutdown_tx.subscribe();
         tasks.spawn(async move {
             axum::serve(listener, app)
                 .with_graceful_shutdown(async move {
-                    let _ = shutdown_rx.recv().await;
+                    wait_for_server_shutdown(Some(shutdown_rx)).await;
                 })
                 .await
         });
     }
-    tokio::signal::ctrl_c().await?;
-    let _ = shutdown_tx.send(());
-    while let Some(result) = tasks.join_next().await {
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => return Err(error),
-            Err(_) => return Err(io::Error::other("dashboard listener task failed")),
+    tokio::select! {
+        result = dashboard_ctrl_c() => result?,
+        () = shutdown => {},
+    }
+    shutdown_tx.send_replace(true);
+    let drained = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while let Some(result) = tasks.join_next().await {
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => return Err(error),
+                Err(_) => return Err(io::Error::other("dashboard listener task failed")),
+            }
+        }
+        Ok(())
+    })
+    .await;
+    match drained {
+        Ok(result) => result,
+        Err(_) => {
+            tasks.abort_all();
+            while tasks.join_next().await.is_some() {}
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "dashboard connection drain exceeded its deadline",
+            ))
         }
     }
-    Ok(())
+}
+
+pub(crate) async fn wait_for_server_shutdown(receiver: Option<tokio::sync::watch::Receiver<bool>>) {
+    let Some(mut receiver) = receiver else {
+        return std::future::pending().await;
+    };
+    let stopped = *receiver.borrow_and_update();
+    if !stopped {
+        let _ = receiver.changed().await;
+    }
+}
+
+async fn dashboard_ctrl_c() -> io::Result<()> {
+    let result = tokio::signal::ctrl_c().await;
+    #[cfg(windows)]
+    if let Err(error) = result {
+        tracing::warn!(%error, "console shutdown unavailable; cooperative role control remains active");
+        return std::future::pending().await;
+    }
+    result
 }
 
 #[cfg(test)]

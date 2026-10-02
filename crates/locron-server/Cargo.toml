@@ -26,6 +26,7 @@ rust-embed = { version = "8.12", features = ["mime-guess"] }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 tokio-stream = "0.1.19"
 uuid.workspace = true
 

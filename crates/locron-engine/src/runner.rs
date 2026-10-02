@@ -34,6 +34,9 @@ use url::Url;
 
 use crate::output::{Channel, OutputStats, OutputWriter};
 
+#[cfg(windows)]
+mod windows;
+
 /// Direct or explicit-shell process configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProcessSpec {
@@ -231,21 +234,15 @@ impl Runner {
         Ok(outcome)
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     async fn run_process(
         &self,
-        _spec: &ProcessSpec,
+        spec: &ProcessSpec,
         context: &AttemptContext,
         writer: OutputWriter,
         start: Instant,
     ) -> Result<ExecutionOutcome, RunnerError> {
-        finalize_configuration_failure(
-            writer,
-            context,
-            start,
-            "process execution is pending the owned Windows Job Object adapter",
-        )
-        .await
+        windows::run_process(&self.config, spec, context, writer, start).await
     }
 
     #[cfg(unix)]

@@ -2,6 +2,8 @@
 
 pub mod admission;
 pub mod daemon;
+#[cfg(windows)]
+pub mod ipc;
 pub mod output;
 pub mod runner;
 

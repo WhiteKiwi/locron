@@ -2804,15 +2804,15 @@ constructor for SDDL input. It declares Rust 1.75. Its Windows safe
 `SecurityDescriptor::deserialize(&U16CStr)` and
 `PipeListenerOptions::new().path(name).security_descriptor(Some(sd)).accept_remote(false)`
 allow a user+SYSTEM DACL to be supplied at creation, without Tokio's unsafe
-`create_with_security_attributes_raw` call in workspace code. Use a receive-only byte listener
-for bounded versioned wake messages, non-inheritable handles and an explicit finite client/read
+`create_with_security_attributes_raw` call in workspace code. Use a byte listener with bounded
+duplex consumption acknowledgements, non-inheritable handles and an explicit finite client/read
 timeout. The source creates the first instance with `FILE_FLAG_FIRST_PIPE_INSTANCE`, subsequent
 instances without that flag, and applies `PIPE_REJECT_REMOTE_CLIENTS` when remote acceptance is
 false. Do not set instance_limit to 1: this API allocates a replacement listener instance during
 accept, and its documentation says that limit breaks accept.
 
-Derive the stable pipe identity from the verified account SID and the normalized, guarded state
-root, e.g. a versioned prefix plus a digest of both. Two users and two roots must never share a
+Derive the stable pipe identity from the verified account SID and the guarded directory file identity,
+with a versioned prefix and digest. Two users and two roots must never share a
 name. Use an explicit protected descriptor allowing only that SID and SYSTEM. Full pipe rights
 to the owner are acceptable for this same-account boundary; do not accidentally grant generic
 write to broader principals, since it includes permission to create pipe instances. All payloads
@@ -2874,6 +2874,25 @@ worker protocol faults and parent-crash cases in exact test subprocesses; failur
 invalidate queued work in that process and must not contaminate unrelated state fixtures.
 Other library harnesses retain normal parallelism. This is test scheduling for deliberate owned
 failures, not a cold-start workaround or a larger production deadline.
+The implementation audit selects Windows-only `file-id =0.2.3` (MIT OR Apache-2.0, declared
+Rust 1.77). Its exact registry source exposes safe `get_high_res_file_id(path)`, opens a
+backup-semantics access-zero file, then queries `GetFileInformationByHandleEx(FileIdInfo)`.
+It returns the full `FileId::HighRes { volume_serial_number: u64, file_id: u128 }`, converting
+the 128-bit identifier from little-endian bytes. It has no public borrowed-handle query, so use
+its path API only while the complete no-write/no-delete-sharing DirectoryGuard remains live.
+Unsupported queries refuse IPC/registration; do not call the automatically falling-back API.
+
+`same-file =1.0.6` was rejected: its Windows key exposes a low 64-bit file index through equality/
+Hash, and its source notes ReFS's 128-bit IDs can collide after truncation. Path uppercasing and
+unspecified Rust Hash encodings also cannot provide stable identity. Encode the fixed
+`locron-instance/v1\0` domain, SID byte length (LE32)/UTF-8, volume (LE64), and file ID (LE128)
+explicitly before SHA-256. The retained guard prevents file-ID reuse during listener ownership;
+role/control UUID framing separates live instances without hashing path spelling.
+
+Sources: [file-id 0.2.3 published source](https://docs.rs/crate/file-id/0.2.3/source/src/lib.rs),
+[published manifest and MSRV](https://docs.rs/crate/file-id/0.2.3/source/Cargo.toml),
+[same-file Windows key limitation](https://github.com/BurntSushi/same-file/blob/1.0.6/src/win.rs),
+[Microsoft full file identity](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info).
 
 The next worker run, PR41 head 762bed7/run 37038880251, passed x64 stable and MSRV core/store.
 ARM64 passed 66 core fixtures, including isolated simultaneous cold callers, but its first

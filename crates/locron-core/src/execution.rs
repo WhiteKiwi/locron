@@ -18,8 +18,20 @@ pub fn effective_environment(
         environment.insert("PATH".into(), path.clone());
     }
     if let Some(file) = &job.file {
+        #[cfg(not(windows))]
         let content =
             std::fs::read_to_string(file).map_err(|error| format!("environment file: {error}"))?;
+        #[cfg(windows)]
+        let content = {
+            use std::io::Read;
+            let mut input = crate::filesystem::open_read_no_follow(file)
+                .map_err(|error| format!("environment file: {error}"))?;
+            let mut content = String::new();
+            input
+                .read_to_string(&mut content)
+                .map_err(|error| format!("environment file: {error}"))?;
+            content
+        };
         apply_environment_layer(&mut environment, &parse_environment_file(&content)?)?;
     }
     apply_environment_layer(&mut environment, &job.values)?;

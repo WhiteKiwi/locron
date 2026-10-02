@@ -567,7 +567,11 @@ enum ConfigCommand {
 #[derive(Subcommand, Debug)]
 enum DaemonCommand {
     #[command(about = "Run the scheduler in the foreground", after_help = DAEMON_RUN_HELP)]
-    Run,
+    Run {
+        /// Internal registration marker used by lifetime-scoped cooperative control.
+        #[arg(long, hide = true)]
+        service_mode: bool,
+    },
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum LogChannel {
@@ -1165,8 +1169,8 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         Command::Prune { dry_run } => prune(&paths, dry_run, format),
         Command::Doctor => doctor(&paths, format),
         Command::Daemon {
-            command: DaemonCommand::Run,
-        } => daemon(paths).await,
+            command: DaemonCommand::Run { service_mode },
+        } => daemon(paths, service_mode).await,
         Command::Mcp => mcp::run_mcp_server(paths).await,
         Command::SelfUpdate => {
             let outcome = self_update::update(&paths.root).await?;
@@ -3618,7 +3622,7 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
     Ok(())
 }
 
-async fn daemon(paths: StatePaths) -> Result<()> {
+async fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {
     let store = Arc::new(Store::open(
         paths.clone(),
         env!("CARGO_PKG_VERSION"),
@@ -3626,6 +3630,7 @@ async fn daemon(paths: StatePaths) -> Result<()> {
     )?);
     let lifetime = SchedulerLifetimeId::new().to_string();
     let global_concurrency = usize::try_from(store.settings()?.global_concurrency)?;
+    let cancellation = CancellationToken::new();
     let adapter = Arc::new(StoreAdapter {
         store,
         lifetime,
@@ -3637,6 +3642,10 @@ async fn daemon(paths: StatePaths) -> Result<()> {
         compiled_schedules: Mutex::new(BTreeMap::new()),
         wake: Mutex::new(None),
         wake_task: Mutex::new(None),
+        service_mode,
+        #[cfg(windows)]
+        cancellation: cancellation.clone(),
+        control_task: Mutex::new(None),
         lock: Mutex::new(None),
     });
     let daemon = Daemon::new(
@@ -3653,21 +3662,30 @@ async fn daemon(paths: StatePaths) -> Result<()> {
         .lock()
         .map_err(|_| anyhow!("wake mutex poisoned"))? = Some(wake);
     tracing::info!(state_dir = %paths.root.display(), "daemon started");
-    daemon.run(CancellationToken::new()).await?;
-    Ok(())
+    let result = daemon.run(cancellation).await;
+    // Includes startup or durable-transition errors, before releasing role ownership.
+    adapter.close_endpoints().await;
+    adapter
+        .lock
+        .lock()
+        .map_err(|_| anyhow!("lock mutex poisoned"))?
+        .take();
+    result.map_err(Into::into)
 }
 
-#[cfg(not(unix))]
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "the staged wake adapter preserves the fallible Unix port until Windows IPC is implemented"
-)]
+#[cfg(windows)]
 fn bind_wake_socket(
-    _paths: &StatePaths,
-    _wake: Arc<tokio::sync::Notify>,
+    paths: &StatePaths,
+    wake: Arc<tokio::sync::Notify>,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    tracing::warn!("local wake adapter pending; safety reconciliation remains active");
-    Ok(tokio::spawn(async {}))
+    let _guard = paths.guard()?;
+    match locron_engine::ipc::bind_wake(&paths.root, wake) {
+        Ok(task) => Ok(task),
+        Err(error) => {
+            tracing::warn!(%error, "local wake endpoint unavailable; safety reconciliation remains active");
+            Ok(tokio::spawn(async {}))
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -3704,17 +3722,8 @@ fn bind_wake_socket(
     }))
 }
 
-#[cfg(not(unix))]
-pub(crate) fn send_wake(_paths: &StatePaths) {}
-
-#[cfg(unix)]
 pub(crate) fn send_wake(paths: &StatePaths) {
-    use std::os::unix::net::UnixDatagram;
-    let result = UnixDatagram::unbound().and_then(|socket| {
-        socket.connect(&paths.wake_socket)?;
-        socket.send(b"locron-wake/v1").map(|_| ())
-    });
-    if let Err(error) = result {
+    if let Err(error) = locron_core::notification::send_wake(&paths.root) {
         tracing::debug!(%error, "wake notification unavailable; command is already durable");
     }
 }
@@ -3730,10 +3739,27 @@ struct StoreAdapter {
     compiled_schedules: Mutex<BTreeMap<(String, i64), locron_core::CompiledSchedule>>,
     wake: Mutex<Option<Arc<tokio::sync::Notify>>>,
     wake_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    service_mode: bool,
+    #[cfg(windows)]
+    cancellation: CancellationToken,
+    control_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     lock: Mutex<Option<locron_store::DaemonLock>>,
 }
 
 impl StoreAdapter {
+    async fn close_endpoints(&self) {
+        let wake = self.wake_task.lock().ok().and_then(|mut task| task.take());
+        let control = self
+            .control_task
+            .lock()
+            .ok()
+            .and_then(|mut task| task.take());
+        for task in [wake, control].into_iter().flatten() {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+
     fn now_us(&self) -> i64 {
         self.clock.now().epoch_micros()
     }
@@ -3812,10 +3838,12 @@ impl DaemonStore for StoreAdapter {
             started_at_us: self.now_us(),
             binary_version: env!("CARGO_PKG_VERSION").into(),
         };
-        let lock = self
-            .store
-            .acquire_daemon_lock(&metadata)
-            .map_err(|error| error.to_string())?;
+        let lock = locron_store::DaemonLock::acquire_role(
+            &self.paths.daemon_lock,
+            &metadata,
+            self.service_mode,
+        )
+        .map_err(|error| error.to_string())?;
         *self.lock.lock().map_err(|_| "lock mutex poisoned")? = Some(lock);
         let wake = self
             .wake
@@ -3828,6 +3856,20 @@ impl DaemonStore for StoreAdapter {
             .wake_task
             .lock()
             .map_err(|_| "wake task mutex poisoned")? = Some(task);
+        #[cfg(windows)]
+        if self.service_mode {
+            let control = locron_engine::ipc::bind_role_control(
+                &self.paths.root,
+                "daemon",
+                &self.lifetime,
+                self.cancellation.clone(),
+            )
+            .map_err(|error| format!("cannot bind registered daemon control: {error}"))?;
+            *self
+                .control_task
+                .lock()
+                .map_err(|_| "control task mutex poisoned")? = Some(control);
+        }
         self.store
             .begin_lifetime(&self.lifetime, self.now_us(), env!("CARGO_PKG_VERSION"))
             .map(|_| ())
@@ -4161,14 +4203,8 @@ impl DaemonStore for StoreAdapter {
         self.store
             .end_lifetime(&self.lifetime, self.now_us())
             .map_err(|e| e.to_string())?;
-        if let Some(task) = self
-            .wake_task
-            .lock()
-            .map_err(|_| "wake task mutex poisoned")?
-            .take()
-        {
-            task.abort();
-        }
+        self.close_endpoints().await;
+        #[cfg(unix)]
         if self.paths.wake_socket.exists() {
             std::fs::remove_file(&self.paths.wake_socket).map_err(|error| error.to_string())?;
         }
@@ -5743,6 +5779,10 @@ mod tests {
             compiled_schedules: Mutex::new(BTreeMap::new()),
             wake: Mutex::new(None),
             wake_task: Mutex::new(None),
+            service_mode: false,
+            #[cfg(windows)]
+            cancellation: CancellationToken::new(),
+            control_task: Mutex::new(None),
             lock: Mutex::new(None),
         }
     }

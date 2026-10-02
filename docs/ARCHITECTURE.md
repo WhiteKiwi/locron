@@ -57,6 +57,12 @@ termination signal. It never carries job/configuration commands or substitutes f
 CLI lifecycle operations observe actual role/lock exit before replacing or deleting registration.
 Task Scheduler supervises only the daemon/dashboard roles and never becomes a job-level backend.
 
+The core notification adapter exposes only synchronous bounded operations and plain endpoint facts.
+Its private Windows client may use Tokio on a dedicated short-lived worker to enforce native
+connect/write/ack deadlines and identification-only SQOS. No async-runtime type crosses core's
+public domain ports, and server does not gain an engine dependency. Engine owns asynchronous
+listeners and composition-owned cancellation; all worker and accepted-client resources are bounded.
+
 ## Workspace and dependency direction
 
 The virtual Cargo workspace has five crates and one distributable binary. Milestone 1 shipped the first four; the subsequently shipped `locron-server` crate provides the web administration surface (`docs/dashboard/SPEC.md`).

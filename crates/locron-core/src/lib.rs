@@ -11,6 +11,7 @@ pub mod execution;
 pub mod filesystem;
 pub mod id;
 pub mod lifecycle;
+pub mod notification;
 pub mod policy;
 pub mod ports;
 pub mod redact;
