@@ -49,7 +49,7 @@ jobs:
       - name: Compile staged Windows workspace
         run: cargo check --workspace --locked
       - name: Verify portable domain scheduling
-        run: cargo test -p locron-core --lib --locked -- schedule::
+        run: 'cargo test -p locron-core --lib --locked -- schedule::'
 
   windows-lint-foundation:
     name: Windows lint foundation / Rust 1.98.0
