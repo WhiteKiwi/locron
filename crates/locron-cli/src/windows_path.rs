@@ -127,7 +127,7 @@ pub(super) struct WriteIntent {
 }
 
 impl WriteIntent {
-    fn new(sid: &str, expected: PathValue, desired: PathValue) -> Result<Self> {
+    pub(super) fn new(sid: &str, expected: PathValue, desired: PathValue) -> Result<Self> {
         ensure!(
             !sid.is_empty() && sid.len() <= 184 && sid.is_ascii(),
             "PATH intent account is invalid"
