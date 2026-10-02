@@ -3388,6 +3388,16 @@ stalled or late results retain the original quarantine boundary. Only the verifi
 reaches Framework LoadFrom. No UNC/URI search, manifest import, policy change or trust fallback is
 selected. The stock executable and all managed state/install long-path behavior remain unchanged.
 
+The newer server cooperative-shutdown fixture reports native error 80 (AlreadyExists) on its
+final writable Store::open. Its call sequence includes state directory ensure/guard, private
+database/WAL/SHM precreation, SQLite open/configuration/migration and final leaf validation; the
+existing panic does not identify the exact stage. API Store work may already be admitted to a
+blocking worker when SSE cancellation drops its async poll, so a sidecar lifecycle race is only
+a hypothesis. Select fixed debug-only failure-stage/counter/code diagnostics preserving the
+original error and all refusal behavior, with no new path reads or payload rendering, before
+assigning or correcting a cause. Hosted native evidence is required; no local behavioral policy
+rehearsal or AlreadyExists adoption follows from this observation.
+
 Exact head 608ab19's ARM64 native job 111026239366 entered the actual generic script at about
 210 ms and its JSON conversion at 219 ms, but never reached json-parsed before the original
 30-second deadline; owned cleanup finished at 30.042 seconds. The preceding 4887 trace measured

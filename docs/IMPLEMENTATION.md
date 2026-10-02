@@ -647,6 +647,25 @@ operations. Normal SQLite sidecar deletion on the last close remains intact; the
 open precreates missing sidecars again. Read-only validation uses the actual supplied database
 filename and its sidecars, and performs final readback without changing the file-creation contract.
 
+Add fixed, bounded failure-stage diagnostics to Windows debug builds at writable Store::open
+and StatePaths.ensure. Record only the selected root/outputs/tmp directory stage, state guard,
+database/WAL/SHM existing-open versus explicit CreateNew, SQLite connection/configuration/migration,
+fresh settings initialization and final leaf validation. Emit one fixed stage plus original
+I/O kind/raw OS code or SQLite primary/extended error code when an admitted operation fails.
+Include a process-local operation counter for concurrent opens; no path, SID, contents, SQL text,
+token, environment or exception payload is rendered. Release builds and Unix behavior stay as
+before. Return the original error without wrapping or changing its raw code, and perform no
+new filesystem query, permission repair, retry or CreatedNew-to-existing adoption for diagnostics.
+The SSE shutdown fixture's observed native 80 does not yet establish which leaf or operation
+failed; cancellation of an async polling future also does not prove its admitted blocking Store
+operation stopped. The diagnostics establish that boundary before any race-handling proposal.
+Verify: (1) a private owned native fixture makes each existing-open/CreateNew failure explicit
+and preserves the original error kind/raw code, while all successful facts stay silent. (2) the
+actual server shutdown fixture reports the failing directory/database/WAL/SHM or SQLite stage,
+with independently identified concurrent operation counters and no extra retry/adoption. (3)
+native x64/ARM64/MSRV and lint preserve all current cold gates, managed ACL refusal and SQLite
+tests; the exact failed stage is recorded before selecting any behavioral correction.
+
 Use Windows-only windows-permissions =0.2.4 explicit GetSecurityInfo/SetSecurityInfo wrappers with
 SE_FILE_OBJECT, Owner/Dacl and ProtectedDacl flags; avoid the audited-buggy convenience trait.
 Safe Windows File open flags permit no-follow handle readback and directory guards. Reject every
