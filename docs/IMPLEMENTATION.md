@@ -156,6 +156,9 @@ Keep input/output limits and failure semantics; owned kill/reap cleanup may add 
 three-second termination-confirmation bound after the operation deadline. Native tests
 must still exercise startup/script stalls and saturated permits; do not extend the deadline or
 reduce privacy coverage to mask ARM64 cold-start contention.
+A bounded stock-adapter entry point accepts a caller's remaining duration, capped at the same
+thirty-second operation maximum. Service polling uses the remaining shared lifecycle deadline;
+a fresh adapter invocation cannot silently restart the complete shutdown budget.
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable
@@ -227,6 +230,24 @@ escaped state/role arguments. Read semantic settings/status rather than localize
 Preserve enabled/disabled role state on refresh; run roles directly or use a fixed hidden launcher
 that waits and propagates exit status so restart works. Task.Stop is a documented hard fallback
 after cooperative timeout, with kill-on-close/recovery behavior, not graceful-drain evidence.
+
+Registered `daemon run --service-mode` first acquires the private daemon.activation.lock and its
+atomic registered-service sidecar with a unique activation lifetime. Bind an internal
+daemon-activation control endpoint to that lifetime, then passively retry actual daemon-lock
+acquisition under cancellation. The wait has no arbitrary execution-duration limit; a manual
+daemon is never signalled, and scheduler ownership is not claimed before its real lock is acquired.
+Once acquired, establish the ordinary daemon ownership/control before beginning scheduling. Keep
+the activation lock/control through this registered process's complete lifetime, and release it
+only after actual daemon ownership and all listeners have been torn down. This gives maintenance
+one exact activation lifetime spanning waiting, running and exit without a handover gap.
+Status distinguishes a waiting registered task from the actual daemon lock owner. Installation
+therefore retains automatic activation after a manual daemon exits. Quiesce disables the task,
+requests the exact activation lifetime, and waits for the activation lock plus waiting launcher
+to exit under the shared thirty-second cooperative deadline. An unchanged owned activation may
+then use explicit Task.Stop; actual lock/launcher exit still requires finite confirmation. A
+remaining manual holder is untouched and can still refuse executable replacement. Runtime owns
+main/waiter/core-control allowlist wiring; store owns the activation path and service owns the
+guarded observer/inventory/quiescence. No new public product role or CLI command is introduced.
 
 Windows registration uses the shared full-file-identity/SID digest for role-specific task names.
 Select a fixed hidden stock PowerShell 5.1 launcher: `-EncodedCommand` carries only static source,
@@ -416,6 +437,14 @@ workspace unsafe code, dynamic P/Invoke, in-place replacement and optimistic suc
 Native adversarial tests must prove mapped-holder refusal, blocked new launch, competing-leaf
 refusal and rollback under the live gate. The concrete recovery design also remains subject to
 the documented native crash-phase gates.
+
+Reading a WinGet-owned executable source uses a separate retained no-reparse file/ancestor guard.
+Require the current SID as file owner and refuse every effective nontrusted-account allow entry
+granting file write, append, delete, WRITE_DAC or WRITE_OWNER; trusted SYSTEM/Administrators access
+is permitted and other accounts may retain read/execute access. Inspect the descriptor on the
+retained handle without taking ownership or silently repairing the package. Helper, journal and
+standalone destination paths keep their stricter current-SID/SYSTEM-only private policy. Native
+tests must preserve permitted package read access and refuse broad write/delete/control rights.
 
 ### Change order and verification
 

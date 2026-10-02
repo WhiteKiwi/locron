@@ -2827,6 +2827,12 @@ or alter an existing task. Principal/logon-trigger readback returned account nam
 inputs, establishing that semantic identity comparison must resolve those names to actual SIDs.
 This proves standard-user registration/readback only, not running-role ownership or restart.
 
+The fixed hidden waiting launcher also ran in a uniquely named native task on the standard-user
+host. Task state was observed running for about three seconds, then reported the nested owned
+child's exact exit code 17 after its two-second wait; the driver deleted only the marker-verified
+fixture. This establishes waiting/exit propagation, not Locron daemon-lock ownership. Failure
+restart is tested separately before that behavior can be claimed.
+
 ### Recommended design order and remaining proof
 
 The first native ARM64 core run at PR #41 head `2f5516e` failed four initial private-directory
@@ -2867,6 +2873,12 @@ identity helpers do not expose a safe borrowed-handle rename. Adapter selection 
 native proof remain open; no unsafe workspace shim or unreviewed replacement fallback is selected.
 Sources: [CreateFileW sharing contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 [SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle).
+
+A disposable private copy of cmd.exe refused the proposed read/write delete-only gate while its
+owned process was mapped (Win32 32). After that process exited, the live gate refused a new
+launch (Win32 32). Path-based backup rename and rollback succeeded while the original stream
+remained open and its bytes matched. The fixture cleaned its process/files/private directory.
+This proves sharing compatibility and exclusion only; exact-object rename remains unresolved.
 
 First freeze and compile the version-pinned safe interfaces, including the suspended post-spawn
 enrollment and independent job query; then add guarded private state and descriptor readback;
