@@ -2636,6 +2636,32 @@ This factory encapsulates the same reviewed enrollment hook; it exposes no nativ
 or process-wrap wrapper chain. Native hidden fixtures can safely test console-device availability
 by opening CONOUT$, while wrapper policy assertions check the explicit CREATE_NO_WINDOW value.
 
+The subsequent native x64/ARM64/MSRV failure of the CONOUT$-absence assertion exposed a semantic
+mismatch, not lost creation flags. The downloaded process-wrap 10.0.1 archive SHA-256 equals the
+locked 1f21b97672d2dc848e7b25701ab4535618b92f4861c13cc3f7f7bed52ad3c8da. Its CreationFlags and
+JobObject hooks preserve the user flags and add only CREATE_SUSPENDED; Tokio forwards them to
+Rust, whose Windows spawn adds CREATE_UNICODE_ENVIRONMENT without NEW_CONSOLE or DETACHED.
+Microsoft's pinned console-allocation specification states that CREATE_NO_WINDOW creates a new
+console host without inheritance, using an invisible initial connection. Its console server
+allocates the buffers before testing whether that connection deserves a visible window.
+Opening CONOUT$ may therefore succeed under the correct windowless policy. DETACHED_PROCESS
+has different console-allocation behavior and is not a replacement production policy.
+
+Make the final safe Command::creation_flags setter explicit at the native spawn closure, after
+every wrapper pre_spawn hook: the selected CreationFlags value plus temporary CREATE_SUSPENDED,
+with no conflicting CREATE_NEW_CONSOLE/DETACHED_PROCESS bits. Keep the logical wrapper value
+unchanged so JobObject still resumes only after both independent Jobs are enrolled. A test-only
+receipt records the exact value passed to that last setter at the actual spawn boundary.
+Native controls compare a direct CREATE_NO_WINDOW child and a direct DETACHED_PROCESS child
+using the same console-device probe; the former may have a buffer, the latter must not inherit
+or allocate one. Retain actual root status, reaping, empty Job and failed-enrollment coverage.
+These observations and the audited final setter qualify the selected policy; console-device
+availability alone does not establish window visibility. No GetConsoleWindow heuristic is used.
+
+Sources: [pinned Microsoft allocation semantics](https://github.com/microsoft/terminal/blob/2b5336c1fca1e53ceeaac09710a13c478938cc8d/doc/specs/%237335%20-%20Console%20Allocation%20Policy.md#interaction-with-existing-apis),
+[buffer allocation and visible-window decision](https://github.com/microsoft/terminal/blob/2b5336c1fca1e53ceeaac09710a13c478938cc8d/src/host/srvinit.cpp#L798),
+[Rust 1.94 native spawn flags](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/process/windows.rs#L302).
+
 Sources: [process-wrap v10.0.1 manifest](https://github.com/watchexec/process-wrap/blob/v10.0.1/Cargo.toml),
 [hook ordering](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/generic_wrap.rs),
 [suspension/assignment](https://github.com/watchexec/process-wrap/blob/v10.0.1/src/tokio/job_object.rs),

@@ -156,8 +156,19 @@ The shared Windows engine factory is windows_child::OwnedChild::spawn(Command, C
 with Hidden/Inherit policies and no mutable native-child escape. Exact argv, environment, cwd
 and stdio remain caller-owned inputs; raw creation_flags on that Command are unsupported.
 Register CreationFlags through the audited wrapper: Hidden selects CREATE_NO_WINDOW and Inherit
-selects zero, then JobObject adds its temporary suspension. The runner selects Inherit to keep
-its current behavior. Expose id, cached root try_wait, authoritative tree_empty, start_kill and
+selects zero, then JobObject adds its temporary suspension. At the final native spawn closure,
+after all wrapper pre_spawn hooks, explicitly apply that selected value plus CREATE_SUSPENDED
+with the safe setter. Keep the logical CreationFlags wrapper free of explicit suspension so
+JobObject resumes only after the external enrollment and its own Job assignment. This final
+boundary must preserve CREATE_NO_WINDOW for Hidden and exclude NEW_CONSOLE/DETACHED flags;
+Inherit retains zero user flags plus temporary suspension. The runner keeps Inherit behavior.
+The native fixture records the actual last-set mask at that spawn boundary. A direct
+CREATE_NO_WINDOW control and a direct DETACHED_PROCESS negative control establish that a
+windowless private console can expose CONOUT$; absence of that device is not the Hidden
+contract. Compare the wrapped child's real device behavior to those controls and retain exact
+actual status/root reaping/empty Job/enrollment-failure assertions. Do not claim the device
+probe proves window visibility or replace the mask with DETACHED_PROCESS/GetConsoleWindow.
+Expose id, cached root try_wait, authoritative tree_empty, start_kill and
 async confirm_exit_until/terminate_until accepting one std::time::Instant deadline. Only the
 runner can take stdout/stderr through crate-private accessors. Confirmation polls both root
 reaping and retained-Job emptiness, never the completion-port wrapper's wait result.
