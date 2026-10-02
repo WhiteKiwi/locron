@@ -19,6 +19,11 @@ static ADAPTER_WORKERS: WorkerPermits = WorkerPermits::new(1);
 static SID_INITIALIZER: WorkerPermits = WorkerPermits::new(1);
 
 mod filesystem_worker;
+mod owned_child;
+mod stock;
+pub use stock::{StockAdapterGuard, StockModuleSet};
+/// Compiled binary-only bootstrap. Paths are guarded environment data, never source.
+pub const STOCK_JSON_BOOTSTRAP: &str = include_str!("windows/stock_json.ps1");
 #[cfg(test)]
 mod generic_trace;
 
@@ -152,7 +157,6 @@ fn run_script_with_deadline(
 }
 
 struct AdapterRequest {
-    executable: PathBuf,
     encoded: String,
     input: Vec<u8>,
     #[cfg(test)]
@@ -169,10 +173,9 @@ fn prepare_adapter(script: &'static str, input: &Value) -> io::Result<AdapterReq
             "Windows adapter input is too large",
         ));
     }
-    let executable = stock_powershell()?;
     #[cfg(not(test))]
     let source = format!(
-        "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); try {{ $request = [Console]::In.ReadToEnd() | ConvertFrom-Json; {script} }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}"
+        "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); try {{ {STOCK_JSON_BOOTSTRAP}\n$request = [Console]::In.ReadToEnd() | & $locronFromJson; {script}\n; }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}"
     );
     #[cfg(test)]
     let source = generic_trace::source(script);
@@ -183,7 +186,6 @@ fn prepare_adapter(script: &'static str, input: &Value) -> io::Result<AdapterReq
             .collect::<Vec<_>>(),
     );
     Ok(AdapterRequest {
-        executable,
         encoded,
         input: request,
         #[cfg(test)]
@@ -199,28 +201,66 @@ fn run_adapter_worker(
     #[cfg(test)]
     let trace = std::sync::Arc::clone(&request.trace);
     // A dedicated thread permits callers already inside Tokio; no async type crosses this API.
-    let result = std::thread::Builder::new()
+    let (reply, receiver) = std::sync::mpsc::sync_channel(1);
+    let worker = std::thread::Builder::new()
         .name("locron-windows-adapter".to_owned())
         .spawn(move || {
             // Keep the permit until all owned child/pipe cleanup completes, including errors.
             let _permit = permit;
             #[cfg(test)]
             request.trace.record("worker-entered", 0);
-            remaining(deadline)?;
-            tokio::runtime::Builder::new_current_thread()
+            let guard = match StockAdapterGuard::acquire_until(
+                StockModuleSet::UtilityAndManagement,
+                deadline,
+            ) {
+                Ok(guard) => guard,
+                Err(error) => {
+                    let _ = reply.send(Err(error));
+                    return;
+                }
+            };
+            let runtime = match tokio::runtime::Builder::new_current_thread()
                 .enable_all()
-                .build()?
-                .block_on(run_adapter(
-                    request.executable,
-                    request.encoded,
-                    request.input,
-                    deadline,
-                    #[cfg(test)]
-                    request.trace,
-                ))
-        })?
-        .join()
-        .map_err(|_| io::Error::other("Windows adapter worker failed"))?;
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    let _ = reply.send(Err(error));
+                    return;
+                }
+            };
+            let outcome = runtime.block_on(run_adapter(request, guard, deadline));
+            let _ = reply.send(outcome.result);
+            if let Some(ownership) = outcome.quarantine {
+                // Retain runtime, all ownership and the slot; no next process/input/replay.
+                let _ownership = ownership;
+                loop {
+                    std::thread::park();
+                }
+            }
+        })?;
+    let caller_deadline = deadline + Duration::from_secs(3);
+    let mut result = receiver
+        .recv_timeout(caller_deadline.saturating_duration_since(Instant::now()))
+        .map_err(|error| match error {
+            std::sync::mpsc::RecvTimeoutError::Timeout => io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Windows adapter ownership remains pending after deadline",
+            ),
+            std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                io::Error::other("Windows adapter worker failed")
+            }
+        })
+        .and_then(std::convert::identity);
+    if result.is_ok() && remaining(deadline).is_err() {
+        result = Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "late Windows adapter result refused",
+        ));
+    }
+    if worker.is_finished() {
+        let _ = worker.join();
+    }
     #[cfg(test)]
     if result.is_err() {
         trace.report("caller-failed");
@@ -228,62 +268,133 @@ fn run_adapter_worker(
     result
 }
 
+struct AdapterOutcome {
+    result: io::Result<Value>,
+    quarantine: Option<AdapterQuarantine>,
+}
+
+enum AdapterQuarantine {
+    Spawn {
+        _failure: owned_child::SpawnFailure,
+        _guard: StockAdapterGuard,
+    },
+    Running {
+        _child: owned_child::OwnedChild,
+        _guard: StockAdapterGuard,
+        _pipes: Option<AdapterPipes>,
+    },
+}
+
+struct AdapterPipes {
+    writer: tokio::task::JoinHandle<io::Result<()>>,
+    output: tokio::task::JoinHandle<io::Result<Vec<u8>>>,
+    errors: tokio::task::JoinHandle<io::Result<Vec<u8>>>,
+}
+
+impl AdapterOutcome {
+    fn failed(error: io::Error) -> Self {
+        Self {
+            result: Err(error),
+            quarantine: None,
+        }
+    }
+}
+
+fn configure_stock_command(command: &mut tokio::process::Command, guard: &StockAdapterGuard) {
+    command
+        .env_remove("PSModulePath")
+        .env("LOCRON_STOCK_UTILITY", guard.utility());
+    if let Some(management) = guard.management() {
+        command.env("LOCRON_STOCK_MANAGEMENT", management);
+    } else {
+        command.env_remove("LOCRON_STOCK_MANAGEMENT");
+    }
+}
+
 async fn run_adapter(
-    executable: PathBuf,
-    encoded: String,
-    request: Vec<u8>,
+    request: AdapterRequest,
+    guard: StockAdapterGuard,
     deadline: Instant,
-    #[cfg(test)] trace: std::sync::Arc<generic_trace::Trace>,
-) -> io::Result<Value> {
+) -> AdapterOutcome {
     use tokio::io::AsyncWriteExt;
 
-    remaining(deadline)?;
-    let deadline = tokio::time::Instant::from_std(deadline);
-    let mut child = tokio::process::Command::new(executable)
-        .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
-        .env_remove("PSModulePath")
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW; no execution-policy changes.
-        .kill_on_drop(true)
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    if let Err(error) = remaining(deadline) {
+        return AdapterOutcome::failed(error);
+    }
+    let mut command = tokio::process::Command::new(guard.executable());
+    command
+        .args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            &request.encoded,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    configure_stock_command(&mut command, &guard);
+    let mut child = match owned_child::OwnedChild::spawn(command) {
+        Ok(child) => child,
+        Err(owned_child::SpawnFailure::NotStarted(error)) => return AdapterOutcome::failed(error),
+        Err(failure @ owned_child::SpawnFailure::Unconfirmed { .. }) => {
+            let owned_child::SpawnFailure::Unconfirmed { ref error, .. } = failure else {
+                unreachable!()
+            };
+            return AdapterOutcome {
+                result: Err(io::Error::new(error.kind(), error.to_string())),
+                quarantine: Some(AdapterQuarantine::Spawn {
+                    _failure: failure,
+                    _guard: guard,
+                }),
+            };
+        }
+    };
     #[cfg(test)]
-    trace.record("spawn-complete", child.id().unwrap_or_default());
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| io::Error::other("missing adapter stdin"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| io::Error::other("missing adapter stdout"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| io::Error::other("missing adapter stderr"))?;
+    request
+        .trace
+        .record("spawn-complete", child.id().unwrap_or_default());
+    if let Err(error) = remaining(deadline) {
+        return failed_adapter(error, child, guard, None).await;
+    }
+    let (Some(mut stdin), Some(stdout), Some(stderr)) =
+        (child.take_stdin(), child.take_stdout(), child.take_stderr())
+    else {
+        return failed_adapter(io::Error::other("missing adapter pipe"), child, guard, None).await;
+    };
     #[cfg(not(test))]
-    let mut writer = tokio::spawn(async move { stdin.write_all(&request).await });
+    let writer =
+        tokio::spawn(
+            async move { adapter_poll_until(deadline, stdin.write_all(&request.input)).await },
+        );
     #[cfg(test)]
-    let writer_trace = std::sync::Arc::clone(&trace);
+    let writer_trace = std::sync::Arc::clone(&request.trace);
     #[cfg(test)]
-    let mut writer = tokio::spawn(async move {
-        stdin.write_all(&request).await?;
+    let writer = tokio::spawn(async move {
+        adapter_poll_until(deadline, stdin.write_all(&request.input)).await?;
         writer_trace.record("input-written", 0);
         Ok::<_, io::Error>(())
     });
-    let mut output = tokio::spawn(capture_output(stdout));
+    let output = tokio::spawn(capture_output(stdout));
     #[cfg(not(test))]
-    let mut errors = tokio::spawn(capture_output(stderr));
+    let errors = tokio::spawn(capture_output(stderr));
     #[cfg(test)]
-    let mut errors = tokio::spawn(generic_trace::capture_stderr(
+    let errors = tokio::spawn(generic_trace::capture_stderr(
         stderr,
-        std::sync::Arc::clone(&trace),
+        std::sync::Arc::clone(&request.trace),
         OUTPUT_LIMIT,
     ));
-    let operation = tokio::time::timeout_at(deadline, async {
+    let mut pipes = AdapterPipes {
+        writer,
+        output,
+        errors,
+    };
+    let operation = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), async {
         let ((), output, errors, status) = tokio::try_join!(
-            async { (&mut writer).await.map_err(io::Error::other)? },
-            async { (&mut output).await.map_err(io::Error::other)? },
-            async { (&mut errors).await.map_err(io::Error::other)? },
-            child.wait(),
+            async { (&mut pipes.writer).await.map_err(io::Error::other)? },
+            async { (&mut pipes.output).await.map_err(io::Error::other)? },
+            async { (&mut pipes.errors).await.map_err(io::Error::other)? },
+            child.confirm_exit_until(deadline),
         )?;
         Ok::<_, io::Error>((output, errors, status))
     })
@@ -291,50 +402,109 @@ async fn run_adapter(
     let (output, errors, status) = match operation {
         Ok(Ok(result)) => result,
         failed => {
-            // Cancel pipe tasks, then kill and reap the owned adapter under a second bound.
-            writer.abort();
-            output.abort();
-            errors.abort();
-            let _ = child.start_kill();
-            let cleanup = tokio::time::timeout(Duration::from_secs(3), async {
-                if !writer.is_finished() {
-                    let _ = (&mut writer).await;
+            let error = match failed {
+                Ok(Err(error)) => error,
+                Err(_) => {
+                    io::Error::new(io::ErrorKind::TimedOut, "stock Windows adapter timed out")
                 }
-                if !output.is_finished() {
-                    let _ = (&mut output).await;
-                }
-                if !errors.is_finished() {
-                    let _ = (&mut errors).await;
-                }
-                child.wait().await
-            })
-            .await;
-            if !matches!(cleanup, Ok(Ok(_))) {
-                return Err(io::Error::other(
-                    "could not confirm Windows adapter termination",
-                ));
-            }
-            #[cfg(test)]
-            trace.record("cleanup-confirmed", 0);
-            return match failed {
-                Ok(Err(error)) => Err(error),
-                Err(_) => Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "stock Windows adapter timed out",
-                )),
                 Ok(Ok(_)) => unreachable!(),
             };
+            let result = failed_adapter(error, child, guard, Some(pipes)).await;
+            #[cfg(test)]
+            if result.quarantine.is_none() {
+                request.trace.record("cleanup-confirmed", 0);
+            }
+            return result;
         }
     };
     #[cfg(test)]
-    trace.record("root-completed", 0);
+    request.trace.record("root-completed", 0);
+    if let Err(error) = remaining(deadline) {
+        return AdapterOutcome::failed(error);
+    }
     if !status.success() {
-        return Err(io::Error::other(format!(
+        return AdapterOutcome::failed(io::Error::other(format!(
             "stock Windows adapter failed: {}",
             String::from_utf8_lossy(&errors).trim()
         )));
     }
-    serde_json::from_slice(&output).map_err(io::Error::other)
+    let result = serde_json::from_slice(&output).map_err(io::Error::other);
+    if let Err(error) = remaining(deadline) {
+        return AdapterOutcome::failed(error);
+    }
+    AdapterOutcome {
+        result,
+        quarantine: None,
+    }
+}
+
+async fn adapter_poll_until<T>(
+    deadline: Instant,
+    future: impl std::future::Future<Output = io::Result<T>>,
+) -> io::Result<T> {
+    use std::future::poll_fn;
+    use std::task::Poll;
+    let mut future = std::pin::pin!(future);
+    poll_fn(|context| {
+        if let Err(error) = remaining(deadline) {
+            return Poll::Ready(Err(error));
+        }
+        let polled = future.as_mut().poll(context);
+        if polled.is_ready()
+            && let Err(error) = remaining(deadline)
+        {
+            return Poll::Ready(Err(error));
+        }
+        polled
+    })
+    .await
+}
+
+async fn failed_adapter(
+    error: io::Error,
+    mut child: owned_child::OwnedChild,
+    guard: StockAdapterGuard,
+    mut pipes: Option<AdapterPipes>,
+) -> AdapterOutcome {
+    if let Some(pipes) = pipes.as_ref() {
+        pipes.writer.abort();
+        pipes.output.abort();
+        pipes.errors.abort();
+    }
+    let cleanup_deadline = Instant::now() + Duration::from_secs(3);
+    let _ = child.start_kill();
+    let cleanup =
+        tokio::time::timeout_at(tokio::time::Instant::from_std(cleanup_deadline), async {
+            child.confirm_exit_until(cleanup_deadline).await?;
+            if let Some(pipes) = pipes.as_mut() {
+                if !pipes.writer.is_finished() {
+                    let _ = (&mut pipes.writer).await;
+                }
+                if !pipes.output.is_finished() {
+                    let _ = (&mut pipes.output).await;
+                }
+                if !pipes.errors.is_finished() {
+                    let _ = (&mut pipes.errors).await;
+                }
+            }
+            remaining(cleanup_deadline)?;
+            Ok::<_, io::Error>(())
+        })
+        .await;
+    if matches!(cleanup, Ok(Ok(()))) {
+        AdapterOutcome::failed(error)
+    } else {
+        AdapterOutcome {
+            result: Err(io::Error::other(
+                "could not confirm Windows adapter termination",
+            )),
+            quarantine: Some(AdapterQuarantine::Running {
+                _child: child,
+                _guard: guard,
+                _pipes: pipes,
+            }),
+        }
+    }
 }
 
 async fn capture_output(stream: impl tokio::io::AsyncRead + Unpin) -> io::Result<Vec<u8>> {
@@ -430,7 +600,7 @@ mod tests {
     #[test]
     fn actual_generic_adapter_emits_ordered_child_phases_without_rendering_input() {
         let request = prepare_adapter(
-            "@{echo=[string]$request.echo}|ConvertTo-Json -Compress",
+            "@{echo=[string]$request.echo}|& $locronToJson -Compress",
             &json!({"echo":"fixture 日本語 % #"}),
         )
         .unwrap();
@@ -444,6 +614,8 @@ mod tests {
             [
                 "source-entry",
                 "encoding-ready",
+                "binding-start",
+                "binding-ready",
                 "input-complete",
                 "json-start",
                 "json-parsed",
@@ -555,10 +727,44 @@ mod tests {
     fn adapter_rejects_large_input_before_spawn() {
         assert!(
             run_script_json(
-                "@{} | ConvertTo-Json -Compress",
+                "@{} | & $locronToJson -Compress",
                 &json!({"large": "x".repeat(70 * 1024)})
             )
             .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn adapter_io_does_not_accept_a_ready_result_after_its_original_deadline() {
+        let expired = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .expect("fixture monotonic clock has an earlier instant");
+        let polls = std::cell::Cell::new(0);
+        let future = std::future::poll_fn(|_| {
+            polls.set(polls.get() + 1);
+            std::task::Poll::Ready(Ok(()))
+        });
+        assert_eq!(
+            adapter_poll_until(expired, future)
+                .await
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert_eq!(polls.get(), 0);
+        let deadline = Instant::now() + Duration::from_millis(20);
+        let future = std::future::poll_fn(|_| {
+            std::thread::sleep(
+                deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(1),
+            );
+            std::task::Poll::Ready(Ok(()))
+        });
+        assert_eq!(
+            adapter_poll_until(deadline, future)
+                .await
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::TimedOut
         );
     }
 
@@ -566,7 +772,7 @@ mod tests {
     fn adapter_startup_and_script_wait_are_bounded() {
         // Acquire separately so this test exercises owned startup/input cleanup, not queue timeout.
         let request = prepare_adapter(
-            "Start-Sleep -Seconds 60; @{} | ConvertTo-Json -Compress",
+            "Start-Sleep -Seconds 60; @{} | & $locronToJson -Compress",
             &json!({"input": "x".repeat(60 * 1024)}),
         )
         .unwrap();
@@ -584,7 +790,7 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let marker = temporary.path().join("owned-script-entered.txt");
         let request = prepare_adapter(
-            "[IO.File]::WriteAllText([string]$request.marker, 'entered'); Start-Sleep -Seconds 60; @{} | ConvertTo-Json -Compress",
+            "[IO.File]::WriteAllText([string]$request.marker, 'entered'); Start-Sleep -Seconds 60; @{} | & $locronToJson -Compress",
             &json!({"marker": marker}),
         ).unwrap();
         let permit = ADAPTER_WORKERS

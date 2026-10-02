@@ -7,20 +7,20 @@ use std::sync::{Arc, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
-use process_wrap::tokio::{
-    ChildWrapper, CommandWrap, CommandWrapper, CreationFlags, JobObject, KillOnDrop,
-};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::mpsc as queue;
 use tokio::task::JoinHandle;
-use win32job::{ExtendedLimitInfo, Job};
 
 #[cfg(not(test))]
 use super::capture_output;
-use super::{OUTPUT_LIMIT, remaining, stock_powershell};
+use super::owned_child::{OwnedChild, SpawnFailure};
+use super::{
+    OUTPUT_LIMIT, STOCK_JSON_BOOTSTRAP, StockAdapterGuard, StockModuleSet, adapter_poll_until,
+    configure_stock_command, remaining,
+};
 
 const CLEANUP: Duration = Duration::from_secs(3);
 const IDLE: Duration = Duration::from_secs(60);
@@ -180,8 +180,8 @@ impl ChildPhases {
 /// Instrument only fixed source in test builds; caller data never selects executable text.
 #[cfg(test)]
 fn instrumented_source() -> String {
-    let mut source = format!("{}\n{SOURCE}", phase_token("source-entry"));
-    let import = r"Microsoft.PowerShell.Core\Import-Module -Name ($PSHOME + '\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1') -Cmdlet ConvertFrom-Json,ConvertTo-Json -Function @() -Alias @()";
+    let mut source = format!("{}\n{}", phase_token("source-entry"), worker_source());
+    let import = STOCK_JSON_BOOTSTRAP;
     assert_eq!(source.matches(import).count(), 1);
     source = source.replace(
         import,
@@ -197,10 +197,7 @@ fn instrumented_source() -> String {
             "while ($null -ne ($line = [Console]::In.ReadLine())) {",
             "input-line",
         ),
-        (
-            r"$request = $line | Microsoft.PowerShell.Utility\ConvertFrom-Json",
-            "json-parsed",
-        ),
+        (r"$request = $line | & $locronFromJson", "json-parsed"),
         (
             "$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User",
             "sid-resolved",
@@ -210,7 +207,7 @@ fn instrumented_source() -> String {
         assert_eq!(source.matches(anchor).count(), 1);
         source = source.replace(anchor, &format!("{anchor}\n{}", phase_token(phase)));
     }
-    let serialize = r"(@{version=1; id=$request.id; pid=$PID; result=$result} | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress -Depth 6)";
+    let serialize = r"(@{version=1; id=$request.id; pid=$PID; result=$result} | & $locronToJson -Compress -Depth 6)";
     let anchor = format!("[Console]::Out.WriteLine({serialize})");
     assert_eq!(source.matches(&anchor).count(), 1);
     source.replace(
@@ -220,6 +217,10 @@ fn instrumented_source() -> String {
             phase_token("reply-serialized")
         ),
     )
+}
+
+fn worker_source() -> String {
+    SOURCE.replace("# LOCRON_STOCK_JSON_BOOTSTRAP", STOCK_JSON_BOOTSTRAP)
 }
 
 #[cfg(test)]
@@ -325,7 +326,12 @@ fn wait_for_reply(
     deadline: Instant,
 ) -> io::Result<Value> {
     match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(result) => result,
+        Ok(result) => {
+            if result.is_ok() {
+                remaining(deadline)?;
+            }
+            result
+        }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             Err(io::Error::other("filesystem worker stopped"))
         }
@@ -389,6 +395,7 @@ fn copy_error(error: &io::Error) -> io::Error {
 async fn own_worker(mut receiver: queue::Receiver<Request>) {
     let mut worker: Option<Worker> = None;
     let mut quarantine = false;
+    let mut quarantined_spawn = None;
     loop {
         let request = if worker.is_some() && !quarantine {
             if let Ok(request) = tokio::time::timeout(IDLE, receiver.recv()).await {
@@ -409,7 +416,7 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
         let Some(request) = request else { break };
         #[cfg(test)]
         request.diagnostic.record("dispatch-received", 0);
-        if quarantine {
+        if quarantine || quarantined_spawn.is_some() {
             #[cfg(test)]
             request.diagnostic.record("quarantined", 0);
             let _ = request.reply.send(Err(io::Error::other(
@@ -428,7 +435,7 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
         if worker.is_none() {
             #[cfg(test)]
             request.diagnostic.record("spawn-start", 0);
-            match Worker::spawn() {
+            match Worker::spawn(request.deadline) {
                 Ok(owned) => {
                     #[cfg(test)]
                     LAST_PID.store(owned.pid, Ordering::Release);
@@ -440,10 +447,15 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
                     request.diagnostic.record("spawn-complete", owned.pid);
                     worker = Some(owned);
                 }
-                Err((uncertain, error)) => {
+                Err(failure) => {
+                    let (ownership, error) = match failure {
+                        FailedSpawn::NotStarted(error) => (None, error),
+                        FailedSpawn::Retained { error, ownership } => (Some(ownership), error),
+                    };
                     #[cfg(test)]
                     request.diagnostic.record("spawn-refused", 0);
-                    quarantine = uncertain;
+                    quarantine = ownership.is_some();
+                    quarantined_spawn = ownership;
                     fail_queued(&mut receiver, &error);
                     let _ = request.reply.send(Err(error));
                     continue;
@@ -497,34 +509,28 @@ fn fail_queued(receiver: &mut queue::Receiver<Request>, error: &io::Error) {
     }
 }
 
-#[derive(Debug)]
-struct Enroll {
-    job: Arc<Job>,
-    created: Arc<AtomicBool>,
+enum FailedSpawn {
+    NotStarted(io::Error),
+    Retained {
+        error: io::Error,
+        ownership: Box<SpawnOwnership>,
+    },
 }
 
-impl CommandWrapper for Enroll {
-    fn post_spawn(
-        &mut self,
-        _command: &mut Command,
-        child: &mut Child,
-        _core: &CommandWrap,
-    ) -> io::Result<()> {
-        self.created.store(true, Ordering::Release);
-        let handle = child
-            .raw_handle()
-            .ok_or_else(|| io::Error::other("suspended filesystem child has no handle"))?;
-        if let Err(error) = self.job.assign_process(handle as isize) {
-            let _ = child.start_kill();
-            return Err(io::Error::other(error));
-        }
-        Ok(())
-    }
+enum SpawnOwnership {
+    LostWait {
+        _failure: SpawnFailure,
+        _guard: StockAdapterGuard,
+    },
+    Child {
+        _child: OwnedChild,
+        _guard: StockAdapterGuard,
+    },
 }
 
 struct Worker {
-    child: Box<dyn ChildWrapper>,
-    job: Arc<Job>,
+    child: OwnedChild,
+    _stock: StockAdapterGuard,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     stderr: JoinHandle<io::Result<Vec<u8>>>,
@@ -533,17 +539,12 @@ struct Worker {
     phases: Arc<ChildPhases>,
 }
 
-fn hidden_creation_flags() -> CreationFlags {
-    let mut flags = CreationFlags(Default::default());
-    flags.0.0 = 0x0800_0000;
-    flags
-}
-
 impl Worker {
-    fn spawn() -> Result<Self, (bool, io::Error)> {
-        let executable = stock_powershell().map_err(|error| (false, error))?;
+    fn spawn(deadline: Instant) -> Result<Self, FailedSpawn> {
+        let guard = StockAdapterGuard::acquire_until(StockModuleSet::Utility, deadline)
+            .map_err(FailedSpawn::NotStarted)?;
         #[cfg(not(test))]
-        let source = SOURCE;
+        let source = worker_source();
         #[cfg(test)]
         let source = instrumented_source();
         let encoded = base64::engine::general_purpose::STANDARD.encode(
@@ -552,14 +553,8 @@ impl Worker {
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>(),
         );
-        let mut limits = ExtendedLimitInfo::default();
-        limits.limit_kill_on_job_close();
-        let job = Arc::new(
-            Job::create_with_limit_info(&limits)
-                .map_err(|error| (false, io::Error::other(error)))?,
-        );
-        let created = Arc::new(AtomicBool::new(false));
-        let mut command = Command::new(executable);
+        remaining(deadline).map_err(FailedSpawn::NotStarted)?;
+        let mut command = Command::new(guard.executable());
         command
             .args([
                 "-NoLogo",
@@ -568,37 +563,41 @@ impl Worker {
                 "-EncodedCommand",
                 &encoded,
             ])
-            .env_remove("PSModulePath")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut wrapped = CommandWrap::from(command);
-        wrapped
-            .wrap(hidden_creation_flags())
-            .wrap(KillOnDrop)
-            .wrap(JobObject)
-            .wrap(Enroll {
-                job: Arc::clone(&job),
-                created: Arc::clone(&created),
+        configure_stock_command(&mut command, &guard);
+        let mut child = match OwnedChild::spawn(command) {
+            Ok(child) => child,
+            Err(SpawnFailure::NotStarted(error)) => return Err(FailedSpawn::NotStarted(error)),
+            Err(failure @ SpawnFailure::Unconfirmed { .. }) => {
+                let SpawnFailure::Unconfirmed { ref error, .. } = failure else {
+                    unreachable!()
+                };
+                return Err(FailedSpawn::Retained {
+                    error: copy_error(error),
+                    ownership: Box::new(SpawnOwnership::LostWait {
+                        _failure: failure,
+                        _guard: guard,
+                    }),
+                });
+            }
+        };
+        let (Some(pid), Some(stdin), Some(stdout), Some(stderr)) = (
+            child.id(),
+            child.take_stdin(),
+            child.take_stdout(),
+            child.take_stderr(),
+        ) else {
+            let _ = child.start_kill();
+            return Err(FailedSpawn::Retained {
+                error: io::Error::other("filesystem child capture failed"),
+                ownership: Box::new(SpawnOwnership::Child {
+                    _child: child,
+                    _guard: guard,
+                }),
             });
-        let mut child = wrapped
-            .spawn()
-            .map_err(|error| (created.load(Ordering::Acquire), error))?;
-        let pid = child
-            .id()
-            .ok_or_else(|| (true, io::Error::other("filesystem child has no PID")))?;
-        let stdin = child
-            .stdin()
-            .take()
-            .ok_or_else(|| (true, io::Error::other("filesystem child has no stdin")))?;
-        let stdout = child
-            .stdout()
-            .take()
-            .ok_or_else(|| (true, io::Error::other("filesystem child has no stdout")))?;
-        let stderr = child
-            .stderr()
-            .take()
-            .ok_or_else(|| (true, io::Error::other("filesystem child has no stderr")))?;
+        };
         #[cfg(test)]
         let phases = Arc::new(ChildPhases::default());
         #[cfg(test)]
@@ -607,7 +606,7 @@ impl Worker {
         let errors = tokio::spawn(capture_output(stderr));
         Ok(Self {
             child,
-            job,
+            _stock: guard,
             stdin,
             stdout: BufReader::new(stdout),
             stderr: errors,
@@ -630,8 +629,8 @@ impl Worker {
         let operation = async {
             tokio::select! {
                 result = async {
-                    stdin.write_all(&request.bytes).await?;
-                    stdin.flush().await?;
+                    adapter_poll_until(request.deadline, stdin.write_all(&request.bytes)).await?;
+                    adapter_poll_until(request.deadline, stdin.flush()).await?;
                     #[cfg(test)]
                     request.diagnostic.record("input-flushed", *pid);
                     let bytes = read_frame(stdout).await?;
@@ -646,26 +645,30 @@ impl Worker {
                 () = cancelled(&request.cancelled) => Err(io::Error::new(io::ErrorKind::TimedOut, "filesystem caller deadline elapsed")),
             }
         };
-        tokio::time::timeout_at(deadline, operation)
+        let result = tokio::time::timeout_at(deadline, operation)
             .await
             .map_err(|_| {
                 io::Error::new(
                     io::ErrorKind::TimedOut,
                     "stock Windows filesystem worker timed out",
                 )
-            })?
+            })?;
+        remaining(request.deadline)?;
+        result
     }
 
     async fn cleanup(&mut self) -> io::Result<()> {
-        self.stderr.abort();
-        let _ = self.child.start_kill();
         let deadline = Instant::now() + CLEANUP;
+        self.stderr.abort();
+        remaining(deadline)?;
+        let _ = self.child.start_kill();
+        remaining(deadline)?;
         loop {
+            remaining(deadline)?;
             let reaped = self.child.try_wait().is_ok_and(|status| status.is_some());
-            let empty = self
-                .job
-                .query_process_id_list()
-                .is_ok_and(|processes| processes.is_empty());
+            remaining(deadline)?;
+            let empty = self.child.tree_empty().is_ok_and(|empty| empty);
+            remaining(deadline)?;
             if reaped && empty {
                 if !self.stderr.is_finished()
                     && tokio::time::timeout_at(
@@ -679,6 +682,7 @@ impl Worker {
                         "filesystem pipe cleanup remains unconfirmed",
                     ));
                 }
+                remaining(deadline)?;
                 return Ok(());
             }
             if Instant::now() >= deadline {
@@ -686,7 +690,7 @@ impl Worker {
                     "filesystem worker termination remains unconfirmed",
                 ));
             }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            tokio::time::sleep(remaining(deadline)?.min(Duration::from_millis(10))).await;
         }
     }
 }
@@ -853,15 +857,6 @@ mod tests {
         );
         assert_eq!(phases.0.lock().unwrap().len(), 2);
         drop(writer);
-    }
-
-    #[test]
-    fn job_wrapper_keeps_hidden_flags_without_explicit_suspension() {
-        let mut wrapped = CommandWrap::from(Command::new("fixture.exe"));
-        wrapped.wrap(hidden_creation_flags()).wrap(JobObject);
-        assert!(wrapped.has_wrap::<JobObject>());
-        let flags = wrapped.get_wrap::<CreationFlags>().unwrap().0.0;
-        assert_eq!(flags, 0x0800_0000);
     }
 
     fn fixture_request(operation: &'static str) -> Request {

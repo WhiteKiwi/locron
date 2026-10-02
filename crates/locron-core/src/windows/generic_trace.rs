@@ -6,9 +6,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 const PREFIX: &str = "locron-generic/v1/";
-const PHASES: [&str; 8] = [
+const PHASES: [&str; 10] = [
     "source-entry",
     "encoding-ready",
+    "binding-start",
+    "binding-ready",
     "input-complete",
     "json-start",
     "json-parsed",
@@ -22,12 +24,15 @@ pub(super) fn token(phase: &str) -> String {
 }
 
 pub(super) fn source(script: &str) -> String {
-    // Only test builds split the existing EOF/JSON pipeline to observe its boundaries.
-    // Input, converter selection, caller source and normal catch remain unchanged.
+    // The same compiled binary-only bootstrap and retained command objects run in both builds.
+    // Only test builds split the EOF/JSON pipeline and emit fixed phase tokens.
     format!(
-        "{} $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); {} try {{ $locronInput = [Console]::In.ReadToEnd(); {} {} $request = $locronInput | ConvertFrom-Json; {} {} {script}\n; {} }} catch {{ {} [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
+        "{} $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); {} try {{ {} {}\n{} $locronInput = [Console]::In.ReadToEnd(); {} {} $request = $locronInput | & $locronFromJson; {} {} {script}\n; {} }} catch {{ {} [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
         token("source-entry"),
         token("encoding-ready"),
+        token("binding-start"),
+        super::STOCK_JSON_BOOTSTRAP,
+        token("binding-ready"),
         token("input-complete"),
         token("json-start"),
         token("json-parsed"),
@@ -146,14 +151,15 @@ mod tests {
         trace.line(format!("{PREFIX}unknown private payload").as_bytes());
         trace.line(format!("{PREFIX}json-parsed\r").as_bytes());
         assert_eq!(trace.child_phases(), ["source-entry", "json-parsed"]);
-        let actual = source("@{ok=$true}|ConvertTo-Json -Compress");
+        let actual = source("@{ok=$true}|& $locronToJson -Compress");
         for phase in super::PHASES {
             assert_eq!(actual.matches(&token(phase)).count(), 1);
         }
-        assert!(actual.contains("$locronInput | ConvertFrom-Json"));
-        assert!(!actual.contains("Import-Module"));
+        assert!(actual.contains("$locronInput | & $locronFromJson"));
+        assert!(actual.contains(super::super::STOCK_JSON_BOOTSTRAP));
+        assert!(!actual.contains("Utility.psd1"));
         assert!(actual.contains(&format!(
-            "ConvertTo-Json -Compress\n; {}",
+            "$locronToJson -Compress\n; {}",
             token("caller-complete")
         )));
         let commented = source("Invoke-Fixture # caller ends with a line comment");
