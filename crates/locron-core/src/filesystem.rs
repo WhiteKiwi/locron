@@ -20,7 +20,7 @@ impl DirectoryGuard {
     pub fn private(path: &Path) -> io::Result<Self> {
         #[cfg(windows)]
         {
-            windows::guard_directory(path, true)
+            windows::guard_directory(path, true, true)
         }
         #[cfg(not(windows))]
         {
@@ -35,11 +35,28 @@ impl DirectoryGuard {
         }
     }
 
+    /// Verifies and guards an existing private directory without creating or repairing it.
+    /// Maintenance must use this entry point before accepting a saved state identity.
+    pub fn existing_private(path: &Path) -> io::Result<Self> {
+        #[cfg(windows)]
+        {
+            windows::guard_directory(path, true, false)
+        }
+        #[cfg(not(windows))]
+        {
+            let guard = Self::ancestors(path)?;
+            if !is_private(path, true)? {
+                return Err(unsafe_path(path));
+            }
+            Ok(guard)
+        }
+    }
+
     /// Guards an existing directory chain without requiring a private leaf.
     pub fn ancestors(path: &Path) -> io::Result<Self> {
         #[cfg(windows)]
         {
-            windows::guard_directory(path, false)
+            windows::guard_directory(path, false, false)
         }
         #[cfg(not(windows))]
         {
@@ -66,9 +83,16 @@ impl DirectoryGuard {
 pub struct GuardedFile {
     file: File,
     guard: DirectoryGuard,
+    path: PathBuf,
 }
 
 impl GuardedFile {
+    /// Returns the file path under its retained directory and no-reparse guards.
+    #[must_use]
+    pub fn normalized_path(&self) -> &Path {
+        &self.path
+    }
+
     /// Splits the file from its guard for an async file or path-based adapter.
     /// The caller must retain the guard through that adapter's complete lifetime.
     #[must_use]
@@ -146,6 +170,50 @@ pub fn open_read_no_follow(path: &Path) -> io::Result<GuardedFile> {
     open_with_guard(path, OpenOptions::new().read(true), guard, false)
 }
 
+/// Reads a current-user-owned Windows executable with no untrusted write/control grants.
+/// SYSTEM/Administrators may retain write access and other accounts may retain read/execute.
+/// Retained no-write/no-delete-sharing handles protect the source through hashing and copying.
+#[cfg(windows)]
+pub fn read_owned_executable(path: &Path) -> io::Result<GuardedFile> {
+    let guard = DirectoryGuard::ancestors(parent(path)?)?;
+    windows::read_owned_executable(path, guard)
+}
+
+/// The complete Windows filesystem object identity, including the full 128-bit file ID.
+#[cfg(windows)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FileIdentity {
+    /// Filesystem volume serial number.
+    pub volume_serial_number: u64,
+    /// Full file identity, without a low-resolution fallback.
+    pub file_id: u128,
+}
+
+/// Queries full file identity while the no-delete leaf and directory guards remain live.
+#[cfg(windows)]
+pub fn file_identity(file: &GuardedFile) -> io::Result<FileIdentity> {
+    let file_id::FileId::HighRes {
+        volume_serial_number,
+        file_id,
+    } = file_id::get_high_res_file_id(file.normalized_path())?
+    else {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "filesystem cannot provide full executable identity",
+        ));
+    };
+    Ok(FileIdentity {
+        volume_serial_number,
+        file_id,
+    })
+}
+
+/// Compares complete filesystem object identities rather than path spelling.
+#[cfg(windows)]
+pub fn same_file(left: &GuardedFile, right: &GuardedFile) -> io::Result<bool> {
+    Ok(file_identity(left)? == file_identity(right)?)
+}
+
 fn open_with_guard(
     path: &Path,
     options: &mut OpenOptions,
@@ -181,7 +249,10 @@ fn open_with_guard(
     }
     #[cfg(not(windows))]
     let _ = private;
-    Ok(GuardedFile { file, guard })
+    let path = guard
+        .normalized_path()
+        .join(path.file_name().ok_or_else(|| unsafe_path(path))?);
+    Ok(GuardedFile { file, guard, path })
 }
 
 /// Renames a private managed file while both directory chains remain guarded.
@@ -331,7 +402,7 @@ fn reject_symlink(path: &Path) -> io::Result<()> {
 
 #[cfg(windows)]
 mod windows {
-    use super::{DirectoryGuard, parent, unsafe_path};
+    use super::{DirectoryGuard, GuardedFile, parent, unsafe_path};
     use std::fs::{self, File, OpenOptions};
     use std::io;
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
@@ -528,7 +599,11 @@ mod windows {
         Ok(())
     }
 
-    pub(super) fn guard_directory(path: &Path, private: bool) -> io::Result<DirectoryGuard> {
+    pub(super) fn guard_directory(
+        path: &Path,
+        private: bool,
+        create: bool,
+    ) -> io::Result<DirectoryGuard> {
         let absolute = normalized_absolute(path)?;
         let sid = crate::windows::current_user_sid()?;
         let chain = absolute.ancestors().collect::<Vec<_>>();
@@ -537,7 +612,7 @@ mod windows {
         for component in chain.iter().rev() {
             let file = match directory_handle(component, false) {
                 Ok(file) => file,
-                Err(error) if error.kind() == io::ErrorKind::NotFound && private => {
+                Err(error) if error.kind() == io::ErrorKind::NotFound && create => {
                     crate::windows::create_private_directory(component)?;
                     created = true;
                     directory_handle(component, false)?
@@ -559,6 +634,56 @@ mod windows {
             path: identity,
             _handles: handles,
         })
+    }
+
+    pub(super) fn read_owned_executable(
+        path: &Path,
+        guard: DirectoryGuard,
+    ) -> io::Result<GuardedFile> {
+        let path = guard
+            .normalized_path()
+            .join(path.file_name().ok_or_else(|| unsafe_path(path))?);
+        let file = OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(&path)?;
+        reject_reparse(&file, &path)?;
+        if !file.metadata()?.is_file() {
+            return Err(unsafe_path(&path));
+        }
+        let sid = crate::windows::current_user_sid()?;
+        let descriptor = descriptor(&file)?;
+        if descriptor
+            .owner()
+            .is_none_or(|owner| owner.to_string() != sid)
+        {
+            return Err(unsafe_path(&path));
+        }
+        let acl = descriptor.dacl().ok_or_else(|| unsafe_path(&path))?;
+        for index in 0..acl.len() {
+            let ace = acl.get_ace(index).ok_or_else(|| unsafe_path(&path))?;
+            if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
+                continue;
+            }
+            if ace.ace_type() != AceType::ACCESS_ALLOWED_ACE_TYPE {
+                return Err(unsafe_path(&path));
+            }
+            // Inherit-only entries do not grant rights on this file object.
+            if ace.flags().bits() & 0x08 != 0 {
+                continue;
+            }
+            let principal = ace.sid().ok_or_else(|| unsafe_path(&path))?.to_string();
+            if principal != sid
+                && principal != SYSTEM_SID
+                && principal != ADMIN_SID
+                // Generic write/all and file write/append/EA/attributes/delete/control rights.
+                && ace.mask().bits() & 0x500D_0156 != 0
+            {
+                return Err(unsafe_path(&path));
+            }
+        }
+        Ok(GuardedFile { file, guard, path })
     }
 
     pub(super) fn restrict_owned(path: &Path, directory: bool) -> io::Result<()> {
@@ -626,6 +751,120 @@ mod tests {
     use std::io::Write;
 
     #[test]
+    fn existing_private_guard_refuses_missing_root_without_creation() {
+        let temporary = tempfile::tempdir().unwrap();
+        let missing_parent = temporary.path().join("missing");
+        let root = missing_parent.join("private");
+        assert_eq!(
+            DirectoryGuard::existing_private(&root).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(!missing_parent.exists());
+    }
+
+    #[test]
+    fn package_source_allows_readers_and_trusted_admin_but_guards_mutation() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let path = root.join("package.exe");
+        use std::io::Write;
+        create_private_new(&path)
+            .unwrap()
+            .write_all(b"package")
+            .unwrap();
+        crate::windows::run_script_json(
+            r"
+            $file = [IO.FileInfo]::new([string]$request.path)
+            $acl = $file.GetAccessControl()
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'ReadAndExecute', 'Allow'))
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'), 'FullControl', 'Allow'))
+            $file.SetAccessControl($acl)
+            @{changed=$true} | ConvertTo-Json -Compress
+            ",
+            &json!({"path": path}),
+        ).unwrap();
+        assert!(!is_private(&path, false).unwrap());
+        let source = read_owned_executable(&path).unwrap();
+        assert_eq!(fs::read(source.normalized_path()).unwrap(), b"package");
+        assert_eq!(
+            OpenOptions::new()
+                .write(true)
+                .open(&path)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        let moved = root.join("moved.exe");
+        assert_eq!(
+            fs::rename(&path, &moved).unwrap_err().raw_os_error(),
+            Some(32)
+        );
+        drop(source);
+        fs::rename(&path, &moved).unwrap();
+    }
+
+    #[test]
+    fn package_source_refuses_every_untrusted_mutating_grant() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let rights = [
+            "WriteData",
+            "AppendData",
+            "WriteExtendedAttributes",
+            "WriteAttributes",
+            "Delete",
+            "ChangePermissions",
+            "TakeOwnership",
+        ];
+        for right in rights {
+            let path = root.join(format!("{right}.exe"));
+            drop(create_private_new(&path).unwrap());
+            crate::windows::run_script_json(
+                r"
+                $file = [IO.FileInfo]::new([string]$request.path)
+                $acl = $file.GetAccessControl()
+                $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), [Security.AccessControl.FileSystemRights][Enum]::Parse([Security.AccessControl.FileSystemRights], [string]$request.right), 'Allow'))
+                $file.SetAccessControl($acl)
+                @{changed=$true} | ConvertTo-Json -Compress
+                ",
+                &json!({"path": path, "right": right}),
+            ).unwrap();
+            assert_eq!(
+                read_owned_executable(&path).unwrap_err().kind(),
+                io::ErrorKind::PermissionDenied,
+                "{right}"
+            );
+        }
+    }
+
+    #[test]
+    fn full_executable_identity_matches_hard_link_and_refuses_equal_bytes() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = DirectoryGuard::private(&root).unwrap();
+        let source = root.join("source.exe");
+        let alias = root.join("alias.exe");
+        let different = root.join("different.exe");
+        use std::io::Write;
+        create_private_new(&source)
+            .unwrap()
+            .write_all(b"same")
+            .unwrap();
+        create_private_new(&different)
+            .unwrap()
+            .write_all(b"same")
+            .unwrap();
+        fs::hard_link(&source, &alias).unwrap();
+        let source = read_owned_executable(&source).unwrap();
+        let alias = read_owned_executable(&alias).unwrap();
+        let different = read_owned_executable(&different).unwrap();
+        assert!(same_file(&source, &alias).unwrap());
+        assert!(!same_file(&source, &different).unwrap());
+    }
+
+    #[test]
     fn created_private_root_and_file_have_real_acl_facts() {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path().join("비공개 state");
@@ -651,6 +890,7 @@ mod tests {
             @{changed=$true} | & $locronToJson -Compress
         ", &json!({"path": root})).unwrap();
         assert!(!is_private(&root, true).unwrap());
+        assert!(DirectoryGuard::existing_private(&root).is_err());
         assert!(DirectoryGuard::private(&root).is_err());
         restrict_owned(&root, true).unwrap();
         assert!(is_private(&root, true).unwrap());
