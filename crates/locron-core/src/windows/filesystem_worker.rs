@@ -676,9 +676,30 @@ mod tests {
             return;
         };
         assert_eq!(mode, "reuse");
-        let first = request("sid", None, Instant::now() + Duration::from_secs(30)).unwrap();
-        let pid = LAST_PID.load(Ordering::Acquire);
-        assert_ne!(pid, 0);
+        assert!(DISPATCHER.get().is_none());
+        let barrier = std::sync::Barrier::new(9);
+        let cold = Instant::now();
+        let results = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        let result =
+                            request("sid", None, Instant::now() + Duration::from_secs(30)).unwrap();
+                        (result, LAST_PID.load(Ordering::Acquire))
+                    })
+                })
+                .collect();
+            barrier.wait();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert!(cold.elapsed() < Duration::from_secs(30));
+        let (first, pid) = &results[0];
+        assert_ne!(*pid, 0);
+        assert!(results.iter().all(|result| result == &results[0]));
         let started = Instant::now();
         std::thread::scope(|scope| {
             let mut handles = Vec::new();
@@ -688,10 +709,10 @@ mod tests {
                 }));
             }
             for handle in handles {
-                assert_eq!(handle.join().unwrap(), first);
+                assert_eq!(&handle.join().unwrap(), first);
             }
         });
-        assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
+        assert_eq!(LAST_PID.load(Ordering::Acquire), *pid);
         assert!(
             started.elapsed() < Duration::from_secs(10),
             "warm requests repeated a cold bootstrap"
@@ -702,7 +723,7 @@ mod tests {
         let path = guard.normalized_path().join("fresh.txt");
         drop(crate::filesystem::create_private_new(&path).unwrap());
         assert!(crate::filesystem::is_private(&path, false).unwrap());
-        assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
+        assert_eq!(LAST_PID.load(Ordering::Acquire), *pid);
         println!("fixed-worker-reuse-confirmed");
     }
 }
