@@ -1687,6 +1687,16 @@ when present and otherwise the ordinary standalone directory, and needs no netwo
 locron install --operation UUID is recovery only and conflicts with all new-install options.
 Dispatch these commands before ordinary StatePaths discovery; their shared operation engine
 opens state only after ownership/source validation and only for requested role registration.
+WindowsInstallOptions carries state_root: Option<PathBuf>. For a new installation the main
+dispatcher forwards the parsed global --state-dir or LOCRON_STATE_DIR override as explicit
+metadata, resolving it to an absolute local path without creating state. Store that selection
+in the protected original request before handoff. Fresh registration uses that frozen selection
+or the ordinary default; an existing receipt preserves its already inventoried registrations
+across roots rather than creating a new registration because an override was supplied.
+UUID recovery rejects a fresh explicit --state-dir option and ignores ambient LOCRON_STATE_DIR;
+the dispatcher retains clap's ValueSource to distinguish them before StatePaths discovery.
+Its follow-up request contains no fresh state_root; the engine reads the original protected
+request's selection instead. Recovery never rediscovers or substitutes the current shell's root.
 The native frontend downloads and verifies canonical release bytes, writes the same protected
 request and runs the same independently verified helper as the script frontend. It never loads
 downloaded/retained .ps1 code or uses Invoke-Expression; fixed compiled stock OS adapters remain
@@ -1718,10 +1728,21 @@ filename alone. Uninstall may retain a modified listed file with an explicit war
 the directory only when it is empty. For an opt-in user PATH insertion, read HKCU\\Environment's
 raw PATH without expanding variables and record both complete prior/resulting values and their
 REG_SZ or REG_EXPAND_SZ kinds; a missing prior value remains distinguishable from an empty one.
+The pure insertion planner preserves a present value's kind and uses REG_SZ only for a missing
+value. Append the normalized literal installation directory once, preserving every existing
+field byte-for-byte; preserve an existing trailing separator instead of adding another one.
+Compare only validated absolute literal entries using the receipt's conservative normalized
+spelling comparison. Do not expand environment references, resolve aliases or rewrite quoted,
+relative or malformed fields. A pre-existing matching literal produces no insertion or new
+receipt ownership; preserve any previously verified receipt-owned conditional rollback record.
+Percent characters in the new directory are accepted in REG_SZ but refuse insertion into
+REG_EXPAND_SZ, where a later environment read could interpret them as references. A selected
+semicolon-containing directory also refuses opt-in insertion. These checks and the complete
+bounded old/new raw-value-plus-kind payload occur before effects. Revalidate the exact current
+raw value and kind immediately before a write; an intervening edit refuses that write.
 Restore that prior value and kind only while both current raw value and kind equal the recorded
 result; retain a subsequently edited PATH with a warning instead of deleting a potential user-owned
-entry. A selected install directory containing a semicolon cannot be represented unambiguously
-in PATH and refuses the opt-in insertion. Use stock RegistryKey operations rather than the
+entry. Use stock RegistryKey operations rather than the
 .NET user-environment getter/setter, which expands values and loses the original registry kind.
 The installer does not synthesize an unaudited native broadcast adapter: it reports that persistent
 PATH changes are available after the next sign-in, and does not claim to change running processes.

@@ -41,9 +41,17 @@ its published SHA-256. Run its locron.exe install command without loading an uns
 Native install also accepts --version, --dashboard and --add-to-path. --dashboard conflicts
 with --no-service, which disables both roles. Native uninstall defaults to its receipt-owned
 directory when present, otherwise the ordinary standalone directory, and works offline.
+For fresh native installation, the global --state-dir or LOCRON_STATE_DIR selects the state
+used by the new daemon registration. Reinstallation preserves existing registrations across
+their original state roots. PATH insertion preserves the existing raw value and registry kind;
+a matching literal entry is retained without claiming it as newly installer-owned. A directory
+containing a semicolon refuses PATH insertion; one containing a percent character also refuses
+insertion when the existing PATH uses the expandable registry format.
 Native locron.exe install --operation UUID recovers an owned interrupted standalone operation;
-that form accepts no new-install options. All these planned commands leave execution policy
-unchanged and still respect the machine's native executable protections and organizational rules.
+that form accepts no new-install options or fresh explicit --state-dir. Recovery uses the
+protected original state selection and ignores ambient LOCRON_STATE_DIR. All these planned
+commands leave execution policy unchanged and still respect the machine's native executable
+protections and organizational rules.
 When the native caller still maps the executable being changed, it reports pending acceptance
 with an operation UUID and status-file path. That is not confirmed installation/removal. A
 separately extracted native ZIP executable can wait for work against a different installation.

@@ -592,6 +592,10 @@ Store distribution remain outside this milestone.
   The optional script route requires an existing operator policy that permits that script.
   Installing over an existing owned receipt preserves all prior enabled role states. Fresh-only
   service/dashboard choices refuse there with guidance to use the explicit service commands.
+  Native fresh installation honors the selected global state-directory option or environment
+  override. UUID recovery retains the protected original state selection, refuses a new explicit
+  state-directory option and ignores an ambient override. An opt-in PATH change preserves the
+  existing raw registry format and never claims ownership of a pre-existing literal entry.
 - WinGet's portable channel installs package files and its command alias; it does not automatically
   install services or invoke lifecycle hooks. Users explicitly configure services through the
   package executable. A native maintenance procedure records and quiesces exact owned

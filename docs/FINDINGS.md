@@ -4122,3 +4122,26 @@ selected ownership contract, without changing manifest format or assuming a WinG
 
 Sources: [WinGet user-scope view and exact value names](https://github.com/microsoft/winget-cli/blob/b0f6209cc58841c19e432325b127ab3c33a8f6f8/src/AppInstallerCommonCore/PortableARPEntry.cpp),
 [portable archive index and legacy target behavior](https://github.com/microsoft/winget-cli/blob/b0f6209cc58841c19e432325b127ab3c33a8f6f8/src/AppInstallerCLICore/PortableInstaller.cpp).
+
+### Literal PATH insertion and frozen native state selection (2026-10-03)
+
+RegistryValueKind distinguishes literal REG_SZ from expandable REG_EXPAND_SZ. A new installation
+directory containing percent characters can be stored literally in REG_SZ, but preserving an
+existing expandable kind could reinterpret it when another process retrieves the environment.
+Refuse that insertion instead of changing the existing kind or expanding its prior fields.
+Semicolon-containing destinations remain unrepresentable as one PATH field. Detect duplicates
+only among validated normalized absolute literal fields; a match is not newly installer-owned.
+This conservative comparison does not equate environment references, aliases or arbitrary
+quoted/relative fields. Exact raw value and kind remain the conditional write/rollback predicate.
+
+Native dispatch occurs before ordinary state discovery. Its new-install state override must be
+request metadata rather than an ambient lookup by the copied helper. Clap retains whether the
+global option came from the command line or environment. Recovery can therefore reject a new
+explicit override, ignore an ambient override and retain the protected original selection.
+This closes the pre-discovery frontend contract without changing ordinary state-path behavior.
+Verify missing/empty and String/ExpandString PATH cases, literal duplicates, percent and semicolon
+refusals, an intervening registry edit, CLI/environment install selection, and UUID recovery in
+a differently configured shell before exposing the native commands.
+
+Sources: [literal and expandable registry value kinds](https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.registryvaluekind?view=netframework-4.8.1),
+[locked clap argument value provenance](https://github.com/clap-rs/clap/blob/13f2db5072d600c11d8d6298e4e9ba53ffc6c1ab/clap_builder/src/parser/matches/value_source.rs).
