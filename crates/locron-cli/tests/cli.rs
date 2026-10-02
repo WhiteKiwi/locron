@@ -51,21 +51,32 @@ fn start_daemon(state: &tempfile::TempDir) -> Child {
         .unwrap();
     let lock_path = state.path().join("daemon.lock");
     let deadline = Instant::now() + Duration::from_secs(5);
-    while DaemonLock::try_prove_free(&lock_path).is_ok() && Instant::now() < deadline {
+    while Instant::now() < deadline {
         if let Some(status) = daemon.try_wait().unwrap() {
             panic!(
                 "daemon exited during startup ({status}): {}",
                 startup_diagnostics(&mut diagnostics)
             );
         }
+        if DaemonLock::read_role_metadata(&lock_path)
+            .ok()
+            .flatten()
+            .is_some_and(|owner| owner.metadata.pid == daemon.id())
+        {
+            assert!(
+                DaemonLock::try_prove_free(&lock_path).is_err(),
+                "daemon published ownership without holding the lock"
+            );
+            return daemon;
+        }
         thread::sleep(Duration::from_millis(20));
     }
-    assert!(
-        DaemonLock::try_prove_free(&lock_path).is_err(),
-        "daemon did not acquire its durable lock: {}",
-        startup_diagnostics(&mut diagnostics),
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+    panic!(
+        "daemon did not publish its ownership: {}",
+        startup_diagnostics(&mut diagnostics)
     );
-    daemon
 }
 
 fn startup_diagnostics(file: &mut std::fs::File) -> String {
