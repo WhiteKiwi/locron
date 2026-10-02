@@ -1911,6 +1911,22 @@ arithmetic overflow, a baseline larger than its promised maximum, or an uncounte
 refuses preflight. The codec accepts only the resulting bounded byte-growth reservation and still
 rejects any actual append beyond it. This is size accounting for the concrete typed record,
 not permission to synthesize a replacement service record or replay arbitrary JSON.
+The concrete existing-installation frame keeps immutable original and current typed service slots,
+the original receipt and any fully verified new receipt, and a fixed-key optional package-completion
+binding. Keep every absent slot as null. At most seven leaf entries identify the six exact payload
+names and the receipt; each freezes its original and durable backup full identities, byte count
+and SHA-256, and records delete intent, confirmed absence, newly created identity, verified writes
+and rollback identity through a strict enum. Derive backup and destination paths from those logical
+names under retained guards; never save arbitrary paths or task source. Changed or unverifiable
+uninstall companions are bounded retention facts, not authorized leaf entries.
+Pure journal validation binds every frame to the protected original request, immutable inventory
+and snapshot, checks consecutive sequence and permitted phase/leaf transitions, and rejects unknown
+names or changed original facts. It cannot establish live ownership or completion. Capacity counts
+all fixed nullable keys, the longest reachable enum spellings, both future created/rollback full
+identities per leaf, every repeated typed service slot, and the future package path/key/version
+bound before journal creation. Fresh installation additionally requires the service owner's real
+typed registration/root rollback record and complete callback plan; the existing-installation
+record cannot authorize fresh role creation or substitute null for that missing authority.
 sync_all must succeed before the next
 effect. Frame/size exhaustion, flush uncertainty, a truncated/corrupt tail or an unknown created
 identity is an explicit refusal with backups retained and no replay inferred from status. Recovery
