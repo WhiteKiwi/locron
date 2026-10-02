@@ -354,6 +354,10 @@ async fn run_adapter(
     request
         .trace
         .record("spawn-complete", child.id().unwrap_or_default());
+    #[cfg(test)]
+    request
+        .trace
+        .record("spawn-flags", child.creation_flags_at_spawn());
     if let Err(error) = remaining(deadline) {
         return failed_adapter(error, child, guard, None).await;
     }
@@ -609,6 +613,8 @@ mod tests {
         let permit = ADAPTER_WORKERS.acquire(deadline).unwrap();
         let result = run_adapter_worker(request, deadline, permit).unwrap();
         assert_eq!(result["echo"], "fixture 日本語 % #");
+        assert_eq!(trace.stage_value("spawn-flags"), Some(0x0800_0004));
+        assert_eq!(trace.stage_value("spawn-flags").unwrap() & 0x18, 0);
         assert_eq!(
             trace.child_phases(),
             [

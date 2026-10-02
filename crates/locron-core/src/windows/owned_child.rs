@@ -16,6 +16,9 @@ use win32job::{ExtendedLimitInfo, Job};
 
 use super::remaining;
 
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+const CREATE_SUSPENDED: u32 = 0x0000_0004;
+
 #[derive(Debug)]
 struct Enroll(Arc<Job>);
 
@@ -45,11 +48,13 @@ pub(super) struct OwnedChild {
     child: Box<dyn ChildWrapper>,
     job: Arc<Job>,
     status: Option<ExitStatus>,
+    #[cfg(test)]
+    creation_flags_at_spawn: u32,
 }
 
 fn hidden_flags() -> CreationFlags {
     let mut flags = CreationFlags(Default::default());
-    flags.0.0 = 0x0800_0000;
+    flags.0.0 = CREATE_NO_WINDOW;
     flags
 }
 
@@ -62,6 +67,9 @@ impl OwnedChild {
                 .map_err(|error| SpawnFailure::NotStarted(io::Error::other(error)))?,
         );
         let created = AtomicBool::new(false);
+        let native_flags = CREATE_NO_WINDOW | CREATE_SUSPENDED;
+        #[cfg(test)]
+        let mut creation_flags_at_spawn = 0;
         let mut command = CommandWrap::from(command);
         command
             .wrap(hidden_flags())
@@ -70,6 +78,13 @@ impl OwnedChild {
             .wrap(Enroll(Arc::clone(&job)));
         let child = command
             .spawn_with(|command| {
+                // Apply the actual native mask after every wrapper pre_spawn hook. The logical
+                // wrapper stays unsuspended so JobObject resumes only after both enrollments.
+                command.creation_flags(native_flags);
+                #[cfg(test)]
+                {
+                    creation_flags_at_spawn = native_flags;
+                }
                 let child = command.spawn()?;
                 created.store(true, Ordering::Release);
                 Ok(child)
@@ -88,7 +103,14 @@ impl OwnedChild {
             child,
             job,
             status: None,
+            #[cfg(test)]
+            creation_flags_at_spawn,
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn creation_flags_at_spawn(&self) -> u32 {
+        self.creation_flags_at_spawn
     }
 
     pub(super) fn id(&self) -> Option<u32> {

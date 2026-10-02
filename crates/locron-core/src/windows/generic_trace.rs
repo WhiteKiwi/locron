@@ -48,6 +48,15 @@ pub(super) struct Trace {
 }
 
 impl Trace {
+    pub(super) fn stage_value(&self, expected: &str) -> Option<u32> {
+        self.stages
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(phase, _, _)| *phase == expected)
+            .map(|(_, value, _)| *value)
+    }
+
     pub(super) fn new() -> Self {
         Self {
             entered: Instant::now(),
