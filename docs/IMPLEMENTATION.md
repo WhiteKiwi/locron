@@ -655,6 +655,21 @@ only after successful deletion or an already-missing leaf. Keep the existing Uni
 Native CLI fixtures prove valid output deletion, idempotent missing output, and unsafe-leaf
 refusal with the pending state preserved and the unrelated object left intact.
 
+Automatic Windows maintenance retains existing-only private guards for the output root and each
+run directory while enumerating, recovering or removing artifacts. Canonical run/attempt names
+and durable reference checks remain required. Use the shared guarded rename for repaired partials
+and private deletion for retained/orphan files; preserve the five-second sharing-violation bound
+and never recreate a missing run directory. Unsafe parents/leaves fail before repair or deletion,
+and a failed removal keeps the existing pending transition for a later maintenance pass.
+Repaired file contents still sync before rename, matching ordinary Windows output finalization.
+The Unix directory fsync path remains Unix-only: Windows does not call a read-only directory
+handle a successful metadata flush or require a privileged volume flush. Record rename/deletion
+results before the existing SQLite completion transition; this does not claim a hardware-power-loss
+directory-fsync guarantee. Native maintenance fixtures use private managed children and cover
+partial-tail repair, already-renamed/missing recovery, protection of live attempts, retention and
+pending-prune restart, canonical orphan deletion, unsafe-object refusal and bounded reader sharing.
+Run the full maintenance harness on native x64/ARM64/MSRV as well as the existing Unix suite.
+
 ### Wake, cooperative role control and Task Scheduler
 
 Use Windows-only interprocess =2.4.4 with tokio, safe SDDL SecurityDescriptor deserialization and

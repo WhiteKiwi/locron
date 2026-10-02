@@ -2997,6 +2997,21 @@ and PKCS#8 key bytes belong only to tests and are never added to an operating-sy
 Source: [tokio-rustls published manifest](https://docs.rs/crate/tokio-rustls/0.26.4/source/Cargo.toml),
 [TLS acceptor API](https://docs.rs/tokio-rustls/0.26.4/tokio_rustls/struct.TlsAcceptor.html).
 
+### Windows maintenance directory flush boundary (2026-10-03)
+
+The existing CLI maintenance helper opens a directory with read-only File::open before sync_all.
+Rust 1.94's Windows File::fsync calls FlushFileBuffers, whose supported file handle requires
+GENERIC_WRITE. Microsoft also requires FILE_FLAG_BACKUP_SEMANTICS to open a directory; ordinary
+File::open does not supply that directory contract. A privileged volume flush is unsuitable for
+the standard-user product. Keep Unix directory fsync in its backend and use the already selected
+Windows repaired-file sync plus guarded rename/deletion contract. Successful native filesystem
+operations and SQLite completion are testable; they do not prove a hardware-power-loss directory
+metadata flush. Maintenance must not report a no-op Windows sync as such proof.
+
+Sources: [Rust 1.94 Windows filesystem source](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs),
+[CreateFile directory handle requirements](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[FlushFileBuffers access and volume-flush requirements](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
