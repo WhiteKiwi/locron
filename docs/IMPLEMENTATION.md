@@ -218,6 +218,14 @@ deadline assertions. Run destructive fixed-worker faults and abrupt-parent cases
 test-helper processes, so those intentional failures cannot invalidate other state tests.
 Keep the core cold gate before post-gate probes and retain normal harness parallelism in the
 other libraries. Splitting the CI core/store invocations changes no coverage or production bound.
+Add cfg(test)-only bounded phase breadcrumbs to the actual filesystem dispatch path: API entry,
+queue admission, owned-child spawn start/completion, input write/flush completion, reply receipt,
+timeout/refusal and cleanup confirmation. Emit only fixed operation/phase names, monotonic request
+ID, owned PID and elapsed/remaining milliseconds; never SID, path, input, reply or secret values.
+The first failing cold state fixture must expose these facts without an earlier warm-up. Keep the
+production source, request framing, mutation no-replay rule and original thirty/three-second
+bounds unchanged. Verify that native failure output identifies the last completed stage; use the
+same x64/ARM64/MSRV cold gates and distinguish post-gate startup measurements from that request.
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable

@@ -2787,6 +2787,16 @@ invalidate queued work in that process and must not contaminate unrelated state 
 Other library harnesses retain normal parallelism. This is test scheduling for deliberate owned
 failures, not a cold-start workaround or a larger production deadline.
 
+The next worker run, PR41 head 762bed7/run 37038880251, passed x64 stable and MSRV core/store.
+ARM64 passed 66 core fixtures, including isolated simultaneous cold callers, but its first
+private-file fixture timed out at filesystem CreateNew. Post-gate stock PowerShell 5.1.26100.9457
+probes measured 513/469/456 ms for bootstrap/small/60k structured input, much faster than the
+earlier image's 22.5-second measurements. Those later probes do not locate the actual first cold
+worker's delay. Select test-only phase/elapsed/operation/request-ID/owned-PID breadcrumbs on its
+real dispatch path, without path/SID/payload values, warm-up, new deadlines or mutation replay.
+Do not call the failed cold acceptance transiently successful from later bootstrap performance.
+Evidence: [exact native ARM64 worker run](https://github.com/WhiteKiwi/locron/actions/runs/37038880251/job/110943792703).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
