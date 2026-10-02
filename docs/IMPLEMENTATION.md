@@ -1171,6 +1171,16 @@ greater-than-260-character paths without increasing journal limits. Compute the 
 record from the complete frozen snapshot plus the bounded future binding/definition, progress
 and forced-instance fields; refuse if it cannot fit the 128 KiB private-record limit.
 
+Expose a pure ServiceRestoreRecord::same_original(&other) comparison for the private journal's
+typed service slot. Compare the version, SID, previous executable path/full volume/file binding,
+and the ordered roles' original role/root/instance/task name/enabled flag/definition fingerprint.
+Ignore only mutable phase, next binding, forced facts, role progress and future-definition fields.
+This accessor establishes a common frozen snapshot origin; each record must still pass account/
+phase validation, allowed transition checks and live guarded ownership before any effect.
+Verify: tampering with SID, either full-ID component, path/root/name, original enabled state,
+definition or role order refuses the comparison; valid forward progress/future fields preserve
+the same origin without independently authorizing a filesystem or task operation.
+
 The persistence plan exposes that maximum record byte count and finite callback ceilings for R
 frozen roles: quiesce <=4R+2, restore <=4R+2, remove <=2R+2. These include per-effect intent/result,
 forced-stop facts and initial/terminal records; retries/polling do not append unbounded snapshots.
