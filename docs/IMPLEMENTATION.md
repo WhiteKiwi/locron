@@ -183,6 +183,13 @@ lost root-wait capability retains its independent Job/guard/slot without treatin
 as a root-exit proof. Parent kernel handle closure supplies emergency containment, never a reported
 graceful exit or permission to replay an uncertain child.
 
+The Core-local factory also sets the final native CREATE_NO_WINDOW | CREATE_SUSPENDED mask in
+the safe spawn closure after all wrapper pre_spawn hooks. Its logical CreationFlags remain only
+CREATE_NO_WINDOW, so JobObject resumes after both enrollments. This fixes the actual spawn boundary
+without adding DETACHED_PROCESS or CREATE_NEW_CONSOLE. Verify the captured final mask in an actual
+owned child; CONOUT$ availability alone cannot distinguish an invisible private console from a
+visible console. The native binary loader/ownership fixtures remain required independently.
+
 Verify this boundary with an isolated actual native guard-phase stall: after retaining real
 no-follow stock ancestor/leaf handles, a cfg(test)-only anonymous-pipe ReadFile blocks the owner
 until the test releases its owned pipe. The driver must time out, retain that slot/handles and

@@ -2945,6 +2945,12 @@ The official [Job Objects contract](https://learn.microsoft.com/en-us/windows/wi
 describes kill-on-close termination when the final Job handle closes. Native parent-crash evidence
 is still pending and cannot be inferred from kill_on_drop or a successful normal-child exit.
 
+The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
+inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
+native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject
+policy unsuspended for resume after both enrollments. Capture the mask at real spawn rather than
+treating a configured wrapper or CONOUT$ device availability as complete visibility evidence.
+
 Select the same fixed stock Windows PowerShell 5.1 adapter using the supported scripting COM
 interface `New-Object -ComObject Schedule.Service`, `Connect()`, `NewTask(0)`, root-folder
 `RegisterTaskDefinition` and typed task properties. This avoids unsafe COM in Rust and avoids
