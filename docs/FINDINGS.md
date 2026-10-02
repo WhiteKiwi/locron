@@ -2321,6 +2321,14 @@ retroactively establish the exact original exit-2 cause. Exact-revision hosted P
 subsequently passed before tagging; see the publication receipt in §44.
 
 
+During Windows-support PR41, head a6f0189/run 37041311097 Linux stable failed
+global_environment::execution_layers_global_environment_and_persists_the_resolved_executable
+at its startup observer, again with discarded stderr. Source shows that helper still actively
+acquires the lock before the daemon is ready; attempt_history and service_lifetime retain the
+same interference path. Extend the approved passive expected-child-PID observation to these
+remaining fixtures. The exact hosted fatal cause remains unavailable until captured diagnostics
+replace the discarded stream; keep all existing startup budgets and actual behavior assertions.
+
 ## 44. v0.9.6 signed publication and preservation receipt (2026-09-30)
 
 Reviewed [PR #19](https://github.com/WhiteKiwi/locron/pull/19) implemented the second feedback.

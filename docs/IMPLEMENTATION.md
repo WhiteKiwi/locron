@@ -1117,6 +1117,11 @@ checks. The parent reviews the scoped branch and exact hosted PR/main CI and Aud
 a blind rerun of the failed unchanged test is not this correction. No manager, Keychain, installed
 binary, publication, dependency or product source operation belongs to the development session.
 
+The Windows-support CI audit also found active readiness probes in global_environment,
+attempt_history and service_lifetime. Apply this same passive PID/liveness contract to their
+helpers, retaining owned-child cleanup and bounded startup stderr before reporting a failure.
+Keep their real command, output and graceful-exit assertions under the original deadlines.
+
 ## Second feedback and v0.9.6 signed macOS release (2026-09-30)
 
 Implement the reviewed SPEC amendments with FINDINGS §42 as the evidence record. The reporter
