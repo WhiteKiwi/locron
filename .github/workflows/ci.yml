@@ -174,6 +174,73 @@ jobs:
       - name: Dependency direction
         run: bash scripts/check-dependency-direction.sh
 
+  windows-package:
+    name: Windows package / ${{ matrix.target }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+      - name: Build native executable with static CRT
+        env:
+          RUSTFLAGS: '-C target-feature=+crt-static'
+        shell: powershell
+        run: |
+          $compiler = rustc -vV
+          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
+          if ($compiler -cnotcontains 'host: ${{ matrix.target }}') { throw 'package target must equal native rustc host' }
+          cargo build --release --locked -p locron --target '${{ matrix.target }}'
+          if ($LASTEXITCODE -ne 0) { throw 'native release build failed' }
+      - name: Package and verify current-version ZIP without developer PATH
+        shell: powershell
+        run: |
+          $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed' }
+          $package = @($metadata.packages | Where-Object { $_.name -eq 'locron' })
+          if ($package.Count -ne 1) { throw 'expected exactly one locron package' }
+          $tag = 'v' + $package[0].version
+          $target = '${{ matrix.target }}'
+          python -B scripts/windows_release.py package $tag $target "target/$target/release/locron.exe" package-artifacts
+          if ($LASTEXITCODE -ne 0) { throw 'native ZIP packaging failed' }
+          $archive = "package-artifacts/locron-$tag-$target.zip"
+          $facts = python -B scripts/windows_release.py validate $tag $target $archive | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'native ZIP validation failed' }
+          $verification = [ordered]@{
+            version = $facts.version
+            target = $facts.target
+            unsigned = $facts.unsigned
+            imports = $facts.imports
+            binary_sha256 = $facts.binary_sha256
+            archive_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+            rustc = (rustc -vV | Out-String).Trim()
+            rustflags = '-C target-feature=+crt-static'
+            version_check_path = 'Windows system directories only'
+          }
+          $verification | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 package-artifacts/verification.json
+      - name: Preserve native package verification
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-package-${{ matrix.target }}
+          path: |
+            package-artifacts/*.zip
+            package-artifacts/verification.json
+          if-no-files-found: error
+
   installer:
     name: Installer / ubuntu-latest
     timeout-minutes: 10
@@ -195,6 +262,8 @@ jobs:
         run: sh scripts/test-render-homebrew-formula.sh
       - name: Test signing, immutable release and updater boundaries
         run: python3 -B scripts/test-release-scripts.py
+      - name: Test Windows archive and versioned release boundaries
+        run: python3 -B scripts/test-windows-distribution.py
       - name: Check release checksum filenames
         run: sh scripts/test-generate-release-checksums.sh
       - name: Refuse unsupported platforms and musl

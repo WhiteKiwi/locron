@@ -4,8 +4,66 @@ Every supported installation channel, plus how to update and uninstall each one.
 supervising the daemon once it is installed, see the [Operator Guide](OPERATOR.md); for the exact
 command contracts mentioned here, see the [CLI Reference](CLI.md).
 
-`locron` supports **macOS** and **Linux** on **x86_64** and **aarch64**. Windows is not a supported
-target.
+Released `locron` builds support **macOS** and **Linux** on **x86_64** and **aarch64**. Native
+Windows 11 x64/ARM64 distribution is planned for the next feature release; its acceptance gates
+and package-channel submission have not yet established released Windows support.
+
+## Planned Windows 11 channels
+
+The first Windows release is planned to use unsigned, native MSVC ZIPs with a statically linked C
+runtime. It must require no Rust, Visual Studio, Git Bash, PowerShell 7 or separately installed VC
+redistributable. Clean Windows 11 standard-user acceptance must verify these requirements before
+the channel is announced. Windows Server and 32-bit Windows are outside this milestone.
+
+The standalone PowerShell 5.1 installer is planned to install into
+`$env:LOCALAPPDATA\Programs\locron`, start the per-user daemon and leave the dashboard disabled
+unless explicitly requested. Its documented switches are `-Version`, `-InstallDirectory`,
+`-NoService`, `-Dashboard` and `-AddToPath`. PATH changes are opt-in and affect only the user's
+persistent PATH; open terminals may require a restart. Protected ownership receipts authorize
+updates/removal of that exact executable. Uninstall retains durable state and removes only
+unchanged installer-owned files, exact owned task registrations and a PATH entry the installer
+inserted. Standalone and package-manager installations use separate locations.
+
+WinGet's proposed identifier is `WhiteKiwi.locron`; availability and community repository
+acceptance remain release gates. Its ZIP/portable manifests point at the same immutable GitHub
+ZIPs, final SHA-256 values and architecture-specific executable paths. Portable manifests cannot
+enforce Scope, so the supported installation and upgrade procedure explicitly passes
+`--scope user`. These are planned commands, available only after package acceptance:
+
+```powershell
+winget install --id WhiteKiwi.locron --exact --scope user
+winget upgrade --id WhiteKiwi.locron --exact --scope user
+```
+
+WinGet owns this installation, including its command alias and PATH behavior; standalone
+installation and `self-update` refuse to adopt it. Portable packages cannot run arbitrary task
+lifecycle hooks. Before a supported WinGet upgrade/removal, the maintenance procedure must
+record all exact executable-bound registrations and their enabled states, suppress activation
+and confirm graceful owned-process exit. After an upgrade it must refresh the active executable
+path and restore the recorded enabled states. A disabled dashboard stays disabled. The planned
+maintenance flow reuses the release installer asset:
+
+```powershell
+# $wingetExecutable is the exact package executable, rather than its command alias.
+$prepared = .\install.ps1 -Maintenance Prepare -Executable $wingetExecutable
+winget upgrade --id WhiteKiwi.locron --exact --scope user
+.\install.ps1 -Maintenance Complete -Operation $prepared.operation_id -Executable $newWingetExecutable
+```
+
+Prepare reports its durable operation UUID and status-file path after owned tasks are disabled
+and graceful exit is confirmed. They stay disabled until Complete verifies the current user,
+package/source registration, canonical executable path, version, architecture and canonical
+release digest, then restores the recorded enabled states. An interrupted or failed Complete can
+be retried with the same UUID and a valid package executable. Recovery reactivates only a
+verified binary; a mismatched/stale path remains disabled with an explicit recovery error.
+Before removal, use `-Maintenance Remove -Executable $wingetExecutable`, then
+`winget uninstall --id WhiteKiwi.locron --exact --scope user`; only exact owned registrations are
+removed. Native maintenance acceptance must pass before this channel is advertised.
+
+Downloads use canonical HTTPS assets from `WhiteKiwi/locron`. Archive checksums detect changed
+or corrupted bytes; they provide no independent publisher authentication. The unsigned first
+release may be blocked or warned about by SmartScreen, Mark-of-the-Web, PowerShell execution
+policy or enterprise controls. Installation does not change those protections or bypass policy.
 
 ## Homebrew (macOS and Linux)
 

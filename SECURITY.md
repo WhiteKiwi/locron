@@ -12,6 +12,20 @@ there are no long-term support branches.
 
 Releases follow the versioning and remediation rules in [`docs/RELEASE.md`](docs/RELEASE.md).
 
+## Planned Windows distribution
+
+Windows 11 x64/ARM64 support is under development and remains gated on native tests and clean
+standard-user acceptance. Its first distribution uses unsigned ZIPs from canonical HTTPS
+`WhiteKiwi/locron` release assets. SHA-256 verification detects corruption or changed bytes; it
+does not independently authenticate a publisher. Installation does not bypass execution policy,
+SmartScreen, Mark-of-the-Web or enterprise controls. A blocked executable remains an explicit
+installation/update failure. Windows signing is a deferred milestone.
+
+Standalone installation/update/removal requires protected current-user ownership and an exact
+executable-bound receipt. WinGet-managed installations are updated through WinGet; the
+standalone installer and self-update must refuse takeover. Report violations of these ownership,
+path or rollback guarantees through the private advisory channel below.
+
 ## Reporting a vulnerability
 
 **Please do not report security vulnerabilities through public GitHub issues, pull requests, or

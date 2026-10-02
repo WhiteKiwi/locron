@@ -21,20 +21,34 @@ jobs:
             os: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7
+      - name: Select versioned release inventory
+        id: inventory
+        run: python -B scripts/release-assets.py plan
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: ${{ runner.os == 'Windows' && '1.94.0' || 'stable' }}
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: false
       - name: Build release binary
+        if: runner.os != 'Windows'
         run: cargo build --release --locked -p locron
+      - name: Build portable Windows release binary
+        if: runner.os == 'Windows' && steps.inventory.outputs.windows == 'true'
+        env:
+          RUSTFLAGS: '-C target-feature=+crt-static'
+        run: cargo build --release --locked -p locron --target '${{ matrix.target }}'
       - name: Package tarball archive
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME}"
@@ -43,6 +57,10 @@ jobs:
           cp target/release/locron "${ARCHIVE_DIR}/"
           cp README.md LICENSE-MIT LICENSE-APACHE "${ARCHIVE_DIR}/"
           tar -czvf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}"
+      - name: Verify and package unsigned native Windows ZIP
+        if: runner.os == 'Windows' && steps.inventory.outputs.windows == 'true'
+        shell: powershell
+        run: python -B scripts/windows_release.py package $env:GITHUB_REF_NAME '${{ matrix.target }}' 'target/${{ matrix.target }}/release/locron.exe' .
       - name: Build Linux packages (.deb and .rpm)
         if: runner.os == 'Linux'
         uses: taiki-e/install-action@v2
@@ -57,13 +75,15 @@ jobs:
           cargo generate-rpm -p crates/locron-cli
           cp target/generate-rpm/*.rpm .
       - uses: actions/upload-artifact@v7
+        if: runner.os != 'Windows' || steps.inventory.outputs.windows == 'true'
         with:
           name: ${{ matrix.target }}
           path: |
             locron-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+            locron-${{ github.ref_name }}-${{ matrix.target }}.zip
             *.deb
             *.rpm
-          if-no-files-found: warn
+          if-no-files-found: error
 
   sign-macos:
     name: Sign and notarize macOS archives
@@ -158,6 +178,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      - name: Select versioned release inventory
+        id: inventory
+        run: python3 -B scripts/release-assets.py plan
       - name: Download only Linux build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -169,6 +192,13 @@ jobs:
         with:
           name: signed-macos
           path: artifacts
+      - name: Download final unsigned Windows archives
+        if: steps.inventory.outputs.windows == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*-pc-windows-msvc'
+          path: artifacts
+          merge-multiple: true
       - name: Verify final archive and package inventory
         run: python3 -B scripts/release-assets.py inventory "$GITHUB_REF_NAME" artifacts
       - name: Generate Checksums
