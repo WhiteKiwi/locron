@@ -36,7 +36,7 @@ locron-server = { path = "crates/locron-server", version = "=0.9.6" }
 locron-store = { path = "crates/locron-store", version = "=0.9.6" }
 nix = { version = "0.31", features = ["process", "signal"] }
 proptest = "1.9"
-process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "job-object", "kill-on-drop"] }
+process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "job-object", "kill-on-drop", "creation-flags"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"] }
 rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }

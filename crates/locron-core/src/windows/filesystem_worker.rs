@@ -7,7 +7,9 @@ use std::sync::{Arc, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
-use process_wrap::tokio::{ChildWrapper, CommandWrap, CommandWrapper, JobObject, KillOnDrop};
+use process_wrap::tokio::{
+    ChildWrapper, CommandWrap, CommandWrapper, CreationFlags, JobObject, KillOnDrop,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -262,6 +264,12 @@ struct Worker {
     pid: u32,
 }
 
+fn hidden_creation_flags() -> CreationFlags {
+    let mut flags = CreationFlags(Default::default());
+    flags.0.0 = 0x0800_0000;
+    flags
+}
+
 impl Worker {
     fn spawn() -> Result<Self, (bool, io::Error)> {
         let executable = stock_powershell().map_err(|error| (false, error))?;
@@ -288,15 +296,18 @@ impl Worker {
                 &encoded,
             ])
             .env_remove("PSModulePath")
-            .creation_flags(0x0800_0000)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut wrapped = CommandWrap::from(command);
-        wrapped.wrap(KillOnDrop).wrap(JobObject).wrap(Enroll {
-            job: Arc::clone(&job),
-            created: Arc::clone(&created),
-        });
+        wrapped
+            .wrap(hidden_creation_flags())
+            .wrap(KillOnDrop)
+            .wrap(JobObject)
+            .wrap(Enroll {
+                job: Arc::clone(&job),
+                created: Arc::clone(&created),
+            });
         let mut child = wrapped
             .spawn()
             .map_err(|error| (created.load(Ordering::Acquire), error))?;
@@ -482,6 +493,15 @@ mod tests {
     use std::io::Read;
     use std::os::windows::process::CommandExt;
     use std::process::{Child, Command as StdCommand, Stdio};
+
+    #[test]
+    fn job_wrapper_keeps_hidden_flags_without_explicit_suspension() {
+        let mut wrapped = CommandWrap::from(Command::new("fixture.exe"));
+        wrapped.wrap(hidden_creation_flags()).wrap(JobObject);
+        assert!(wrapped.has_wrap::<JobObject>());
+        let flags = wrapped.get_wrap::<CreationFlags>().unwrap().0.0;
+        assert_eq!(flags, 0x0800_0000);
+    }
 
     fn fixture_request(operation: &'static str) -> Request {
         let (reply, _) = mpsc::sync_channel(1);
