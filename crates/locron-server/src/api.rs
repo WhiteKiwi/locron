@@ -1861,7 +1861,7 @@ pub(crate) async fn diagnostics(State(state): State<AppState>) -> Response {
                         &definition.cwd,
                         &environment,
                     )
-                    .ok_or_else(|| format!("executable not found: {requested}"))?;
+                    .ok_or_else(|| "executable not found in execution path".to_owned())?;
                     if let Target::Process { .. } = &definition.target {
                         locron_core::execution::validate_direct_executable(&resolved)?;
                     } else if let Target::Shell { command, .. } = &definition.target {
