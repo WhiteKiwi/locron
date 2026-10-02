@@ -61,8 +61,8 @@ starting a substantial change.
   explicitly and also tests floating `stable` for forward compatibility; its two blocking lint jobs
   use exact Rust 1.98.0 so a new stable release cannot change the warning gate unexpectedly.
 - **macOS or Linux.** Windows is not a supported target.
-- Nothing else. SQLite is compiled in through `rusqlite`'s bundled feature, so there is no system
-  library to install and no external service to run.
+- The Rust build needs nothing else. SQLite is compiled in through `rusqlite`'s bundled feature,
+  so there is no system library to install and no external service to run.
 
 ### Build and run
 
@@ -78,6 +78,24 @@ To exercise a build without touching your real state, point it at a scratch dire
 ```sh
 cargo run -- --state-dir /tmp/locron-dev doctor
 ```
+
+### Change the dashboard
+
+Rust embeds the committed dashboard bundle, so building or using Locron does not require Node.
+To change the browser source, use the pinned development tools and rebuild that bundle:
+
+```sh
+cd crates/locron-server/frontend
+mise trust
+mise install
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Commit any generated `dist` changes with the source change. The dashboard CI job checks that a
+frozen production build reproduces the complete committed tree, including its file list.
 
 ---
 
@@ -204,6 +222,8 @@ git cliff --unreleased --prepend CHANGELOG.md
 CI runs `fmt` and `clippy` with exact Rust 1.98.0 on Linux x86_64 and macOS arm64. It runs the test
 suite with floating stable on macOS and Linux, on both `x86_64` and `aarch64`, plus one Rust 1.94
 MSRV job on Linux x86_64. A green local run on one platform is a good signal, not a guarantee.
+The dashboard job independently verifies frozen pnpm installation, TypeScript, browser unit tests,
+and the committed production bundle under Node 24.21.0.
 
 ---
 

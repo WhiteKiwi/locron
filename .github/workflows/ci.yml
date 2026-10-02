@@ -11,6 +11,30 @@ permissions:
   contents: read
 
 jobs:
+  frontend:
+    name: Dashboard frontend / Node 24.21.0
+    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crates/locron-server/frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        env:
+          TMPDIR: ${{ runner.temp }}
+        with:
+          working_directory: crates/locron-server/frontend
+          cache: false
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Verify committed dashboard assets
+        run: |
+          git diff --exit-code -- dist
+          test -z "$(git ls-files --others -- dist)"
+
   windows-foundation:
     name: Windows foundation / ${{ matrix.platform }} / Rust ${{ matrix.rust }}
     timeout-minutes: 35

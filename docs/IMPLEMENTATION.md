@@ -1,5 +1,75 @@
 # locron Milestone 1 Implementation Plan
 
+## Dashboard pnpm tooling review (2026-10-02, PR38)
+
+The owner's request replaces npm dependency installations with pnpm's shared
+store and uses one common development toolchain: Node `24.21.0` LTS and pnpm
+`10.34.6`. Scheduler, dashboard behavior, Rust compatibility, installation and
+release contracts stay unchanged, so the frozen product SPEC needs no amendment.
+
+1. Normalize the nested frontend mise/manifest pins and current installation
+   commands; compare every imported dependency version and integrity against
+   the removed npm lockfile. **Verify:** frozen install under the common tools
+   preserves the exact graph and required native build-script policy.
+2. Inspect frontend consumers, CI/release and embedded assets; convert remaining
+   current npm installation/build calls without changing published asset or
+   Cargo packaging contracts. **Verify:** frontend typecheck, full unit suite
+   and production build pass; generated tracked assets are reviewed, and the
+   existing Rust embedding/source-package checks appropriate to those changes
+   pass without publication. Preserve historical npm verification receipts.
+3. Qualify and integrate the source change. **Verify:** complete final diff and
+   changed-file review, expected-head hosted CI and the ordered PR38 merge.
+   Record exact commands/revisions/results on the private Project draft before
+   Done. Hosted Rust-cache follow-up LOCRON-TODO-041 remains a separate task.
+
+### Frontend verification and installation policy
+
+The current CI gates Rust and source packages but does not rebuild the dashboard.
+Add one Ubuntu frontend job for the pinned Node/pnpm tools, frozen installation,
+typecheck, all unit/component tests and production build. Compare the complete
+generated distribution with the tracked tree, including newly created paths, so
+the Rust embed cannot silently ship an old bundle. One platform is sufficient for
+these browser assets; keep the existing Rust platform/MSRV/lint matrix unchanged.
+Use the runner-owned temporary directory for mise extraction and disable its
+remote cache. This avoids shared temporary ownership conflicts without changing
+the independent Rust cache-restoration task.
+
+The imported graph retains all 197 package versions and integrity values. Install
+with `--ignore-scripts`: the installed locked packages declare no installation
+lifecycle hook, and platform-specific Rolldown binaries are registry packages.
+The optional `fsevents` entry in the old npm lock does not require a lifecycle
+script for the installed build/test graph. The production build and tests must
+demonstrate that this policy preserves the required Vite/native behavior. Node
+type declarations remain at the locked version; downgrading them would change the
+dependency graph and is unnecessary if the Node 24 gate succeeds.
+
+The source-package boundary already uses exact-version workspace dependencies
+and a Rust 1.94 package/publication dry-run gate. Correct the dashboard plan's
+older path-only/non-publication explanation to describe that current policy;
+this tooling review changes neither Cargo manifests nor release publication.
+
+### Integration with newer main (2026-10-03)
+
+PR39 and PR40 entered main while PR38 was under review. Merge main
+`82af6471ad477d96416ee67ad88cc2392abf98aa` normally and keep both Windows
+foundation job definitions: their three native build/scheduling matrix legs and
+one pinned lint leg are a staged build foundation, not Windows product acceptance.
+Keep all existing Unix Rust, installer and source-package gates unchanged and
+add the independent frontend job beside them. Windows ownership, implementation
+scope and private acceptance drafts remain with their existing workstream.
+
+Verify every pre-existing job against this exact main revision and retain the
+reviewed frontend job from published PR38 head `c07a854`. Recheck frozen frontend
+installation, typecheck, the complete test suite and production build, then run
+Rust 1.98 formatting/Clippy plus Rust 1.94 and stable full workspace tests on the
+integrated macOS source. Reuse the unchanged dependency graph and asset proof;
+record a separate integration handoff before parent publication and exact-head CI.
+
+After this reviewed plan and Project handoff, a separate development sub-session
+owns implementation and documentation updates for any new decision. The parent
+reviews and publishes. No tags, signing, registry upload, installer execution,
+live jobs/services, Windows acceptance or broad storage deletion belongs here.
+
 ## Status and authority
 
 This document plans the first program milestone against the frozen behavior in `docs/SPEC.md` and the durable structure in `docs/ARCHITECTURE.md`.
