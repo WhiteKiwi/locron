@@ -85,6 +85,8 @@ jobs:
           }
       - name: Verify durable store and runtime library contracts
         run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
+      - name: Verify native registered service semantics
+        run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=1'
       - name: Diagnose the stock Windows adapter after cold contracts
         if: always()
         shell: pwsh
