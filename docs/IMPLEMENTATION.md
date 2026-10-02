@@ -1722,13 +1722,45 @@ Failed or rolled-back operations report an error. Unix synchronous output is unc
 The helper binds its exact path/hash, SID, destination, old receipt and staged verified executable
 in a durable operation request. It serializes updates, snapshots all exact executable-bound owned
 tasks, disables activation, requests lifetime-bound shutdown and waits for owned-role exit plus
-the original caller. A bounded exclusive write-open of the old executable is the final mapped-holder
-gate; unowned MCP/manual holders refuse replacement rather than being killed. Retain the file
-guard with delete sharing through the backup rename, maintain private rollback binary/receipt and
-write a durable journal before each irreversible step. Restore exact prior enabled/disabled
-registrations after verification, recording restoration warnings separately from confirmed binary
+the original caller. A bounded exclusive read/write/DELETE open of the old executable, with
+share_mode(0), is the final mapped-holder gate; unowned MCP/manual holders refuse replacement
+rather than being killed. The same live leaf and ancestor guards validate the receipt, current SID,
+private descriptor, full volume/file identity and old hash. Refuse read-only or multiply linked
+replacement leaves. No write to the old executable is permitted.
+
+Use Windows-only fs_at =0.2.1 (Apache-2.0, MSRV 1.71) for its safe consuming
+fs_at::os::windows::FileExt::delete_by_handle(File) interface. This selects exact-handle deletion
+instead of a path-based backup rename. First copy all old receipt-listed payloads and the old
+receipt to the private operation directory, flush them, verify their hashes through retained
+guards, and flush a write-ahead record containing their original identities, the lifecycle restore
+record and delete intent. Only then consume the exact gated old File while retaining its parent
+DirectoryGuard. Any deletion error is ambiguous: the dependency's read-only fallback can mark a
+file deleted before returning an error. Preserve the backup and journal and inspect the guarded
+leaf before deciding whether rollback is possible; never assume an error leaves the old path intact.
+
+Create the new leaf only with CreateNew, read/write/DELETE access and share_mode(0), inherited
+private creation security and immediate handle-bound descriptor verification. An existing entry
+is a refusal, never permission to truncate, clobber or follow it. Record the new full file identity
+durably before writing; write the complete verified bytes, flush and verify them and the new receipt
+while the leaf gate still blocks executable launch. Apply the same identity-gated replacement
+discipline to owned companion files. Rollback may delete only a leaf whose recorded identity and
+ownership still agree, then use CreateNew for a verified backup. Unexpected entries remain intact
+and keep task activation disabled. In particular, a crash between creation and durable identity
+recording leaves an unrecognized leaf that recovery explicitly refuses; it cannot be safely
+adopted by filename, empty length or matching bytes. A retained verified helper and backups remain
+available even when the installed executable is absent or incomplete.
+
+Recover standalone operations through install.ps1 -Operation UUID, without -Maintenance; this
+uses the protected original request, verified retained helper and durable journal, and reports a
+confirmed rollback or completion, or an actionable refusal. Recovery never treats a partial status
+file as authorization. Restore exact prior enabled/disabled registrations only after a verified
+working binary and receipt exist, recording registration warnings separately from confirmed binary
 replacement. Interrupted operations must be recovered or explicitly refused before a later update;
 neither a stale request nor a task-state transition implies completion. No reboot replacement.
+Native safe-crate, ACL, mapped-holder, competing-leaf and crash-phase fixtures on both architectures
+must pass before this candidate adapter enables support; the x64 OS primitive rehearsal in FINDINGS
+is narrower evidence. Write-through and sync_all provide OS flush guarantees, not an unconditional
+promise against storage hardware or filesystem failure.
 
 WinGet uses WhiteKiwi.locron, user-scoped ZIP/portable installers and the same immutable ZIP hashes,
 with architecture-specific nested executable paths and the locron command alias. The receipt-free

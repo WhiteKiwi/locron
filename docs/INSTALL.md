@@ -24,6 +24,16 @@ updates/removal of that exact executable. Uninstall retains durable state and re
 unchanged installer-owned files, exact owned task registrations and a PATH entry the installer
 inserted. Standalone and package-manager installations use separate locations.
 
+Windows self-update hands off to a verified helper and initially reports `updated=false`,
+`pending=true`, an operation UUID and a status-file path. The planned
+`locron self-update --status UUID` command reports confirmed completion separately. If interruption
+leaves the installed executable unavailable, `.\install.ps1 -Operation UUID` uses the retained verified helper and
+backup to recover that standalone operation. Recovery restores tasks only after binary and receipt
+integrity pass. An unexpected file at the destination, including a new leaf whose identity was
+not recorded before the interruption, remains untouched and produces an explicit recovery error.
+The operation's verified backup is retained for operator recovery; a failed deletion is never
+assumed to have left the old executable in place.
+
 WinGet's proposed identifier is `WhiteKiwi.locron`; availability and community repository
 acceptance remain release gates. Its ZIP/portable manifests point at the same immutable GitHub
 ZIPs, final SHA-256 values and architecture-specific executable paths. Portable manifests cannot

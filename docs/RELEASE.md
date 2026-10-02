@@ -22,6 +22,11 @@ verifies native compiler identity, PE architecture, no certificate table, normal
 DLL imports and `--version` with system-only PATH. Native package verification is retained as an
 artifact. Clean Windows 11 standard-user install/run/update/uninstall gates are still required;
 hosted images alone cannot prove absence of separately installed redistributables.
+Executable-update acceptance also covers the exact-handle fs_at deletion and exclusive CreateNew
+adapter, all mapped holders, competing entries and every durable backup/delete/create/write/receipt
+phase on both architectures. It must prove verified rollback or an explicit disabled-task refusal
+with preserved backups after interruption, including ambiguous deletion errors and an unrecorded
+fresh leaf. A successful handoff alone never satisfies the confirmed-update gate.
 
 Maintainers generate proposed WinGet manifests from final ZIPs and their complete published
 checksum inventory, then validate them on Windows:

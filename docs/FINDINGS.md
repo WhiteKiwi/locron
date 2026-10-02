@@ -3942,3 +3942,73 @@ maintenance 11/11 on all three rows is required; earlier pruning success does no
 
 Sources: [Root43 completed ARM64 job](https://github.com/WhiteKiwi/locron/actions/runs/37107116124/job/111157711798),
 [Root44 completed MSRV job](https://github.com/WhiteKiwi/locron/actions/runs/37107738582/job/111159474352).
+
+### Exact executable replacement and recoverable deletion (2026-10-03)
+
+A path-based rename does not identify the source by the exact retained executable handle.
+The audited Windows implementations of cap-primitives, atomic-write-file and renamore resolve
+source/destination paths for their rename operation; they do not provide the needed consuming
+source-File replacement interface. This is an interface limitation of these audited versions,
+not evidence that safe Rust executable replacement is impossible.
+
+The concrete candidate is Windows-only `fs_at = "=0.2.1"`, Apache-2.0, declared MSRV 1.71.0.
+Its safe `fs_at::os::windows::FileExt::delete_by_handle(self: File)` returns
+`Result<(), (File, io::Error)>` and calls SetFileInformationByHandle on that exact owned File,
+first with FileDispositionInfoEx and then with a compatibility fallback when appropriate.
+Workspace call sites need no unsafe block and preserve Rust 1.94 and unsafe_code=forbid.
+It does not provide an atomic rename transaction; the design must make deletion recoverable.
+
+Acquire the old regular executable with read/write/DELETE access, OPEN_REPARSE_POINT and
+share_mode(0), under the existing strict private descriptor and retained ancestor checks.
+Microsoft documents that zero sharing denies later read/write/delete opens, delete permission
+also governs rename, and CreateNew fails on any existing entry. The exclusive old gate verifies
+the exact old receipt, bytes and complete volume/file identity and is retained until exact-handle
+deletion. The audited file-id 0.2.3 high-resolution query opens with access_mode(0), so a metadata
+query remains compatible with the live gate; the guarded leaf cannot be renamed during that query.
+Refuse a read-only or multiply linked replacement leaf rather than repairing ownership or
+mutating a second link. The shared filesystem adapter needs explicit exclusive-existing and
+exclusive-create entry points: ordinary open_private intentionally has shared read/write behavior
+and must not silently discard the replacement gate's sharing/access requirements.
+
+Before deletion, copy and flush a verified old binary, receipt and owned companion payloads into
+the private operation root. Persist the serializable all-task restore record, old leaf identities,
+backup hashes and delete intent before consuming the old File. Retain the parent guards and create
+the destination only with CreateNew, private inherited security, immediate handle-bound readback
+and the same exclusive gate. Persist the fresh complete file identity before writing; flush and
+verify every new byte and the receipt before releasing the executable gate or restoring task
+activation. Rollback applies the same exact-identity deletion and exclusive creation rules to
+recorded leaves; it never overwrites an unexpected entry.
+
+Source review found an important error boundary: the fs_at read-only compatibility branch can
+successfully mark a file for deletion and then return Err when restoring its attribute fails.
+Therefore every deletion error is ambiguous, even if ordinary supported files avoid that branch.
+Keep verified backups and the durable journal; inspect the guarded destination and reconcile the
+recorded identities instead of assuming the old path survived. If it is absent, a verified backup
+can be created exclusively. If it is an unrecognized entry, preserve it, keep activation disabled
+and report explicit recovery instructions. A crash between fresh creation and identity-record
+flush is likewise an explicit refusal boundary, not an automatic permission to delete an empty
+or partially written file. The retained verified helper resides outside the replaced directory,
+so install.ps1 -Operation UUID can inspect/recover a standalone operation even when locron.exe is
+missing. Status files are derived reporting and never authorize recovery by themselves.
+
+A tools-only rehearsal on this standard-user Windows 11 x64 host used a test-owned copy of the
+stock command interpreter, hidden owned child processes and a unique temporary directory. The
+exclusive read/write/DELETE gate refused the mapped image with sharing violation; after child
+exit it blocked a competing rename and relaunch. With a flushed verified backup and write-ahead
+record, exact-handle FileDispositionInfoEx deletion succeeded. Exclusive CreateNew kept launch
+blocked until complete bytes were flushed and checked. A competing destination made CreateNew
+fail with ERROR_FILE_EXISTS and its marker bytes and backup remained unchanged. All owned children
+and test paths were cleaned up. This establishes OS primitive behavior on one x64 host; it did
+not compile fs_at in this workspace, exercise ARM64, validate the complete ACL adapter, or prove
+crash recovery/all-task lifecycle. Native Rust fixtures and every crash phase remain release gates.
+Windows write-through plus sync_all request durable OS flushes; Microsoft's caching guidance
+explicitly limits claims about hardware write-through support.
+
+Sources: [fs_at version metadata](https://docs.rs/crate/fs_at/0.2.1),
+[exact consuming deletion source](https://docs.rs/crate/fs_at/0.2.1/source/src/win.rs),
+[CreateFile sharing, CreateNew and caching](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[handle-bound deletion and DELETE access](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle),
+[file-id metadata-only open](https://docs.rs/crate/file-id/0.2.3/source/src/lib.rs),
+[audited cap-primitives path rename](https://github.com/bytecodealliance/cap-std/blob/main/cap-primitives/src/windows/fs/rename_unchecked.rs),
+[audited atomic-write-file path rename](https://github.com/andreacorbellini/rust-atomic-write-file/blob/master/src/imp/generic.rs),
+[audited renamore path rename](https://github.com/indianakernick/renamore/blob/master/src/windows.rs).
