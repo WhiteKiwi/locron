@@ -58,6 +58,127 @@ fn validate_sqlite_files(database: &Path, create: bool) -> std::io::Result<bool>
     Ok(fresh)
 }
 
+#[cfg(windows)]
+fn sqlite_sidecar(database: &Path, suffix: &str) -> std::path::PathBuf {
+    let mut path = database.as_os_str().to_os_string();
+    path.push(suffix);
+    path.into()
+}
+
+#[cfg(windows)]
+fn optional_sqlite_leaf(
+    path: &Path,
+) -> std::io::Result<Option<locron_core::filesystem::GuardedFile>> {
+    match locron_core::filesystem::open_private(path, std::fs::OpenOptions::new().read(true)) {
+        Ok(file) => Ok(Some(file)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(windows)]
+fn immutable_sqlite_uri(path: &Path) -> std::io::Result<String> {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let path = path
+        .to_str()
+        .filter(|path| !path.contains('\0'))
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "immutable database path must be UTF-8 without NUL",
+            )
+        })?;
+    let mut uri = String::from("file:");
+    for byte in path.bytes() {
+        uri.push('%');
+        uri.push(char::from(HEX[usize::from(byte >> 4)]));
+        uri.push(char::from(HEX[usize::from(byte & 15)]));
+    }
+    uri.push_str("?mode=ro&immutable=1");
+    Ok(uri)
+}
+
+#[cfg(windows)]
+fn open_windows_read_only(
+    database: &Path,
+) -> StoreResult<(Connection, Vec<locron_core::filesystem::GuardedFile>)> {
+    use locron_core::filesystem::{open_private, open_private_read_stable, same_file};
+    use std::fs::OpenOptions;
+
+    let stable = match open_private_read_stable(database) {
+        Ok(file) => Some(file),
+        Err(error) if matches!(error.raw_os_error(), Some(32 | 33)) => None,
+        Err(error) => return Err(error.into()),
+    };
+    let first = match stable {
+        Some(file) => file,
+        None => open_private(database, OpenOptions::new().read(true))?,
+    };
+    let normalized = first.normalized_path().to_path_buf();
+    if optional_sqlite_leaf(&sqlite_sidecar(&normalized, "-journal"))?.is_some() {
+        return Err(StoreError::Conflict(
+            "read-only database has an existing rollback journal".into(),
+        ));
+    }
+    let wal = optional_sqlite_leaf(&sqlite_sidecar(&normalized, "-wal"))?;
+    let shm = optional_sqlite_leaf(&sqlite_sidecar(&normalized, "-shm"))?;
+    // Retained regular private sidecars prevent a final writer from unlinking/recreating them.
+    let (connection, leaves) = match (wal, shm) {
+        (Some(wal), Some(shm)) => {
+            // A closed WAL pair still uses ordinary locking and permits subsequent writers.
+            let shared = open_private(&normalized, OpenOptions::new().read(true))?;
+            if !same_file(&shared, &first)? {
+                return Err(StoreError::Conflict("database identity changed".into()));
+            }
+            drop(first);
+            let connection = Connection::open_with_flags_and_vfs(
+                &normalized,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                "win32-longpath",
+            )?;
+            (connection, vec![shared, wal, shm])
+        }
+        (None, None) => {
+            // A sharing-refused first open cannot turn a live database into an immutable one.
+            let stable = open_private_read_stable(&normalized)?;
+            if !same_file(&stable, &first)? {
+                return Err(StoreError::Conflict("database identity changed".into()));
+            }
+            drop(first);
+            // Recheck journal absence only after the retained stable gate excludes new writers.
+            for suffix in ["-wal", "-shm", "-journal"] {
+                if optional_sqlite_leaf(&sqlite_sidecar(&normalized, suffix))?.is_some() {
+                    return Err(StoreError::Conflict(
+                        "database journals changed during read-only admission".into(),
+                    ));
+                }
+            }
+            let connection = Connection::open_with_flags_and_vfs(
+                immutable_sqlite_uri(&normalized)?,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+                "win32-longpath",
+            )?;
+            (connection, vec![stable])
+        }
+        _ => {
+            return Err(StoreError::Conflict(
+                "read-only WAL requires both existing private sidecars".into(),
+            ));
+        }
+    };
+    let reported = connection.path().ok_or_else(|| {
+        StoreError::Conflict("SQLite did not report its database filename".into())
+    })?;
+    let reported = open_private(Path::new(reported), OpenOptions::new().read(true))?;
+    if !same_file(&reported, &leaves[0])? {
+        return Err(StoreError::Conflict(
+            "SQLite opened a different database object".into(),
+        ));
+    }
+    configure_read_only(&connection)?;
+    Ok((connection, leaves))
+}
+
 /// Result type returned by store operations, carrying a [`StoreError`] on failure.
 pub type StoreResult<T> = Result<T, StoreError>;
 
@@ -668,6 +789,9 @@ pub struct ImportSummary {
 pub struct Store {
     paths: StatePaths,
     connection: Mutex<Connection>,
+    // SQLite must close before retained read-only DB/WAL/SHM leaves and their parent guards.
+    #[cfg(windows)]
+    _read_guards: Vec<locron_core::filesystem::GuardedFile>,
     // Dropped after SQLite closes, preventing ancestor swaps throughout WAL/SHM access.
     #[cfg(windows)]
     _state_guard: locron_core::filesystem::DirectoryGuard,
@@ -697,6 +821,8 @@ impl Store {
             paths,
             connection: Mutex::new(connection),
             #[cfg(windows)]
+            _read_guards: Vec::new(),
+            #[cfg(windows)]
             _state_guard: state_guard,
         })
     }
@@ -715,15 +841,17 @@ impl Store {
         #[cfg(windows)]
         let state_guard = locron_core::filesystem::DirectoryGuard::existing_private(&paths.root)?;
         #[cfg(windows)]
-        validate_sqlite_files(path, false)?;
+        let (connection, read_guards) = open_windows_read_only(path)?;
+        #[cfg(not(windows))]
         let connection =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        #[cfg(not(windows))]
         configure_read_only(&connection)?;
-        #[cfg(windows)]
-        validate_sqlite_files(path, false)?;
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
+            #[cfg(windows)]
+            _read_guards: read_guards,
             #[cfg(windows)]
             _state_guard: state_guard,
         })
@@ -3472,6 +3600,8 @@ fn map_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    use std::io::Write;
 
     struct PrivateTempDir {
         _temporary: tempfile::TempDir,
@@ -3562,6 +3692,183 @@ mod tests {
         let read_only = Store::open_read_only(&backup).unwrap();
         assert_eq!(read_only.paths().database, backup);
         assert!(!backup_root.join("state.db").exists());
+    }
+
+    #[cfg(windows)]
+    fn sqlite_leaf_identity(path: &Path) -> locron_core::filesystem::FileIdentity {
+        let file =
+            locron_core::filesystem::open_private(path, std::fs::OpenOptions::new().read(true))
+                .unwrap();
+        locron_core::filesystem::file_identity(&file).unwrap()
+    }
+
+    #[cfg(windows)]
+    fn assert_no_sqlite_journals(path: &Path) {
+        for suffix in ["-wal", "-shm", "-journal"] {
+            assert!(!sqlite_sidecar(path, suffix).exists());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn closed_read_only_unicode_long_path_creates_no_journals_and_blocks_writers() {
+        let (temporary, writer) = store();
+        create(&writer, "00000000-0000-4000-8000-000000000001", "committed");
+        let source_path = writer.paths().database.clone();
+        drop(writer);
+        assert_no_sqlite_journals(&source_path);
+        let root = temporary
+            .path()
+            .join("a".repeat(120))
+            .join("b".repeat(120))
+            .join("Unicode 한글 % #");
+        let guard = locron_core::filesystem::DirectoryGuard::private(&root).unwrap();
+        let path = guard.normalized_path().join("snapshot % #.db");
+        assert!(path.as_os_str().len() > 260);
+        let mut source = locron_core::filesystem::open_private(
+            &source_path,
+            std::fs::OpenOptions::new().read(true),
+        )
+        .unwrap();
+        let mut destination = locron_core::filesystem::create_private_new(&path).unwrap();
+        std::io::copy(&mut *source, &mut *destination).unwrap();
+        destination.sync_all().unwrap();
+        drop((source, destination));
+        let identity = sqlite_leaf_identity(&path);
+        let reader = Store::open_read_only(&path).unwrap();
+        assert_eq!(reader.list_jobs(false).unwrap()[0].name, "committed");
+        assert_no_sqlite_journals(&path);
+        let error = locron_core::filesystem::open_private(
+            &path,
+            std::fs::OpenOptions::new().read(true).write(true),
+        )
+        .unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(32));
+        assert_eq!(sqlite_leaf_identity(&path), identity);
+        drop(reader);
+        assert_no_sqlite_journals(&path);
+        assert!(
+            locron_core::filesystem::open_private(
+                &path,
+                std::fs::OpenOptions::new().read(true).write(true),
+            )
+            .is_ok()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn live_read_only_sees_later_commits_and_retains_sidecars_during_final_writer_close() {
+        let (_temporary, writer) = store();
+        writer
+            .conn()
+            .unwrap()
+            .execute_batch("PRAGMA wal_autocheckpoint=0")
+            .unwrap();
+        create(&writer, "00000000-0000-4000-8000-000000000001", "first");
+        let paths = writer.paths().clone();
+        let sidecars = [
+            sqlite_sidecar(&paths.database, "-wal"),
+            sqlite_sidecar(&paths.database, "-shm"),
+        ];
+        let identities = sidecars.each_ref().map(|path| sqlite_leaf_identity(path));
+        let reader = Store::open_read_only(&paths.database).unwrap();
+        assert_eq!(reader.list_jobs(false).unwrap().len(), 1);
+        create(&writer, "00000000-0000-4000-8000-000000000002", "later");
+        assert_eq!(reader.list_jobs(false).unwrap().len(), 2);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let closed = std::thread::spawn({
+            let barrier = std::sync::Arc::clone(&barrier);
+            move || {
+                barrier.wait();
+                drop(writer);
+            }
+        });
+        barrier.wait();
+        for _ in 0..8 {
+            assert_eq!(reader.list_jobs(false).unwrap().len(), 2);
+        }
+        closed.join().unwrap();
+        for (path, identity) in sidecars.iter().zip(identities) {
+            assert_eq!(sqlite_leaf_identity(path), identity);
+            assert!(locron_core::filesystem::is_private(path, false).unwrap());
+        }
+        drop(reader);
+        // Retained no-delete leaves survive the last close until a later writable cleanup.
+        for path in &sidecars {
+            assert!(path.is_file());
+        }
+        let writable = Store::open(paths.clone(), "test", 2).unwrap();
+        assert_eq!(writable.list_jobs(false).unwrap().len(), 2);
+        drop(writable);
+        assert_no_sqlite_journals(&paths.database);
+        let closed = Store::open_read_only(&paths.database).unwrap();
+        assert_eq!(closed.list_jobs(false).unwrap().len(), 2);
+        assert_no_sqlite_journals(&paths.database);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_only_refuses_partial_and_broad_sidecars_without_repair() {
+        let (_temporary, writer) = store();
+        let paths = writer.paths().clone();
+        drop(writer);
+        let wal = sqlite_sidecar(&paths.database, "-wal");
+        let shm = sqlite_sidecar(&paths.database, "-shm");
+        locron_core::filesystem::create_private_new(&wal)
+            .unwrap()
+            .write_all(b"unchanged")
+            .unwrap();
+        assert!(Store::open_read_only(&paths.database).is_err());
+        assert!(!shm.exists());
+        assert_eq!(std::fs::read(&wal).unwrap(), b"unchanged");
+        locron_core::filesystem::remove_private_file(&wal).unwrap();
+        let writer = Store::open(paths.clone(), "test", 2).unwrap();
+        let original = std::fs::read(&wal).unwrap();
+        locron_core::windows::run_script_json(r"
+            $acl = [IO.File]::GetAccessControl([string]$request.path);
+            $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
+            [IO.File]::SetAccessControl([string]$request.path, $acl);
+            @{changed=$true} | ConvertTo-Json -Compress
+        ", &serde_json::json!({"path": wal})).unwrap();
+        assert!(!locron_core::filesystem::is_private(&wal, false).unwrap());
+        assert!(Store::open_read_only(&paths.database).is_err());
+        assert!(!locron_core::filesystem::is_private(&wal, false).unwrap());
+        assert_eq!(std::fs::read(&wal).unwrap(), original);
+        drop(writer);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_only_open_racing_final_close_never_recreates_sidecars() {
+        for _ in 0..4 {
+            let (_temporary, writer) = store();
+            create(&writer, "00000000-0000-4000-8000-000000000001", "durable");
+            let path = writer.paths().database.clone();
+            let sidecars = [sqlite_sidecar(&path, "-wal"), sqlite_sidecar(&path, "-shm")];
+            let identities = sidecars.each_ref().map(|path| sqlite_leaf_identity(path));
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let closing = std::thread::spawn({
+                let barrier = std::sync::Arc::clone(&barrier);
+                move || {
+                    barrier.wait();
+                    drop(writer);
+                }
+            });
+            barrier.wait();
+            let opened = Store::open_read_only(&path);
+            closing.join().unwrap();
+            if let Ok(reader) = opened {
+                assert_eq!(reader.list_jobs(false).unwrap()[0].name, "durable");
+                drop(reader);
+            }
+            for (sidecar, identity) in sidecars.iter().zip(identities) {
+                if sidecar.exists() {
+                    assert_eq!(sqlite_leaf_identity(sidecar), identity);
+                    assert!(locron_core::filesystem::is_private(sidecar, false).unwrap());
+                }
+            }
+        }
     }
     fn create(store: &Store, id: &str, name: &str) {
         store
