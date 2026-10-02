@@ -2354,13 +2354,12 @@ impl Store {
             |row| row.get(0),
         )?;
         let mut environment = parse_environment_json(&source)?;
-        match value {
-            Some(value) => {
-                environment.insert(name.to_owned(), value.to_owned());
-            }
-            None => {
-                environment.remove(name);
-            }
+        let canonical_name = locron_core::execution::environment_name(name);
+        environment.retain(|existing, _| {
+            locron_core::execution::environment_name(existing) != canonical_name
+        });
+        if let Some(value) = value {
+            environment.insert(canonical_name, value.to_owned());
         }
         let canonical = serde_json::to_string(&environment)?;
         tx.execute(
@@ -3350,6 +3349,8 @@ fn validate_import_settings(settings: &SettingsRecord) -> StoreResult<()> {
             "import retention and output limits must be non-negative".into(),
         ));
     }
+    locron_core::execution::validate_environment_layer(&settings.environment)
+        .map_err(StoreError::Conflict)?;
     for (name, value) in &settings.environment {
         validate_environment_entry(name, Some(value))?;
     }
@@ -3358,6 +3359,8 @@ fn validate_import_settings(settings: &SettingsRecord) -> StoreResult<()> {
 
 fn parse_environment_json(source: &str) -> StoreResult<BTreeMap<String, String>> {
     let environment: BTreeMap<String, String> = serde_json::from_str(source)?;
+    locron_core::execution::validate_environment_layer(&environment)
+        .map_err(StoreError::Conflict)?;
     for (name, value) in &environment {
         validate_environment_entry(name, Some(value))?;
     }
@@ -3375,7 +3378,7 @@ fn validate_environment_entry(name: &str, value: Option<&str>) -> StoreResult<()
         .next()
         .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_');
     let valid_rest = bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
-    if !valid_start || !valid_rest || name.starts_with("LOCRON_") {
+    if !valid_start || !valid_rest || locron_core::execution::is_reserved_environment_name(name) {
         return Err(StoreError::Conflict(format!(
             "invalid or reserved environment name {name}"
         )));

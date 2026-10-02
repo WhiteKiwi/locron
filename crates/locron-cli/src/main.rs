@@ -22,6 +22,10 @@ use anyhow::{Context, Result, anyhow};
 use base64::Engine as _;
 use clap::{ArgAction, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use locron_core::command::{CompletionAction, JobDefinition};
+use locron_core::execution::{
+    default_shell, environment_value, is_reserved_environment_name, minimal_environment,
+    shell_arguments, validate_direct_executable,
+};
 use locron_core::policy::{BackoffMode, MissedRunPolicy, OverlapPolicy};
 use locron_core::ports::{Clock, TimeZoneResolver};
 use locron_core::schedule::{Schedule, ScheduleTimeZone};
@@ -34,7 +38,7 @@ use locron_core::{
 };
 use locron_engine::admission::{RetryClass, decide_retry};
 use locron_engine::daemon::{AdmittedAttempt, CompletionError, DaemonStore};
-use locron_engine::runner::{OutcomeKind, RunnerConfig, resolve_executable};
+use locron_engine::runner::{OutcomeKind, RunnerConfig};
 use locron_engine::{
     AttemptContext, Daemon, DaemonConfig, HttpSpec, OutputWriter, ProcessSpec, Runner, TargetSpec,
 };
@@ -1499,15 +1503,18 @@ fn normalize_definition(
         ));
     }
     let mut normalized_target = match (&target.shell, &target.http, target.command.is_empty()) {
-        (Some(command), None, true) => Target::Shell {
-            command: command.clone(),
-            shell: normalize_path(
-                target
-                    .shell_executable
-                    .as_deref()
-                    .unwrap_or_else(|| Path::new("/bin/sh")),
-            )?,
-        },
+        (Some(command), None, true) => {
+            let shell = target
+                .shell_executable
+                .clone()
+                .map_or_else(|| default_shell().map_err(anyhow::Error::msg), Ok)?;
+            let shell = normalize_path(&shell)?;
+            shell_arguments(&shell, command).map_err(anyhow::Error::msg)?;
+            Target::Shell {
+                command: command.clone(),
+                shell,
+            }
+        }
         (None, Some(parts), true) => Target::Http(HttpTarget {
             method: parse_method(&parts[0])?,
             url: parts[1].clone(),
@@ -1558,12 +1565,26 @@ fn normalize_definition(
         environment.values.clear();
     }
     for name in &target.unset_env {
-        if !is_valid_environment_name(name) || name.starts_with("LOCRON_") {
+        if !is_valid_environment_name(name) || is_reserved_environment_name(name) {
             return Err(anyhow!("invalid or reserved environment name: {name}"));
         }
-        environment.values.remove(name);
+        let name = locron_core::execution::environment_name(name);
+        environment
+            .values
+            .retain(|existing, _| locron_core::execution::environment_name(existing) != name);
     }
-    environment.values.extend(target.env.iter().cloned());
+    let mut inline_layer = BTreeMap::new();
+    let mut inline_names = BTreeSet::new();
+    for (name, value) in &target.env {
+        if cfg!(windows) && !inline_names.insert(locron_core::execution::environment_name(name)) {
+            return Err(anyhow!(
+                "environment names collide in one inline layer: {name}"
+            ));
+        }
+        inline_layer.insert(name.clone(), value.clone());
+    }
+    locron_core::execution::apply_environment_layer(&mut environment.values, &inline_layer)
+        .map_err(anyhow::Error::msg)?;
     if target.env_file.is_some() && target.no_env_file {
         return Err(anyhow!("--env-file and --no-env-file conflict"));
     }
@@ -2354,7 +2375,7 @@ fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<
             if let Some(name) = environment_config_name(&key)? {
                 validate_environment_value(name, &value)?;
                 let before = config_dry_run_settings(paths, dry_run)?;
-                let action = if before.environment.contains_key(name) {
+                let action = if environment_value(&before.environment, name).is_some() {
                     "replaced"
                 } else {
                     "created"
@@ -2398,7 +2419,7 @@ fn config(paths: &StatePaths, command: ConfigCommand, format: Format) -> Result<
             let name = environment_config_name(&key)?
                 .ok_or_else(|| anyhow!("only environment.NAME settings can be unset"))?;
             let before = config_dry_run_settings(paths, dry_run)?;
-            let action = if before.environment.contains_key(name) {
+            let action = if environment_value(&before.environment, name).is_some() {
                 "removed"
             } else {
                 "unchanged"
@@ -2420,7 +2441,7 @@ fn environment_config_name(key: &str) -> Result<Option<&str>> {
         }
         return Ok(None);
     };
-    if !is_valid_environment_name(name) || name.starts_with("LOCRON_") {
+    if !is_valid_environment_name(name) || is_reserved_environment_name(name) {
         return Err(anyhow!("invalid or reserved environment name {name}"));
     }
     Ok(Some(name))
@@ -2447,7 +2468,7 @@ fn config_dry_run_settings(paths: &StatePaths, dry_run: bool) -> Result<Settings
 fn default_settings() -> SettingsRecord {
     SettingsRecord {
         global_concurrency: 16,
-        execution_path: "/usr/local/bin:/usr/bin:/bin".into(),
+        execution_path: locron_core::execution::default_execution_path(),
         run_retention_count: 10_000,
         run_retention_age_us: Some(7_776_000_000_000),
         output_limit_bytes: 268_435_456,
@@ -2460,7 +2481,7 @@ fn render_config_get(format: Format, key: Option<&str>, settings: &SettingsRecor
     if let Some(key) = key
         && let Some(name) = environment_config_name(key)?
     {
-        let configured = settings.environment.contains_key(name);
+        let configured = environment_value(&settings.environment, name).is_some();
         if format == Format::Human {
             println!(
                 "{key}: {}",
@@ -3259,6 +3280,8 @@ fn validate_import_settings_cli(settings: &SettingsRecord) -> Result<()> {
         environment_config_name(&format!("environment.{name}"))?;
         validate_environment_value(name, value)?;
     }
+    locron_core::execution::validate_environment_layer(&settings.environment)
+        .map_err(anyhow::Error::msg)?;
     Ok(())
 }
 
@@ -3271,7 +3294,10 @@ fn normalize_import_definition(definition: &mut JobDefinition) -> Result<()> {
         definition.environment.path = Some(normalize_path_list(path)?);
     }
     match &mut definition.target {
-        Target::Process { executable, .. } if executable.contains('/') => {
+        Target::Process { executable, .. }
+            if executable.contains('/')
+                || cfg!(windows) && (executable.contains('\\') || executable.contains(':')) =>
+        {
             *executable = normalize_path_from(&definition.cwd, Path::new(executable))?
                 .to_string_lossy()
                 .into_owned();
@@ -4156,37 +4182,11 @@ pub(crate) fn engine_target(
     attempt: &locron_store::AdmitAttempt,
     settings: &SettingsRecord,
 ) -> Result<TargetSpec, String> {
-    let mut env = minimal_env();
-    env.insert("PATH".into(), settings.execution_path.clone());
-    for (key, value) in &settings.environment {
-        env.insert(key.clone(), value.clone());
-    }
-    if let Some(path) = &definition.environment.path {
-        env.insert("PATH".into(), path.clone());
-    }
-    if let Some(path) = &definition.environment.file {
-        let content =
-            std::fs::read_to_string(path).map_err(|error| format!("environment file: {error}"))?;
-        for (line_number, line) in content.lines().enumerate() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let (key, value) = line
-                .split_once('=')
-                .ok_or_else(|| format!("environment file line {} is malformed", line_number + 1))?;
-            if !is_valid_environment_name(key) || key.starts_with("LOCRON_") {
-                return Err(format!("invalid or reserved environment name {key}"));
-            }
-            if value.contains('\0') {
-                return Err(format!("environment file value for {key} contains NUL"));
-            }
-            env.insert(key.to_owned(), value.to_owned());
-        }
-    }
-    for (key, value) in &definition.environment.values {
-        env.insert(key.clone(), value.clone());
-    }
+    let mut env = locron_core::execution::effective_environment(
+        &settings.execution_path,
+        &settings.environment,
+        &definition.environment,
+    )?;
     env.insert("LOCRON_JOB_ID".into(), attempt.job_id.clone());
     env.insert("LOCRON_RUN_ID".into(), attempt.run_id.clone());
     env.insert("LOCRON_ATTEMPT".into(), attempt.attempt_number.to_string());
@@ -4200,6 +4200,7 @@ pub(crate) fn engine_target(
     match &definition.target {
         Target::Process { executable, args } => {
             let executable = resolve_attempt_executable(executable, &definition.cwd, &env)?;
+            validate_direct_executable(Path::new(&executable))?;
             Ok(TargetSpec::Process(ProcessSpec {
                 executable,
                 args: args.clone(),
@@ -4215,29 +4216,31 @@ pub(crate) fn engine_target(
                 &definition.cwd,
                 &env,
             )?;
+            let args = shell_arguments(Path::new(&executable), command)?;
             Ok(TargetSpec::Process(ProcessSpec {
                 executable,
-                args: vec!["-c".into(), command.clone()],
+                args,
                 cwd: definition.cwd.clone(),
                 env,
             }))
         }
         Target::Http(http) => {
-            let headers = http
-                .headers
-                .iter()
-                .map(|(name, source)| {
-                    let value = match source {
-                        HttpHeaderSource::Inline(value) => value.clone(),
-                        HttpHeaderSource::Environment(environment) => {
-                            env.get(environment).cloned().ok_or_else(|| {
-                                format!("header environment {environment} is missing")
-                            })?
-                        }
-                    };
-                    Ok((name.clone(), value))
-                })
-                .collect::<Result<BTreeMap<_, _>, String>>()?;
+            let headers =
+                http.headers
+                    .iter()
+                    .map(|(name, source)| {
+                        let value =
+                            match source {
+                                HttpHeaderSource::Inline(value) => value.clone(),
+                                HttpHeaderSource::Environment(environment) => {
+                                    environment_value(&env, environment).cloned().ok_or_else(
+                                        || format!("header environment {environment} is missing"),
+                                    )?
+                                }
+                            };
+                        Ok((name.clone(), value))
+                    })
+                    .collect::<Result<BTreeMap<_, _>, String>>()?;
             Ok(TargetSpec::Http(HttpSpec {
                 method: http.method.as_str().into(),
                 url: http.url.parse().map_err(|e| format!("{e}"))?,
@@ -4311,21 +4314,7 @@ fn resolve_attempt_executable(
     cwd: &Path,
     env: &BTreeMap<String, String>,
 ) -> Result<String, String> {
-    let path = env.get("PATH").map_or("", String::as_str);
-    let absolute_directories = std::env::split_paths(path)
-        .map(|directory| {
-            if directory.is_absolute() {
-                directory
-            } else {
-                cwd.join(directory)
-            }
-        })
-        .collect::<Vec<_>>();
-    let normalized_path = std::env::join_paths(absolute_directories)
-        .map_err(|_| "effective PATH cannot be represented".to_string())?
-        .into_string()
-        .map_err(|_| "effective PATH is not valid UTF-8".to_string())?;
-    let resolved = resolve_executable(executable, cwd, Some(&normalized_path))
+    let resolved = locron_core::execution::resolve_executable(executable, cwd, env)
         .ok_or_else(|| format!("executable not found: {executable}"))?;
     let absolute = if resolved.is_absolute() {
         resolved
@@ -4338,12 +4327,7 @@ fn resolve_attempt_executable(
         .ok_or_else(|| "resolved executable path is not valid UTF-8".to_string())
 }
 fn minimal_env() -> BTreeMap<String, String> {
-    [
-        "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "PATH",
-    ]
-    .into_iter()
-    .filter_map(|name| std::env::var(name).ok().map(|value| (name.into(), value)))
-    .collect()
+    minimal_environment()
 }
 fn parse_method(value: &str) -> Result<HttpMethod> {
     match value.to_ascii_uppercase().as_str() {
@@ -4363,8 +4347,20 @@ fn parse_key_value(value: &str) -> Result<(String, String), String> {
         .ok_or_else(|| "expected KEY=VALUE".into())
 }
 fn normalize_path(path: &Path) -> Result<PathBuf> {
+    #[cfg(windows)]
+    if matches!(
+        path.components().next(),
+        Some(std::path::Component::Prefix(_))
+    ) && !path.is_absolute()
+        || path.has_root() && !path.is_absolute()
+    {
+        return Err(anyhow!(
+            "drive-relative and root-relative paths require an explicit absolute drive or UNC path"
+        ));
+    }
     let expanded = if let Ok(rest) = path.strip_prefix("~") {
-        let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is unavailable"))?;
+        let name = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let home = std::env::var_os(name).ok_or_else(|| anyhow!("{name} is unavailable"))?;
         PathBuf::from(home).join(rest)
     } else {
         path.to_path_buf()

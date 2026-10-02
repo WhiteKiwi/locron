@@ -7,6 +7,7 @@
 
 pub mod command;
 pub mod error;
+pub mod execution;
 pub mod id;
 pub mod lifecycle;
 pub mod policy;

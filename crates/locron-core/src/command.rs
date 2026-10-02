@@ -322,7 +322,7 @@ impl ConfigurationChange {
             }
             Self::Environment { name, value }
                 if !is_valid_environment_name(name)
-                    || name.starts_with("LOCRON_")
+                    || crate::execution::is_reserved_environment_name(name)
                     || value.as_deref().is_some_and(|item| item.contains('\0')) =>
             {
                 Err(ValidationError::new(

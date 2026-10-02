@@ -887,7 +887,7 @@ fn parse_target(
             }
             Ok(Target::Shell {
                 command: script.to_string(),
-                shell: PathBuf::from("/bin/sh"),
+                shell: locron_core::execution::default_shell().map_err(anyhow::Error::msg)?,
             })
         }
         "http" => {
