@@ -27,6 +27,12 @@ adapter, all mapped holders, competing entries and every durable backup/delete/c
 phase on both architectures. It must prove verified rollback or an explicit disabled-task refusal
 with preserved backups after interruption, including ambiguous deletion errors and an unrecorded
 fresh leaf. A successful handoff alone never satisfies the confirmed-update gate.
+Acceptance must also prove capacity refusal leaves installation/state/tasks/PATH/journal/backups
+untouched, despite protected bootstrap metadata already existing; fixed OS-adapter input/output
+bounds are preflighted with the full journal and rollback path. Existing owned installs preserve
+disabled roles and reject fresh-only service flags. A post-receipt registration failure stays
+pending Restoring and resumes idempotently; it cannot claim completion or replace an image behind
+re-enabled roles.
 First-install acceptance exercises the native install/uninstall/recovery frontend under stock
 Restricted script policy, with the machine's executable protections intact. The optional unsigned
 .ps1 frontend has an explicit policy prerequisite; checkout execution on a permissive hosted

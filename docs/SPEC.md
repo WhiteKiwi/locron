@@ -584,12 +584,14 @@ Store distribution remain outside this milestone.
   independent publisher authentication. SmartScreen warnings and policy-blocked configurations
   are documented; installation/update does not automatically disable Windows protections.
 - Windows standalone installation and offline removal are available through native commands
-  without loading an unsigned PowerShell script or changing execution policy. The installation
-  default is the current user's ordinary local application location with the daemon enabled;
+  without loading an unsigned PowerShell script or changing execution policy. A fresh installation
+  defaults to the current user's ordinary local application location with the daemon enabled;
   dashboard and persistent PATH changes are opt-in. Declining services disables both roles, and
   selecting a dashboard while declining services is an explicit argument error. Owned interrupted
   standalone operations can be recovered by operation UUID before ordinary state discovery.
   The optional script route requires an existing operator policy that permits that script.
+  Installing over an existing owned receipt preserves all prior enabled role states. Fresh-only
+  service/dashboard choices refuse there with guidance to use the explicit service commands.
 - WinGet's portable channel installs package files and its command alias; it does not automatically
   install services or invoke lifecycle hooks. Users explicitly configure services through the
   package executable. A native maintenance procedure records and quiesces exact owned
@@ -604,6 +606,9 @@ Store distribution remain outside this milestone.
   coordinate owned executable holders and automatic restarts before replacement; preserve rollback,
   enabled/disabled registration state and durable jobs/history; and report confirmed completion
   only after replacement succeeds. Remaining unowned holders produce an actionable bounded refusal.
+  If task restoration fails after the verified new binary and receipt are durable, the operation
+  remains pending restoration and can be resumed; it cannot report completed or replace a newly
+  running image behind reactivated roles.
 - Windows install/update/package maintenance accepts recorded normalized local paths of at most
   4,096 UTF-16 units. Longer or unsupported paths and an oversized recovery snapshot refuse before
   stopping services or changing installation state; Unicode and paths beyond 260 characters remain

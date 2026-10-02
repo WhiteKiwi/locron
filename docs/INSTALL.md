@@ -25,6 +25,9 @@ ownership receipts authorize
 updates/removal of that exact executable. Uninstall retains durable state and removes only
 unchanged installer-owned files, exact owned task registrations and a PATH entry the installer
 inserted. Standalone and package-manager installations use separate locations.
+Daemon-on/dashboard-off defaults apply to a fresh installation. Reinstalling over an owned receipt
+preserves prior enabled states; fresh-only NoService/Dashboard choices refuse there and direct the
+operator to explicit service/dashboard commands.
 
 The planned native alternative starts from the manually downloaded native ZIP after checking
 its published SHA-256. Run its locron.exe install command without loading an unsigned script:
@@ -45,6 +48,9 @@ When the native caller still maps the executable being changed, it reports pendi
 with an operation UUID and status-file path. That is not confirmed installation/removal. A
 separately extracted native ZIP executable can wait for work against a different installation.
 Use locron maintenance status --operation UUID to read the protected operation's current phase.
+An operation with verified new files but incomplete task restoration remains in restoring and
+requires UUID recovery; it has not completed. Recovery resumes restoration against those verified
+bytes rather than replacing an image after its roles have started.
 
 The optional install.ps1/uninstall.ps1 frontend requires an operator policy that already permits
 the selected script. Restricted blocks script files; RemoteSigned can block a downloaded unsigned

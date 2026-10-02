@@ -1618,9 +1618,10 @@ safe paths before installing in a private user directory. Retain versioned exact
 explicit PATH choice, optional daemon/dashboard registration and precise state-preserving removal.
 The Windows updater verifies helper/destination ownership and stages verified bytes, quiesces all
 owned mapped executable holders, suppresses restarts, hands off to a second process and confirms
-completion before success. Locked/unowned MCP/manual holders are bounded refusals. Replacement,
-receipt update and registration restoration are rollback-capable; no normal reboot-replacement
-path, optimistic updated:true or silently enabled dashboard. WinGet uses the same final ZIPs,
+completion before success. Locked/unowned MCP/manual holders are bounded refusals. Replacement
+and receipt update retain verified rollback; incomplete registration restoration remains resumable.
+No normal reboot-replacement path, optimistic updated:true or silently enabled dashboard.
+WinGet uses the same final ZIPs,
 InstallerSha256 and explicit package-manager ownership; self-update refuses its binary.
 
 #### Concrete Windows distribution contracts
@@ -1658,12 +1659,16 @@ This choice follows the [Rust linkage reference](https://doc.rust-lang.org/refer
 and [PE import format](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format).
 
 The standalone Windows default executable is LocalAppData\\Programs\\locron\\locron.exe. The
-installer accepts -Version, -InstallDirectory, -NoService, -Dashboard and -AddToPath. It starts the
-daemon by default, enables the dashboard only when explicitly requested, and changes only the
-current user's persistent PATH when -AddToPath is specified. Reinstallation preserves a registered
-dashboard's previous enabled state. Registration failures are explicit warnings after a confirmed
-binary install, not a fabricated claim of service health. Private installation directories and a
-versioned JSON receipt bind the current SID, canonical executable, channel, target, version,
+installer accepts -Version, -InstallDirectory, -NoService, -Dashboard and -AddToPath. Fresh install
+starts the daemon by default and enables the dashboard only when explicitly requested. It changes
+only the current user's persistent PATH when -AddToPath is specified. Reinstallation preserves
+every existing role's enabled state. After the new binary and receipt are fully durable and verified,
+a registration failure leaves pending Restoring with a typed bounded cause and correct new bytes;
+it is neither completed nor permission to roll back a mapped image behind reactivated roles.
+Recovery resumes guarded idempotent restoration. Any earlier rollback first quiesces all verified
+new roles before exact deletion/restoration of the old bytes; reserve that quiesce and old-role
+restore path as well. Private installation directories and a versioned JSON receipt bind the
+current SID, canonical executable, channel, target, version,
 canonical archive URL, archive SHA-256 and executable SHA-256. Existing unowned/package-manager
 destinations are refused. Uninstall requires this receipt, quiesces only exact owned registrations,
 removes only receipt-listed unchanged files and an installer-inserted PATH entry, and retains state.
@@ -1672,7 +1677,11 @@ Standalone and WinGet locations coexist; neither installer adopts the other's fi
 Provide Windows-only native locron install and locron uninstall commands for the default
 Restricted script-policy case. Native install accepts --version, --install-directory,
 --no-service, --dashboard and --add-to-path with the same standalone defaults. --no-service
-disables both roles and conflicts with --dashboard before any state/download/task effects.
+disables both roles on a fresh installation and conflicts with --dashboard before any
+state/download/task effects. With an existing owned receipt, preserve every prior enabled state
+and reject --no-service or --dashboard before installation effects, directing the operator to
+explicit service/dashboard configuration commands. Existing-install defaults never enable a
+previously disabled role.
 Native uninstall accepts --install-directory, defaults to the running receipt-owned directory
 when present and otherwise the ordinary standalone directory, and needs no network. Native
 locron install --operation UUID is recovery only and conflicts with all new-install options.
@@ -1682,6 +1691,12 @@ The native frontend downloads and verifies canonical release bytes, writes the s
 request and runs the same independently verified helper as the script frontend. It never loads
 downloaded/retained .ps1 code or uses Invoke-Expression; fixed compiled stock OS adapters remain
 the only PowerShell procedures. Unix CLI/help stays unchanged and the public asset count stays 14.
+Verified downloads, the private copied helper and protected temporary bootstrap metadata may exist
+to execute this frontend. They do not authorize effects on the installation or state. The helper
+revalidates these bytes/source and current guards, then performs the complete typed preflight
+before any installed-target, state, task, PATH, transaction-journal or backup mutation. Fresh role
+setup uses an explicit verified destination executable and a typed registration/root rollback
+record; it never derives the registration action from the copied helper's current_exe.
 The optional script frontend must describe its actual execution-policy prerequisite: Restricted
 blocks .ps1, RemoteSigned can require operator-selected unblocking of that reviewed asset, and
 AllSigned or organizational policy can refuse it. Do not add automatic policy changes, a process
@@ -1846,17 +1861,21 @@ service::ServiceRestoreRecord type for all-task lifecycle state, including its s
 original task fingerprints and confirmed quiescence; arbitrary JSON and saved task source cannot
 authorize task effects. Preflight the complete serialized original lifecycle snapshot and reserve
 the worst-case frame count and bytes for all quiesce callbacks, forward file/receipt/registration
-transitions and rollback before any task, registry or file mutation. Count encoded frame overhead
-and repeated snapshot/inventory fields, using bounded maximum representations for not-yet-created
+transitions and rollback before any installed-target, state, task, PATH, transaction-journal or
+backup mutation. Protected verified bootstrap metadata is the exception described above.
+Preflight each planned fixed OS-adapter request/response against its 64 KiB input/128 KiB output
+bounds as well, so a later oversized PATH or path payload cannot discover its limit after effects.
+Count encoded frame overhead and repeated snapshot/inventory fields, using bounded maximum
+representations for not-yet-created
 identities and other future fields. A reservation must cover the entire operation, not only its
 next append or successful path. An oversized snapshot or unprovable remaining budget refuses with
 zero effects; do not raise limits, truncate the snapshot or begin disabling tasks to discover its
 size. The service adapter's 256-binding limit is a ceiling, not a promise that every such inventory
 fits this distribution journal. Revalidate and reserve against the actual validated record at
 each resumed-operation entry before another effect. The first flushed frame contains the complete
-original lifecycle snapshot
-and durable verified backups before any disable/delete; later frames record each delete intent
-and every newly created identity before bytes are written. sync_all must succeed before the next
+original lifecycle snapshot and durable verified backups before any disable/delete; later frames
+record each delete intent and every newly created identity before bytes are written.
+sync_all must succeed before the next
 effect. Frame/size exhaustion, flush uncertainty, a truncated/corrupt tail or an unknown created
 identity is an explicit refusal with backups retained and no replay inferred from status. Recovery
 validates live guards, recorded identities and typed lifecycle state before any resumed mutation.
