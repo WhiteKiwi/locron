@@ -18,6 +18,13 @@ initial release is unsigned; signing remains deferred in public proposal #37 and
 this milestone's dependency graph. Execution progress/evidence belongs in private Project drafts;
 public #23–#36 remain proposal and review context rather than a second live execution checklist.
 
+The first portability commit is explicitly a build foundation: native `windows-2025` x64 and
+`windows-11-arm` ARM64 jobs check the workspace, exercise the portable scheduling domain, and
+check pinned Windows MSRV/lint. Process execution fails with an actionable pending-adapter reason;
+wake remains a reconciliation-only fallback until the secured adapter lands. These intermediate
+gates are expanded to all-target behavioral tests with the runtime changes and do not claim
+Windows product support. Existing Linux/macOS full-suite gates remain required throughout.
+
 ### Build, paths and execution configuration
 
 Keep the existing five-package graph, Rust 1.94 MSRV and workspace unsafe-code prohibition. Make
@@ -81,6 +88,11 @@ Separate secured control endpoints bind role/lifetime identity and deliver only 
 requests to that role's existing cancellation token. Lifecycle coordination first disables automatic
 task activation, requests stop, and waits for confirmed role/lock exit. A failed request/remaining
 holder is an actionable bounded failure; task-state alone cannot report graceful completion.
+
+Keep core free of async-runtime types: it shares normalized user/state endpoint identity, fixed
+message framing and a bounded synchronous hint sender. Engine owns the asynchronous named-pipe
+listener and role-control cancellation adapter. Server uses the core sender without gaining an
+engine dependency; CLI composes engine listeners after acquiring the owning lifetime lock.
 
 Use stock PowerShell Schedule.Service COM with structured inputs/output, deterministic SID/state/
 role task names, current SID LogonTrigger, INTERACTIVE_TOKEN, LUA, no password, and create/update

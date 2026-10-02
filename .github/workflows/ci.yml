@@ -11,6 +11,64 @@ permissions:
   contents: read
 
 jobs:
+  windows-foundation:
+    name: Windows foundation / ${{ matrix.platform }} / Rust ${{ matrix.rust }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x86_64-pc-windows-msvc
+            os: windows-2025
+            rust: stable
+          - platform: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            rust: stable
+          - platform: x86_64-pc-windows-msvc
+            os: windows-2025
+            rust: 1.94.0
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Verify native toolchain
+        shell: pwsh
+        run: |
+          Get-ComputerInfo -Property WindowsProductName, WindowsVersion, OsArchitecture
+          rustc -vV
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hostTriple = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
+          if ($hostTriple -ne '${{ matrix.platform }}') { throw "Wrong native toolchain: $hostTriple" }
+      - name: Compile staged Windows workspace
+        run: cargo check --workspace --locked
+      - name: Verify portable domain scheduling
+        run: cargo test -p locron-core --lib --locked -- schedule::
+
+  windows-lint-foundation:
+    name: Windows lint foundation / Rust 1.98.0
+    timeout-minutes: 35
+    runs-on: windows-2025
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.0
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --locked -- -D warnings
+
   test:
     name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
     timeout-minutes: 30
