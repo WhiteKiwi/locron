@@ -612,6 +612,16 @@ helper error before an absent-marker assertion can hide it. Stop waiting when th
 exited; this shortens failure reporting without changing either adapter budget or mapped-handle
 acceptance. Never turn a missing marker into a passing mapped-file assertion.
 
+The joined native mapping helper now reports an empty map-name argument before its entry marker.
+Pass [System.Management.Automation.Language.NullString]::Value as only that fixture's mapName
+argument, preserving an unnamed real writable mapping. PowerShell otherwise converts raw $null
+to an empty .NET string, which the Framework mapping constructor rejects. Keep the six-argument
+FileStream overload, writable view, explicit original FileStream disposal, release/join and exact
+stable-gate sharing refusal/bytes assertions. Verify: native x64/ARM64/MSRV must reach the original-
+handle-closed marker, refuse the stable gate while the real writable mapping remains, then accept
+it only after helper/view disposal with payload intact. A binder/setup error still fails visibly;
+this fixture-only correction changes no production adapter, deadline or cold-loader behavior.
+
 Verify: (1) original native ARM64 broad-file cold failure now identifies the actual generic child
 phase under the same thirty-plus-three bound without warming/replaying state creation. (2) the
 mapping fixture reports its actual setup/stall error and independent temporary-parent status after

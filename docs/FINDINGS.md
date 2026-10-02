@@ -3354,6 +3354,19 @@ inside spawn_with after wrapper pre_spawn hooks. Core's local factory should pre
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject
 policy unsuspended for resume after both enrollments. Capture the mask at real spawn rather than
 treating a configured wrapper or CONOUT$ device availability as complete visibility evidence.
+
+### Native mapping fixture null-string binding (2026-10-03)
+
+The actual joined mapping fixture's native error is an empty mapName, before its entry marker;
+it is separate from the measured generic converter delay. PowerShell's documented NullString
+type explicitly supplies null to a .NET string method parameter and is present in its 5.1
+reference assemblies. The .NET Framework reference source permits null but rejects a nonnull
+empty mapName and delegates the six-argument FileStream overload without reopening the path.
+Select NullString::Value only for this fixture argument, retaining the real writable view and
+original-handle-close proof. Native success is pending. Sources:
+[NullString contract](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.language.nullstring?view=powershellsdk-7.4.0),
+[Framework mapping implementation](https://raw.githubusercontent.com/microsoft/referencesource/main/System.Core/System/IO/MemoryMappedFiles/MemoryMappedFile.cs#L162).
+
 ### Task Scheduler phase transport and callback bounds (2026-10-03)
 
 Measured stock PowerShell starts can consume about twenty-two seconds on hosted ARM64 even for
