@@ -1927,6 +1927,14 @@ identities per leaf, every repeated typed service slot, and the future package p
 bound before journal creation. Fresh installation additionally requires the service owner's real
 typed registration/root rollback record and complete callback plan; the existing-installation
 record cannot authorize fresh role creation or substitute null for that missing authority.
+For the existing-installation path, no new daemon/dashboard activation occurs before all six
+replacement payloads and the new receipt are fully verified and durable. Before that boundary,
+rollback uses the original confirmed-quiescent role record; it never activates a new executable.
+After entering restoration, failure remains pending restoration and the journal rejects a return
+to file rollback. This order avoids an uncounted new-origin service snapshot slot. Any future path
+that activates new roles earlier must first add a separate real typed new-origin quiescence record
+and its complete persistence budget. Task activation also needs its own recorded intent/result;
+an enabled flag or enable intent cannot authorize replaying Task.Run after an uncertain result.
 sync_all must succeed before the next
 effect. Frame/size exhaustion, flush uncertainty, a truncated/corrupt tail or an unknown created
 identity is an explicit refusal with backups retained and no replay inferred from status. Recovery
