@@ -41,6 +41,10 @@ mod windows_protocol;
 #[path = "windows_release_source.rs"]
 mod windows_release_source;
 
+#[cfg(all(windows, test))]
+#[path = "windows_replacement.rs"]
+mod windows_replacement;
+
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";

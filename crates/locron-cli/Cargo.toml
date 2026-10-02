@@ -44,6 +44,7 @@ url.workspace = true
 uuid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+fs_at = "=0.2.1"
 zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
 
 [dev-dependencies]
