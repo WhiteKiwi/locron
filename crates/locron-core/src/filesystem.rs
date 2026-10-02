@@ -623,6 +623,7 @@ mod windows {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::io::Write;
 
     #[test]
     fn created_private_root_and_file_have_real_acl_facts() {
@@ -632,7 +633,6 @@ mod tests {
         assert!(is_private(&root, true).unwrap());
         let path = root.join("secret.txt");
         let mut file = create_private_new(&path).unwrap();
-        use std::io::Write;
         file.write_all(b"private").unwrap();
         drop(file);
         assert!(is_private(&path, false).unwrap());
@@ -644,12 +644,12 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path().join("owned");
         drop(DirectoryGuard::private(&root).unwrap());
-        crate::windows::run_script_json(r#"
+        crate::windows::run_script_json(r"
             $acl = Get-Acl -LiteralPath ([string]$request.path);
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
             Set-Acl -LiteralPath ([string]$request.path) -AclObject $acl;
             @{changed=$true} | ConvertTo-Json -Compress
-        "#, &json!({"path": root})).unwrap();
+        ", &json!({"path": root})).unwrap();
         assert!(!is_private(&root, true).unwrap());
         assert!(DirectoryGuard::private(&root).is_err());
         restrict_owned(&root, true).unwrap();
@@ -695,17 +695,16 @@ mod tests {
         let root = temporary.path().join("private");
         let _guard = DirectoryGuard::private(&root).unwrap();
         let path = root.join("foreign-access.txt");
-        use std::io::Write;
         create_private_new(&path)
             .unwrap()
             .write_all(b"preserve")
             .unwrap();
-        crate::windows::run_script_json(r#"
+        crate::windows::run_script_json(r"
             $acl = Get-Acl -LiteralPath ([string]$request.path);
             $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'), 'Read', 'Allow'));
             Set-Acl -LiteralPath ([string]$request.path) -AclObject $acl;
             @{changed=$true} | ConvertTo-Json -Compress
-        "#, &json!({"path": path})).unwrap();
+        ", &json!({"path": path})).unwrap();
         assert!(!is_private(&path, false).unwrap());
         assert!(open_private(&path, OpenOptions::new().write(true).truncate(true)).is_err());
         assert_eq!(fs::read(&path).unwrap(), b"preserve");
@@ -718,7 +717,6 @@ mod tests {
         let _guard = DirectoryGuard::private(&root).unwrap();
         let source = root.join("output.partial");
         let destination = root.join("output.log");
-        use std::io::Write;
         create_private_new(&source)
             .unwrap()
             .write_all(b"captured")
@@ -750,7 +748,6 @@ mod tests {
         let path = guard.normalized_path().join("secret.txt");
         assert!(path.as_os_str().len() > 260);
         let mut file = create_private_new(&path).unwrap();
-        use std::io::Write;
         file.write_all(b"preserve").unwrap();
         drop(file);
         assert!(is_private(&path, false).unwrap());
