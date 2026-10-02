@@ -64,6 +64,34 @@ impl Fixture {
         NativeProcess::start(command)
     }
 
+    fn supervised_daemon(&self, supervisor: &str, worker: &str) -> NativeProcess {
+        let mut command = Command::new(cli_executable());
+        command.arg("--state-dir").arg(&self.paths.root).args([
+            "daemon",
+            "run",
+            "--service-mode",
+            "--supervisor-lifetime",
+            supervisor,
+            "--worker-lifetime",
+            worker,
+        ]);
+        NativeProcess::start(command)
+    }
+
+    fn parent_activation(&self, lifetime: &str) -> DaemonLock {
+        DaemonLock::acquire_role(
+            &self.paths.daemon_activation_lock,
+            &locron_store::LockMetadata {
+                pid: std::process::id(),
+                lifetime_id: lifetime.to_owned(),
+                started_at_us: 1,
+                binary_version: "test".into(),
+            },
+            true,
+        )
+        .expect("owned held supervisor fixture lease")
+    }
+
     fn dashboard(&self) -> NativeProcess {
         let mut command = Command::new(cli_executable());
         command.arg("--state-dir").arg(&self.paths.root).args([
@@ -408,6 +436,7 @@ impl NativeProcess {
         let status = self.wait_exit(deadline);
         let lock = match role {
             "daemon-activation" => &paths.daemon_activation_lock,
+            "daemon-worker" => &paths.daemon_worker_activation_lock,
             "dashboard" => &paths.dashboard_lock,
             _ => panic!("unsupported fixture role"),
         };
@@ -557,6 +586,166 @@ fn duplicate_registered_activation_and_stale_control_lifetime_are_refused() {
     assert_eq!(actual.metadata, activation.metadata);
     registered.stop_activation(&fixture.paths, &activation);
     DaemonLock::try_prove_free(&fixture.paths.daemon_lock).expect("original daemon exited");
+}
+
+#[test]
+fn invalid_supervised_daemon_arguments_never_create_child_state() {
+    let supervisor = uuid::Uuid::now_v7().to_string();
+    let worker = uuid::Uuid::now_v7().to_string();
+    for arguments in [
+        vec!["--supervisor-lifetime", supervisor.as_str()],
+        vec![
+            "--service-mode",
+            "--supervisor-lifetime",
+            supervisor.as_str(),
+        ],
+        vec!["--service-mode", "--worker-lifetime", worker.as_str()],
+        vec![
+            "--supervisor-lifetime",
+            supervisor.as_str(),
+            "--worker-lifetime",
+            worker.as_str(),
+        ],
+        vec![
+            "--service-mode",
+            "--supervisor-lifetime",
+            "not-a-uuid",
+            "--worker-lifetime",
+            worker.as_str(),
+        ],
+        vec![
+            "--service-mode",
+            "--supervisor-lifetime",
+            supervisor.as_str(),
+            "--worker-lifetime",
+            supervisor.as_str(),
+        ],
+        // Valid UUIDs still require an existing held parent before any child writes.
+        vec![
+            "--service-mode",
+            "--supervisor-lifetime",
+            supervisor.as_str(),
+            "--worker-lifetime",
+            worker.as_str(),
+        ],
+    ] {
+        let fixture = Fixture::absent();
+        let mut command = Command::new(cli_executable());
+        command
+            .arg("--state-dir")
+            .arg(&fixture.paths.root)
+            .args(["daemon", "run"])
+            .args(arguments);
+        let mut child = NativeProcess::start(command);
+        assert!(
+            !child
+                .wait_exit(Instant::now() + Duration::from_secs(30))
+                .success()
+        );
+        assert!(!fixture.paths.root.exists());
+    }
+}
+
+#[test]
+fn stale_supervisor_uuid_cannot_create_a_daemon_worker_lease() {
+    let fixture = Fixture::new();
+    let supervisor = uuid::Uuid::now_v7().to_string();
+    let _parent = fixture.parent_activation(&supervisor);
+    let before = DaemonLock::read_role_metadata(&fixture.paths.daemon_activation_lock)
+        .unwrap()
+        .unwrap();
+    let mut child = fixture.supervised_daemon(
+        &uuid::Uuid::now_v7().to_string(),
+        &uuid::Uuid::now_v7().to_string(),
+    );
+    assert!(
+        !child
+            .wait_exit(Instant::now() + Duration::from_secs(30))
+            .success()
+    );
+    assert!(!fixture.paths.daemon_worker_activation_lock.exists());
+    assert!(!fixture.paths.daemon_lock.exists());
+    assert_eq!(
+        DaemonLock::probe_existing(&fixture.paths.daemon_activation_lock).unwrap(),
+        locron_store::LockProbe::Held
+    );
+    assert_eq!(
+        DaemonLock::read_role_metadata(&fixture.paths.daemon_activation_lock)
+            .unwrap()
+            .unwrap(),
+        before
+    );
+}
+
+#[test]
+fn exact_daemon_worker_cancellation_preserves_the_parent_and_manual_scheduler() {
+    let fixture = Fixture::new();
+    let mut manual = fixture.daemon(false);
+    let manual_owner = manual.wait_owner(&fixture.paths.daemon_lock);
+    let supervisor = uuid::Uuid::now_v7().to_string();
+    let _parent = fixture.parent_activation(&supervisor);
+    let worker = uuid::Uuid::now_v7().to_string();
+    let mut child = fixture.supervised_daemon(&supervisor, &worker);
+    let activation = child.wait_owner(&fixture.paths.daemon_worker_activation_lock);
+    assert_eq!(activation.metadata.lifetime_id, worker);
+    assert!(activation.service_mode);
+    assert!(
+        locron_core::notification::request_shutdown(
+            &fixture.paths.root,
+            "daemon-worker",
+            &uuid::Uuid::now_v7().to_string(),
+        )
+        .is_err()
+    );
+    assert!(
+        child
+            .stop_role(&fixture.paths, "daemon-worker", &activation)
+            .success()
+    );
+    assert_manual_owner_is_preserved(&mut manual, &fixture.paths, &manual_owner);
+    assert_eq!(
+        DaemonLock::probe_existing(&fixture.paths.daemon_activation_lock).unwrap(),
+        locron_store::LockProbe::Held
+    );
+    assert!(
+        locron_core::notification::request_shutdown(&fixture.paths.root, "daemon-worker", &worker)
+            .is_err()
+    );
+}
+
+#[test]
+fn supervised_daemon_activates_with_its_worker_uuid_after_the_manual_owner_exits() {
+    let fixture = Fixture::new();
+    let mut manual = fixture.daemon(false);
+    manual.wait_owner(&fixture.paths.daemon_lock);
+    let supervisor = uuid::Uuid::now_v7().to_string();
+    let _parent = fixture.parent_activation(&supervisor);
+    let worker = uuid::Uuid::now_v7().to_string();
+    let mut child = fixture.supervised_daemon(&supervisor, &worker);
+    let activation = child.wait_owner(&fixture.paths.daemon_worker_activation_lock);
+    manual.hard_stop();
+    let role = child.wait_owner(&fixture.paths.daemon_lock);
+    assert!(role.service_mode);
+    assert_eq!(role.metadata.lifetime_id, worker);
+    assert_eq!(
+        DaemonLock::read_role_metadata(&fixture.paths.daemon_worker_activation_lock)
+            .unwrap()
+            .unwrap(),
+        activation
+    );
+    let run_id = fixture.queue_marker_run("supervised-worker-target", None);
+    fixture.wait_marker_run(&run_id);
+    assert!(
+        child
+            .stop_role(&fixture.paths, "daemon-worker", &activation)
+            .success()
+    );
+    DaemonLock::try_prove_free(&fixture.paths.daemon_lock).expect("actual owned daemon exit");
+    assert!(locron_core::notification::send_wake(&fixture.paths.root).is_err());
+    assert_eq!(
+        DaemonLock::probe_existing(&fixture.paths.daemon_activation_lock).unwrap(),
+        locron_store::LockProbe::Held
+    );
 }
 
 fn dashboard_client() -> reqwest::Client {
