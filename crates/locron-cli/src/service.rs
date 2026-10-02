@@ -286,6 +286,7 @@ pub(crate) enum ServiceCommand {
 /// Everything a backend needs to register the running binary as a service.
 struct ServiceContext {
     executable: PathBuf,
+    #[cfg(any(unix, test))]
     home: PathBuf,
     /// The registration target addressed by the flow.
     target: Target,
@@ -299,6 +300,7 @@ struct ServiceContext {
 impl ServiceContext {
     fn new(state_dir: Option<PathBuf>, target: Target) -> Result<Self, ServiceError> {
         let executable = canonical_executable()?;
+        #[cfg(any(unix, test))]
         let home = env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
             ServiceError::Io("cannot determine the home directory (HOME is unset)".to_owned())
         })?;
@@ -312,6 +314,7 @@ impl ServiceContext {
         };
         Ok(Self {
             executable,
+            #[cfg(any(unix, test))]
             home,
             target,
             uid,
@@ -1174,6 +1177,7 @@ fn render_status_human(target: Target, outcome: &ServiceStatus) {
 
 /// Write a registration file owned by the user with 0644 permissions (launchd
 /// and systemd both refuse registration files writable by group or others).
+#[cfg(any(unix, test))]
 fn write_private(path: &Path, content: &[u8]) -> Result<(), ServiceError> {
     let mut file = fs::File::create(path)
         .map_err(|error| ServiceError::Io(format!("cannot write {}: {error}", path.display())))?;
