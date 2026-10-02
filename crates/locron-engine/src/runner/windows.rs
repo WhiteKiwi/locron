@@ -1,10 +1,12 @@
 //! Safe Windows process ownership before the first target instruction.
 
+use std::io;
 use std::process::Stdio;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::{Duration, Instant};
 
 use process_wrap::tokio::{ChildWrapper, CommandWrap, CommandWrapper, JobObject, KillOnDrop};
 use tokio::io::AsyncReadExt;
@@ -12,7 +14,12 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use win32job::{ExtendedLimitInfo, Job};
 
-use super::*;
+use crate::output::{Channel, OutputWriter};
+
+use super::{
+    AttemptContext, ExecutionOutcome, OutcomeKind, ProcessSpec, RunnerConfig, RunnerError,
+    finalize_configuration_failure, simple_outcome,
+};
 
 #[derive(Debug)]
 struct Enroll {
