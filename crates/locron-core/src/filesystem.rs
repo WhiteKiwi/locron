@@ -1056,7 +1056,7 @@ mod tests {
                 $mapping = $null;
                 $view = $null;
                 try {
-                    $mapping = [IO.MemoryMappedFiles.MemoryMappedFile]::CreateFromFile($stream, $null, 0, [IO.MemoryMappedFiles.MemoryMappedFileAccess]::ReadWrite, [IO.HandleInheritability]::None, $true);
+                    $mapping = [IO.MemoryMappedFiles.MemoryMappedFile]::CreateFromFile($stream, [System.Management.Automation.Language.NullString]::Value, 0, [IO.MemoryMappedFiles.MemoryMappedFileAccess]::ReadWrite, [IO.HandleInheritability]::None, $true);
                     $view = $mapping.CreateViewAccessor();
                     $stream.Dispose();
                     [IO.File]::WriteAllText([string]$request.entered, 'original-handle-closed');
