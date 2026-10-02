@@ -984,6 +984,19 @@ the shutdown path; any retry uses only its remaining absolute budget. Failed/unc
 persistence cannot fabricate an actual child outcome. At most four attempt facts distinguish
 actual completed exits from known-not-started attempts and infrastructure/refusal causes.
 
+Expose Windows-only filesystem::rename_private_until(source, destination, std::time::Instant)
+for this owned worker. Preserve the existing rename_private five-second contract. The new helper
+uses the same retained existing-parent/no-reparse/private-leaf validation and retries only native
+sharing codes 32/33; check expiry before dispatch and after each result, and cap every retry sleep
+to the caller's remaining time. An expired or late successful native rename is an explicit
+uncertain diagnostic failure, not evidence that no rename happened. The caller still quarantines
+an in-flight uncancellable operation and never retries it from a second owner. Verify a held
+reader released before the deadline succeeds, a retained reader refuses at the shared deadline
+with the partial intact, and an already expired deadline performs no rename or directory creation.
+After the approved development handoff, runtime owns only service/windows_supervisor.rs plus
+its existing shared-child/main boundaries; service.rs, COM registration and typed maintenance
+remain with the privacy/lifecycle developer.
+
 Verify: (1) actual native fixtures stall the owned I/O operation before metadata read, during
 fact/rename/sync and at a ready response crossing expiry; each caller refuses under one budget,
 keeps quarantined guards/Job, sends no late/replayed control, and launches no later child. Normal
