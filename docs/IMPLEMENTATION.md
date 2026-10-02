@@ -1054,6 +1054,28 @@ exhaust observably; cancellation during startup, waiting, running or any retry g
 owned locks/processes exit while disabled registrations stay disabled. Actual Scheduler wrapper
 exit/PID and task state must not be confused with daemon ownership or graceful exit.
 
+Native CLI qualification selects the complete `service::` unit-test namespace with
+`cargo test -p locron --bin locron --locked -- service:: --test-threads=1` on every existing
+Windows foundation row: native x64 stable, native ARM64 stable and x64 Rust 1.94.0. Add one
+semantic-test step after the original cold core gate; preserve the required job names, the
+existing job deadline and the independent package/positive-distribution harness. Library tests
+and targeted CLI filters do not select service::windows_supervisor, so successful package
+compilation alone is insufficient qualification for this owner.
+
+Serial selection belongs only to this service harness. Every fixture uses a unique current-SID
+private temporary child root and owned executable/processes; no live registration or shared
+state is used. Keep real process/Job/lease/cancellation/log/fact/manual-owner assertions. The
+genuine four-exit and known-not-started exhaustion fixtures each retain three actual sixty-second
+waits; their serial execution therefore includes at least six minutes of real retry waits.
+Do not skip, retry, warm the adapter before the cold gate, shorten those waits or widen operation
+budgets to obtain a green run. The existing library suites retain their selected harness policy.
+
+Verify all three native rows actually list and run service::windows_supervisor semantic tests,
+including real child 70/negative codes, four combined attempts, I/O quarantine, startup/wait/run/
+retry cancellation, private stdout/stderr, diagnostic refusal and the new-manual-publication gap.
+Record exact revision/runner/toolchain and the service test count/results; failed native
+compilation, an empty filter or a package-only pass cannot satisfy this qualification.
+
 Windows registration uses the shared full-file-identity/SID digest for role-specific task names.
 
 ### Phase-scoped Task Scheduler transport and persistence ownership

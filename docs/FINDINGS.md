@@ -3230,6 +3230,17 @@ not permission to release while a root/descendant or Job query remains unconfirm
 Sources: [process termination resources](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process),
 [ExitProcess handle closure and descendant behavior](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-exitprocess).
 
+#### Native supervisor harness selection
+
+The existing native library command tests core/store/engine/server; the targeted CLI commands
+select other areas and do not match service::windows_supervisor. Review of that module's fourteen
+semantic fixtures therefore cannot be qualified by a native package build or those filters.
+Select the complete service:: CLI unit namespace in the existing x64/ARM64/MSRV foundation
+matrix with --test-threads=1, after the original cold core gate. This preserves independent
+private fixtures while making the two real three-by-sixty-second exhaustion policies execute
+serially. Keep all existing operation deadlines, child/Job proof, fault assertions and required
+status names; record the actual test count and results for the exact revision.
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development
