@@ -200,7 +200,7 @@ async fn run_adapter(
     request: Vec<u8>,
     deadline: Instant,
 ) -> io::Result<Value> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
 
     remaining(deadline)?;
     let deadline = tokio::time::Instant::from_std(deadline);
@@ -223,22 +223,8 @@ async fn run_adapter(
         .take()
         .ok_or_else(|| io::Error::other("missing adapter stderr"))?;
     let mut writer = tokio::spawn(async move { stdin.write_all(&request).await });
-    let mut output = tokio::spawn(async move {
-        let mut bytes = Vec::new();
-        stdout
-            .take(OUTPUT_LIMIT + 1)
-            .read_to_end(&mut bytes)
-            .await?;
-        Ok::<_, io::Error>(bytes)
-    });
-    let mut errors = tokio::spawn(async move {
-        let mut bytes = Vec::new();
-        stderr
-            .take(OUTPUT_LIMIT + 1)
-            .read_to_end(&mut bytes)
-            .await?;
-        Ok::<_, io::Error>(bytes)
-    });
+    let mut output = tokio::spawn(capture_output(stdout));
+    let mut errors = tokio::spawn(capture_output(stderr));
     let operation = tokio::time::timeout_at(deadline, async {
         let ((), output, errors, status) = tokio::try_join!(
             async { (&mut writer).await.map_err(io::Error::other)? },
@@ -285,11 +271,6 @@ async fn run_adapter(
             };
         }
     };
-    if output.len() > OUTPUT_LIMIT as usize || errors.len() > OUTPUT_LIMIT as usize {
-        return Err(io::Error::other(
-            "Windows adapter exceeded its output limit",
-        ));
-    }
     if !status.success() {
         return Err(io::Error::other(format!(
             "stock Windows adapter failed: {}",
@@ -297,6 +278,21 @@ async fn run_adapter(
         )));
     }
     serde_json::from_slice(&output).map_err(io::Error::other)
+}
+
+async fn capture_output(stream: impl tokio::io::AsyncRead + Unpin) -> io::Result<Vec<u8>> {
+    use tokio::io::AsyncReadExt;
+    let mut bytes = Vec::new();
+    stream
+        .take(OUTPUT_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .await?;
+    if bytes.len() > OUTPUT_LIMIT as usize {
+        return Err(io::Error::other(
+            "Windows adapter exceeded its output limit",
+        ));
+    }
+    Ok(bytes)
 }
 
 /// Returns the actual current token's SID, independent of username environment text.
@@ -559,6 +555,24 @@ mod tests {
 
     #[test]
     fn adapter_output_is_bounded() {
-        assert!(run_script_json("('x' * 200000) | ConvertTo-Json -Compress", &json!({})).is_err());
+        for script in [
+            "[Console]::Write(('x' * 200000)); [Threading.Thread]::Sleep(60000)",
+            "[Console]::Error.Write(('x' * 200000)); [Threading.Thread]::Sleep(60000)",
+        ] {
+            let request = prepare_adapter(script, &json!({})).unwrap();
+            // Queue admission is covered separately. Measure the owned child's cap and cleanup.
+            let permit = ADAPTER_WORKERS
+                .acquire(Instant::now() + ADAPTER_TIMEOUT)
+                .unwrap();
+            let started = Instant::now();
+            let error =
+                run_adapter_worker(request, started + Duration::from_secs(10), permit).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::Other);
+            assert_eq!(
+                error.to_string(),
+                "Windows adapter exceeded its output limit"
+            );
+            assert!(started.elapsed() < Duration::from_secs(13));
+        }
     }
 }
