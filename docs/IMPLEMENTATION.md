@@ -236,9 +236,37 @@ destinations are refused. Uninstall requires this receipt, quiesces only exact o
 removes only receipt-listed unchanged files and an installer-inserted PATH entry, and retains state.
 Standalone and WinGet locations coexist; neither installer adopts the other's files.
 
+Keep the release inventory unchanged by placing WinGet maintenance in install.ps1:
+-Maintenance Prepare|Complete|Remove with -Executable and -Operation selects that explicit flow.
+Prepare copies the verified existing package executable as the hidden helper into the protected
+LocalAppData\\locron-distribution\\operations\\UUID directory, outside the package installation.
+It persists SID, package registration/source, exact executable hash and all task definitions with
+their prior enabled/running states before suppressing activation and confirming graceful exit.
+Prepare returns operation_id, status_file and prepared=true only after the journal is durable and
+quiescence is confirmed. Those owned tasks remain disabled until a successful Complete.
+Complete validates this journal and the newly selected package registration/executable, refreshes
+the stored paths and restores the recorded enabled states. Its current SID, package/source IDs,
+canonical registered location, target, version and canonical-release binary hash must agree;
+arbitrary or stale executable paths cannot resume tasks. On an interrupted/failed Complete,
+recover the journal and restore prior state only against a still-valid recorded binary, or retain
+disabled registrations with an explicit recovery error until a valid package is selected. Never
+enable a mismatched path. Remove quiesces and removes only the recorded exact executable-bound
+registrations before the operator runs winget uninstall. The helper request schema is
+locron.windows-operation/v1; installer, updater, uninstaller and maintenance share this internal
+entrypoint and serializable validated lifecycle record. Missing, foreign or interrupted records
+are explicit refusal/recovery cases. No new release asset or arbitrary manifest hook is introduced.
+Use Windows-only zip =8.6.0 (MSRV 1.88) with only deflate-flate2, reusing the workspace's Rust
+flate2 backend. Read exact inventory members with bounded sizes into memory, reject encrypted,
+special/reparse/duplicate members and never use a generic path-extract operation. Persist all
+managed files through the shared safe filesystem guard API. PowerShell performs stock .NET
+private staging and passes typed operation JSON to the same verified binary helper; it needs no
+runtime compiler or native API code generation.
+
 Windows self-update cannot wait synchronously while its caller still maps the destination. A
 verified copy of the owned running executable in a private operation directory executes the hidden
-update-helper entrypoint. The caller returns only after helper acceptance, with updated=false,
+update-helper entrypoint. The helper is launched detached with breakaway requested; if an enclosing
+Job Object prevents breakaway, the update refuses handoff instead of risking helper termination
+when the caller exits. The caller returns only after helper acceptance, with updated=false,
 pending=true, an operation UUID and status-file location. This exit 0 means handoff accepted, not
 replacement complete. self-update --status UUID reports pending until the helper confirms binary,
 receipt and registration-restoration results; only confirmed replacement yields updated=true.

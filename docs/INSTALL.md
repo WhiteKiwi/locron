@@ -40,9 +40,25 @@ installation and `self-update` refuse to adopt it. Portable packages cannot run 
 lifecycle hooks. Before a supported WinGet upgrade/removal, the maintenance procedure must
 record all exact executable-bound registrations and their enabled states, suppress activation
 and confirm graceful owned-process exit. After an upgrade it must refresh the active executable
-path and restore the recorded enabled states. A disabled dashboard stays disabled. The concrete
-maintenance command and its native acceptance evidence must be completed before advertising
-this channel; plain uninstall/re-enable instructions would lose disabled-registration state.
+path and restore the recorded enabled states. A disabled dashboard stays disabled. The planned
+maintenance flow reuses the release installer asset:
+
+```powershell
+# $wingetExecutable is the exact package executable, rather than its command alias.
+$prepared = .\install.ps1 -Maintenance Prepare -Executable $wingetExecutable
+winget upgrade --id WhiteKiwi.locron --exact --scope user
+.\install.ps1 -Maintenance Complete -Operation $prepared.operation_id -Executable $newWingetExecutable
+```
+
+Prepare reports its durable operation UUID and status-file path after owned tasks are disabled
+and graceful exit is confirmed. They stay disabled until Complete verifies the current user,
+package/source registration, canonical executable path, version, architecture and canonical
+release digest, then restores the recorded enabled states. An interrupted or failed Complete can
+be retried with the same UUID and a valid package executable. Recovery reactivates only a
+verified binary; a mismatched/stale path remains disabled with an explicit recovery error.
+Before removal, use `-Maintenance Remove -Executable $wingetExecutable`, then
+`winget uninstall --id WhiteKiwi.locron --exact --scope user`; only exact owned registrations are
+removed. Native maintenance acceptance must pass before this channel is advertised.
 
 Downloads use canonical HTTPS assets from `WhiteKiwi/locron`. Archive checksums detect changed
 or corrupted bytes; they provide no independent publisher authentication. The unsigned first

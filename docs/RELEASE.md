@@ -36,6 +36,12 @@ acceptance are verified. Final canonical HTTPS URLs, ZIP hashes, native architec
 Windows 11 version and relative executable paths must agree. WinGet portable manifests cannot
 enforce user scope; the channel procedure supplies `--scope user`. Package ownership and the
 task maintenance procedure must pass native upgrade/removal acceptance before channel promotion.
+The existing install.ps1 asset supplies -Maintenance Prepare|Complete|Remove with exact package
+executable paths and a durable operation UUID. Prepare confirms quiescence and keeps the recorded
+tasks disabled; Complete validates current SID/package/source/path/architecture/version/hash
+before restoring prior enabled states. Interrupted or mismatched operations fail with recovery
+instructions and cannot reactivate an unverified executable. Remove touches only owned exact
+registrations. This does not add a fifteenth release asset or manifest lifecycle hook.
 Signing is a separate future milestone and must not be described as authentication for these ZIPs.
 
 ## 1. Versioning Policy
