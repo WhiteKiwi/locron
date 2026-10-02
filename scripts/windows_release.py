@@ -2,6 +2,7 @@
 """Build and inspect unsigned Windows ZIPs without changing installed software."""
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -212,7 +213,7 @@ def main():
     if args.mode == "package":
         print(package(args.tag, args.target, args.input, args.directory))
     else:
-        print(validate_archive(args.input, args.tag, args.target))
+        print(json.dumps(validate_archive(args.input, args.tag, args.target), sort_keys=True))
 
 
 if __name__ == "__main__":

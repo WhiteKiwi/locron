@@ -215,6 +215,9 @@ redistributable DLLs, debug runtimes and other application DLLs. Run the package
 version check with only Windows system directories in its child PATH. These gates verify the
 build intent and direct dependencies; clean Windows 11 acceptance remains required to prove
 runtime behavior without Visual Studio, a Rust toolchain or separately installed VC redistributables.
+PR CI builds both native Windows release targets with this configuration, packages the current
+workspace version as a test input, validates the actual ZIP and retains import/hash/toolchain facts.
+Branch names never select release publication inventory, and this job creates no tag or release.
 This choice follows the [Rust linkage reference](https://doc.rust-lang.org/reference/linkage.html),
 [Cargo flag scoping](https://doc.rust-lang.org/cargo/reference/config.html#buildrustflags),
 [Microsoft CRT redistribution guidance](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170)
