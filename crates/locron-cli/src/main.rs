@@ -938,6 +938,18 @@ async fn main() {
     let Some(command) = command else {
         missing_subcommand_error().exit();
     };
+    #[cfg(windows)]
+    if let Command::Service {
+        command: service::ServiceCommand::Supervise { role },
+    } = &command
+    {
+        // This hidden owner may have quarantined uncancellable I/O. Its error path must
+        // reach process exit without the public renderer or a join of unfinished work.
+        match service::supervise(state_dir, *role).await {
+            Ok(code) => std::process::exit(code),
+            Err(_) => std::process::exit(70),
+        }
+    }
     init_tracing(verbose, debug);
     let command_name = command_name(&command);
     let streaming = format == Format::Json && command_uses_stream(&command);
