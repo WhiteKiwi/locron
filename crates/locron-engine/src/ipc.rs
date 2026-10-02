@@ -756,7 +756,7 @@ mod tests {
         let name = endpoint_name(&root.path, "wake", None).unwrap();
         let pipe = name.strip_prefix(r"\\.\pipe\").unwrap().to_owned();
         let result = tokio::task::spawn_blocking(move || locron_core::windows::run_script_json(
-            r"$client=[System.IO.Pipes.NamedPipeClientStream]::new('localhost',[string]$request.name,[System.IO.Pipes.PipeDirection]::InOut); try { $client.Connect(200); @{rejected=$false} | ConvertTo-Json -Compress } catch { @{rejected=$true} | ConvertTo-Json -Compress } finally { $client.Dispose() }",
+            r"$client=[System.IO.Pipes.NamedPipeClientStream]::new('localhost',[string]$request.name,[System.IO.Pipes.PipeDirection]::InOut); try { $client.Connect(200); @{rejected=$false} | & $locronToJson -Compress } catch { @{rejected=$true} | & $locronToJson -Compress } finally { $client.Dispose() }",
             &serde_json::json!({"name":pipe}),
         )).await.unwrap().unwrap();
         assert_eq!(result["rejected"], true, "remote pipe view connected");
