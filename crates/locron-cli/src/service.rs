@@ -916,8 +916,7 @@ async fn foreground_serve(
                 "dashboard",
                 &metadata.lifetime_id,
                 cancellation.clone(),
-            )
-            .await?,
+            )?,
         )
     } else {
         None
