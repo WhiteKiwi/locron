@@ -398,6 +398,33 @@ impl ServiceRestoreRecord {
     pub(crate) fn previous_path(&self) -> &Path {
         Path::new(&self.previous.path)
     }
+
+    /// Compares the complete ordered frozen origin, independently of recovery progress.
+    /// This pure equality check never validates a transition or proves live ownership.
+    pub(crate) fn same_original(&self, other: &Self) -> bool {
+        self.version == other.version
+            && self.sid == other.sid
+            && self.previous == other.previous
+            && self.roles.len() == other.roles.len()
+            && self.roles.iter().zip(&other.roles).all(|(left, right)| {
+                left.role == right.role
+                    && left.root == right.root
+                    && left.instance == right.instance
+                    && left.task_name == right.task_name
+                    && left.enabled == right.enabled
+                    && left.definition == right.definition
+            })
+    }
+
+    /// Compares both full original identity components with a typed executable inventory fact.
+    /// Parsing, bytes/path equality and this pure check do not authorize an external effect.
+    pub(crate) fn matches_previous_identity(
+        &self,
+        identity: &locron_core::filesystem::FileIdentity,
+    ) -> bool {
+        self.previous.volume == format!("{:016x}", identity.volume_serial_number)
+            && self.previous.file == format!("{:032x}", identity.file_id)
+    }
 }
 
 #[cfg(test)]
@@ -409,6 +436,69 @@ mod tests {
     use crate::service::Target;
 
     const SID: &str = "S-1-5-21-1-2-3-1001";
+
+    #[test]
+    fn frozen_origin_refuses_each_tampered_original_field_and_role_order() {
+        let original = record(2);
+        let changes: [fn(&mut ServiceRestoreRecord); 12] = [
+            |value| value.version = 2,
+            |value| value.sid = "S-1-5-21-4-5-6-1001".into(),
+            |value| value.previous.path = r"C:\other\locron.exe".into(),
+            |value| value.previous.volume = "e".repeat(16),
+            |value| value.previous.file = "e".repeat(32),
+            |value| value.roles[0].role = Target::Dashboard,
+            |value| value.roles[0].root = r"C:\other\state".into(),
+            |value| value.roles[0].instance = "e".repeat(64),
+            |value| value.roles[0].task_name.push('x'),
+            |value| value.roles[0].enabled = !value.roles[0].enabled,
+            |value| value.roles[0].definition = "e".repeat(64),
+            |value| value.roles.swap(0, 1),
+        ];
+        for change in changes {
+            let mut altered = original.clone();
+            change(&mut altered);
+            assert!(!original.same_original(&altered));
+            assert!(!altered.same_original(&original));
+        }
+        let mut future = original.clone();
+        future.phase = RestorePhase::Restoring;
+        future.next = Some(ExecutableBinding {
+            path: r"C:\new\locron.exe".into(),
+            volume: "e".repeat(16),
+            file: "e".repeat(32),
+        });
+        for (index, role) in future.roles.iter_mut().enumerate() {
+            role.progress = RoleProgress::RefreshIntent;
+            role.future_definition = Some("e".repeat(64));
+            future.forced.push(ForcedInstance {
+                role_index: u16::try_from(index).unwrap(),
+                instance: uuid::Uuid::now_v7().to_string(),
+                phase: ForcedPhase::ExitConfirmed,
+            });
+        }
+        future.validate_for_sid(SID).unwrap();
+        assert!(original.same_original(&future));
+        assert!(future.same_original(&original));
+        future.roles.pop();
+        assert!(!original.same_original(&future));
+    }
+
+    #[test]
+    fn original_binding_compares_the_complete_typed_volume_and_file_identity() {
+        let original = record(1);
+        let mut identity = locron_core::filesystem::FileIdentity {
+            volume_serial_number: u64::MAX,
+            file_id: u128::MAX,
+        };
+        assert!(original.matches_previous_identity(&identity));
+        identity.volume_serial_number ^= 1 << 63;
+        assert!(!original.matches_previous_identity(&identity));
+        identity.volume_serial_number = u64::MAX;
+        identity.file_id ^= 1 << 127;
+        assert!(!original.matches_previous_identity(&identity));
+        identity.file_id = u128::MAX ^ 1;
+        assert!(!original.matches_previous_identity(&identity));
+    }
 
     fn record(count: usize) -> ServiceRestoreRecord {
         ServiceRestoreRecord::snapshot(
