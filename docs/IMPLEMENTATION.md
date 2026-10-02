@@ -1935,6 +1935,27 @@ to file rollback. This order avoids an uncounted new-origin service snapshot slo
 that activates new roles earlier must first add a separate real typed new-origin quiescence record
 and its complete persistence budget. Task activation also needs its own recorded intent/result;
 an enabled flag or enable intent cannot authorize replaying Task.Run after an uncertain result.
+For existing operations, activation selects every originally enabled owned registration; its
+transient prior running state is not authority and needs no new immutable original-running field.
+Originally disabled roles retain their disabled setting and never receive Run. Activation starts
+only after all registration/enable confirmations and the verified complete payload/receipt boundary.
+The service owner must add a distinct typed activating phase with a durable per-role RunIntent
+before dispatch, actual returned/fresh Task Scheduler InstanceGuid and exact owned role/lifetime
+confirmation, and an UnknownStart state for uncertain dispatch or startup. A successful COM call,
+an enabled setting, a task-state string or EnginePID alone cannot confirm the role. Recovery may
+confirm an already running exact owned instance through fresh readback; it must not redispatch Run
+from a saved intent, unknown state or enabled flag. No repeated polling record may consume an
+unbounded callback budget. A timed-out persistence owner remains uncertain under the existing
+retained-writer/guard rule.
+Before effects, replace the model's registration-only summed-restore scaffold with the real
+provider's complete maximum object growth and longest legal callback branch. Count the common
+backup/quiesce prefix, then the maximum of forward replacement/restoration/activation and a
+pre-restoration rollback/original-role-restoration/activation path. Those paths are mutually
+exclusive under the frozen no-Restoring-to-file-rollback ordering; neither path may omit activation
+intent, observed result, unknown-start recovery, final lifetime proof or outer/frame/PATH overhead.
+The exact activation representation and callback ceiling must be reviewed with the service owner
+before source changes. Fresh installation still requires its separate real typed root/task creation
+and rollback record; the existing-operation snapshot cannot authorize that creation.
 sync_all must succeed before the next
 effect. Frame/size exhaustion, flush uncertainty, a truncated/corrupt tail or an unknown created
 identity is an explicit refusal with backups retained and no replay inferred from status. Recovery

@@ -60,6 +60,13 @@ An operation with verified new files but incomplete task restoration remains in 
 requires UUID recovery; it has not completed. Recovery resumes restoration against those verified
 bytes rather than replacing an image after its roles have started.
 
+Existing-operation restoration starts every originally enabled owned role, even when that role
+was temporarily stopped before maintenance. Originally disabled roles remain disabled and receive
+no start request. To keep a role stopped across maintenance, disable its registration explicitly.
+An accepted Task Scheduler start request alone cannot confirm completion; uncertain startup stays
+pending until the actual owned role is verified, and recovery does not automatically send another
+start request.
+
 The optional install.ps1/uninstall.ps1 frontend requires an operator policy that already permits
 the selected script. Restricted blocks script files; RemoteSigned can block a downloaded unsigned
 asset until the operator reviews its provenance/hash and selectively unblocks it. AllSigned or

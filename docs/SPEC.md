@@ -614,6 +614,10 @@ Store distribution remain outside this milestone.
   If task restoration fails after the verified new binary and receipt are durable, the operation
   remains pending restoration and can be resumed; it cannot report completed or replace a newly
   running image behind reactivated roles.
+  Existing-operation restoration starts every originally enabled owned registration, including a
+  role that was temporarily stopped. Originally disabled registrations are never started.
+  Completion requires confirmed owned role startup; an enabled setting or accepted start request
+  alone is insufficient, and an uncertain start remains pending without automatic redispatch.
 - Windows install/update/package maintenance accepts recorded normalized local paths of at most
   4,096 UTF-16 units. Longer or unsupported paths and an oversized recovery snapshot refuse before
   stopping services or changing installation state; Unicode and paths beyond 260 characters remain
