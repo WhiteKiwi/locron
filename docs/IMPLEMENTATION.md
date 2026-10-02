@@ -343,6 +343,28 @@ deadline assertions. Run destructive fixed-worker faults and abrupt-parent cases
 test-helper processes, so those intentional failures cannot invalidate other state tests.
 Keep the core cold gate before post-gate probes and retain normal harness parallelism in the
 other libraries. Splitting the CI core/store invocations changes no coverage or production bound.
+
+Qualify private filesystem-channel EOF in an exact isolated helper with no unrelated dispatcher
+or SID cache. Use a private bounded channel and the real fixed worker to complete one SID frame
+under its original thirty-second entry deadline, then drop the final sender. At that owner's
+cleanup boundary, a cfg(test)-only started blocking task reads an actual owned anonymous pipe.
+Retain the writer in the helper and require the real root-reaped plus empty-Job observation before
+the unchanged three-second cleanup budget expires with that native read still pending. Fixed
+bounded test receipts identify entry, actual root/tree confirmation and retained quarantine;
+they contain no SID/path/request values and introduce no production selector or behavior.
+
+Verify that the private owner thread remains live rather than being joined or dropped, and that
+a read-only incompatible open of its actual stock leaf returns the native sharing violation.
+Release the pipe only after expiry, observe that actual read's completion, and verify ownership
+still refuses the same incompatible open with no second spawn/request/effect. This proves the
+EOF branch preserves uncertain I/O ownership after a late completion; it does not simulate a
+failed root wait or claim the production security API was made to hang. End only the disposable
+helper through its retained parent-owned process handle; kernel process exit then closes the
+quarantined handles. Final guard-release proof runs in a fresh exact orchestrator with no other
+stock worker, so a cached filesystem guard cannot create a false failure or success. The ordinary
+cold gate stays first, helper waits remain finite, and production thirty/three-second budgets,
+mutation no-replay, idle behavior and one-filesystem/one-generic ceiling remain unchanged.
+
 Add cfg(test)-only bounded phase breadcrumbs to the actual filesystem dispatch path: API entry,
 queue admission, owned-child spawn start/completion, input write/flush completion, reply receipt,
 timeout/refusal and cleanup confirmation. Emit only fixed operation/phase names, monotonic request

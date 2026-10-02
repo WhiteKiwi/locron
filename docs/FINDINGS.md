@@ -3055,6 +3055,18 @@ The official [Job Objects contract](https://learn.microsoft.com/en-us/windows/wi
 describes kill-on-close termination when the final Job handle closes. Native parent-crash evidence
 is still pending and cannot be inferred from kill_on_drop or a successful normal-child exit.
 
+The fixed filesystem owner's private-channel EOF path now retains uncertain cleanup ownership,
+but source inspection is not native proof of that branch. A deterministic isolated fixture can
+add one cfg(test)-only anonymous-pipe ReadFile to its owned cleanup boundary. A started blocking
+read cannot be cancelled by JoinHandle::abort; hold the writer in the fixture until after the
+unchanged three-second cleanup deadline. Require actual root reaping and an empty retained Job
+before the deliberate pipe remains unconfirmed. This tests real outstanding native cleanup I/O,
+not a fabricated Job-query/termination failure or a claim that a production descriptor call hung.
+The private sender's final drop must park the owner with its stock/Job handles, even after that
+read is later released. Native execution and the retained-handle assertion remain pending.
+Tokio documents that abort cannot cancel an already started blocking task:
+[pinned blocking-task contract](https://docs.rs/tokio/1.53.1/tokio/task/fn.spawn_blocking.html).
+
 The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
 inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject
