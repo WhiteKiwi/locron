@@ -4166,3 +4166,25 @@ actual native execution on both architectures.
 Evidence: [x64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37058613767/job/111009366048),
 [ARM64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37058613767/job/111009366093),
 [reviewed core guard and native private-root fixture](https://github.com/WhiteKiwi/locron/blob/eff2c19b78ddc9c7f80848c76e7eb4eee56e3b76/crates/locron-core/src/filesystem.rs).
+
+### Native positive distribution harness admission (2026-10-03)
+
+The next exact PR #44 run at 846c6c2 again built both native archives. The x64 distribution
+contracts finished with 37 passes and eight failures, all in the private-child setup at
+windows_fixture.rs:17: six reported stock Windows adapter deadline elapsed and two filesystem
+caller deadline elapsed. ARM64 finished with 44 passes and one failure: the current-user PATH
+read reported stock Windows adapter timed out. Its other distribution assertions, including the
+private-root corrections, passed. These logs establish bounded timeouts, not the specific queue,
+cold-start or host-load cause, and do not justify relaxing ownership or deadline checks.
+
+Each libtest process shares the approved one filesystem plus one generic/COM worker admission
+slots. Serialize the independent positive distribution fixtures with --test-threads=1 so setup
+success does not rely on unbounded parallel requests finishing inside each 30-second admission
+and execution deadline. Preserve explicit concurrent admission/cold-call/deadline fixtures and
+all production slots, budgets, guards and cleanup rules. Do not warm the first call, skip failed
+assertions, retry timeouts or infer completion from a deadline. A fresh reviewed revision must
+pass the complete native x64/ARM64 distribution harness once, with no ignored tests; dedicated
+concurrency/deadline gates remain separate required evidence.
+
+Evidence: [exact x64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37064979742/job/111030476464),
+[exact ARM64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37064979742/job/111030476465).

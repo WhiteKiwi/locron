@@ -1945,6 +1945,13 @@ Guard its existing ancestry, create a private child through DirectoryGuard::priv
 child guard and use its normalized_path for every fixture object. Assert the actual current-SID
 owner/protected descriptor through is_private before exercising the operation. Do not assume the
 container's inherited owner, repair that container, or weaken production checks for runner paths.
+Run the positive Windows distribution contract harness with libtest --test-threads=1. Those
+independent successful setup assertions share this test process's one filesystem and one generic
+worker admission slots; unbounded libtest setup concurrency is not their success contract. Keep
+explicit concurrent admission, cold-call, deadline and cleanup assertions unchanged. Do not warm
+the first call, retry or skip a timeout, add helper slots, or extend the production 30-second budget.
+Verify: the same reviewed revision passes every distribution assertion once on native x64/ARM64,
+with zero ignored tests and the existing concurrency/deadline gates still exercised separately.
 
 WinGet uses WhiteKiwi.locron, user-scoped ZIP/portable installers and the same immutable ZIP hashes,
 with architecture-specific nested executable paths and the locron command alias. The receipt-free
