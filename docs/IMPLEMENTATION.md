@@ -960,6 +960,20 @@ retained handle without taking ownership or silently repairing the package. Help
 standalone destination paths keep their stricter current-SID/SYSTEM-only private policy. Native
 tests must preserve permitted package read access and refuse broad write/delete/control rights.
 
+WinGet maintenance obtains a separate Windows-only `open_owned_executable_exclusive` proof gate
+after recorded all-executable quiescence. Use existing-only guarded, trusted-owner ancestors and
+a regular no-reparse leaf opened with read/write/DELETE access and share_mode(0); validate the
+same current-SID owner and no nontrusted mutation grants as `read_owned_executable` on that exact
+handle. Permit trusted SYSTEM/Administrators rights and foreign read/execute without requiring
+the standalone private descriptor. Refuse read-only attributes, multiple hard links and missing
+full file identity. Never create, repair, write or delete package bytes through this API; it only
+proves mapped holders are gone and blocks new opens until the caller releases the gate for the
+external package manager. Keep the standalone replacement APIs' protected SID/SYSTEM policy.
+Native Verify: a disposable owned executable with Administrators write/foreign read-execute is
+accepted, every nontrusted mutation grant is refused without byte/ACL changes, a mapped process
+refuses the gate, the live gate blocks launch/read/write/rename, and release permits the original
+executable to run with unchanged bytes and descriptor. Missing roots remain absent throughout.
+
 ### Native runtime fixtures
 
 Keep portable process/output/HTTP behavior under native Windows tests, with a private managed
