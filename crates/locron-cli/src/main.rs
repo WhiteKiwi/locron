@@ -3632,6 +3632,10 @@ async fn daemon(paths: StatePaths) -> Result<()> {
 }
 
 #[cfg(not(unix))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "the staged wake adapter preserves the fallible Unix port until Windows IPC is implemented"
+)]
 fn bind_wake_socket(
     _paths: &StatePaths,
     _wake: Arc<tokio::sync::Notify>,

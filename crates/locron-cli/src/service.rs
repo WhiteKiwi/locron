@@ -736,7 +736,7 @@ fn token_facts(paths: &StatePaths) -> Result<Value, ServiceError> {
             #[cfg(unix)]
             let permissions = {
                 use std::os::unix::fs::PermissionsExt;
-                if metadata.permissions().mode() & 0o077 == 0 {
+                if (metadata.permissions().mode() & 0o777).trailing_zeros() >= 6 {
                     "owner_only"
                 } else {
                     "world_readable"
