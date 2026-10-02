@@ -146,7 +146,11 @@ fn bind(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use locron_core::notification::{endpoint_name, request_shutdown, send_wake};
+    use interprocess::os::windows::named_pipe::PipeListener;
+    use locron_core::notification::{
+        endpoint_name, request_shutdown, request_shutdown_guarded_until, send_wake,
+    };
+    use std::time::Instant;
     use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 
     struct FixtureRoot {
@@ -197,6 +201,187 @@ mod tests {
             .await
             .unwrap()
             .unwrap_err();
+    }
+
+    fn held_fixture_listener(name: &str) -> PipeListener<pipe_mode::Bytes, pipe_mode::Bytes> {
+        let sid = locron_core::windows::current_user_sid().unwrap();
+        let sddl =
+            U16CString::from_str(format!("O:{sid}G:{sid}D:P(A;;GA;;;SY)(A;;GA;;;{sid})")).unwrap();
+        let descriptor = SecurityDescriptor::deserialize(&sddl).unwrap();
+        PipeListenerOptions::new()
+            .path(Path::new(name))
+            .security_descriptor(Some(descriptor))
+            .accept_remote(false)
+            .inheritable(false)
+            .nonblocking(true)
+            .instance_limit(std::num::NonZeroU8::new(2))
+            .create_duplex::<pipe_mode::Bytes>()
+            .unwrap()
+    }
+
+    async fn accepted_fixture_client(
+        listener: &PipeListener<pipe_mode::Bytes, pipe_mode::Bytes>,
+    ) -> BoundedClient {
+        let accepted = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                match listener.accept() {
+                    Ok(peer) => break peer,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                    Err(error) => panic!("owned fixture accept failed: {error}"),
+                }
+            }
+        })
+        .await
+        .unwrap();
+        async_client(accepted).unwrap()
+    }
+
+    #[tokio::test]
+    async fn guarded_control_expiry_never_cancels_and_on_time_targets_the_exact_lifetime() {
+        let root = FixtureRoot::new();
+        let guard = Arc::new(DirectoryGuard::existing_private(&root.path).unwrap());
+        let lifetime = uuid::Uuid::now_v7().to_string();
+        let cancellation = CancellationToken::new();
+        let listener =
+            bind_role_control(&root.path, "dashboard", &lifetime, cancellation.clone()).unwrap();
+        let caller_guard = Arc::clone(&guard);
+        let expected = lifetime.clone();
+        tokio::task::spawn_blocking(move || {
+            let error = request_shutdown_guarded_until(
+                &caller_guard,
+                "dashboard",
+                &expected,
+                Instant::now(),
+            )
+            .unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+            assert!(
+                request_shutdown_guarded_until(
+                    &caller_guard,
+                    "daemon",
+                    &expected,
+                    Instant::now() + Duration::from_secs(1),
+                )
+                .is_err()
+            );
+            assert!(
+                request_shutdown_guarded_until(
+                    &caller_guard,
+                    "dashboard",
+                    &uuid::Uuid::now_v7().to_string(),
+                    Instant::now() + Duration::from_secs(1),
+                )
+                .is_err()
+            );
+        })
+        .await
+        .unwrap();
+        assert!(!cancellation.is_cancelled());
+        assert!(!listener.is_finished());
+        tokio::task::spawn_blocking(move || {
+            request_shutdown_guarded_until(
+                &guard,
+                "dashboard",
+                &lifetime,
+                Instant::now() + Duration::from_secs(1),
+            )
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), cancellation.cancelled())
+            .await
+            .unwrap();
+        // Delivery leaves the owning role/control lifetime alive until explicit teardown.
+        assert!(!listener.is_finished());
+        close(listener).await;
+    }
+
+    #[tokio::test]
+    async fn guarded_stalled_ack_uses_remaining_budget_and_closes_the_sender() {
+        let root = FixtureRoot::new();
+        let guard = Arc::new(DirectoryGuard::existing_private(&root.path).unwrap());
+        let lifetime = uuid::Uuid::now_v7().to_string();
+        let name = endpoint_name_guarded(&guard, "dashboard", Some(&lifetime)).unwrap();
+        let listener = held_fixture_listener(&name);
+        let caller_guard = Arc::clone(&guard);
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(100);
+        let sender = tokio::task::spawn_blocking(move || {
+            let result =
+                request_shutdown_guarded_until(&caller_guard, "dashboard", &lifetime, deadline);
+            (result, Instant::now())
+        });
+        let mut peer = accepted_fixture_client(&listener).await;
+        tokio::time::timeout(Duration::from_secs(1), async {
+            assert_eq!(
+                peer.0.read_u8().await.unwrap(),
+                SHUTDOWN_MESSAGE.len() as u8
+            );
+            let mut payload = [0; SHUTDOWN_MESSAGE.len()];
+            peer.0.read_exact(&mut payload).await.unwrap();
+            assert_eq!(payload.as_slice(), SHUTDOWN_MESSAGE);
+        })
+        .await
+        .unwrap();
+        // The peer deliberately withholds ACK while the exact caller deadline expires.
+        let (result, returned) = sender.await.unwrap();
+        let error = result.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        let elapsed = returned.saturating_duration_since(started);
+        assert!(
+            elapsed < Duration::from_millis(180),
+            "100ms remaining budget was renewed to 200ms: {elapsed:?}"
+        );
+        assert!(error.to_string().contains("uncertain"));
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), peer.0.read_u8())
+                .await
+                .unwrap()
+                .is_err(),
+            "a timed-out sender remained connected or wrote a receipt"
+        );
+        assert_eq!(Arc::strong_count(&guard), 1);
+        drop(peer);
+        drop(listener);
+        drop(guard);
+        std::fs::rename(&root.path, root.path.with_file_name("closed")).unwrap();
+    }
+
+    #[tokio::test]
+    async fn guarded_busy_endpoint_cannot_renew_the_connect_retry_budget() {
+        let root = FixtureRoot::new();
+        let guard = Arc::new(DirectoryGuard::existing_private(&root.path).unwrap());
+        let lifetime = uuid::Uuid::now_v7().to_string();
+        let name = endpoint_name_guarded(&guard, "dashboard", Some(&lifetime)).unwrap();
+        let listener = held_fixture_listener(&name);
+        let occupying_peer = client(&name).await;
+        let mut options = ClientOptions::new();
+        options.security_qos_flags(0x0001_0000);
+        assert_eq!(options.open(&name).unwrap_err().raw_os_error(), Some(231));
+        let caller_guard = Arc::clone(&guard);
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(100);
+        let (result, returned) = tokio::task::spawn_blocking(move || {
+            let result =
+                request_shutdown_guarded_until(&caller_guard, "dashboard", &lifetime, deadline);
+            (result, Instant::now())
+        })
+        .await
+        .unwrap();
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+        let elapsed = returned.saturating_duration_since(started);
+        assert!(
+            elapsed < Duration::from_millis(180),
+            "100ms busy-endpoint budget was renewed across retries: {elapsed:?}"
+        );
+        assert_eq!(Arc::strong_count(&guard), 1);
+        drop(occupying_peer);
+        drop(listener);
+        drop(guard);
+        std::fs::rename(&root.path, root.path.with_file_name("closed")).unwrap();
     }
 
     fn disconnect_before_first_poll(name: &str) {
