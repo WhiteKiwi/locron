@@ -137,7 +137,10 @@ fn set_owner_only(path: &std::path::Path) -> io::Result<()> {
     #[cfg(not(unix))]
     {
         let _ = path;
-        Ok(())
+        Err(io::Error::new(
+            ErrorKind::Unsupported,
+            "private token permission enforcement is not implemented on this platform",
+        ))
     }
 }
 
