@@ -706,6 +706,20 @@ including listener abort during acknowledgement; accepted-client cleanup never c
 unbounded FlushFileBuffers worker. Bind after the owner lock and retain reconciliation on
 absent/busy/occupied endpoints. Bound reads and avoid unnecessary server impersonation.
 
+The pinned Tokio listener lacks the dead-on-arrival ERROR_NO_DATA reset implemented by its
+synchronous counterpart. Retain a creation-time-secured synchronous listener with nonblocking
+accept; poll WouldBlock at five-millisecond runtime yields. The library resets a disconnected
+stored instance and creates its replacement before returning the accepted stream, preserving
+continuous name ownership and first-instance collision protection. Change only that accepted
+stream to blocking wait mode and move its handle through the safe OwnedHandle and Tokio
+DuplexPipeStream conversions; all payload I/O remains asynchronous with the original 200 ms
+deadline. A genuine accept or conversion failure remains explicit and fails the endpoint closed;
+no FILE_NOT_FOUND client retry or full name rebind is used. Aborting and awaiting the listener
+task releases both accepted and listening handles before the lifetime lock drops. Native fixtures
+open/drop a peer synchronously before the listener's first poll, prove another bind is still
+refused, then deliver valid wake and exact-lifetime control. Existing malformed, idle, nonreading,
+remote, collision and teardown assertions remain mandatory.
+
 Shared notification::instance_identity(root) and instance_identity_guarded(DirectoryGuard) return
 the lowercase SHA-256 hex of the fixed locron-instance/v1 domain, SID length (LE32)/UTF-8 bytes,
 volume serial (LE64) and full file ID (LE128). Windows-only file-id =0.2.3 supplies its reviewed

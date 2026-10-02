@@ -2862,6 +2862,30 @@ Sources: [interprocess manifest](https://github.com/kotauskas/interprocess/blob/
 [Microsoft named-pipe ACL/instance rights](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
 [Microsoft pipe creation flags](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-createnamedpipew).
 
+### Named-pipe dead-on-arrival acceptance (2026-10-03)
+
+PR43 df4630a/run 37041815226 failed the same malformed-frame fixture on x64 stable and MSRV:
+after a raw peer wrote an invalid frame and closed, the next connection reported ERROR_FILE_NOT_FOUND.
+The pinned interprocess 2.4.4 Tokio listener returns its stored server's connect error directly.
+Its synchronous listener instead clears ERROR_NO_DATA with DisconnectNamedPipe before reusing
+that same instance. Microsoft's contract requires this reset when a peer closes before acceptance.
+The current fatal accept branch drops the owning endpoint; retrying a client open would conceal
+the lost listener rather than repair it.
+
+Use the same safe creation-time-secured synchronous listener in nonblocking accept mode only.
+WouldBlock yields to the runtime; its replacement server is created before the accepted handle
+is handed out, keeping the name continuously owned. Switch each accepted stream to PIPE_WAIT,
+transfer it through the safe OwnedHandle::try_from(PipeStream), then use the safe Tokio
+DuplexPipeStream::try_from(OwnedHandle). Payload reads/writes remain overlapped Tokio I/O under
+the original 200 ms budget. No synchronous payload I/O or flush is used. Both reset and handle
+conversions are present in the package's recorded VCS revision e27f397daebff9054f8e2f7b3dc034bae36b2867.
+Verify a peer opened and closed before the first listener poll, continuous first-instance collision
+refusal, malformed/shutdown-not-wake framing, subsequent valid wake/control, and abort/await teardown.
+
+Sources: [pinned synchronous listener reset](https://github.com/kotauskas/interprocess/blob/e27f397daebff9054f8e2f7b3dc034bae36b2867/src/os/windows/named_pipe/listener.rs),
+[safe Tokio handle conversion](https://github.com/kotauskas/interprocess/blob/e27f397daebff9054f8e2f7b3dc034bae36b2867/src/os/windows/named_pipe/tokio/stream/impl/handle.rs),
+[ConnectNamedPipe reset contract](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe).
+
 ### Passive missing-state observation (2026-10-03)
 
 A fresh-state source audit found that Windows open_private cleared file creation flags but still
