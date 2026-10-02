@@ -1083,6 +1083,19 @@ existing job deadline and the independent package/positive-distribution harness.
 and targeted CLI filters do not select service::windows_supervisor, so successful package
 compilation alone is insufficient qualification for this owner.
 
+Give the unchanged cold core step the identifier `native_core`. Gate only the service semantic
+step with `if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}`. GitHub's explicit
+status function permits this independent private-fixture harness after an unrelated library
+failure, while requiring a genuinely successful original cold gate. A failed/skipped cold gate
+or workflow cancellation prevents new service admission. Keep the service command, step order,
+required names and all deadlines unchanged; use no continue-on-error, so any preceding library
+failure still makes the whole required job fail.
+
+Verify the condition matrix: successful cold core plus a library failure executes the full
+service assertions and retains job failure; cold failure/skip or cancellation excludes that
+step; ordinary success still selects the same complete serial harness. Native logs must show
+actual service execution/test results, not a skipped-step or package-build qualification.
+
 Serial selection belongs only to this service harness. Every fixture uses a unique current-SID
 private temporary child root and owned executable/processes; no live registration or shared
 state is used. Keep real process/Job/lease/cancellation/log/fact/manual-owner assertions. The

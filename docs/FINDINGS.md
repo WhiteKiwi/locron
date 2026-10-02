@@ -3289,6 +3289,17 @@ private fixtures while making the two real three-by-sixty-second exhaustion poli
 serially. Keep all existing operation deadlines, child/Job proof, fault assertions and required
 status names; record the actual test count and results for the exact revision.
 
+At native f8b7854/868c537, core and engine passes led to two server-library failures, so the
+following service semantic step was skipped by the default success condition. Those runs do
+not qualify the supervisor. GitHub documents that an explicit status function overrides the
+default success gate, and step.outcome reports the original result. Retain the original cold
+core command with id native_core and admit the service step only with
+`!cancelled() && steps.native_core.outcome == 'success'`. This obtains independent owned-fixture
+evidence after unrelated library failure without accepting the failed job, admitting after a
+failed cold gate or running after cancellation. Keep all source assertions and budgets.
+Sources: [GitHub status-check conditions](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions),
+[original step outcome](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#steps-context).
+
 #### Hash-bound bundled license checkout
 
 Native revision f8b785465d2d2b2b419d3b576529552d76b77f66 failed the unchanged official-font
