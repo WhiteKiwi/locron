@@ -765,6 +765,84 @@ remaining manual holder is untouched and can still refuse executable replacement
 main/waiter/core-control allowlist wiring; store owns the activation path and service owns the
 guarded observer/inventory/quiescence. No new public product role or CLI command is introduced.
 
+### Registered Windows role supervisor
+
+Native Scheduler RestartOnFailure settings remain configured for action-launch failure, but the
+measured completed-role exits did not restart. The fixed hidden PowerShell launcher therefore
+waits for a native Locron supervisor; Rust owns ordinary daemon/dashboard failure retries and
+private exit facts. Introduce only the hidden Windows entry `service supervise --role daemon` or
+`service supervise --role dashboard`, with the existing global state directory. Registration uses
+the fixed dashboard port. Keep visible install/enable/uninstall/status syntax unchanged.
+
+The supervisor creates the selected private daemon.activation.lock or dashboard.activation.lock
+lease with its own canonical UUID, PID and registered-service marker, then binds the matching
+daemon-activation/dashboard-activation cancellation endpoint. Retain this lease, its state-chain
+guard and verified executable read guard throughout child startup, manual-owner waiting, running,
+retry gaps and teardown. It is activation ownership; only the child daemon.lock or dashboard.lock
+proves actual role ownership. Scheduler status must distinguish those conditions.
+
+Each child gets a new canonical UUID through paired hidden `--supervisor-lifetime` and
+`--worker-lifetime` arguments on `daemon run --service-mode` or `dashboard serve --service-mode`.
+Require both options together and only in service mode, with exact internally generated argv.
+Before creating any child state, validate the existing selected supervisor activation sidecar,
+registered marker, UUID and held actual activation lock. An existing-only nonmutating lock probe
+DaemonLock::probe_existing reports LockProbe::Missing/Free/Held without creating/truncating a
+lock or writing metadata; Held alone is never PID authorization. Reject an absent/mismatched
+parent lease and recheck its UUID around the held-lock observation.
+The child owns daemon.worker.activation.lock or dashboard.worker.activation.lock and the
+daemon-worker/dashboard-worker endpoint for its UUID before waiting for the actual role lock.
+Use that same child UUID in the actual role metadata/control after acquisition. Keep the worker
+lease/control through complete role teardown, abort and await all listeners before dropping it.
+The ordinary service-mode path without these paired options retains its approved activation
+waiter. Supervised waiting never signals a manual role or claims its lock; the registered daemon
+still activates automatically after the manual daemon exits.
+
+Share a Windows-only engine OwnedChild factory with the runner. It accepts the caller's exact
+Tokio argv/stdio Command and ChildWindow::Hidden/Inherit policy, registers the safe CreationFlags
+wrapper for headless service children, and uses
+the reviewed suspended Enroll plus independent kill-on-close Job before resume. Expose only id,
+try_wait, authoritative tree_empty and start_kill, plus async confirm_exit_until/terminate_until.
+Confirmation requires both reaped root and empty retained Job PID list under one supplied deadline.
+Classify spawn failure as NotStarted or ExecutionMayHaveStarted; enrollment/resume uncertainty
+must carry retained cleanup ownership, quarantine and refuse retry of an unconfirmed worker.
+The runner keeps its existing window policy. Do not expose the
+raw mutable ChildWrapper. Drop's kernel Job cleanup is emergency containment, not reported proof.
+Runtime owns this shared process factory and main/worker flag composition; service owns the
+supervisor, dashboard worker composition and guarded registration/quiescence; store owns paths
+and existing-only probe. Core adds only the fixed role allowlist, without public async types.
+
+After a genuine nonzero child exit and confirmed complete tree exit, retry at most three times,
+each after a cancellable sixty-second wait. Never retry a still-mapped/unconfirmed old worker or
+replay an uncertain spawn. Exit zero or cooperative cancellation ends the registration lifetime.
+During shutdown, cancel the exact worker endpoint once its PID/UUID/held lease match this owned
+child, including manual-owner waiting. Forward cancellation while startup establishes that lease;
+wait for actual child/tree/role/worker lease exit under one thirty-second budget. A remaining
+child is an explicit refusal; a validated unchanged Task instance may then use the separately
+documented forced Task.Stop fallback. Keep the parent activation endpoint available until child
+and listener teardown completes, including retry gaps. Manual PIDs are never terminated.
+
+Write bounded private Rust facts at phase transitions and after verified exit: schema version,
+supervisor/child UUIDs, attempt count, waiting/running/retry/stopping/exhausted/error phase and the
+actual child exit code. Use fixed service.daemon.runtime.json/service.dashboard.runtime.json paths
+and at most four attempt entries, preserving every completed child UUID/PID/exit code.
+Facts are diagnostics, never owner proof or arbitrary task source. Record
+exhaustion before releasing activation ownership; do not replace actual exit diagnostics with a
+synthetic successful Task result. Supervisor infrastructure failures remain explicit errors;
+ordinary completed-role retry is proved by this live owner, not inferred from Scheduler settings.
+After owned teardown, supervisor exhaustion returns the final actual child exit code and the
+static PowerShell launcher propagates it. Infrastructure/fact-write failures return a distinct
+failure with retained diagnostics, never a fabricated child outcome or successful registration.
+
+Native Verify: (1) invalid/missing/stale parent and child lifetimes refuse without creating state;
+manual ownership survives registered waiting, exact cancellation stops the waiter, and manual
+exit admits the registered daemon with a new actual owner. (2) suspended enrollment, failed/uncertain
+spawn, immediate grandchildren and root-before-descendant exit prove bounded root-plus-tree
+ownership; headless flags survive wrapper composition. (3) one initial role failure plus three
+actual sixty-second retries preserve all four exit facts, have no old descendant overlap and
+exhaust observably; cancellation during startup, waiting, running or any retry gap confirms all
+owned locks/processes exit while disabled registrations stay disabled. Actual Scheduler wrapper
+exit/PID and task state must not be confused with daemon ownership or graceful exit.
+
 Windows registration uses the shared full-file-identity/SID digest for role-specific task names.
 Select a fixed hidden stock PowerShell 5.1 launcher: `-EncodedCommand` carries only static source,
 and `-EncodedArguments` carries a serialized CLIXML array containing one base64 JSON request.
