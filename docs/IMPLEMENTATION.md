@@ -195,6 +195,56 @@ receipt update and registration restoration are rollback-capable; no normal rebo
 path, optimistic updated:true or silently enabled dashboard. WinGet uses the same final ZIPs,
 InstallerSha256 and explicit package-manager ownership; self-update refuses its binary.
 
+#### Concrete Windows distribution contracts
+
+The Windows feature release inventory starts at v0.10.0. Tags before v0.3.0 retain their eight
+Unix payloads plus checksums; v0.3.0 through v0.9.x additionally retain install.sh. Windows tags
+add exactly the x86_64-pc-windows-msvc and aarch64-pc-windows-msvc ZIPs, install.ps1 and uninstall.ps1.
+The ZIP has one exact version/target directory containing locron.exe, README.md and both licenses.
+Check final PE architecture, executable version and absent certificate table before accepting it.
+SHA256SUMS retains bare names and covers all payload archives/packages; installer assets are
+separately included in immutable publication digest verification. No historical asset is rewritten.
+
+The standalone Windows default executable is LocalAppData\\Programs\\locron\\locron.exe. The
+installer accepts -Version, -InstallDirectory, -NoService, -Dashboard and -AddToPath. It starts the
+daemon by default, enables the dashboard only when explicitly requested, and changes only the
+current user's persistent PATH when -AddToPath is specified. Reinstallation preserves a registered
+dashboard's previous enabled state. Registration failures are explicit warnings after a confirmed
+binary install, not a fabricated claim of service health. Private installation directories and a
+versioned JSON receipt bind the current SID, canonical executable, channel, target, version,
+canonical archive URL, archive SHA-256 and executable SHA-256. Existing unowned/package-manager
+destinations are refused. Uninstall requires this receipt, quiesces only exact owned registrations,
+removes only receipt-listed unchanged files and an installer-inserted PATH entry, and retains state.
+Standalone and WinGet locations coexist; neither installer adopts the other's files.
+
+Windows self-update cannot wait synchronously while its caller still maps the destination. A
+verified copy of the owned running executable in a private operation directory executes the hidden
+update-helper entrypoint. The caller returns only after helper acceptance, with updated=false,
+pending=true, an operation UUID and status-file location. This exit 0 means handoff accepted, not
+replacement complete. self-update --status UUID reports pending until the helper confirms binary,
+receipt and registration-restoration results; only confirmed replacement yields updated=true.
+Failed or rolled-back operations report an error. Unix synchronous output is unchanged.
+
+The helper binds its exact path/hash, SID, destination, old receipt and staged verified executable
+in a durable operation request. It serializes updates, snapshots all exact executable-bound owned
+tasks, disables activation, requests lifetime-bound shutdown and waits for owned-role exit plus
+the original caller. A bounded exclusive write-open of the old executable is the final mapped-holder
+gate; unowned MCP/manual holders refuse replacement rather than being killed. Retain the file
+guard with delete sharing through the backup rename, maintain private rollback binary/receipt and
+write a durable journal before each irreversible step. Restore exact prior enabled/disabled
+registrations after verification, recording restoration warnings separately from confirmed binary
+replacement. Interrupted operations must be recovered or explicitly refused before a later update;
+neither a stale request nor a task-state transition implies completion. No reboot replacement.
+
+WinGet uses WhiteKiwi.locron, user-scoped ZIP/portable installers and the same immutable ZIP hashes,
+with architecture-specific nested executable paths and the locron command alias. The receipt-free
+WinGet package location and its package-manager registration identify managed ownership; the
+standalone installer refuses those paths and self-update directs to winget upgrade --id
+WhiteKiwi.locron --exact. WinGet cannot run arbitrary portable-install hooks, so upgrades/removals
+require the documented explicit service-disable/upgrade-or-remove/service-refresh procedure;
+durable state is preserved. Generate reviewable manifests from final local or downloaded canonical
+release assets and validate with winget validate; submission/publication remains parent-owned.
+
 ### Change order and verification
 
 1. Review SPEC, source-backed FINDINGS, these decisions and Project drafts; freeze the minimum
