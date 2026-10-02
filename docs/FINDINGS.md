@@ -3213,6 +3213,23 @@ and infrastructure 70, never a fabricated completed child code.
 Sources: [reviewed independent Job creation](https://github.com/ohadravid/win32job-rs/blob/17080e2a29ea244bb4e58400dc27739075b2fbc8/src/job.rs),
 [Rust 1.94 I/O error kinds](https://doc.rust-lang.org/1.94.0/std/io/enum.ErrorKind.html).
 
+#### Completed supervisor role sidecar handoff
+
+A retained authenticated role-sidecar handle denies replacement. After the old owned root has
+exited, a new manual daemon/dashboard can acquire the shared permanent role lock while its new
+sidecar publication waits on that retained handle. Reading the old retained PID/UUID around a
+now-held lock cannot identify the new holder as the completed child. Microsoft documents that
+process termination closes that process's handles; root termination alone leaves descendants,
+so the independently retained Job must also report empty before releasing these old role guards.
+
+After that combined proof, release the retained shared-role sidecar before any later fact/log
+I/O. Do not probe or authenticate the shared role as the completed old child, and do not wait,
+signal or terminate a new manual owner. Preserve the separate actual owned worker-activation
+lease exit check, activation ownership and listener teardown. This is an ownership refinement,
+not permission to release while a root/descendant or Job query remains unconfirmed.
+Sources: [process termination resources](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process),
+[ExitProcess handle closure and descendant behavior](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-exitprocess).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development

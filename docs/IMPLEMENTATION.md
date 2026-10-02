@@ -981,6 +981,23 @@ next child's atomic sidecar publication. Missing startup leaves are observed und
 existing root; they never trigger directory creation or a fresh SID initialization. Handle
 opens/readback still verify the actual private descriptor and no-reparse identity.
 
+Once the authoritative owned root is reaped and its retained Job reports empty, release the
+retained shared daemon/dashboard role-sidecar handle before subsequent fact/log I/O. Keep it
+while either proof is uncertain. The combined native proof establishes that the old root and
+descendants released their kernel handles; a now-held shared role lock cannot be attributed to
+that completed child using its retained stale PID/UUID. Do not probe, signal, terminate or wait
+for a new manual owner. Keep the independent owned worker-activation lease exit check, guarded
+activation/control lifetime and all existing normal teardown proof. Fact-write failure still
+refuses and quarantines remaining ownership rather than fabricating a child result.
+
+Verify the gap with an actual registered fixture: authenticate its running role, finish its
+root and descendants, then withhold completion-fact I/O under the same deadline while activation
+remains held. A separate native manual owner must acquire that shared role lock and publish its
+new PID/UUID sidecar. Release the I/O gate and confirm that supervisor completion and control/
+activation teardown preserve the manual owner's live lock, new metadata and process; only the
+fixture's own independent teardown may stop that manual process. An unconfirmed root/Job must
+never release the old guard or admit an ordinary retry.
+
 The driver awaits each worker response only within the remaining caller deadline. If a native
 operation remains in flight at expiry, close worker admission and quarantine its retained root,
 executable, activation and child/Job ownership. Do not join an unfinished worker, replay its
