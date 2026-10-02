@@ -73,6 +73,7 @@ jobs:
       - name: Compile staged Windows workspace
         run: cargo check --workspace --locked
       - name: Verify cold core contracts with isolated fault fixtures
+        id: native_core
         run: cargo test -p locron-core --lib --locked -- --test-threads=1
       - name: Verify isolated stock adapter policy and parent containment
         shell: pwsh
@@ -86,6 +87,7 @@ jobs:
       - name: Verify durable store and runtime library contracts
         run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
       - name: Verify native registered service semantics
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=1'
       - name: Diagnose the stock Windows adapter after cold contracts
         if: always()
