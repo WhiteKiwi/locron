@@ -10,6 +10,128 @@ Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, th
 
 `docs/FINDINGS.md` preserves the research path and does not override the frozen specification. In particular, v1 has no `queue-one` overlap policy and global concurrency defaults to 16, not 4.
 
+## Native Windows 11 implementation (2026-10-02)
+
+The Windows amendment in SPEC and adapter boundaries in ARCHITECTURE are the authority for this
+milestone. FINDINGS §46 records the selected safe interfaces, source audit and limitations. The
+initial release is unsigned; signing remains deferred in public proposal #37 and is not part of
+this milestone's dependency graph. Execution progress/evidence belongs in private Project drafts;
+public #23–#36 remain proposal and review context rather than a second live execution checklist.
+
+### Build, paths and execution configuration
+
+Keep the existing five-package graph, Rust 1.94 MSRV and workspace unsafe-code prohibition. Make
+nix/Unix imports target-specific and bring native Windows x64/ARM64 CI alongside the first changes.
+Use LocalAppData for default machine-local state. Retain explicit state overrides, file-lock
+ownership and SQLite WAL semantics; path strings never imply safe ownership by themselves.
+
+Shared environment/path helpers normalize Windows environment keys case-insensitively, reject
+same-layer collisions and reserved-name variants, and apply precedence consistently across CLI,
+dashboard and MCP. Resolve executables against effective PATH/PATHEXT; recognize drive/UNC and
+separator paths, preserve argv/Unicode/spaces, and reject implicit .cmd/.bat direct execution.
+Build shell snapshots by explicit family: cmd.exe /D /S /C, PowerShell/pwsh -NoProfile
+-NonInteractive -Command, and POSIX shells -c. Unknown ambiguous Windows shell families produce
+an actionable configuration failure. Persist absolute selected executables before spawn.
+
+### Race-free process-tree supervision
+
+Use Windows-only process-wrap =10.0.1 with tokio1/job-object/kill-on-drop, plus win32job =2.0.3.
+An attempt retains an independent win32job Job with kill-on-close. A safe CommandWrapper post_spawn
+hook assigns the suspended Tokio child by raw_handle to that job; process-wrap's JobObject
+pre_spawn sets CREATE_SUSPENDED and its wrap_child assigns its nested job before resuming. Failed
+enrollment kills the suspended child and fails closed. Neither job enables process breakaway.
+
+The root child and output streams are not tree-exit evidence. Query the retained job's process-ID
+list under a bounded deadline on completion, timeout, cancellation, replacement and output-error
+cleanup. Query errors or capacity overflow remain unconfirmed and retain existing quarantine/
+interrupted-unknown rules. Do not rely on process-wrap's completion-port wait as proof of an empty
+tree. Keep handles through confirmation/finalization so daemon crash triggers kill-on-close.
+Use ordinary bounded natural completion/drain; hard tree termination is explicit where Windows
+has no generic cooperative target signal. Keep Unix signal-group behavior in its existing backend.
+
+### Private state and guarded filesystem access
+
+Use a fixed stock PowerShell 5.1/.NET DirectoryInfo.Create(DirectorySecurity) adapter to create
+missing managed root components with a protected current-SID/SYSTEM-only inheritable DACL at
+creation. Paths/options arrive as structured stdin JSON, never interpolated source. Use the
+absolute stock PowerShell with -NoProfile -NonInteractive and a reviewed encoded script; do not
+require pwsh or change execution policy. Existing roots require ownership/descriptor validation.
+
+Use Windows-only windows-permissions =0.2.4 explicit GetSecurityInfo/SetSecurityInfo wrappers with
+SE_FILE_OBJECT, Owner/Dacl and ProtectedDacl flags; avoid the audited-buggy convenience trait.
+Safe Windows File open flags permit no-follow handle readback and directory guards. Reject every
+managed/ancestor reparse point, unsafe foreign ownership and unsupported ACL filesystems. Retain
+guards that prevent path replacement/mutation through SQLite/output/token operations; native
+adversarial tests must validate the guarded-chain sharing policy, including custom roots.
+New files inherit only from validated private parents; inspect existing files before reading
+sensitive contents. Shared core primitives let store, engine output and server token enforce the
+same rule without reversing the workspace dependency graph. doctor reports measured ACL facts.
+
+### Wake, cooperative role control and Task Scheduler
+
+Use Windows-only interprocess =2.4.4 with tokio, safe SDDL SecurityDescriptor deserialization and
+PipeListenerOptions security_descriptor/accept_remote(false). The audited source establishes the
+first-instance flag and remote rejection; do not use instance_limit=1 because accept creates a
+replacement listener. Derive names from verified SID + normalized guarded state + endpoint role.
+Owner/SYSTEM-only descriptors apply at creation. Both CLI and dashboard notification senders use
+the same bounded versioned-hint backend; bind after the owner lock and retain reconciliation on
+absent/busy/occupied endpoints. Bound reads and avoid unnecessary server impersonation.
+
+Separate secured control endpoints bind role/lifetime identity and deliver only graceful shutdown
+requests to that role's existing cancellation token. Lifecycle coordination first disables automatic
+task activation, requests stop, and waits for confirmed role/lock exit. A failed request/remaining
+holder is an actionable bounded failure; task-state alone cannot report graceful completion.
+
+Use stock PowerShell Schedule.Service COM with structured inputs/output, deterministic SID/state/
+role task names, current SID LogonTrigger, INTERACTIVE_TOKEN, LUA, no password, and create/update
+registration. Set PT0S execution limit, no battery/idle/network gates, IgnoreNew, and bounded
+RestartOnFailure (three retries, PT1M). Definitions use absolute ExecAction path and correctly
+escaped state/role arguments. Read semantic settings/status rather than localized schtasks text.
+Preserve enabled/disabled role state on refresh; run roles directly or use a fixed hidden launcher
+that waits and propagates exit status so restart works. Task.Stop is a documented hard fallback
+after cooperative timeout, with kill-on-close/recovery behavior, not graceful-drain evidence.
+
+### Unsigned release, installation and update handoff
+
+Add native x64/ARM64 MSVC ZIP builds containing locron.exe, README and both licenses. Extend exact
+asset inventory and SHA-256 generation with version-aware historical inventory compatibility;
+keep existing Unix publication/signing inputs authoritative. The canonical release source is
+WhiteKiwi/locron over verified HTTPS. Final published bytes, version/architecture and channel
+metadata agree; checksums check integrity without independent publisher authentication.
+
+The standalone PowerShell 5.1 installer validates archive source/digest/architecture/version and
+safe paths before installing in a private user directory. Retain versioned exact-path receipts,
+explicit PATH choice, optional daemon/dashboard registration and precise state-preserving removal.
+The Windows updater verifies helper/destination ownership and stages verified bytes, quiesces all
+owned mapped executable holders, suppresses restarts, hands off to a second process and confirms
+completion before success. Locked/unowned MCP/manual holders are bounded refusals. Replacement,
+receipt update and registration restoration are rollback-capable; no normal reboot-replacement
+path, optimistic updated:true or silently enabled dashboard. WinGet uses the same final ZIPs,
+InstallerSha256 and explicit package-manager ownership; self-update refuses its binary.
+
+### Change order and verification
+
+1. Review SPEC, source-backed FINDINGS, these decisions and Project drafts; freeze the minimum
+   contract and safe interface versions before implementation. Verify: review resolves all contract
+   gaps and each draft has concrete criteria; no premature support claim.
+2. Add build/state/configuration foundations with native x64/ARM64 compile/core/store CI, then
+   process-tree/wake behavior and shared Windows fixtures. Verify: Rust 1.94 build, platform
+   environment parity and real descendants/cancel/timeout/recovery pass on both architectures.
+3. Enforce ACL/reparse privacy and role-control/Task Scheduler lifecycle. Verify: actual standard
+   account isolation, ancestor-swap refusal, occupied/remote pipes, long-running settings and
+   graceful exact-instance refresh/removal pass; Unix behavior remains green.
+4. Add immutable ZIPs, installer, rollback handoff and WinGet generation/validation. Verify: corrupt
+   source/digest/archive/version/architecture, locks, interruption and ownership preserve a working
+   installation and durable state; historical release inventory and macOS signing gates still pass.
+5. Run same-revision clean Windows 11 standard-user acceptance and complete support/operator docs.
+   Verify: no compiler/shell-toolchain runtime prerequisite, both native architectures, reboot/login,
+   locked-session and security-policy evidence; merge/release/channel evidence precedes Done.
+
+Keep fixture portability meaningful: genuinely Unix signal tests may be target-specific, but
+Windows equivalents must cover the same observable contract. Do not skip scheduling, privacy,
+process-tree or ownership coverage merely to get a green Windows job. Signing eligibility,
+credentials and business-history checks remain outside these steps.
+
 ## Project-only execution tracking migration (2026-10-02)
 
 This is an administrative workflow change within the unchanged product specification. FINDINGS

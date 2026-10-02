@@ -32,7 +32,30 @@ The accepted implementation foundation is:
 - macOS 14 or newer on `aarch64` and `x86_64`.
 - Linux kernel 5.14 or newer with glibc 2.34 or newer on `aarch64` and `x86_64`.
 
-Windows, 32-bit targets, and official musl/Alpine support are deferred. Unsupported builds may happen to work, but they have no v1 compatibility or release-verification promise.
+Windows 11 x64 and ARM64 are the planned next platform milestone under SPEC's Windows amendment;
+support is advertised after native runtime, distribution and standard-user acceptance pass.
+32-bit targets, Windows Server as a separate target and official musl/Alpine support remain deferred.
+Unsupported builds may happen to work, but they have no compatibility or release-verification promise.
+
+### Windows adapter boundaries (2026-10-02)
+
+Keep the five-crate dependency graph and one distributable binary. Shared safe filesystem and
+environment primitives may live in core; they do not own job execution or operating-system service
+registration. Store owns state layout/SQLite access, engine owns process-tree supervision, CLI owns
+service setup and composition, and server retains its loopback application boundary.
+
+On Windows the engine establishes a kill-on-close Job Object boundary before target code runs and
+retains an independently queryable job handle until tree termination is confirmed. This changes the
+OS mechanism, not durable admission, cancellation quarantine, retry or recovery semantics. Native
+ancestor/reparse guards and owner/SYSTEM-only protected descriptors enforce state privacy; a
+failed permission check is not a successful no-op or a fabricated owner-only diagnostic.
+
+Windows wakeup is a user/state-isolated local named-pipe hint; durable application changes still
+commit before notification and periodic reconciliation remains the correctness path. A separate
+secured lifetime-bound role-control endpoint may carry cooperative shutdown, analogous to a Unix
+termination signal. It never carries job/configuration commands or substitutes for durable state.
+CLI lifecycle operations observe actual role/lock exit before replacing or deleting registration.
+Task Scheduler supervises only the daemon/dashboard roles and never becomes a job-level backend.
 
 ## Workspace and dependency direction
 
