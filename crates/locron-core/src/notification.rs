@@ -88,7 +88,7 @@ pub fn request_shutdown(root: &Path, role: &str, lifetime: &str) -> io::Result<(
 /// Stable account/state identity for local endpoints and registered role names.
 #[cfg(windows)]
 pub fn instance_identity(root: &Path) -> io::Result<String> {
-    instance_identity_guarded(&crate::filesystem::DirectoryGuard::private(root)?)
+    instance_identity_guarded(&crate::filesystem::DirectoryGuard::existing_private(root)?)
 }
 
 /// Queries the guarded object while its complete no-write/no-delete-sharing chain is live.
@@ -133,7 +133,7 @@ fn identity_digest(sid: &str, volume: u64, file_id: u128) -> io::Result<String> 
 #[cfg(windows)]
 pub fn endpoint_name(root: &Path, role: &str, lifetime: Option<&str>) -> io::Result<String> {
     endpoint_name_guarded(
-        &crate::filesystem::DirectoryGuard::private(root)?,
+        &crate::filesystem::DirectoryGuard::existing_private(root)?,
         role,
         lifetime,
     )
@@ -287,13 +287,39 @@ mod tests {
         );
         let first = temporary.path().join("state ß");
         let second = temporary.path().join("state SS");
+        let _first = DirectoryGuard::private(&first).unwrap();
+        let _second = DirectoryGuard::private(&second).unwrap();
         assert_ne!(
             instance_identity(&first).unwrap(),
             instance_identity(&second).unwrap()
         );
-        assert_ne!(
-            identity,
-            instance_identity(&temporary.path().join("工具 state")).unwrap()
+        let unicode = temporary.path().join("工具 state");
+        let _unicode = DirectoryGuard::private(&unicode).unwrap();
+        assert_ne!(identity, instance_identity(&unicode).unwrap());
+    }
+
+    #[test]
+    fn missing_state_identity_and_client_lookups_never_create_a_root() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("absent private state");
+        let lifetime = uuid::Uuid::now_v7().to_string();
+        for result in [
+            instance_identity(&root).map(|_| ()),
+            endpoint_name(&root, "wake", None).map(|_| ()),
+            send_wake(&root),
+            request_shutdown(&root, "dashboard", &lifetime),
+        ] {
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotFound);
+            assert!(
+                !root.exists(),
+                "an identity or control lookup recreated state"
+            );
+        }
+        assert!(
+            std::fs::read_dir(temporary.path())
+                .unwrap()
+                .next()
+                .is_none()
         );
     }
 

@@ -30,20 +30,26 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new() -> Self {
+    fn absent() -> Self {
         let temporary = tempfile::tempdir().expect("temporary parent");
-        let guard = locron_core::filesystem::DirectoryGuard::private(
-            &temporary.path().join("private native 生命周期"),
-        )
-        .expect("private fixture state");
-        let paths = StatePaths::new(guard.normalized_path().to_path_buf());
-        drop(Store::open(paths.clone(), "test", 1).expect("initialized fixture store"));
-        // The test binary and CLI must derive identical versioned SID/file identities.
-        locron_core::notification::instance_identity(&paths.root).expect("native state identity");
+        let paths = StatePaths::new(temporary.path().join("private native 生命周期"));
+        assert!(!paths.root.exists());
         Self {
             paths,
             _temporary: temporary,
         }
+    }
+
+    fn new() -> Self {
+        let mut fixture = Self::absent();
+        let guard = locron_core::filesystem::DirectoryGuard::private(&fixture.paths.root)
+            .expect("private fixture state");
+        fixture.paths = StatePaths::new(guard.normalized_path().to_path_buf());
+        drop(Store::open(fixture.paths.clone(), "test", 1).expect("initialized fixture store"));
+        // The test binary and CLI must derive identical versioned SID/file identities.
+        locron_core::notification::instance_identity(&fixture.paths.root)
+            .expect("native state identity");
+        fixture
     }
 
     fn daemon(&self, registered: bool) -> NativeProcess {
@@ -213,6 +219,36 @@ impl Fixture {
                 Instant::now() < deadline,
                 "native target did not complete: {}",
                 run.state
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn wait_initialized_store(&self, process: &mut NativeProcess) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Ok(store) = Store::open_read_only(&self.paths.database)
+                && let Ok(settings) = store.settings()
+            {
+                assert_eq!(
+                    settings.execution_path,
+                    locron_core::execution::default_execution_path()
+                );
+                return;
+            }
+            assert!(
+                process
+                    .child
+                    .try_wait()
+                    .expect("first-run daemon process")
+                    .is_none(),
+                "daemon exited during first-run store initialization: {}",
+                process.stderr()
+            );
+            assert!(
+                Instant::now() < deadline,
+                "first-run store was not initialized: {}",
+                process.stderr()
             );
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -561,6 +597,60 @@ fn assert_dashboard_is_gone(paths: &StatePaths, owner: &RoleLockMetadata) {
         )
         .is_err()
     );
+}
+
+#[test]
+fn first_run_registered_daemon_explicitly_creates_private_state_before_control() {
+    let fixture = Fixture::absent();
+    assert_eq!(
+        locron_core::notification::instance_identity(&fixture.paths.root)
+            .unwrap_err()
+            .kind(),
+        std::io::ErrorKind::NotFound
+    );
+    assert!(!fixture.paths.root.exists());
+    let mut registered = fixture.daemon(true);
+    let activation = registered.wait_owner(&fixture.paths.daemon_activation_lock);
+    let owner = registered.wait_owner(&fixture.paths.daemon_lock);
+    assert!(owner.service_mode);
+    assert!(locron_core::filesystem::is_private(&fixture.paths.root, true).unwrap());
+    fixture.wait_initialized_store(&mut registered);
+    let run_id = fixture.queue_marker_run("first-run-target", None);
+    fixture.wait_marker_run(&run_id);
+    registered.stop_activation(&fixture.paths, &activation);
+    DaemonLock::try_prove_free(&fixture.paths.daemon_lock).expect("first-run daemon exited");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn first_run_registered_dashboard_explicitly_creates_private_state_before_control() {
+    let fixture = Fixture::absent();
+    assert!(
+        locron_core::notification::request_shutdown(
+            &fixture.paths.root,
+            "dashboard",
+            &uuid::Uuid::now_v7().to_string(),
+        )
+        .is_err()
+    );
+    assert!(!fixture.paths.root.exists());
+    let mut dashboard = fixture.dashboard();
+    let (owner, url) = dashboard.wait_dashboard(&fixture.paths);
+    assert!(locron_core::filesystem::is_private(&fixture.paths.root, true).unwrap());
+    let token = locron_server::token::ensure(&fixture.paths).expect("first-run private token");
+    let response = dashboard_client()
+        .get(format!("{url}api/v1/session"))
+        .header("authorization", format!("token {token}"))
+        .send()
+        .await
+        .expect("first-run dashboard listener");
+    assert!(response.status().is_success());
+    let status = dashboard.stop_role(&fixture.paths, "dashboard", &owner);
+    assert!(
+        status.success(),
+        "first-run dashboard exit failed: {}",
+        dashboard.stderr()
+    );
+    assert_dashboard_is_gone(&fixture.paths, &owner);
 }
 
 #[tokio::test(flavor = "multi_thread")]
