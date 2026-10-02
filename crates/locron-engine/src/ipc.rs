@@ -307,12 +307,12 @@ mod tests {
         let name = endpoint_name_guarded(&guard, "dashboard", Some(&lifetime)).unwrap();
         let listener = held_fixture_listener(&name);
         let caller_guard = Arc::clone(&guard);
-        let started = Instant::now();
-        let deadline = started + Duration::from_millis(100);
         let sender = tokio::task::spawn_blocking(move || {
+            let started = Instant::now();
+            let deadline = started + Duration::from_millis(100);
             let result =
                 request_shutdown_guarded_until(&caller_guard, "dashboard", &lifetime, deadline);
-            (result, Instant::now())
+            (result, started, Instant::now())
         });
         let mut peer = accepted_fixture_client(&listener).await;
         tokio::time::timeout(Duration::from_secs(1), async {
@@ -327,7 +327,7 @@ mod tests {
         .await
         .unwrap();
         // The peer deliberately withholds ACK while the exact caller deadline expires.
-        let (result, returned) = sender.await.unwrap();
+        let (result, started, returned) = sender.await.unwrap();
         let error = result.unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         let elapsed = returned.saturating_duration_since(started);
@@ -362,12 +362,12 @@ mod tests {
         options.security_qos_flags(0x0001_0000);
         assert_eq!(options.open(&name).unwrap_err().raw_os_error(), Some(231));
         let caller_guard = Arc::clone(&guard);
-        let started = Instant::now();
-        let deadline = started + Duration::from_millis(100);
-        let (result, returned) = tokio::task::spawn_blocking(move || {
+        let (result, started, returned) = tokio::task::spawn_blocking(move || {
+            let started = Instant::now();
+            let deadline = started + Duration::from_millis(100);
             let result =
                 request_shutdown_guarded_until(&caller_guard, "dashboard", &lifetime, deadline);
-            (result, Instant::now())
+            (result, started, Instant::now())
         })
         .await
         .unwrap();
