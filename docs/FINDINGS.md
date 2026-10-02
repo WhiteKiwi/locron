@@ -2905,6 +2905,18 @@ Sources: [pinned Rust 1.94 Windows lock implementation](https://github.com/rust-
 
 ### Measured generic JSON binding and binary-only candidate (2026-10-03)
 
+At loader head 8674237, all three native Core rows fail before child spawn with Win32 123
+(invalid filename), including direct stock-guard acquisition. Source inspection finds fixed
+multi-component joins containing forward slashes followed by a literal verbatim prefix. Microsoft
+documents that the verbatim prefix disables path-string parsing; Rust documents that forward slash
+is not a separator in a verbatim prefix. This is a source-grounded cause candidate, pending native
+proof. Rebuild validated local drive/root/normal components with native separators before verbatim
+opens, including an ordinary SystemRoot spelling that uses forward slashes. Reject an embedded
+separator in an already-verbatim component rather than silently reinterpret it. No trust, no-follow,
+sharing, full-identity, deadline or owned-worker boundary changes. Sources:
+[Win32 file namespaces](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
+[Rust Windows prefixes](https://doc.rust-lang.org/std/path/enum.Prefix.html).
+
 Exact head 608ab19's ARM64 native job 111026239366 entered the actual generic script at about
 210 ms and its JSON conversion at 219 ms, but never reached json-parsed before the original
 30-second deadline; owned cleanup finished at 30.042 seconds. The preceding 4887 trace measured

@@ -153,6 +153,16 @@ and phase-scoped COM worker. Before spawn, a SID-independent native core StockAd
 the exact stock PowerShell executable and selected GAC library files plus every ancestor through
 owned cleanup/idle/quarantine. Build their absolute paths only from the absolute Windows root and
 fixed Windows PowerShell 5.1/.NET Framework identities; no module search, cwd fallback or repair.
+Join each fixed stock path component separately and reconstruct the validated absolute local
+drive/root/normal-component sequence before adding its verbatim namespace. Preserve native OsStr
+components and Unicode; never prepend a verbatim prefix to an unnormalized slash-containing string.
+Already-verbatim components containing a forward slash refuse rather than changing their meaning.
+Keep the existing local-drive-only, root and normal-component admission checks and all native trust,
+reparse, sharing, identity and original-deadline checks. Verify: (1) pure Windows component fixtures
+cover mixed ordinary SystemRoot separators, Unicode and every resulting ancestor, while rejecting
+relative/UNC/device/parent and verbatim-slash inputs; (2) actual stock-file guarded full identities
+and the real native guard-stall callback pass on x64, ARM64 and MSRV; (3) the original cold generic
+and filesystem gates spawn through those same production paths within their unchanged budget.
 Require SYSTEM/Administrators/TrustedInstaller owner, no untrusted effective write/append/EA/
 attributes/delete/WRITE_DAC/WRITE_OWNER/generic write/all grants on each library/executable, and
 no untrusted control/delete/reparse-mutation grants on any retained ancestor. Creation of an
