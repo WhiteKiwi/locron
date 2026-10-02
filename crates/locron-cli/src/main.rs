@@ -3584,8 +3584,23 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         .collect::<Vec<_>>();
     if !dry_run {
         for candidate in &candidates {
+            #[cfg(windows)]
+            let path = {
+                let attempt = u16::try_from(candidate.attempt_number)?;
+                let path = paths.final_output(&candidate.run_id, attempt)?;
+                if candidate.relative_path != format!("{}/{attempt}.log", candidate.run_id) {
+                    return Err(anyhow!(
+                        "database output path is not the canonical final path"
+                    ));
+                }
+                path
+            };
             store.mark_output_prune_pending(candidate, now_us())?;
+            #[cfg(not(windows))]
             let path = paths.outputs.join(&candidate.relative_path);
+            #[cfg(windows)]
+            locron_core::filesystem::remove_private_file(&path)?;
+            #[cfg(not(windows))]
             match std::fs::symlink_metadata(&path) {
                 Ok(metadata) if metadata.file_type().is_symlink() => {
                     return Err(anyhow!("refusing to prune symbolic-link output"));
@@ -7076,5 +7091,217 @@ mod tests {
             overlap_decision(1, OverlapPolicy::Allow),
             "eligible_subject_to_capacity"
         );
+    }
+
+    #[cfg(windows)]
+    mod windows_prune_tests {
+        use super::*;
+        use std::io::Write as _;
+
+        struct Fixture {
+            // Close SQLite and its state guard before removing the fixture directory.
+            store: Store,
+            paths: StatePaths,
+            run_id: String,
+            _temporary: tempfile::TempDir,
+        }
+
+        impl Fixture {
+            fn new() -> Self {
+                let temporary = tempfile::tempdir().unwrap();
+                let paths = StatePaths::new(temporary.path().join("private prune 工具"));
+                let store = Store::open(paths.clone(), "test", 1).unwrap();
+                let run_id = Uuid::now_v7().to_string();
+                let definition = JobDefinition {
+                    schedule: Schedule::Every {
+                        interval: "1h".parse().unwrap(),
+                        anchor: Timestamp::UNIX_EPOCH,
+                    },
+                    target: Target::Process {
+                        executable: fixture_executable(),
+                        args: Vec::new(),
+                    },
+                    cwd: paths.root.clone(),
+                    environment: Environment::default(),
+                    policy: Default::default(),
+                    completion_action: CompletionAction::Retain,
+                };
+                store
+                    .create_job(&CreateJob {
+                        id: Uuid::now_v7().to_string(),
+                        name: "prune-fixture".into(),
+                        description: None,
+                        tags_json: "[]".into(),
+                        enabled: true,
+                        definition_json: serde_json::to_string(&definition).unwrap(),
+                        now_us: 1,
+                        cursor_us: 1,
+                    })
+                    .unwrap();
+                store.enqueue_manual("prune-fixture", &run_id, 2).unwrap();
+                let lifetime = Uuid::now_v7().to_string();
+                store.begin_lifetime(&lifetime, 3, "test").unwrap();
+                assert_eq!(store.admit(&lifetime, 3, 1).unwrap().attempts.len(), 1);
+                store
+                    .finalize_output(
+                        &OutputRecord {
+                            run_id: run_id.clone(),
+                            attempt_number: 1,
+                            relative_path: format!("{run_id}/1.log"),
+                            state: "finalized".into(),
+                            retained_payload_bytes: 8,
+                            physical_bytes: 8,
+                            discarded_bytes: 0,
+                            truncated: false,
+                        },
+                        4,
+                    )
+                    .unwrap();
+                store
+                    .complete_attempt(&AttemptCompletion {
+                        run_id: run_id.clone(),
+                        attempt_number: 1,
+                        now_us: 5,
+                        duration_us: 2,
+                        state: "succeeded".into(),
+                        exit_code: Some(0),
+                        http_status: None,
+                        http_content_type: None,
+                        reason: "fixture".into(),
+                        retry: None,
+                    })
+                    .unwrap();
+                Self {
+                    store,
+                    paths,
+                    run_id,
+                    _temporary: temporary,
+                }
+            }
+
+            fn path(&self) -> PathBuf {
+                self.paths.final_output(&self.run_id, 1).unwrap()
+            }
+
+            fn output(&self) -> locron_store::AttemptOutputRecord {
+                self.store.attempts_for_run(&self.run_id).unwrap()[0]
+                    .output
+                    .clone()
+                    .unwrap()
+            }
+
+            fn seed_file(&self) {
+                write_private(&self.path(), b"captured");
+            }
+
+            fn assert_pending(&self) {
+                let output = self.output();
+                assert_eq!(output.state, "prune_pending");
+                assert_eq!(output.physical_bytes, 8);
+                assert_eq!(self.store.pending_output_prunes(10).unwrap().len(), 1);
+                let reopened = Store::open_read_only(&self.paths.database).unwrap();
+                assert_eq!(
+                    reopened.attempts_for_run(&self.run_id).unwrap()[0]
+                        .output
+                        .as_ref()
+                        .unwrap()
+                        .state,
+                    "prune_pending"
+                );
+            }
+        }
+
+        fn write_private(path: &Path, content: &[u8]) {
+            let mut file = locron_core::filesystem::create_private_new(path).unwrap();
+            file.write_all(content).unwrap();
+            file.sync_all().unwrap();
+        }
+
+        #[test]
+        fn removes_private_output_before_committing_pruned_state() {
+            let fixture = Fixture::new();
+            fixture.seed_file();
+            assert!(locron_core::filesystem::is_private(&fixture.path(), false).unwrap());
+            let unrelated = fixture.paths.root.join("preserve.txt");
+            write_private(&unrelated, b"unrelated");
+
+            prune(&fixture.paths, false, Format::Json).unwrap();
+
+            assert!(!fixture.path().exists());
+            assert_eq!(fixture.output().state, "pruned");
+            assert_eq!(fixture.output().physical_bytes, 0);
+            assert!(fixture.store.pending_output_prunes(10).unwrap().is_empty());
+            assert_eq!(std::fs::read(unrelated).unwrap(), b"unrelated");
+        }
+
+        #[test]
+        fn missing_output_is_idempotent_without_recreating_its_parent() {
+            let fixture = Fixture::new();
+            let directory = fixture.paths.output_directory(&fixture.run_id).unwrap();
+            assert!(!directory.exists());
+
+            prune(&fixture.paths, false, Format::Json).unwrap();
+            prune(&fixture.paths, false, Format::Json).unwrap();
+
+            assert!(!directory.exists());
+            assert_eq!(fixture.output().state, "pruned");
+            assert_eq!(fixture.output().physical_bytes, 0);
+            assert!(fixture.store.pending_output_prunes(10).unwrap().is_empty());
+        }
+
+        // Deliberate descriptor/junction setup runs sequentially in this one case;
+        // other native prune cases need no generic PowerShell fixture worker.
+        #[test]
+        fn unsafe_output_keeps_pending_state_and_preserves_unrelated_objects() {
+            let fixture = Fixture::new();
+            fixture.seed_file();
+            let path = fixture.path();
+            locron_core::windows::run_script_json(
+                r"$acl=Get-Acl -LiteralPath ([string]$request.path);
+                $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'),'Read','Allow'));
+                Set-Acl -LiteralPath ([string]$request.path) -AclObject $acl;
+                @{changed=$true} | ConvertTo-Json -Compress",
+                &json!({"path":path}),
+            )
+            .unwrap();
+            assert!(!locron_core::filesystem::is_private(&path, false).unwrap());
+            assert!(prune(&fixture.paths, false, Format::Json).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), b"captured");
+            assert!(!locron_core::filesystem::is_private(&path, false).unwrap());
+            fixture.assert_pending();
+
+            let junction_fixture = Fixture::new();
+            let target = junction_fixture
+                ._temporary
+                .path()
+                .join("outside private target");
+            drop(locron_core::filesystem::DirectoryGuard::private(&target).unwrap());
+            let target_file = target.join("1.log");
+            write_private(&target_file, b"unrelated");
+            let link = junction_fixture
+                .paths
+                .output_directory(&junction_fixture.run_id)
+                .unwrap();
+            locron_core::windows::run_script_json(
+                "New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null; @{created=$true} | ConvertTo-Json -Compress",
+                &json!({"link":link,"target":target}),
+            )
+            .unwrap();
+            let refusal = prune(&junction_fixture.paths, false, Format::Json);
+            // Remove this exact junction before recursive fixture cleanup.
+            std::fs::remove_dir(&link).unwrap();
+            assert!(refusal.is_err());
+            assert_eq!(std::fs::read(target_file).unwrap(), b"unrelated");
+            junction_fixture.assert_pending();
+
+            let directory_fixture = Fixture::new();
+            let directory = directory_fixture.path();
+            drop(locron_core::filesystem::DirectoryGuard::private(&directory).unwrap());
+            let child = directory.join("preserve.txt");
+            write_private(&child, b"preserve");
+            assert!(prune(&directory_fixture.paths, false, Format::Json).is_err());
+            assert_eq!(std::fs::read(child).unwrap(), b"preserve");
+            directory_fixture.assert_pending();
+        }
     }
 }

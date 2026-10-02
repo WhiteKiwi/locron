@@ -649,8 +649,10 @@ that bound leaves the synced partial intact and reports a real infrastructure fa
 recovery; never claim finalization or discard captured bytes when the rename has not succeeded.
 
 Windows output pruning uses the shared guarded private-file deletion primitive after committing
-the existing pending-retention transition. Validate the private parent chain and existing leaf
-before deleting it; refuse reparse/non-file/unsafe-descriptor paths, and mark retention complete
+the existing pending-retention transition. Derive the canonical output path from validated run
+identity and attempt number; refuse an inconsistent durable relative path before marking pending.
+Validate the private parent chain and existing leaf before deleting it; refuse reparse/non-file/
+unsafe-descriptor paths, and mark retention complete
 only after successful deletion or an already-missing leaf. Keep the existing Unix deletion path.
 Native CLI fixtures prove valid output deletion, idempotent missing output, and unsafe-leaf
 refusal with the pending state preserved and the unrelated object left intact.
