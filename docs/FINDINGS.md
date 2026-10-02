@@ -2742,6 +2742,35 @@ Sources: [interprocess manifest](https://github.com/kotauskas/interprocess/blob/
 [Microsoft named-pipe ACL/instance rights](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
 [Microsoft pipe creation flags](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-createnamedpipew).
 
+### Measured ARM64 stock PowerShell bootstrap (2026-10-03)
+
+PR41 head 70fe31d run 37031019704, ARM64 job 110917557150, still failed eight cold fixtures after
+the output-cap deadlock correction. Its post-gate diagnostics independently measured 22,504,
+22,552 and 22,593 ms for three stock PowerShell 5.1 children: no-stdin version/SID, small structured
+stdin and 60 KiB structured stdin. All stdout/stderr/EOF processing completed. The stock image
+was native ARM64 (PE machine 0xAA64), and the invoking shell was PowerShell 7.6.6. This isolates
+slow stock process bootstrap on that hosted image independently of Locron's pipe framing; it
+does not establish the underlying Windows/.NET bootstrap cause or a universal ARM64 latency.
+
+Current SID discovery, every missing directory component and every new managed file each start
+a separate stock child. Two thirty-second worker slots therefore cannot keep concurrent callers
+inside their original queue/startup budgets when each start consumes about 22.5 seconds. The
+five-second script-entry and ten-second output-phase assumptions also expire before the script
+can execute. Raising production deadlines or skipping ACL tests would not address this cost.
+
+Select a fixed persistent filesystem dispatch worker for SID and the already reviewed atomic
+.NET security constructors, with bounded framed JSON, original per-request deadlines, finite
+queue/idle lifetime and no arbitrary source/data execution. A suspended pre-enrolled kill-on-close
+Job is required because a static cached child is not dropped on parent process exit. Keep one
+filesystem and one generic worker slot; confirm worker cleanup and refuse uncertain mutation
+outcomes without replay. Native proof remains required for cold first use, concurrent callers,
+bad frames, output caps, idle restart and actual abrupt-parent-exit child termination. Task
+Scheduler cannot assume repeated fresh 22.5-second COM launches fit a thirty-second quiesce;
+its separate fixed-worker design is still pending. Preserve phase markers in real-stock timeout/
+cap fixtures under the original thirty-second maximum and measure prompt cleanup after entry.
+
+Evidence: [native ARM64 job and post-gate diagnostics](https://github.com/WhiteKiwi/locron/actions/runs/37031019704/job/110917557150).
+
 ### Task Scheduler and cooperative lifecycle
 
 #### Windows role-lock diagnostic refinement during development

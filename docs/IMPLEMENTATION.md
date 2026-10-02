@@ -164,6 +164,43 @@ and confirmed cleanup, independently of startup timeout and saturated-queue acce
 A bounded stock-adapter entry point accepts a caller's remaining duration, capped at the same
 thirty-second operation maximum. Service polling uses the remaining shared lifecycle deadline;
 a fresh adapter invocation cannot silently restart the complete shutdown budget.
+
+Native ARM64 evidence measured about 22.5 seconds for every stock PowerShell 5.1 startup,
+including a no-stdin version/SID probe. Replace repeated filesystem process starts with one
+process-local fixed filesystem worker containing only SID discovery, private-directory creation
+and private CreateNew-file creation. The existing .NET descriptor constructors and post-operation
+Rust guards remain authoritative. Each request is structured JSON with a version, monotonically
+assigned request ID and fixed operation selector; the worker accepts no source, command or
+executable in request data. Requests and reply frames retain the 64 KiB/128 KiB limits, with a
+separate bounded stderr capture. Compare the reply ID and operation/result shape before accepting
+it. Failure never triggers an automatic replay of a mutating creation request.
+
+Retain one bounded owner thread and request queue for this filesystem worker. An absolute
+thirty-second deadline starts at each public API entry and includes queue admission, cold worker
+start, input, reply and validation. Requests already expired in the queue perform no work. A
+timeout, EOF, malformed reply, wrong ID or output-limit violation kills/reaps the owned worker
+under the separate three-second cleanup bound and wakes pending callers; future calls may create
+a fresh worker. An idle sixty-second interval likewise closes and confirms the worker before
+retiring it. Keep at most two stock children per process: one filesystem worker and one generic
+reviewed-script worker; idle retention does not permit unbounded child/thread accumulation.
+
+Spawn the persistent filesystem worker suspended and enroll it in the same reviewed safe
+process-wrap =10.0.1 JobObject/kill-on-drop plus independent win32job =2.0.3 kill-on-close Job
+pattern used for attempts before resuming it. The owner thread retains the Job handle through
+confirmed root exit and empty-tree query. Parent abrupt exit closes that handle in the kernel;
+static-cache or thread destructors and Tokio kill_on_drop alone are not this crash guarantee.
+Spawn/enrollment/resume or cleanup uncertainty remains an explicit failure, never a successful
+creation fact or an automatic replay. No private data is sent to an unconfirmed child.
+
+Native cold gates remain before the diagnostic probes, with no warm-up step. Fixtures retain the
+production thirty-second maximum for a real stock process and report startup separately from
+the script phase. A script-entered marker proves timeout cleanup after actual entry; an
+output-phase marker and exact output-limit error prove prompt refusal after the cap is reached.
+Use the separate three-second cleanup bound rather than assuming ARM64 enters within five or
+ten seconds. Add concurrent-first-request, idle retirement/restart, failure-with-queued-callers,
+wrong-ID/oversized-frame and abrupt-parent-exit fixtures. Generic arbitrary-script tests and
+Task Scheduler COM calls remain outside the fixed filesystem dispatch; a later fixed COM worker
+requires its own reviewed contract and the same shared lifecycle deadline.
 Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
 descriptor and validate them again after configuration/migration, before accepting application
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable
