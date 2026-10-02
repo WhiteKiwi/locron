@@ -29,6 +29,8 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 static DISPATCHER: OnceLock<io::Result<queue::Sender<Request>>> = OnceLock::new();
 #[cfg(test)]
 static LAST_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+#[cfg(test)]
+static LAST_PHASES: std::sync::Mutex<Option<Arc<ChildPhases>>> = std::sync::Mutex::new(None);
 
 struct Request {
     id: String,
@@ -418,6 +420,10 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
                 Ok(owned) => {
                     #[cfg(test)]
                     LAST_PID.store(owned.pid, Ordering::Release);
+                    #[cfg(test)]
+                    if let Ok(mut phases) = LAST_PHASES.lock() {
+                        *phases = Some(Arc::clone(&owned.phases));
+                    }
                     #[cfg(test)]
                     request.diagnostic.record("spawn-complete", owned.pid);
                     worker = Some(owned);
@@ -983,6 +989,15 @@ mod tests {
 
     #[test]
     fn cold_fixed_worker_serves_concurrent_callers_without_repeated_bootstrap() {
+        run_isolated_fixture("reuse", "fixed-worker-reuse-confirmed");
+    }
+
+    #[test]
+    fn owned_sid_and_create_requests_report_ordered_child_phases() {
+        run_isolated_fixture("phase-order", "fixed-worker-phase-order-confirmed");
+    }
+
+    fn run_isolated_fixture(mode: &str, confirmation: &str) {
         let temporary = tempfile::tempdir().unwrap();
         let stdout = temporary.path().join("stdout.txt");
         let stderr = temporary.path().join("stderr.txt");
@@ -993,7 +1008,7 @@ mod tests {
                     "windows::filesystem_worker::tests::worker_fixture_child",
                     "--nocapture",
                 ])
-                .env("LOCRON_FIXED_WORKER_FIXTURE", "reuse")
+                .env("LOCRON_FIXED_WORKER_FIXTURE", mode)
                 .creation_flags(0x0800_0000)
                 .stdin(Stdio::null())
                 .stdout(std::fs::File::create(&stdout).unwrap())
@@ -1018,7 +1033,7 @@ mod tests {
             bounded_text(&stdout),
             bounded_text(&stderr)
         );
-        assert!(bounded_text(&stdout).contains("fixed-worker-reuse-confirmed"));
+        assert!(bounded_text(&stdout).contains(confirmation));
     }
 
     #[test]
@@ -1026,8 +1041,12 @@ mod tests {
         let Ok(mode) = std::env::var("LOCRON_FIXED_WORKER_FIXTURE") else {
             return;
         };
-        assert_eq!(mode, "reuse");
         assert!(DISPATCHER.get().is_none());
+        if mode == "phase-order" {
+            phase_order_fixture();
+            return;
+        }
+        assert_eq!(mode, "reuse");
         let barrier = std::sync::Barrier::new(9);
         let cold = Instant::now();
         let results = std::thread::scope(|scope| {
@@ -1076,5 +1095,66 @@ mod tests {
         assert!(crate::filesystem::is_private(&path, false).unwrap());
         assert_eq!(LAST_PID.load(Ordering::Acquire), *pid);
         println!("fixed-worker-reuse-confirmed");
+    }
+
+    fn wait_for_phases(phases: &ChildPhases, expected: &[&str], deadline: Instant) {
+        loop {
+            {
+                let observed = phases.0.lock().unwrap();
+                if observed.len() >= expected.len() {
+                    let names: Vec<_> = observed.iter().map(|(phase, _)| *phase).collect();
+                    assert_eq!(names, expected);
+                    return;
+                }
+            }
+            assert!(
+                Instant::now() < deadline,
+                "owned child phase receipt timed out"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn phase_order_fixture() {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        crate::windows::current_user_sid().unwrap();
+        let pid = LAST_PID.load(Ordering::Acquire);
+        let phases = Arc::clone(LAST_PHASES.lock().unwrap().as_ref().unwrap());
+        wait_for_phases(
+            &phases,
+            &[
+                "child-source-entry",
+                "child-encoding-ready",
+                "child-input-line",
+                "child-json-parsed",
+                "child-sid-resolved",
+                "child-reply-serialized",
+                "child-reply-flushed",
+            ],
+            deadline,
+        );
+        phases.0.lock().unwrap().clear();
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private Unicode 한글 # %");
+        let operation_phases = [
+            "child-input-line",
+            "child-json-parsed",
+            "child-sid-resolved",
+            "child-reply-serialized",
+            "child-reply-flushed",
+        ];
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let guard = crate::filesystem::DirectoryGuard::private(&root).unwrap();
+        wait_for_phases(&phases, &operation_phases, deadline);
+        assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
+        phases.0.lock().unwrap().clear();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let path = guard.normalized_path().join("fresh.txt");
+        drop(crate::filesystem::create_private_new(&path).unwrap());
+        wait_for_phases(&phases, &operation_phases, deadline);
+        assert!(crate::filesystem::is_private(&path, false).unwrap());
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 0);
+        assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
+        println!("fixed-worker-phase-order-confirmed");
     }
 }
