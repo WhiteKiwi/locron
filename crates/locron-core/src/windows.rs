@@ -107,7 +107,7 @@ async fn run_adapter(
         Ok::<_, io::Error>(bytes)
     });
     let operation = tokio::time::timeout_at(deadline, async {
-        let (_, output, errors, status) = tokio::try_join!(
+        let ((), output, errors, status) = tokio::try_join!(
             async { (&mut writer).await.map_err(io::Error::other)? },
             async { (&mut output).await.map_err(io::Error::other)? },
             async { (&mut errors).await.map_err(io::Error::other)? },
@@ -192,7 +192,7 @@ pub fn current_user_sid() -> io::Result<String> {
 
 pub(crate) fn create_private_directory(path: &std::path::Path) -> io::Result<()> {
     run_script_json(
-        r#"
+        r"
         $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User;
         $acl = [System.Security.AccessControl.DirectorySecurity]::new();
         $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true, $false);
@@ -203,7 +203,7 @@ pub(crate) fn create_private_directory(path: &std::path::Path) -> io::Result<()>
         }
         [System.IO.DirectoryInfo]::new([string]$request.path).Create($acl);
         @{created=$true} | ConvertTo-Json -Compress
-    "#,
+    ",
         &json!({"path": path}),
     )?;
     Ok(())

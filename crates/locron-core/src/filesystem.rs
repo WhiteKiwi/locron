@@ -201,10 +201,10 @@ pub fn is_private(path: &Path, directory: bool) -> io::Result<bool> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            return Ok(
+            Ok(
                 (metadata.permissions().mode() & 0o777).trailing_zeros() >= 6
                     && metadata.is_dir() == directory,
-            );
+            )
         }
         #[cfg(not(unix))]
         {
@@ -247,9 +247,11 @@ fn reject_symlink(path: &Path) -> io::Result<()> {
 
 #[cfg(windows)]
 mod windows {
-    use super::*;
+    use super::{DirectoryGuard, parent, unsafe_path};
+    use std::fs::{self, File, OpenOptions};
+    use std::io;
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
-    use std::path::{Component, Prefix};
+    use std::path::{Component, Path, PathBuf, Prefix};
     use windows_permissions::constants::{AceType, SeObjectType, SecurityInformation};
     use windows_permissions::{LocalBox, SecurityDescriptor, wrappers};
 
