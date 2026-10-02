@@ -273,6 +273,13 @@ jobs:
           if ($compiler -cnotcontains 'host: ${{ matrix.target }}') { throw 'package target must equal native rustc host' }
           cargo build --release --locked -p locron --target '${{ matrix.target }}'
           if ($LASTEXITCODE -ne 0) { throw 'native release build failed' }
+      - name: Verify native Windows archive and ownership contracts
+        env:
+          RUSTFLAGS: '-C target-feature=+crt-static'
+        shell: powershell
+        run: |
+          cargo test --locked -p locron --bin locron --target '${{ matrix.target }}' self_update::windows_
+          if ($LASTEXITCODE -ne 0) { throw 'native Windows distribution contract fixtures failed' }
       - name: Package and verify current-version ZIP without developer PATH
         shell: powershell
         run: |
