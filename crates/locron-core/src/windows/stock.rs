@@ -2,6 +2,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io;
+use std::os::windows::ffi::OsStrExt;
 use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf, Prefix};
 use std::time::Instant;
@@ -16,7 +17,6 @@ const TRUSTED: [&str; 3] = [
     "S-1-5-32-544",
     "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464",
 ];
-const GAC: &str = "Microsoft.NET/assembly/GAC_MSIL";
 const VERSION: &str = "v4.0_3.0.0.0__31bf3856ad364e35";
 const READ_CONTROL_ATTRIBUTES: u32 = 0x0002_0080;
 const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
@@ -62,10 +62,7 @@ impl StockAdapterGuard {
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
             .ok_or_else(|| io::Error::other("Windows SystemRoot is unavailable"))?;
-        let powershell = guard_file(
-            &root.join("System32/WindowsPowerShell/v1.0/powershell.exe"),
-            deadline,
-        )?;
+        let powershell = guard_file(&powershell_path(&root), deadline)?;
         let utility = guard_file(&library_path(&root, "Utility"), deadline)?;
         let management = match modules {
             StockModuleSet::Utility => None,
@@ -123,10 +120,19 @@ pub(super) struct GuardStall {
 
 fn library_path(root: &Path, suffix: &str) -> PathBuf {
     let name = format!("Microsoft.PowerShell.Commands.{suffix}");
-    root.join(GAC)
+    root.join("Microsoft.NET")
+        .join("assembly")
+        .join("GAC_MSIL")
         .join(&name)
         .join(VERSION)
         .join(format!("{name}.dll"))
+}
+
+fn powershell_path(root: &Path) -> PathBuf {
+    root.join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe")
 }
 
 fn checked<T>(deadline: Instant, operation: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
@@ -148,19 +154,28 @@ fn absolute_local(path: &Path) -> io::Result<PathBuf> {
     let Some(Component::Prefix(prefix)) = components.next() else {
         return Err(unsafe_stock());
     };
-    if !matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
-        || components.next() != Some(Component::RootDir)
-        || components.any(|component| !matches!(component, Component::Normal(_)))
-    {
+    let (Prefix::Disk(volume) | Prefix::VerbatimDisk(volume)) = prefix.kind() else {
+        return Err(unsafe_stock());
+    };
+    if components.next() != Some(Component::RootDir) {
         return Err(unsafe_stock());
     }
-    if matches!(prefix.kind(), Prefix::Disk(_)) {
-        let mut absolute = std::ffi::OsString::from(r"\\?\");
-        absolute.push(path);
-        Ok(PathBuf::from(absolute))
-    } else {
-        Ok(path.to_path_buf())
+    // Verbatim names suppress slash normalization. Rebuild from validated components;
+    // never prepend that prefix to an ordinary path's original slash-containing spelling.
+    let mut absolute = PathBuf::from(format!(r"\\?\{}:\", char::from(volume)));
+    for component in components {
+        let Component::Normal(value) = component else {
+            return Err(unsafe_stock());
+        };
+        if value
+            .encode_wide()
+            .any(|unit| unit == u16::from(b'/') || unit == u16::from(b'\\'))
+        {
+            return Err(unsafe_stock());
+        }
+        absolute.push(value);
     }
+    Ok(absolute)
 }
 
 fn guard_file(path: &Path, deadline: Instant) -> io::Result<StockFile> {
@@ -251,9 +266,71 @@ fn verify_descriptor(descriptor: &SecurityDescriptor, directory: bool) -> io::Re
 
 #[cfg(test)]
 mod tests {
-    use super::{StockAdapterGuard, StockModuleSet, verify_descriptor};
+    use super::{
+        StockAdapterGuard, StockFile, StockModuleSet, absolute_local, library_path,
+        powershell_path, verify_descriptor,
+    };
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Path, PathBuf};
     use std::time::{Duration, Instant};
     use windows_permissions::{LocalBox, SecurityDescriptor};
+
+    #[test]
+    fn stock_paths_rebuild_native_components_before_verbatim_opens() {
+        for root in [
+            r"C:\Windows",
+            "C:/Windows",
+            r"C:/윈도우\Stock",
+            r"\\?\C:\Windows",
+        ] {
+            for path in [
+                powershell_path(Path::new(root)),
+                library_path(Path::new(root), "Utility"),
+                library_path(Path::new(root), "Management"),
+            ] {
+                let absolute = absolute_local(&path).unwrap();
+                assert_eq!(absolute_local(&absolute).unwrap(), absolute);
+                for ancestor in absolute.ancestors() {
+                    assert!(
+                        !ancestor
+                            .as_os_str()
+                            .encode_wide()
+                            .any(|unit| unit == u16::from(b'/'))
+                    );
+                }
+            }
+        }
+        let expected =
+            PathBuf::from(r"\\?\C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
+        assert_eq!(
+            absolute_local(Path::new(
+                "C:/Windows\\System32/WindowsPowerShell\\v1.0/powershell.exe"
+            ))
+            .unwrap(),
+            expected
+        );
+        assert_eq!(
+            absolute_local(&powershell_path(Path::new("C:/Windows"))).unwrap(),
+            expected
+        );
+        assert_eq!(
+            absolute_local(Path::new("C:/윈도우\\Stock/파일.dll")).unwrap(),
+            PathBuf::from(r"\\?\C:\윈도우\Stock\파일.dll")
+        );
+        for rejected in [
+            r"Windows\stock.dll",
+            r"C:Windows\stock.dll",
+            r"\Windows\stock.dll",
+            r"\\server\share\stock.dll",
+            r"\\?\UNC\server\share\stock.dll",
+            r"\\.\C:\Windows\stock.dll",
+            r"C:\Windows\..\stock.dll",
+            r"\\?\C:\Windows/stock.dll",
+            r"\\?\C:\Windows\..\stock.dll",
+        ] {
+            assert!(absolute_local(Path::new(rejected)).is_err(), "{rejected}");
+        }
+    }
 
     #[test]
     fn servicing_trust_refuses_foreign_mutation_but_preserves_readers_and_siblings() {
@@ -308,9 +385,10 @@ mod tests {
                 .unwrap()
                 .ends_with("Microsoft.PowerShell.Commands.Management.dll")
         );
-        assert!(matches!(
-            guard.utility._identity,
-            file_id::FileId::HighRes { .. }
-        ));
+        let StockFile {
+            _identity: identity,
+            ..
+        } = &guard.utility;
+        assert!(matches!(identity, file_id::FileId::HighRes { .. }));
     }
 }
