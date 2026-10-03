@@ -1482,7 +1482,7 @@ task-instance exit independently; instance state, engine PID or helper EOF canno
 The native GUI action and sealed activation proposal below supersede the fixed stock PowerShell
 EncodedCommand/one-value EncodedArguments launcher plan. Historical probes of that launcher are
 not evidence for the revised action. Keep its source unselected while this complete proposal,
-private Project criteria, companion inventory and producer/consumer interfaces are reviewed.
+repository issue Verify criteria, companion inventory and producer/consumer interfaces are reviewed.
 No dynamic PowerShell source, base64 fragment splice or installed script is selected instead.
 Readback compares semantic principal/trigger/power/restart/action fields and retains a disabled
 registration on refresh. COM may return account names after SID-based registration, so translate
@@ -1783,7 +1783,7 @@ Service/COM/typed-record ownership remains with the privacy developer; RuntimeFa
 and thin main consumption remain with runtime; companion packaging/receipt/install/WinGet and
 aggregate journal ownership remain with distribution. Share only the reviewed opaque consumer
 ABI. Source stays held until these owners and the parent review the complete proposal and its
-Project criteria; no parallel legacy launcher implementation or success stub is authorized.
+repository issue Verify criteria; no parallel legacy launcher implementation or success stub is authorized.
 
 Updater/package maintenance inventories every current-SID Locron task bound to either verified
 installed executable member, across all state roots. Compare both full Windows file identities
