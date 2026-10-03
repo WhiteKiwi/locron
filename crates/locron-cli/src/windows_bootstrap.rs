@@ -3,6 +3,7 @@
 //! this gate; protected request JSON alone never authorizes installation effects.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, ensure};
 use locron_core::filesystem::{DirectoryGuard, same_file};
@@ -102,7 +103,36 @@ fn validate_followup(request: &Request, original: &Request) -> Result<()> {
     Ok(())
 }
 
+fn within<T>(deadline: Instant, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    ensure!(
+        Instant::now() < deadline,
+        "original bootstrap deadline expired"
+    );
+    let result = operation()?;
+    ensure!(
+        Instant::now() < deadline,
+        "original bootstrap deadline expired"
+    );
+    Ok(result)
+}
+
 fn verify_at(request_path: &Path, root: &Path, current_executable: &Path) -> Result<Bootstrap> {
+    verify_at_until(
+        request_path,
+        root,
+        current_executable,
+        Instant::now() + Duration::from_secs(30),
+    )
+}
+
+/// Guard queries run in the retained launch owner; the deadline precedes its first SID/guard work.
+pub(super) fn verify_at_until(
+    request_path: &Path,
+    root: &Path,
+    current_executable: &Path,
+    deadline: Instant,
+) -> Result<Bootstrap> {
+    let sid = locron_core::windows::current_user_sid_until(deadline)?;
     ensure!(
         request_path.is_absolute(),
         "helper request must be absolute"
@@ -128,8 +158,10 @@ fn verify_at(request_path: &Path, root: &Path, current_executable: &Path) -> Res
         same_path(text(parent)?, text(root)?)?,
         "request is outside the owning account's operation root"
     );
-    let root = DirectoryGuard::existing_private(root)?;
-    let directory = DirectoryGuard::existing_private(directory_path)?;
+    let root = within(deadline, || Ok(DirectoryGuard::existing_private(root)?))?;
+    let directory = within(deadline, || {
+        Ok(DirectoryGuard::existing_private(directory_path)?)
+    })?;
     ensure!(
         same_path(
             text(
@@ -142,15 +174,17 @@ fn verify_at(request_path: &Path, root: &Path, current_executable: &Path) -> Res
         )?,
         "canonical operation directory differs from its guarded root"
     );
-    let sid = locron_core::windows::current_user_sid()?;
     let target = native_target()?;
-    let (request_file, bytes) =
-        immutable_private(&directory.normalized_path().join(name), REQUEST_LIMIT)?;
+    let (request_file, bytes) = within(deadline, || {
+        immutable_private(&directory.normalized_path().join(name), REQUEST_LIMIT)
+    })?;
     let request = Request::parse(&bytes, &sid, target, id)?;
-    let (original_file, bytes) = immutable_private(
-        &directory.normalized_path().join("request.json"),
-        REQUEST_LIMIT,
-    )?;
+    let (original_file, bytes) = within(deadline, || {
+        immutable_private(
+            &directory.normalized_path().join("request.json"),
+            REQUEST_LIMIT,
+        )
+    })?;
     let original = Request::parse(&bytes, &sid, target, id)?;
     ensure!(
         !matches!(original.kind, Kind::Recover | Kind::MaintenanceComplete),
@@ -161,21 +195,28 @@ fn verify_at(request_path: &Path, root: &Path, current_executable: &Path) -> Res
         validate_followup(&request, &original)?;
     } else {
         ensure!(
-            same_file(&request_file.file, &original_file.file)?
+            within(deadline, || Ok(same_file(
+                &request_file.file,
+                &original_file.file
+            )?))?
                 && request_file.sha256 == original_file.sha256,
             "initial request differs from its protected original"
         );
     }
-    let (helper_file, _) = immutable_private(
-        &directory.normalized_path().join("locron-helper.exe"),
-        HELPER_LIMIT,
-    )?;
+    let (helper_file, _) = within(deadline, || {
+        immutable_private(
+            &directory.normalized_path().join("locron-helper.exe"),
+            HELPER_LIMIT,
+        )
+    })?;
     ensure!(
         helper_file.sha256 == original.helper_sha256
             && request.helper_sha256 == original.helper_sha256,
         "retained helper bytes differ from the protected original request"
     );
-    let (current_file, _) = immutable_private(current_executable, HELPER_LIMIT)?;
+    let (current_file, _) = within(deadline, || {
+        immutable_private(current_executable, HELPER_LIMIT)
+    })?;
     // The frontend must retain its immutable helper guard through launch and
     // acceptance, until this helper guard is acquired. current_exe is a path,
     // not an independent identity query for the already mapped process image.
@@ -183,27 +224,34 @@ fn verify_at(request_path: &Path, root: &Path, current_executable: &Path) -> Res
         same_path(
             text(current_file.file.normalized_path())?,
             text(helper_file.file.normalized_path())?
-        )? && same_file(&current_file.file, &helper_file.file)?,
+        )? && within(deadline, || Ok(same_file(
+            &current_file.file,
+            &helper_file.file
+        )?))?,
         "current executable path is not the exact protected retained helper"
     );
-    Ok(Bootstrap {
-        root,
-        directory,
-        request_file,
-        original_file,
-        helper_file,
-        request,
-        original,
+    within(deadline, || {
+        Ok(Bootstrap {
+            root,
+            directory,
+            request_file,
+            original_file,
+            helper_file,
+            request,
+            original,
+        })
     })
 }
 
 pub(super) fn verify(request_path: &Path) -> Result<Bootstrap> {
+    let deadline = Instant::now() + Duration::from_secs(30);
     let local = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .ok_or_else(|| anyhow::anyhow!("current user's LocalAppData is unavailable"))?;
     ensure!(local.is_absolute(), "LocalAppData must be absolute");
     let root = local.join("locron-distribution").join("operations");
-    verify_at(request_path, &root, &std::env::current_exe()?)
+    let current = within(deadline, || Ok(std::env::current_exe()?))?;
+    verify_at_until(request_path, &root, &current, deadline)
 }
 
 #[cfg(test)]
@@ -253,6 +301,28 @@ mod tests {
         );
         drop(guard);
         (temp, root, directory, request)
+    }
+
+    #[test]
+    fn expired_original_budget_refuses_existing_bootstrap_without_effects() {
+        let (_temp, root, directory, _) = fixture();
+        let request = directory.join("request.json");
+        let bytes = fs::read(&request).unwrap();
+        let deadline = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+        assert!(
+            verify_at_until(
+                &request,
+                &root,
+                &directory.join("locron-helper.exe"),
+                deadline
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(request).unwrap(), bytes);
+        assert!(!directory.join("journal.bin").exists());
+        assert!(!directory.join("status.json").exists());
     }
 
     #[test]
