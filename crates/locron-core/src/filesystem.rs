@@ -554,6 +554,8 @@ mod windows {
     const DELETE: u32 = 0x0001_0000;
     const GENERIC_READ_WRITE: u32 = 0xc000_0000;
     const FULL_CONTROL: u32 = 0x001f_01ff;
+    // Match Stock/passive ancestry: sibling creation is separate from object/child mutation.
+    const DIRECTORY_MUTATION: u32 = 0x500d_0156 & !0x06;
     const SYSTEM_SID: &str = "S-1-5-18";
     const ADMIN_SID: &str = "S-1-5-32-544";
     const INSTALLER_SID: &str = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
@@ -643,8 +645,8 @@ mod windows {
                     | FILE_LIST_DIRECTORY
                     | if repair { WRITE_DAC } else { 0 },
             )
-            // No delete sharing prevents rename; no write sharing prevents reparse mutation.
-            .share_mode(FILE_SHARE_READ)
+            // Child rename/link admission needs parent write access; retain the directory itself.
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
             .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
             .open(path)
     }
@@ -664,7 +666,7 @@ mod windows {
         )
     }
 
-    fn trusted_owner(file: &File, path: &Path, sid: &str) -> io::Result<()> {
+    fn trusted_directory(file: &File, path: &Path, sid: &str) -> io::Result<()> {
         let descriptor = descriptor(file)?;
         let owner = descriptor
             .owner()
@@ -672,6 +674,26 @@ mod windows {
             .to_string();
         if owner != sid && ![SYSTEM_SID, ADMIN_SID, INSTALLER_SID].contains(&owner.as_str()) {
             return Err(unsafe_path(path));
+        }
+        let acl = descriptor.dacl().ok_or_else(|| unsafe_path(path))?;
+        for index in 0..acl.len() {
+            let ace = acl.get_ace(index).ok_or_else(|| unsafe_path(path))?;
+            if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
+                continue;
+            }
+            if ace.ace_type() != AceType::ACCESS_ALLOWED_ACE_TYPE {
+                return Err(unsafe_path(path));
+            }
+            if ace.flags().bits() & 0x08 != 0 {
+                continue;
+            }
+            let principal = ace.sid().ok_or_else(|| unsafe_path(path))?.to_string();
+            if principal != sid
+                && ![SYSTEM_SID, ADMIN_SID, INSTALLER_SID].contains(&principal.as_str())
+                && ace.mask().bits() & DIRECTORY_MUTATION != 0
+            {
+                return Err(unsafe_path(path));
+            }
         }
         Ok(())
     }
@@ -830,7 +852,7 @@ mod windows {
             if !file.metadata()?.is_dir() {
                 return Err(unsafe_path(component));
             }
-            trusted_owner(&file, component, &sid)?;
+            trusted_directory(&file, component, &sid)?;
             if created || (private && *component == absolute) {
                 verify_private(&file, component, true)?;
             }
@@ -1645,6 +1667,153 @@ mod tests {
         assert!(!ancestor.join("never created").exists());
         assert!(fs::read_dir(&ancestor).unwrap().next().is_none());
         assert!(DirectoryGuard::existing_private(&ancestor).is_ok());
+    }
+
+    #[test]
+    fn common_ancestry_refuses_foreign_mutation_before_creating_a_suffix() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let ancestor = fs::canonicalize(temporary.path())
+            .unwrap()
+            .join("foreign mutation ancestor");
+        drop(DirectoryGuard::private(&ancestor).unwrap());
+        let sid = crate::windows::current_user_sid().unwrap();
+        let mut metadata = OpenOptions::new()
+            .access_mode(0x0006_0080)
+            .share_mode(3)
+            .custom_flags(0x0220_0000)
+            .open(&ancestor)
+            .unwrap();
+        let original = wrappers::GetSecurityInfo(
+            &metadata,
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Owner | SecurityInformation::Dacl,
+        )
+        .unwrap();
+        // Actual-object generic write/all, DELETE, DELETE_CHILD, EA/attributes and DAC/owner.
+        for mask in [
+            0x4000_0000_u32,
+            0x1000_0000,
+            0x0001_0000,
+            0x0000_0040,
+            0x0000_0010,
+            0x0000_0100,
+            0x0004_0000,
+            0x0008_0000,
+        ] {
+            let altered: windows_permissions::LocalBox<windows_permissions::SecurityDescriptor> =
+                format!("D:P(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)(A;;0x{mask:08x};;;WD)")
+                    .parse()
+                    .unwrap();
+            wrappers::SetSecurityInfo(
+                &mut metadata,
+                SeObjectType::SE_FILE_OBJECT,
+                SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+                None,
+                None,
+                altered.dacl(),
+                None,
+            )
+            .unwrap();
+            let descriptor = fixture_descriptor(&metadata);
+            let missing = ancestor.join("must remain absent").join("private");
+            let refused = DirectoryGuard::private(&missing);
+            let unchanged = fixture_descriptor(&metadata) == descriptor;
+            let absent = !ancestor.join("must remain absent").exists();
+            let empty = fs::read_dir(&ancestor).unwrap().next().is_none();
+            let error = match refused {
+                Ok(guard) => {
+                    drop(guard);
+                    None
+                }
+                Err(error) => Some(error),
+            };
+            wrappers::SetSecurityInfo(
+                &mut metadata,
+                SeObjectType::SE_FILE_OBJECT,
+                SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+                None,
+                None,
+                original.dacl(),
+                None,
+            )
+            .unwrap();
+            assert_eq!(error.unwrap().kind(), io::ErrorKind::PermissionDenied);
+            assert!(unchanged);
+            assert!(absent);
+            assert!(empty);
+            assert!(!ancestor.join("must remain absent").exists());
+            assert!(fs::read_dir(&ancestor).unwrap().next().is_none());
+            assert!(DirectoryGuard::existing_private(&ancestor).is_ok());
+        }
+    }
+
+    #[test]
+    fn common_ancestry_accepts_read_inherit_only_and_sibling_creation_without_acl_repair() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let ancestor = fs::canonicalize(temporary.path())
+            .unwrap()
+            .join("permitted sibling ancestor");
+        drop(DirectoryGuard::private(&ancestor).unwrap());
+        let sid = crate::windows::current_user_sid().unwrap();
+        let mut metadata = OpenOptions::new()
+            .access_mode(0x0006_0080)
+            .share_mode(3)
+            .custom_flags(0x0220_0000)
+            .open(&ancestor)
+            .unwrap();
+        let original = wrappers::GetSecurityInfo(
+            &metadata,
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Owner | SecurityInformation::Dacl,
+        )
+        .unwrap();
+        for entry in [
+            "(A;;GR;;;WD)",
+            "(A;OICIIO;GA;;;WD)",
+            "(A;;0x00000006;;;WD)",
+            "(D;;0x00010000;;;WD)(A;;GR;;;WD)",
+        ] {
+            let altered: windows_permissions::LocalBox<windows_permissions::SecurityDescriptor> =
+                format!("D:P{entry}(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)")
+                    .parse()
+                    .unwrap();
+            wrappers::SetSecurityInfo(
+                &mut metadata,
+                SeObjectType::SE_FILE_OBJECT,
+                SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+                None,
+                None,
+                altered.dacl(),
+                None,
+            )
+            .unwrap();
+            let descriptor = fixture_descriptor(&metadata);
+            let accepted = DirectoryGuard::ancestors(&ancestor);
+            let private_refused = DirectoryGuard::existing_private(&ancestor);
+            let unchanged = fixture_descriptor(&metadata) == descriptor;
+            wrappers::SetSecurityInfo(
+                &mut metadata,
+                SeObjectType::SE_FILE_OBJECT,
+                SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+                None,
+                None,
+                original.dacl(),
+                None,
+            )
+            .unwrap();
+            drop(accepted.unwrap());
+            assert_eq!(
+                private_refused.unwrap_err().kind(),
+                io::ErrorKind::PermissionDenied
+            );
+            assert!(unchanged);
+            assert!(fs::read_dir(&ancestor).unwrap().next().is_none());
+            assert!(DirectoryGuard::existing_private(&ancestor).is_ok());
+        }
     }
 
     #[test]

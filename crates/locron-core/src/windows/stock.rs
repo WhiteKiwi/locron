@@ -269,7 +269,7 @@ fn guard_file(path: &Path, deadline: Instant) -> io::Result<StockFile> {
             .open(&path)
     })?;
     verify_file(&file, false, deadline)?;
-    // All queried path components/leaf remain protected against write/delete while queried.
+    // Ancestry retains object names and its trusted-mutation policy; the leaf excludes writes.
     let path = checked(deadline, || fs::canonicalize(&path))?;
     let identity = checked(deadline, || file_id::get_high_res_file_id(&path))?;
     if !matches!(identity, file_id::FileId::HighRes { .. }) {
