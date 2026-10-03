@@ -68,10 +68,19 @@ impl Probe {
         event(&self.events, "root-tree-confirmed");
         let read = self.read.as_mut().expect("actual cleanup read started");
         // A started blocking task survives timeout/abort; this handle stays in the parked owner.
-        crate::windows::adapter_poll_until(deadline, async {
-            read.await.map_err(io::Error::other)?
-        })
-        .await?;
+        tokio::time::timeout_at(
+            tokio::time::Instant::from_std(deadline),
+            crate::windows::adapter_poll_until(deadline, async {
+                read.await.map_err(io::Error::other)?
+            }),
+        )
+        .await
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::TimedOut,
+                "fixture native cleanup read remains pending",
+            )
+        })??;
         Ok(())
     }
 
