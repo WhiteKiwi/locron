@@ -4590,8 +4590,10 @@ Sources: [Cargo target feature admission](https://doc.rust-lang.org/cargo/refere
 Rust 1.94 process::exit calls runtime cleanup. Stdout cleanup uses try_lock, but when a line
 buffer is available it replaces/drops that buffered writer; a remaining payload can therefore
 be flushed outside the expired worker. Merely containing StdoutLock in the worker is insufficient
-for the probe's no-new-output-after-expiry rule. Select safe Stdout::as_handle, BorrowedHandle's
-try_clone_to_owned and File::from(OwnedHandle), all stable since 1.63, for unbuffered owned output.
+for the probe's rule against fresh write/flush admission or timely success after expiry. An
+already queued native write may finish late, and its bytes remain uncertain. Select safe
+Stdout::as_handle, BorrowedHandle::try_clone_to_owned and File::from(OwnedHandle), all stable
+since 1.63, for unbuffered owned output.
 The audited clone uses non-inheritable DuplicateHandle with the same access. Null stdout is an
 explicit supported borrowed-handle case; cloning it does not prove writable output, and actual
 File write failure must refuse. All duplicate/write/close work stays in the finite owner; this
