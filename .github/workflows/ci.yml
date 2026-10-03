@@ -2,6 +2,12 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      full_windows:
+        description: Run exploratory full native Windows tests and Clippy
+        type: boolean
+        required: false
+        default: false
   push:
     branches:
       - main
@@ -12,6 +18,7 @@ permissions:
 
 jobs:
   frontend:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Dashboard frontend / Node 24.21.0
     timeout-minutes: 15
     runs-on: ubuntu-24.04
@@ -36,6 +43,7 @@ jobs:
           test -z "$(git ls-files --others -- dist)"
 
   windows-foundation:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Windows foundation / ${{ matrix.platform }} / Rust ${{ matrix.rust }}
     timeout-minutes: 35
     strategy:
@@ -146,6 +154,7 @@ jobs:
             windows-native-sha256.txt
 
   windows-lint-foundation:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Windows lint foundation / Rust 1.98.0
     timeout-minutes: 35
     runs-on: windows-2025
@@ -166,7 +175,85 @@ jobs:
       - run: cargo clippy -p locron --bin locron --test windows_lifecycle --test mcp --locked -- -D warnings
       - run: cargo clippy -p locron --bin locron-service-launcher --test windows_service_launcher --features windows-service-launcher --locked -- -D warnings
 
+  windows-full-test:
+    name: Windows exploratory tests / ${{ matrix.platform }} / Rust ${{ matrix.rust }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_windows }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x86_64-pc-windows-msvc
+            os: windows-2025
+            rust: stable
+          - platform: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            rust: stable
+          - platform: x86_64-pc-windows-msvc
+            os: windows-2025
+            rust: 1.94.0
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+      - name: Verify requested native compiler
+        shell: pwsh
+        run: |
+          $compiler = rustc -vV
+          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
+          $compiler | Write-Output
+          $requestedCompiler = rustup run '${{ matrix.rust }}' rustc -vV
+          if ($LASTEXITCODE -ne 0) { throw 'requested toolchain facts unavailable' }
+          $requestedRelease = @($requestedCompiler | Where-Object { $_ -clike 'release: *' })
+          if ($requestedRelease.Count -ne 1 -or $compiler -cnotcontains $requestedRelease[0]) { throw 'actual compiler must match requested toolchain release' }
+          if ($compiler -cnotcontains 'host: ${{ matrix.platform }}') { throw 'test target must equal native rustc host' }
+      - name: Run full native workspace tests
+        run: cargo test --workspace --all-targets --locked
+
+  windows-full-clippy:
+    name: Windows exploratory Clippy / ${{ matrix.platform }} / Rust 1.98.0
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_windows }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x86_64-pc-windows-msvc
+            os: windows-2025
+          - platform: aarch64-pc-windows-msvc
+            os: windows-11-arm
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.0
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+      - name: Verify requested native compiler
+        shell: pwsh
+        run: |
+          $compiler = rustc -vV
+          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
+          $compiler | Write-Output
+          if ($compiler -cnotcontains 'release: 1.98.0') { throw 'full Clippy requires Rust 1.98.0' }
+          if ($compiler -cnotcontains 'host: ${{ matrix.platform }}') { throw 'Clippy target must equal native rustc host' }
+      - name: Run warnings-denied full native workspace Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
   test:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
     timeout-minutes: 30
     env:
@@ -212,6 +299,7 @@ jobs:
       - run: cargo test --workspace --all-targets
 
   lint:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Lint / ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
     timeout-minutes: 30
     env:
@@ -248,6 +336,7 @@ jobs:
         run: bash scripts/check-dependency-direction.sh
 
   windows-package:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Windows package / ${{ matrix.target }}
     timeout-minutes: 45
     strategy:
@@ -261,6 +350,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+    env:
+      RUSTUP_TOOLCHAIN: 1.94.0
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
@@ -276,6 +367,8 @@ jobs:
         run: |
           $compiler = rustc -vV
           if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
+          $compiler | Write-Output
+          if ($compiler -cnotcontains 'release: 1.94.0') { throw 'native packages require Rust 1.94.0' }
           if ($compiler -cnotcontains 'host: ${{ matrix.target }}') { throw 'package target must equal native rustc host' }
           cargo build --release --locked -p locron --bins --features windows-service-launcher --target '${{ matrix.target }}'
           if ($LASTEXITCODE -ne 0) { throw 'native release build failed' }
@@ -379,6 +472,7 @@ jobs:
           if-no-files-found: error
 
   installer:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Installer / ubuntu-latest
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -459,6 +553,7 @@ jobs:
           "$PWD/test-bin/locron" -V
 
   source-package:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Source packages / Rust 1.94.0
     timeout-minutes: 30
     runs-on: ubuntu-24.04
