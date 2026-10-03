@@ -172,7 +172,8 @@ impl Sources {
             )?;
             ensure!(
                 current.identity == original.identity
-                    && observe(deadline, || Ok(file_identity(&original.file)?))? == original.identity,
+                    && observe(deadline, || Ok(file_identity(&original.file)?))?
+                        == original.identity,
                 "indexed package source no longer names the original native object"
             );
         }
@@ -222,7 +223,6 @@ impl IndexedSources {
     pub(super) fn revalidate_until(&self, deadline: Instant) -> Result<()> {
         let deadline = deadline.min(self.original_deadline);
         self.sources.revalidate(deadline)?;
-        // Native registration is the final observation, not a lock against a later writer.
         self.index.revalidate_until(deadline)?;
         clock(deadline)
     }
