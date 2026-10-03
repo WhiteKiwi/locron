@@ -25,8 +25,8 @@ use super::windows_launch_transport::{CloseTask, PipeNames, ReceiveEndpoint, Sen
 use super::windows_ownership::{
     Removal, Standalone, VerifiedFile, immutable_private_until, verify_removal_until, verify_until,
 };
-use super::windows_protocol::Kind;
-use super::windows_receipt::{maintenance_path, same_path};
+use super::windows_protocol::{Kind, maintenance_path};
+use super::windows_receipt::same_path;
 
 const PHASE: Duration = Duration::from_secs(30);
 const CLEANUP: Duration = Duration::from_secs(3);
