@@ -5070,3 +5070,14 @@ parent reviews full Source then publishes fresh ordinary/full/per-binary native
 evidence. A passing later scenario does not diagnose an earlier failure. Missing
 Server SSE-reopen connection/file ownership correlation remains separate, and
 required red checks continue blocking merge.
+
+### Fresh per-binary native inventory after fixture changes (2026-10-04)
+
+Continue the already reviewed manual-only discovery on an isolated verification
+branch, using the exact c374176b temporary ci.yml blob and unchanged three native
+compiler rows/three positive-token selectors/locked all-targets --no-fail-fast
+command. A separate developer owns that workflow-only Source. Before dispatch,
+parent integrates and conserves every newly reviewed app/test blob and mode from
+PR130. Keep35min job bound, nonzero failures, original concurrency and complete
+per-binary/case counts. No ordinary/main workflow import or PR. Preserve old
+failure receipts, qualify only actual new runs and report zero cases truthfully.
