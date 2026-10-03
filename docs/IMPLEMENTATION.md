@@ -1551,21 +1551,47 @@ sole SDK call. The digest uses versioned length framing of operation/context, cu
 state identity, role and nonce. Raw nonce/Run capability stays only in live producer/transport;
 never put it in the journal, receipt, RuntimeFacts, application logs or diagnostics. Entropy
 failure refuses before Run. Preserve the actual SDK-returned InstanceGuid and durably confirm
-that observation before authorizing the launch exchange. Revalidate the exact owned task and
-its sole live IgnoreNew instance; an SDK return, task state or EnginePID alone is not proof.
+that observation before issuing a child-start Permit. Revalidate the exact owned task and its
+sole live IgnoreNew instance; an SDK return, task state or EnginePID alone is not proof.
 
-The first accepted stream must carry the fresh expected capability/context/role. Obtain the GUI
-launcher's real client_process_id from that actual pipe instance; a frame PID is not authority.
-The launcher reports its retained OwnedChild.id while the child/Job remains owned, and passes
-only a bounded private stdin bootstrap to that child. The second accepted stream comes from
-the supervisor: its kernel client PID must match the retained child's reported PID, and its
-new internally generated supervisor UUID must match the actual registered activation lease/
-control lifetime. Validate both exchanges before sealing the witness. PID/query/connection,
-registration, capability or deadline failure never falls back to GUID-only authorization.
+The GUI captures its existing startup clock before SID/guard discovery. It first sends the fresh
+expected capability/context/role and authenticates its real client_process_id on the actual
+first accepted stream. This exchange alone cannot authorize OwnedChild creation. The producer
+issues a bounded Permit only after the SDK GUID observation is durable, its owned definition
+still matches and the original phase deadline remains live. The Permit binds this connection,
+context/digest, role and GUID and carries the producer's remaining original budget. Clamp that
+remaining duration to the GUI's pre-SID entry clock and existing startup deadline, rounding down
+when encoded: gui_deadline = min(original_gui_deadline, gui_entry + permit_remaining). Refuse
+overflow; this shortens admission rather than starting a new clock at receipt. Check expiry
+at every poll and after Ready, then before and after each guard/child operation. A queued Run
+arriving after phase expiry has no timely Permit, refuses without dispatching a child and leaves
+the operation UnknownStart/pending. A queued I/O operation begun before expiry remains uncertain;
+retain/quarantine its ownership and never infer cancellation or replay permission from timeout.
+
+Only the timely Permit permits the exact hidden OwnedChild spawn. Keep that retained child/Job
+and the authenticated first connection through the two-peer exchange, report its actual id and
+pass only a bounded private stdin bootstrap to it. The second accepted stream comes from the
+supervisor: its kernel client PID must match that retained child, and its new internally generated
+supervisor UUID must match the actual registered activation lease/control lifetime. The producer
+validates both peers and owned lifetimes, then sends the bounded matching seal ACK within its
+original phase budget. PID/query/connection, registration, capability or deadline failure never
+falls back to GUID-only authorization or another child/Run dispatch.
 
 Expose a CLI-private AuthenticatedActivation value with no public constructor and no Deserialize
-conversion from argument text or raw frames. Only the service exchange creates it. RuntimeFacts
-adds one nullable serialized witness containing context UUID, digest, Scheduler InstanceGuid and
+conversion from argument text or raw frames. It may implement Clone, Debug and Serialize only,
+with private fields; RuntimeFacts needs no raw-field constructor/getters. The service-owned
+supervisor consumer runs inside the existing finite lifecycle/I/O worker, after actual supervisor
+activation/control ownership is established, with its retained lease/guard and original deadline.
+Its boundary is authenticate_supervisor(&StatePaths, Target, supervisor_lifetime, Option<Bootstrap>,
+absolute_deadline) -> Result<Option<AuthenticatedActivation>, ServiceError>; service owns the
+asynchronous exchange and untrusted Bootstrap type, runtime supplies its existing owned context.
+It accepts an optional untrusted private-stdin bootstrap of at most 1 KiB: absence returns an
+unwitnessed None. With a bootstrap, it verifies the actual live server peer, expected capability/
+context/role, its own PID and held supervisor UUID/control, and the matching timely seal ACK before
+privately minting Some(AuthenticatedActivation). Parsing an ACK creates only an untrusted wire
+value; neither that value nor a supplied GUID can construct the opaque local type. Runtime retains
+and serializes the immutable optional value without adding a second worker or constructor.
+RuntimeFacts adds one nullable serialized witness containing context UUID, digest, Scheduler InstanceGuid and
 the authenticated launcher PID; the outer actual supervisor PID/UUID and worker PID/UUID remain
 authoritative fields rather than duplicated claims. A hidden scheduler-instance argument, if
 retained as an untrusted hint, cannot construct that value. Ordinary/manual supervision with a
@@ -1598,13 +1624,16 @@ held candidate's ability to confirm an unrelated fresh automatic GUID. Retain th
 installation and bounded status/refusal; do not perform post-receipt file rollback merely because
 startup could not be confirmed.
 
-The canonical unsigned Windows ZIP inventory gains exactly the GUI companion beside locron.exe,
-README and the two licenses. Verify both PE32+ architectures, console subsystem 3 versus GUI
-subsystem 2, same version/launcher ABI, absent certificate tables, final individual digests and
-the unchanged stock-DLL allowlist. Preserve the existing 64 MiB aggregate download/unpacked limit.
-Standalone payload inventory becomes seven exact payload names plus its receipt: the prior six
-names plus the companion. The receipt requires both hashes/bindings and rejects missing, unknown,
-duplicate, wrong-architecture/version/ABI or reparse members. A one-executable receipt cannot
+The canonical unsigned Windows ZIP inventory is exactly locron.exe, locron-service-launcher.exe,
+README.md, LICENSE-MIT and LICENSE-APACHE. Embedded font licenses remain their existing source
+integrity inputs; they are not extra extracted ZIP members. Verify both PE32+ architectures,
+console subsystem 3 versus GUI subsystem 2, same version/launcher ABI, absent certificate tables,
+final individual digests and the unchanged stock-DLL allowlist. Preserve the existing 64 MiB
+aggregate download/unpacked limit.
+Standalone payload inventory is exactly locron.exe, locron-service-launcher.exe, README.md,
+LICENSE-MIT, LICENSE-APACHE, uninstall.ps1 and .locron-installer.ps1, plus its separate receipt:
+seven payloads/eight managed leaves. The receipt requires both hashes/bindings and rejects
+missing, unknown, duplicate, wrong-architecture/version/ABI or reparse members. A one-executable receipt cannot
 authorize a two-executable takeover; Windows has no published baseline to migrate silently.
 Install/update/uninstall, read-only status, retained helper requests, package ownership and
 WinGet ZIP portable/package inventory all consume that same pair. Declare only locron.exe as the
@@ -1641,6 +1670,14 @@ failure occurs before disable, Run, file or PATH effects. Limits for Core IPC, r
 products remain unchanged. Review the pure reservation and complete maximum objects before
 effectful producer/consumer integration.
 
+Reconcile every active distribution write-ahead, preflight, complete-record and package-inventory
+paragraph to the same 140-frame/18 MiB aggregate, seven-payload/eight-managed-leaf contract before
+selecting its source. Earlier single-executable six-payload and 128-frame/16 MiB text is superseded
+where it states an active contract; clearly historical Findings evidence remains historical.
+Use complete typed old/new pair objects and both full identities throughout those paragraphs,
+not a companion basename as authority. This reconciliation must also cover the later distribution
+owner's paragraphs when the plan is integrated; no future source is imported by this doc change.
+
 Implementation order and Verify:
 
 1. Freeze the revised product/architecture, exact pair/action ABI, typed context/digest edges and
@@ -1658,7 +1695,9 @@ Implementation order and Verify:
 4. Exercise wrong/expired/reused capabilities, forged PID frames from another real peer,
    nil/noncanonical UUID, wrong role/root/executable, collision/remote refusal and late-ready
    transport under the original bounds. Verify no extra Run, operation replay or newly dispatched
-   post-deadline child/callback; an already queued uncertain operation cannot count as confirmation.
+   post-phase GUI child/callback; an already queued uncertain operation cannot count as confirmation.
+   Stall first authentication, GUID persistence and Permit delivery past expiry: no new GUI child
+   may dispatch. Preserve the supervisor's separate existing ordinary worker retry policy.
    Verify no raw secret in durable/application output and retain actual root/tree/guard cleanup.
 5. Run native VT_EMPTY demand start and a unique no-parameter time-triggered action with exact
    absent/empty/unsubstituted parser controls. Verify ordinary headless startup without witness,

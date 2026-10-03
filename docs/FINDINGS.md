@@ -4398,7 +4398,15 @@ Sources: pinned crate src/os/windows/named_pipe/{stream,tokio/stream}/impl.rs an
 
 The proposed authority is one fresh 32-byte OS-random capability delivered only through the sole
 SDK Run and live bounded transport, then exchanged against those actual pipe peers and a new
-supervisor/control lifetime. A sealed service-produced optional RuntimeFacts witness holds only
+supervisor/control lifetime. First authenticate the real launcher peer/capability, then durably
+record the actual SDK GUID; only a timely producer Permit may authorize its retained child.
+Permit remaining time is anchored at the GUI's pre-SID entry clock, not at receipt, so it only
+shortens admission. A late queued Run without a timely Permit cannot create another child.
+The second real pipe peer must match the retained child's PID and actual owned supervisor UUID/
+control; a timely matching ACK then mints the supervisor's local opaque value in the existing
+finite lifecycle worker. Raw ACK parsing alone remains untrusted and never deserializes that
+value. These order/budget gates need native late-ready/queued-Run proof before qualification.
+A sealed service-produced optional RuntimeFacts witness holds only
 the context/digest/GUID/launcher PID; GUID-only CLI input remains unwitnessed. This follows
 SECURITY.md's user-account boundary. It does not claim protection against arbitrary code/debugging
 or theft of another same-account process's argv/state. No raw capability is journaled. Already
