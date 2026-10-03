@@ -3067,6 +3067,17 @@ read is later released. Native execution and the retained-handle assertion remai
 Tokio documents that abort cannot cancel an already started blocking task:
 [pinned blocking-task contract](https://docs.rs/tokio/1.53.1/tokio/task/fn.spawn_blocking.html).
 
+The first hosted private-channel EOF fixture on 93ebcb38 timed out waiting for its helper's
+confirmation at forty seconds on all three native rows. The actual guarded diagnostic probes
+passed; this failure is separate. Source inspection identifies a fixture-specific wait gap:
+adapter_poll_until gates each Future poll against expiry but schedules no timer. A blocked
+native read's JoinHandle cannot wake that gated future until the held writer is released, while
+the fixture correctly waits for quarantine before releasing it. Wrap this owned read wait in
+Tokio timeout_at using the same original cleanup deadline, retaining the per-poll expiry gates.
+No production deadline, adapter or ownership policy changes. Source explains the circular wait;
+native root/Job/read/quarantine confirmation remains required after the correction.
+[Pinned timeout implementation](https://docs.rs/tokio/1.53.1/tokio/time/fn.timeout_at.html).
+
 The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
 inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject

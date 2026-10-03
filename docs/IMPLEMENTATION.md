@@ -365,6 +365,15 @@ stock worker, so a cached filesystem guard cannot create a false failure or succ
 cold gate stays first, helper waits remain finite, and production thirty/three-second budgets,
 mutation no-replay, idle behavior and one-filesystem/one-generic ceiling remain unchanged.
 
+The EOF fixture's deliberately pending native read must have both an active timer and per-poll
+expiry checks. Wrap only that cfg(test) owned-read future in timeout_at with the exact original
+three-second cleanup Instant; do not create a fresh budget, abort/drop the started blocking
+task or alter production adapter polling. On timer expiry, return the cleanup error while its
+JoinHandle stays in the retained Worker, then observe real quarantine before releasing the
+writer. Verify the same real root/empty-Job, late read completion, two held-stock sharing
+violations, owner-thread liveness and final helper-exit guard release under the existing finite
+waits. The prior forty-second circular wait is not passing evidence for any of those assertions.
+
 Add cfg(test)-only bounded phase breadcrumbs to the actual filesystem dispatch path: API entry,
 queue admission, owned-child spawn start/completion, input write/flush completion, reply receipt,
 timeout/refusal and cleanup confirmation. Emit only fixed operation/phase names, monotonic request
