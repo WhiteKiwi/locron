@@ -12,6 +12,9 @@ use super::windows_protocol;
 use super::windows_receipt::{PAYLOADS, Receipt, UserPath, local_path};
 use super::windows_release_source::{Release, Remote};
 
+#[path = "windows_payloads/paired.rs"]
+pub(super) mod paired;
+
 pub(super) struct Payloads {
     pub version: String,
     pub target: String,
