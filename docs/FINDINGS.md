@@ -3868,3 +3868,27 @@ Verify criteria, not locally executed SQLite or native Windows evidence.
 Sources: [SQLite isolation](https://sqlite.org/isolation.html),
 [SQLite transaction admission and rollback](https://sqlite.org/lang_transaction.html),
 [exact failed native job](https://github.com/WhiteKiwi/locron/actions/runs/37100504912/job/111138932141).
+
+### Native pruning fixture uses an unloaded Security cmdlet (2026-10-03)
+
+Exact Root43 `c2a7495` CI 37105022659 passed native Core 118, Engine 69, Server 31, Store 90,
+Service 43, lifecycle 12 and registered-dashboard 4 on the completed x64 stable/MSRV rows.
+The original concurrent-first-open test and first-run PATH assertion now pass. Guarded pruning
+passed its private-file removal and missing-file cases, but its unsafe-output fixture failed
+at main.rs:7354 before any unsafe ACL/pruning assertion: Get-Acl was unavailable.
+
+This is a fixture setup failure. The reviewed stock_json prefix deliberately disables module
+autoloading and imports only retained, identity-checked Framework Utility/Management binaries.
+Get-Acl/Set-Acl belong to Security and are not selected. Loading that module or re-enabling
+ambient discovery would change the loader contract to accommodate a test rather than exercise
+its existing boundary. The same fixed fixture can obtain and update the temporary file's
+FileSecurity through the documented .NET Framework System.IO.File.GetAccessControl and
+SetAccessControl methods in mscorlib. Preserve the Everyone-Read rule and all later refusal,
+pending-state, byte-preservation, junction and directory assertions. No production ACL/loader,
+Store or pruning policy changes are needed. The method signatures are verified documentation;
+the corrected fixture has not yet run natively and must pass on all three hosted rows.
+
+Sources: [completed x64 stable job](https://github.com/WhiteKiwi/locron/actions/runs/37105022659/job/111151723399),
+[completed x64 MSRV job](https://github.com/WhiteKiwi/locron/actions/runs/37105022659/job/111151723430),
+[Framework file ACL read](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.getaccesscontrol?view=netframework-4.8.1),
+[Framework file ACL write](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.setaccesscontrol?view=netframework-4.8.1).

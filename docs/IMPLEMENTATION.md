@@ -3449,3 +3449,23 @@ complete workspace all-target test suite, frontend focused/full tests plus typec
 build, workspace package and publish dry-runs with the lockfile enforced, and final status/diff
 inspection including `git diff --check`. The parent session owns the release commit, immutable tag,
 push, hosted release workflow, registry/GitHub/Homebrew publication, and post-publication checks.
+
+## Native pruning ACL fixture correction (2026-10-03)
+
+Root43 `c2a7495` reached the original unsafe-output pruning fixture after the corrected initial Store
+and PATH contracts passed. Its Get-Acl setup fails under the intentionally fixed stock binary
+loader. This is a test-fixture compatibility correction within the frozen product and approved
+ACL/reparse refusal plan; do not expand production module loading or alter pruning admission.
+
+1. Keep the original fixture's JSON path input and Everyone-Read ACL mutation, replacing its
+   unavailable Security cmdlets with .NET Framework File.GetAccessControl/SetAccessControl.
+   **Verify:** stock PowerShell 5.1 parses the fixed literal; documented signatures match;
+   production loader, filesystem and Store source remain byte-identical. AST/type inspection
+   is not native execution, and local permission mutation is not part of this correction.
+2. Preserve all existing negative-case assertions and owned-object cleanup. **Verify:** exact
+   source review retains unsafe-file refusal, pending SQLite state and original bytes plus
+   junction/directory refusal and unrelated-marker preservation; no test is skipped or softened.
+3. Hand the recorded issue plan to a separate development session, then root-review/select it.
+   **Verify:** fresh exact-head hosted native x64/ARM64/MSRV pruning 3/3 and the remaining CI
+   pass before merge. Record actual revision/commands/results on issues #27/#31; initial releases
+   stay unsigned and this fixture does not complete standard-user/reboot/release acceptance.
