@@ -287,10 +287,9 @@ mod tests {
         initialize_schema(&tx, "winner", 123, Some(winner_path)).unwrap();
         assert_eq!(stored_execution_path(&tx), winner_path);
         assert_eq!(settings_tables(&observer), 0);
-        let error = observer
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .err()
-            .expect("another writer cannot enter the initial transaction");
+        let Err(error) = observer.transaction_with_behavior(TransactionBehavior::Immediate) else {
+            panic!("another writer cannot enter the initial transaction");
+        };
         assert!(matches!(
             error,
             rusqlite::Error::SqliteFailure(code, _)
