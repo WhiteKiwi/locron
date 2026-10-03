@@ -77,7 +77,7 @@ jobs:
       - name: Verify isolated stock adapter policy and parent containment
         shell: pwsh
         run: |
-          foreach ($proofMode in @('restricted-driver', 'parent-exit-driver')) {
+          foreach ($proofMode in @('eof-release-driver', 'restricted-driver', 'parent-exit-driver')) {
             $env:LOCRON_STOCK_LOADER_FIXTURE = $proofMode
             Write-Output "Isolated stock adapter proof: $proofMode"
             cargo test -p locron-core --lib --locked windows::loader_tests::owned_loader_fixture_child -- --exact --nocapture --test-threads=1
