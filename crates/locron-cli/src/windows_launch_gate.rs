@@ -235,10 +235,13 @@ async fn while_live<T>(
 }
 
 const MODULE_QUERY: &str = r#"
-$p = [Diagnostics.Process]::GetProcessById([int]$locronInput.pid)
+$locronQueryPid = $request.pid
+if (($locronQueryPid -isnot [int] -and $locronQueryPid -isnot [long]) -or $locronQueryPid -le 0 -or $locronQueryPid -gt [int]::MaxValue) { throw 'invalid actual child PID' }
+$p = [Diagnostics.Process]::GetProcessById([int]$locronQueryPid)
 try {
-  $m = $p.MainModule
-  $path = $m.FileName
+  $m = $p.get_MainModule()
+  if ($null -eq $m) { throw 'No initialized main module' }
+  $path = $m.get_FileName()
   if ([string]::IsNullOrEmpty($path)) { throw 'No initialized main module filename' }
   &$locronToJson -Compress @{ pid = [uint32]$p.Id; path = $path }
 } finally { $p.Dispose() }
@@ -870,6 +873,46 @@ mod tests {
             !OWNER.load(Ordering::Acquire),
             "actual launch owner still live/quarantined"
         );
+    }
+
+    fn refuses_module_inputs(inputs: &[serde_json::Value]) {
+        // Each fixture's cold adapter admission and every case use its one original clock.
+        let deadline = Instant::now() + PHASE;
+        for input in inputs {
+            let error = locron_core::windows::run_script_json_bounded(
+                MODULE_QUERY,
+                input,
+                remaining(deadline).unwrap(),
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("invalid actual child PID"),
+                "malformed input must refuse before process lookup: {input}; got {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn module_query_refuses_absent_and_null_pid() {
+        refuses_module_inputs(&[json!({}), json!({"pid": null})]);
+    }
+
+    #[test]
+    fn module_query_refuses_non_integral_pid_types() {
+        refuses_module_inputs(&[
+            json!({"pid": "123"}),
+            json!({"pid": true}),
+            json!({"pid": 1.5}),
+        ]);
+    }
+
+    #[test]
+    fn module_query_refuses_nonpositive_and_out_of_range_pid() {
+        refuses_module_inputs(&[
+            json!({"pid": 0}),
+            json!({"pid": -1}),
+            json!({"pid": i64::from(i32::MAX) + 1}),
+        ]);
     }
 
     #[test]
