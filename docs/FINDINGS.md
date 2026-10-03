@@ -5158,3 +5158,42 @@ kind=TimedOut, raw_os=None, followed by SQLite configuration deadline elapsed. I
 unconfirmed; the distinct earlier Server SQLITE_PROTOCOL15 reopen failure is preserved under
 Issue #25. Neither this positive-root correction nor an unrelated later pass repairs that
 observed required-gate failure. No unchanged rerun, timeout increase or broad retry is selected.
+
+### Stock heartbeat fixture command-line boundary (2026-10-04)
+
+Integrated head e4d2ca16e17752d330275b8907cb10a31a318413 conserves both reviewed fixture
+patches. Ordinary CI37146145032's x64 stable111270385871 and MSRV111270385843 pass all130
+Core cases and the unchanged isolated EOF/Restricted proofs. Parent-exit-driver then fails
+after0.06s: loader_crash.rs272 reports its actual helper exited101, and the helper's668 refusal
+is `generic adapter exited before actual spawn` after0.01s. Saved trace reaches worker-entered
+and caller-failed only. Actual Win32 error detail was not retained by that existing refusal;
+do not invent a returned error code or conflate this with the earlier45.01s timeout.
+
+Parent and separate read-only research independently reconstruct the exact unchanged
+generic_trace::source format, shared stock_json bootstrap and current HOST literal. Original
+ec13 HOST has1386 UTF-8 bytes; wrapped source is4677 UTF-16 units and EncodedCommand12472
+ASCII units. Current HOST has9022 bytes; wrapped source is12313 UTF-16 units and encoded
+argument32836 units. That argument alone exceeds CreateProcessW's32767-character limit,
+which includes the terminating Unicode NUL. The standard retained extended stock path,
+original flags, argv0 quotes and NUL produce32952 units; CRLF checkout increases the bound.
+This is a confirmed static platform-contract defect consistent with the pre-spawn trace;
+the failed job's specific raw OS code remains unobserved.
+
+The normal parent-exit host also contains the full new publication-proof branch even when
+the operation is absent. Select shared definitions plus only the intended compiled static
+body. Unique comment delimiters in the existing test-only ps1 permit a pure Rust split/join
+without reading scripts from disk, interpolating request data, fallback or changing the
+production adapter. Preserve every normal/proof program token, assertion, clock and child
+ownership boundary. Verify LF and CRLF complete command lengths with executable/flags/NUL,
+and collect new actual native proof results before merge.
+
+Separate primary-source research identifies a downstream string-null issue: PowerShell's
+NullString is specifically for passing managed null to .NET string parameters. Framework
+File.Replace treats a non-null backup name as a path; an empty name fails path validation.
+Use direct fully qualified NullString.Value for the existing no-backup call, preserving false
+ignoreMetadataErrors and all refusal assertions. The current job did not reach that API, so
+this is a source-contract correction requiring its own actual Framework5.1 publication proof.
+Sources: [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw),
+[NullString](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.language.nullstring),
+[Framework File.Replace](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.replace?view=netframework-4.8.1),
+and retained actual job logs under the private PR review evidence directory.

@@ -5028,3 +5028,24 @@ verification branch. Report downstream assumptions instead of masking failures o
 102 integration cases are repaired. Real process/shell/wake equivalence, Store timeout/reopen,
 stock-crash publication, actual two-user/registered-task and public distribution acceptance keep
 their distinct plans and unfinished Verify criteria. No owner-PC effectful operation is selected.
+
+### Stock heartbeat command-size and managed-null continuation (2026-10-04)
+
+Continue the existing stock-heartbeat plan after measured e4 native pre-spawn failures. Keep
+the three permitted Source files and original45s driver/30s adapter/owned cleanup boundaries.
+In loader_crash_host.ps1 mark the shared publication definitions, existing complete proof
+branch and unchanged normal-host tail with two unique static comment delimiters. A pure
+loader_crash.rs builder selects shared plus normal or shared plus proof before prepare_adapter.
+Two test-only OnceLock<String> slots retain those fixed strings for the existing static-lifetime
+API; no leak, unsafe bridge, user-keyed cache or production signature change is needed.
+Preserve both bodies and every actual-process assertion, using no new script file, runtime
+script read, request-code interpolation, adapter fallback or workflow selection change.
+
+Pass fully qualified NullString.Value directly as File.Replace's no-backup argument. This
+does not permit metadata errors or replace the actual collision/share/stage/kill/reap checks.
+Parent checks exact source-section conservation, both LF/CRLF full encoded command budgets,
+format/actionlint/Windows-target compilation and all unrelated blobs before normal publication.
+Fresh exact-head ordinary native rows must exercise the original parent crash and both
+publication proofs. Preserve old unknown raw-error/timeout facts and full-discovery failures;
+no required red check is bypassed. Reviewed docs and owning Issue Verify readback precede
+the separate development handoff. All public acceptance gates remain unfinished.

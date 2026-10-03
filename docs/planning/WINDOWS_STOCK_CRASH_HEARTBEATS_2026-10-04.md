@@ -146,3 +146,37 @@ Windows 11 standard-user installation/task/reboot, independent-user privacy/IPC,
 crash recovery, final public unsigned release/update/removal and catalog lifecycle remain their
 existing separate acceptance work. Retain original failure receipts and do not claim that a
 successful fixture correction retroactively establishes the missing bytes in Job 111250945393.
+
+## Measured command-size continuation before Source
+
+At e4d2ca16, native Core130 and EOF/Restricted succeed, but the parent-exit helper refuses
+before actual generic spawn. Exact source reconstruction gives EncodedCommand32836 ASCII
+units before executable, flags and NUL; CreateProcessW permits32767 total. This Source defect
+is separate from the old45.01s expiry and the unobserved raw OS error. File.Replace's ordinary
+$null backup argument also needs direct managed-null binding, without claiming that the failed
+job reached it. FINDINGS records the measured bounds and primary references.
+
+1. Publish reviewed docs and owning Issue criteria before handing Source to the separate
+   developer. **Verify:** clean docs-only commit and exact Issue readback; retain all failed
+   native rows and their missing raw-error limitation. Frozen SPEC and public scope stay exact.
+2. Keep Source in loader_crash.rs, loader_crash_host.ps1 and the already permitted dispatcher.
+   Add two unique static comment delimiters in the existing ps1; choose shared definitions
+   plus only the original normal tail or complete proof branch using a pure Rust split/join.
+   Retain two fixed strings in test-only OnceLock<String> slots for the existing static API;
+   no unsafe/leak, dynamic-key cache or production signature change.
+   **Verify:** both selected bodies retain their entire original program tokens, conditions,
+   receipts and assertions. Delimiter matching preserves LF/CRLF. No new file, script I/O,
+   request-code interpolation, stdin-code transport, production adapter or fallback.
+3. Change only the no-backup argument to direct fully qualified NullString.Value. **Verify:**
+   false ignoreMetadataErrors, initial no-clobber, complete closed candidates, actual sharing
+   refusal and retained stage/kill/reap/7-preserved/8-published assertions remain exact.
+4. Parent reviews complete scoped Source before publication. **Verify:** actual static normal
+   and proof requests fit32767 UTF-16 command units including executable, original flags,
+   quoting and NUL for LF and CRLF; preserve measurable margin. Windows-target Rust1.94 check,
+   Rust1.94/1.98 fmt, actionlint and whitespace pass. All unrelated blobs/modes are conserved.
+5. Collect fresh ordinary and original five full native rows on the exact current-main head.
+   **Verify:** all three ordinary native rows pass actual original crash/observer/guard proof
+   and both publication proofs inside the original45s boundary. The stock Framework5.1
+   publisher must qualify real collision/share/child termination and complete replacement.
+   Record remaining full-discovery failures and no skip/allow/deadline or ownership reset.
+   Required checks must pass before merge; Issue #31/#32 and public acceptance remain open.
