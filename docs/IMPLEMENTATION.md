@@ -4922,3 +4922,22 @@ commands and ordinary protected PR checks on the next exact head. Preserve any n
 runtime failure in #31 instead of widening cfgs, adding allow/ignore, or changing deadlines.
 Existing component/GUI/distribution gates remain separately required. Frozen SPEC and first
 unsigned-release/signing policy remain unchanged; compile success is not full support evidence.
+
+### Native per-binary discovery without early Cargo termination (2026-10-04)
+
+Continue #31 through [the focused discovery plan](planning/WINDOWS_NATIVE_BINARY_DISCOVERY_2026-10-04.md).
+The measured full command stops after256 successful and16 failed CLI unit cases, preventing the
+three modified token integration setups and later workspace binaries from running. A separate
+retained verification branch from543e823 will use a manual-only ci.yml with the same native
+x64 stable, ARM64 stable and x64 Rust1.94 matrix. Assert actual requested host/compiler, execute
+each of the three original integration cases separately, then run locked all-target default
+workspace tests with no-fail-fast. Later steps may run after a test failure only if the compiler
+gate succeeded and the job was not cancelled; the job preserves every failed exit as failure.
+
+This temporary caller is not a replacement for normal PR/main CI or the original five full
+discovery commands. Every application/test/lockfile blob must equal543e823. Preserve all
+assertions, isolation, deadlines, concurrency and current platform selectors. Review docs and
+exact #31 Verify receipt before separate development edits the single workflow. Publish this
+branch without a PR, collect all actual per-case/per-binary results, and return the worktree
+to PR130 without importing this temporary workflow. Normal x64 Core failure remains blocking;
+triage must precede any correction. Partial evidence keeps the owning issues open.

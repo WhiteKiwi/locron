@@ -4955,3 +4955,28 @@ native run; metadata and source inspection cannot qualify private creation or su
 Other recorded warnings and legacy shell/state fixture assumptions remain discovery findings.
 The scoped compilation correction cannot establish full lint/runtime success, Windows11
 standard-user installation, active-crash recovery, two-user privacy/IPC or public distribution.
+
+### Full native runtime discovery stops before integration cases (2026-10-04)
+
+Full discovery37135594179 on reviewed7ad2256 passed the previous compilation prerequisites.
+Each x64 stable, ARM64 stable and x64 Rust1.94 CLI unit binary reports256 passed/16 failed;
+Cargo stops at that binary, so the three changed positive token integration cases have not
+executed. Failures comprise eleven MCP fixtures, four Windows launch-owner fixtures and one
+internal supervise argument-help contract. Both full1.98 Clippy rows next reject seven unused
+Unix-only helper entities in service_backends.rs. That crate also contains two Windows
+platform-exclusion reporting cases; suppressing the entire crate would lose real contracts.
+Keep all original failures and the raw per-job evidence; cause triage is separate from coverage.
+
+Integrated543e823 normal CI37135898238 additionally records a cold x64 stable Core failure:
+native_guard_stall_keeps_ownership_after_bounded_driver_returns. Its isolated child fails at
+loader_tests.rs273 waiting for the driver; recorded phases include worker-entered and
+caller-failed at33001ms. The whole Core binary reports129 passed/1 failed. Other native rows
+and both package rows pass; this does not resolve the observed failure or permit a merge.
+
+To observe integration cases and every later workspace binary without changing their contracts,
+use a retained manual-only verification branch from543e823. First execute the three unchanged
+token cases separately on each existing native test-matrix row, then run the unchanged default
+feature all-target workspace suite with Cargo's no-fail-fast scheduling option. This option
+continues to later test binaries while preserving each original failure and final nonzero exit.
+It does not serialize tests, retry failures, relax deadlines or imply that any failed gate passed.
+No owner-PC script, ACL, registry, service, PATH, execution-policy or reboot action is needed.
