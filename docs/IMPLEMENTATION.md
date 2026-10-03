@@ -647,6 +647,34 @@ operations. Normal SQLite sidecar deletion on the last close remains intact; the
 open precreates missing sidecars again. Read-only validation uses the actual supplied database
 filename and its sidecars, and performs final readback without changing the file-creation contract.
 
+Refine writable bootstrap for the measured concurrent wal-create-new error 80. Existing private
+DB/WAL/SHM admission remains strict. If a missing-leaf CreateNew returns only AlreadyExists,
+perform one existing-only handle open with the same current-SID/protected-DACL/regular/no-reparse
+validation; a private verified winner is accepted under the ordinary existing-leaf contract.
+Unknown, broad, disappeared or changed leaves refuse; no permission repair, truncation, second
+creation or general retry follows. Mark a database fresh only when this caller's explicit
+CreateNew succeeded, preserving configured PATH and historical migration checksums.
+
+Retain all three validated preparation handles and their ancestor guards until SQLite open,
+configuration/migration and reported-filename/full-object-ID readback finish. Open the normalized
+verified main file with READWRITE without CREATE through the existing win32-longpath VFS and
+reject a read-only fallback. Rust creates the empty database explicitly before this call; SQLite
+cannot create a different database behind a missing path. Preparation handles deny delete sharing
+across this handoff. SQLite's actual ordinary DB/WAL/SHM handles then retain that no-delete policy
+during connection use; release the preparation guards after acceptance so normal final-close
+checkpoint/sidecar deletion stays intact. Do not retain writable guards past SQLite close or change
+the separately reviewed read-only WAL/immutable gate.
+
+Verify: (1) an exact private-leaf CreateNew winner race preserves its bytes/full ID, while a broad,
+reparse or vanished winner refuses unchanged; no other error triggers the existing-leaf branch.
+(2) actual concurrent first writable opens and final-writer-close/open races preserve committed
+rows, current-SID ownership and reported full database identity. Native incompatible renames after
+the preparation handoff still refuse while SQLite owns live DB/WAL/SHM handles. (3) the measured
+server SSE shutdown fixture succeeds on all three native rows, and existing cold closed/no-journal
+Unicode-long-path reads, live WAL commits, final-close cleanup and unsafe-sidecar refusal retain
+their original assertions. Record other failures by their precise stage rather than treating
+error 80 or a successful reopened handle as evidence that every concurrency failure is resolved.
+
 Add fixed, bounded failure-stage diagnostics to Windows debug builds at writable Store::open
 and StatePaths.ensure. Record only the selected root/outputs/tmp directory stage, state guard,
 database/WAL/SHM existing-open versus explicit CreateNew, SQLite connection/configuration/migration,

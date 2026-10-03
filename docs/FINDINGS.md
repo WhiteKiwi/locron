@@ -3398,6 +3398,24 @@ original error and all refusal behavior, with no new path reads or payload rende
 assigning or correcting a cause. Hosted native evidence is required; no local behavioral policy
 rehearsal or AlreadyExists adoption follows from this observation.
 
+The post-namespace native server gate now reaches this diagnostic: operation 11 fails exactly
+at wal-create-new with Windows error 80. The same fixture admits concurrent per-request writable
+Store opens; NotFound followed by CreateNew therefore has a legitimate winner race, but this
+result alone does not prove that the winner's object is private or unchanged. Reuse the strict
+existing-leaf policy after only an explicit AlreadyExists result, and retain the verified DB/WAL/SHM
+handles through SQLite startup rather than dropping each precreation handle immediately. Do not
+repair, truncate, accept a reparse point or retry creation after any other failure.
+
+The pinned bundled Windows SQLite VFS uses FILE_SHARE_READ | FILE_SHARE_WRITE, without delete
+sharing, for ordinary database/WAL and shared-memory file handles. Use these actual native handles
+after configuration acquires the sidecars; keep the private Rust preparation guards until that
+handoff and exact reported database identity validation finish. SQLITE_OPEN_READWRITE without
+CREATE requires an existing file, so Rust's guarded explicit creation remains the only database
+creation authority. This prevents an unguarded SQLite database-create fallback; read-only mode
+fallback must also refuse. Other final-open failures remain distinct until native evidence resolves
+them. Sources: [SQLite open flags](https://www.sqlite.org/c3ref/open.html),
+[Windows VFS source](https://sqlite.org/src/file?name=src/os_win.c).
+
 Exact head 608ab19's ARM64 native job 111026239366 entered the actual generic script at about
 210 ms and its JSON conversion at 219 ms, but never reached json-parsed before the original
 30-second deadline; owned cleanup finished at 30.042 seconds. The preceding 4887 trace measured
