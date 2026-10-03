@@ -3477,6 +3477,49 @@ still refuse immediately. Sources:
 [LockFileEx rules](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex),
 [Win32 deletion contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-deletefilew).
 
+Exact runtime head 7c4e136 passes all 118 Core fixtures on all three native rows, including the
+retained-directory and child-mutation regressions. Its simultaneous first writable Store-open
+fixture still fails at sqlite-configure with SQLITE_BUSY/extended 5 on ARM64 operation 14 and
+x64 MSRV operation 15; x64 stable passes. The native shared admission/final-close and migration
+catch-up fixtures pass. The existing configuration diagnostic covers five PRAGMAs in one batch,
+so the failed individual PRAGMA is not yet measured. Keep that uncertainty explicit.
+
+Pinned SQLite 3.53.2 OP_JournalMode changes into WAL through sqlite3BtreeSetVersion, which first
+opens a read transaction and can then request an exclusive write transaction to change the
+database header. btreeBeginTrans deliberately omits the busy callback on a contended read-to-write
+promotion; its comment describes the competing reader/reserved-lock deadlock. This supplies a
+source-grounded explanation for an immediate busy result despite the configured five-second
+busy timeout, rather than evidence that a longer timeout or whole-Store retry is required.
+SQLite's public busy-handler contract makes the same exception. Its journal-mode contract returns
+the effective mode, including the old mode when a change cannot be made; acceptance must therefore
+verify WAL, not merely successful statement preparation or a discarded result row. Sources:
+[busy-handler contract](https://sqlite.org/c3ref/busy_handler.html),
+[journal-mode result](https://sqlite.org/pragma.html#pragma_journal_mode),
+[pinned JournalMode/Btree implementation](https://docs.rs/crate/libsqlite3-sys/0.38.2/source/sqlite3/sqlite3.c).
+
+The pinned rusqlite 0.40.2 execute_batch consumes only the first step and drops each statement;
+it neither verifies that WAL was returned nor exposes that statement's finalization error.
+Use a separately owned fixed WAL statement, consume its sole row through completion and explicitly
+finalize it before considering only exact SQLITE_BUSY/extended 5 for another attempt. SQLite's
+autocommit VDBE halt path commits or rolls back and releases transaction locks; finalizing a
+failed statement is necessary before yielding to the competing initializer. A successful row
+alone is insufficient because completion/reset/finalize can still report an error. Any other
+SQLite error, unexpected mode or explicit transaction remains an immediate refusal. The
+five-second entry deadline must cover handler waits, every attempted WAL statement and sleeps;
+it must not restart on each attempt. This bounds admitted lock contention, not uninterruptible
+native disk I/O. Native proof of the correction remains pending. Sources:
+[rusqlite batch implementation](https://docs.rs/crate/rusqlite/0.40.2/source/src/lib.rs),
+[rusqlite statement implementation](https://docs.rs/crate/rusqlite/0.40.2/source/src/statement.rs),
+[statement completion/reset](https://sqlite.org/c3ref/reset.html),
+[explicit finalization](https://sqlite.org/c3ref/finalize.html).
+
+Use zero busy timeout during this owned Windows configuration phase, rather than assigning
+remaining time to an internal handler whose locking-event waits are not the caller's absolute
+deadline. The public zero-timeout contract disables that handler. The sole fixed WAL admission
+loop owns the five-second allowance and yields only after its failed statement is finalized;
+remaining local settings are not retried. Restore the ordinary five-second connection timeout
+only for an accepted configuration. [busy-timeout contract](https://sqlite.org/c3ref/busy_timeout.html).
+
 Exact head 608ab19's ARM64 native job 111026239366 entered the actual generic script at about
 210 ms and its JSON conversion at 219 ms, but never reached json-parsed before the original
 30-second deadline; owned cleanup finished at 30.042 seconds. The preceding 4887 trace measured

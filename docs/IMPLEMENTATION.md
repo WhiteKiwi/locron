@@ -720,6 +720,51 @@ Exercise immediate non-contention failure and error-path lock release; hostile s
 fixtures remain fail-closed. Run all three native Store rows and Unix migration suites; no timing
 exemptions, global-budget increase or blanket raw-5/AlreadyExists/SQLite-error retry is admitted.
 
+Correct the measured Windows configuration contention separately from sidecar preparation and
+migration catch-up. Keep the existing database/sidecar guards, no-CREATE connection, migration
+ownership and read-only behavior. Windows startup owns its connection before returning a Store;
+no other statement or explicit transaction may be active while admitting WAL. Split the fixed
+WAL PRAGMA from the remaining connection settings. Consume exactly its effective-mode row through
+statement completion and explicitly finalize on success and failure, even when stepping fails.
+Require the effective mode to be WAL. A completion/finalization error cannot be replaced by an
+earlier row; any non-BUSY finalization error prevents retry. Refuse an explicit transaction or
+unexpected mode without changing it to success. No retry of Store::open, a SQL batch, migrations,
+settings writes, native permission errors or SQLite errors other than exact BUSY/extended 5.
+
+Establish one absolute five-second configuration deadline before its first attempt. Disable
+SQLite's internal busy handler for this owned startup phase with a zero timeout: one statement's
+internal locking-event waits must not reset or multiply the caller's allowance. Before every
+WAL attempt and remaining-settings stage, check expiry. After finalization, check expiry
+before accepting success or dispatching again. An exact BUSY 5 from the standalone WAL attempt
+may yield for at most ten milliseconds capped to the remaining budget, with its failed statement
+already finalized and autocommit verified. Reprepare the same WAL request against the current
+committed header, so another initializer's durable WAL transition is observed rather than
+replayed as an assumed failure. On persistent contention return the last original BUSY error;
+an already expired entry or late successful completion refuses as a deadline error. Apply the
+unchanged FULL/foreign-keys/NORMAL/trusted-schema settings once after WAL acceptance, within the
+remaining allowance and without retries; restore the ordinary five-second busy timeout before
+returning an accepted Store. Do not claim cancellation of stalled native I/O from deadline checks.
+
+Add only fixed debug failure substages for WAL admission and remaining connection settings,
+sharing the existing operation counter and original error category/raw code. No path, SQL text,
+exception payload, row contents or new filesystem query. Unix configuration keeps its existing
+behavior. A failed finalization or post-deadline response never releases a usable Store.
+
+Verify: (1) use real independent SQLite connections on a disposable private rollback database.
+Hold a reserved writer, prove an actual WAL-promotion BUSY result, and prove its explicitly
+finalized failed statement no longer prevents the other connection from committing. A test-only
+observation after a genuine finalized BUSY may signal that writer to release; it must not inject
+results or replace the production statement/timeout path. Release within the original bound and
+prove successful WAL acceptance, exact remaining settings, committed rows and final cleanup.
+(2) retain the writer past a short supplied deadline and verify bounded original BUSY refusal,
+autocommit/lock release and no subsequent attempt. An expired entry, explicit transaction,
+non-WAL in-memory result and genuine non-BUSY SQLite error refuse without retries or unrelated
+changes. Successful already-WAL admission must also consume/finalize its result. (3) retain every
+assertion and iteration in simultaneous first Store opens and raced final-close fixtures: both
+rows, full database identity, private sidecars, real SQLite no-delete handoff and final journal
+removal. Qualify all three native Store/Core/server rows plus Unix suites and lint; if another
+configuration failure remains, report its fixed substage instead of broadening retry policy.
+
 Add fixed, bounded failure-stage diagnostics to Windows debug builds at writable Store::open
 and StatePaths.ensure. Record only the selected root/outputs/tmp directory stage, state guard,
 database/WAL/SHM existing-open versus explicit CreateNew, SQLite connection/configuration/migration,
