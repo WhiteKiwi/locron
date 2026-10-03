@@ -525,16 +525,39 @@ fn publication_proofs(directory: &Path, observations: &mut Observations) {
         .open(&path)
         .unwrap();
     observations.check();
-    let refusal =
-        publish_heartbeat(heartbeat_snapshot(&path, 8).unwrap(), &path, false).unwrap_err();
+    let candidate = heartbeat_snapshot(&path, 8).unwrap();
     observations.check();
-    assert_eq!(refusal.error.raw_os_error(), Some(32));
+    let candidate_path = candidate.to_path_buf();
+    observations.check();
+    let refusal = publish_heartbeat(candidate, &path, false).unwrap_err();
+    observations.check();
+    assert_eq!(refusal.error.raw_os_error(), Some(5));
+    assert!(refusal.path.as_os_str() == candidate_path.as_os_str());
     assert_eq!(
         observations.counter(directory, "rust-publication-heartbeat", 0),
         7
     );
     assert_eq!(observations.counters[0].bytes, b"7");
-    drop((refusal, held));
+    observations.phase("rust-replacement-share-release");
+    drop(held);
+    observations.check();
+    publish_heartbeat(refusal.path, &path, false).unwrap();
+    observations.check();
+    assert_eq!(
+        observations.counter(directory, "rust-publication-heartbeat", 0),
+        8
+    );
+    assert_eq!(observations.counters[0].bytes, b"8");
+    observations.phase("rust-publication-stage-baseline");
+    let baseline = heartbeat_snapshot(&path, 7).unwrap();
+    observations.check();
+    publish_heartbeat(baseline, &path, false).unwrap();
+    observations.check();
+    assert_eq!(
+        observations.counter(directory, "rust-publication-heartbeat", 0),
+        7
+    );
+    assert_eq!(observations.counters[0].bytes, b"7");
     observations.phase("rust-direct-publisher-spawn");
     let mut publisher = Helper::spawn_with_budget(
         "heartbeat-rust-staged",
