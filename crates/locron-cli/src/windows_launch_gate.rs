@@ -69,6 +69,28 @@ fn remaining(deadline: Instant) -> Result<Duration> {
     Ok(left)
 }
 
+fn advertised_budget_ms(left: Duration) -> Result<u64> {
+    // Floor transport precision; a sub-millisecond remainder cannot be rounded up.
+    let millis = left.as_millis().min(PHASE.as_millis());
+    ensure!(
+        millis != 0,
+        "original launch budget is below transport precision"
+    );
+    Ok(millis as u64)
+}
+
+fn child_horizon(entry: Instant, original: Instant, advertised_ms: u64) -> Result<Instant> {
+    ensure!(
+        (1..=30_000).contains(&advertised_ms),
+        "invalid advertised budget"
+    );
+    // This is the pre-I/O entry instant, never the later receipt/readback instant.
+    let advertised = entry
+        .checked_add(Duration::from_millis(advertised_ms))
+        .context("advertised child horizon overflow")?;
+    Ok(original.min(advertised))
+}
+
 fn within<T>(deadline: Instant, operation: impl FnOnce() -> Result<T>) -> Result<T> {
     remaining(deadline)?;
     let result = operation();
@@ -332,7 +354,7 @@ async fn parent_exchange(
     let challenge = Frame::challenge(
         lease.bindings(session)?,
         std::process::id(),
-        remaining(deadline)?.as_millis().clamp(1, 30_000) as u64,
+        advertised_budget_ms(remaining(deadline)?)?,
     )?;
     let mut transcript = Transcript::new(lease.bindings(session)?, std::process::id(), child.id())?;
     transcript.observe(&challenge)?;
@@ -579,6 +601,7 @@ struct ChildExchange {
 
 async fn begin_child(
     selector: ChildSelector,
+    child_entry: Instant,
     original: Instant,
 ) -> Result<(ChildExchange, PathBuf, PathBuf)> {
     let mut receive = ReceiveEndpoint::child(&selector.names, original).await?;
@@ -589,12 +612,13 @@ async fn begin_child(
         actual_parent_pid == challenge.parent_pid(),
         "Challenge is not from the actual parent endpoint"
     );
-    let advertised = Duration::from_millis(
+    let deadline = child_horizon(
+        child_entry,
+        original,
         challenge
             .remaining_ms()
             .context("Challenge lacks remaining budget")?,
-    );
-    let deadline = original.min(Instant::now() + advertised);
+    )?;
     let sid = locron_core::windows::current_user_sid_until(deadline)?;
     selector.names.bind_sid(&sid)?;
     remaining(deadline)?;
@@ -849,8 +873,38 @@ mod tests {
     }
 
     #[test]
+    fn advertised_budget_floors_and_refuses_sub_millisecond_roundup() {
+        assert!(advertised_budget_ms(Duration::ZERO).is_err());
+        assert!(advertised_budget_ms(Duration::from_nanos(999_999)).is_err());
+        assert_eq!(advertised_budget_ms(Duration::from_millis(1)).unwrap(), 1);
+        assert_eq!(
+            advertised_budget_ms(Duration::from_nanos(1_999_999)).unwrap(),
+            1
+        );
+        assert_eq!(advertised_budget_ms(PHASE).unwrap(), 30_000);
+        assert_eq!(advertised_budget_ms(PHASE + POLL).unwrap(), 30_000);
+    }
+
+    #[test]
+    fn child_horizon_is_anchored_before_io_and_never_extended_by_receipt() {
+        let entry = Instant::now();
+        let original = entry + PHASE;
+        let receipt = entry + Duration::from_secs(12);
+        let horizon = child_horizon(entry, original, 20_000).unwrap();
+        assert_eq!(horizon, entry + Duration::from_secs(20));
+        assert!(horizon < receipt + Duration::from_secs(20));
+        assert_eq!(
+            child_horizon(entry, entry + POLL, 30_000).unwrap(),
+            entry + POLL
+        );
+        assert!(child_horizon(entry, original, 0).is_err());
+        assert!(child_horizon(entry, original, 30_001).is_err());
+    }
+
+    #[test]
     fn copied_helper_entry() {
-        let original = Instant::now() + PHASE;
+        let child_entry = Instant::now();
+        let original = child_entry + PHASE;
         let Some(session) = std::env::var_os(SESSION) else {
             return;
         };
@@ -882,8 +936,9 @@ mod tests {
                 .enable_all()
                 .build()
                 .unwrap();
-            let (exchange, request, root) =
-                runtime.block_on(begin_child(selector, original)).unwrap();
+            let (exchange, request, root) = runtime
+                .block_on(begin_child(selector, child_entry, original))
+                .unwrap();
             let current = within(exchange.deadline, || Ok(std::env::current_exe()?)).unwrap();
             let bootstrap = verify_at_until(&request, &root, &current, exchange.deadline).unwrap();
             let mut attempt = qualify_child(bootstrap, exchange);
