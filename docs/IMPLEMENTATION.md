@@ -103,6 +103,35 @@ nix/Unix imports target-specific and bring native Windows x64/ARM64 CI alongside
 Use LocalAppData for default machine-local state. Retain explicit state overrides, file-lock
 ownership and SQLite WAL semantics; path strings never imply safe ownership by themselves.
 
+#### Unavailable state discovery diagnostics (#25, 2026-10-03)
+
+The remaining unavailable-default criterion in #25 requires a recovery path in the actual CLI
+error. Missing or unusable platform discovery currently reports only that discovery failed, and
+a failed Windows KnownFolder adapter loses the state-discovery context. This correction retains
+the frozen SPEC, override precedence, platform defaults and managed-path admission policy.
+
+1. Add both supported state-directory overrides to unavailable-default errors. Wrap a failed
+   Windows KnownFolder adapter in a typed discovery error that retains its original I/O source;
+   ordinary filesystem failures remain ordinary I/O errors. Keep the existing `state_error`
+   category, exit status 5 and human/JSON/stream envelope behavior. **Verify:** missing or unusable
+   defaults and failed adapters identify state discovery and offer `--state-dir <PATH>` and
+   `LOCRON_STATE_DIR`; the adapter's original cause remains available through the error chain.
+2. Isolate only the existing KnownFolder result interpretation behind a private helper used by
+   the production Windows discovery call. **Verify:** probe failure, non-string, empty and
+   relative results fail explicitly; a native Windows absolute LocalAppData result still selects
+   its `locron` child, including spaces and Unicode, without creating state or changing privacy
+   policy. Tests supply probe results directly and do not change KnownFolder or security policy.
+3. Exercise the real CLI error renderer in Unix child processes with HOME and both state
+   environment variables removed. **Verify:** human stderr, JSON errors and terminal stream
+   errors include both recovery alternatives and retain exit status 5 and `state_error`; explicit
+   CLI and environment overrides permit recovery and retain CLI-over-environment precedence.
+   Environment isolation applies only to spawned children, never the test process or host.
+
+Run the focused store and CLI regressions, formatting and whitespace checks where the required
+Rust toolchain is available. The existing native store-library CI gate covers the Windows result
+fixtures. Record unexecuted checks explicitly. This change covers unavailable-default diagnostics;
+the remaining discovery/path acceptance cases stay with #25 and do not establish Windows support.
+
 Historical migration SQL/checksums stay immutable. A Windows database receives its captured
 execution PATH in the transaction that creates its initial schema. The logical initial-schema
 winner owns this default, independently of which opener created the empty physical file.
@@ -4676,6 +4705,95 @@ Use the existing Windows-only additive wake object; retain legacy Unix boolean c
    Broader two-user/two-root IPC, durable fallback, Windows 11 and public-release acceptance
    remain the existing open issue criteria; this correction completes only the display slice.
 
+### Windows PATH entry anchoring correction (2026-10-03)
+
+Correct the PATH-entry defect recorded in FINDINGS under #26's existing deterministic
+execution contract. SPEC already requires the effective configured PATH/PATHEXT and job
+working directory, so no product-scope amendment is needed. Before any filesystem lookup,
+classify each Windows PATH entry with the same ambiguity rule as an executable request.
+Skip drive-relative and root-relative entries; preserve absolute drive/UNC/verbatim entries
+and anchor ordinary relative entries, including empty entries, to the explicit job cwd.
+
+Skipping one unusable location preserves later usable PATH entries and the resolver's current
+Option/missing-candidate contract. Refusing the whole list would change error policy across
+entrypoints without improving job-cwd isolation. Retain PATHEXT order, absolute executable
+canonicalization, argv, environment precedence and Unix behavior; add no ambient fallback.
+
+1. Apply shared pre-lookup path admission in execution.rs. **Verify:** C:bin, C: and root-only
+   entries refuse while ordinary relative, absolute drive, UNC and verbatim entries preserve
+   their existing interpretation; ambiguous executable requests remain refused.
+2. Add an isolated native subprocess regression with distinct process/job working directories.
+   **Verify:** real files establish the ambient drive-relative/root-relative lookup control;
+   the resolver skips those entries, returns no match when they are the only entries, and
+   selects the job-relative/absolute candidate after an invalid entry. Empty PATH entries
+   resolve against the job cwd. Only the disposable child receives a changed cwd/environment.
+3. Review and qualify the focused change. **Verify:** existing mixed-case PATHEXT/Unicode/direct
+   target tests and new native regressions pass on the repository's Windows lanes; retained Unix
+   tests, formatting and diff checks pass. Pure UNC vectors prove classification, not access to
+   a live network share. Record unavailable local tools and unrun native gates honestly; publish
+   a Draft PR without claiming the broader Windows execution issue or release milestone complete.
+
+## Guarded paired standalone inventory (2026-10-03)
+
+Continue #33/#34's accepted paired ownership work under #27's existing private-file policy.
+The v2 receipt and five-member archive parsers qualify in-memory inputs without retained
+installed-file guards; the live standalone reader and preparation/transaction consumers use the
+historical single-image v1 contract. Add a separate read-only paired inventory consumer without changing
+SPEC, the v1 consumers, service activation, public commands, release packaging or support claims.
+This module remains `cfg(all(windows, test))` beside the existing distribution foundations.
+Native fixtures call the actual guarded reader; there is no production read-only entrypoint in
+this slice. The returned inventory proves recorded local bytes and structural PE properties,
+not a canonical download, executed version/ABI, helper authority or successful installation.
+
+Use the existing current-user SID/native-target selection, existing-only private directory
+guards, immutable private reads and full native file identities. The caller supplies only the
+selected directory and its original absolute deadline; caller-provided SID, architecture or
+receipt metadata cannot construct a successful inventory. Parse the retained v2 receipt bytes
+against the actual guarded canonical directory, SID and target, then read all seven fixed
+payloads under retained no-write/no-delete-sharing guards. Compare every digest to the strict
+receipt map and the two ordered executable bindings; inspect the actual console/launcher bytes
+using the existing unsigned PE/import validator with subsystems 3/2. Keep the raw receipt bytes,
+the root/receipt/payload guards and all complete native identities together in a move-only type
+with private fields and borrowed accessors. Never serialize this type into effect authority or
+derive it from a deserialized receipt. Reject any repeated full identity among the receipt and
+seven listed leaves, so distinct inventory names cannot alias the same guarded object. This
+does not certify the absence of other hard links outside that inventory; exclusive replacement
+still requires its separate single-link gate. Do not adopt or inspect unrelated entries.
+Apply the existing 4,096 UTF-16-unit maintenance-path limit to the canonical root and every
+joined and actually guarded receipt/payload path, including any retained transport prefix;
+an equivalent shorter spelling in receipt metadata cannot bypass the live-path capacity bound.
+
+Check the same caller deadline before and after each guarded operation, receipt parsing, hash
+comparison and PE inspection, and before returning the complete inventory. Use the existing
+`immutable_private_until` contract; do not create a fresh duration, deadline, retry or detached
+worker. The synchronous caller owns the inventory construction and its guards through return
+or refusal. An expired operation cannot return a successful partial or complete inventory.
+Keep the 128 KiB receipt and 64 MiB individual payload read bounds. Process payloads sequentially
+and release each payload byte buffer before reading the next; retain only their guards/digests/
+identities. Working payload content is therefore bounded by one such buffer, not seven payload
+copies, plus the bounded receipt bytes/parsed metadata and existing reader/parser allocation
+overhead. No new aggregate disk-size restriction or promise about allocator overhead is added.
+
+Implementation and verification order:
+
+1. Add the guarded v2 reader and its test-only module registration. **Verify:** actual private
+   receipt/seven-leaf fixtures return the unchanged raw receipt, seven exact guarded digests,
+   ordered native PE pair and complete receipt/payload file IDs; held guards reject writes and
+   replacement, and unrelated files stay unowned and unchanged.
+2. Add bounded refusal fixtures through that same reader. **Verify:** missing roots/receipt/
+   payloads stay missing; v1, foreign SID/channel/directory/target, malformed or swapped pair,
+   changed hashes, bad console/GUI subsystem, repeated full identities, unsafe ACL/reparse leaves
+   and over-limit metadata/payload files refuse without repair, deletion, journal, status, task
+   or PATH effects. A pre-expired caller deadline refuses before discovery; missing-payload
+   refusals release the earlier receipt guard. These fixtures do not qualify mid-operation
+   timeout behavior or an actual foreign filesystem-owner change.
+3. Review the complete scoped diff and run available formatting/static checks, then require the
+   existing native x64/ARM64 distribution command on the published revision. **Verify:** all
+   new guarded-reader fixtures plus every original distribution case pass without relaxed
+   privacy, bounds, v1 fixtures or cfg gates. Record unavailable local Rust/Windows execution
+   honestly; installer/update/activation, runtime version/ABI probes, immutable publication and
+   standard-user Windows acceptance remain separate owning-issue gates.
+
 ### Paired Windows package producer in draft CI (2026-10-03, #32)
 
 The five-member archive and native GUI probe contracts above are already selected. The current
@@ -4715,3 +4833,55 @@ unchanged. A separate CI artifact records a development candidate, not a publish
    must execute the paired producer/validator on the recorded revision before native results can
    be reported as passing. Installer/update dispatch, role activation, standard-user/reboot
    acceptance, immutable release publication and WinGet remain their existing open gates.
+
+### Guarded registered WinGet index prerequisite (2026-10-03)
+
+Issue #35's bounded SQLite reader currently qualifies caller-supplied bytes. Add the actual
+read-only registration/index connection as a narrower prerequisite to the accepted IndexedPair
+composition. RegisteredIndex is an opaque, move-only observation of the actual current SID,
+selected HKCU64 portable registration and retained index object. Its fields and construction
+stay private. It is neither complete paired-file ownership nor authority to activate, install,
+update, remove or repair anything. The five canonical ZIP/source leaves, both executable
+identities/PE/version/ABI checks and actual console-link ownership remain separate work.
+
+1. Add an absolute-Instant form of the existing stock JSON adapter, forwarding the earlier of
+   the caller's original deadline and the existing thirty-second per-call cap. Keep its same
+   finite worker, queue/child/cleanup ownership and quarantine behavior. The registered reader
+   starts no replacement deadline, worker pool or native process of its own. **Verify:** an
+   expired request refuses before adapter admission, a finite actual native registry read uses
+   this API, and late returned observations cannot create a usable result. All historical
+   adapter and single-image package paths retain their existing behavior.
+2. Select the actual current-user registration for the exact console path with the existing
+   fixed HKCU64 reader. Derive the index path only from the validated product code and registered
+   location; guard that location, the exact version root and the existing index under the current
+   package-source ACL policy. Retain its full native identity and a bounded complete snapshot,
+   reject all -journal/-wal/-shm sidecars before and after the read, and call the existing <=4 MiB
+   pure parser. The explicit expected_alias argument is solely a compared metadata expectation;
+   no link is followed, opened or attested. **Verify:** real test-owned SQLite files pass without
+   byte/descriptor changes; missing roots, wrong index/root/row facts, oversized files, sidecars,
+   concurrent writers and unsafe descriptors/reparse paths refuse without creation or repair.
+3. Re-read the actual SID and exact current registration before returning. Explicit later
+   revalidation repeats registration, guarded-object identity/digest, ancestry and sidecar
+   observations while retaining the original handles. Its deadline is capped to the original
+   read's deadline even if the caller supplies a later Instant. **Verify:** changed SID or
+   selected registration, changed index facts, new sidecars and late observations refuse; unit
+   fixtures can supply metadata only through module-private test setup, while the public
+   prerequisite entry point always reads actual native registration. Native no-match coverage
+   reads existing registration without creating or modifying any registry key.
+
+This synchronous prerequisite must run inside the caller's already finite owned native phase.
+That owner must not retain the generic/COM script permit while entering this reader: its registry
+query admits through that existing slot. Retained filesystem guards stay live across the query.
+Pre/post gates surround each guard/read/query/parse boundary; they do not cancel a stalled native
+filesystem call. A timed-out driver retains that worker and its handles until completion or
+quarantine, and cannot reuse an uncertain observation. A registry snapshot is not a retained
+registry lock: revalidation observes the exact current selection and refuses changes, but cannot
+prove continuous immutability of registry metadata between calls. Stable index read handles deny
+write/delete sharing; the parser only sees copied bytes and never reopens a SQLite path.
+
+Keep the entire registered-reader source behind the existing Windows test-only distribution
+staging boundary. No CLI, receipt/journal schema, manifest, release or package effect is added.
+The existing native self_update::windows_ package selector must run these real-file regressions
+on x64 and ARM64. A cloud environment without Rust/native Windows cannot claim those gates;
+record actual local checks and leave compilation, native qualification, selected-client
+install/upgrade/removal and catalog publication open in #35 and the Draft PR.

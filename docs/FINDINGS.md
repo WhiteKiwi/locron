@@ -4873,3 +4873,29 @@ No backend, IPC, permission, state-discovery or diagnostics polling change is re
 Evidence: crates/locron-core/src/notification.rs WakeFacts/wake_facts and its missing-state test;
 crates/locron-server/src/api.rs diagnostics response; frontend/src/routes/Diagnostics.tsx and
 frontend/src/api.ts; the root acceptance audit recorded on #29 before implementation.
+
+### Windows PATH entries can discard the job working directory (2026-10-03)
+
+At main b6b98eb, execution::resolve_executable rejects a drive-relative or root-relative
+executable request, but applies cwd.join to every non-absolute PATH directory. Rust's Windows
+PathBuf::push/Path::join contract states that a prefix without a root replaces the base;
+therefore a PATH entry such as C:bin remains drive-relative after that join. The subsequent
+filesystem lookup can select a program through the process's ambient drive directory instead
+of the job's explicit working directory. A root without a prefix also discards the job directory,
+retaining only its drive prefix. The existing mixed-case/Unicode resolution test does not cover
+either PATH-entry form.
+
+The frozen SPEC already requires resolution from the effective configured PATH/PATHEXT and
+working directory. Apply the executable request's ambiguity rule to each PATH entry before
+filesystem lookup. Skip an ambiguous entry while retaining later usable entries, as for other
+unusable search locations; refusing the entire list would add a new configuration/error policy.
+Ordinary relative entries, including empty entries, keep their existing job-cwd meaning;
+absolute local/UNC/verbatim entries keep their existing meaning. This does not change argv,
+shell selection, PATHEXT order, environment precedence or Unix resolution.
+
+Primary evidence: [Rust PathBuf::push](https://doc.rust-lang.org/std/path/struct.PathBuf.html#method.push)
+and [Path::join](https://doc.rust-lang.org/std/path/struct.Path.html#method.join).
+Code evidence: crates/locron-core/src/execution.rs resolve_executable at main b6b98eb;
+execution scope remains the existing Windows environment/resolution issue #26. The isolated
+native regression must demonstrate the actual ambient candidate and selected job candidate;
+static path reasoning alone is not native execution evidence.
