@@ -102,6 +102,10 @@ nix/Unix imports target-specific and bring native Windows x64/ARM64 CI alongside
 Use LocalAppData for default machine-local state. Retain explicit state overrides, file-lock
 ownership and SQLite WAL semantics; path strings never imply safe ownership by themselves.
 
+Historical migration SQL/checksums stay immutable. Only a newly created Windows database receives
+the captured Windows execution PATH after migration, guarded by its untouched default/zero-update
+settings state; existing configured PATH values are preserved on reopen.
+
 Shared environment/path helpers normalize Windows environment keys case-insensitively, reject
 same-layer collisions and reserved-name variants, and apply precedence consistently across CLI,
 dashboard and MCP. Resolve executables against effective PATH/PATHEXT; recognize drive/UNC and
@@ -134,6 +138,455 @@ creation. Paths/options arrive as structured stdin JSON, never interpolated sour
 absolute stock PowerShell with -NoProfile -NonInteractive and a reviewed encoded script; do not
 require pwsh or change execution policy. Existing roots require ownership/descriptor validation.
 
+Create missing managed files through the stock .NET FileStream CreateNew/FileSecurity constructor
+with an explicit current-SID owner and protected SID/SYSTEM DACL. Elevated tokens can otherwise
+assign Administrators as the default owner even beneath a private parent. Keep the guarded parent
+live through empty-file creation and subsequent Rust no-follow handle/ACL readback, before any
+caller writes data. Use its canonical verbatim parent path for the .NET adapter, including long
+paths. Report existing-file races from the IOException's numeric Win32 HResult; never repair or
+truncate the raced-in file. Lock creation explicitly opens or creates, while sensitive output/
+token/database creation remains CreateNew. Existing-file opens never infer creation from options.
+Remove inherited PSModulePath only for the stock adapter, allowing PowerShell 5.1 to discover its
+own built-in modules instead of loading incompatible PowerShell 7 modules from the calling shell.
+Use one shared binary-only stock JSON bootstrap in the generic adapter, fixed filesystem worker
+and phase-scoped COM worker. Before spawn, a SID-independent native core StockAdapterGuard retains
+the exact stock PowerShell executable and selected GAC library files plus every ancestor through
+owned cleanup/idle/quarantine. Build their absolute paths only from the absolute Windows root and
+fixed Windows PowerShell 5.1/.NET Framework identities; no module search, cwd fallback or repair.
+Join each fixed stock path component separately and reconstruct the validated absolute local
+drive/root/normal-component sequence before adding its verbatim namespace. Preserve native OsStr
+components and Unicode; never prepend a verbatim prefix to an unnormalized slash-containing string.
+Already-verbatim components containing a forward slash refuse rather than changing their meaning.
+Keep the existing local-drive-only, root and normal-component admission checks and all native trust,
+reparse, sharing, identity and original-deadline checks. Verify: (1) pure Windows component fixtures
+cover mixed ordinary SystemRoot separators, Unicode and every resulting ancestor, while rejecting
+relative/UNC/device/parent and verbatim-slash inputs; (2) actual stock-file guarded full identities
+and the real native guard-stall callback pass on x64, ARM64 and MSRV; (3) the original cold generic
+and filesystem gates spawn through those same production paths within their unchanged budget.
+Require SYSTEM/Administrators/TrustedInstaller owner, no untrusted effective write/append/EA/
+attributes/delete/WRITE_DAC/WRITE_OWNER/generic write/all grants on each library/executable, and
+no untrusted control/delete/reparse-mutation grants on any retained ancestor. Creation of an
+unrelated sibling alone does not grant mutation of the guarded existing chain. The current SID
+does not bypass these checks, avoiding the cold SID/bootstrap dependency cycle.
+
+Construct the stock guard only inside the already admitted finite owner worker. Caller admission
+updates only the existing permit counter; it performs no native path, descriptor or identity I/O.
+Each native guard operation has explicit pre/post checks against the original API-entry deadline.
+The generic result driver replaces its unconditional thread join with a deadline-bounded channel
+receive, rejects a late ready result, and joins only an already finished worker. The filesystem
+owner and COM phase owner follow the same boundary. A blocked native guard operation retains its
+slot and every partially acquired handle in quarantine; its caller returns within the existing
+thirty-second operation plus three-second owned-cleanup allowance. When that operation eventually
+returns, the owner checks expiry before any next guard operation, process spawn or private input.
+There is no second admitted child, replay, or successful ownership fact behind that refusal.
+
+Transfer the complete stock guard into the exact child owner before spawn. It remains live through
+the filesystem worker's sixty-second idle interval, generic/COM exchanges, and root/Job/pipe cleanup.
+Confirmed cleanup releases it; uncertain cleanup retains it with the child/Job/permit in quarantine.
+The generic adapter currently spawns a Tokio child without a Job and cannot claim abrupt-parent
+containment from kill_on_drop. Select the same pinned safe Core-local suspended Job enrollment
+pattern already used by the filesystem worker, including CreationFlags, process-wrap JobObject
+and a separate win32job kill-on-close handle. Both Job enrollments precede resume and private input;
+Core gains no Engine dependency. Generic cleanup requires the reaped root, authoritative retained
+Job emptiness and finished pipe workers within its existing three seconds. A spawn failure that
+lost root-wait capability retains its independent Job/guard/slot without treating empty Job state
+as a root-exit proof. Parent kernel handle closure supplies emergency containment, never a reported
+graceful exit or permission to replay an uncertain child.
+
+The Core-local factory also sets the final native CREATE_NO_WINDOW | CREATE_SUSPENDED mask in
+the safe spawn closure after all wrapper pre_spawn hooks. Its logical CreationFlags remain only
+CREATE_NO_WINDOW, so JobObject resumes after both enrollments. This fixes the actual spawn boundary
+without adding DETACHED_PROCESS or CREATE_NEW_CONSOLE. Verify the captured final mask in an actual
+owned child; CONOUT$ availability alone cannot distinguish an invisible private console from a
+visible console. The native binary loader/ownership fixtures remain required independently.
+
+Verify this boundary with an isolated actual native guard-phase stall: after retaining real
+no-follow stock ancestor/leaf handles, a cfg(test)-only anonymous-pipe ReadFile blocks the owner
+until the test releases its owned pipe. The driver must time out, retain that slot/handles and
+refuse another admission; releasing the pipe after expiry must produce no subsequent spawn/input
+marker. This exercises real blocking native I/O inside guard ownership, not a claim that the
+security-descriptor API itself was forced to hang. A separate owned parent-crash helper must prove
+the actual generic PowerShell child's kernel Job termination and stopped heartbeat; Drop or an
+unjoined worker alone is insufficient evidence. No fixture warms the original cold gate.
+
+Pass only these retained canonical library paths as child environment data. Static bootstrap
+loads/imports the exact binary, verifies its full assembly identity and actual loaded location,
+and validates each retained JSON CmdletInfo's implementing assembly/type against that binary.
+Use the returned command objects for both JSON directions; never rediscover them by a module
+name. Disable module autoload and remove inherited PSModulePath. Import binary Utility cmdlets
+for already reviewed generic callers (including Add-Type/Start-Sleep), plus the guarded binary
+Management module for the reviewed junction/registry callers. The fixed filesystem/COM loops
+need only Utility. Import no manifest, script module, format/type file, alias or function and
+change no policy. Binding/location/descriptor/policy refusal is explicit with no fallback.
+
+Native Win32 guard paths and Framework assembly loader paths have an explicit separate boundary.
+Continue opening/retaining the exact canonical verbatim native files and every ancestor. Before
+exposing a library to LoadFrom, derive an absolute local DOS spelling with native separators;
+refuse URI/UNC/device/stream, dot/parent, trailing-dot/space and other normalization-sensitive
+components. Query that spelling's full HighRes identity under the already retained native chain
+and require exact equality. This conversion and native query occur in the existing finite owned
+worker, with pre/post gates against its original entry deadline and no late spawn or unconditional
+join. Library environment getters return only this verified Framework spelling; the executable
+getter keeps the native spelling. Bootstrap refuses a verbatim/relative/URI library argument
+before LoadFrom and retains the full assembly, loaded-location and CmdletInfo checks.
+
+Verify: (1) pure namespace fixtures round-trip canonical Unicode/space/percent/hash paths and
+reject ambiguous components, devices, UNC/URI and verbatim loader input without a search fallback.
+(2) the actual stock guard probes compare both complete identities for each converted library,
+retain replacement-denying handles, and preserve refusal/quarantine on a native stall. (3) the
+original cold generic JSON, fixed SID/CreateNew and existing x64/ARM64/MSRV native core fixtures
+load the guarded binaries under their unchanged thirty/three-second bounds. Restricted, forged-
+module and abrupt-parent proof remain independent gates; this namespace correction cannot claim
+their completion.
+
+The fixed Task Scheduler waiting launcher also avoids a JSON/module bootstrap before Rust can
+guard its state. Keep its one generated CLIXML/base64 argument value, but encode a versioned,
+length-delimited UTF-8 record containing only SID, exact executable, state root and fixed role.
+Static .NET BinaryReader with throwing UTF-8 decoding enforces lengths, protocol, no trailing
+bytes and the fixed role before ProcessStartInfo; Rust readback accepts only the identical generated
+representation. No data becomes executable source. This replaces the earlier base64-JSON payload
+choice without changing exact argv, waiting/exit propagation or the original enabled flags.
+
+Preserve the one-filesystem plus one-generic/COM child ceiling, original per-entry 30-second
+budget and three-second owned adapter cleanup, with no warm-up or mutation retry. Verify:
+(1) the original cold native x64/ARM64/MSRV core gate and actual first generic JSON request pass;
+static phases show binary binding/conversion inside the unchanged budget. (2) forged user module
+paths/cwd/name collisions and foreign-mutable/reparse stock candidates refuse or cannot execute
+their marker; retained library/ancestor handles block replacement while the child is live.
+(3) isolated actual children under process-only Restricted retain the inherited host policy and
+round-trip generic JSON, filesystem SID/CreateNew, COM inventory and launcher exact Unicode/
+quote/backslash argv; native wait/exit, caps, wrong-frame and parent-exit containment remain tested.
+
+Bound stock adapter concurrency to two owned workers per process. A single thirty-second deadline
+starts at API entry and includes permit wait, runtime/process startup and all input/output work;
+permit saturation fails under that deadline rather than spawning more cold PowerShell processes.
+Serialize first SID discovery under the same finite budget and share its verified cached result.
+Keep input/output limits and failure semantics; owned kill/reap cleanup may add its existing
+three-second termination-confirmation bound after the operation deadline. Native tests
+must still exercise startup/script stalls and saturated permits; do not extend the deadline or
+reduce privacy coverage to mask ARM64 cold-start contention.
+An output reader that reaches the maximum plus one byte fails the operation immediately and
+enters the same owned kill/reap cleanup. Do not wait for normal child exit before enforcing the
+output cap: a child blocked on its output pipe would otherwise consume a complete adapter permit
+deadline and starve independent state calls. Native fixtures must prove prompt output-cap refusal
+and confirmed cleanup, independently of startup timeout and saturated-queue acceptance.
+A bounded stock-adapter entry point accepts a caller's remaining duration, capped at the same
+thirty-second operation maximum. Service polling uses the remaining shared lifecycle deadline;
+a fresh adapter invocation cannot silently restart the complete shutdown budget.
+
+Expose current_user_sid_until(Instant) for an already bounded bootstrap qualification. Capture
+the caller's absolute deadline, cap it to API-entry plus the existing thirty-second maximum,
+and use that same value for finite SID initializer admission and the existing fixed SID dispatch.
+Check expiry before reading a verified cache, before a cold query, after its result and before
+returning. Only a verified success received before that value may enter the shared cache;
+failures remain retryable by a later independent call. Preserve the ordinary SID API and cached-only
+IPC accessor. This adds no warm-up, child, mutation replay or metadata ownership authority.
+The fixed worker retains its existing separate three-second cleanup/quarantine allowance.
+
+Verify: (1) an expired call refuses even with a verified cache and performs no query; a finite
+initializer-wait fixture consumes the caller's supplied deadline rather than starting thirty
+seconds afterward. (2) a gated query that returns success only after expiry cannot publish a
+cache value, while an in-budget result is shared by concurrent callers. (3) the actual isolated
+cold fixed SID probe records its original caller deadline and accepts only an in-budget result;
+the mapped-helper bootstrap caller forwards its existing qualification deadline without prewarming.
+
+Native ARM64 evidence measured about 22.5 seconds for every stock PowerShell 5.1 startup,
+including a no-stdin version/SID probe. Replace repeated filesystem process starts with one
+process-local fixed filesystem worker containing only SID discovery, private-directory creation
+and private CreateNew-file creation. The existing .NET descriptor constructors and post-operation
+Rust guards remain authoritative. Each request is structured JSON with a version, monotonically
+assigned request ID and fixed operation selector; the worker accepts no source, command or
+executable in request data. Requests and reply frames retain the 64 KiB/128 KiB limits, with a
+separate bounded stderr capture. Compare the reply ID and operation/result shape before accepting
+it. Failure never triggers an automatic replay of a mutating creation request.
+
+Retain one bounded owner thread and request queue for this filesystem worker. An absolute
+thirty-second deadline starts at each public API entry and includes queue admission, cold worker
+start, input, reply and validation. Requests already expired in the queue perform no work. A
+timeout, EOF, malformed reply, wrong ID or output-limit violation kills/reaps the owned worker
+under the separate three-second cleanup bound and wakes pending callers; future calls may create
+a fresh worker. An idle sixty-second interval likewise closes and confirms the worker before
+retiring it. Keep at most two stock children per process: one filesystem worker and one generic
+reviewed-script worker; idle retention does not permit unbounded child/thread accumulation.
+
+Spawn the persistent filesystem worker suspended and enroll it in the same reviewed safe
+process-wrap =10.0.1 JobObject/kill-on-drop plus independent win32job =2.0.3 kill-on-close Job
+pattern used for attempts before resuming it. The owner thread retains the Job handle through
+confirmed root exit and empty-tree query. Parent abrupt exit closes that handle in the kernel;
+static-cache or thread destructors and Tokio kill_on_drop alone are not this crash guarantee.
+Spawn/enrollment/resume or cleanup uncertainty remains an explicit failure, never a successful
+creation fact or an automatic replay. No private data is sent to an unconfirmed child.
+
+Enable process-wrap's pinned creation-flags feature and supply CREATE_NO_WINDOW through its
+CreationFlags wrapper, rather than only calling Tokio Command::creation_flags. JobObject's
+pre_spawn derives its flags from that wrapper and otherwise overwrites the raw command flags.
+The reviewed wrapper preserves CREATE_NO_WINDOW while adding temporary CREATE_SUSPENDED;
+the existing post_spawn enrollment still precedes resume and private request input. Verify the
+registered flag bits and JobObject wrapper in a unit fixture, and retain the native fixed-worker
+reply/owned-cleanup fixtures. Source inspection proves the composed creation flags; a headless
+runner's lack of a visible console alone does not prove CREATE_NO_WINDOW.
+
+Native cold gates remain before the diagnostic probes, with no warm-up step. Fixtures retain the
+production thirty-second maximum for a real stock process and report startup separately from
+the script phase. A script-entered marker proves timeout cleanup after actual entry; an
+output-phase marker and exact output-limit error prove prompt refusal after the cap is reached.
+Use the separate three-second cleanup bound rather than assuming ARM64 enters within five or
+ten seconds. Add concurrent-first-request, idle retirement/restart, failure-with-queued-callers,
+wrong-ID/oversized-frame and abrupt-parent-exit fixtures. Generic arbitrary-script tests and
+Task Scheduler COM calls remain outside the fixed filesystem dispatch; a later fixed COM worker
+requires its own reviewed contract and the same shared lifecycle deadline.
+Run the native core-library harness with --test-threads=1 because its real-stock timeout/cap
+fixtures deliberately consume the one shared generic child slot for up to thirty seconds.
+This serializes unrelated harness cases, not the implementation: explicit concurrent-first-use
+and saturated-queue fixtures still create real concurrent callers and retain their original
+deadline assertions. Run destructive fixed-worker faults and abrupt-parent cases in exact spawned
+test-helper processes, so those intentional failures cannot invalidate other state tests.
+Keep the core cold gate before post-gate probes and retain normal harness parallelism in the
+other libraries. Splitting the CI core/store invocations changes no coverage or production bound.
+
+Qualify private filesystem-channel EOF in an exact isolated helper with no unrelated dispatcher
+or SID cache. Use a private bounded channel and the real fixed worker to complete one SID frame
+under its original thirty-second entry deadline, then drop the final sender. At that owner's
+cleanup boundary, a cfg(test)-only started blocking task reads an actual owned anonymous pipe.
+Retain the writer in the helper and require the real root-reaped plus empty-Job observation before
+the unchanged three-second cleanup budget expires with that native read still pending. Fixed
+bounded test receipts identify entry, actual root/tree confirmation and retained quarantine;
+they contain no SID/path/request values and introduce no production selector or behavior.
+
+Verify that the private owner thread remains live rather than being joined or dropped, and that
+a read-only incompatible open of its actual stock leaf returns the native sharing violation.
+Release the pipe only after expiry, observe that actual read's completion, and verify ownership
+still refuses the same incompatible open with no second spawn/request/effect. This proves the
+EOF branch preserves uncertain I/O ownership after a late completion; it does not simulate a
+failed root wait or claim the production security API was made to hang. End only the disposable
+helper through its retained parent-owned process handle; kernel process exit then closes the
+quarantined handles. Final guard-release proof runs in a fresh exact orchestrator with no other
+stock worker, so a cached filesystem guard cannot create a false failure or success. The ordinary
+cold gate stays first, helper waits remain finite, and production thirty/three-second budgets,
+mutation no-replay, idle behavior and one-filesystem/one-generic ceiling remain unchanged.
+
+The EOF fixture's deliberately pending native read must have both an active timer and per-poll
+expiry checks. Wrap only that cfg(test) owned-read future in timeout_at with the exact original
+three-second cleanup Instant; do not create a fresh budget, abort/drop the started blocking
+task or alter production adapter polling. On timer expiry, return the cleanup error while its
+JoinHandle stays in the retained Worker, then observe real quarantine before releasing the
+writer. Verify the same real root/empty-Job, late read completion, two held-stock sharing
+violations, owner-thread liveness and final helper-exit guard release under the existing finite
+waits. The prior forty-second circular wait is not passing evidence for any of those assertions.
+
+Select the complete EOF proof only through mandatory post-cold `eof-release-driver`, invoking
+the existing isolated `eof-driver`/`eof-helper` chain. Remove its enclosing ordinary mixed-Core
+test invocation, whose still-live cached dispatcher independently holds the stock leaf. Keep
+the original forty-five-second outer helper and forty-second driver bounds, with no production
+change. Before starting the EOF helper, the fresh driver must actually open and close the stock
+leaf with read access and share_mode(0); an unrelated holder refuses this baseline. Then retain
+the existing helper-held error 32, expiry/late-read-held error 32, exact helper kill/reap and
+final exclusive-open success assertions. Verify: all three native rows run this exact mode as
+the required first post-cold ownership proof after the cold Core process exits, followed by the
+unchanged Restricted/parent-crash proofs; no coverage, guard or deadline is weakened or skipped.
+
+Add cfg(test)-only bounded phase breadcrumbs to the actual filesystem dispatch path: API entry,
+queue admission, owned-child spawn start/completion, input write/flush completion, reply receipt,
+timeout/refusal and cleanup confirmation. Emit only fixed operation/phase names, monotonic request
+ID, owned PID and elapsed/remaining milliseconds; never SID, path, input, reply or secret values.
+The first failing cold state fixture must expose these facts without an earlier warm-up. Keep the
+production source, request framing, mutation no-replay rule and original thirty/three-second
+bounds unchanged. Verify that native failure output identifies the last completed stage; use the
+same x64/ARM64/MSRV cold gates and distinguish post-gate startup measurements from that request.
+
+Add a separate native stock-adapter proof step after the original cold core gate on the same
+x64/ARM64/MSRV rows. Select the exact existing owned_loader_fixture_child with fixed
+restricted-driver and parent-exit-driver modes in fresh test processes; record each actual
+mode/result. The ordinary mixed Core harness can retain its earlier filesystem stock guard for
+sixty seconds, so it cannot supply the final incompatible-open release proof. The fresh proof
+orchestrator must perform no stock/SID/filesystem-dispatch call of its own. Keep required names,
+the original cold command/order and all job deadlines; run no probe before cold qualification.
+
+Restricted mode sets PSExecutionPolicyPreference=Restricted only on its owned child helper.
+Before binding JSON, a cfg(test)-only compiled assertion in both the actual generic and fixed
+PowerShell source resolves SecuritySupport from the already loaded PSObject assembly, selects
+the exact NonPublic|Static GetExecutionPolicy(string) method for Microsoft.PowerShell, and
+requires the actual Microsoft.PowerShell.ExecutionPolicy enum to be Restricted. Missing
+PowerShell 5.1 reflection compatibility or an overriding policy fails explicitly. No Security-module
+import, Set-ExecutionPolicy, bypass argument, host/registry policy change or production selector is added.
+Report a fixed bounded policy-confirmed token tied to each actual owned PID.
+
+Preserve that actual fixed-child receipt independently of its rolling diagnostic history.
+Add one cfg(test)-only observed-policy bit to each ChildPhases; latch it only when the existing
+exact policy-confirmed token is parsed from that owned child's bounded stderr. policy_observation
+reads this bit from the current retained ChildPhases/PID association, rather than searching a
+sixteen-entry ring whose startup token can be evicted by three successful requests. Keep the
+ring, production source, token/reflection and all deadlines unchanged. A fresh ChildPhases
+starts false; arbitrary stderr, another child or environment text cannot supply confirmation.
+Verify: feed the existing recognized token followed by more than sixteen recognized request phases,
+retain its confirmation while the ring stays bounded, and prove fresh/unknown-token states
+remain unconfirmed. Then require actual Restricted generic JSON/COM and fixed SID/CreateNew/
+ACL/PID proof on all native rows; the observed timeout or a saved generic result alone is not
+passing evidence. Parent-crash qualification follows only after that required mode succeeds.
+
+Within that helper, run the real generic Unicode JSON round-trip/read-only Schedule.Service
+inventory and fixed SID/CreateNew/private-ACL operations concurrently, preserving each API's
+original thirty-second entry deadline and three-second cleanup. The existing forty-five-second
+isolated helper bound stays unchanged; no sequential cold-start allowance is added. Use retained
+JSON command objects and the existing forged-module/cwd marker; the marker must remain absent.
+Core source and its private policy composition/token parser remain filesystem-owner scope.
+
+Parent-exit mode owns a crash-host and an independent observer through retained native Child
+objects. The crash-host starts its real fixed worker and generic PowerShell child; the latter
+starts one exact current-test-executable heartbeat descendant with data-only argv/environment,
+UseShellExecute=false and hidden stdio. Observe actual worker/generic/descendant identities while
+alive, including real fixed replies and generic spawn facts. The observer opens and retains all
+three Process handles, then publishes the bounded handles-bound marker before any crash.
+
+The orchestrator kills/reaps only its retained crash-host, preserving abrupt kernel Job closure.
+The observer must confirm actual associated-process exits with finite WaitForExit under its
+single original adapter budget; API completion is accepted only before that deadline. Verify
+both generic/native heartbeat files stop, not merely that PID lookup fails. A read-only share=0
+stock open refuses while either helper owns the guard, including after crash-host exit while
+the observer remains live. Permit the final successful open only after both helper processes,
+all observed targets and the observer's normal adapter pipe/Job cleanup are confirmed finished;
+otherwise fail and retain bounded cleanup ownership. No system file mutation or unrelated PID signalling occurs.
+
+Verify: (1) each fresh Restricted child reports actual enum/PID proof, JSON/COM and fixed
+SID/CreateNew/private ACL succeed, and forged code remains unexecuted. (2) before-crash retained
+handles and moving heartbeats prove real live descendants; killing only the owned parent makes
+all three handles signal exit without replay or graceful-exit claims. (3) the observer-held guard
+continues refusing incompatible opens, then final confirmed helper exit permits a read-only open
+and heartbeat samples stay unchanged. Record revision/image/toolchain, modes, stages and counts;
+compile-only, unset helper mode, timeout or missing marker cannot qualify these gates.
+
+The post-cold stock diagnostic still launches its own raw PowerShell children with unqualified
+JSON cmdlets, while the accepted Core adapter uses retained guarded binaries and command objects.
+Correct that diagnostic boundary by invoking the exact owned_loader_fixture_child with three
+fixed LOCRON_STOCK_LOADER_FIXTURE modes: diagnostic-bootstrap, diagnostic-small and diagnostic-60k.
+Each selection runs in a fresh hosted test process and independently retains the existing
+forty-five-second isolated-helper bound, thirty-second API-entry budget and three-second owned
+cleanup bound. Do not combine two sequential cold starts inside one helper, add a warm-up, change
+the original cold Core command/order or let a later diagnostic pass replace a failed cold gate.
+
+All three helpers use the real prepare_adapter/run_adapter_worker, StockAdapterGuard, owned
+suspended Job factory, bounded pipes and retained locronFromJson/locronToJson command objects.
+The cfg(test)-only bootstrap helper clears only the prepared input bytes, preserving genuine
+zero-byte stdin and EOF through the normal bootstrap. Its compiled static fact script ignores
+request data and requires the actual locronInput length to be zero; it must not substitute an
+empty JSON object or skip parsing. The two structured helpers send the existing Unicode echo
+and five-character/60,000-character payloads, validating the exact 54/60,049 UTF-8 input lengths,
+echo equality and payload lengths. Static caller JSON output uses &$locronToJson -Compress.
+
+Retain the runner-host PE/file-version and invoking-shell architecture/version facts. Record
+each actual child PID, PowerShell 5.1 version, is64bit/process architecture, actual current-token
+SID, byte count, elapsed time, input/EOF/output phase receipts and success or timeout category.
+Require a valid S-1 SID and PS5.1 facts, native architecture agreement, input-written and ordered
+binding/JSON/caller phases, and actual root-exit/empty-Job/pipe completion before a passing fact.
+Use bounded existing trace/error data on failure. Cleanup uncertainty or a retained quarantine
+is a failed diagnostic, never a synthesized cleanup-confirmed value from process Drop/PID absence.
+No fixed-worker warm-up, adapter fallback, source supplied by environment, host policy change or
+new public Core API is introduced. Core helper source remains the filesystem owner's scope.
+
+The CI diagnostic script retains its host metadata header, replaces its private raw child-launch
+implementation with these three exact cargo/helper selections, and records every independent
+result before failing if any selection failed. Keep the existing post-cold always condition,
+job names and deadlines; no continue-on-error, retry, suppressed assertion or weakened output cap.
+Verify on native x64/ARM64/MSRV: all original facts and zero/small/60k assertions execute against
+the actual guarded Core path; a timeout or missing phase remains a failing gate with real owned
+cleanup facts, and the original unwarmed cold suite still runs first. Pair the reviewed Core
+helper and CI source before publication; command compilation alone is not native qualification.
+
+The next exact ARM64 run located the first failure in the SID exchange: spawning the owned child
+and flushing its input took 49 ms, but no reply arrived before the original thirty-second
+deadline. The fixed PowerShell source contains no Add-Type or dynamically compiled C# helper.
+The current parent-side stages cannot distinguish stock host/source initialization, Console
+encoding and ReadLine, first JSON cmdlet activation, SID lookup, or reply serialization. Before
+changing any production operation, add test-only static child-phase tokens on stderr at source
+entry, encoding completion, input-line receipt, JSON parse completion, SID completion and reply
+serialization/flush. Select these tokens only from fixed source at compile time; no caller data,
+SID, path, payload or exception text enters a token. Preserve the existing stderr capture cap and
+early failure, collect at most sixteen timestamped recognized tokens per owned child, and attach
+only those tokens to the existing failure diagnostics. These timestamps mean parent receipt,
+not a claimed child CPU measurement. Production source, framing and deadlines remain unchanged.
+
+Verify: (1) the actual first failing request runs without warm-up or replay and distinguishes the
+last completed child phase from the already measured input flush; absence of the source-entry
+token remains an unresolved host/source bootstrap gap. (2) native successful SID and create
+requests produce the expected ordered fixed phases without contaminating stdout frames or
+revealing private input, while unknown stderr content is never promoted into diagnostic facts.
+(3) capture-limit and timeout fixtures still fail promptly under thirty seconds plus the separate
+three-second confirmed cleanup; token retention stays bounded and failed queued work is not
+replayed. Use these facts to review the next implementation choice before changing production.
+
+The measured first request now reaches input-line receipt in about 3.1 seconds but never reaches
+the JSON-parse completion token before thirty seconds. Command discovery, module import and the
+first JSON invocation still share that unmeasured interval; do not label autoload the proven cause.
+Select a narrow fixed-worker binding change: disable module autoload in this child session and
+explicitly import only ConvertFrom-Json/ConvertTo-Json cmdlets from the absolute stock Utility
+manifest under the running stock host's PSHOME. Import no exported functions or aliases, qualify
+both JSON calls with Microsoft.PowerShell.Utility, and retain the same stock converters and
+parameters. No request value chooses a module, assembly, function or source. Keep inherited
+PSModulePath removal, NoProfile/NonInteractive, the existing execution-policy behavior and all
+descriptor operations; policy/import failure is a visible refusal rather than a bypass.
+
+Add test-only fixed before/after-import phase tokens to the existing bounded stderr facts. Import
+is inside the first caller's original thirty-second cold budget, not a warm-up or separate startup
+allowance. The existing input-line/JSON/SID/reply tokens locate any remaining first invocation gap.
+Stock Utility is the same OS module previously selected by autoload; read-only inspection of this
+host's 5.1 manifest confirms both JSON cmdlets and its stock nested binary/script modules. This
+binding choice removes module search from request processing but is not yet a performance proof.
+
+Verify: (1) the original unwarmed x64/ARM64/MSRV cold gate completes or reports the last import/
+JSON phase under the unchanged thirty-second operation and three-second confirmed cleanup bounds;
+later successful probes cannot turn a failed gate into acceptance. (2) an isolated actual worker
+uses the fixed stock converters despite hostile inherited module paths, preserves Unicode/percent/
+hash paths and strict reply frames, and emits ordered bounded import/SID/CreateNew phases.
+(3) malformed input, output caps and timed-out creation still refuse without executing request
+source, increasing children, replaying a mutation or changing execution policy. Native evidence
+must establish whether the measured ARM64 delay is resolved before marking the privacy gate done.
+
+The measured remaining ARM64 broad-file failure is its separate generic ACL-fixture setup, after
+private creation succeeded. Change only the two broad file/root setup scripts to the compiled
+.NET Framework File/Directory GetAccessControl and SetAccessControl methods; preserve the same
+Everyone Read ACE, JSON input/output and original generic thirty-second plus three-second bounds.
+Avoid importing the unrelated PowerShell Security module for a test-owned ACL mutation. Do not
+change production worker framing, JSON binding, deadlines, cold gate ordering or host policy.
+This is a fixture dependency correction; generic cold-stage/policy acceptance is still pending.
+
+Verify: (1) native ARM64/x64/MSRV original cold core suites run unchanged and the deliberately
+broad file fails private validation before truncation with all original bytes intact. (2) the
+owned broad directory still refuses ordinary private adoption, remains broad until explicit
+repair, then has real current-SID/SYSTEM privacy. (3) real generic startup/stall/output-bound and
+fixed-worker cold/concurrent phase tests still execute without a warm-up, retry, skipped test or
+budget increase; setup failure stays a visible failure rather than a passing privacy assertion.
+
+Instrument the actual generic adapter separately from the fixed filesystem dispatcher. Add only
+cfg(test) fixed child tokens for source entry, encoding, complete stdin read, JSON conversion
+entry/completion, caller entry/completion and catch. Retain a bounded recognized-token trace while
+stderr is read, and report it on actual adapter failure even when timeout cancels its pipe task.
+Do not render request/SID/path/payload values or promote unknown stderr into phase facts. Preserve
+production source/JSON binding, the per-entry thirty-second deadline, separate three-second owned
+cleanup, 64 KiB input and 128 KiB per-output bounds, permit accounting and original cold ordering.
+Explicit stock Utility binding is a researched next candidate, not a measured generic root cause
+or an approved production switch in this diagnostic step. A stricter-policy candidate must be
+tested only in an owned hosted child; production and host policy remain unchanged.
+
+The mapping fixture must attempt release and join its helper before any assertion, preserve the
+independent marker, release, helper and test-owned ancestry observations, and inspect the joined
+helper error before an absent-marker assertion can hide it. Stop waiting when the helper already
+exited; this shortens failure reporting without changing either adapter budget or mapped-handle
+acceptance. Never turn a missing marker into a passing mapped-file assertion.
+
+Verify: (1) original native ARM64 broad-file cold failure now identifies the actual generic child
+phase under the same thirty-plus-three bound without warming/replaying state creation. (2) the
+mapping fixture reports its actual setup/stall error and independent temporary-parent status after
+owned cleanup, or proves a writable mapping still rejects the stable read gate after the original
+FileStream closes. (3) isolated successful generic calls emit ordered fixed phases, malformed/
+oversized/stalled calls keep both caps and confirmed cleanup, and hostile module paths/stricter
+policy remain explicit pending acceptance until an actual reviewed binding fixture proves them.
+
+Before writable SQLite open, explicitly precreate missing database/WAL/SHM files with that
+descriptor and validate them again after configuration/migration, before accepting application
+operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable
+open precreates missing sidecars again. Read-only validation uses the actual supplied database
+filename and its sidecars, and performs final readback without changing the file-creation contract.
+
 Use Windows-only windows-permissions =0.2.4 explicit GetSecurityInfo/SetSecurityInfo wrappers with
 SE_FILE_OBJECT, Owner/Dacl and ProtectedDacl flags; avoid the audited-buggy convenience trait.
 Safe Windows File open flags permit no-follow handle readback and directory guards. Reject every
@@ -144,9 +597,34 @@ New files inherit only from validated private parents; inspect existing files be
 sensitive contents. Shared core primitives let store, engine output and server token enforce the
 same rule without reversing the workspace dependency graph. doctor reports measured ACL facts.
 
+Windows existing-file observers use existing-only private parent guards. In particular,
+open_private, role-sidecar reads, missing-file deletion and read-only SQLite validation may
+return absence but never create a state root, lock, database or sidecar while observing it.
+Explicit private-directory/CreateNew/permanent-lock creation remains in the owning writable
+composition path. Preserve Unix permission/open semantics. Native fixtures inspect an initially
+absent root before and after each passive operation, verify NotFound/None/idempotent deletion,
+and prove that the separate writable first-run path still creates correctly owned state.
+
 During the build-foundation stage, unimplemented Windows permission changes fail with an explicit
 unsupported-capability error, and permission diagnostics report `unsupported`. Compilation alone
 must never turn a no-op permission adapter or a numeric placeholder into an owner-only fact.
+
+Managed directories and data files accept only the current SID as owner and only current-SID/
+SYSTEM allow entries; existing broad descriptors are refused rather than silently tightened. A
+test that begins with an ordinary temporary directory creates a private managed child. Ancestor
+directories may have trusted current-user, SYSTEM, Administrators or Windows TrustedInstaller
+ownership. Retained no-delete/no-write-sharing handles protect even foreign-writable ancestors;
+an incompatible existing handle is an actionable refusal, never a reason to drop the guard.
+Resolve relative state overrides lexically against the current directory before opening guards;
+reject drive-relative/root-relative ambiguity and network state roots. Canonicalize identity only
+after every component has passed no-reparse handle inspection and the guards remain live.
+
+Managed file readers retain no-delete sharing. Dashboard/CLI follow reads release their handles
+after each frame snapshot, but a concurrent snapshot can briefly prevent Windows finalization.
+Retry only native sharing violations for at most five seconds, validating source and destination
+again on each guarded rename attempt. Keep all other failures immediate. A reader held beyond
+that bound leaves the synced partial intact and reports a real infrastructure failure for normal
+recovery; never claim finalization or discard captured bytes when the rename has not succeeded.
 
 ### Wake, cooperative role control and Task Scheduler
 
@@ -163,10 +641,16 @@ requests to that role's existing cancellation token. Lifecycle coordination firs
 task activation, requests stop, and waits for confirmed role/lock exit. A failed request/remaining
 holder is an actionable bounded failure; task-state alone cannot report graceful completion.
 
-Keep core free of async-runtime types: it shares normalized user/state endpoint identity, fixed
+Keep core free of public async-runtime types: it shares normalized user/state endpoint identity, fixed
 message framing and a bounded synchronous hint sender. Engine owns the asynchronous named-pipe
 listener and role-control cancellation adapter. Server uses the core sender without gaining an
 engine dependency; CLI composes engine listeners after acquiring the owning lifetime lock.
+
+Windows role locks retain actual OS byte-range ownership and publish a separate private, atomic
+owner sidecar containing diagnostic lifetime identity and whether the process is a registered
+service. This keeps observers from trying to read bytes covered by the Windows lock. The sidecar
+never proves ownership or authorizes PID killing: control validates the exact live lifetime,
+and lifecycle completion still requires the corresponding daemon/dashboard lock to be free.
 
 Use stock PowerShell Schedule.Service COM with structured inputs/output, deterministic SID/state/
 role task names, current SID LogonTrigger, INTERACTIVE_TOKEN, LUA, no password, and create/update
@@ -176,6 +660,65 @@ escaped state/role arguments. Read semantic settings/status rather than localize
 Preserve enabled/disabled role state on refresh; run roles directly or use a fixed hidden launcher
 that waits and propagates exit status so restart works. Task.Stop is a documented hard fallback
 after cooperative timeout, with kill-on-close/recovery behavior, not graceful-drain evidence.
+
+Registered `daemon run --service-mode` first acquires the private daemon.activation.lock and its
+atomic registered-service sidecar with a unique activation lifetime. Bind an internal
+daemon-activation control endpoint to that lifetime, then passively retry actual daemon-lock
+acquisition under cancellation. The wait has no arbitrary execution-duration limit; a manual
+daemon is never signalled, and scheduler ownership is not claimed before its real lock is acquired.
+Once acquired, establish the ordinary daemon ownership/control before beginning scheduling. Keep
+the activation lock/control through this registered process's complete lifetime, and release it
+only after actual daemon ownership and all listeners have been torn down. This gives maintenance
+one exact activation lifetime spanning waiting, running and exit without a handover gap.
+Status distinguishes a waiting registered task from the actual daemon lock owner. Installation
+therefore retains automatic activation after a manual daemon exits. Quiesce disables the task,
+requests the exact activation lifetime, and waits for the activation lock plus waiting launcher
+to exit under the shared thirty-second cooperative deadline. An unchanged owned activation may
+then use explicit Task.Stop; actual lock/launcher exit still requires finite confirmation. A
+remaining manual holder is untouched and can still refuse executable replacement. Runtime owns
+main/waiter/core-control allowlist wiring; store owns the activation path and service owns the
+guarded observer/inventory/quiescence. No new public product role or CLI command is introduced.
+
+Windows registration uses the shared full-file-identity/SID digest for role-specific task names.
+Select a fixed hidden stock PowerShell 5.1 launcher: `-EncodedCommand` carries only static source,
+and `-EncodedArguments` carries a serialized CLIXML array containing one base64 JSON request.
+The launcher validates the current SID and uses ProcessStartInfo with UseShellExecute=false,
+CreateNoWindow=true, exact escaped Windows argv and an explicit working directory; it waits for
+the role and returns that role's exit code. The wrapper's PID is never the role's PID. This
+keeps paths/data out of executable source and avoids a separate installed script or policy change.
+Readback compares semantic principal/trigger/power/restart/action fields and retains a disabled
+registration on refresh. COM may return account names after SID-based registration, so translate
+actual principal/logon-trigger account identifiers to SIDs before semantic comparison; environment
+username text never proves account identity. Cooperative failure first waits under the shutdown deadline; Task.Stop
+then targets only the validated owned registration with the unchanged registered-service lifetime.
+After this hard fallback, actual role-lock exit is still required and forced completion is
+reported explicitly; unowned/manual holders remain a bounded refusal or registration deferral.
+
+Updater/package maintenance inventories every current-SID Locron task bound to the verified
+installed executable, across all state roots. Compare full Windows file identity while retained
+no-follow file/ancestor guards remain live; path lowercasing and filename matching do not prove
+an executable binding. Parse only the fixed launcher command plus its strictly generated one-value
+CLIXML/base64-JSON argument representation. Reconstruct the private state guard and shared full
+instance digest, and validate role, deterministic task name, marker, task ACL and executable.
+Malformed, foreign or unconfirmed bindings refuse maintenance before stopping any process.
+
+Expose a guarded in-memory snapshot and a serializable versioned restore record containing the
+current SID, previous executable, and each prior registered role's state root, instance digest,
+task name, original enabled flag and exact semantic definition fingerprint. Exclude transient
+run/result observations and the enabled flag from that fingerprint. Quiesce disables activation
+for every owned binding before requesting exact lifetime shutdown; actual role-lock and waiting
+launcher exit remain necessary. The private journal records confirmed quiescence and explicit
+forced fallback facts, without containing executable task source or arbitrary role arguments.
+Restore reconstructs guards and checks every existing definition against the recorded fingerprint
+before the first write, then binds only prior registered roles to the new verified executable and
+restores their exact enabled flags. Changed definitions/roots/SIDs fail closed; disabled roles stay
+disabled. Missing registrations are not silently recreated from a stale record.
+
+The package flow composes these same APIs through the existing installer maintenance modes:
+Prepare snapshots/quiesces all bindings for one verified executable and journals an operation UUID;
+Complete validates the installed package and restores prior registrations; Remove quiesces and
+removes only the validated prior registrations. No additional release asset or arbitrary manifest
+hook is introduced. Distribution owns the private journal/receipt and package registration proof.
 
 ### Unsigned release, installation and update handoff
 
@@ -312,6 +855,26 @@ also an exact-path binding. ZIP registrations use their registered InstallLocati
 relative executable path; a package-looking directory name alone is insufficient. This uses
 [WinGet's ARP source](https://github.com/microsoft/winget-cli/blob/master/src/AppInstallerCommonCore/PortableARPEntry.cpp)
 and [portable installer source](https://github.com/microsoft/winget-cli/blob/master/src/AppInstallerCLICore/PortableInstaller.cpp).
+
+The replacement adapter must retain a narrow exclusive read/write gate opened without reparse
+traversal, with handle-bound current-SID/private-DACL validation inside a guarded parent. Existing
+mapped holders must refuse this gate, and new launch/read/write attempts must remain refused
+while it lives. Retain the exact handle and parent guards through the selected replacement and
+rollback; reopening it through ordinary shared private-file helpers would collide with the gate.
+Delete sharing alone does not prevent another same-SID rename, so path-based rename cannot be
+presented as exact-handle identity proof. The selected adapter must use an audited safe API;
+workspace unsafe code, dynamic P/Invoke, in-place replacement and optimistic success are refused.
+Native adversarial tests must prove mapped-holder refusal, blocked new launch, competing-leaf
+refusal and rollback under the live gate. The concrete recovery design also remains subject to
+the documented native crash-phase gates.
+
+Reading a WinGet-owned executable source uses a separate retained no-reparse file/ancestor guard.
+Require the current SID as file owner and refuse every effective nontrusted-account allow entry
+granting file write, append, delete, WRITE_DAC or WRITE_OWNER; trusted SYSTEM/Administrators access
+is permitted and other accounts may retain read/execute access. Inspect the descriptor on the
+retained handle without taking ownership or silently repairing the package. Helper, journal and
+standalone destination paths keep their stricter current-SID/SYSTEM-only private policy. Native
+tests must preserve permitted package read access and refuse broad write/delete/control rights.
 
 ### Change order and verification
 

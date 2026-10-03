@@ -2709,6 +2709,94 @@ Sources: [atomic DirectoryInfo creation](https://learn.microsoft.com/en-us/dotne
 [CreateFile flags and sharing lifetime](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 [reparse-point mutation](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_set_reparse_point).
 
+### Native stock-adapter policy and parent-exit proof
+
+Microsoft documents that process execution policy is held in the session environment and does
+not write registry policy; Group Policy still takes precedence. The early Desktop source has
+System.Management.Automation.Internal.SecuritySupport.GetExecutionPolicy(string shellId), with
+MachinePolicy/UserPolicy/Process ordering and the actual Microsoft.PowerShell.ExecutionPolicy
+enum. This is evidence for a fixed reflection candidate, not a PowerShell 5.1 runtime claim. Use
+only the exact method in the already loaded PSObject assembly and require actual Restricted in
+both real adapter children. Missing binding or a different effective policy is a failed proof,
+never an env-text substitute, module import, policy bypass or skipped assertion.
+Sources: [process policy and precedence](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1),
+[Desktop method and scope source](https://github.com/PowerShell/PowerShell/blob/v6.0.0-alpha.18/src/System.Management.Automation/security/SecuritySupport.cs#L230).
+
+The existing fixed worker has a cfg(test)-only source-composition seam and bounded child-phase
+parser. Add the one compiled policy assertion/token only for the exact isolated Restricted mode;
+generic source uses the same assertion. Match tokens to actual generic/fixed PIDs and real
+JSON/SID/CreateNew results. Concurrent generic JSON/read-only COM and fixed filesystem proof
+keeps the original thirty-second API, three-second cleanup and forty-five-second helper bounds.
+No production operation, public selector or caller-provided script enters the fixed protocol.
+
+Exact 8814d8c MSRV job 111106970873 passes cold Core 88/88 and the mandatory independent EOF
+proof in 3.42 seconds. Its next Restricted fixture times out at loader_tests.rs:201, the fixed
+thread's policy-observation loop after real SID/CreateNew/ACL assertions, then the failed join
+masks the saved generic result. This log does not show a policy, binary-binding or COM failure.
+The fixed policy observation currently scans only ChildPhases' sixteen-entry diagnostic ring:
+five startup tokens include the policy assertion receipt, followed by five tokens for each of
+SID, directory creation and file creation. Twenty tokens necessarily evict that startup receipt.
+This source-grounded explanation remains subject to the unchanged native two-child proof.
+
+Keep a separate cfg(test)-only observed-policy bit in the actual owned child's ChildPhases,
+latched exclusively by the exact successfully parsed policy-confirmed token. The recent-phase
+ring remains bounded to sixteen and a newly owned child begins false. Keep its actual PID/Arc
+association and effective enum assertion; no environment text or guessed policy can set it.
+An overflow/reset/unknown-token fixture plus the required native Restricted mode must prove
+the durable receipt without relaxing the original deadline, policy or child-lifetime gates.
+
+Root exit and PID disappearance do not prove descendant cleanup. Job kill-on-close supplies
+emergency containment when the parent closes its kernel handles; an independent observer must
+retain actual process handles while the targets are alive and wait for those associated objects.
+Select an owned crash-host with real generic/fixed children plus one native heartbeat descendant,
+and a separate real generic observer. Kill only the retained crash-host after all three target
+handles are bound. Confirm their exits, both stopped heartbeat files and actual helper cleanup
+under existing bounds; do not replace the intended crash with a normal parent wait/destructor.
+Sources: [Job child membership and kill-on-close](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+[parent handle closure and descendant behavior](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process),
+[finite associated-process waits](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.waitforexit?view=netframework-4.8.1).
+
+The mixed Core test process can legitimately retain a prior filesystem worker's stock guard for
+sixty idle seconds. A final share=0 open there cannot identify this fixture's guard release.
+Run the two exact proof-driver modes in fresh hosted test processes after the unchanged cold
+gate, with no stock/SID call from their orchestrator. The incompatible read-only open must remain
+blocked while the observer still owns its guard and succeed only after both owned helpers have
+actually exited. A host-only exit cannot release the observer's independent guard. This adds
+native evidence rather than warming the cold gate, extending timeouts or mutating system files.
+
+### Post-cold diagnostic adapter alignment (2026-10-03)
+
+PR41 head 1fb5301, run 37081545855, ARM job 111082951981 passed all 82 cold Core and 61 Store
+tests. Its later diagnostic's zero-input child timed out at 30,051 ms with actual cleanup
+confirmed; independent small and 60k children passed at 23,166 and 22,894 ms. The stock PE was
+native 0xAA64, PowerShell 5.1.26100.9457, invoked from native pwsh 7.6.6. This is an actual failing
+post-cold diagnostic, not a failed privacy test or evidence for extending the product deadline.
+Source: [exact native ARM gate and diagnostic](https://github.com/WhiteKiwi/locron/actions/runs/37081545855/job/111082951981).
+
+The diagnostic's direct and structured child sources invoke unqualified ConvertTo-Json and
+ConvertFrom-Json, despite removing inherited PSModulePath. They therefore measure a distinct
+command-discovery/bootstrap path from the accepted guarded binary loader. The original elapsed
+times include command binding/JSON serialization, so they do not isolate process-start time or
+prove autoload to be the sole delay. Preserve those historical observations, and qualify the
+actual reviewed Core adapter in the corrective diagnostic rather than re-running this mismatch.
+Sources: [legacy diagnostic source](https://github.com/WhiteKiwi/locron/blob/1fb5301b77e3949ac008fa84e747ae84ef1ba4fe/.github/scripts/windows-adapter-diagnostic.ps1),
+[accepted Core adapter](https://github.com/WhiteKiwi/locron/blob/1fb5301b77e3949ac008fa84e747ae84ef1ba4fe/crates/locron-core/src/windows.rs),
+[retained JSON commands](https://github.com/WhiteKiwi/locron/blob/1fb5301b77e3949ac008fa84e747ae84ef1ba4fe/crates/locron-core/src/windows/stock_json.ps1).
+
+Windows PowerShell 5.1 documents that empty-string ConvertFrom-Json input produces no output.
+Select a cfg(test)-only prepared-input clear for the zero-input helper while retaining actual
+EOF reading and command-object parsing. Its static fact script must ignore request data and
+assert the received text was empty. Native failure of that contract remains a failed proof;
+replacing it with {} would conceal the original zero-byte requirement.
+Source: [PowerShell 5.1 empty-input contract](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-5.1#-inputobject).
+
+Three independent exact helper modes preserve each existing 30/3-second adapter/cleanup limit
+and forty-five-second isolated-helper bound without serial cold-start allowance inside a helper.
+Require actual guard/Job/pipe ownership, real SID/version/architecture, original UTF-8 sizes and
+echo/length assertions, bounded stage/PID receipts and confirmed cleanup. The script remains a
+post-cold failing gate on all three native rows; no host policy edit, raw stock child, fallback,
+warm-up, test retry or passing cleanup fact from destructor/PID disappearance is accepted.
+
 ### Local named pipes with creation-time security
 
 Select target-specific `interprocess = "=2.4.4"` with its `tokio` feature and a safe widestring
@@ -2742,7 +2830,287 @@ Sources: [interprocess manifest](https://github.com/kotauskas/interprocess/blob/
 [Microsoft named-pipe ACL/instance rights](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
 [Microsoft pipe creation flags](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-createnamedpipew).
 
+### Passive missing-state observation (2026-10-03)
+
+A fresh-state source audit found that Windows open_private cleared file creation flags but still
+called DirectoryGuard::private for its parent. A role-sidecar or read-only observer could thus
+create directories while reporting no file. Require existing-only guards at Windows observer
+boundaries and retain explicit creation in writable/owning paths. Tests must inspect absence
+without preinitializing the root; existing populated fixtures do not prove this property.
+
+### Measured ARM64 stock PowerShell bootstrap (2026-10-03)
+
+PR41 head 70fe31d run 37031019704, ARM64 job 110917557150, still failed eight cold fixtures after
+the output-cap deadlock correction. Its post-gate diagnostics independently measured 22,504,
+22,552 and 22,593 ms for three stock PowerShell 5.1 children: no-stdin version/SID, small structured
+stdin and 60 KiB structured stdin. All stdout/stderr/EOF processing completed. The stock image
+was native ARM64 (PE machine 0xAA64), and the invoking shell was PowerShell 7.6.6. This isolates
+slow stock process bootstrap on that hosted image independently of Locron's pipe framing; it
+does not establish the underlying Windows/.NET bootstrap cause or a universal ARM64 latency.
+
+Current SID discovery, every missing directory component and every new managed file each start
+a separate stock child. Two thirty-second worker slots therefore cannot keep concurrent callers
+inside their original queue/startup budgets when each start consumes about 22.5 seconds. The
+five-second script-entry and ten-second output-phase assumptions also expire before the script
+can execute. Raising production deadlines or skipping ACL tests would not address this cost.
+
+Select a fixed persistent filesystem dispatch worker for SID and the already reviewed atomic
+.NET security constructors, with bounded framed JSON, original per-request deadlines, finite
+queue/idle lifetime and no arbitrary source/data execution. A suspended pre-enrolled kill-on-close
+Job is required because a static cached child is not dropped on parent process exit. Keep one
+filesystem and one generic worker slot; confirm worker cleanup and refuse uncertain mutation
+outcomes without replay. Native proof remains required for cold first use, concurrent callers,
+bad frames, output caps, idle restart and actual abrupt-parent-exit child termination. Task
+Scheduler cannot assume repeated fresh 22.5-second COM launches fit a thirty-second quiesce;
+its separate fixed-worker design is still pending. Preserve phase markers in real-stock timeout/
+cap fixtures under the original thirty-second maximum and measure prompt cleanup after entry.
+
+Evidence: [native ARM64 job and post-gate diagnostics](https://github.com/WhiteKiwi/locron/actions/runs/37031019704/job/110917557150).
+
+The selected one-generic-child limit makes unrelated test-harness timeout/cap cases compete for
+the same intentionally occupied thirty-second slot. Serialize only native core-library harness
+cases while preserving explicit concurrent-caller and saturated-queue fixtures. Isolate fixed
+worker protocol faults and parent-crash cases in exact test subprocesses; failure is expected to
+invalidate queued work in that process and must not contaminate unrelated state fixtures.
+Other library harnesses retain normal parallelism. This is test scheduling for deliberate owned
+failures, not a cold-start workaround or a larger production deadline.
+
+The next worker run, PR41 head 762bed7/run 37038880251, passed x64 stable and MSRV core/store.
+ARM64 passed 66 core fixtures, including isolated simultaneous cold callers, but its first
+private-file fixture timed out at filesystem CreateNew. Post-gate stock PowerShell 5.1.26100.9457
+probes measured 513/469/456 ms for bootstrap/small/60k structured input, much faster than the
+earlier image's 22.5-second measurements. Those later probes do not locate the actual first cold
+worker's delay. Select test-only phase/elapsed/operation/request-ID/owned-PID breadcrumbs on its
+real dispatch path, without path/SID/payload values, warm-up, new deadlines or mutation replay.
+Do not call the failed cold acceptance transiently successful from later bootstrap performance.
+Evidence: [exact native ARM64 worker run](https://github.com/WhiteKiwi/locron/actions/runs/37038880251/job/110943792703).
+
+The real-request diagnostics in PR41 head a6f0189/run 37041311097 identify the first stalled
+operation as SID discovery, rather than the later CreateNew call that reports its failure.
+ARM64 child PID 8688 spawned at 48 ms and input was flushed at 49 ms; no reply arrived by
+30,004 ms, and owned root-plus-Job cleanup was confirmed at 30,052 ms. This rules out caller
+queue and process creation latency in that request, while leaving the fixed PowerShell host,
+source initialization and request body unlocated. Inspection of filesystem_worker.ps1 confirms
+there is no Add-Type or dynamic C# compilation. Its first stages are Console encoding setup,
+ReadLine, ConvertFrom-Json, WindowsIdentity.User and JSON reply serialization. Select bounded
+test-only fixed phase tokens on stderr to locate the gap before replacing any of those stages.
+Do not infer a production fix, warm the original gate, or replay a timed-out mutation from the
+later successful fixtures or stock bootstrap probe.
+Evidence: [first SID exchange and confirmed cleanup](https://github.com/WhiteKiwi/locron/actions/runs/37041311097/job/110951832994).
+
+PR41 head cebdfe4/run 37044222227 narrows the real first SID gap further. Its child spawned at
+49 ms and input flushed at 50 ms; fixed source entry arrived at 3,097 ms, encoding at 3,114 ms,
+and the actual input line at 3,123 ms. No JSON-parse completion arrived before the thirty-second
+timeout, and owned cleanup completed at 30,041 ms. The source's first unqualified ConvertFrom-Json
+therefore contains the remaining gap, including command discovery/import and converter activation.
+This does not yet prove which component is slow.
+Evidence: [actual first JSON-stage timeout](https://github.com/WhiteKiwi/locron/actions/runs/37044222227/job/110961511069).
+
+Windows PowerShell 5.1 documents automatic import on first command use, its session-local None
+preference, explicit module-file imports and cmdlet/function/alias import restrictions. Qualified
+command names select the intended module. Select an absolute PSHOME stock Utility manifest import
+with only its two JSON cmdlets, disable autoload in the child and qualify those two calls; the
+converter implementation and JSON parameters remain unchanged. Static before/after-import tokens
+will distinguish module initialization from the remaining converter gap without extra budget.
+Read-only inspection of this host's stock manifest confirms the JSON exports and stock nested
+binary/script modules; it is not native execution or ARM64 performance evidence. The inference
+that avoiding discovery helps the cold failure remains a hypothesis until the original CI gate.
+Sources: [5.1 module-autoload preference](https://raw.githubusercontent.com/MicrosoftDocs/PowerShell-Docs/main/reference/5.1/Microsoft.PowerShell.Core/About/about_Preference_Variables.md#psmoduleautoloadingpreference),
+[5.1 explicit/restricted imports](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/import-module?view=powershell-5.1),
+[5.1 command qualification](https://raw.githubusercontent.com/MicrosoftDocs/PowerShell-Docs/main/reference/5.1/Microsoft.PowerShell.Core/About/about_Command_Precedence.md#use-module-qualified-names).
+
+PR41 f476fc3/run 37049957470 passes 69 of 70 native ARM64 core fixtures. The remaining broad-file
+test reaches its generic run_script_json ACL setup after private SID/directory/CreateNew succeeded,
+then fails at that separate Get-Acl/Set-Acl exchange's original thirty-second timeout. The fixed
+worker's cold concurrent and ordered phase fixtures pass. Post-gate stock probes still take
+23,240/22,660/22,738 ms, so neither that later success nor first-SID evidence identifies the
+generic child's stalled JSON or security-module stage.
+Evidence: [actual broad-file setup failure and post-gate probes](https://github.com/WhiteKiwi/locron/actions/runs/37049957470/job/110980584946).
+
+The broad-file/root fixtures only need to add an Everyone Read ACE to a disposable owned object.
+Use .NET Framework File/Directory GetAccessControl and SetAccessControl for that deliberate setup,
+avoiding the unrelated PowerShell Security module's Get-Acl/Set-Acl discovery. This retains an
+independent platform ACL operation and the same real descriptor, repair/refusal and original-byte
+assertions; generic JSON conversion, child budgets and production ACL adapters remain separate.
+This choice does not claim the generic adapter's cold startup or restrictive-policy behavior is
+resolved. Native acceptance and generic lifecycle tests remain required.
+Sources: [File ACL read](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.getaccesscontrol?view=netframework-4.8.1),
+[File ACL write](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.setaccesscontrol?view=netframework-4.8.1),
+[Directory ACL read](https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.getaccesscontrol?view=netframework-4.8.1),
+[Directory ACL write](https://learn.microsoft.com/en-us/dotnet/api/system.io.directory.setaccesscontrol?view=netframework-4.8.1).
+
+### Generic adapter failure visibility (2026-10-03)
+
+The exact PR41 c919530/run 37053606277 ARM64 core gate still passes 69/70 after the two
+compiled .NET ACL-fixture setup changes. That result does not establish a Security-module cause
+or resolve the separate generic adapter. Fixed-worker cold SID and concurrent first-use gates
+pass on this revision. The generic adapter still reads EOF and calls unqualified ConvertFrom-Json;
+its caller scripts generally call unqualified ConvertTo-Json, unlike the explicitly bound fixed
+filesystem dispatcher. Stock startup, JSON command discovery/binding and the caller operation
+remain separate possible delays until this actual adapter reports fixed child phases.
+
+PR43 cb5074a/run 37055608817 has a different mapping fixture failure on all three native rows
+(90/91 core tests pass). The x64 job 110999439152 reports NotFound at filesystem.rs:998. Direct
+line-number inspection of this exact commit places that assertion at marker.unwrap(); the release
+write is line 996, but its independent result and temporary ancestry must also be retained. The
+fixture currently asserts its marker before inspecting its joined helper result, so the hosted
+log does not disclose whether setup failed, timed out, or never created the marker. Do not label
+this a generic timeout or a mapped-file protection failure from that assertion alone.
+
+PowerShell 5.1 documents explicit module-path imports, restricted imported member sets and
+module-qualified command lookup. The existing Utility manifest includes a nested .psm1 as well
+as its binary module; Cmdlet/Function filters do not prove that Restricted can load the manifest.
+Audit a generic converter binding separately from its measured phase cause, keep all existing
+static caller commands working, and require hosted process-only stricter-policy/forged-module
+fixtures before claiming that the native installation path works under Restricted. No production
+policy change, bypass, warm-up or local rejected rehearsal is permitted.
+
+Sources: [PR41 ARM64 failure](https://github.com/WhiteKiwi/locron/actions/runs/37053606277/job/110992744736),
+[PR43 x64 mapping fixture](https://github.com/WhiteKiwi/locron/actions/runs/37055608817/job/110999439152),
+[PowerShell 5.1 Import-Module](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/import-module?view=powershell-5.1),
+[PowerShell execution policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1).
+
 ### Task Scheduler and cooperative lifecycle
+
+#### Windows role-lock diagnostic refinement during development
+
+Rust 1.94's Windows `File::try_lock` calls `LockFileEx` at offset zero with both length words set
+to `u32::MAX`, exclusive and fail-immediately flags. This covers diagnostic bytes in the permanent
+lock file. Microsoft's remarks explain that another process, and even another handle opened by
+the owner, cannot read the exclusively locked region. Unix advisory-lock observer behavior cannot
+therefore be carried over by simply reading the same lock file on Windows.
+
+Keep the permanent lock as the sole ownership proof. Publish diagnostic `LockMetadata` plus an
+explicit registered-service marker in a private atomic sidecar while ownership is held. A bounded
+no-follow observer reads that sidecar, and a separately secured endpoint validates the exact live
+role/lifetime before accepting shutdown. Stale sidecar contents never authorize PID signalling
+or prove liveness; service/update completion still waits for actual corresponding role-lock exit.
+Native tests must read the observer metadata while the lock remains held, refuse a second owner,
+and confirm OS lock release after orderly exit/crash.
+
+Sources: [pinned Rust 1.94 Windows lock implementation](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs#L431),
+[LockFileEx mandatory range semantics](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex).
+
+### Measured generic JSON binding and binary-only candidate (2026-10-03)
+
+At loader head 8674237, all three native Core rows fail before child spawn with Win32 123
+(invalid filename), including direct stock-guard acquisition. Source inspection finds fixed
+multi-component joins containing forward slashes followed by a literal verbatim prefix. Microsoft
+documents that the verbatim prefix disables path-string parsing; Rust documents that forward slash
+is not a separator in a verbatim prefix. This is a source-grounded cause candidate, pending native
+proof. Rebuild validated local drive/root/normal components with native separators before verbatim
+opens, including an ordinary SystemRoot spelling that uses forward slashes. Reject an embedded
+separator in an already-verbatim component rather than silently reinterpret it. No trust, no-follow,
+sharing, full-identity, deadline or owned-worker boundary changes. Sources:
+[Win32 file namespaces](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
+[Rust Windows prefixes](https://doc.rust-lang.org/std/path/enum.Prefix.html).
+
+At corrected path head d615b120, native stock guard/identity probes pass, but the actual generic
+and fixed filesystem children fail during Assembly.LoadFrom before JSON binding. The error names
+file:// followed by the verbatim local path as a missing assembly. Framework's reference source
+sets LoadFrom's argument as CodeBase, then VerifyCodeBase treats any leading two backslashes as a
+file URI rather than a local DOS path. Prefix removal after LoadFrom is too late. This isolates
+the next loader boundary; native correction remains required and does not establish policy proof.
+Sources: [Framework assembly binding](https://raw.githubusercontent.com/microsoft/referencesource/main/mscorlib/system/reflection/assembly.cs),
+[Assembly.LoadFrom](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.assembly.loadfrom?view=netframework-4.8.1).
+
+The existing current_user_sid entry captures a fresh thirty-second deadline. Reusing it from an
+already bounded mapped-helper qualification can extend that caller's operation after native
+bootstrap work has consumed part of its budget. Select an absolute-deadline SID entry sharing
+the same verified cache, finite initializer and fixed filesystem owner, with expiry checks around
+both cache and query results. Do not prewarm the cache or treat returned SID text as an executable
+or process-ownership proof. The existing three-second owned-cleanup allowance remains explicit;
+native cold completion under the forwarded caller deadline still requires hosted qualification.
+
+Keep verbatim native stock guard paths and handles. Derive a separate canonical absolute DOS
+library path only after those handles are retained, refuse components that ordinary Windows path
+normalization could reinterpret (including trailing dots/spaces, devices and alternate streams),
+and require the converted path's full high-resolution volume/file ID to equal the retained native
+identity. Run this query inside the same admitted finite owner with pre/post deadline checks;
+stalled or late results retain the original quarantine boundary. Only the verified library path
+reaches Framework LoadFrom. No UNC/URI search, manifest import, policy change or trust fallback is
+selected. The stock executable and all managed state/install long-path behavior remain unchanged.
+
+Exact head 608ab19's ARM64 native job 111026239366 entered the actual generic script at about
+210 ms and its JSON conversion at 219 ms, but never reached json-parsed before the original
+30-second deadline; owned cleanup finished at 30.042 seconds. The preceding 4887 trace measured
+another first conversion returning only near 22.09 seconds. The statement-separator correction
+removed the diagnostic parser/argument error; the remaining delay is actual unqualified converter
+binding, not a filesystem ACL call or an increased/deferred queue budget.
+
+Read-only inspection confirms the Windows PowerShell 5.1 Utility manifest names both a binary
+DLL and Utility.psm1 in NestedModules. Restricting its exported functions does not prove that
+the nested script was never loaded. Microsoft's Import-Module documentation permits an explicit
+DLL filename or Assembly input and says those import only that file/assembly's members. Restricted
+policy blocks psm1 and configuration script files. Select guarded explicit binary imports as a
+candidate; native cold timing and policy acceptance still need proof. Sources:
+[Import-Module 5.1](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/import-module?view=powershell-5.1),
+[execution policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1).
+
+The selected stock library guard cannot depend on current_user_sid: it is also needed before
+the first filesystem SID request. Its trust policy is therefore the existing Windows servicing
+boundary of SYSTEM, Administrators and TrustedInstaller ownership/mutation only, with no current-
+SID exemption. Retained no-reparse/no-write/no-delete handles plus handle-bound descriptor checks
+must establish the binary location before assembly import; a GAC directory suffix, module name,
+strong-name token or post-load path string alone does not establish file ownership/privacy.
+
+Native file opens, handle-bound descriptor reads and identity queries can themselves block.
+Adding them before the existing generic driver's unconditional join would invalidate the entry
+deadline even if every child pipe is timed. Run them in the admitted finite owner and retain
+partial guards/permit on a stalled operation; the caller only receives a bounded result and never
+joins an unfinished owner. Explicit post-operation expiry checks prevent a late guard result from
+starting a child. The selected stall fixture uses an actual blocking anonymous-pipe read inside
+this native guard phase; it does not fabricate a stalled GetSecurityInfo result.
+
+The generic adapter's current Tokio kill_on_drop is weaker than kernel crash containment: process
+exit does not guarantee Rust destructors run. Reuse the reviewed Core filesystem worker's pinned
+process-wrap/win32job suspended-enrollment pattern before importing stock binaries or sending
+private input. The retained independent kill-on-close Job must span guard ownership, running/idle
+child and confirmed cleanup; root-wait loss remains quarantined even when the Job later empties.
+The official [Job Objects contract](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+describes kill-on-close termination when the final Job handle closes. Native parent-crash evidence
+is still pending and cannot be inferred from kill_on_drop or a successful normal-child exit.
+
+The fixed filesystem owner's private-channel EOF path now retains uncertain cleanup ownership,
+but source inspection is not native proof of that branch. A deterministic isolated fixture can
+add one cfg(test)-only anonymous-pipe ReadFile to its owned cleanup boundary. A started blocking
+read cannot be cancelled by JoinHandle::abort; hold the writer in the fixture until after the
+unchanged three-second cleanup deadline. Require actual root reaping and an empty retained Job
+before the deliberate pipe remains unconfirmed. This tests real outstanding native cleanup I/O,
+not a fabricated Job-query/termination failure or a claim that a production descriptor call hung.
+The private sender's final drop must park the owner with its stock/Job handles, even after that
+read is later released. Native execution and the retained-handle assertion remain pending.
+Tokio documents that abort cannot cancel an already started blocking task:
+[pinned blocking-task contract](https://docs.rs/tokio/1.53.1/tokio/task/fn.spawn_blocking.html).
+
+The first hosted private-channel EOF fixture on 93ebcb38 timed out waiting for its helper's
+confirmation at forty seconds on all three native rows. The actual guarded diagnostic probes
+passed; this failure is separate. Source inspection identifies a fixture-specific wait gap:
+adapter_poll_until gates each Future poll against expiry but schedules no timer. A blocked
+native read's JoinHandle cannot wake that gated future until the held writer is released, while
+the fixture correctly waits for quarantine before releasing it. Wrap this owned read wait in
+Tokio timeout_at using the same original cleanup deadline, retaining the per-poll expiry gates.
+No production deadline, adapter or ownership policy changes. Source explains the circular wait;
+native root/Job/read/quarantine confirmation remains required after the correction.
+[Pinned timeout implementation](https://docs.rs/tokio/1.53.1/tokio/time/fn.timeout_at.html).
+
+The corrected EOF fixture on exact 1c748ce reaches the owned read/quarantine receipt and exits
+its helper in 3.38 seconds on the MSRV row, then its final exclusive stock open fails with raw
+Windows sharing error 32. The enclosing cold Core test process has previously initialized its
+global filesystem dispatcher and retains an unrelated stock guard; a fresh child alone does
+not isolate this final release assertion from a live grandparent. Move the complete native EOF
+proof to a mandatory post-cold exact helper selection after that mixed test process exits.
+Require an actual exclusive-open baseline before its helper starts, followed by held sharing
+violations and actual helper-exit release. A failed baseline remains an honest unrelated-holder
+failure. Keep the original owned native read, root/Job confirmation, timer, late completion,
+retained handles and finite waits; do not retire production caches or reinterpret error 32 as
+successful release.
+
+The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
+inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
+native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject
+policy unsuspended for resume after both enrollments. Capture the mask at real spawn rather than
+treating a configured wrapper or CONOUT$ device availability as complete visibility evidence.
 
 Select the same fixed stock Windows PowerShell 5.1 adapter using the supported scripting COM
 interface `New-Object -ComObject Schedule.Service`, `Connect()`, `NewTask(0)`, root-folder
@@ -2792,7 +3160,98 @@ Sources: [TaskFolder registration and flags](https://learn.microsoft.com/en-us/w
 [engine PID semantics](https://learn.microsoft.com/en-us/windows/win32/taskschd/runningtask-enginepid),
 [immediate Stop and caller rights](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-stop).
 
+Development selected a hidden waiting stock PowerShell launcher using static EncodedCommand and
+data-only EncodedArguments. The documented UTF-16LE EncodedArguments representation accepts a
+serialized CLIXML argument array; a native Windows PowerShell 5.1 fixture round-tripped one
+base64 JSON value containing Korean text, quotes, ampersands, dollar/backtick characters and a
+trailing backslash without source interpolation. This proves argument transport only; real task
+ownership, role exit propagation and crash restart still require native integrated acceptance.
+Source: [Windows PowerShell 5.1 executable parameters](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
+
+A disposable native registration probe on this host returned elevated=false and successfully
+created/read/deleted one uniquely named disabled task. Readback confirmed INTERACTIVE_TOKEN/LUA,
+PT0S, three PT1M retries, IgnoreNew, disabled battery/idle/network gates, and a protected
+current-SID/SYSTEM-only task DACL with full-control mask 0x1f01ff. It did not execute a Locron role
+or alter an existing task. Principal/logon-trigger readback returned account names despite SID
+inputs, establishing that semantic identity comparison must resolve those names to actual SIDs.
+This proves standard-user registration/readback only, not running-role ownership or restart.
+
+The fixed hidden waiting launcher also ran in a uniquely named native task on the standard-user
+host. Task state was observed running for about three seconds, then reported the nested owned
+child's exact exit code 17 after its two-second wait; the driver deleted only the marker-verified
+fixture. This establishes waiting/exit propagation, not Locron daemon-lock ownership. Failure
+restart is tested separately before that behavior can be claimed.
+
+The subsequent native restart probe did not observe a second run within eighty seconds after a
+demand-started waiting launcher returned exit 17. Two further uniquely named time-triggered tasks
+likewise propagated exit 17 and E_FAIL (-2147467259), respectively, without a restart in that
+bound. Each task was disabled and deleted after marker verification. Changing the trigger or
+returning a failing HRESULT did not establish unexpected-role-exit restart. Microsoft's protocol
+specification describes RestartOnFailure in terms of unmet start conditions or failure to start
+an action, a narrower description than the general API overview. Keep native action-launch retry
+settings, but do not claim they supervise ordinary completed role exits. A reviewed owned retry
+supervisor/cancellation lifetime and actual-role-exit diagnostics remain prerequisites; a bare
+PowerShell sleep loop would leave an uncontrolled gap after the child's activation lock exits.
+Source: [MS-TSCH RestartOnFailure](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tsch/2ff4aa5a-7bc4-449f-bbb1-27475645867f).
+
 ### Recommended design order and remaining proof
+
+The first native ARM64 core run at PR #41 head `2f5516e` failed four initial private-directory
+fixtures together about thirty seconds after test launch. The failures precede private-file
+creation; x64 stable and pinned MSRV core/store runs succeeded. Current first SID discovery is a
+racy cache get/query/set, allowing concurrent callers to start separate cold PowerShell processes.
+Cold-start contention is a plausible cause, rather than a proved filesystem failure. Development
+selects two bounded adapter permits and one finite SID initializer, with the unchanged thirty-second
+deadline measured from API entry including queue wait. Saturated-queue and startup/termination
+tests remain required; a fresh native ARM64 run must establish whether this resolves the failure.
+Evidence: [native ARM64 job](https://github.com/WhiteKiwi/locron/actions/runs/37021167379/job/110884313590).
+
+The next native ARM64 run at head `960a446` retained timeouts after bounded permits and the single
+SID initializer were introduced; six filesystem fixtures and the script-entry marker fixture
+failed. The output-limit fixture passed only after thirty seconds. Source audit found that the
+reader returned an oversized successful buffer and enforced its limit only after waiting for
+the child to exit. That consumes a complete permit while an output-blocked child remains alive,
+so development selects immediate reader failure and the existing confirmed kill/reap cleanup.
+It does not establish that this is the only ARM64 cause. Post-gate bounded stock PowerShell
+diagnostics separately measure PE/process architecture, version/SID bootstrap and small/60k UTF-8
+stdin/EOF round trips without warming the original cold-start tests. Operation deadlines and
+privacy coverage remain unchanged.
+Evidence: [subsequent native ARM64 job](https://github.com/WhiteKiwi/locron/actions/runs/37027297548/job/110905081384).
+
+Hosted native tests found an elevated token's default file owner can be Administrators despite
+an explicitly private SID-owned parent. Development retains the strict owner check and selects
+the .NET Framework FileStream CreateNew constructor with FileSecurity to set owner/DACL atomically.
+A standard-user stock PowerShell 5.1 fixture created a 355-character verbatim Unicode file path,
+read back the current SID owner and protected SID/SYSTEM-only DACL, and observed numeric Win32
+error 80 on duplicate creation. It cleaned only its owned empty files and directories. This proves
+the adapter's long-path/descriptor/duplicate behavior; elevated Rust and SQLite acceptance remains
+required. The fixed stock adapter clears inherited PSModulePath so PowerShell 7's module paths do
+not cause PowerShell 5.1 to autoload incompatible ACL modules on hosted CI.
+Source: [FileStream with FileSecurity](https://learn.microsoft.com/en-us/dotnet/api/system.io.filestream.-ctor?view=netframework-4.8.1#system-io-filestream-ctor(system-string-system-io-filemode-system-security-accesscontrol-filesystemrights-system-io-fileshare-system-int32-system-io-fileoptions-system-security-accesscontrol-filesecurity)).
+
+Windows file sharing without FILE_SHARE_DELETE prevents concurrent rename until the reader
+closes its handle. Output readers currently collect one snapshot and close before the next poll.
+Development therefore retains the strict leaf sharing policy and selects a five-second retry
+only for native sharing violations, revalidating both guarded paths each time. A persistent
+holder leaves the synced partial recoverable and the failure observable. Native acceptance
+must hold a framed-output reader across finalization and verify bytes after reader release.
+Source: [CreateFileW sharing and rename semantics](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew).
+
+Updater replacement needs a separate read/write, delete-only-sharing file gate. Microsoft's
+CreateFile sharing contract permits delete/rename under that flag and exempts attribute-only
+queries from sharing restrictions. Consequently a retained gate can exclude read/write/launch
+without by itself proving a subsequent path-based rename moved that exact file. Exact source
+handle rename uses SetFileInformationByHandle with appropriate access, but the reviewed ACL/file
+identity helpers do not expose a safe borrowed-handle rename. Adapter selection and adversarial
+native proof remain open; no unsafe workspace shim or unreviewed replacement fallback is selected.
+Sources: [CreateFileW sharing contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[SetFileInformationByHandle](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle).
+
+A disposable private copy of cmd.exe refused the proposed read/write delete-only gate while its
+owned process was mapped (Win32 32). After that process exited, the live gate refused a new
+launch (Win32 32). Path-based backup rename and rollback succeeded while the original stream
+remained open and its bytes matched. The fixture cleaned its process/files/private directory.
+This proves sharing compatibility and exclusion only; exact-object rename remains unresolved.
 
 First freeze and compile the version-pinned safe interfaces, including the suspended post-spawn
 enrollment and independent job query; then add guarded private state and descriptor readback;

@@ -24,6 +24,40 @@ use crate::{DaemonLock, LockMetadata, StatePaths};
 type AdmissionRow = (String, String, String, i64, String, Option<i64>);
 const MAINTENANCE_BATCH_LIMIT: usize = 100;
 
+#[cfg(windows)]
+fn validate_sqlite_files(database: &Path, create: bool) -> std::io::Result<bool> {
+    use locron_core::filesystem::{create_private_new, open_private};
+    use std::fs::OpenOptions;
+    use std::io::ErrorKind;
+
+    let fresh = match open_private(database, OpenOptions::new().read(true)) {
+        Ok(file) => {
+            drop(file);
+            false
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound && create => {
+            // Creation races fail closed instead of opening a raced-in path.
+            drop(create_private_new(database)?);
+            true
+        }
+        Err(error) => return Err(error),
+    };
+    for suffix in ["-wal", "-shm"] {
+        let mut path = database.as_os_str().to_os_string();
+        path.push(suffix);
+        let path = std::path::PathBuf::from(path);
+        match open_private(&path, OpenOptions::new().read(true)) {
+            Ok(file) => drop(file),
+            Err(error) if error.kind() == ErrorKind::NotFound && create => {
+                drop(create_private_new(&path)?);
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(fresh)
+}
+
 /// Result type returned by store operations, carrying a [`StoreError`] on failure.
 pub type StoreResult<T> = Result<T, StoreError>;
 
@@ -634,6 +668,9 @@ pub struct ImportSummary {
 pub struct Store {
     paths: StatePaths,
     connection: Mutex<Connection>,
+    // Dropped after SQLite closes, preventing ancestor swaps throughout WAL/SHM access.
+    #[cfg(windows)]
+    _state_guard: locron_core::filesystem::DirectoryGuard,
 }
 
 impl Store {
@@ -643,12 +680,24 @@ impl Store {
     /// separately via [`Store::acquire_daemon_lock`].
     pub fn open(paths: StatePaths, binary_version: &str, now_us: i64) -> StoreResult<Self> {
         paths.ensure()?;
+        #[cfg(windows)]
+        let state_guard = paths.guard()?;
+        #[cfg(windows)]
+        let fresh = validate_sqlite_files(&paths.database, true)?;
         let mut connection = Connection::open(&paths.database)?;
         configure(&connection)?;
         migrate(&mut connection, binary_version, now_us)?;
+        #[cfg(windows)]
+        if fresh {
+            connection.execute("UPDATE settings SET execution_path=?1 WHERE singleton=1 AND execution_path='/usr/local/bin:/usr/bin:/bin' AND updated_at_us=0", [locron_core::execution::default_execution_path()])?;
+        }
+        #[cfg(windows)]
+        validate_sqlite_files(&paths.database, false)?;
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
+            #[cfg(windows)]
+            _state_guard: state_guard,
         })
     }
 
@@ -656,13 +705,27 @@ impl Store {
     /// running migrations or touching the daemon lock. The store's state
     /// paths are derived from the database file's parent directory.
     pub fn open_read_only(path: &Path) -> StoreResult<Self> {
-        let paths = StatePaths::new(path.parent().unwrap_or(Path::new(".")).to_path_buf());
+        let mut paths = StatePaths::new(
+            path.parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or(Path::new("."))
+                .to_path_buf(),
+        );
+        paths.database = path.to_path_buf();
+        #[cfg(windows)]
+        let state_guard = paths.guard()?;
+        #[cfg(windows)]
+        validate_sqlite_files(path, false)?;
         let connection =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         configure_read_only(&connection)?;
+        #[cfg(windows)]
+        validate_sqlite_files(path, false)?;
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
+            #[cfg(windows)]
+            _state_guard: state_guard,
         })
     }
 
@@ -2354,13 +2417,12 @@ impl Store {
             |row| row.get(0),
         )?;
         let mut environment = parse_environment_json(&source)?;
-        match value {
-            Some(value) => {
-                environment.insert(name.to_owned(), value.to_owned());
-            }
-            None => {
-                environment.remove(name);
-            }
+        let canonical_name = locron_core::execution::environment_name(name);
+        environment.retain(|existing, _| {
+            locron_core::execution::environment_name(existing) != canonical_name
+        });
+        if let Some(value) = value {
+            environment.insert(canonical_name, value.to_owned());
         }
         let canonical = serde_json::to_string(&environment)?;
         tx.execute(
@@ -3350,6 +3412,8 @@ fn validate_import_settings(settings: &SettingsRecord) -> StoreResult<()> {
             "import retention and output limits must be non-negative".into(),
         ));
     }
+    locron_core::execution::validate_environment_layer(&settings.environment)
+        .map_err(StoreError::Conflict)?;
     for (name, value) in &settings.environment {
         validate_environment_entry(name, Some(value))?;
     }
@@ -3358,6 +3422,8 @@ fn validate_import_settings(settings: &SettingsRecord) -> StoreResult<()> {
 
 fn parse_environment_json(source: &str) -> StoreResult<BTreeMap<String, String>> {
     let environment: BTreeMap<String, String> = serde_json::from_str(source)?;
+    locron_core::execution::validate_environment_layer(&environment)
+        .map_err(StoreError::Conflict)?;
     for (name, value) in &environment {
         validate_environment_entry(name, Some(value))?;
     }
@@ -3375,7 +3441,7 @@ fn validate_environment_entry(name: &str, value: Option<&str>) -> StoreResult<()
         .next()
         .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_');
     let valid_rest = bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
-    if !valid_start || !valid_rest || name.starts_with("LOCRON_") {
+    if !valid_start || !valid_rest || locron_core::execution::is_reserved_environment_name(name) {
         return Err(StoreError::Conflict(format!(
             "invalid or reserved environment name {name}"
         )));
@@ -3406,16 +3472,79 @@ fn map_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<RunRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct PrivateTempDir {
+        _temporary: tempfile::TempDir,
+        path: std::path::PathBuf,
+    }
+
+    impl PrivateTempDir {
+        fn path(&self) -> &std::path::Path {
+            &self.path
+        }
+    }
+
+    fn private_tempdir() -> PrivateTempDir {
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("private");
+        locron_core::filesystem::DirectoryGuard::private(&path).unwrap();
+        PrivateTempDir {
+            _temporary: temporary,
+            path,
+        }
+    }
     use locron_core::command::JobDefinition;
     use locron_core::policy::ExecutionPolicy;
     use locron_core::schedule::Schedule;
     use locron_core::target::{Environment, Target};
     use locron_core::{RunId, Timestamp};
 
-    fn store() -> (tempfile::TempDir, Store) {
-        let temp = tempfile::tempdir().unwrap();
+    fn store() -> (PrivateTempDir, Store) {
+        let temp = private_tempdir();
         let store = Store::open(StatePaths::new(temp.path().into()), "test", 1).unwrap();
         (temp, store)
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sqlite_database_and_sidecars_have_explicit_private_owners_on_reopen() {
+        let (temp, store) = store();
+        let paths = store.paths().clone();
+        for name in ["state.db", "state.db-wal", "state.db-shm"] {
+            assert!(locron_core::filesystem::is_private(&temp.path().join(name), false).unwrap());
+        }
+        drop(store);
+        let reopened = Store::open(paths, "test", 2).unwrap();
+        for name in ["state.db", "state.db-wal", "state.db-shm"] {
+            assert!(locron_core::filesystem::is_private(&temp.path().join(name), false).unwrap());
+        }
+        drop(reopened);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_only_database_validation_uses_the_supplied_filename() {
+        let (temp, store) = store();
+        let source_path = store.paths().database.clone();
+        drop(store);
+        let backup_root = temp.path().join("backup");
+        let _guard = locron_core::filesystem::DirectoryGuard::private(&backup_root).unwrap();
+        let backup = backup_root.join("snapshot.db");
+        let mut source = locron_core::filesystem::open_private(
+            &source_path,
+            std::fs::OpenOptions::new().read(true),
+        )
+        .unwrap();
+        let mut destination = locron_core::filesystem::create_private_new(&backup).unwrap();
+        std::io::copy(&mut *source, &mut *destination).unwrap();
+        destination.sync_all().unwrap();
+        drop((source, destination));
+        for name in ["snapshot.db-wal", "snapshot.db-shm"] {
+            drop(locron_core::filesystem::create_private_new(&backup_root.join(name)).unwrap());
+        }
+        let read_only = Store::open_read_only(&backup).unwrap();
+        assert_eq!(read_only.paths().database, backup);
+        assert!(!backup_root.join("state.db").exists());
     }
     fn create(store: &Store, id: &str, name: &str) {
         store
@@ -3649,7 +3778,10 @@ mod tests {
                 anchor: Timestamp::UNIX_EPOCH,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: std::env::current_exe()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
                 args: Vec::new(),
             },
             cwd: cwd.into(),
@@ -4128,7 +4260,7 @@ mod tests {
 
     #[test]
     fn concurrent_enable_disable_transitions_serialize_in_sqlite() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let paths = StatePaths::new(temp.path().into());
         let first = Store::open(paths.clone(), "test", 1).unwrap();
         let second = Store::open(paths, "test", 1).unwrap();
@@ -5817,7 +5949,7 @@ mod tests {
 
     #[test]
     fn referenced_partial_finalization_and_missing_reconcile_after_reopen() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let paths = StatePaths::new(temp.path().into());
         let store = Store::open(paths.clone(), "test", 1).unwrap();
         let job = Uuid::from_u128(8_001).to_string();
@@ -5898,7 +6030,7 @@ mod tests {
 
     #[test]
     fn recovery_candidates_exclude_live_lifetime_attempts() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let paths = StatePaths::new(temp.path().into());
         let store = Store::open(paths, "test", 1).unwrap();
         let job = Uuid::from_u128(8_101).to_string();
@@ -5963,7 +6095,7 @@ mod tests {
 
     #[test]
     fn metadata_retention_resumes_and_requires_output_prune_before_delete() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let paths = StatePaths::new(temp.path().into());
         let store = Store::open(paths.clone(), "test", 1).unwrap();
         let job = Uuid::from_u128(9_001).to_string();
@@ -6034,7 +6166,7 @@ mod tests {
 
     #[test]
     fn sqlite_writer_contention_returns_busy_and_recovers_after_release() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let paths = StatePaths::new(temp.path().into());
         let first = Store::open(paths.clone(), "test", 1).unwrap();
         let second = Store::open(paths, "test", 1).unwrap();
@@ -6068,7 +6200,7 @@ mod tests {
 
     #[test]
     fn prune_pending_state_survives_reopen_and_known_candidate_can_finish() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = private_tempdir();
         let paths = StatePaths::new(temp.path().into());
         let store = Store::open(paths.clone(), "test", 1).unwrap();
         let job = Uuid::from_u128(5_001).to_string();
@@ -6271,6 +6403,7 @@ mod tests {
     #[test]
     fn resolved_executable_is_committed_at_the_cancellable_pre_spawn_boundary() {
         let (_temp, store) = store();
+        let executable = std::env::current_exe().unwrap();
         let job = Uuid::from_u128(6_001).to_string();
         let run = Uuid::from_u128(6_002).to_string();
         create(&store, &job, "resolved");
@@ -6285,7 +6418,7 @@ mod tests {
                     &run,
                     attempt.attempt_number,
                     4,
-                    Some(Path::new("/usr/bin/true")),
+                    Some(&executable),
                 )
                 .unwrap(),
             StartDecision::Ready
@@ -6295,7 +6428,7 @@ mod tests {
                 .attempt_resolved_executable(&run, attempt.attempt_number)
                 .unwrap()
                 .as_deref(),
-            Some("/usr/bin/true")
+            Some(executable.to_string_lossy().as_ref())
         );
 
         assert!(matches!(

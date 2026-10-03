@@ -92,7 +92,7 @@ pub struct ExportDocument {
 pub fn default_settings() -> SettingsRecord {
     SettingsRecord {
         global_concurrency: 16,
-        execution_path: "/usr/local/bin:/usr/bin:/bin".to_owned(),
+        execution_path: locron_core::execution::default_execution_path(),
         run_retention_count: 10_000,
         run_retention_age_us: Some(7_776_000_000_000),
         output_limit_bytes: 268_435_456,

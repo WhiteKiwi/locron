@@ -118,7 +118,10 @@ impl Target {
                 ))
             }
             Self::Process { executable, .. }
-                if executable.contains('/') && !PathBuf::from(executable).is_absolute() =>
+                if (executable.contains('/')
+                    || cfg!(windows)
+                        && (executable.contains('\\') || executable.contains(':')))
+                    && !PathBuf::from(executable).is_absolute() =>
             {
                 Err(ValidationError::new(
                     "executable",
@@ -136,7 +139,15 @@ impl Target {
                 ))
             }
             Self::Http(http) => http.validate(),
-            _ => Ok(()),
+            Self::Process { executable, .. } => {
+                crate::execution::validate_direct_executable(std::path::Path::new(executable))
+                    .map_err(|reason| {
+                        ValidationError::new("executable", "explicit_shell_required", reason)
+                    })
+            }
+            Self::Shell { command, shell } => crate::execution::shell_arguments(shell, command)
+                .map(|_| ())
+                .map_err(|reason| ValidationError::new("shell", "unsupported_shell", reason)),
         }
     }
 }
@@ -232,6 +243,7 @@ impl Environment {
                 "environment file must be absolute",
             ));
         }
+        let mut names = std::collections::BTreeSet::new();
         for (name, value) in &self.values {
             if !is_valid_environment_name(name) {
                 return Err(ValidationError::new(
@@ -240,7 +252,7 @@ impl Environment {
                     format!("invalid environment name: {name}"),
                 ));
             }
-            if name.starts_with("LOCRON_") {
+            if crate::execution::is_reserved_environment_name(name) {
                 return Err(ValidationError::new(
                     "environment",
                     "reserved_name",
@@ -252,6 +264,13 @@ impl Environment {
                     "environment",
                     "invalid_value",
                     format!("{name} contains NUL"),
+                ));
+            }
+            if !names.insert(crate::execution::environment_name(name)) {
+                return Err(ValidationError::new(
+                    "environment",
+                    "colliding_names",
+                    "environment names collide in one configuration layer",
                 ));
             }
         }
@@ -417,21 +436,28 @@ mod tests {
 
     #[test]
     fn process_and_shell_reject_nul_before_persistence() {
-        assert!(
+        assert_eq!(
             Target::Process {
-                executable: "/usr/bin/printf".into(),
+                executable: std::env::current_exe()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
                 args: vec!["bad\0argument".into()],
             }
             .validate()
-            .is_err()
+            .unwrap_err()
+            .code,
+            "invalid_argument_vector"
         );
-        assert!(
+        assert_eq!(
             Target::Shell {
                 command: "bad\0command".into(),
-                shell: "/bin/sh".into(),
+                shell: crate::execution::default_shell().unwrap(),
             }
             .validate()
-            .is_err()
+            .unwrap_err()
+            .code,
+            "invalid_shell"
         );
     }
 }

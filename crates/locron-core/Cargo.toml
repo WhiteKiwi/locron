@@ -20,8 +20,17 @@ thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+base64.workspace = true
+file-id = "=0.2.3"
+process-wrap.workspace = true
+tokio.workspace = true
+windows-permissions = "=0.2.4"
+win32job.workspace = true
+
 [dev-dependencies]
 proptest.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

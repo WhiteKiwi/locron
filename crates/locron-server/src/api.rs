@@ -1469,11 +1469,12 @@ pub(crate) async fn settings_put(
         if let Some(name) = environment_config_name(&key)? {
             validate_environment_value(name, &body.value)?;
             let before = dry_settings(store)?;
-            let action = if before.environment.contains_key(name) {
-                "replaced"
-            } else {
-                "created"
-            };
+            let action =
+                if locron_core::execution::environment_value(&before.environment, name).is_some() {
+                    "replaced"
+                } else {
+                    "created"
+                };
             if let Some(store) = store {
                 store.set_environment(name, Some(&body.value), now_us())?;
                 send_wake(store.paths());
@@ -1513,11 +1514,12 @@ pub(crate) async fn settings_delete(
             )
         })?;
         let before = store.settings()?;
-        let action = if before.environment.contains_key(name) {
-            "removed"
-        } else {
-            "unchanged"
-        };
+        let action =
+            if locron_core::execution::environment_value(&before.environment, name).is_some() {
+                "removed"
+            } else {
+                "unchanged"
+            };
         store.set_environment(name, None, now_us())?;
         send_wake(store.paths());
         Ok(json!({
@@ -1545,7 +1547,9 @@ fn environment_config_name(key: &str) -> Result<Option<&str>, ApiError> {
         }
         return Ok(None);
     };
-    if !is_valid_environment_name(name) || name.starts_with("LOCRON_") {
+    if !is_valid_environment_name(name)
+        || locron_core::execution::is_reserved_environment_name(name)
+    {
         return Err(ApiError::Message(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -1846,21 +1850,43 @@ pub(crate) async fn diagnostics(State(state): State<AppState>) -> Response {
                     Target::Shell { shell, .. } => shell.display().to_string(),
                     Target::Http(_) => continue,
                 };
-                match resolve_executable(&requested, &settings.execution_path) {
-                    Some(resolved) => resolutions.push(json!({
+                let resolved = locron_core::execution::effective_environment(
+                    &settings.execution_path,
+                    &settings.environment,
+                    &definition.environment,
+                )
+                .and_then(|environment| {
+                    let resolved = locron_core::execution::resolve_executable(
+                        &requested,
+                        &definition.cwd,
+                        &environment,
+                    )
+                    .ok_or_else(|| "executable not found in execution path".to_owned())?;
+                    if let Target::Process { .. } = &definition.target {
+                        locron_core::execution::validate_direct_executable(&resolved)?;
+                    } else if let Target::Shell { command, .. } = &definition.target {
+                        locron_core::execution::shell_arguments(&resolved, command)?;
+                    }
+                    Ok((
+                        resolved,
+                        locron_core::execution::environment_value(&environment, "PATH").cloned(),
+                    ))
+                });
+                match resolved {
+                    Ok((resolved, effective_path)) => resolutions.push(json!({
                         "job_id": job.id,
                         "job_name": job.name,
                         "requested_executable": requested,
-                        "effective_path": settings.execution_path,
+                        "effective_path": effective_path,
                         "resolved_executable": resolved,
                         "status": "resolved",
                     })),
-                    None => resolutions.push(json!({
+                    Err(error) => resolutions.push(json!({
                         "job_id": job.id,
                         "job_name": job.name,
                         "requested_executable": requested,
                         "status": "unresolved",
-                        "error": "executable not found in execution path",
+                        "error": error,
                     })),
                 }
             }
@@ -1878,20 +1904,6 @@ pub(crate) async fn diagnostics(State(state): State<AppState>) -> Response {
     })
     .await;
     respond(result, &[])
-}
-
-/// Resolves an executable against the execution path: paths containing a
-/// separator resolve directly, bare names search each `:`-separated entry.
-fn resolve_executable(executable: &str, execution_path: &str) -> Option<String> {
-    if executable.contains('/') {
-        return std::path::Path::new(executable)
-            .is_file()
-            .then(|| executable.to_owned());
-    }
-    execution_path.split(':').find_map(|directory| {
-        let candidate = std::path::Path::new(directory).join(executable);
-        candidate.is_file().then(|| candidate.display().to_string())
-    })
 }
 
 // ---------------------------------------------------------------------------

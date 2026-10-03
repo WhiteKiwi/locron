@@ -1,4 +1,5 @@
 use std::env;
+#[cfg(not(windows))]
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,8 @@ pub struct StatePaths {
     pub database: PathBuf,
     /// Daemon exclusive-lock file.
     pub daemon_lock: PathBuf,
+    /// Dashboard lifetime lock, independent of scheduler ownership.
+    pub dashboard_lock: PathBuf,
     /// Socket used to wake a running daemon.
     pub wake_socket: PathBuf,
     /// Directory holding run output artifacts.
@@ -41,6 +44,7 @@ impl StatePaths {
         Self {
             database: root.join("state.db"),
             daemon_lock: root.join("daemon.lock"),
+            dashboard_lock: root.join("dashboard.lock"),
             wake_socket: root.join("wake.sock"),
             outputs: root.join("outputs"),
             temporary: root.join("tmp"),
@@ -54,6 +58,13 @@ impl StatePaths {
         ensure_private_directory(&self.outputs)?;
         ensure_private_directory(&self.temporary)?;
         Ok(())
+    }
+
+    /// Retains validated directory-chain guards for a complete state operation.
+    pub fn guard(&self) -> Result<locron_core::filesystem::DirectoryGuard, StoreError> {
+        Ok(locron_core::filesystem::DirectoryGuard::private(
+            &self.root,
+        )?)
     }
 
     /// Returns the per-run output directory, validating the run identity first.
@@ -88,16 +99,36 @@ impl StatePaths {
 }
 
 fn platform_default() -> Result<PathBuf, StoreError> {
-    let home = env::var_os("HOME").ok_or(StoreError::StateDirectoryUnavailable)?;
-    #[cfg(target_os = "macos")]
-    return Ok(PathBuf::from(home).join("Library/Application Support/locron"));
-
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     {
-        if let Some(path) = env::var_os("XDG_STATE_HOME").filter(|p| !p.is_empty()) {
-            Ok(PathBuf::from(path).join("locron"))
-        } else {
-            Ok(PathBuf::from(home).join(".local/state/locron"))
+        // KnownFolder discovery avoids trusting HOME/XDG or a mutable LocalAppData value.
+        let value = locron_core::windows::run_script_json(
+            "[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData) | & $locronToJson -Compress",
+            &serde_json::json!({}),
+        )?;
+        let path = value
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .ok_or(StoreError::StateDirectoryUnavailable)?;
+        let path = PathBuf::from(path);
+        if !path.is_absolute() {
+            return Err(StoreError::StateDirectoryUnavailable);
+        }
+        Ok(path.join("locron"))
+    }
+    #[cfg(not(windows))]
+    {
+        let home = env::var_os("HOME").ok_or(StoreError::StateDirectoryUnavailable)?;
+        #[cfg(target_os = "macos")]
+        return Ok(PathBuf::from(home).join("Library/Application Support/locron"));
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Some(path) = env::var_os("XDG_STATE_HOME").filter(|p| !p.is_empty()) {
+                Ok(PathBuf::from(path).join("locron"))
+            } else {
+                Ok(PathBuf::from(home).join(".local/state/locron"))
+            }
         }
     }
 }
@@ -114,19 +145,27 @@ pub(crate) fn validate_uuid(value: &str) -> Result<(), StoreError> {
 }
 
 pub(crate) fn ensure_private_directory(path: &Path) -> Result<(), StoreError> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() || !metadata.is_dir() {
-                return Err(StoreError::UnsafePath(path.to_path_buf()));
-            }
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir_all(path)?;
-        }
-        Err(error) => return Err(error.into()),
+    #[cfg(windows)]
+    {
+        locron_core::filesystem::DirectoryGuard::private(path)?;
+        Ok(())
     }
-    set_owner_only(path, true)?;
-    Ok(())
+    #[cfg(not(windows))]
+    {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(StoreError::UnsafePath(path.to_path_buf()));
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                fs::create_dir_all(path)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        set_owner_only(path, true)?;
+        Ok(())
+    }
 }
 
 pub(crate) fn set_owner_only(path: &Path, directory: bool) -> io::Result<()> {
@@ -136,7 +175,19 @@ pub(crate) fn set_owner_only(path: &Path, directory: bool) -> io::Result<()> {
         let mode = if directory { 0o700 } else { 0o600 };
         fs::set_permissions(path, fs::Permissions::from_mode(mode))
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        // Ordinary state operations validate before use and never silently repair.
+        if locron_core::filesystem::is_private(path, directory)? {
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("unsafe private permissions: {}", path.display()),
+            ))
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (path, directory);
         Err(io::Error::new(
