@@ -18,6 +18,9 @@ downloaded paired ZIPs' actual 1.98.0 compiler despite the intended 1.94.0 packa
    A full_windows=true manual run executes only these five discovery rows; the ordinary CI jobs
    retain their exact behavior on PR, push and default manual events. Their event condition merely
    avoids duplicate normal checks during this explicitly selected discovery run.
+   Newly introduced third-party action references use verified full commit hashes; existing
+   ordinary job action selection remains unchanged. **Verify:** both new matrices resolve to the
+   independently observed upstream Rust toolchain/cache revisions and actionlint passes.
    **Verify:** normal PR CI does not run the discovery jobs; an exact-branch manual invocation
    records the intended host/compiler and runs the unmodified full commands on all five rows.
    Failures stay visible; no skip, softened assertion, deadline change or unsupported adapter
