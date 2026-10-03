@@ -4277,6 +4277,14 @@ The repository's existing SECURITY account boundary excludes arbitrary same-acco
 control. No unsigned publisher authentication, retrospective proof for a manually started broker,
 service snapshot authority or completed operation is inferred from this plan.
 
+The source-feasibility audit found that cold current_user_sid currently creates its own 30-second
+deadline. A bounded initializer must initialize that same cache with the launch phase's remaining
+budget; surrounding a fresh default-budget call with clock checks is insufficient. Native guards
+and pipe reads can also block, so the caller needs a finite retained owner and uncertain-cleanup
+quarantine rather than an indefinite join. The copied libtest executable has uncontrolled harness
+stdout; isolate that stdout to null and select piped stderr only for its strict fixture protocol.
+Any noise on the selected channel still fails. These are planned refinements, not native proof.
+
 Sources: [Rust current_exe](https://doc.rust-lang.org/std/env/fn.current_exe.html),
 [image-name query](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew),
 [mapped-file name](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmappedfilenamew),

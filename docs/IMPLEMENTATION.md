@@ -2003,6 +2003,25 @@ QualifiedLaunch, and qualify_child(Bootstrap) -> QualifiedBootstrap; the latter 
 These tokens have private constructors and no Serialize/Deserialize/Clone implementation.
 The initial qualification fixture consumer stops there; none of these functions takes, creates
 or casts a ServiceSnapshot, and none can dispatch the future operation engine.
+The original deadline is born before launch-context guard/SID work, not after lease construction.
+Propagate its remaining budget into Bootstrap's cold SID initialization and every adapter call;
+do not warm the cache first or use a nested default 30-second initializer. Challenge carries only
+the bounded remaining milliseconds for the child's local budget. The parent's original absolute
+deadline remains authoritative across transport and process startup, so transit or a later child
+timer cannot extend it. Check expiration before and after each synchronous native guard query.
+Run potentially blocking native guard/spawn/channel operations in a finite retained owner, never
+an indefinitely joined caller thread. Retain child, lease and outstanding I/O in that owner after
+uncertain cleanup; permit at most one such launch owner per process and refuse another admission
+while it remains live. A timed-out callback cannot later publish a qualified token or enter effects.
+Frame wire size includes a four-byte little-endian JSON length prefix; consume exactly four
+strict frames, reject over-limit lengths/trailing input, and never search past noise for a frame.
+
+For the copied libtest executable fixture only, route qualification output through its piped
+stderr and set harness stdout to null. A private fixture-only channel selector chooses this route;
+request JSON/flags cannot select it in the real stdin/stdout interface. Check the exact selected
+pipe types and identical frame/total bounds. Any uncontrolled harness/adapter stderr before or
+between frames is an honest qualification failure, never filtered or retried. This uses the
+existing copied test executable and adds no helper binary, product dispatch or execution-policy change.
 
 The existing hidden helper entry and optional PowerShell route first enter a native read-only
 broker. It validates launch context and uses this same guarded native launch; an already running
