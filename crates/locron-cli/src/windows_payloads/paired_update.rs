@@ -218,7 +218,10 @@ mod tests {
             .into_iter()
             .map(|name| (name, "ab".repeat(32)))
             .collect();
-        digests.insert(format!("locron-v{version}-{target}.zip"), sha256_hex(&archive));
+        digests.insert(
+            format!("locron-v{version}-{target}.zip"),
+            sha256_hex(&archive),
+        );
         let sums = digests
             .iter()
             .map(|(name, hash)| format!("{hash}  {name}\n"))
@@ -235,12 +238,16 @@ mod tests {
                 "name": name, "digest": format!("sha256:{hash}")
             })).collect::<Vec<_>>()
         });
-        let release = Release::parse(&serde_json::to_vec(&metadata).unwrap(), Some(version)).unwrap();
+        let release =
+            Release::parse(&serde_json::to_vec(&metadata).unwrap(), Some(version)).unwrap();
         Payloads::verify(&release, target, &sums, &archive, &installer, &uninstaller).unwrap()
     }
 
     fn receipt(version: &str) -> Receipt {
-        payloads(version, X64).receipt(SID, DIRECTORY, None).unwrap().0
+        payloads(version, X64)
+            .receipt(SID, DIRECTORY, None)
+            .unwrap()
+            .0
     }
 
     #[test]
