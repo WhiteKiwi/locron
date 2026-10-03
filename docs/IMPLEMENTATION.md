@@ -2045,9 +2045,15 @@ instance; retain the connected stream. Limit 1 cannot be used because accept cre
 Both clients use Tokio ClientOptions read(true), write(false), explicit SECURITY_IDENTIFICATION
 SQOS and byte mode; its safe open registers one overlapped I/O handle. For the client's server-PID
 query only, safely clone its BorrowedHandle into OwnedHandle and wrap that clone in the synchronous
-interprocess PipeStream<Bytes,None>. After the query, consume this unsplit metadata wrapper back
-into OwnedHandle and close it even if the query failed; it never reads, writes, registers I/O or
-enters default-drop limbo. Do not convert the I/O client into an interprocess receive-only stream,
+interprocess PipeStream<Bytes,Bytes>. After the query, consume this unsplit metadata-only wrapper
+with safe evade_limbo even if the query failed; it never reads, writes, registers I/O or enters
+default-drop limbo. The send-mode parameter exposes this cleanup method without granting protocol
+send authority; the actual Tokio client stays receive-only. The constructor's optional native
+ReOpenFile may request read/write access and fall back to the original cloned handle on failure.
+Require actual client direction and peer PID in either case; never adopt metadata as proof.
+This eliminates an untracked impossible-extraction fallback, not a new I/O endpoint. Verify both
+native directions and query-error disposal within the original owner/deadline. Do not convert
+the I/O client into an interprocess receive-only stream,
 whose externally supplied handle starts with unknown flush state. These are safe owned-handle
 operations with no workspace raw FFI or inherited handles. Bounded connection attempts, safe
 client_process_id/server_process_id queries and all cold setup consume the original

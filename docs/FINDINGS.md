@@ -4300,10 +4300,14 @@ safe creation-time descriptor/listener options, and safe synchronous stream/Owne
 Create the parent-to-child and child-to-parent pipes as send-only servers owned by their respective
 senders. Tokio ClientOptions safely opens receive-only overlapped clients with identification SQOS.
 Only for the server-PID query, clone the client's BorrowedHandle into OwnedHandle and wrap it in
-synchronous PipeStream<Bytes,None>; consume the unsplit wrapper back into OwnedHandle and close it
-before propagating success or query failure. This wrapper performs no I/O or second registration.
-An externally wrapped interprocess stream starts with unknown flush state; merely dropping even
-the receive-only wrapper could enter limbo, so the explicit owned-handle extraction is required.
+synchronous PipeStream<Bytes,Bytes>; after the query consume that metadata-only wrapper through
+its safe evade_limbo method on success and failure. This wrapper performs no reads/writes or
+second registration. The original Tokio client remains receive-only. The metadata wrapper's
+send-mode parameter merely exposes deterministic safe cleanup: evade_limbo clears unknown flush
+state and closes instead of entering limbo, avoiding an unexpected extraction-error leak.
+Its optional ReOpenFile may request read/write access and may fail; pinned construction then
+retains the cloned original handle. Neither outcome relaxes the required actual client direction
+and server-PID checks, and all native calls still consume the retained owner's original deadline.
 This avoids unsafe Tokio raw-handle calls in this workspace and double I/O registration. It also
 avoids wrapping an ordinary send-only handle: GetNamedPipeInfo requires additional read-attribute
 rights for a write-only pipe. Peer-PID queries are consistency checks under the original live Child
@@ -4345,6 +4349,7 @@ Sources: [Rust current_exe](https://doc.rust-lang.org/std/env/fn.current_exe.htm
 [module name/truncation](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.processmodule.filename?view=netframework-4.8.1),
 [pinned unstable attribute API](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/process.rs),
 [safe owned-handle conversion/extraction](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/stream/impl/handle.rs),
+[safe metadata-wrapper cleanup](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/stream/impl/send.rs),
 [safe peer-PID queries](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/stream/impl.rs),
 [Tokio read-only client/SQOS options](https://github.com/tokio-rs/tokio/blob/tokio-1.53.1/tokio/src/net/windows/named_pipe.rs),
 [descriptor/first-instance/remote flags](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/listener/create_instance.rs),
