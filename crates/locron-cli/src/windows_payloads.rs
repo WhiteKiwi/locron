@@ -1,6 +1,9 @@
 //! Complete canonical six-file payloads and a pure strict receipt builder.
 //! No archive is extracted and no installation, staging or state object is created.
 
+#[path = "windows_payloads/indexed_sources.rs"]
+mod indexed_sources;
+
 use std::collections::BTreeMap;
 
 use anyhow::{Result, ensure};
