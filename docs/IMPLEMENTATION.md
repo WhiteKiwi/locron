@@ -1152,6 +1152,21 @@ service assertions and retains job failure; cold failure/skip or cancellation ex
 step; ordinary success still selects the same complete serial harness. Native logs must show
 actual service execution/test results, not a skipped-step or package-build qualification.
 
+Give the existing durable store/engine/server library-contract step that same independent
+`if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}` admission condition. It runs
+only after the unchanged cold core gate succeeds, in its original position after the required
+isolated proof step. A failed Restricted/parent/EOF proof still fails the required job, but no
+longer hides independent Store/Engine/Server results behind GitHub's implicit success condition.
+Keep the exact cargo command, default library harness concurrency, cold/proof commands, all
+assertions, required context names and existing job/operation deadlines. No continue-on-error,
+retry, skipped assertion, duplicate test invocation or warmed replacement gate is introduced.
+
+Verify: cold success plus an isolated proof failure actually executes both the unchanged
+library harness and serial service harness while preserving job failure; cold failure/skip or
+cancellation admits neither independent harness; ordinary success executes the same existing
+tests once. Record native library counts and failures as independent qualification evidence,
+never as success for the still-failed isolated proof.
+
 Serial selection belongs only to this service harness. Every fixture uses a unique current-SID
 private temporary child root and owned executable/processes; no live registration or shared
 state is used. Keep real process/Job/lease/cancellation/log/fact/manual-owner assertions. The
