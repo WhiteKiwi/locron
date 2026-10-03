@@ -3,12 +3,35 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use zip::read::HasZipMetadata;
 
 use super::sha256_hex;
 
 pub(super) const FILES: [&str; 4] = ["locron.exe", "README.md", "LICENSE-MIT", "LICENSE-APACHE"];
+pub(super) const PAIRED_FILES: [&str; 5] = [
+    "locron.exe",
+    "locron-service-launcher.exe",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+];
+
+/// Explicit internal layouts; the one-image route is historical test evidence only.
+pub(super) enum Inventory {
+    SingleFixture,
+    Paired,
+}
+
+impl Inventory {
+    fn names(&self) -> &'static [&'static str] {
+        match self {
+            Self::SingleFixture => &FILES,
+            Self::Paired => &PAIRED_FILES,
+        }
+    }
+}
+
 pub(super) const LIMIT: usize = 64 * 1024 * 1024;
 const SYSTEM_DLLS: &[&str] = &[
     "api-ms-win-core-synch-l1-2-0.dll",
@@ -95,9 +118,9 @@ fn catalog(bytes: &[u8], expected: &BTreeSet<String>) -> Result<()> {
     ensure!(
         u16_at(bytes, end + 4)? == 0
             && u16_at(bytes, end + 6)? == 0
-            && u16_at(bytes, end + 8)? == 4
-            && u16_at(bytes, end + 10)? == 4,
-        "Windows ZIP must have exactly four single-disk members"
+            && usize::from(u16_at(bytes, end + 8)?) == expected.len()
+            && usize::from(u16_at(bytes, end + 10)?) == expected.len(),
+        "Windows ZIP must have the exact single-disk member inventory"
     );
     let start = u32_at(bytes, end + 16)? as usize;
     ensure!(
@@ -107,7 +130,7 @@ fn catalog(bytes: &[u8], expected: &BTreeSet<String>) -> Result<()> {
     let mut offset = start;
     let mut names = BTreeSet::new();
     let mut ranges = Vec::new();
-    for _ in 0..4 {
+    for _ in 0..expected.len() {
         ensure!(
             u32_at(bytes, offset)? == 0x0201_4b50,
             "invalid Windows ZIP central header"
@@ -166,7 +189,7 @@ fn catalog(bytes: &[u8], expected: &BTreeSet<String>) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("catalog offset overflow"))?;
     }
     ensure!(
-        offset == end && names.len() == 4,
+        offset == end && names.len() == expected.len(),
         "Windows ZIP has extra catalog data"
     );
     ranges.sort_unstable();
@@ -192,6 +215,25 @@ pub(super) fn verify_archive(
     target: &str,
     expected: &str,
 ) -> Result<VerifiedArchive> {
+    let files = read_archive(bytes, version, target, expected, Inventory::SingleFixture)?;
+    let binary = files
+        .get("locron.exe")
+        .ok_or_else(|| anyhow::anyhow!("Windows ZIP has no executable"))?;
+    verify_pe(binary, target)?;
+    Ok(VerifiedArchive {
+        binary_sha256: sha256_hex(binary),
+        files,
+    })
+}
+
+/// Shared bounded byte parser; this returns no live ownership or version/ABI authority.
+pub(super) fn read_archive(
+    bytes: &[u8],
+    version: &str,
+    target: &str,
+    expected: &str,
+    inventory: Inventory,
+) -> Result<BTreeMap<String, Vec<u8>>> {
     ensure!(valid_version(version), "invalid Windows release version");
     ensure!(
         expected.len() == 64
@@ -200,10 +242,17 @@ pub(super) fn verify_archive(
         "Windows ZIP digest mismatch"
     );
     let root = format!("locron-v{version}-{target}/");
-    let names = FILES.iter().map(|name| format!("{root}{name}")).collect();
+    let names = inventory
+        .names()
+        .iter()
+        .map(|name| format!("{root}{name}"))
+        .collect();
     catalog(bytes, &names)?;
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
-    ensure!(archive.len() == 4, "Windows ZIP reader inventory differs");
+    ensure!(
+        archive.len() == inventory.names().len(),
+        "Windows ZIP reader inventory differs"
+    );
     let mut files = BTreeMap::new();
     let mut total = 0_u64;
     for index in 0..archive.len() {
@@ -232,18 +281,11 @@ pub(super) fn verify_archive(
         member.take(LIMIT as u64 + 1).read_to_end(&mut data)?;
         ensure!(data.len() as u64 == size, "Windows ZIP member size differs");
         ensure!(
-            FILES.contains(&name.as_str()) && files.insert(name, data).is_none(),
+            inventory.names().contains(&name.as_str()) && files.insert(name, data).is_none(),
             "unexpected Windows ZIP member"
         );
     }
-    let binary = files
-        .get("locron.exe")
-        .ok_or_else(|| anyhow::anyhow!("Windows ZIP has no executable"))?;
-    verify_pe(binary, target)?;
-    Ok(VerifiedArchive {
-        binary_sha256: sha256_hex(binary),
-        files,
-    })
+    Ok(files)
 }
 
 /// Inspect architecture, unsigned status and direct/delayed native dependencies.
@@ -357,6 +399,27 @@ pub(super) fn verify_pe(bytes: &[u8], target: &str) -> Result<Vec<String>> {
         ensure!(terminated, "unterminated PE import directory");
     }
     Ok(imports.into_iter().collect())
+}
+
+/// Keep subsystem qualification separate from the already-checked native imports.
+pub(super) fn verify_pe_subsystem(
+    bytes: &[u8],
+    target: &str,
+    subsystem: u16,
+) -> Result<Vec<String>> {
+    ensure!(
+        matches!(subsystem, 2 | 3),
+        "unsupported paired PE subsystem"
+    );
+    let imports = verify_pe(bytes, target)?;
+    let optional = (u32_at(bytes, 60)? as usize)
+        .checked_add(24)
+        .context("PE optional header overflow")?;
+    ensure!(
+        u16_at(bytes, optional + 68)? == subsystem,
+        "paired PE subsystem differs"
+    );
+    Ok(imports)
 }
 
 #[cfg(test)]
