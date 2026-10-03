@@ -1841,6 +1841,38 @@ Windows equivalents must cover the same observable contract. Do not skip schedul
 process-tree or ownership coverage merely to get a green Windows job. Signing eligibility,
 credentials and business-history checks remain outside these steps.
 
+## Repository Issue execution tracking migration (2026-10-03)
+
+The owner selected repository Issues for all maintainer TODOs and requested that the private
+Locron Project be closed. This supersedes its live-tracking policy; the earlier migration remains
+historical evidence. Product/design contracts and accepted Windows implementation decisions do
+not change. All subsequent execution plans, deviations and verification evidence belong to the
+relevant repository issue before source changes; completed historical work is not fresh proof.
+
+The exhausted Project snapshot contains 83 drafts: 70 Done, eleven In Progress and two Todo.
+Thirteen Windows drafts already have matching public issues #24–#36. Reuse those issue identities
+and preserve their earlier public text as explicitly historical migration evidence, then copy the
+full current draft body without dropping scope, checklist state, Verify criteria, dependencies or
+progress. Convert the remaining seventy drafts through GitHub's supported draft-to-issue API,
+retaining original Project item links. Map Done to a closed/completed issue, and preserve Todo
+versus In Progress on open issues with explicit labels. Existing issue #4, Windows umbrella #23
+and deferred unsigned-release signing follow-up #37 remain separate existing records.
+
+1. Capture the exact exhausted source, Project metadata/fields and all existing issue identities
+   before writes. Build a unique source-to-issue map and preserve original task text and status.
+   Verify: 83 unique unarchived drafts, 13 unambiguous existing Windows identities, no omitted page
+   or duplicate task destination; record source hashes and preserve unrelated existing issues.
+2. Reuse/convert sequentially with destination and body readback after every write. Keep existing
+   Windows numbers, prior issue text, Phase/Legacy ID, source order and all meaningful links.
+   Verify: all 83 mappings have exact source bodies, titles and Verify/checklist content, 70 closed
+   completed histories and thirteen open tasks (eleven active, two planned); no duplicate issue.
+3. Update repository agent/contributor/TODO guidance and static migration links, then close the
+   Project through the CLI with a retired README pointing to Issues. Preserve the closed Project
+   as history, without deleting it or reclassifying pending work as complete.
+   Verify: new instructions consistently use Issues, immutable source snapshots stay byte-exact,
+   task/PR links are preserved, the final Project reads closed, and future progress goes to issue
+   comments. Review and publish the documentation with the current PR work.
+
 ## Project-only execution tracking migration (2026-10-02)
 
 This is an administrative workflow change within the unchanged product specification. FINDINGS

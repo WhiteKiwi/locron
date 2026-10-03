@@ -24,6 +24,12 @@ tickets. This administrative migration changes no Locron product behavior, platf
 release scope. Existing task requirements, verification criteria, completion states, and historical
 evidence must be preserved; creating repository issues is outside this migration.
 
+Repository workflow amendment (2026-10-03): maintainer execution planning, Verify criteria and
+progress return to repository Issues. Preserve every Project task and its completion evidence,
+reuse matching existing Windows issues, and close the private Project after verifying the
+migration. This supersedes the 2026-10-02 tracking policy without changing product behavior,
+platform support or release scope. Completed task history remains completed.
+
 ## Goal
 
 Build a local-first job scheduler that lets one user register, inspect, run, and manage scheduled work consistently on macOS, Linux and the planned Windows 11 platform.
