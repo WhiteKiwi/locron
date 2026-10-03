@@ -305,10 +305,12 @@ fn refuse_index_sidecars(path: &Path, deadline: Instant) -> Result<()> {
     for suffix in ["-journal", "-wal", "-shm"] {
         let mut sidecar = path.as_os_str().to_os_string();
         sidecar.push(suffix);
-        index_observe(deadline, || match fs::symlink_metadata(Path::new(&sidecar)) {
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-            Ok(_) => anyhow::bail!("portable index has an unsupported {suffix} sidecar"),
+        index_observe(deadline, || {
+            match fs::symlink_metadata(Path::new(&sidecar)) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.into()),
+                Ok(_) => anyhow::bail!("portable index has an unsupported {suffix} sidecar"),
+            }
         })?;
     }
     Ok(())
