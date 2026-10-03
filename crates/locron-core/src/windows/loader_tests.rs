@@ -126,6 +126,14 @@ fn actual_cold_sid_preserves_the_forwarded_qualification_deadline() {
 }
 
 #[test]
+fn expired_private_directory_inspection_does_not_admit_a_cold_sid_worker() {
+    isolated(
+        "private-directory-expired",
+        "expired-directory-no-admission-confirmed",
+    );
+}
+
+#[test]
 fn owned_loader_fixture_child() {
     let Ok(mode) = std::env::var("LOCRON_STOCK_LOADER_FIXTURE") else {
         return;
@@ -146,6 +154,19 @@ fn owned_loader_fixture_child() {
         "parent-exit-host" => super::loader_crash::host(),
         "parent-exit-observer" => super::loader_crash::observer(),
         "native-heartbeat" => super::loader_crash::heartbeat(),
+        "private-directory-expired" => {
+            assert!(super::USER_SID.get().is_none());
+            assert_eq!(super::filesystem_worker::observed_pid(), 0);
+            let error = crate::filesystem::PrivateDirectoryPlan::inspect_until(
+                Path::new(r"C:\never-created-private-preflight"),
+                Instant::now(),
+            )
+            .unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+            assert!(super::USER_SID.get().is_none());
+            assert_eq!(super::filesystem_worker::observed_pid(), 0);
+            println!("expired-directory-no-admission-confirmed");
+        }
         "sid-deadline" => {
             let start = Instant::now();
             let deadline = start + ADAPTER_TIMEOUT;
