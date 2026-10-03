@@ -4999,3 +4999,88 @@ Research artifacts: windows-runtime-discovery-triage-20261004/report.md and meas
 under the retained task review directory. They include all25 MCP fixture callers, complete
 Gate/transport owner inventories, six compared blobs and the raw Core log SHA256
 486f9ef7c416a10a5dc1ef0358623cfaf84c2b7552b73d7c1bb9b35daab23874.
+
+### Stock parent-crash heartbeat publication and missing failure observations (2026-10-04)
+
+PR #130 head `99ea5c97ce925f41755fa86dfa54eeffb97313bb`, based on main
+`d56dcbbbb20a58c68a81d6348a54a77c87488e3d`, has fifteen passing ordinary rows and one
+failed x64 MSRV foundation row in [CI run 37139545888](https://github.com/WhiteKiwi/locron/actions/runs/37139545888).
+[Job 111250945393](https://github.com/WhiteKiwi/locron/actions/runs/37139545888/job/111250945393)
+checks out merge `495bfd5817dc25deb8f03219ee5fbfc5359c4988`. Its step
+`Verify isolated stock adapter policy and parent containment` passes the fresh EOF-release and
+Restricted drivers, then fails `windows::loader_tests::owned_loader_fixture_child` in
+parent-exit-driver mode after 45.01 seconds at `windows/loader_crash.rs:107:36`:
+`Custom { kind: TimedOut, error: "stock Windows adapter deadline elapsed" }`.
+The original cold Core command had already passed 130/130 tests. Later independent stock
+startup measurements use different owned PIDs and cannot supply the failed driver's receipt.
+
+Source parity was checked before this documentation handoff. The complete `crates/locron-core`
+tree is `857adf2f06476ec0dd9143aff386ebd5d749748f` at the earlier reviewed head
+`543e82392754c2e2a1286ae7ae8e22c9c3f89f95`, current PR head and actual CI merge. The two
+relevant fixture blobs are `7749964fdc4e3e2b70b87d957fe0e203eae01638` for loader_crash.rs and
+`3899d49738fde8e08d011dc0b1b3d3bae22c3bb6` for loader_crash_host.ps1. All eleven existing
+PR-owned blobs also match that earlier head. Thus this failure does not establish a new
+production loader change or the cause of the separate earlier cold native_guard_stall timeout.
+
+Line 107 is the original shared deadline check inside `beats`, which waits for each counter to
+parse as u64. The driver calls it at five different stages. Reaching it follows the required
+`three-live-handles` marker check, but this stack does not identify which call/counter failed,
+whether the host had been killed, whether all three target handles had signalled exit, or the
+counter's final bytes. There is no saved phase/counter observation in that panic. The helper's
+private stdout/stderr files are not printed by this failure path; the temporary directory is
+removed during unwind. This failed MSRV row has no uploaded native diagnostic artifact in the
+run inventory. The actual file bytes and last completed phase are unavailable, so an empty
+counter is a hypothesis for this CI failure, not an observed fact. The deadline could also
+have expired before a particular read began.
+
+An independently established fixture defect makes that hypothesis plausible. The Rust
+`heartbeat` writes the final native-heartbeat path with `fs::write` every 25 ms. The generic
+PowerShell loop writes generic-heartbeat with `[IO.File]::WriteAllText` at the same interval.
+Both truncate the published file before completing its new digits. The installed Rust 1.94
+standard-library source (`library/std/src/fs.rs:419`) implements fs::write with File::create
+followed by write_all. During the separate PR #133 investigation, a real native Rust writer was
+observed in this window, stopped, killed and reaped; its final counter stayed empty. The retained
+portable receipt (`pr133-heartbeat-write-repro.rs` and `.py`) reports actual_std_fs_write,
+stopped_between_truncate_and_write, empty_counter_after_hard_stop and owned_process_reaped as
+true. A separate real-process snapshot regression preserved the old complete counter 7 after
+killing the unpublished candidate, then published complete counter 8. These macOS observations
+establish the write-window hazard and proposed staging principle, not Windows Job/replacement
+qualification or this failed job's exact cause.
+
+The permitted Rust implementation needs no dependency change. Cargo.lock selects tempfile
+3.27.0 (checksum `32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd`), already
+a Core dev-dependency. Its checked source, src/file/mod.rs:170-204/220-276/898-904 and
+src/file/imp/windows.rs:92-121, provides a same-directory candidate, explicit close through
+into_temp_path, no-clobber initial publication and replacement through MoveFileExW. The Windows
+implementation sets only MOVEFILE_REPLACE_EXISTING for replacement; it has no cross-volume copy
+fallback. [TempPath::persist](https://docs.rs/tempfile/3.27.0/tempfile/struct.TempPath.html#method.persist)
+documents atomic replacement, but no file/directory synchronization. persist_noclobber's general
+portable contract is weaker; the verified Windows implementation uses a single no-overwrite
+move. Candidate flush/close and process-termination tests must not be described as power-loss
+durability or a portable atomicity guarantee for initial publication.
+
+Stock Windows PowerShell 5.1 can use the .NET Framework two-argument File.Move for the first
+completed candidate and File.Replace(candidate, destination, null, false) thereafter.
+[Microsoft's Framework reference source](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/file.cs#L1221)
+maps those calls to MoveFile and ReplaceFile and propagates native errors. The
+[File.Replace contract](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.replace?view=netframework-4.8)
+requires an existing destination; passing false retains metadata-error refusal. The
+[ReplaceFileW contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew)
+requires one volume and combines replacement in one API, but documents failure states that can
+change the destination's name. Its WRITE_THROUGH flag is unsupported. Consequently this design
+must fail on replacement errors, without delete+move, fallback creation, guessed counters or
+claims that every failed replacement preserves the old path. Successful publication and an
+interrupted publisher require fresh native proof on the actual Framework/filesystem.
+
+Windows sharing also matters. ReplaceFileW opens the destination with delete access and the
+candidate without sharing, so the candidate must already be closed and a live destination reader
+must permit delete sharing. The actual counter reader uses ordinary Rust File::open through
+read_to_string; the installed Rust 1.94 Windows OpenOptions source defaults to
+FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE (`library/std/src/sys/fs/windows.rs:206`).
+This is separate from the existing deliberate share_mode(0) stock executable guard, whose
+refusal/release assertions must remain unchanged. The fixture modules and embedded host script
+are reached only from the cfg(test) loader_crash/loader_tests declarations in windows.rs:29-34.
+No product loader, owned-child, guard or admission source is needed for this handoff. The
+[fixture correction plan](planning/WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md) preserves the
+original budgets and all actual-process assertions; owning Issue #31 and fresh native Verify
+remain required before any support or acceptance claim.

@@ -4946,3 +4946,38 @@ separate development session. Reconcile accepted current-main changes without al
 patches, then collect fresh normal protected CI and five full native rows on the final exact head.
 The unchanged-source no-fail-fast verification branch remains separate evidence. Preserve all
 old/new failures and unfinished native/public-release scope; no owner-PC effectful acceptance.
+
+### Stock crash-fixture counter publication and expiry observations (2026-10-04)
+
+Continue #31 under the [new measured fixture plan](planning/WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md).
+FINDINGS records the exact current-head x64 MSRV failure and unchanged Core source, the missing
+last counter/phase artifact, and the separately reproduced truncate/write hazard. The actual
+cause of that CI timeout remains unconfirmed. Frozen SPEC and the earlier validation plans stay
+unchanged; this repairs test observation/publication without changing process-security policy.
+
+After the parent publishes the reviewed documentation and owning-issue pre-Source Verify note,
+the separate development session changes only windows/loader_crash.rs and loader_crash_host.ps1.
+If an isolated actual-process regression needs new explicit mode dispatch, add only those
+cfg(test) arms in windows/loader_tests.rs; preserve every existing mode and selector. No product
+loader, owned-child, guard/admission, dependency, toolchain or workflow change belongs here.
+
+Each writer completes a new counter in the same private directory, flushes and closes it, then
+uses explicit no-clobber initial publication or replacement of the published snapshot. Use the
+already locked tempfile 3.27.0 API and stock Framework File.Move/File.Replace; propagate errors,
+including sharing/metadata failures. Never truncate the final counter, delete it before moving,
+fall back to copying/creation, or replace a failed parse with a default/saved number. Native
+qualification must confirm actual reader sharing and process-stop behavior; this is not a
+power-loss durability promise.
+
+Store bounded counter bytes/status and fixed driver phase/timing facts during permitted reads
+under the original deadline. On expiry, print only those saved observations; start no new file,
+process or stock-adapter I/O for diagnostics. Preserve the single 45-second helper budget,
+30-second adapter/observer/writer budgets, 3-second cleanup, 25-ms heartbeats, 200-ms settle
+windows, and every real PID/handle/Job/tree/pipe/share=0 guard assertion. Parent reviews complete
+source/cfg isolation and protected blobs; Verify includes controlled real-process unpublished
+snapshot hard stops, both writers' initial/replacement failures, and unchanged fresh native
+cold Core/EOF/Restricted/parent-exit gates on x64 stable, ARM64 stable and x64 Rust 1.94. Select
+the new controlled modes after the normal parent-exit proof within its original helper budget,
+without earlier cold-gate warm-up or a workflow change. Full discovery and all remaining clean
+Windows 11, user/privacy, recovery and distribution acceptance
+stay open and retain their failures; no skip, relaxed deadline, retry or quarantine reset qualifies.
