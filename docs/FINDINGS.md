@@ -3833,3 +3833,37 @@ std::env::current_exe(), copied to a fresh private managed destination, separate
 image bytes from the managed-root policy. Production input/executable validation and every
 supervisor-owned guard stay unchanged. Native execution of the resulting fixtures remains
 pending; no child, tree or lifecycle success is inferred from the setup failure.
+
+### First Windows PATH initialization exposes a committed historical seed (2026-10-03)
+
+Exact Root43 `7c4e136` CI 37100504912, x64 native job 111138932141, passed all 118 Core,
+81 Store and 43 service assertions. The lifecycle filter passed eleven and failed one: the first
+registered daemon fixture read `/usr/local/bin:/usr/bin:/bin` at windows_lifecycle.rs:262, whereas
+the inherited Windows PATH was expected. This log does not show a completed Store opener or a
+persistent wrong seed; it establishes an early observation of committed settings.
+
+Source inspection explains that observation. The historical initial SQL inserts the POSIX PATH.
+Its first migration transaction commits before later migration steps; settings() can read that
+row from early schemas. Store::open then writes the Windows default only after migrate returns,
+and only when its preparation created the physical database file. Daemon role metadata can be
+published before that Store opening, so it supplies identity rather than an initialization barrier.
+
+There is also a distinct product gap, independent of the fixture's early read: a different writable
+opener can finish with the old seed while the creator is between migration commits and its later
+update. If the creator exits in that interval, future openers have physical-fresh=false and do not
+perform that update. The failure log alone does not establish either sequence occurred in CI.
+Changing the observer to wait until its expected string appears would not close these sequences.
+
+SQLite documents that separate connections do not see an uncommitted transaction's changes and
+that BEGIN IMMEDIATE obtains write admission before modifying data. Therefore the selected
+correction seeds the Windows default inside the existing logical initial-schema transaction,
+alongside settings and its verified migration markers, before the first commit. The physical
+create winner is not the logical initialization authority. Historical SQL/checksums and already
+versioned settings remain unchanged. Real two-connection tests will prove pre-commit visibility,
+competing-writer exclusion, post-commit winner preservation and rollback/connection-close recovery;
+the unchanged actual first-run lifecycle assertion remains the product canary. These are planned
+Verify criteria, not locally executed SQLite or native Windows evidence.
+
+Sources: [SQLite isolation](https://sqlite.org/isolation.html),
+[SQLite transaction admission and rollback](https://sqlite.org/lang_transaction.html),
+[exact failed native job](https://github.com/WhiteKiwi/locron/actions/runs/37100504912/job/111138932141).

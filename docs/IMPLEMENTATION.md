@@ -102,9 +102,41 @@ nix/Unix imports target-specific and bring native Windows x64/ARM64 CI alongside
 Use LocalAppData for default machine-local state. Retain explicit state overrides, file-lock
 ownership and SQLite WAL semantics; path strings never imply safe ownership by themselves.
 
-Historical migration SQL/checksums stay immutable. Only a newly created Windows database receives
-the captured Windows execution PATH after migration, guarded by its untouched default/zero-update
-settings state; existing configured PATH values are preserved on reopen.
+Historical migration SQL/checksums stay immutable. A Windows database receives its captured
+execution PATH in the transaction that creates its initial schema. The logical initial-schema
+winner owns this default, independently of which opener created the empty physical file.
+Already migrated settings, including an unchanged historical PATH, are preserved on reopen.
+
+#### Atomic first Windows execution path (2026-10-03)
+
+Exact Root43 `7c4e136` native lifecycle evidence read the historical POSIX seed before the first
+Windows opener returned. A readable settings row and published daemon owner metadata do not prove
+that Store initialization has finished. Merely waiting for an expected PATH would conceal the
+separate product window: a competing writable opener can return before the physical creator's
+post-migration update, or that creator can exit after committing the schema but before the update.
+
+Capture the Windows default once for an opening migration, then parameterize the platform default
+inside the existing initial step's `BEGIN IMMEDIATE` transaction, after its admitted version-zero
+recheck and before its commit. Initial settings, platform PATH, application/schema markers and the
+unchanged historical migration checksum become visible together. An interrupted uncommitted step
+can roll back and be initialized by the next logical winner; a committed step already has the
+correct PATH even if later migration steps have not finished. A stale loser rechecks admission and
+never rewrites the winner's default. A valid empty database can receive its first logical schema;
+version-one or newer databases keep their previous PATH, including POSIX or customized values.
+
+Remove only the later physical-fresh settings update, its unused retained flag and diagnostic
+stage. Keep guarded file creation, DB/WAL/SHM admission, later migration transactions, all SQL
+source/checksums and Unix default behavior unchanged. A private initializer accepts explicit test
+data so competing default values can be tested without changing the host/process environment.
+
+Verify with two real WAL connections: before the admitted initial commit, an independent reader
+cannot observe settings and a competing writer cannot initialize them; after commit, the reader
+sees the winner's platform PATH and a stale opener with a different default preserves it. Cover
+rollback before commit and closing the creator immediately after the initial commit, then complete
+recovery on another connection with the correct default/checksum retained. Cover an existing empty
+private file, completed fresh Store opening, and reopening versioned historical/custom settings.
+Keep the native first-run lifecycle's original PATH assertion, actual target/control/exit checks
+and thirty-second readiness deadline; qualify on x64, ARM64 and MSRV alongside the Unix suites.
 
 Shared environment/path helpers normalize Windows environment keys case-insensitively, reject
 same-layer collisions and reserved-name variants, and apply precedence consistently across CLI,
