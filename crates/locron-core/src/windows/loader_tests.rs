@@ -114,6 +114,11 @@ fn forged_module_path_and_cwd_cannot_replace_retained_json_commands() {
 }
 
 #[test]
+fn actual_cold_sid_preserves_the_forwarded_qualification_deadline() {
+    isolated("sid-deadline", "forwarded-cold-sid-deadline-confirmed");
+}
+
+#[test]
 fn owned_loader_fixture_child() {
     let Ok(mode) = std::env::var("LOCRON_STOCK_LOADER_FIXTURE") else {
         return;
@@ -125,6 +130,18 @@ fn owned_loader_fixture_child() {
         "parent-exit-host" => super::loader_crash::host(),
         "parent-exit-observer" => super::loader_crash::observer(),
         "native-heartbeat" => super::loader_crash::heartbeat(),
+        "sid-deadline" => {
+            let start = Instant::now();
+            let deadline = start + ADAPTER_TIMEOUT;
+            // Qualification has already consumed time; the SID API must keep this same boundary.
+            std::thread::sleep(Duration::from_millis(20));
+            let sid = super::current_user_sid_until(deadline).unwrap();
+            assert!(sid.starts_with("S-1-"));
+            assert!(start.elapsed() < ADAPTER_TIMEOUT);
+            let pid = super::filesystem_worker::observed_pid();
+            assert!(pid > 0);
+            println!("forwarded-cold-sid-deadline-confirmed pid={pid}");
+        }
         "guard-stall" => guard_stall(),
         "forged" => {
             let value = super::run_script_json(

@@ -557,6 +557,30 @@ pub fn current_user_sid() -> io::Result<String> {
     )
 }
 
+/// Returns the verified token SID within an existing caller deadline, capped at thirty seconds.
+/// Owned fixed-worker cleanup may add its separate three-second allowance after refusal.
+pub fn current_user_sid_until(deadline: Instant) -> io::Result<String> {
+    let deadline = deadline.min(Instant::now() + ADAPTER_TIMEOUT);
+    bounded_cached_sid(&USER_SID, &SID_INITIALIZER, deadline, query_sid)
+}
+
+fn bounded_cached_sid(
+    cache: &OnceLock<String>,
+    initializer: &WorkerPermits,
+    deadline: Instant,
+    query: impl FnOnce(Instant) -> io::Result<String>,
+) -> io::Result<String> {
+    remaining(deadline)?;
+    let result = cached_sid(cache, initializer, deadline, |deadline| {
+        remaining(deadline)?;
+        let sid = query(deadline)?;
+        remaining(deadline)?;
+        Ok(sid)
+    })?;
+    remaining(deadline)?;
+    Ok(result)
+}
+
 fn cached_sid(
     cache: &OnceLock<String>,
     initializer: &WorkerPermits,
@@ -621,6 +645,96 @@ fn adapter_path(path: &std::path::Path) -> io::Result<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_sid_refuses_expired_cache_and_initializer_wait_without_query() {
+        let cache = OnceLock::new();
+        cache.set("S-1-5-21-1234".to_owned()).unwrap();
+        let initializer = WorkerPermits::new(1);
+        let expired = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+        let error = bounded_cached_sid(&cache, &initializer, expired, |_| {
+            panic!("an expired verified cache must perform no query")
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        let empty = OnceLock::new();
+        let held = initializer
+            .acquire(Instant::now() + Duration::from_secs(1))
+            .unwrap();
+        let start = Instant::now();
+        let deadline = start + Duration::from_millis(30);
+        let error = bounded_cached_sid(&empty, &initializer, deadline, |_| {
+            panic!("a saturated initializer must not start a fresh query budget")
+        })
+        .unwrap_err();
+        drop(held);
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(empty.get().is_none());
+    }
+
+    #[test]
+    fn bounded_sid_never_caches_a_query_that_returns_after_expiry() {
+        let cache = std::sync::Arc::new(OnceLock::new());
+        let initializer = std::sync::Arc::new(WorkerPermits::new(1));
+        let (entered, entry) = std::sync::mpsc::sync_channel(1);
+        let (release, released) = std::sync::mpsc::sync_channel(1);
+        let caller = std::thread::spawn({
+            let cache = std::sync::Arc::clone(&cache);
+            let initializer = std::sync::Arc::clone(&initializer);
+            move || {
+                let deadline = Instant::now() + Duration::from_millis(30);
+                bounded_cached_sid(&cache, &initializer, deadline, |actual| {
+                    assert_eq!(actual, deadline);
+                    entered.send(actual).unwrap();
+                    released.recv_timeout(Duration::from_secs(1)).unwrap();
+                    Ok("S-1-5-21-1234".to_owned())
+                })
+            }
+        });
+        let deadline = entry.recv_timeout(Duration::from_secs(1)).unwrap();
+        std::thread::sleep(
+            deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(5),
+        );
+        release.send(()).unwrap();
+        assert_eq!(
+            caller.join().unwrap().unwrap_err().kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert!(cache.get().is_none());
+        assert_eq!(*initializer.active.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn bounded_sid_shares_one_in_budget_result_with_concurrent_callers() {
+        let cache = OnceLock::new();
+        let initializer = WorkerPermits::new(1);
+        let barrier = std::sync::Barrier::new(4);
+        let queries = std::sync::atomic::AtomicUsize::new(0);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        std::thread::scope(|scope| {
+            let callers: Vec<_> = (0..4)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        bounded_cached_sid(&cache, &initializer, deadline, |actual| {
+                            assert_eq!(actual, deadline);
+                            queries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            Ok("S-1-5-21-1234".to_owned())
+                        })
+                        .unwrap()
+                    })
+                })
+                .collect();
+            for caller in callers {
+                assert_eq!(caller.join().unwrap(), "S-1-5-21-1234");
+            }
+        });
+        assert_eq!(queries.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(*initializer.active.lock().unwrap(), 0);
+    }
 
     #[test]
     fn actual_generic_adapter_emits_ordered_child_phases_without_rendering_input() {
