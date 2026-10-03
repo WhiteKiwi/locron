@@ -1166,6 +1166,28 @@ retry cancellation, private stdout/stderr, diagnostic refusal and the new-manual
 Record exact revision/runner/toolchain and the service test count/results; failed native
 compilation, an empty filter or a package-only pass cannot satisfy this qualification.
 
+The hosted supervisor fixture's observed refusal is its source reader: DirectoryGuard::private
+for the destination already succeeded, then open_read_no_follow(std::env::current_exe()) rejected
+the native runner's D: source-image ancestry. This evidence does not show a temporary-directory
+refusal. Preserve the existing unique disposable TempDir and final private child creation, add
+an explicit is_private assertion for its current-SID/SYSTEM descriptor, and retain the normalized
+child path. Never repair/adopt the workspace volume or weaken managed ancestry checks.
+Each real supervisor must still acquire and retain its own live guards under its original budget.
+
+The corrected fixture source is only the OS-reported already-running native test executable.
+Copy it through a retained read-only std::File into create_private_new in that private child,
+flush the copied image and retain the existing runtime executable validation. This test-only
+reader does not authorize a managed state root or a production input/executable on the runner's
+workspace volume. No arbitrary caller path can select the fixture source. The temporary
+container remains disposable cleanup ownership rather than runtime security authority.
+
+Verify: every existing supervisor fixture passes the private destination assertion and known
+source-copy boundary, then reaches its intended native child/I/O/lease assertions with the real
+three sixty-second retry waits on x64, ARM64 and MSRV. Broad ancestry/private-leaf refusals remain
+enforced by existing Core contracts; no skip, setup retry, warming or longer lifecycle/test budget
+is selected. A successful setup alone does not qualify supervisor effects. A future genuine
+temporary-parent refusal needs its own measured fixture correction; this change does not infer it.
+
 The bundled font license has a frozen byte digest. Apply `text eol=lf` only to
 `crates/locron-server/assets/fonts/OFL.txt` and
 `crates/locron-server/frontend/dist/fonts/OFL.txt` in repository attributes, so native Windows

@@ -3693,3 +3693,21 @@ junction swaps, a second user's read/write attempts, pipe occupation/remote reje
 standard-account registration, battery/locked-session operation and graceful shutdown with active
 work. This research has not performed those tests; Project drafts must name and later record
 their verification evidence before the platform is advertised as supported.
+
+### Hosted supervisor source-image refusal before semantic execution (2026-10-03)
+
+Exact Root43 CI 37089768203, MSRV native job 111107408527, executed the complete serial service
+filter: 26 passed, 17 failed, zero ignored. Thirteen supervisor assertions stopped in shared
+Fixture::new line 1411 at open_read_no_follow(std::env::current_exe()) with PermissionDenied,
+"unsafe managed path: \\?\D:\". The private destination guard at line 1408 had already succeeded.
+This is a fixture setup refusal before role effects, not evidence that their retry, cancellation,
+manual-owner, logging or quarantine contracts passed. The observed D: object is the workspace
+source image, not the temporary root. Preserve the unique disposable child and assert its final
+protected current-SID/SYSTEM leaf; never relax real managed-root checks to fit the runner.
+
+The fixture's current source reader guards D: while copying its already-running test image.
+A fixture-only retained std::File reader for exactly
+std::env::current_exe(), copied to a fresh private managed destination, separates trusted test
+image bytes from the managed-root policy. Production input/executable validation and every
+supervisor-owned guard stay unchanged. Native execution of the resulting fixtures remains
+pending; no child, tree or lifecycle success is inferred from the setup failure.
