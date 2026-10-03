@@ -5084,3 +5084,39 @@ No product loader, owned-child, guard or admission source is needed for this han
 [fixture correction plan](planning/WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md) preserves the
 original budgets and all actual-process assertions; owning Issue #31 and fresh native Verify
 remain required before any support or acceptance claim.
+
+### MCP native process fixture after private-root discovery (2026-10-04)
+
+Reviewed c676e37baeb8049fae3eb65cf007bb397850253d passes all sixteen ordinary rows and
+GitGuardian in run37143494890. Original five-row full discovery37143508598 still fails:
+x64 stable job111262652892, ARM64 stable111262652865 and x64 Rust1.94 job111262652832 each
+execute301 CLI unit cases with291 passed/10 failed and zero ignored/filtered. The five
+owner-sensitive Gate fixtures, recursive argument description and separate shell at-schedule
+case now pass in all three logs. The remaining ten failures are MCP cases, all at request_tool's
+unchanged success assertion1855, reporting only `tool locron_add_job failed`. Their actual
+tool error envelope is not printed; a specific returned error is not an observed fact.
+
+Separate read-only research pins the MCP source and traces a common invalid fixture input.
+valid_add_args1859–1870 supplies process command `/bin/echo`, `hello`. parse_target877–879
+retains that executable and args; tool_add_job1021 invokes definition.validate, which reaches
+target.rs120–129. On Windows a separator-containing executable must be absolute, including
+its prefix. `/bin/echo` is rooted without a drive/UNC prefix and fails that requirement. This
+is a source-backed input-contract mismatch, not a claim to have recovered the hidden error
+envelope. All ten failed cases depend on this shared process fixture. Their add/update/read,
+dry-run and durable queued/cancel assertions do not run an Engine or spawn that scheduled
+command. The independent shell at-schedule fixture already uses default_shell and passes.
+
+A minimal test-only correction can keep Target::Process and choose the actual current test
+image's absolute Windows path with fixed `--help` argv. The image is already running; path
+lookup/encoding must fail explicitly rather than inventing or lossily encoding an executable.
+The argument remains a finite native help request if executed, while these MCP cases still
+qualify job definition/queue behavior rather than echo output or child execution. Unix retains
+the exact `/bin/echo`, `hello` values. Every case body/name/assertion stays unchanged, and no
+production validation, state/permission policy, process owner or deadline change is needed.
+The [MCP follow-up plan](planning/WINDOWS_MCP_NATIVE_PROCESS_FIXTURE_2026-10-04.md) precedes Source.
+
+The full Clippy rows now report41 CLI diagnostics per architecture after the seven Unix-helper
+errors were removed. Accepted main through #129 contributes staged APIs and test-style work
+beyond the earlier29-diagnostic baseline. These warnings remain denied and outside this
+single-helper correction. The87 measured integration failures, distinct Core admission/Server
+WAL-reopen observations, stock-crash heartbeat work and public acceptance remain open.

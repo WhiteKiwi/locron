@@ -4981,3 +4981,24 @@ the new controlled modes after the normal parent-exit proof within its original 
 without earlier cold-gate warm-up or a workflow change. Full discovery and all remaining clean
 Windows 11, user/privacy, recovery and distribution acceptance
 stay open and retain their failures; no skip, relaxed deadline, retry or quarantine reset qualifies.
+
+### MCP process-fixture continuation under native target validation (2026-10-04)
+
+Continue #31 using the [MCP fixture plan](planning/WINDOWS_MCP_NATIVE_PROCESS_FIXTURE_2026-10-04.md).
+The seven-file correction now has ordinary native passes, while full CLI discovery still has
+ten downstream MCP failures. FINDINGS distinguishes the source-backed invalid `/bin/echo`
+Windows input from the unprinted actual error envelope. Frozen SPEC and production validation
+stay unchanged; the goal is to reach the existing MCP assertions with a valid process definition.
+
+After documentation and exact Issue Verify readback, a separate development session changes
+only tests::valid_add_args in mcp.rs. Windows uses the actual running test image's absolute,
+non-lossy path and fixed finite `--help` argv; Unix keeps the original command values. Preserve
+process target type, job metadata/policy, private state setup, every test body/name/assertion
+and original request_tool success refusal. This is definition/queue acceptance, not scheduled
+process execution or echo-output proof. Add no new selector, skip, warning allowance or fallback.
+
+Parent checks the complete one-helper diff, exact inverse conservation and every other blob,
+then publishes fresh ordinary CI and the original five full native rows. Ten intended downstream
+assertions must actually run and pass on x64 stable, ARM64 stable and x64 Rust1.94; any newly
+reached integration/lint failure is retained. Separate stock-crash, integration, Core/Server
+and public distribution work remain outside this slice and keep their unfinished Verify gates.
