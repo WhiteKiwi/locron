@@ -2346,13 +2346,16 @@ and all five guarded regular release leaves. Every leaf hash must match the veri
 ZIP; both actual executable identities, PE subsystems, native version and launcher ABI must agree.
 
 Keep this new qualification separate from the historical single-image test route. Proposed
-private interfaces are `verify_index_snapshot(bytes, registration, root) -> IndexFacts` for pure
-bounded metadata and `verify_package_pair_until(console, original_deadline) -> IndexedPair` for
+private interfaces are `verify_index_snapshot(bytes, registration, root, original_deadline)
+-> IndexFacts` for pure bounded metadata and
+`verify_package_pair_until(console, original_deadline) -> IndexedPair` for
 the live read-only composition. IndexedPair is move-only and retains the real registration,
 index guard/digest/full identity, guarded root ancestry, five source guards and canonical archive
 proof; metadata or serde cannot construct it. It authorizes no lifecycle effect. Guard/SID/index
 reads and real pair probes share the original admitted deadline and retained owner; uncertainty
-retains resources and refuses a late proof.
+retains resources and refuses a late proof. The pure reader receives that same absolute Instant,
+checks it before deserialization and each fixed query, and captures it in the progress hook;
+neither interface creates a fresh deadline.
 
 Use Windows-only features serialize/limits/hooks on the already locked rusqlite 0.40.2. Read a
 complete existing index of at most 4 MiB, then deserialize only that bounded slice into a read-only
