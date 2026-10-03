@@ -4268,11 +4268,13 @@ Actual native x64/ARM64 behavior, including the stock adapter's architecture, re
 for this new gate. No query failure is permission to fall back to current_exe alone.
 
 Rust 1.94's raw attribute-list spawning remains unstable, so arbitrary inherited handle-list
-transfer is not selected. Stable native piped stdio plus a private four-frame qualification
-exchange keeps the parent lease alive until overlapping child protection is confirmed. The
-already locked winapi-util 0.1.11 safe file::typ accepts Stdin/Stdout and reports disk/character/pipe
-types; it does not distinguish or authenticate a pipe's peer. Live qualification tokens therefore
-come only from the native launch owner and its actual Child/channel, never deserialized metadata.
+transfer is not selected. A private four-frame qualification exchange keeps the parent lease alive
+until overlapping child protection is confirmed. Borrowed global Rust stdout cannot be safely
+closed independently while the child remains live; the copied libtest harness also writes its own
+stdout. Waiting for stdio EOF would require losing that live-child overlap or an indefinite wait.
+Two owned one-way named-pipe endpoints replace the earlier stdio/stderr proposal; no quiet period,
+Peek or noise filtering is selected. Live qualification tokens still come only from the native
+launch owner and its actual Child/channel, never deserialized metadata.
 The repository's existing SECURITY account boundary excludes arbitrary same-account code/debugger
 control. No unsigned publisher authentication, retrospective proof for a manually started broker,
 service snapshot authority or completed operation is inferred from this plan.
@@ -4281,9 +4283,35 @@ The source-feasibility audit found that cold current_user_sid currently creates 
 deadline. A bounded initializer must initialize that same cache with the launch phase's remaining
 budget; surrounding a fresh default-budget call with clock checks is insufficient. Native guards
 and pipe reads can also block, so the caller needs a finite retained owner and uncertain-cleanup
-quarantine rather than an indefinite join. The copied libtest executable has uncontrolled harness
-stdout; isolate that stdout to null and select piped stderr only for its strict fixture protocol.
-Any noise on the selected channel still fails. These are planned refinements, not native proof.
+quarantine rather than an indefinite join. These are planned refinements, not native proof.
+
+Pinned interprocess 2.4.4 exposes safe client_process_id/server_process_id on connected streams,
+safe creation-time descriptor/listener options, and safe synchronous stream/OwnedHandle conversions.
+Create the parent-to-child and child-to-parent pipes as send-only servers owned by their respective
+senders. Tokio ClientOptions safely opens receive-only overlapped clients with identification SQOS.
+Only for the server-PID query, clone the client's BorrowedHandle into OwnedHandle and wrap it in
+synchronous PipeStream<Bytes,None>; consume the unsplit wrapper back into OwnedHandle and close it
+before propagating success or query failure. This wrapper performs no I/O or second registration.
+An externally wrapped interprocess stream starts with unknown flush state; merely dropping even
+the receive-only wrapper could enter limbo, so the explicit owned-handle extraction is required.
+This avoids unsafe Tokio raw-handle calls in this workspace and double I/O registration. It also
+avoids wrapping an ordinary send-only handle: GetNamedPipeInfo requires additional read-attribute
+rights for a write-only pipe. Peer-PID queries are consistency checks under the original live Child
+and continuous guards, not standalone process authentication. Actual client-side server-PID
+behavior and native architecture/ACL facts remain qualification requirements.
+
+Use the already selected private SID+SYSTEM descriptor, local-only first-instance creation and
+noninheritance. Accept exactly once with a two-instance ceiling, then drop the replacement listener;
+the connected stream keeps the name reserved until its own closure. Microsoft documents that a
+server FlushFileBuffers waits for the client to consume buffered bytes. Interprocess's explicit
+flush followed by consuming evade_limbo provides a source-feasible terminal close; plain drop may
+instead hand an unflushed stream to its limbo worker. Async flush uses a retained blocking worker
+and cannot be cancelled by evade_limbo, so uncertain timeout must retain that owner and protections.
+After Permit and Qualified respectively, each receiver must observe exact terminal EOF within the
+original deadline and reject any extra byte before it; neither sender needs to exit its process.
+Both copied fixture stdio outputs are null, and there is no extra channel-selector ABI or need for
+a direct winapi-util dependency. Four frames and both terminal reads remain read-only qualification,
+with no helper acceptance, status/journal write or lifecycle/file effect.
 
 Sources: [Rust current_exe](https://doc.rust-lang.org/std/env/fn.current_exe.html),
 [image-name query](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew),
@@ -4295,5 +4323,17 @@ Sources: [Rust current_exe](https://doc.rust-lang.org/std/env/fn.current_exe.htm
 [process-handle/PID lifetime](https://learn.microsoft.com/en-us/windows/win32/procthread/process-handles-and-identifiers),
 [module name/truncation](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.processmodule.filename?view=netframework-4.8.1),
 [pinned unstable attribute API](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/process.rs),
-[safe handle-type source](https://github.com/BurntSushi/winapi-util/blob/0.1.11/src/file.rs),
+[safe owned-handle conversion/extraction](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/stream/impl/handle.rs),
+[safe peer-PID queries](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/stream/impl.rs),
+[Tokio read-only client/SQOS options](https://github.com/tokio-rs/tokio/blob/tokio-1.53.1/tokio/src/net/windows/named_pipe.rs),
+[descriptor/first-instance/remote flags](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/listener/create_instance.rs),
+[accept/replacement lifecycle](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/listener.rs),
+[explicit flush and terminal drop](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/stream/impl/send.rs),
+[retained async flush worker](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/tokio_flusher.rs),
+[Rust 1.94 owned handles](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/io/handle.rs),
+[client PID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid),
+[server PID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid),
+[metadata access requirements](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-getnamedpipeinfo),
+[server flush contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers),
+[pipe terminal operations](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-operations),
 [existing account boundary](../SECURITY.md#out-of-scope).

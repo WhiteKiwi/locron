@@ -1982,14 +1982,13 @@ Neither current_exe, a reopened path/hash, an arbitrary process lookup nor Boots
 that interval. No new raw FFI or runtime source compilation is required.
 
 Freeze a private locron.windows-helper-launch/v1 Challenge -> Ready -> Permit -> Qualified
-exchange on the native parent's actual piped stdin/stdout. Each strict, deny-unknown frame is at
+exchange on two private one-way byte pipes. Each strict, deny-unknown frame is at
 most 4 KiB, with four frames/16 KiB total, and binds the operation UUID, fresh session UUID, raw
 original/current-request SHA-256 and helper's full identity/digest; Ready additionally binds the
 actual child PID and a child-generated fresh UUID echoed by Permit/Qualified, preventing saved
 frames from satisfying a new exchange. Encode full identities as fixed 16/32-character hex strings,
 not lossy JSON numbers. No paths, task source or effect instructions come from this channel.
-Use the already locked Windows-only winapi-util =0.1.11 safe file::typ on stdin/stdout to reject ordinary console
-or disk channels; pipe type alone is not authentication. The parent constructs nonserializable
+The parent constructs nonserializable
 QualifiedLaunch only after real launch/readback/overlap checks; the child constructs its private
 QualifiedBootstrap only through that exchange while retaining Bootstrap. Request/status JSON,
 saved Qualified frames and a command-line flag cannot reconstruct either live proof. Apply one
@@ -2013,15 +2012,50 @@ Run potentially blocking native guard/spawn/channel operations in a finite retai
 an indefinitely joined caller thread. Retain child, lease and outstanding I/O in that owner after
 uncertain cleanup; permit at most one such launch owner per process and refuse another admission
 while it remains live. A timed-out callback cannot later publish a qualified token or enter effects.
-Frame wire size includes a four-byte little-endian JSON length prefix; consume exactly four
-strict frames, reject over-limit lengths/trailing input, and never search past noise for a frame.
+Frame wire size includes a four-byte little-endian JSON length prefix; each endpoint receives its
+exact two phases, reject over-limit lengths/trailing JSON, and never search past noise for a frame.
+After its second frame each receiver requires actual pipe EOF within the same deadline. Any
+additional byte refuses immediately; an idle open writer, cancellation or read error is not EOF.
 
-For the copied libtest executable fixture only, route qualification output through its piped
-stderr and set harness stdout to null. A private fixture-only channel selector chooses this route;
-request JSON/flags cannot select it in the real stdin/stdout interface. Check the exact selected
-pipe types and identical frame/total bounds. Any uncontrolled harness/adapter stderr before or
-between frames is an honest qualification failure, never filtered or retried. This uses the
-existing copied test executable and adds no helper binary, product dispatch or execution-policy change.
+The parent creates and owns the send-only Challenge/Permit server before spawning the original
+Child. After reading Challenge the child creates and owns the send-only Ready/Qualified server
+within the propagated remaining budget. Both names are fixed local pipe names derived from the
+verified SID digest and fresh session UUID, with distinct direction suffixes; selectors carry
+only those exact names, not arbitrary network paths. Each server uses interprocess =2.4.4 with
+the tokio feature, SecurityDescriptor::deserialize and PipeListenerOptions::create_tokio_send_only
+with current-SID owner and an explicit protected SID+SYSTEM DACL, accept_remote(false), inheritable(false)
+and instance_limit(2). Its initial creation uses FIRST_PIPE_INSTANCE; a collision refuses without
+adopting an existing endpoint. Accept once and immediately drop the listener's unused replacement
+instance; retain the connected stream. Limit 1 cannot be used because accept creates that replacement.
+
+Both clients use Tokio ClientOptions read(true), write(false), explicit SECURITY_IDENTIFICATION
+SQOS and byte mode; its safe open registers one overlapped I/O handle. For the client's server-PID
+query only, safely clone its BorrowedHandle into OwnedHandle and wrap that clone in the synchronous
+interprocess PipeStream<Bytes,None>. After the query, consume this unsplit metadata wrapper back
+into OwnedHandle and close it even if the query failed; it never reads, writes, registers I/O or
+enters default-drop limbo. Do not convert the I/O client into an interprocess receive-only stream,
+whose externally supplied handle starts with unknown flush state. These are safe owned-handle
+operations with no workspace raw FFI or inherited handles. Bounded connection attempts, safe
+client_process_id/server_process_id queries and all cold setup consume the original
+deadline. Bind the parent's outgoing accepted client and incoming server to actual Child.id(),
+bracketing peer queries with original Child live checks. The child binds both opposite peers to
+the actual parent PID carried by Challenge and read from the connected endpoint; a claimed PID
+alone never authorizes qualification. Query failure or wrong direction/peer refuses.
+
+Each sender explicitly flushes its own server stream after its second frame, waiting for those
+bytes to be read within the original deadline, then consumes the stream with evade_limbo. Keep
+no clones or split halves of that endpoint. The child reads Permit followed by terminal EOF before
+sending Qualified; the parent reads Qualified followed by terminal EOF while the original Child
+and overlapping helper guards remain live. Do not substitute a quiet period, Peek, discarded noise
+or process exit for closure. Interprocess's default send-stream drop can retain a flushing limbo
+worker, so it is not the terminal operation. A timed-out explicit flush remains owned/quarantined
+with its outstanding worker and guards; evading limbo cannot cancel an already outstanding flush.
+
+Use these same owned channels for the copied libtest fixture and null its harness stdout/stderr;
+there is no alternate stderr protocol or fixture channel selector. No qualification bytes come
+from global stdio, whose safely borrowed handles cannot be independently closed while the child
+remains live. This uses the existing copied test executable and adds no helper binary, product
+dispatch or execution-policy change. The transport consumes no direct winapi-util dependency.
 
 The existing hidden helper entry and optional PowerShell route first enter a native read-only
 broker. It validates launch context and uses this same guarded native launch; an already running
@@ -2039,7 +2073,10 @@ Verify on native x64/ARM64 using a real copied test executable and unique privat
 the guarded launch passes once, concurrent leaf/ancestor replacement and conflicting writes are
 refused across readiness/guard overlap, changed created full identity or original request bytes
 refuse, a wrong actual image/missing module/process exit or broken/stale/oversized channel refuses,
-and cold deadline/owned cleanup stays bounded. Assert no installed-target/state/task/PATH/journal
+pipe collisions/wrong peers/trailing bytes or a held-open terminal sender refuse, terminal EOF
+occurs while the original child remains live, and cold deadline/owned cleanup stays bounded.
+Exercise real creation-time ACL/remote rejection and flush/drop behavior on both architectures.
+Assert no installed-target/state/task/PATH/journal
 mutation in every qualification fixture. Release executable qualification, actual helper
 acceptance, complete lifecycle effects and clean Windows 11 acceptance remain separate gates.
 
