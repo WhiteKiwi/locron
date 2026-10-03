@@ -85,6 +85,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Verify durable store and runtime library contracts
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
       - name: Verify native registered service semantics
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
