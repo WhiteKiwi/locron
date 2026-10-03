@@ -3469,3 +3469,24 @@ ACL/reparse refusal plan; do not expand production module loading or alter pruni
    **Verify:** fresh exact-head hosted native x64/ARM64/MSRV pruning 3/3 and the remaining CI
    pass before merge. Record actual revision/commands/results on issues #27/#31; initial releases
    stay unsigned and this fixture does not complete standard-user/reboot/release acceptance.
+
+## Native WAL recovery contention correction (2026-10-03)
+
+The measured Root43 `bfe7b8d` Server failure returns real SQLITE_BUSY_RECOVERY (261) from the
+fixed WAL setup before its original five-second budget is used. The current predicate admits
+only exact 5. This is a correction within the frozen SQLite/private-state product contract;
+retain dashboard shutdown behavior and its actual active-SSE/durable-run fixture.
+
+1. Extend only the finalized idle WAL admission predicate to explicit codes 5 and 261, including
+   the existing step/finalize error-precedence boundary. **Verify:** full source review shows the
+   same entry deadline, zero internal busy timeout, bounded ten-millisecond yields, autocommit
+   checks, effective WAL readback and one-shot remaining settings; no other operation is replayed.
+2. Preserve the four original real SQLite controls and their exact-5 assertions, immutable SQL,
+   physical DB/sidecar admission and the Server regression fixture. **Verify:** unchanged control
+   assertions and production boundaries; snapshot 517, timeout 773, LOCKED, read-only and I/O
+   errors still refuse. Do not add a fake-error or unproven overlap fixture. Existing native 261
+   is recorded failure evidence; a later passing run is not claimed to force the same error.
+3. Record the issue plan, hand implementation to a separate developer and root-review/select it.
+   **Verify:** source coverage is complete and all protected blobs/deltas match; fresh exact-head
+   x64/ARM64/MSRV Server 31, Store 90, original concurrency/PATH/lifecycle and guarded-prune 3/3
+   pass with all remaining checks before merge. Keep unfinished acceptance/release issues open.

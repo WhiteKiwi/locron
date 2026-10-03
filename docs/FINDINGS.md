@@ -3892,3 +3892,37 @@ Sources: [completed x64 stable job](https://github.com/WhiteKiwi/locron/actions/
 [completed x64 MSRV job](https://github.com/WhiteKiwi/locron/actions/runs/37105022659/job/111151723430),
 [Framework file ACL read](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.getaccesscontrol?view=netframework-4.8.1),
 [Framework file ACL write](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.setaccesscontrol?view=netframework-4.8.1).
+
+### Actual WAL recovery contention is outside the current retry predicate (2026-10-03)
+
+Root43 `bfe7b8d` CI 37107116124 passes Core 118, Engine 69 and Service 43 on both completed
+x64 rows. Server passes 30/31: the original active-SSE shutdown test fails when reopening its
+durable state at lib.rs:1060. The retained trace reports sqlite-configure-wal, primary
+DatabaseBusy and extended 261. Cargo stops there, so these rows do not run the Store suite or
+later lifecycle/pruning gates. This is different from the earlier concurrent-first-open failure.
+
+The current WAL predicate accepts extended code 5 only and immediately returns 261. The log
+does not show exhaustion of the five-second admission budget. SQLite documents 261 as
+SQLITE_BUSY_RECOVERY; the pinned SQLite 3.53.2 source returns it after an unsuccessful shared
+recovery-lock acquisition while the WAL index is being recovered. Guarded sidecar preparation
+does not acquire that SHM recovery lock. Preserved WAL/SHM leaves can require index recovery
+after a clean close too; a process crash or a particular blocking connection is not established.
+
+Select an explicit {5,261} allowlist only inside the idle, fully finalized, fixed WAL statement
+admission. Keep the same API-entry five-second budget and ten-millisecond bounded yields,
+step/finalize error precedence, verified WAL result and one-shot remaining settings. Snapshot
+517, timeout 773, LOCKED, read-only and I/O errors remain outside that allowlist. No arbitrary
+SQL operation, transaction, migration or generic Store open is replayed. The four existing
+native WAL controls retain their exact-5 assertions; the actual Server fixture stays unchanged.
+
+The measured native 261 failure is real regression evidence. A passing Server suite does not
+prove that every execution encountered 261. No deterministic recovery-suspension hook was
+found in the current safe SQLite API: WAL recovery scans through VFS operations outside its
+ordinary progress/trace callbacks. A barrier plus a large WAL alone is not a deterministic
+fixture. Additional organic recovery observation remains a separate investigation; do not
+fabricate an Error value or add a timing-dependent acceptance test for this correction.
+
+Sources: [completed x64 stable failure](https://github.com/WhiteKiwi/locron/actions/runs/37107116124/job/111157711707),
+[completed MSRV failure](https://github.com/WhiteKiwi/locron/actions/runs/37107116124/job/111157711755),
+[SQLite recovery and snapshot codes](https://sqlite.org/rescode.html#busy_recovery),
+[WAL close/recovery contention](https://sqlite.org/wal.html#sometimes_queries_return_sqlite_busy_in_wal_mode).
