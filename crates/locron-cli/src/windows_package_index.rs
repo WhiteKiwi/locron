@@ -16,7 +16,7 @@ use super::sha256_hex;
 use super::windows_protocol::{maintenance_path, native_target};
 use super::windows_receipt::{same_path, stable_version};
 
-const SNAPSHOT_LIMIT: usize = 4 * 1024 * 1024;
+pub(super) const SNAPSHOT_LIMIT: usize = 4 * 1024 * 1024;
 const VALUE_LIMIT: usize = 16 * 1024;
 // SQLite's length limit includes the complete encoded row, not only each value.
 const ROW_LIMIT: i32 = 4 * 16 * 1024 + 128;
@@ -25,24 +25,24 @@ const PROGRESS_INTERVAL: i32 = 1_000;
 const PROGRESS_CALLBACKS: u32 = 1_024;
 
 /// Borrowed caller-selected registration metadata, never a live registry proof.
-struct Registration<'a> {
-    product_code: &'a str,
-    package_id: &'a str,
-    source_id: &'a str,
-    version: &'a str,
-    target: &'a str,
-    install_location: &'a str,
-    index_path: &'a str,
-    console_alias: &'a str,
+pub(super) struct Registration<'a> {
+    pub(super) product_code: &'a str,
+    pub(super) package_id: &'a str,
+    pub(super) source_id: &'a str,
+    pub(super) version: &'a str,
+    pub(super) target: &'a str,
+    pub(super) install_location: &'a str,
+    pub(super) index_path: &'a str,
+    pub(super) console_alias: &'a str,
 }
 
 /// Exact row/path facts and snapshot digest; none can authenticate installed bytes.
 #[derive(Debug, PartialEq, Eq)]
-struct IndexFacts {
-    directory: String,
-    console_alias: String,
-    console: String,
-    snapshot_sha256: String,
+pub(super) struct IndexFacts {
+    pub(super) directory: String,
+    pub(super) console_alias: String,
+    pub(super) console: String,
+    pub(super) snapshot_sha256: String,
 }
 
 fn before_deadline(deadline: Instant) -> Result<()> {
@@ -319,7 +319,7 @@ fn metadata(database: &Connection, deadline: Instant) -> Result<()> {
     Ok(())
 }
 
-fn verify_index_snapshot(
+pub(super) fn verify_index_snapshot(
     bytes: &[u8],
     registration: &Registration<'_>,
     root: &str,
