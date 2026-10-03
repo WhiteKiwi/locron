@@ -2748,6 +2748,39 @@ blocked while the observer still owns its guard and succeed only after both owne
 actually exited. A host-only exit cannot release the observer's independent guard. This adds
 native evidence rather than warming the cold gate, extending timeouts or mutating system files.
 
+### Post-cold diagnostic adapter alignment (2026-10-03)
+
+PR41 head 1fb5301, run 37081545855, ARM job 111082951981 passed all 82 cold Core and 61 Store
+tests. Its later diagnostic's zero-input child timed out at 30,051 ms with actual cleanup
+confirmed; independent small and 60k children passed at 23,166 and 22,894 ms. The stock PE was
+native 0xAA64, PowerShell 5.1.26100.9457, invoked from native pwsh 7.6.6. This is an actual failing
+post-cold diagnostic, not a failed privacy test or evidence for extending the product deadline.
+Source: [exact native ARM gate and diagnostic](https://github.com/WhiteKiwi/locron/actions/runs/37081545855/job/111082951981).
+
+The diagnostic's direct and structured child sources invoke unqualified ConvertTo-Json and
+ConvertFrom-Json, despite removing inherited PSModulePath. They therefore measure a distinct
+command-discovery/bootstrap path from the accepted guarded binary loader. The original elapsed
+times include command binding/JSON serialization, so they do not isolate process-start time or
+prove autoload to be the sole delay. Preserve those historical observations, and qualify the
+actual reviewed Core adapter in the corrective diagnostic rather than re-running this mismatch.
+Sources: [legacy diagnostic source](https://github.com/WhiteKiwi/locron/blob/1fb5301b77e3949ac008fa84e747ae84ef1ba4fe/.github/scripts/windows-adapter-diagnostic.ps1),
+[accepted Core adapter](https://github.com/WhiteKiwi/locron/blob/1fb5301b77e3949ac008fa84e747ae84ef1ba4fe/crates/locron-core/src/windows.rs),
+[retained JSON commands](https://github.com/WhiteKiwi/locron/blob/1fb5301b77e3949ac008fa84e747ae84ef1ba4fe/crates/locron-core/src/windows/stock_json.ps1).
+
+Windows PowerShell 5.1 documents that empty-string ConvertFrom-Json input produces no output.
+Select a cfg(test)-only prepared-input clear for the zero-input helper while retaining actual
+EOF reading and command-object parsing. Its static fact script must ignore request data and
+assert the received text was empty. Native failure of that contract remains a failed proof;
+replacing it with {} would conceal the original zero-byte requirement.
+Source: [PowerShell 5.1 empty-input contract](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-5.1#-inputobject).
+
+Three independent exact helper modes preserve each existing 30/3-second adapter/cleanup limit
+and forty-five-second isolated-helper bound without serial cold-start allowance inside a helper.
+Require actual guard/Job/pipe ownership, real SID/version/architecture, original UTF-8 sizes and
+echo/length assertions, bounded stage/PID receipts and confirmed cleanup. The script remains a
+post-cold failing gate on all three native rows; no host policy edit, raw stock child, fallback,
+warm-up, test retry or passing cleanup fact from destructor/PID disappearance is accepted.
+
 ### Local named pipes with creation-time security
 
 Select target-specific `interprocess = "=2.4.4"` with its `tokio` feature and a safe widestring

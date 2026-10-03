@@ -400,6 +400,43 @@ continues refusing incompatible opens, then final confirmed helper exit permits 
 and heartbeat samples stay unchanged. Record revision/image/toolchain, modes, stages and counts;
 compile-only, unset helper mode, timeout or missing marker cannot qualify these gates.
 
+The post-cold stock diagnostic still launches its own raw PowerShell children with unqualified
+JSON cmdlets, while the accepted Core adapter uses retained guarded binaries and command objects.
+Correct that diagnostic boundary by invoking the exact owned_loader_fixture_child with three
+fixed LOCRON_STOCK_LOADER_FIXTURE modes: diagnostic-bootstrap, diagnostic-small and diagnostic-60k.
+Each selection runs in a fresh hosted test process and independently retains the existing
+forty-five-second isolated-helper bound, thirty-second API-entry budget and three-second owned
+cleanup bound. Do not combine two sequential cold starts inside one helper, add a warm-up, change
+the original cold Core command/order or let a later diagnostic pass replace a failed cold gate.
+
+All three helpers use the real prepare_adapter/run_adapter_worker, StockAdapterGuard, owned
+suspended Job factory, bounded pipes and retained locronFromJson/locronToJson command objects.
+The cfg(test)-only bootstrap helper clears only the prepared input bytes, preserving genuine
+zero-byte stdin and EOF through the normal bootstrap. Its compiled static fact script ignores
+request data and requires the actual locronInput length to be zero; it must not substitute an
+empty JSON object or skip parsing. The two structured helpers send the existing Unicode echo
+and five-character/60,000-character payloads, validating the exact 54/60,049 UTF-8 input lengths,
+echo equality and payload lengths. Static caller JSON output uses &$locronToJson -Compress.
+
+Retain the runner-host PE/file-version and invoking-shell architecture/version facts. Record
+each actual child PID, PowerShell 5.1 version, is64bit/process architecture, actual current-token
+SID, byte count, elapsed time, input/EOF/output phase receipts and success or timeout category.
+Require a valid S-1 SID and PS5.1 facts, native architecture agreement, input-written and ordered
+binding/JSON/caller phases, and actual root-exit/empty-Job/pipe completion before a passing fact.
+Use bounded existing trace/error data on failure. Cleanup uncertainty or a retained quarantine
+is a failed diagnostic, never a synthesized cleanup-confirmed value from process Drop/PID absence.
+No fixed-worker warm-up, adapter fallback, source supplied by environment, host policy change or
+new public Core API is introduced. Core helper source remains the filesystem owner's scope.
+
+The CI diagnostic script retains its host metadata header, replaces its private raw child-launch
+implementation with these three exact cargo/helper selections, and records every independent
+result before failing if any selection failed. Keep the existing post-cold always condition,
+job names and deadlines; no continue-on-error, retry, suppressed assertion or weakened output cap.
+Verify on native x64/ARM64/MSRV: all original facts and zero/small/60k assertions execute against
+the actual guarded Core path; a timeout or missing phase remains a failing gate with real owned
+cleanup facts, and the original unwarmed cold suite still runs first. Pair the reviewed Core
+helper and CI source before publication; command compilation alone is not native qualification.
+
 The next exact ARM64 run located the first failure in the SID exchange: spawning the owned child
 and flushing its input took 49 ms, but no reply arrived before the original thirty-second
 deadline. The fixed PowerShell source contains no Add-Type or dynamically compiled C# helper.
