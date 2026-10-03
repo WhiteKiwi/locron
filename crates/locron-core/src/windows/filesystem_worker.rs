@@ -149,6 +149,7 @@ impl ChildPhases {
         let phase = match line {
             b"locron-fs-phase:source-entry" => "child-source-entry",
             b"locron-fs-phase:encoding-ready" => "child-encoding-ready",
+            b"locron-fs-phase:policy-confirmed" => "child-policy-confirmed",
             b"locron-fs-phase:utility-import-start" => "child-utility-import-start",
             b"locron-fs-phase:utility-import-ready" => "child-utility-import-ready",
             b"locron-fs-phase:input-line" => "child-input-line",
@@ -180,12 +181,29 @@ impl ChildPhases {
 /// Instrument only fixed source in test builds; caller data never selects executable text.
 #[cfg(test)]
 fn instrumented_source() -> String {
+    instrumented_source_with_policy(super::loader_tests::restricted_child())
+}
+
+#[cfg(test)]
+fn instrumented_source_with_policy(restricted: bool) -> String {
     let mut source = format!("{}\n{}", phase_token("source-entry"), worker_source());
     let import = STOCK_JSON_BOOTSTRAP;
     assert_eq!(source.matches(import).count(), 1);
     source = source.replace(
         import,
-        &format!("{}\n{import}", phase_token("utility-import-start")),
+        &format!(
+            "{}{}\n{import}",
+            if restricted {
+                format!(
+                    "{}\n{}\n",
+                    super::loader_tests::POLICY_ASSERTION,
+                    phase_token("policy-confirmed")
+                )
+            } else {
+                String::new()
+            },
+            phase_token("utility-import-start")
+        ),
     );
     for (anchor, phase) in [
         (
@@ -217,6 +235,20 @@ fn instrumented_source() -> String {
             phase_token("reply-serialized")
         ),
     )
+}
+
+#[cfg(test)]
+pub(super) fn policy_observation() -> (u32, bool) {
+    let pid = LAST_PID.load(Ordering::Acquire);
+    let confirmed = LAST_PHASES.lock().unwrap().as_ref().is_some_and(|phases| {
+        phases
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(phase, _)| *phase == "child-policy-confirmed")
+    });
+    (pid, confirmed)
 }
 
 fn worker_source() -> String {
@@ -794,6 +826,18 @@ mod tests {
     use std::io::Read;
     use std::os::windows::process::CommandExt;
     use std::process::{Child, Command as StdCommand, Stdio};
+
+    #[test]
+    fn fixed_policy_assertion_precedes_binary_binding_without_a_request_selector() {
+        let source = instrumented_source_with_policy(true);
+        let policy = source
+            .find(super::super::loader_tests::POLICY_ASSERTION)
+            .unwrap();
+        assert!(policy < source.find(STOCK_JSON_BOOTSTRAP).unwrap());
+        assert_eq!(source.matches(&phase_token("policy-confirmed")).count(), 1);
+        assert!(!worker_source().contains("stock child effective policy"));
+        assert!(!source.contains("Set-ExecutionPolicy"));
+    }
 
     #[test]
     fn fixed_phase_source_and_observations_are_bounded_and_do_not_render_inputs() {

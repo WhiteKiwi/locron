@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 const PREFIX: &str = "locron-generic/v1/";
-const PHASES: [&str; 10] = [
+const PHASES: [&str; 11] = [
     "source-entry",
     "encoding-ready",
+    "policy-confirmed",
     "binding-start",
     "binding-ready",
     "input-complete",
@@ -24,12 +25,25 @@ pub(super) fn token(phase: &str) -> String {
 }
 
 pub(super) fn source(script: &str) -> String {
+    source_with_policy(script, super::loader_tests::restricted_child())
+}
+
+fn source_with_policy(script: &str, restricted: bool) -> String {
     // The same compiled binary-only bootstrap and retained command objects run in both builds.
     // Only test builds split the EOF/JSON pipeline and emit fixed phase tokens.
     format!(
-        "{} $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); {} try {{ {} {}\n{} $locronInput = [Console]::In.ReadToEnd(); {} {} $request = $locronInput | & $locronFromJson; {} {} {script}\n; {} }} catch {{ {} [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
+        "{} $ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); {} try {{ {} {} {}\n{} $locronInput = [Console]::In.ReadToEnd(); {} {} $request = $locronInput | & $locronFromJson; {} {} {script}\n; {} }} catch {{ {} [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
         token("source-entry"),
         token("encoding-ready"),
+        if restricted {
+            format!(
+                "{}\n{}",
+                super::loader_tests::POLICY_ASSERTION,
+                token("policy-confirmed")
+            )
+        } else {
+            String::new()
+        },
         token("binding-start"),
         super::STOCK_JSON_BOOTSTRAP,
         token("binding-ready"),
@@ -157,7 +171,7 @@ pub(super) async fn capture_stderr(
 
 #[cfg(test)]
 mod tests {
-    use super::{PREFIX, Trace, capture_stderr, source, token};
+    use super::{PREFIX, Trace, capture_stderr, source, source_with_policy, token};
     use std::sync::Arc;
 
     #[test]
@@ -170,6 +184,9 @@ mod tests {
         assert_eq!(trace.child_phases(), ["source-entry", "json-parsed"]);
         let actual = source("@{ok=$true}|& $locronToJson -Compress");
         for phase in super::PHASES {
+            if phase == "policy-confirmed" {
+                continue;
+            }
             assert_eq!(actual.matches(&token(phase)).count(), 1);
         }
         assert!(actual.contains("$locronInput | & $locronFromJson"));
@@ -184,6 +201,19 @@ mod tests {
             "# caller ends with a line comment\n; {}",
             token("caller-complete")
         )));
+    }
+
+    #[test]
+    fn restricted_assertion_precedes_binding_and_requires_the_actual_enum() {
+        let source = source_with_policy("@{} | & $locronToJson -Compress", true);
+        let policy = source
+            .find(super::super::loader_tests::POLICY_ASSERTION)
+            .unwrap();
+        assert!(policy < source.find(super::super::STOCK_JSON_BOOTSTRAP).unwrap());
+        assert_eq!(source.matches(&token("policy-confirmed")).count(), 1);
+        assert!(source.contains("Microsoft.PowerShell.ExecutionPolicy"));
+        assert!(source.contains(".Invoke($null, [object[]]@('Microsoft.PowerShell'))"));
+        assert!(!source.contains("Set-ExecutionPolicy"));
     }
 
     #[tokio::test]
