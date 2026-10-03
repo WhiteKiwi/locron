@@ -95,6 +95,16 @@ jobs:
       - name: Verify durable store and runtime library contracts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
+      - name: Verify native default doctor facts and output
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          cargo test -p locron --test cli --locked windows_default_doctor_
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p locron --test cli --locked human_doctor_prints_one_level_line_per_check -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p locron --test cli --locked human_forms_leave_the_json_envelope_untouched -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native registered service semantics
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=1'
