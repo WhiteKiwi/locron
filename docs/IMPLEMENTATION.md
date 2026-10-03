@@ -2311,6 +2311,23 @@ Validate the receipt and listed retained-installer hash before sharing that boot
 the helper's verified read handle across launch/wait, and require no network for owned removal.
 Malformed, missing or modified executable/bootstrap ownership evidence is a refusal.
 
+The shared PowerShell bootstrap path converter must inspect raw components before calling
+Framework GetFullPath. Preserve the absolute local-drive, control-character and alternate-stream
+prechecks. For inspection only, translate slash to backslash and split the original suffix into
+components; reject dot/parent segments, terminal dots/spaces and the existing reserved-device
+forms before normalization can erase them. Then call GetFullPath and retain its existing final
+component check and drive-root/trailing-separator output rules. Ordinary internal dots/spaces,
+leading-dot names and Unicode remain valid text; normalized text never grants object ownership.
+This corrects the existing ambiguous-input refusal, without changing ancestry, ACL, retained
+handle, package or lifecycle authority.
+
+Verify: retain all five original bootstrap refusal inputs/assertions with case-labelled fixture
+diagnostics, add raw terminal/intermediate dot/space and dot/parent-segment cases with both
+separator spellings and reserved-device extensions, and accept ordinary names plus drive roots.
+Render uninstall.ps1 from install.ps1 through scripts/render-windows-uninstaller.py and require
+exact --check parity. Use only local stock 5.1 AST/static Python checks; the changed real bootstrap
+must run successfully on both native hosted architectures before qualification is recorded.
+
 Keep the release inventory unchanged by placing WinGet maintenance in install.ps1:
 -Maintenance Prepare|Complete|Remove with -Executable and -Operation selects that explicit flow.
 Prepare copies the verified existing package console executable as the hidden helper into the

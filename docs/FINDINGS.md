@@ -4734,3 +4734,38 @@ new clock, SQLite path reopen or live SID/package/source authority follows from 
 Sources: [SQLite complete-row length limit](https://www.sqlite.org/c3ref/c_limit_attached.html),
 [encoded record headers and integer sizes](https://www.sqlite.org/fileformat2.html#record_format),
 [safe rusqlite limits](https://docs.rs/rusqlite/0.40.2/rusqlite/limits/index.html).
+
+### Bootstrap raw path refusal before Framework normalization (2026-10-03)
+
+At PR #44 revision 5041e392, native x64 job 111141838176 and ARM64 job 111141838133
+each passed all 105 distribution tests, including the corrected held-child gate and nine index
+cases. Their next stock PowerShell 5.1 bootstrap step failed with `fixture failed: ambiguous path`.
+The fixture uses the same message for five original relative, UNC, alternate-stream, trailing-dot
+and reserved-device inputs. Neither completed log identifies the input that was accepted.
+
+ConvertTo-LocronPath checks absolute-drive syntax, controls and alternate streams before calling
+Framework Path.GetFullPath, but checks component ambiguity only on the returned string. Microsoft
+documents that this normalization evaluates dot/parent segments and removes certain ending dots
+and spaces. Framework reference source routes GetFullPath through NormalizePath; its legacy
+branch explicitly drops terminal dots/spaces and handles dot segments. The active Framework
+compatibility branch is not recorded in these logs. This is a source-established ordering gap:
+normalizing first can erase the raw spelling that the later ambiguity check needs. `C:\locron.`
+is a documented candidate, not a separately observed failing input or a reason to relax the test.
+
+Check every original component before GetFullPath, treating slash and backslash as equivalent
+separators only for this inspection. Refuse dot/parent components, terminal dots or spaces and
+the existing reserved-device forms, retaining the existing prechecks and post-normalization
+component check. Accept ordinary internal dots/spaces, leading-dot names, Unicode, drive roots
+and allowed separator normalization. No trim or Framework rewrite can convert a refused input
+into an accepted installation/removal path; valid normalized text still supplies no live identity.
+
+Keep all five original refusal assertions, add case-labelled raw ambiguity and ordinary-path
+fixtures, and generate the identical uninstall check through the existing renderer. Local
+verification is stock 5.1 AST parsing plus static renderer/Python checks only. Actual x64/ARM64
+bootstrap requalification remains pending; no execution-policy or filesystem/registration gate
+is changed.
+
+Sources: [Windows normalization, relative components and character trimming](https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#path-normalization),
+[Framework GetFullPath and normalization dispatch](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/path.cs#L301),
+[Framework terminal dot/space handling](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/path.cs#L681),
+[Windows trailing-character and reserved-name rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#naming-conventions).
