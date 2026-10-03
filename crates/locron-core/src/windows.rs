@@ -29,6 +29,8 @@ mod generic_trace;
 #[cfg(test)]
 mod loader_crash;
 #[cfg(test)]
+mod loader_diagnostic;
+#[cfg(test)]
 mod loader_tests;
 
 /// Only short counter updates run while this mutex is held; never process or I/O work.

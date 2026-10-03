@@ -47,7 +47,7 @@ pub(super) fn bounded_text(path: &Path) -> String {
     value
 }
 
-fn isolated(mode: &str, confirmation: &str) {
+pub(super) fn isolated(mode: &str, confirmation: &str) {
     let temporary = tempfile::tempdir().unwrap();
     let forged = temporary.path().join("forged modules");
     let module = forged.join("Microsoft.PowerShell.Utility");
@@ -99,8 +99,15 @@ fn isolated(mode: &str, confirmation: &str) {
         bounded_text(&stdout),
         bounded_text(&stderr)
     );
-    assert!(bounded_text(&stdout).contains(confirmation));
+    let output = bounded_text(&stdout);
+    assert!(output.contains(confirmation));
     assert!(!temporary.path().join("forged-module-ran").exists());
+    if matches!(
+        mode,
+        "diagnostic-bootstrap-helper" | "diagnostic-small-helper" | "diagnostic-60k-helper"
+    ) {
+        print!("{output}");
+    }
 }
 
 #[test]
@@ -124,6 +131,12 @@ fn owned_loader_fixture_child() {
         return;
     };
     match mode.as_str() {
+        "diagnostic-bootstrap" | "diagnostic-small" | "diagnostic-60k" => {
+            super::loader_diagnostic::driver(&mode);
+        }
+        "diagnostic-bootstrap-helper" | "diagnostic-small-helper" | "diagnostic-60k-helper" => {
+            super::loader_diagnostic::probe(&mode);
+        }
         "restricted-driver" => isolated("restricted-helper", "restricted-child-policies-confirmed"),
         "restricted-helper" => restricted_policy(),
         "parent-exit-driver" => super::loader_crash::driver(),
