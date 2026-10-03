@@ -5139,3 +5139,18 @@ Verify the two-assignment inverse, unchanged release/native policy and all other
 blobs, stable Rust1.94/1.98 syntax, formatting and fresh native compilation.
 No feature gate, allow, clock, SQL, retry, diagnostic field or selector changes.
 The original five-step plan and owning Issue criteria remain required.
+
+
+### Native CLI process/shell/render fixture continuation (2026-10-04)
+
+Select the one-file input-only plan in planning/WINDOWS_NATIVE_CLI_FIXTURE_PORTABILITY_2026-10-04.md
+after complete native14-case/41-lint/later-binary triage in FINDINGS. Base main4ab equals
+reviewed10fe. Root records exact Issue31 Verify before separate development. Windows success
+targets use the actual cargo-built CLI with --help, and3 Target::Shell contracts use supported
+explicit stock PowerShell static .NET output/sleep/marker/exit semantics. Preserve every Unix
+value/body/argv,71 selectors, assertions, retry/clock/private-state/native cleanup; complete
+human target/table byte oracles use actual target+argv without the production renderer.
+Only11 listed existing test functions and narrow helpers may change. Wake readiness, both
+doctor cases,41 full lint diagnoses and later distribution/Core cases remain unqualified.
+Four ordered Verify criteria require reversible Source conservation, genuine native behavior,
+exact human bytes and reviewed fresh native/ordinary CI results; no local native effects.
