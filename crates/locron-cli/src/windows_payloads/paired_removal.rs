@@ -78,7 +78,10 @@ pub(in crate::self_update) struct RemovalPair {
 }
 
 impl RemovalPair {
-    pub(in crate::self_update) fn verify_until(directory: &Path, deadline: Instant) -> Result<Self> {
+    pub(in crate::self_update) fn verify_until(
+        directory: &Path,
+        deadline: Instant,
+    ) -> Result<Self> {
         clock(deadline)?;
         let sid = locron_core::windows::current_user_sid_until(deadline)?;
         let target = observe(deadline, native_target)?;
@@ -340,7 +343,10 @@ mod tests {
                 reason,
             }));
         }
-        assert_eq!(fs::read(root.path().join("README.md")).unwrap(), b"local edits");
+        assert_eq!(
+            fs::read(root.path().join("README.md")).unwrap(),
+            b"local edits"
+        );
         assert!(!root.path().join("LICENSE-MIT").exists());
         untouched(root.path());
         drop((proof, locked));
