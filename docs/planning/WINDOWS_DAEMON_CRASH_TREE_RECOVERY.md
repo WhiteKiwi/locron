@@ -53,3 +53,35 @@ race, not a Windows Job Object failure.
 ## Boundaries
 
 This is acceptance composition, not a new kill mechanism. It does not claim forced-kernel-operation failure coverage, replacement admission, configured grace timing, login/reboot behavior, installer activation or public Windows support. Existing Unix crash-boundary tests remain unchanged.
+
+
+## PR134 failed-continuation observation before Source (2026-10-04)
+
+Continue Issues28/30 after the exact eae776 required failure recorded in FINDINGS.
+The product specification and all lifecycle success predicates remain frozen. Select
+only one test file's failure diagnostics, without assuming the cause or retrying a
+failed operation. The separate developer owns implementation after this plan and the
+exact Issue30 Verify readback; the parent reviews and publishes.
+
+1. Preserve actual durable failure facts. **Verify:** only when the already-read run
+   is not running, include its bounded reason and the first owned attempt's state,
+   outcome, exit code and artifact byte/truncation counts in the existing failing
+   assertion. Do not print resolved paths, argv, tokens, configured values or output
+   payloads. At most one attempt summary is rendered; querying failures remain explicit.
+   No extra Store/native I/O occurs on the successful path, and no clock is restarted.
+2. Identify real heartbeat publication failures. **Verify:** retain the same one
+   write/flush/persist sequence and immediate failure, but use fixed phase plus counter,
+   ErrorKind and raw OS code instead of path-bearing error Debug. A deterministic
+   disposable held-destination native control must reach the actual persist failure,
+   show its fixed facts, preserve the previous complete counter, and publish the next
+   complete counter successfully only after releasing its own blocking handle. No
+   publication retry, synthetic success, release of production guards, warmup, suite
+   serialization or deadline enlargement is selected.
+3. Review and qualify the changed file. **Verify:** all original sixteen lifecycle
+   selectors, their predicates, observation/ownership/cleanup clocks and production
+   blobs remain conserved outside the explicit diagnostics/control. Rust1.94/1.98
+   formatting and whitespace checks pass; the parent reviews every changed hunk and
+   separately reviews excluded documents. Fresh ordinary pull_request CI at the new
+   exact head/main must pass every required native row. Preserve the eae failure and
+   its unknown cause even if fresh diagnostics/control pass; broader CLI4/lint41 and
+   acceptance work remain open. A passing rerun alone is not causal evidence.

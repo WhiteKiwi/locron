@@ -4,6 +4,7 @@
 use futures_util::StreamExt;
 use locron_store::{DaemonLock, RoleLockMetadata, StatePaths, Store};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -263,7 +264,12 @@ impl Fixture {
     fn assert_target_continues(&self, run_id: &str, previous_heartbeat: u64) {
         let store = Store::open(self.paths.clone(), "test", 1).expect("preserved durable target");
         let run = store.run(run_id).expect("preserved running state");
-        assert_eq!(run.state, "running");
+        assert_eq!(
+            run.state,
+            "running",
+            "{}",
+            failed_continuation_facts(&store, run_id, run.reason.as_deref())
+        );
         assert_eq!(run.finished_at_us, None);
         assert!(
             !store
@@ -350,6 +356,65 @@ impl Fixture {
             std::thread::sleep(Duration::from_millis(20));
         }
     }
+}
+
+fn bounded_failure_reason(reason: Option<&str>) -> String {
+    let Some(reason) = reason else {
+        return "unobserved".to_owned();
+    };
+    // Only fixed engine reasons and the numeric native exit status may be rendered.
+    // Unknown reasons can contain infrastructure paths and remain explicitly redacted.
+    if matches!(
+        reason,
+        "process failed"
+            | "process tree exited successfully"
+            | "attempt timed out; owned process tree exit confirmed"
+            | "attempt was cancelled; owned process tree exit confirmed"
+            | "root exited while descendants outlived the bounded natural drain"
+    ) {
+        return reason.to_owned();
+    }
+    if let Some(status) = reason.strip_prefix("process exited with status exit code: ")
+        && let Ok(status) = status.parse::<u32>()
+    {
+        return format!("process exited with status exit code: {status}");
+    }
+    format!("redacted(reason_bytes={})", reason.len().min(256))
+}
+
+fn failed_continuation_facts(store: &Store, run_id: &str, reason: Option<&str>) -> String {
+    let attempts = store
+        .attempts_for_run(run_id)
+        .expect("failed continuation attempt observation");
+    let reason = bounded_failure_reason(reason);
+    let Some(attempt) = attempts.first() else {
+        return format!("run_reason={reason}; attempt=unobserved");
+    };
+    let state: String = attempt.state.chars().take(32).collect();
+    let outcome: String = attempt
+        .outcome
+        .as_deref()
+        .unwrap_or("unobserved")
+        .chars()
+        .take(32)
+        .collect();
+    let output = attempt.output.as_ref().map_or_else(
+        || "unobserved".to_owned(),
+        |output| {
+            let state: String = output.state.chars().take(32).collect();
+            format!(
+                "state={state},retained={:?},physical={:?},discarded={:?},truncated={}",
+                output.retained_payload_bytes,
+                output.physical_bytes,
+                output.discarded_bytes,
+                output.truncated,
+            )
+        },
+    );
+    format!(
+        "run_reason={reason}; attempt={} state={state} outcome={outcome} exit_code={:?} output={output}",
+        attempt.attempt_number, attempt.exit_code,
+    )
 }
 
 struct NativeProcess {
@@ -554,9 +619,27 @@ fn heartbeat_snapshot(path: &Path, value: u64) -> tempfile::NamedTempFile {
 
 fn publish_heartbeat(path: &Path, value: u64) {
     // A hard stop before replacement must leave the previous complete counter.
-    heartbeat_snapshot(path, value)
-        .persist(path)
-        .expect("publish heartbeat snapshot");
+    if let Err(error) = persist_heartbeat(heartbeat_snapshot(path, value), path, value) {
+        panic!(
+            "publish heartbeat snapshot: phase=persist counter={value} kind={:?} raw_os={:?}",
+            error.error.kind(),
+            error.error.raw_os_error(),
+        );
+    }
+}
+
+fn persist_heartbeat(
+    snapshot: tempfile::NamedTempFile,
+    path: &Path,
+    value: u64,
+) -> Result<std::fs::File, tempfile::PersistError> {
+    snapshot.persist(path).inspect_err(|error| {
+        eprintln!(
+            "native-heartbeat-failure phase=persist counter={value} kind={:?} raw_os={:?}",
+            error.error.kind(),
+            error.error.raw_os_error(),
+        );
+    })
 }
 
 #[test]
@@ -615,6 +698,44 @@ fn hard_stopping_an_unpublished_heartbeat_preserves_the_last_complete_counter() 
     assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "7");
     writer.hard_stop();
     assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "7");
+
+    // This is an explicitly held test handle, not an inference about ordinary readers.
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&heartbeat)
+        .expect("held heartbeat destination");
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    let candidate = heartbeat_snapshot(&heartbeat, 8);
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    let candidate_path = candidate.path().to_path_buf();
+    let Err(refusal) = persist_heartbeat(candidate, &heartbeat, 8) else {
+        panic!("held heartbeat destination accepted replacement");
+    };
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    assert_eq!(refusal.error.raw_os_error(), Some(5));
+    let same_candidate = refusal.file.path().as_os_str() == candidate_path.as_os_str();
+    assert!(same_candidate, "failed replacement changed the candidate");
+    assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "7");
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    drop(held);
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    if let Err(error) = persist_heartbeat(refusal.file, &heartbeat, 8) {
+        panic!(
+            "released heartbeat destination refused the same candidate: kind={:?} raw_os={:?}",
+            error.error.kind(),
+            error.error.raw_os_error(),
+        );
+    }
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "8");
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    publish_heartbeat(&heartbeat, 7);
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+    assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "7");
+    assert!(Instant::now() < deadline, "heartbeat control deadline");
+
     publish_heartbeat(&heartbeat, 8);
     assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "8");
 }

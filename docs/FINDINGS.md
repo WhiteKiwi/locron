@@ -5323,6 +5323,30 @@ ownership/lint surfaces require distinct subsequent plans. No owner-PC native fi
 selected. Full failures remain visible and Issue31 remains open.
 
 
+### PR134 required native dashboard continuation failure (2026-10-04)
+
+Main133-integrated head eae776ff2bd2a3a9b1fa591139615b9a3139e48e ordinary
+37157605645 x64 Rust1.94 job111304173492 reaches all16 lifecycle selectors:
+15pass/1fail/0ignored/0filtered. actual_dashboard_exit_is_bounded_with_idle_http_clients
+fails at windows_lifecycle.rs266: durable state failed versus required running.
+wait_running had observed running and a parseable real heartbeat; dashboard process/role
+exit and manual daemon ownership checks had returned before this equality. Both other
+native foundation rows pass. Preserve the raw job log (SHA256
+a499e0366cb8c370531f7362628ae0daa95cab994f3f39b88e1ddb1304e92e43).
+The log contains no run reason, attempt exit/result or heartbeat publication error.
+A heartbeat persist panic is a possible target-exit path, not an established cause.
+Rust1.94 default File::open and tempfile named-file opens retain delete sharing, so a
+concurrent ordinary heartbeat read does not itself prove a rename-sharing failure.
+
+Full discovery37157905776 at that same head runs all301 CLI units successfully on
+x64 stable/ARM64 stable/x64 MSRV, then all71 CLI integrations with67pass/4fail and
+0ignored/filtered. Remaining failures are durable_cancel_terminates_a_running_process,
+human_doctor_prints_one_level_line_per_check, human_forms_leave_the_json_envelope_untouched
+and wake_socket_makes_new_manual_run_promptly_visible_to_daemon. Later binaries are
+not reached; both full Clippy rows retain41 errors. The failed required lifecycle
+qualification remains separate and must pass at newly reviewed Source before merge.
+
+
 ### Default Windows doctor research and measured correction (2026-10-04)
 
 Separate committed-source report SHA25601d3ae05af66956e816cc3f21b53f386c7a7e14244427546c82210e647e9040b,

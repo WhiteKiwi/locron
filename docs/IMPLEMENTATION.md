@@ -5156,6 +5156,21 @@ Four ordered Verify criteria require reversible Source conservation, genuine nat
 exact human bytes and reviewed fresh native/ordinary CI results; no local native effects.
 
 
+### PR134 lifecycle failure observation before Source (2026-10-04)
+
+Apply the three Verify steps in planning/WINDOWS_DAEMON_CRASH_TREE_RECOVERY.md
+to the existing test-only native lifecycle fixture. eae776 ordinary37157605645
+x64 MSRV observes failed after running+heartbeat and dashboard exit/ownership proof,
+but saved logs cannot identify the durable attempt or publication cause. Preserve
+this failed qualification. Add fail-only bounded fixed durable facts and path-free
+heartbeat failure facts; qualify the actual same-candidate held rename refusal and
+release positive control under the existing bound. Keep immediate refusal, original
+assertions/selectors/clocks, production/dependency/workflow blobs and frozen SPEC.
+Separate development starts only after Issue30 exact Verify readback and parent plan
+review. No retry, guard release, prewarm, warning allowance or success weakening is
+authorized. Fresh exact-head ordinary native CI is required before PR134 merge.
+
+
 ### Default Windows doctor continuation before Source (2026-10-04)
 
 Select planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md after the separate complete
