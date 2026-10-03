@@ -15,6 +15,14 @@ function ConvertTo-LocronPath([string]$Path) {
     if ($Path -notmatch '^[A-Za-z]:[\\/]' -or $Path -match '[\x00-\x1f]' -or $Path.Substring(2).Contains(':')) {
         throw 'locron requires an absolute local drive path without alternate streams'
     }
+    # Framework normalization can erase the spelling that requires refusal.
+    # Inspect slash-equivalent raw components before allowing that rewrite.
+    $raw = $Path.Replace('/', '\')
+    foreach ($part in $raw.Substring(3).Split('\')) {
+        if ($part -match '[. ]$' -or $part -match '^(?i:CON|PRN|AUX|NUL|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3])(?:\..*)?$') {
+            throw 'locron refuses ambiguous Windows path components'
+        }
+    }
     $full = [IO.Path]::GetFullPath($Path)
     foreach ($part in $full.Substring(3).Split('\')) {
         if ($part -match '[. ]$' -or $part -match '^(?i:CON|PRN|AUX|NUL|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3])(?:\..*)?$') {

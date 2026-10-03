@@ -102,7 +102,23 @@ Assert-Refused { Get-LocronChecksum $wrongCaseSums $inventory[8] $tag } 'case-mu
 Assert-Refused { Get-LocronHttps 'http://github.com/WhiteKiwi/locron' } 'HTTP transport'
 Assert-Refused { Get-LocronHttps 'https://example.com/locron' } 'foreign transport'
 foreach ($path in @('relative', '\\server\share\locron', 'C:\locron:stream', 'C:\locron.', 'C:\CON\locron')) {
-    Assert-Refused { ConvertTo-LocronPath $path } 'ambiguous path'
+    Assert-Refused { ConvertTo-LocronPath $path } "ambiguous path '$path'"
+}
+foreach ($path in @('C:\locron ', 'C:\locron.\', 'C:\locron.\child', 'C:\locron \child',
+    'C:/locron./child', 'C:/locron /child', 'C:\safe\.\locron', 'C:\safe\..\locron',
+    'C:/safe/./locron', 'C:/safe/../locron', 'C:\CON.txt\locron', 'C:/com1.txt/locron')) {
+    Assert-Refused { ConvertTo-LocronPath $path } "ambiguous raw path '$path'"
+}
+$ordinaryPaths = [ordered]@{
+    'C:\' = 'C:\'
+    'C:\locron-fixture\file.name\folder name\.cache\locron' = 'C:\locron-fixture\file.name\folder name\.cache\locron'
+    'C:/locron-fixture/folder name/.cache/locron/' = 'C:\locron-fixture\folder name\.cache\locron'
+}
+# Construct real Unicode independently of the script's legacy source encoding.
+$unicodePath = 'C:\locron-fixture\' + [char]0x72b6 + [char]0x614b + '\locron'
+$ordinaryPaths[$unicodePath] = $unicodePath
+foreach ($case in $ordinaryPaths.GetEnumerator()) {
+    Assert-True ((ConvertTo-LocronPath $case.Key) -ceq $case.Value) "ordinary path '$($case.Key)'"
 }
 
 $metadata = ConvertFrom-LocronJson ([Text.Encoding]::UTF8.GetBytes('{"schema":"test","nested":{"value":1}}'))
