@@ -28,6 +28,14 @@ class ProbeTests(unittest.TestCase):
         self.assertTrue(probe._ADMISSION.acquire(blocking=False))
         probe._ADMISSION.release()
 
+    def run_isolated(self, source, timeout=15):
+        result = subprocess.run([sys.executable, "-B", "-c", source],
+                                cwd=Path(__file__).parent, capture_output=True,
+                                text=True, timeout=timeout)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_admission_free()
+        return result.stdout.strip()
+
     def test_normal_binary_and_text_outputs_preserve_the_expected_result(self):
         result = self.run_child("import os; os.write(1,b'locron 0.10.0\\n'); os.write(2,b'note')")
         self.assertEqual(result.stdout, b"locron 0.10.0\n")
@@ -157,23 +165,162 @@ class ProbeTests(unittest.TestCase):
                 probe.run_probe("not a shell command")
         self.assert_admission_free()
 
-    def test_spawn_failure_and_reader_start_failure_release_admission(self):
+    def test_spawn_failure_and_reader_creation_failure_release_admission(self):
         with patch.object(probe.subprocess, "Popen", side_effect=OSError("fixture spawn failure")):
             with self.assertRaisesRegex(OSError, "fixture spawn failure"):
                 self.run_child("pass")
         self.assert_admission_free()
-        start = threading.Thread.start
+        children = []
+        real_spawn = subprocess.Popen
+        real_capture = probe._Capture
         calls = 0
-        def start_second_fails(thread):
+        def spawn(*args, **kwargs):
+            child = real_spawn(*args, **kwargs)
+            children.append(child)
+            return child
+        def second_capture_fails(stream):
             nonlocal calls
             calls += 1
             if calls == 2:
-                raise RuntimeError("fixture reader start failure")
-            return start(thread)
-        with patch.object(threading.Thread, "start", new=start_second_fails):
-            with self.assertRaisesRegex(RuntimeError, "fixture reader start failure"):
+                raise RuntimeError("fixture reader creation failure")
+            return real_capture(stream)
+        with patch.object(probe.subprocess, "Popen", side_effect=spawn), \
+                patch.object(probe, "_Capture", side_effect=second_capture_fails), \
+                patch.object(threading.Thread, "start", side_effect=AssertionError("unexpected reader start")) as start:
+            with self.assertRaisesRegex(RuntimeError, "fixture reader creation failure"):
                 self.run_child("import time; time.sleep(20)")
+        start.assert_not_called()
+        self.assertIsNotNone(children[0].poll())
         self.assert_admission_free()
+
+    def test_uncertain_reader_start_failure_retains_owner_and_refuses_next_spawn(self):
+        source = """
+import subprocess
+import sys
+import threading
+from unittest.mock import patch
+import windows_probe as p
+real_start = threading.Thread.start
+calls = 0
+def second_start_fails(thread):
+    global calls
+    calls += 1
+    if calls == 2:
+        raise RuntimeError('fixture reader start failure')
+    return real_start(thread)
+with patch.object(threading.Thread, 'start', new=second_start_fails):
+    try:
+        p.run_probe([sys.executable, '-c', 'import time; time.sleep(20)'])
+    except p.ProbeCleanupPending as error:
+        assert isinstance(error.__cause__, RuntimeError)
+    else:
+        raise AssertionError('uncertain reader start accepted')
+owner = p._QUARANTINED
+assert owner is not None and owner.process.poll() is not None
+assert not owner.process.stdout.closed and not owner.process.stderr.closed
+with patch.object(p.subprocess, 'Popen', side_effect=AssertionError('second spawn')):
+    try:
+        p.run_probe(['missing'])
+    except p.ProbeCleanupPending:
+        pass
+    else:
+        raise AssertionError('uncertain reader start reopened admission')
+print('uncertain-start-confirmed')
+"""
+        self.assertEqual(self.run_isolated(source), "uncertain-start-confirmed")
+
+    def test_interrupted_native_reader_start_retains_owner_and_admission(self):
+        # Hold an actual native thread before bootstrap publishes ident/_started.
+        # Its intentional quarantine must remain in this separate Python process.
+        source = """
+import json
+import sys
+import threading
+from unittest.mock import patch
+import windows_probe as p
+entered = threading.Event()
+release = threading.Event()
+captures = []
+owners = []
+saved_wait = None
+real_capture_init = p._Capture.__init__
+real_bootstrap = threading.Thread._bootstrap_inner
+real_finish = p._Owner.finish
+def capture_init(capture, stream):
+    global saved_wait
+    real_capture_init(capture, stream)
+    captures.append(capture)
+    if len(captures) == 1:
+        saved_wait = capture.thread._started.wait
+        def interrupted_wait(timeout=None):
+            assert entered.wait(5), 'native reader did not enter bootstrap'
+            raise KeyboardInterrupt('controlled interruption in Thread.start')
+        capture.thread._started.wait = interrupted_wait
+def delayed_bootstrap(thread):
+    if captures and thread is captures[0].thread:
+        entered.set()
+        assert release.wait(15), 'native reader release was not signalled'
+    real_bootstrap(thread)
+def finish(owner, deadline, terminate=False):
+    result = real_finish(owner, deadline, terminate)
+    owners.append((owner, result))
+    return result
+try:
+    with patch.object(p._Capture, '__init__', new=capture_init), \\
+            patch.object(threading.Thread, '_bootstrap_inner', new=delayed_bootstrap), \\
+            patch.object(p._Owner, 'finish', new=finish):
+        try:
+            p.run_probe([sys.executable, '-c', 'import time; time.sleep(20)'], timeout=3)
+        except (KeyboardInterrupt, p.ProbeCleanupPending) as error:
+            error_type = type(error).__name__
+        else:
+            raise AssertionError('interrupted start returned success')
+    assert entered.is_set() and captures[0].thread.ident is None
+    owner, completed = owners[-1]
+    acquired = p._ADMISSION.acquire(blocking=False)
+    if acquired:
+        p._ADMISSION.release()
+    facts = {
+        'exception': error_type,
+        'native_reader_entered_without_ident': True,
+        'cleanup_claimed_complete': completed,
+        'reader_stream_closed_before_bootstrap_completed': captures[0].stream.closed,
+        'admission_reopened_before_reader_completion': acquired,
+        'owned_root_reaped': owner.process.poll() is not None,
+        'owner_retained': p._QUARANTINED is owner,
+    }
+    print(json.dumps(facts))
+    assert error_type == 'ProbeCleanupPending'
+    assert not completed and p._QUARANTINED is owner
+    assert not captures[0].stream.closed and not owner.process.stderr.closed
+    assert not acquired and owner.process.poll() is not None
+    with patch.object(p.subprocess, 'Popen', side_effect=AssertionError('second spawn')):
+        try:
+            p.run_probe(['missing'])
+        except p.ProbeCleanupPending:
+            pass
+        else:
+            raise AssertionError('live unpublished reader reopened admission')
+finally:
+    release.set()
+    if saved_wait is not None:
+        assert saved_wait(5), 'native reader did not publish startup after release'
+        captures[0].thread.join(5)
+        assert not captures[0].thread.is_alive(), 'fixture reader did not exit'
+assert captures[0].done.is_set() and not captures[0].stream.closed
+assert p._QUARANTINED is owner
+assert not p._ADMISSION.acquire(blocking=False)
+"""
+        facts = json.loads(self.run_isolated(source))
+        self.assertEqual(facts, {
+            "exception": "ProbeCleanupPending",
+            "native_reader_entered_without_ident": True,
+            "cleanup_claimed_complete": False,
+            "reader_stream_closed_before_bootstrap_completed": False,
+            "admission_reopened_before_reader_completion": False,
+            "owned_root_reaped": True,
+            "owner_retained": True,
+        })
 
     def test_uncertain_cleanup_retains_owner_and_refuses_the_next_spawn(self):
         # Controlled cleanup uncertainty lives in a separate Python process so
@@ -199,10 +346,7 @@ with patch.object(p.subprocess, 'Popen', side_effect=AssertionError('second spaw
         raise AssertionError('quarantine reopened')
 print('quarantine-confirmed')
 """
-        result = subprocess.run(command(source), cwd=Path(__file__).parent, capture_output=True,
-                                text=True, timeout=5, check=True)
-        self.assertEqual(result.stdout.strip(), "quarantine-confirmed")
-        self.assert_admission_free()
+        self.assertEqual(self.run_isolated(source, timeout=5), "quarantine-confirmed")
 
 
 class PackageIntegration(unittest.TestCase):

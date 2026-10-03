@@ -33,7 +33,14 @@ class _Capture:
         self.data = bytearray()
         self.error = None
         self.done = threading.Event()
+        self.start_attempted = False
         self.thread = threading.Thread(target=self.read, name="locron-probe-reader", daemon=True)
+
+    def start(self):
+        # Thread.start can be interrupted after native creation but before it
+        # publishes ident. Never infer that an attempted start created no reader.
+        self.start_attempted = True
+        self.thread.start()
 
     def read(self):
         try:
@@ -64,7 +71,7 @@ class _Owner:
         self.captures = []
 
     def finish(self, deadline, terminate=False):
-        """Return True only after the exact child and every started reader finish."""
+        """Return True only after the exact child and every attempted reader finish."""
         try:
             if self.process is not None:
                 if terminate and self.process.poll() is None:
@@ -75,7 +82,9 @@ class _Owner:
                         return False
                     time.sleep(min(0.01, left))
             for capture in self.captures:
-                if capture.thread.ident is not None:
+                if capture.start_attempted:
+                    # An unpublished start cannot be joined yet. That exception
+                    # means cleanup is uncertain, so the owner must be retained.
                     capture.thread.join(max(0, deadline - time.monotonic()))
                     if capture.thread.is_alive():
                         return False
@@ -123,7 +132,7 @@ def run_probe(command, *, cwd=None, stdin=subprocess.DEVNULL, capture_output=Tru
         )
         owner.captures = [_Capture(owner.process.stdout), _Capture(owner.process.stderr)]
         for capture in owner.captures:
-            capture.thread.start()
+            capture.start()
         while True:
             for name, capture in zip(("stdout", "stderr"), owner.captures):
                 capture.check(name)
