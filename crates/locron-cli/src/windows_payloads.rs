@@ -24,6 +24,9 @@ pub(super) mod paired_handoff;
 #[path = "windows_payloads/paired_removal.rs"]
 pub(super) mod paired_removal;
 
+#[path = "windows_payloads/paired_update.rs"]
+pub(super) mod paired_update;
+
 pub(super) struct Payloads {
     pub version: String,
     pub target: String,
