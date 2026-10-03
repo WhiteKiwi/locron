@@ -3,7 +3,7 @@
 
 use futures_util::StreamExt;
 use locron_store::{DaemonLock, RoleLockMetadata, StatePaths, Store};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -180,7 +180,7 @@ impl Fixture {
                 "--retries",
                 "2",
                 "--retry-delay",
-                "200ms",
+                "1s",
                 "--cwd",
             ])
             .arg(&self.paths.root)
@@ -207,7 +207,9 @@ impl Fixture {
             .expect("add descendant target");
         assert!(
             added.status.success(),
-            "native descendant add failed: {}",
+            "native descendant add failed ({}): stdout={}; stderr={}",
+            added.status,
+            String::from_utf8_lossy(&added.stdout),
             String::from_utf8_lossy(&added.stderr)
         );
         let run = Command::new(cli_executable())
@@ -218,7 +220,9 @@ impl Fixture {
             .expect("queue descendant target");
         assert!(
             run.status.success(),
-            "native descendant run failed: {}",
+            "native descendant run failed ({}): stdout={}; stderr={}",
+            run.status,
+            String::from_utf8_lossy(&run.stdout),
             String::from_utf8_lossy(&run.stderr)
         );
         let envelope: serde_json::Value =
@@ -540,6 +544,81 @@ impl Drop for NativeProcess {
     }
 }
 
+fn heartbeat_snapshot(path: &Path, value: u64) -> tempfile::NamedTempFile {
+    let mut snapshot = tempfile::NamedTempFile::new_in(path.parent().expect("heartbeat parent"))
+        .expect("private heartbeat snapshot");
+    write!(snapshot, "{value}").expect("complete heartbeat snapshot");
+    snapshot.flush().expect("flush heartbeat snapshot");
+    snapshot
+}
+
+fn publish_heartbeat(path: &Path, value: u64) {
+    // A hard stop before replacement must leave the previous complete counter.
+    heartbeat_snapshot(path, value)
+        .persist(path)
+        .expect("publish heartbeat snapshot");
+}
+
+#[test]
+fn native_heartbeat_snapshot_target() {
+    let Some(path) = std::env::var_os("WINDOWS_NATIVE_HEARTBEAT_SNAPSHOT") else {
+        return;
+    };
+    let path = PathBuf::from(path);
+    let _unpublished = heartbeat_snapshot(&path, 8);
+    std::fs::write(path.with_extension("ready"), b"ready")
+        .expect("unpublished heartbeat ready fact");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "unpublished heartbeat fixture was not stopped"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn hard_stopping_an_unpublished_heartbeat_preserves_the_last_complete_counter() {
+    let fixture = Fixture::new();
+    let heartbeat = fixture.paths.root.join("snapshot.heartbeat");
+    publish_heartbeat(&heartbeat, 7);
+    let mut command = Command::new(std::env::current_exe().expect("native fixture executable"));
+    command
+        .args([
+            "--exact",
+            "native_heartbeat_snapshot_target",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("WINDOWS_NATIVE_HEARTBEAT_SNAPSHOT", &heartbeat)
+        .stdin(Stdio::null());
+    let mut writer = NativeProcess::start(command);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !heartbeat.with_extension("ready").is_file() {
+        assert!(
+            writer
+                .child
+                .try_wait()
+                .expect("snapshot writer state")
+                .is_none(),
+            "snapshot writer exited before staging: {}",
+            writer.stderr()
+        );
+        assert!(
+            Instant::now() < deadline,
+            "snapshot writer did not stage its next counter: {}",
+            writer.stderr()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "7");
+    writer.hard_stop();
+    assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "7");
+    publish_heartbeat(&heartbeat, 8);
+    assert_eq!(std::fs::read_to_string(&heartbeat).unwrap(), "8");
+}
+
 #[test]
 fn native_descendant_target() {
     let Some(marker) = std::env::var_os("WINDOWS_NATIVE_DESCENDANT") else {
@@ -550,7 +629,7 @@ fn native_descendant_target() {
     let heartbeat = marker.with_extension("heartbeat");
     let mut value = 0_u64;
     loop {
-        std::fs::write(&heartbeat, value.to_string()).expect("native descendant heartbeat");
+        publish_heartbeat(&heartbeat, value);
         value = value.wrapping_add(1);
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -585,8 +664,7 @@ fn native_process_target() {
         let mut heartbeat = 0_u64;
         while !gate.exists() {
             assert!(Instant::now() < deadline, "native target gate did not open");
-            std::fs::write(marker.with_extension("heartbeat"), heartbeat.to_string())
-                .expect("native progress fact");
+            publish_heartbeat(&marker.with_extension("heartbeat"), heartbeat);
             heartbeat += 1;
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -702,7 +780,9 @@ fn registered_daemon_crash_kills_live_tree_and_recovers_one_unknown_run_without_
     // Sample only after all role ownership is gone, then require both the
     // direct target and its grandchild to remain stopped across a settle window.
     std::thread::sleep(Duration::from_millis(100));
-    let root_stopped = fixture.heartbeat().expect("direct target heartbeat after crash");
+    let root_stopped = fixture
+        .heartbeat()
+        .expect("direct target heartbeat after crash");
     let descendant_stopped = std::fs::read_to_string(&descendant_heartbeat)
         .expect("descendant heartbeat after crash")
         .parse::<u64>()
@@ -734,7 +814,9 @@ fn registered_daemon_crash_kills_live_tree_and_recovers_one_unknown_run_without_
     let recovery_deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let store = Store::open(fixture.paths.clone(), "test", 1).expect("recovery observation");
-        let run = store.run(&run_id).expect("original durable run after restart");
+        let run = store
+            .run(&run_id)
+            .expect("original durable run after restart");
         if run.state == "interrupted_unknown" {
             assert_eq!(run.id, run_id);
             break;
@@ -753,9 +835,11 @@ fn registered_daemon_crash_kills_live_tree_and_recovers_one_unknown_run_without_
 
     // The job advertises retries, so waiting beyond its retry delay proves
     // interrupted_unknown is not converted into a retry/duplicate occurrence.
-    std::thread::sleep(Duration::from_millis(750));
+    std::thread::sleep(Duration::from_millis(1_500));
     let store = Store::open(fixture.paths.clone(), "test", 1).expect("final recovery observation");
-    let history = store.history(Some(name), 10).expect("durable crash history");
+    let history = store
+        .history(Some(name), 10)
+        .expect("durable crash history");
     assert_eq!(history.len(), 1, "crashed run was duplicated or retried");
     assert_eq!(history[0].id, run_id);
     assert_eq!(history[0].state, "interrupted_unknown");
