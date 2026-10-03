@@ -1998,8 +1998,22 @@ lease in its owner until exit is confirmed; it cannot enter the operation engine
 unknown child's protection to perform effects. This follows the existing user-account security
 boundary and does not claim protection against arbitrary code or debugger control as that user.
 The narrow private ABI is LaunchLease::spawn -> PendingLaunch, PendingLaunch::qualify ->
-QualifiedLaunch, and qualify_child(Bootstrap) -> QualifiedBootstrap; the latter owns its Bootstrap.
+QualifiedLaunch, begin_child(selector) -> ChildExchange and
+qualify_child(Bootstrap, ChildExchange) -> QualifiedBootstrap; the latter owns its Bootstrap.
 These tokens have private constructors and no Serialize/Deserialize/Clone implementation.
+ChildExchange owns the actual receive endpoint, validated Challenge and a clock born before its
+first selector/pipe/SID/guard work. After receiving Challenge, shorten that clock by the parent's
+remaining budget; never reset it. Pass the shortened deadline into Bootstrap before acquiring
+its overlapping guards. Only then can qualify_child consume both capabilities and finish Ready,
+Permit/EOF and Qualified/flush. This additional argument carries live transport/deadline ownership,
+not saved-frame authority; Bootstrap or a deserialized Challenge alone cannot construct it.
+The parent tokens own the sole retained owner connection; that owner retains the original native
+Child and every lease/guard/close task through qualification and confirmed cleanup. Token Drop
+requests cleanup without an indefinite caller join. No PID/atomic flag replaces actual Child
+liveness brackets, and an owner reply received after the original deadline cannot create a token.
+The first live fixture consumer accepts existing standalone/removal source proof only. Canonical
+new-payload, package and recovery integration remain separate consumers; recovery additionally
+needs its validated original journal source and cannot rebuild authority from a replaced receipt.
 The initial qualification fixture consumer stops there; none of these functions takes, creates
 or casts a ServiceSnapshot, and none can dispatch the future operation engine.
 The original deadline is born before launch-context guard/SID work, not after lease construction.

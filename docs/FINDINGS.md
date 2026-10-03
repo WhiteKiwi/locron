@@ -4279,6 +4279,16 @@ The repository's existing SECURITY account boundary excludes arbitrary same-acco
 control. No unsigned publisher authentication, retrospective proof for a manually started broker,
 service snapshot authority or completed operation is inferred from this plan.
 
+The concrete child sequence needs a private ChildExchange in addition to Bootstrap: the receive
+endpoint/Challenge must be acquired before cold Bootstrap SID/guard work so the actual remaining
+budget can reach those calls. The selected private begin_child -> ChildExchange and
+qualify_child(Bootstrap, ChildExchange) sequence retains that endpoint and original shortened
+deadline; neither object has a deserialization/clone constructor for live proof. The parent
+Pending/Qualified token retains the sole owner connection, while that owner retains the actual
+native Child/lease/guards and uncertain I/O. This is ownership plumbing, not a new process-ID
+authentication API. The first real copied-helper fixture consumes existing standalone/removal
+proof; canonical payload/package/recovery authority and all operation effects remain unqualified.
+
 The source-feasibility audit found that cold current_user_sid currently creates its own 30-second
 deadline. A bounded initializer must initialize that same cache with the launch phase's remaining
 budget; surrounding a fresh default-budget call with clock checks is insufficient. Native guards
