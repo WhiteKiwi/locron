@@ -532,7 +532,11 @@ fn publication_proofs(directory: &Path, observations: &mut Observations) {
     let refusal = publish_heartbeat(candidate, &path, false).unwrap_err();
     observations.check();
     assert_eq!(refusal.error.raw_os_error(), Some(5));
-    assert!(refusal.path.as_os_str() == candidate_path.as_os_str());
+    let same_candidate = refusal.path.as_os_str() == candidate_path.as_os_str();
+    assert!(
+        same_candidate,
+        "failed replacement changed the closed candidate"
+    );
     assert_eq!(
         observations.counter(directory, "rust-publication-heartbeat", 0),
         7
