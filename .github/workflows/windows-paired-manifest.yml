@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/windows-paired-manifest.yml'
       - 'scripts/windows_release.py'
+      - 'scripts/windows_zip.py'
+      - 'scripts/test-windows-zip-catalog.py'
+      - 'crates/locron-cli/src/windows_package.rs'
       - 'scripts/release-assets.py'
       - 'scripts/render-winget-manifest.py'
       - 'scripts/test-winget-paired.py'
@@ -13,6 +16,9 @@ on:
     paths:
       - '.github/workflows/windows-paired-manifest.yml'
       - 'scripts/windows_release.py'
+      - 'scripts/windows_zip.py'
+      - 'scripts/test-windows-zip-catalog.py'
+      - 'crates/locron-cli/src/windows_package.rs'
       - 'scripts/release-assets.py'
       - 'scripts/render-winget-manifest.py'
       - 'scripts/test-winget-paired.py'
@@ -32,3 +38,5 @@ jobs:
       - uses: actions/checkout@v7
       - name: Test static manifests and retained native probe contract
         run: python3 -B scripts/test-winget-paired.py
+      - name: Test raw ZIP records and bounded complete member decoding
+        run: python3 -B scripts/test-windows-zip-catalog.py
