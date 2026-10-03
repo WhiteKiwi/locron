@@ -35,6 +35,10 @@ use serde_json::{Value, json};
 use crate::{Format, render};
 
 #[cfg(all(windows, test))]
+mod windows_activation;
+#[cfg(all(windows, test))]
+mod windows_activation_wire;
+#[cfg(all(windows, test))]
 mod windows_record;
 #[cfg(windows)]
 mod windows_supervisor;
