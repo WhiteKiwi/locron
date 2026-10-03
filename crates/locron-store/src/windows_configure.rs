@@ -166,7 +166,9 @@ fn admit_wal_until(
     // Refuse the caller's explicit transaction before changing its timeout.
     let autocommit = connection.is_autocommit();
     #[cfg(debug_assertions)]
-    observations.autocommit = Some(autocommit);
+    {
+        observations.autocommit = Some(autocommit);
+    }
     if !autocommit {
         return Err(StoreError::Conflict(
             "WAL admission requires an idle autocommit connection".into(),
@@ -235,7 +237,9 @@ fn admit_wal_until(
             Err(error) if is_wal_contention(&error) => {
                 let autocommit = connection.is_autocommit();
                 #[cfg(debug_assertions)]
-                observations.autocommit = Some(autocommit);
+                {
+                    observations.autocommit = Some(autocommit);
+                }
                 if !autocommit {
                     return Err(error.into());
                 }
