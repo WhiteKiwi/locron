@@ -74,9 +74,11 @@ def validate_inputs(tag, directory, installer, with_checksums=True,
     if not all(path.is_file() and not path.is_symlink() for path in installers.values()):
         raise ValueError("missing or unsafe installer")
     if includes_windows(tag):
-        from windows_release import validate_archive
+        from windows_release import inspect_archive
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
-            validate_archive(directory / f"locron-{tag}-{target}.zip", tag, target)
+            # Publication runs on Ubuntu: native version/ABI probes already ran in
+            # each Windows build leg, while final bytes are re-inspected statically.
+            inspect_archive(directory / f"locron-{tag}-{target}.zip", tag, target, paired=True)
     hashes = {name: sha(directory / name) for name in names}
     if with_checksums:
         if checksums((directory / "SHA256SUMS.txt").read_text()) != hashes:
