@@ -1640,6 +1640,10 @@ mod tests {
         assert_eq!(refused.unwrap_err().raw_os_error(), Some(5));
         assert!(suffix_absent);
         assert!(unchanged);
+        // Check absence again after restoring list access, so a permission-denied
+        // path observation cannot conceal an unexpectedly created suffix.
+        assert!(!ancestor.join("never created").exists());
+        assert!(fs::read_dir(&ancestor).unwrap().next().is_none());
         assert!(DirectoryGuard::existing_private(&ancestor).is_ok());
     }
 
