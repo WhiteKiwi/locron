@@ -1715,8 +1715,9 @@ aggregate journal ownership remain with distribution. Share only the reviewed op
 ABI. Source stays held until these owners and the parent review the complete proposal and its
 Project criteria; no parallel legacy launcher implementation or success stub is authorized.
 
-Updater/package maintenance inventories every current-SID Locron task bound to the verified
-installed executable, across all state roots. Compare full Windows file identity while retained
+Updater/package maintenance inventories every current-SID Locron task bound to either verified
+installed executable member, across all state roots. Compare both full Windows file identities
+while retained
 no-follow file/ancestor guards remain live; path lowercasing and filename matching do not prove
 an executable binding. Parse only the exact native GUI launcher action and its strictly generated
 fixed argument template, with both executable bindings described above. Reconstruct the private
@@ -1736,11 +1737,13 @@ before the first write, then binds only prior registered roles to the new verifi
 restores their exact enabled flags. Changed definitions/roots/SIDs fail closed; disabled roles stay
 disabled. Missing registrations are not silently recreated from a stale record.
 
-Freeze the CLI-private Windows maintenance protocol as snapshot_executable_roles(executable),
+Freeze the CLI-private Windows maintenance protocol as snapshot_executable_roles(executable_pair),
 ServiceSnapshot::{restore_record,persistence_plan}(), quiesce_roles(snapshot, persist),
 QuiescedServices::restore_record(), recover_quiesced(record, persist),
-ServiceRestoreRecord::persistence_plan(), restore_roles(quiesced, new_executable, persist),
-restore_record(record, new_executable, persist) and remove_roles(quiesced, persist).
+ServiceRestoreRecord::persistence_plan(), restore_roles(quiesced, new_executable_pair, persist),
+restore_record(record, new_executable_pair, persist) and remove_roles(quiesced, persist).
+Those entry parameters are complete typed console/launcher pairs; a console path or a guessed
+sibling basename cannot supply the pair's native ownership proof.
 The persist callback receives a typed ServiceRestoreRecord and returns
 ServiceError on a failed private-journal write. Invoke it with the complete original snapshot
 before disabling the first task; callback failure changes nothing. Persist confirmed quiescence
@@ -1801,7 +1804,7 @@ record from the complete frozen snapshot plus the bounded future binding/definit
 and forced-instance fields; refuse if it cannot fit the 128 KiB private-record limit.
 
 Expose a pure ServiceRestoreRecord::same_original(&other) comparison for the private journal's
-typed service slot. Compare the version, SID, previous executable path/full volume/file binding,
+typed service slot. Compare the version, SID, both previous executable paths/full volume/file bindings,
 and the ordered roles' original role/root/instance/task name/enabled flag/definition fingerprint.
 Ignore only mutable phase, next binding, forced facts, role progress and future-definition fields.
 This accessor establishes a common frozen snapshot origin; each record must still pass account/
@@ -1816,7 +1819,9 @@ typed original executable inventory identity, without exposing mutable wire fiel
 individually valid records do not establish that they refer to the same original executable.
 Verify: the exact original identity matches; identical bytes or path paired with a different
 volume or any different file-ID bit refuses. This comparison performs no I/O and does not
-authorize replacement, restoration or any task effect.
+authorize replacement, restoration or any task effect. This retained console-specific accessor
+does not match a complete pair: add the typed launcher identity/path readback and require both
+members against the caller's guarded ExecutablePair before admitting an effect.
 
 Expose pure next_path()->Option<&Path> and matches_next_identity(&FileIdentity)->bool accessors
 without exposing service wire fields. Consumers validate the record's account/phase first, then
@@ -1826,6 +1831,8 @@ binding compares both complete fixed-width volume/file components. Verify: None 
 refuses identity matching; the exact next path/identity succeeds, while any high or low identity
 bit or different volume refuses even with identical bytes/path. These readbacks add no phase,
 effect, callback count or ownership authority and never replace live existing-only guard checks.
+Preserve these existing console readbacks, add their typed next-launcher counterparts, and bind
+both members to the same verified next ExecutablePair; neither readback alone establishes it.
 
 The persistence plan exposes that maximum record byte count and finite callback ceilings for R
 frozen roles: quiesce <=4R+2, restore <=4R+2, remove <=2R+2. These include per-effect intent/result,
@@ -1930,13 +1937,13 @@ Failure to prove the complete budget refuses with zero effects; initial callback
 is not a reservation. The 256-binding inventory limit is only a ceiling, not a promise that it fits.
 
 An interrupted unconfirmed record can resume disabling/quiescing only after reconstructing all
-existing root guards and matching the old executable object plus unchanged definitions; an
+existing root guards and matching both old executable objects plus unchanged definitions; an
 originally disabled role must still be disabled. A confirmed quiescent record reconstructs
 existing roots/task guards and requires old definitions disabled/stopped without reopening the
-old executable: postreplacement/WinGet Complete may legitimately find it absent or replaced.
-Restoration retains the new executable already verified by distribution's protected receipt/
-package proof, validates its full object and all existing registrations, then flushes a typed
-Restoring intent with that new binding before refreshing any task. Only this phase plus fresh
+old pair: postreplacement/WinGet Complete may legitimately find its members absent or replaced.
+Restoration retains the new executable pair already verified by distribution's protected receipt/
+package proof, validates both full objects and all existing registrations, then flushes a typed
+Restoring intent with that new pair binding before refreshing any task. Only this phase plus fresh
 verified new bytes admits an exact deterministic new definition or its original enabled flag as
 idempotent recovery. A merely quiescent record requires original disabled definitions and cannot
 adopt an unexplained new action. Never treat saved journal source as a task definition.
@@ -1959,15 +1966,16 @@ with zero disables/registry writes/file replacements. Callback observations must
 the published ceilings through graceful, forced and interrupted recovery paths.
 
 The package flow composes these same APIs through the existing installer maintenance modes:
-Prepare snapshots/quiesces all bindings for one verified executable and journals an operation UUID;
+Prepare snapshots/quiesces all bindings for one verified executable pair and journals an operation UUID;
 Complete validates the installed package and restores prior registrations; Remove quiesces and
 removes only the validated prior registrations. No additional release asset or arbitrary manifest
 hook is introduced. Distribution owns the private journal/receipt and package registration proof.
 
 ### Unsigned release, installation and update handoff
 
-Add native x64/ARM64 MSVC ZIP builds containing locron.exe, README and both licenses. Extend exact
-asset inventory and SHA-256 generation with version-aware historical inventory compatibility;
+Add native x64/ARM64 MSVC ZIP builds containing locron.exe, locron-service-launcher.exe, README.md,
+LICENSE-MIT and LICENSE-APACHE. Extend exact asset inventory and SHA-256 generation with
+version-aware historical inventory compatibility;
 keep existing Unix publication/signing inputs authoritative. The canonical release source is
 WhiteKiwi/locron over verified HTTPS. Final published bytes, version/architecture and channel
 metadata agree; checksums check integrity without independent publisher authentication.
@@ -1988,8 +1996,9 @@ InstallerSha256 and explicit package-manager ownership; self-update refuses its 
 The Windows feature release inventory starts at v0.10.0. Tags before v0.3.0 retain their eight
 Unix payloads plus checksums; v0.3.0 through v0.9.x additionally retain install.sh. Windows tags
 add exactly the x86_64-pc-windows-msvc and aarch64-pc-windows-msvc ZIPs, install.ps1 and uninstall.ps1.
-The ZIP has one exact version/target directory containing locron.exe, README.md and both licenses.
-Check final PE architecture, executable version and absent certificate table before accepting it.
+The ZIP has one exact version/target directory containing the five exact members above.
+Check both final PE architectures, console/GUI subsystems, matching versions/launcher ABI and
+absent certificate tables before accepting it.
 SHA256SUMS retains bare names and covers all payload archives/packages; installer assets are
 separately included in immutable publication digest verification. No historical asset is rewritten.
 
@@ -1999,9 +2008,9 @@ RUSTFLAGS=-C target-feature=+crt-static. The explicit --target keeps this flag o
 and procedural macros. The locked cc 1.4.4, bundled libsqlite3-sys 0.38.2, ring 0.17.14 and
 aws-lc-sys 0.44.0 build scripts propagate that choice to their C/C++ compilation. Check both normal
 and delayed PE imports against a finite Windows system-DLL allowlist; reject Visual C++
-redistributable DLLs, debug runtimes and other application DLLs. Run the packaged executable's
-version check with only Windows system directories in its child PATH. These gates verify the
-build intent and direct dependencies; clean Windows 11 acceptance remains required to prove
+redistributable DLLs, debug runtimes and other application DLLs in both images. Run both packaged
+images' bounded version/identity probes with only Windows system directories in their child PATH.
+These gates verify the build intent and direct dependencies; clean Windows 11 acceptance remains required to prove
 runtime behavior without Visual Studio, a Rust toolchain or separately installed VC redistributables.
 The finite allowlist includes only the explicitly reviewed api-ms-win-core-synch-l1-2-0.dll API
 set used by the native Rust build. Microsoft's
@@ -2021,15 +2030,15 @@ The standalone Windows default executable is LocalAppData\\Programs\\locron\\loc
 installer accepts -Version, -InstallDirectory, -NoService, -Dashboard and -AddToPath. Fresh install
 starts the daemon by default and enables the dashboard only when explicitly requested. It changes
 only the current user's persistent PATH when -AddToPath is specified. Reinstallation preserves
-every existing role's enabled state. After the new binary and receipt are fully durable and verified,
+every existing role's enabled state. After both new binaries and the receipt are fully durable and verified,
 a registration failure leaves pending Restoring with a typed bounded cause and correct new bytes;
 it is neither completed nor permission to roll back a mapped image behind reactivated roles.
 Recovery resumes guarded idempotent restoration. Any earlier rollback first quiesces all verified
 new roles before exact deletion/restoration of the old bytes; reserve that quiesce and old-role
 restore path as well. Private installation directories and a versioned JSON receipt bind the
-current SID, canonical executable, channel, target, version,
-canonical archive URL, archive SHA-256 and executable SHA-256. Existing unowned/package-manager
-destinations are refused. Uninstall requires this receipt, quiesces only exact owned registrations,
+current SID, the complete canonical console/launcher pair, channel, target, version,
+canonical archive URL, archive SHA-256 and both executable SHA-256 values. Existing unowned/
+package-manager destinations are refused. Uninstall requires this receipt, quiesces only exact owned registrations,
 removes only receipt-listed unchanged files and an installer-inserted PATH entry, and retains state.
 Standalone and WinGet locations coexist; neither installer adopts the other's files.
 
@@ -2078,13 +2087,19 @@ An independently extracted native executable can wait for confirmed work against
 destination; its frontend still handles pending when exact file identity shows the same mapped
 object. Reading an owned operation's status reports its phase without mutating state.
 
-The Windows receipt keeps the sibling filename .locron-install-receipt-v1 and uses the strict
-locron.install/windows-v1 JSON schema. Its six listed payloads are the four exact ZIP members,
-uninstall.ps1 and .locron-installer.ps1 (the canonical install.ps1 release asset, retained to share
-the verified bootstrap with removal). Every listed file has a SHA-256; the receipt binds its own
-canonical directory, executable, SID and standalone channel. It never grants ownership through
-filename alone. Uninstall may retain a modified listed file with an explicit warning, and removes
-the directory only when it is empty. For an opt-in user PATH insertion, read HKCU\\Environment's
+Select the Windows-only sibling receipt .locron-install-receipt-v2 and strict
+locron.install/windows-v2 JSON schema. Its seven listed payloads are locron.exe,
+locron-service-launcher.exe, README.md, LICENSE-MIT, LICENSE-APACHE, uninstall.ps1 and
+.locron-installer.ps1 (the canonical install.ps1 release asset, retained to share the verified
+bootstrap with removal). The receipt itself is the eighth managed leaf. Every listed file has
+a SHA-256; the receipt binds its canonical directory, ordered console/launcher path-and-digest
+objects, SID and standalone channel. These persistent receipt objects contain no native file
+IDs. Retained live pair guards and the write-ahead journal independently prove both full native
+identities; raw receipt rollback preserves the original bytes. Reject the unpublished Windows
+v1 schema and filename as prerelease-only rather than treating them as pair ownership. Never
+grant ownership through filename alone. Uninstall may retain a modified listed file with an
+explicit warning, and removes the directory only when it is empty. For an opt-in user PATH
+insertion, read HKCU\\Environment's
 raw PATH without expanding variables and record both complete prior/resulting values and their
 REG_SZ or REG_EXPAND_SZ kinds; a missing prior value remains distinguishable from an empty one.
 The pure insertion planner preserves a present value's kind and uses REG_SZ only for a missing
@@ -2109,10 +2124,14 @@ This receipt is Windows-only; the existing Unix receipt bytes remain
 unchanged. Operation status uses locron.windows-status/v1 with operation_id, SID, canonical
 executable, phase, current/new version, updated, prepared and warnings; the status file alone
 cannot authorize changes, and is read only after validating its protected operation request.
-The strict receipt fields are schema, sid, channel, directory, executable, target, version,
-archive_url, archive_sha256, binary_sha256, files (the six bare names mapped to hashes), and
+The strict receipt fields are schema, sid, channel, directory, executables (a two-member ordered
+console/launcher list, each with path and sha256), target, version, launcher_abi (native-gui-v1),
+archive_url, archive_sha256, files (the seven exact bare names mapped to hashes), and
 user_path (null or before/after values plus before_kind/after_kind, where a missing before value/kind
-is null and non-null kinds are String or ExpandString). Status uses schema, operation_id, sid,
+is null and non-null kinds are String or ExpandString). Remove the ambiguous v1 top-level
+executable/binary_sha256 duplicates. Crossvalidate both path/digest members against the exact
+file map, canonical directory, shared target/version and native-gui-v1 ABI before accepting
+the receipt. Status uses schema, operation_id, sid,
 executable, phase, current_version, new_version, updated, prepared and warnings. Unknown fields or filename inventories
 are refused. The uninstall.ps1 asset accepts -InstallDirectory; an installed copy defaults to its
 own receipt-bearing directory and a downloaded copy to the ordinary standalone directory.
@@ -2122,25 +2141,29 @@ Malformed, missing or modified executable/bootstrap ownership evidence is a refu
 
 Keep the release inventory unchanged by placing WinGet maintenance in install.ps1:
 -Maintenance Prepare|Complete|Remove with -Executable and -Operation selects that explicit flow.
-Prepare copies the verified existing package executable as the hidden helper into the protected
+Prepare copies the verified existing package console executable as the hidden helper into the
+protected
 LocalAppData\\locron-distribution\\operations\\UUID directory, outside the package installation.
-It persists SID, package registration/source, exact executable hash and all task definitions with
-their prior enabled/running states before suppressing activation and confirming graceful exit.
+It persists SID, package registration/source, both installed executable paths/digests/full native
+bindings and all task definitions with their prior enabled/running states before suppressing
+activation and confirming graceful exit.
 Prepare returns operation_id, status_file and prepared=true only after the journal is durable and
 quiescence is confirmed. Those owned tasks remain disabled until a successful Complete.
-Complete validates this journal and the newly selected package registration/executable, refreshes
-the stored paths and restores the recorded enabled states. Its current SID, package/source IDs,
-canonical registered location, target, version and canonical-release binary hash must agree;
-arbitrary or stale executable paths cannot resume tasks. On an interrupted/failed Complete,
-recover the journal and restore prior state only against a still-valid recorded binary, or retain
+Complete validates this journal and the newly selected package registration/executable pair,
+refreshes the stored paths and restores the recorded enabled states. Its current SID, package/source IDs,
+canonical registered location, target, version, launcher ABI and both canonical-release binary
+hashes must agree. Require actual package-index ownership of the exact sibling launcher while
+only the console receives a WinGet alias; arbitrary or stale executable paths cannot resume tasks.
+On an interrupted/failed Complete, recover the journal and restore prior state only against a
+still-valid recorded pair, or retain
 disabled registrations with an explicit recovery error until a valid package is selected. Never
-enable a mismatched path. Remove quiesces and removes only the recorded exact executable-bound
+enable a mismatched pair. Remove quiesces and removes only the recorded exact pair-bound
 registrations before the operator runs winget uninstall. The helper request schema is
 locron.windows-operation/v1; installer, updater, uninstaller and maintenance share this internal
 entrypoint and serializable validated lifecycle record. Missing, foreign or interrupted records
 are explicit refusal/recovery cases. No new release asset or arbitrary manifest hook is introduced.
-Validate the exact normalized package executable and registered location at no more than 4,096
-UTF-16 code units each, counting the supported verbatim transport prefix when present. Apply the
+Validate each exact normalized package executable path and the registered location at no more
+than 4,096 UTF-16 code units each, counting the supported verbatim transport prefix when present. Apply the
 bound after local-drive normalization and again to the live canonical guarded representation;
 stripping a prefix for path comparison does not remove it from this capacity count. A request
 spelling cannot substitute for the guarded identity.
@@ -2191,14 +2214,14 @@ replacement complete. self-update --status UUID reports pending until the helper
 receipt and registration-restoration results; only confirmed replacement yields updated=true.
 Failed or rolled-back operations report an error. Unix synchronous output is unchanged.
 
-The helper binds its exact path/hash, SID, destination, old receipt and staged verified executable
-in a durable operation request. It serializes updates, snapshots all exact executable-bound owned
-tasks, disables activation, requests lifetime-bound shutdown and waits for owned-role exit plus
-the original caller. A bounded exclusive read/write/DELETE open of the old executable, with
-share_mode(0), is the final mapped-holder gate; unowned MCP/manual holders refuse replacement
-rather than being killed. The same live leaf and ancestor guards validate the receipt, current SID,
-private descriptor, full volume/file identity and old hash. Refuse read-only or multiply linked
-replacement leaves. No write to the old executable is permitted.
+The helper binds its exact console path/hash, SID, destination, old receipt and staged verified
+executable pair in a durable operation request. It serializes updates, snapshots all exact
+pair-bound owned tasks, disables activation, requests lifetime-bound shutdown and waits for owned-role exit plus
+the original caller. Bounded exclusive read/write/DELETE opens of both old executable members,
+with share_mode(0), are the final mapped-holder gates; unowned MCP/manual holders refuse
+replacement rather than being killed. The same live leaf and ancestor guards validate the receipt,
+current SID, private descriptors, both full volume/file identities and old hashes. Refuse read-only
+or multiply linked replacement leaves. No write to either old executable is permitted.
 
 Use Windows-only fs_at =0.2.1 (Apache-2.0, MSRV 1.71) for its safe consuming
 fs_at::os::windows::FileExt::delete_by_handle(File) interface. This selects exact-handle deletion
@@ -2234,8 +2257,9 @@ neither a stale request nor a task-state transition implies completion. No reboo
 The write-ahead journal is one retained private read/write/DELETE/share0 journal.bin handle,
 not a sequence of path-based replacements. Append frames consisting of a little-endian length,
 the previous frame's SHA-256 (zero for the first), typed UTF-8 JSON and the current frame's SHA-256
-over length, previous digest and JSON. Limit a complete frame to 128 KiB, the journal to 16 MiB
-and 128 frames; validate the whole bounded chain before recovery. Each locron.windows-journal/v1
+over length, previous digest and JSON. Keep a complete frame at 128 KiB including its 68-byte
+overhead, and select the reviewed aggregate ceiling of 18 MiB and 140 frames; validate the whole
+bounded chain before recovery. Each locron.windows-journal/v1
 frame repeats the operation UUID, SID, original request digest, monotonic sequence, the exact
 accepted/quiescing/replacing/restoring/completed/prepared/removed/failed/rolled_back phase enum,
 verified backup inventory and full original/created volume-and-file identities. Use the actual
@@ -2251,7 +2275,7 @@ Count encoded frame overhead and repeated snapshot/inventory fields, using bound
 representations for not-yet-created
 identities and other future fields. A reservation must cover the entire operation, not only its
 next append or successful path. An oversized snapshot or unprovable remaining budget refuses with
-zero effects; do not raise limits, truncate the snapshot or begin disabling tasks to discover its
+zero effects; do not raise those reviewed limits, truncate the snapshot or begin disabling tasks to discover its
 size. The service adapter's 256-binding limit is a ceiling, not a promise that every such inventory
 fits this distribution journal. Revalidate and reserve against the actual validated record at
 each resumed-operation entry before another effect. The first flushed frame contains the complete
@@ -2272,7 +2296,7 @@ rejects any actual append beyond it. This is size accounting for the concrete ty
 not permission to synthesize a replacement service record or replay arbitrary JSON.
 The concrete existing-installation frame keeps immutable original and current typed service slots,
 the original receipt and any fully verified new receipt, and a fixed-key optional package-completion
-binding. Keep every absent slot as null. At most seven leaf entries identify the six exact payload
+binding. Keep every absent slot as null. At most eight leaf entries identify the seven exact payload
 names and the receipt; each freezes its original and durable backup full identities, byte count
 and SHA-256, and records delete intent, confirmed absence, newly created identity, verified writes
 and rollback identity through a strict enum. Derive backup and destination paths from those logical
@@ -2462,7 +2486,7 @@ created/rollback full identities per leaf, every repeated typed service slot, an
 bound before journal creation. Fresh installation additionally requires the service owner's real
 typed registration/root rollback record and complete callback plan; the existing-installation
 record cannot authorize fresh role creation or substitute null for that missing authority.
-For the existing-installation path, no new daemon/dashboard activation occurs before all six
+For the existing-installation path, no new daemon/dashboard activation occurs before all seven
 replacement payloads and the new receipt are fully verified and durable. Before that boundary,
 rollback uses the original confirmed-quiescent role record; it never activates a new executable.
 After entering restoration, failure remains pending restoration and the journal rejects a return
@@ -2475,10 +2499,13 @@ transient prior running state is not authority and needs no new immutable origin
 Originally disabled roles retain their disabled setting and never receive Run. Activation starts
 only after all registration/enable confirmations and the verified complete payload/receipt boundary.
 The service owner must add a distinct typed activating phase with a durable per-role RunIntent
-before dispatch, actual returned/fresh Task Scheduler InstanceGuid and exact owned role/lifetime
-confirmation, and an UnknownStart state for uncertain dispatch or startup. A successful COM call,
+before dispatch, the immutable observed Task Scheduler InstanceGuid and the sealed matching
+context/digest plus exact live supervisor/role lifetime confirmation, and an UnknownStart state
+for uncertain dispatch or startup. A successful COM call,
 an enabled setting, a task-state string or EnginePID alone cannot confirm the role. Recovery may
-confirm an already running exact owned instance through fresh readback; it must not redispatch Run
+confirm an already authenticated exact owned instance through fresh guarded readback of that
+same GUID/context/digest and live lifetime. An unrelated GUID or unwitnessed Logon launch cannot
+complete the recorded activation. Recovery must not redispatch Run
 from a saved intent, unknown state or enabled flag. No repeated polling record may consume an
 unbounded callback budget. A timed-out persistence owner remains uncertain under the existing
 retained-writer/guard rule.
