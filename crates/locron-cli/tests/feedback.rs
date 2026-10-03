@@ -1,9 +1,14 @@
 //! Isolated regression contracts for the first user feedback triage.
+#[path = "support/private_state.rs"]
+mod private_state;
+
+use private_state::{PrivateState, private_state_fixture};
+
 use locron_store::{StatePaths, Store};
 use serde_json::Value;
 use std::process::Command;
 
-fn output(state: &tempfile::TempDir, args: &[&str]) -> std::process::Output {
+fn output(state: &PrivateState, args: &[&str]) -> std::process::Output {
     let out = Command::new(assert_cmd::cargo::cargo_bin!("locron"))
         .arg("--state-dir")
         .arg(state.path())
@@ -17,7 +22,7 @@ fn output(state: &tempfile::TempDir, args: &[&str]) -> std::process::Output {
     );
     out
 }
-fn json(state: &tempfile::TempDir, args: &[&str]) -> Value {
+fn json(state: &PrivateState, args: &[&str]) -> Value {
     let mut arguments = vec!["--json"];
     arguments.extend(args);
     serde_json::from_slice(&output(state, &arguments).stdout).unwrap()
@@ -25,7 +30,7 @@ fn json(state: &tempfile::TempDir, args: &[&str]) -> Value {
 
 #[test]
 fn registration_warnings_are_advisory_and_dry_runs_are_read_only() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let args = [
         "add",
         "probe",
@@ -74,7 +79,7 @@ fn registration_warnings_are_advisory_and_dry_runs_are_read_only() {
 
 #[test]
 fn http_hint_is_narrow_and_never_repeats_urls_or_environment_errors() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     // Explicit empty PATH makes this independent of installed http clients.
     let base = [
         "add",
@@ -135,7 +140,7 @@ fn http_hint_is_narrow_and_never_repeats_urls_or_environment_errors() {
 
 #[test]
 fn advisory_resolution_uses_environment_precedence_and_cwd() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let bin = state.path().join("bin");
     std::fs::create_dir(&bin).unwrap();
     std::fs::write(bin.join("http"), "fixture").unwrap();
@@ -201,7 +206,7 @@ fn advisory_resolution_uses_environment_precedence_and_cwd() {
 
 #[test]
 fn list_reports_latest_identity_and_state_without_changing_show() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     json(
         &state,
         &["add", "probe", "--every", "1h", "--", "/usr/bin/true"],

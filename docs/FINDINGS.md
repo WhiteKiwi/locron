@@ -4899,3 +4899,392 @@ Code evidence: crates/locron-core/src/execution.rs resolve_executable at main b6
 execution scope remains the existing Windows environment/resolution issue #26. The isolated
 native regression must demonstrate the actual ambient candidate and selected job candidate;
 static path reasoning alone is not native execution evidence.
+
+### Native Windows package toolchain evidence (2026-10-03)
+
+At main `00e1006b817b5442fbc9b5b79e1b736d439661a3`, completed CI
+[37129629579](https://github.com/WhiteKiwi/locron/actions/runs/37129629579) passes the existing
+native matrix. Both downloaded paired package verification records report actual `rustc 1.98.0`,
+although the package job installs 1.94.0. The checkout's rust-toolchain.toml selects 1.98.0 and
+the package job does not set RUSTUP_TOOLCHAIN. The release Windows build has the same selection
+gap. Native foundation MSRV coverage is separately explicit and does not qualify the release
+compiler. ZIP hashes, PE roles/imports and finite native version/GUI identity probes still match;
+these are development candidates rather than public immutable release assets.
+
+[Rustup override precedence](https://rust-lang.github.io/rustup/overrides.html) places the
+RUSTUP_TOOLCHAIN environment override before the checkout toolchain file, which takes precedence
+over the default toolchain. Thus installing/selecting a default does not enforce the intended
+compiler inside this checkout. Set the Windows package/build override explicitly and reject
+unexpected compiler release or native host before building. Existing Unix build and macOS signing
+selection remain unchanged.
+
+The same CI has selected native component and package gates, but not Windows all-target workspace
+tests or all-target warnings-denied Clippy. Run those full commands as explicit manual discovery
+on disposable native x64/ARM64 runners, preserving failures and original tests. Discovery results
+cannot complete clean Windows 11 standard-user installation, task/reboot, two-user access,
+public unsigned download, update/recovery or WinGet acceptance.
+
+### Full native test compilation prerequisites (2026-10-04)
+
+Reviewed PR130 head63473f1 has successful ordinary CI37132853263, including actual Rust1.94
+on both native package rows. Separately, full discovery37132861132 failed all five native rows
+during compilation/lint, before any full runtime test body executed. x64 stable identifies
+unguarded Unix permission imports in service.rs:343/605; ARM64 stable and x64 MSRV identify
+dashboard.rs:391/392. Both Clippy rows reject missing crate docs in existing Unix-only crates.
+Keep complete failure logs and do not infer full supported behavior from selected-suite success.
+
+The separate research session reproduced the documentation failure with native Rust1.94 and
+1.98 using standalone metadata-only compilation, without linking or executing app/test code.
+Putting unchanged crate documentation before the existing crate-level cfg fixes that failure;
+both the minimal repro and the actual service_lifetime body pass warnings-denied metadata
+compilation. The research inventory finds four affected crates: attempt_history,
+crash_boundaries, global_environment and service_lifetime. Their bodies, test names and existing
+Unix selection can remain byte-identical. A module wrapper would unnecessarily change test
+namespaces. The [Rust Reference's crate-level cfg rule](https://doc.rust-lang.org/reference/conditional-compilation.html#the-cfg-attribute)
+explains that attributes before a false crate cfg survive and attributes after it are removed.
+
+The three permission blocks seed positive dashboard owner-only-token fixtures, not Unix-specific
+behavior. Existing core::filesystem::create_private_new creates missing private parent components
+and an exclusive new private leaf under validated guards: Unix creation uses 0700/0600 and
+Windows performs private creation rather than repairing an existing broad descriptor. Use that
+existing API for these seed bytes, flush and release the guard before starting the subprocess;
+do not create a broad directory/file first and chmod, skip Windows, or soften owner_only/no-secret
+assertions. This changes test setup only. Actual Windows fixture acceptance still needs the next
+native run; metadata and source inspection cannot qualify private creation or subprocess output.
+
+Other recorded warnings and legacy shell/state fixture assumptions remain discovery findings.
+The scoped compilation correction cannot establish full lint/runtime success, Windows11
+standard-user installation, active-crash recovery, two-user privacy/IPC or public distribution.
+
+### Measured Windows fixture interference and return visibility (2026-10-04)
+
+Separate read-only research pins7ad2256 and compares the relevant unchanged blobs at543e823.
+Full37135594179 has256/16 CLI unit results on all three native rows. Later37135898657 at543e823
+has264/15 x64 stable and263/16 ARM64/MSRV after additional unrelated main tests. The difference
+is the uncertain launch-owner case passing on x64; other owner-negative cases still fail at
+initial admission, while the positive actual copied-child case passes. No failing cleanup
+boundary or production owner-reset defect is established by those admission failures.
+
+MCP fresh_paths uses the already-created TempDir as its managed root. Eleven successful-tool
+cases fail at initial locron_add_job, with captured directory-root/PermissionDenied diagnostics.
+Production private creation verifies existing roots instead of repairing broad descriptors.
+Retaining TempDir and creating a missing private Windows child fixes the fixture prerequisite;
+Unix setup and all mutation/dry-run/report assertions can remain unchanged. No individual
+owner/ACE or 8.3 path cause is established by the captured error category.
+
+The Gate's complete caller inventory finds five parent fixtures sharing process-wide OWNER.
+The actual copied-helper selector enters a separate process, and transport uses a different
+owner atomic. A narrow test-only mutex around those five parent proofs, acquired before setup
+and deadline birth, preserves the uncertain case's actual internal second-admission refusal.
+Never clear OWNER for isolation; poison or retained ownership must remain a failure.
+
+The CLI description test identifies missing metadata on the hidden Windows supervise role
+field; add its field description without excluding hidden commands or changing parsing.
+Seven unused service_backends helpers only serve the existing macOS/Linux consumers. Gate
+those exact helpers, related imports and cleanup impl consistently; retain the crate's two
+Windows exclusion-reporting cases and every Unix body. Full543 Clippy additionally reveals29
+staged CLI diagnostics beyond those seven; this correction cannot claim full lint completion.
+
+Ordinary543 CI37135898238 x64 stable also has129/130 Core results: the isolated guard-stall
+child times out at loader_tests.rs273. Caller-failed is recorded at33001ms, before its external
+reply deadline of original+4s; the actual return/send interval is unmeasured. windows.rs joins
+only a finished worker, then test-only trace.report synchronously prints before returning.
+There is no evidence of an unconditional blocked-worker join. Add bounded in-memory timing
+for result computation, diagnostic entry/exit, function return and external send/receive under
+the unchanged30+3s/30+4s clocks. Emit only after delivery/cleanup or in the original failure
+message, with fixed event names/counters. This observes the unresolved boundary; it does not
+select a fix, suppress diagnostics, reset permits or increase any budget.
+
+Research artifacts: windows-runtime-discovery-triage-20261004/report.md and measured-evidence.json
+under the retained task review directory. They include all25 MCP fixture callers, complete
+Gate/transport owner inventories, six compared blobs and the raw Core log SHA256
+486f9ef7c416a10a5dc1ef0358623cfaf84c2b7552b73d7c1bb9b35daab23874.
+
+### Stock parent-crash heartbeat publication and missing failure observations (2026-10-04)
+
+PR #130 head `99ea5c97ce925f41755fa86dfa54eeffb97313bb`, based on main
+`d56dcbbbb20a58c68a81d6348a54a77c87488e3d`, has fifteen passing ordinary rows and one
+failed x64 MSRV foundation row in [CI run 37139545888](https://github.com/WhiteKiwi/locron/actions/runs/37139545888).
+[Job 111250945393](https://github.com/WhiteKiwi/locron/actions/runs/37139545888/job/111250945393)
+checks out merge `495bfd5817dc25deb8f03219ee5fbfc5359c4988`. Its step
+`Verify isolated stock adapter policy and parent containment` passes the fresh EOF-release and
+Restricted drivers, then fails `windows::loader_tests::owned_loader_fixture_child` in
+parent-exit-driver mode after 45.01 seconds at `windows/loader_crash.rs:107:36`:
+`Custom { kind: TimedOut, error: "stock Windows adapter deadline elapsed" }`.
+The original cold Core command had already passed 130/130 tests. Later independent stock
+startup measurements use different owned PIDs and cannot supply the failed driver's receipt.
+
+Source parity was checked before this documentation handoff. The complete `crates/locron-core`
+tree is `857adf2f06476ec0dd9143aff386ebd5d749748f` at the earlier reviewed head
+`543e82392754c2e2a1286ae7ae8e22c9c3f89f95`, current PR head and actual CI merge. The two
+relevant fixture blobs are `7749964fdc4e3e2b70b87d957fe0e203eae01638` for loader_crash.rs and
+`3899d49738fde8e08d011dc0b1b3d3bae22c3bb6` for loader_crash_host.ps1. All eleven existing
+PR-owned blobs also match that earlier head. Thus this failure does not establish a new
+production loader change or the cause of the separate earlier cold native_guard_stall timeout.
+
+Line 107 is the original shared deadline check inside `beats`, which waits for each counter to
+parse as u64. The driver calls it at five different stages. Reaching it follows the required
+`three-live-handles` marker check, but this stack does not identify which call/counter failed,
+whether the host had been killed, whether all three target handles had signalled exit, or the
+counter's final bytes. There is no saved phase/counter observation in that panic. The helper's
+private stdout/stderr files are not printed by this failure path; the temporary directory is
+removed during unwind. This failed MSRV row has no uploaded native diagnostic artifact in the
+run inventory. The actual file bytes and last completed phase are unavailable, so an empty
+counter is a hypothesis for this CI failure, not an observed fact. The deadline could also
+have expired before a particular read began.
+
+An independently established fixture defect makes that hypothesis plausible. The Rust
+`heartbeat` writes the final native-heartbeat path with `fs::write` every 25 ms. The generic
+PowerShell loop writes generic-heartbeat with `[IO.File]::WriteAllText` at the same interval.
+Both truncate the published file before completing its new digits. The installed Rust 1.94
+standard-library source (`library/std/src/fs.rs:419`) implements fs::write with File::create
+followed by write_all. During the separate PR #133 investigation, a real native Rust writer was
+observed in this window, stopped, killed and reaped; its final counter stayed empty. The retained
+portable receipt (`pr133-heartbeat-write-repro.rs` and `.py`) reports actual_std_fs_write,
+stopped_between_truncate_and_write, empty_counter_after_hard_stop and owned_process_reaped as
+true. A separate real-process snapshot regression preserved the old complete counter 7 after
+killing the unpublished candidate, then published complete counter 8. These macOS observations
+establish the write-window hazard and proposed staging principle, not Windows Job/replacement
+qualification or this failed job's exact cause.
+
+The permitted Rust implementation needs no dependency change. Cargo.lock selects tempfile
+3.27.0 (checksum `32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd`), already
+a Core dev-dependency. Its checked source, src/file/mod.rs:170-204/220-276/898-904 and
+src/file/imp/windows.rs:92-121, provides a same-directory candidate, explicit close through
+into_temp_path, no-clobber initial publication and replacement through MoveFileExW. The Windows
+implementation sets only MOVEFILE_REPLACE_EXISTING for replacement; it has no cross-volume copy
+fallback. [TempPath::persist](https://docs.rs/tempfile/3.27.0/tempfile/struct.TempPath.html#method.persist)
+documents atomic replacement, but no file/directory synchronization. persist_noclobber's general
+portable contract is weaker; the verified Windows implementation uses a single no-overwrite
+move. Candidate flush/close and process-termination tests must not be described as power-loss
+durability or a portable atomicity guarantee for initial publication.
+
+Stock Windows PowerShell 5.1 can use the .NET Framework two-argument File.Move for the first
+completed candidate and File.Replace(candidate, destination, null, false) thereafter.
+[Microsoft's Framework reference source](https://github.com/microsoft/referencesource/blob/ec9fa9ae770d522a5b5f0607898044b7478574a3/mscorlib/system/io/file.cs#L1221)
+maps those calls to MoveFile and ReplaceFile and propagates native errors. The
+[File.Replace contract](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.replace?view=netframework-4.8)
+requires an existing destination; passing false retains metadata-error refusal. The
+[ReplaceFileW contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew)
+requires one volume and combines replacement in one API, but documents failure states that can
+change the destination's name. Its WRITE_THROUGH flag is unsupported. Consequently this design
+must fail on replacement errors, without delete+move, fallback creation, guessed counters or
+claims that every failed replacement preserves the old path. Successful publication and an
+interrupted publisher require fresh native proof on the actual Framework/filesystem.
+
+Windows sharing also matters. ReplaceFileW opens the destination with delete access and the
+candidate without sharing, so the candidate must already be closed and a live destination reader
+must permit delete sharing. The actual counter reader uses ordinary Rust File::open through
+read_to_string; the installed Rust 1.94 Windows OpenOptions source defaults to
+FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE (`library/std/src/sys/fs/windows.rs:206`).
+This is separate from the existing deliberate share_mode(0) stock executable guard, whose
+refusal/release assertions must remain unchanged. The fixture modules and embedded host script
+are reached only from the cfg(test) loader_crash/loader_tests declarations in windows.rs:29-34.
+No product loader, owned-child, guard or admission source is needed for this handoff. The
+[fixture correction plan](planning/WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md) preserves the
+original budgets and all actual-process assertions; owning Issue #31 and fresh native Verify
+remain required before any support or acceptance claim.
+
+### MCP native process fixture after private-root discovery (2026-10-04)
+
+Reviewed c676e37baeb8049fae3eb65cf007bb397850253d passes all sixteen ordinary rows and
+GitGuardian in run37143494890. Original five-row full discovery37143508598 still fails:
+x64 stable job111262652892, ARM64 stable111262652865 and x64 Rust1.94 job111262652832 each
+execute301 CLI unit cases with291 passed/10 failed and zero ignored/filtered. The five
+owner-sensitive Gate fixtures, recursive argument description and separate shell at-schedule
+case now pass in all three logs. The remaining ten failures are MCP cases, all at request_tool's
+unchanged success assertion1855, reporting only `tool locron_add_job failed`. Their actual
+tool error envelope is not printed; a specific returned error is not an observed fact.
+
+Separate read-only research pins the MCP source and traces a common invalid fixture input.
+valid_add_args1859–1870 supplies process command `/bin/echo`, `hello`. parse_target877–879
+retains that executable and args; tool_add_job1021 invokes definition.validate, which reaches
+target.rs120–129. On Windows a separator-containing executable must be absolute, including
+its prefix. `/bin/echo` is rooted without a drive/UNC prefix and fails that requirement. This
+is a source-backed input-contract mismatch, not a claim to have recovered the hidden error
+envelope. All ten failed cases depend on this shared process fixture. Their add/update/read,
+dry-run and durable queued/cancel assertions do not run an Engine or spawn that scheduled
+command. The independent shell at-schedule fixture already uses default_shell and passes.
+
+A minimal test-only correction can keep Target::Process and choose the actual current test
+image's absolute Windows path with fixed `--help` argv. The image is already running; path
+lookup/encoding must fail explicitly rather than inventing or lossily encoding an executable.
+The argument remains a finite native help request if executed, while these MCP cases still
+qualify job definition/queue behavior rather than echo output or child execution. Unix retains
+the exact `/bin/echo`, `hello` values. Every case body/name/assertion stays unchanged, and no
+production validation, state/permission policy, process owner or deadline change is needed.
+The [MCP follow-up plan](planning/WINDOWS_MCP_NATIVE_PROCESS_FIXTURE_2026-10-04.md) precedes Source.
+
+The full Clippy rows now report41 CLI diagnostics per architecture after the seven Unix-helper
+errors were removed. Accepted main through #129 contributes staged APIs and test-style work
+beyond the earlier29-diagnostic baseline. These warnings remain denied and outside this
+single-helper correction. The87 measured integration failures, distinct Core admission/Server
+WAL-reopen observations, stock-crash heartbeat work and public acceptance remain open.
+
+### Native integration positive-root research and new Store initialization failure (2026-10-04)
+
+Head302b1bf full run37145285065 reaches301 CLI unit cases, all passing on native x64 stable,
+ARM64 stable and x64 Rust1.94, zero ignored/filtered. The previously failing ten MCP cases
+now reach their unchanged definition/queue assertions; no scheduled child is exercised there.
+It next reaches71 CLI integration cases,12 passed/59 failed on each architecture/compiler.
+Complete logs print private-root refusals and the Windows `locron.exe` help basename. Cargo
+then stops; this does not qualify later binaries. Both full Clippy rows retain41 CLI diagnostics.
+
+Separate read-only research pins the four CLI/dashboard/feedback/service integration files to
+the earlier measured543 source. Those blobs remain exact through302 ande4d2ca1. The earlier
+complete run37140952254 records102 cases in these files,31 passed/71 failed;59 errors actually
+print the private-directory refusal. A positive TempDir inherited broad Windows permissions,
+while the existing DirectoryGuard::private API can create a missing private child. Setup should
+normalize that child and release guards before subprocesses, keeping TempDir cleanup ownership.
+The constructor inventory distinguishes state roots from discovery working directories,
+advisory inputs, ordinary fake-manager JSON/log parents and intentionally absent paths. Dry-run
+root-empty/DB-absence tests must not preseed state. Stored token bytes need private-new creation;
+the manual-owner positive needs a genuine Windows DaemonLock and its owner metadata, rather
+than a broad plain File lock. Existing missing-token/status refusal paths remain absent.
+Feedback's extensionless `bin/http` placeholder is advisory-only: execution.rs checks the exact
+file before PATHEXT candidates, so a new PE/extension requirement is not supported by the source.
+
+Remaining POSIX execution fixtures, target display expectations and wake.sock readiness need
+their own selected equivalence plan. A held lock precedes engine wake binding and cannot prove
+a named-pipe endpoint or ACK. Native send_wake can consume a separate30-second identity budget;
+calling it inside a5-second fixture would not preserve that fixture's original bound. The
+[positive-fixture plan](planning/WINDOWS_INTEGRATION_PRIVATE_FIXTURES_2026-10-04.md) therefore
+changes only five test files and three help basename expectations before measuring downstream.
+
+Ordinary302 run37145289162 passes15 actual rows and fails x64 stable job111267842987. Its
+two dashboard-exit cases stop at windows_lifecycle.rs48 Store fixture initialization, before
+dashboard exit. The actual diagnostic is operation=2, stage=sqlite-configure-wal, category=io,
+kind=TimedOut, raw_os=None, followed by SQLite configuration deadline elapsed. Its cause remains
+unconfirmed; the distinct earlier Server SQLITE_PROTOCOL15 reopen failure is preserved under
+Issue #25. Neither this positive-root correction nor an unrelated later pass repairs that
+observed required-gate failure. No unchanged rerun, timeout increase or broad retry is selected.
+
+### Stock heartbeat fixture command-line boundary (2026-10-04)
+
+Integrated head e4d2ca16e17752d330275b8907cb10a31a318413 conserves both reviewed fixture
+patches. Ordinary CI37146145032's x64 stable111270385871 and MSRV111270385843 pass all130
+Core cases and the unchanged isolated EOF/Restricted proofs. Parent-exit-driver then fails
+after0.06s: loader_crash.rs272 reports its actual helper exited101, and the helper's668 refusal
+is `generic adapter exited before actual spawn` after0.01s. Saved trace reaches worker-entered
+and caller-failed only. Actual Win32 error detail was not retained by that existing refusal;
+do not invent a returned error code or conflate this with the earlier45.01s timeout.
+
+Parent and separate read-only research independently reconstruct the exact unchanged
+generic_trace::source format, shared stock_json bootstrap and current HOST literal. Original
+ec13 HOST has1386 UTF-8 bytes; wrapped source is4677 UTF-16 units and EncodedCommand12472
+ASCII units. Current HOST has9022 bytes; wrapped source is12313 UTF-16 units and encoded
+argument32836 units. That argument alone exceeds CreateProcessW's32767-character limit,
+which includes the terminating Unicode NUL. The standard retained extended stock path,
+original flags, argv0 quotes and NUL produce32952 units; CRLF checkout increases the bound.
+This is a confirmed static platform-contract defect consistent with the pre-spawn trace;
+the failed job's specific raw OS code remains unobserved.
+
+The normal parent-exit host also contains the full new publication-proof branch even when
+the operation is absent. Select shared definitions plus only the intended compiled static
+body. Unique comment delimiters in the existing test-only ps1 permit a pure Rust split/join
+without reading scripts from disk, interpolating request data, fallback or changing the
+production adapter. Preserve every normal/proof program token, assertion, clock and child
+ownership boundary. Verify LF and CRLF complete command lengths with executable/flags/NUL,
+and collect new actual native proof results before merge.
+
+Separate primary-source research identifies a downstream string-null issue: PowerShell's
+NullString is specifically for passing managed null to .NET string parameters. Framework
+File.Replace treats a non-null backup name as a path; an empty name fails path validation.
+Use direct fully qualified NullString.Value for the existing no-backup call, preserving false
+ignoreMetadataErrors and all refusal assertions. The current job did not reach that API, so
+this is a source-contract correction requiring its own actual Framework5.1 publication proof.
+Sources: [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw),
+[NullString](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.language.nullstring),
+[Framework File.Replace](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.replace?view=netframework-4.8.1),
+and retained actual job logs under the private PR review evidence directory.
+
+### Initial lifecycle WAL timeout observations and diagnostic scope (2026-10-04)
+
+Read-only research at unchanged Store Source302b1bf separates two first-open
+failures from dashboard shutdown and the older Server SSE reopen. Correction to
+the compressed integration note above: idle-client local operation3 and
+active-SSE operation2 both fail at Fixture::new's first Store::open, before any
+daemon/dashboard/job/client/shutdown activity. They report ConfigureWal IO
+TimedOut/raw_os=None, not PROTOCOL15. These process-local counters do not
+correlate databases. Complete logs are retained; no missing cause is inferred.
+
+Private/SID/DB-admission and new Connection preparation end before the original
+configure-entry5s clock. That one clock covers WAL and remaining settings. Fixed
+PRAGMA query_one consumes ROW and DONE and explicitly finalizes even on errors.
+Only idle-autocommit5/261 retry after finalization; exhaustion preserves the
+SQLite code and15 is immediately returned. The observed IO timeout can be an
+entry/pre-call gate or a refused late success. Pinned SQLite3.53.2 has native
+WAL/VFS retry paths independent of busy_timeout(0), but current logs do not show
+which boundary ran slowly. No retry, serialization or larger timeout is justified.
+
+Select a bounded debug-only owner-local failure snapshot before a cause fix,
+using only existing gates/calls and fixed numeric/category data. Capture native
+prepare/query_one/ROW callback/finalize boundaries, query_one success-confirmed
+DONE, attempt count and timeout
+gate without timed-path logs or new native work. PID/local operation correlation
+is not file identity. The prior Server15 needs separate owned connection/file
+facts. Research receipt SHA256
+f66dfe9b0007d33afe5ac294974c1191e0f48320bb376cf519a02b9bf69a7f17 and the reviewed
+WINDOWS_WAL_CONFIGURE_DIAGNOSTICS_2026-10-04 plan preserve original policy and
+all unqualified acceptance gates. No Source was implemented by the planning parent.
+
+
+### Measured rename-refusal expectation before Source (2026-10-04)
+
+Head1a1e5967ed179ef4b43654a0dd951118b62a5a1b qualifies the command-size correction in
+ordinary CI37148405286: all three native jobs pass131 Core cases and the original
+parent-exit-targets-handles-heartbeats-guards-confirmed marker. Their new Rust publication
+proof then fails at loader_crash.rs531: actual raw OS errorSome(5), expectedSome(32).
+The x64 stable111276979316, ARM111276979308 and MSRV111276979298 logs agree. The ordinary
+run was cancelled after those actual failures to obtain logs promptly; later native
+steps and packages are not qualified by that cancelled run. Full discovery37148403193
+remains a separate failed receipt; no whole-workspace or public acceptance claim follows.
+
+The locked tempfile3.27.0 implementation retains the failed TempPath in PathPersistError.
+Its Windows persist sets candidate attributes and calls MoveFileExW with replacement;
+that envelope does not distinguish the two internal syscall failures. Microsoft rename
+processing documents access-denied refusal when replacing an open target. Win325 is
+ERROR_ACCESS_DENIED;32 is ERROR_SHARING_VIOLATION. The prior expectation imported the
+exclusive CreateFile open result into a different rename operation without evidence.
+Do not generalize that all filesystems or rename refusals always return5.
+
+For this measured fixture, require the exactSome(5) and add a same-candidate positive
+control. Retain the closed8 candidate returned in the failure, verify its identity and
+unchanged published7 while the exact held target handle remains open, then close that
+handle and publish the same TempPath successfully to8. Restore a complete7 snapshot
+before the unchanged actual child stage8/kill/reap/preserved7/publish8 proof. This control
+separates the deliberate held-target state from a permanently invalid candidate, while
+preserving failure propagation and the original45-second absolute driver deadline.
+The earlier45.01s failure remains unexplained; successful new receipts do not reconstruct
+its missing bytes. Exclusive stock-open and PowerShell File.Replace error32 assertions
+remain unchanged and require their own native evidence. Sources: locked tempfile source;
+[Microsoft rename processing](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/rename-and-hard-link-processing);
+[Win32 errors5/32](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-);
+[actual CI](https://github.com/WhiteKiwi/locron/actions/runs/37148405286).
+
+
+### Stable cfg statement syntax after native compile refusal (2026-10-04)
+
+Source5585936 ordinary37151318184, full37151330037 and isolated discovery37151378233
+finished red before the requested application runtime tests. Separate always-run stock
+bootstrap/small/60k diagnostics passed on the three foundation rows; these do not qualify
+the failed compilation or application suite. Actual Rust1.94/stable/1.98 reject #[cfg] directly on
+the two assignment expressions at windows_configure.rs168/237 with E0658. Release builds
+also retain unresolved observations assignments (E0425). The immutable release-token inverse
+and formatting checks could not establish compiler validity; Root's prior review missed this.
+
+Select only a syntax correction: wrap those two existing debug observations in cfg-gated
+blocks. Keep assignment expressions, captured existing autocommit results, cfg condition,
+release erasure and every native call/result/gate/error/deadline byte-equivalent after inverse.
+No feature/nightly/warning allowance, production/query/test/dependency/workflow change is selected.
+Separate development owns only windows_configure.rs after Issue25/31 exact Verify readback.
+
+1. Reproduce/repair the two stable cfg statement sites. Verify: Rust1.94 native Windows debug
+   and release compilation both succeed; no unresolved observations or experimental syntax.
+2. Conserve observation and native policy. Verify: two exact block-only transformations invert
+   the whole prior file; all other tracked blobs/modes and old/native/new diagnostic tests remain
+   exact; cfg-erased release policy still equals the ce641 original.
+3. Review/publish fresh changed Source. Verify: Root reviews the one-file diff and static checks,
+   then records actual ordinary/full/every-binary results at the new source. These previous runs
+   reached no requested app suite cases and produced no new paired ZIP; separate stock
+   diagnostics remain their own evidence. All runs remain failures, not skipped validations.

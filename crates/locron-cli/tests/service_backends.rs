@@ -13,16 +13,22 @@
 //! template is frozen), so the tests refuse to run when a manual daemon
 //! already holds that state lock or when the service is already registered.
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::fs;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::process::Command;
 #[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use assert_cmd::cargo::cargo_bin;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use serde_json::Value;
 
 /// Serializes this suite's tests: they share the real service manager.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn serialized() -> std::sync::MutexGuard<'static, ()> {
     static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
     SERIAL
@@ -30,10 +36,12 @@ fn serialized() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn locron() -> PathBuf {
     cargo_bin("locron")
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn run_json(binary: &Path, args: &[&str]) -> (i32, Value) {
     let output = Command::new(binary)
         .args(args)
@@ -45,12 +53,14 @@ fn run_json(binary: &Path, args: &[&str]) -> (i32, Value) {
     (output.status.code().unwrap_or(-1), value)
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn home() -> PathBuf {
     PathBuf::from(
         std::env::var_os("HOME").unwrap_or_else(|| panic!("HOME must be set for the real tests")),
     )
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn uid() -> String {
     let output = Command::new("id").arg("-u").output().expect("id -u");
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
@@ -65,6 +75,7 @@ fn launchctl_ok(args: &[&str]) -> bool {
 }
 
 /// The default-state daemon lock, so a manual daemon's ownership is respected.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn default_daemon_lock_held() -> bool {
     let state_dir = home().join("Library/Application Support/locron");
     let lock_path = state_dir.join("daemon.lock");
@@ -102,10 +113,12 @@ fn wait_until(mut condition: impl FnMut() -> bool, timeout: Duration, what: &str
 
 /// Best-effort uninstall on drop, so a failing test never leaves a real
 /// service registered behind.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 struct ServiceCleanup {
     binary: PathBuf,
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 impl Drop for ServiceCleanup {
     fn drop(&mut self) {
         let _ = Command::new(&self.binary)

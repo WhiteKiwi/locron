@@ -42,11 +42,20 @@ jobs:
       - name: Build release binary
         if: runner.os != 'Windows'
         run: cargo build --release --locked -p locron
-      - name: Build portable Windows release binary
+      - name: Build portable Windows release executable pair
         if: runner.os == 'Windows' && steps.inventory.outputs.windows == 'true'
         env:
           RUSTFLAGS: '-C target-feature=+crt-static'
-        run: cargo build --release --locked -p locron --target '${{ matrix.target }}'
+          RUSTUP_TOOLCHAIN: 1.94.0
+        shell: pwsh
+        run: |
+          $compiler = rustc -vV
+          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
+          $compiler | Write-Output
+          if ($compiler -cnotcontains 'release: 1.94.0') { throw 'native release requires Rust 1.94.0' }
+          if ($compiler -cnotcontains 'host: ${{ matrix.target }}') { throw 'release target must equal native rustc host' }
+          cargo build --release --locked -p locron --bins --features windows-service-launcher --target '${{ matrix.target }}'
+          if ($LASTEXITCODE -ne 0) { throw 'native release build failed' }
       - name: Package tarball archive
         if: runner.os != 'Windows'
         shell: bash
@@ -57,10 +66,16 @@ jobs:
           cp target/release/locron "${ARCHIVE_DIR}/"
           cp README.md LICENSE-MIT LICENSE-APACHE "${ARCHIVE_DIR}/"
           tar -czvf "${ARCHIVE_DIR}.tar.gz" "${ARCHIVE_DIR}"
-      - name: Verify and package unsigned native Windows ZIP
+      - name: Verify and package unsigned native Windows executable pair
         if: runner.os == 'Windows' && steps.inventory.outputs.windows == 'true'
         shell: powershell
-        run: python -B scripts/windows_release.py package $env:GITHUB_REF_NAME '${{ matrix.target }}' 'target/${{ matrix.target }}/release/locron.exe' .
+        run: |
+          $target = '${{ matrix.target }}'
+          python -B scripts/windows_release.py package $env:GITHUB_REF_NAME $target "target/$target/release/locron.exe" . --launcher "target/$target/release/locron-service-launcher.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'paired Windows release packaging or native probes failed' }
+          $archive = "locron-$env:GITHUB_REF_NAME-$target.zip"
+          python -B scripts/windows_release.py validate $env:GITHUB_REF_NAME $target $archive --paired
+          if ($LASTEXITCODE -ne 0) { throw 'final paired Windows release validation failed' }
       - name: Build Linux packages (.deb and .rpm)
         if: runner.os == 'Linux'
         uses: taiki-e/install-action@v2

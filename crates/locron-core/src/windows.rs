@@ -315,6 +315,8 @@ fn run_adapter_worker(
             "late Windows adapter result refused",
         ));
     }
+    #[cfg(test)]
+    trace.delivery_event(generic_trace::DeliveryEvent::ResultComputed);
     if worker.is_finished() {
         let _ = worker.join();
     }

@@ -1,6 +1,6 @@
-#![cfg(unix)]
-
 //! End-to-end run and attempt observability contracts.
+
+#![cfg(unix)]
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
