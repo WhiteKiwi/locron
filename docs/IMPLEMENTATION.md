@@ -5126,3 +5126,16 @@ Separate development owns only windows_configure.rs after Issue25/31 exact Verif
    then records actual ordinary/full/every-binary results at the new source. These previous runs
    reached no requested app suite cases and produced no new paired ZIP; separate stock
    diagnostics remain their own evidence. All runs remain failures, not skipped validations.
+
+
+## Stable Rust syntax continuation before Source
+
+Ordinary558 run37151318184 fails compilation, before native controls: Rust1.94
+job111285640711 and Rust1.98 lint111285640451 report E0658 at windows_configure.rs
+168 and237. The two cfg attributes attach directly to assignment expressions.
+A separate developer may only enclose those same assignments in cfg-gated
+statement blocks, keeping their exact debug-only evaluation points and values.
+Verify the two-assignment inverse, unchanged release/native policy and all other
+blobs, stable Rust1.94/1.98 syntax, formatting and fresh native compilation.
+No feature gate, allow, clock, SQL, retry, diagnostic field or selector changes.
+The original five-step plan and owning Issue criteria remain required.
