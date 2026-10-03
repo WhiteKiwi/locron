@@ -3,9 +3,11 @@
 This is a measured test-fixture continuation of Issue #31 and
 [Windows native validation](WINDOWS_NATIVE_VALIDATION_2026-10-03.md). Frozen SPEC, that plan's
 historical workflow/compilation handoffs and unfinished external Windows acceptance stay
-unchanged. The separate research session has not changed Source. The parent must review and
-publish these documents, record/read back the owning-issue pre-Source Verify criteria, and then
-hand implementation to the separate development session.
+unchanged. At planning review the separate research session had not changed Source. The parent
+published docs-only ec13bed633672d080b7810a8596ba4e9801bd123 and read back the
+[Issue #31 pre-Source criteria](https://github.com/WhiteKiwi/locron/issues/31#issuecomment-5971969016)
+before handing implementation to the separate development session. Fresh native Source Verify
+and parent publication remain required.
 
 ## Evidence and limits
 
@@ -37,7 +39,7 @@ The default complete Source list is:
 Only if those regressions require dispatch from the existing exact fixture entry point, also
 change crates/locron-core/src/windows/loader_tests.rs by adding explicit cfg(test) mode arms.
 Retain every existing mode, selector and unset/unknown-mode behavior. Both modules and the host
-script are already cfg(test)-isolated by windows.rs. Production windows.rs, loader.rs,
+script are already cfg(test)-isolated by windows.rs. Production windows.rs,
 owned-child/cleanup, guard/admission code, observer assertions, lockfile/dependencies, workflow
 commands/order and toolchain selection remain outside this Source scope. Report a required
 change outside it with evidence before implementing it.
@@ -118,6 +120,26 @@ unchanged. Replacement failures, including metadata/sharing errors and documente
 rename outcomes, remain failures rather than a weaker success path. Primary source and portable
 process proof establish the design only; fresh Windows process/filesystem evidence must qualify
 the actual successful and interrupted publications.
+
+Implementation refinement: the original parent-exit driver retains its one absolute deadline
+through every new proof. New exact child modes receive a data-only remaining-millisecond budget
+capped at 30 seconds; the parent's pre/post checks and retained-child termination still enforce
+its earlier boundary, including process startup. Rust stages in a directly retained fixture
+child. A separately retained helper owns the new stock adapter; its script starts and retains
+the actual PowerShell publisher Process/handle, kills/reaps that exact child and verifies old/new
+bytes. Its static encoded child source reuses the same publication functions as the normal
+writer; directory and budget are environment data. No new dependency, unsafe clock bridge,
+workflow selector or driver-owned adapter is introduced. Failure cleanup remains the existing
+owned-helper/adapter Job cleanup rather than a new grace period or quarantine reset.
+
+The implementation receipt preserves the original entry modes and appends only two explicit
+publication-proof modes. Local macOS Core Rust 1.94 passes 45/45 tests. Exact-source portable
+helpers use the same locked tempfile package/checksum/resolved dependencies; a directly owned
+publisher stages a closed candidate, is killed/reaped, preserves counter 7 and then publishes 8.
+Initial collision, numeric-to-malformed refusal, 64-byte saved observations, sixteen-entry phase
+history and expired-read callback refusal are checked. Rust 1.94/1.98 formatting, actionlint and
+diff whitespace checks pass. These local receipts do not qualify Windows sharing, Framework
+replacement, Job/tree/pipe behavior or explain the original job's missing counter bytes.
 
 This correction does not resolve all full-suite failures or complete Issues #31/#32. Clean
 Windows 11 standard-user installation/task/reboot, independent-user privacy/IPC, active daemon
