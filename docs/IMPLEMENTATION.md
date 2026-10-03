@@ -4675,3 +4675,64 @@ Use the existing Windows-only additive wake object; retain legacy Unix boolean c
    then the exact reviewed head passes the repository CI/Audit checks before head-matched merge.
    Broader two-user/two-root IPC, durable fallback, Windows 11 and public-release acceptance
    remain the existing open issue criteria; this correction completes only the display slice.
+
+## Guarded paired standalone inventory (2026-10-03)
+
+Continue #33/#34's accepted paired ownership work under #27's existing private-file policy.
+The v2 receipt and five-member archive parsers qualify in-memory inputs without retained
+installed-file guards; the live standalone reader and preparation/transaction consumers use the
+historical single-image v1 contract. Add a separate read-only paired inventory consumer without changing
+SPEC, the v1 consumers, service activation, public commands, release packaging or support claims.
+This module remains `cfg(all(windows, test))` beside the existing distribution foundations.
+Native fixtures call the actual guarded reader; there is no production read-only entrypoint in
+this slice. The returned inventory proves recorded local bytes and structural PE properties,
+not a canonical download, executed version/ABI, helper authority or successful installation.
+
+Use the existing current-user SID/native-target selection, existing-only private directory
+guards, immutable private reads and full native file identities. The caller supplies only the
+selected directory and its original absolute deadline; caller-provided SID, architecture or
+receipt metadata cannot construct a successful inventory. Parse the retained v2 receipt bytes
+against the actual guarded canonical directory, SID and target, then read all seven fixed
+payloads under retained no-write/no-delete-sharing guards. Compare every digest to the strict
+receipt map and the two ordered executable bindings; inspect the actual console/launcher bytes
+using the existing unsigned PE/import validator with subsystems 3/2. Keep the raw receipt bytes,
+the root/receipt/payload guards and all complete native identities together in a move-only type
+with private fields and borrowed accessors. Never serialize this type into effect authority or
+derive it from a deserialized receipt. Reject any repeated full identity among the receipt and
+seven listed leaves, so distinct inventory names cannot alias the same guarded object. This
+does not certify the absence of other hard links outside that inventory; exclusive replacement
+still requires its separate single-link gate. Do not adopt or inspect unrelated entries.
+Apply the existing 4,096 UTF-16-unit maintenance-path limit to the canonical root and every
+joined and actually guarded receipt/payload path, including any retained transport prefix;
+an equivalent shorter spelling in receipt metadata cannot bypass the live-path capacity bound.
+
+Check the same caller deadline before and after each guarded operation, receipt parsing, hash
+comparison and PE inspection, and before returning the complete inventory. Use the existing
+`immutable_private_until` contract; do not create a fresh duration, deadline, retry or detached
+worker. The synchronous caller owns the inventory construction and its guards through return
+or refusal. An expired operation cannot return a successful partial or complete inventory.
+Keep the 128 KiB receipt and 64 MiB individual payload read bounds. Process payloads sequentially
+and release each payload byte buffer before reading the next; retain only their guards/digests/
+identities. Working payload content is therefore bounded by one such buffer, not seven payload
+copies, plus the bounded receipt bytes/parsed metadata and existing reader/parser allocation
+overhead. No new aggregate disk-size restriction or promise about allocator overhead is added.
+
+Implementation and verification order:
+
+1. Add the guarded v2 reader and its test-only module registration. **Verify:** actual private
+   receipt/seven-leaf fixtures return the unchanged raw receipt, seven exact guarded digests,
+   ordered native PE pair and complete receipt/payload file IDs; held guards reject writes and
+   replacement, and unrelated files stay unowned and unchanged.
+2. Add bounded refusal fixtures through that same reader. **Verify:** missing roots/receipt/
+   payloads stay missing; v1, foreign SID/channel/directory/target, malformed or swapped pair,
+   changed hashes, bad console/GUI subsystem, repeated full identities, unsafe ACL/reparse leaves
+   and over-limit metadata/payload files refuse without repair, deletion, journal, status, task
+   or PATH effects. A pre-expired caller deadline refuses before discovery; missing-payload
+   refusals release the earlier receipt guard. These fixtures do not qualify mid-operation
+   timeout behavior or an actual foreign filesystem-owner change.
+3. Review the complete scoped diff and run available formatting/static checks, then require the
+   existing native x64/ARM64 distribution command on the published revision. **Verify:** all
+   new guarded-reader fixtures plus every original distribution case pass without relaxed
+   privacy, bounds, v1 fixtures or cfg gates. Record unavailable local Rust/Windows execution
+   honestly; installer/update/activation, runtime version/ABI probes, immutable publication and
+   standard-user Windows acceptance remain separate owning-issue gates.
