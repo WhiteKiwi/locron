@@ -1303,6 +1303,7 @@ dependencies = [
  "flate2",
  "fs_at",
  "futures-util",
+ "interprocess",
  "jiff",
  "locron-core",
  "locron-engine",

@@ -149,6 +149,10 @@ pub(super) struct Frame {
 }
 
 impl Frame {
+    pub(super) fn phase(&self) -> Phase {
+        self.phase
+    }
+
     pub(super) fn challenge(
         bindings: Bindings,
         parent_pid: u32,
