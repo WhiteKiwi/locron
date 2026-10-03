@@ -18,6 +18,15 @@ use assert_cmd::cargo::cargo_bin;
 use locron_server::DEFAULT_PORT;
 use serde_json::Value;
 
+/// Seeds a private token and releases its guarded handle before child execution.
+fn seed_private_token(path: &std::path::Path, token: &str) {
+    use std::io::Write;
+
+    let mut file = locron_core::filesystem::create_private_new(path).unwrap();
+    file.write_all(token.as_bytes()).unwrap();
+    file.flush().unwrap();
+}
+
 fn locron() -> Command {
     Command::new(cargo_bin("locron"))
 }
@@ -384,13 +393,7 @@ fn dashboard_token_generates_a_missing_token() {
 fn doctor_reports_the_dashboard_exposure_facts() {
     let tmp = tempfile::tempdir().unwrap();
     let state_dir = tmp.path().join("state");
-    fs::create_dir_all(&state_dir).unwrap();
-    let token_path = state_dir.join("dashboard.token");
-    fs::write(&token_path, "c".repeat(64)).unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&token_path, fs::Permissions::from_mode(0o600)).unwrap();
-    }
+    seed_private_token(&state_dir.join("dashboard.token"), &"c".repeat(64));
     let fake_state = tmp.path().join("state.json");
     let fake_log = tmp.path().join("calls.log");
     fs::write(

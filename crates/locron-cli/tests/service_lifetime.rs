@@ -1,6 +1,6 @@
-#![cfg(unix)]
-
 //! Cross-process service-lifetime acceptance fixtures for Unix daemon shutdown.
+
+#![cfg(unix)]
 
 use std::fs;
 use std::io::Read as _;

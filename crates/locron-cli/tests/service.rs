@@ -38,6 +38,15 @@ fn seeded(dir: &Path, body: &str) -> (PathBuf, PathBuf) {
     (state, log)
 }
 
+/// Seeds a private token and releases its guarded handle before child execution.
+fn seed_private_token(path: &Path, token: &str) {
+    use std::io::Write;
+
+    let mut file = locron_core::filesystem::create_private_new(path).unwrap();
+    file.write_all(token.as_bytes()).unwrap();
+    file.flush().unwrap();
+}
+
 fn envelope(output: &std::process::Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("locron.cli/v1 envelope on stdout")
 }
@@ -337,16 +346,7 @@ fn lifecycle_human_modes_render_labeled_reports_instead_of_json() {
         assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
     }
 
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("dashboard.token"), "d".repeat(64)).unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            state_dir.join("dashboard.token"),
-            fs::Permissions::from_mode(0o600),
-        )
-        .unwrap();
-    }
+    seed_private_token(&state_dir.join("dashboard.token"), &"d".repeat(64));
     for (command, expected) in [
         ("enable", "Registered: yes"),
         ("status", "Access token permissions: owner_only"),
@@ -592,19 +592,11 @@ fn dashboard_status_reports_service_state_url_and_token_facts() {
     let _serial = serialized();
     let tmp = tempfile::tempdir().unwrap();
     let state_dir = tmp.path().join("state");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("dashboard.token"), "b".repeat(64)).unwrap();
+    seed_private_token(&state_dir.join("dashboard.token"), &"b".repeat(64));
     let (state, log) = seeded(
         tmp.path(),
         "{\"session\":true,\"loaded\":true,\"enabled\":true,\"registered\":true}",
     );
-    // The real flow writes the token with 0600; mirror that here so the
-    // posture fact is observable (fs::write would use the umask).
-    let token_path = state_dir.join("dashboard.token");
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&token_path, fs::Permissions::from_mode(0o600)).unwrap();
-    }
     let output = fake_dashboard_command(&state, &log, &state_dir)
         .arg("status")
         .arg("--json")
