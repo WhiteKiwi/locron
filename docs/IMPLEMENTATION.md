@@ -5125,3 +5125,24 @@ dev edge, then explicitly dispatch native x64 Server2025 and Win11 ARM64 Rust1.9
 Compilation/zero-case libtest output contributes zero prerequisite cases. Confirm both
 actual actors and exact cleanup; retain failures without unchanged rerun. This stage does
 not complete cross-user state/pipe protection or clean standard-user Win11 installation.
+
+
+### Existing servicing ancestry versus new fixture writers (2026-10-04)
+
+Before accepting an existing servicing ancestor in Source, distinguish its trust from
+the new fixture DACL. Reviewed application5585936 core filesystem.rs Windows constants
+and stock.rs TRUSTED/verify_descriptor already recognize SYSTEM, Administrators and the
+fixed Windows TrustedInstaller SID
+S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464. Select that same fixed
+servicing trust for read-only validation of existing local Program Files/Windows ancestry:
+owner and actual mutation ACEs may belong only to those trusted identities. Reparse,
+unknown owner/ACE or other actual object/retained-child mutation refuses. Directory
+sibling creation is distinct from mutation of the retained existing object; preserve
+the reviewed directory mask distinction and no-delete ancestry protection.
+
+This does not authorize modifying an existing ancestor or adopting a shared writable
+image/root. New protected job/image writers remain exactly Administrators/SYSTEM;
+new A/B controls add only their corresponding actual actor SID. Do not add a servicing
+writer to those new descriptors. Verify existing ancestry and exact handles without
+repair; create only the new job namespace and conserve application ACL policy. The
+original finite owner/deadline/secret/real-token/cleanup receipt contract remains.

@@ -78,3 +78,24 @@ Final receipt is strict `locron.windows-user-prerequisite/v1`, max **4 KiB**, wi
 Exact receipt top-level keys are `schema`, `source_sha`, `base_sha`, `workflow`, `run_id`, `run_attempt`, `target`, `os`, `compiler`, `example_sha256`, `runner_administrative`, `identities_distinct`, `actors`, `counts`, `cleanup`, `profile_disposition`, `elapsed_ms`, `failure`. `os` contains only `{sku,build,image}`; `actors` is ordered A then B, each `{label,primary_tokens_match,users_only,root_exit_zero,tree_live_negative_confirmed,tree_empty_confirmed,stdout_eof,stderr_eof,outer_exit_zero}`; `counts` is `{created,executed,removed}`. `cleanup` is `confirmed` or `unknown`; `failure` is null only for confirmed full success, otherwise a fixed nonprivate enum (`preflight`, `account`, `credential_start`, `token`, `protocol`, `containment`, `deadline`, `cleanup`, `native_owner_unknown`). Receipt source/run/OS strings have explicit small length limits, not arbitrary environment or error dumps; all bool/count claims derive from actual retained observations. A partial failure receipt can report its known counts and unknown cleanup, but cannot satisfy the expected success contract.
 
 The bounded budgets, dependency edge and runspace ABI above are selected. Root reviews this completed plan and records Issues #27/#29 prerequisite Verify before handing separate development the exact five allowed paths. The two manual native rows qualify only this prerequisite at their exact SHA. Hosted x64 Server and tool-rich Win11 ARM results remain distinct from clean standard-user Win11 application acceptance. The remaining 12-case privacy/IPC design stays a later phase.
+
+
+### Existing servicing ancestry versus new fixture writers (2026-10-04)
+
+Before accepting an existing servicing ancestor in Source, distinguish its trust from
+the new fixture DACL. Reviewed application5585936 core filesystem.rs Windows constants
+and stock.rs TRUSTED/verify_descriptor already recognize SYSTEM, Administrators and the
+fixed Windows TrustedInstaller SID
+S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464. Select that same fixed
+servicing trust for read-only validation of existing local Program Files/Windows ancestry:
+owner and actual mutation ACEs may belong only to those trusted identities. Reparse,
+unknown owner/ACE or other actual object/retained-child mutation refuses. Directory
+sibling creation is distinct from mutation of the retained existing object; preserve
+the reviewed directory mask distinction and no-delete ancestry protection.
+
+This does not authorize modifying an existing ancestor or adopting a shared writable
+image/root. New protected job/image writers remain exactly Administrators/SYSTEM;
+new A/B controls add only their corresponding actual actor SID. Do not add a servicing
+writer to those new descriptors. Verify existing ancestry and exact handles without
+repair; create only the new job namespace and conserve application ACL policy. The
+original finite owner/deadline/secret/real-token/cleanup receipt contract remains.
