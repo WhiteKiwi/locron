@@ -1808,6 +1808,13 @@ mod tests {
 
     fn fresh_paths() -> (tempfile::TempDir, StatePaths) {
         let dir = tempfile::tempdir().expect("tempdir");
+        #[cfg(windows)]
+        let paths = {
+            let guard = locron_core::filesystem::DirectoryGuard::private(&dir.path().join("state"))
+                .expect("private state root");
+            StatePaths::new(guard.normalized_path().to_path_buf())
+        };
+        #[cfg(not(windows))]
         let paths = StatePaths::new(dir.path().to_path_buf());
         (dir, paths)
     }

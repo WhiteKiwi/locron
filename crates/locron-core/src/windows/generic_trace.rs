@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 use std::io;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -56,9 +57,56 @@ fn source_with_policy(script: &str, restricted: bool) -> String {
     )
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum DeliveryEvent {
+    ResultComputed,
+    DiagnosticEntry,
+    DiagnosticExit,
+    FunctionReturn,
+    ExternalSendEntry,
+    ExternalSendExit,
+    ExternalReceiveEntry,
+    ExternalReceiveReady,
+    ExternalReceiveTimeout,
+    ExternalReceiveDisconnected,
+}
+
+const DELIVERY_EVENTS: [&str; 10] = [
+    "result-computed",
+    "diagnostic-entry",
+    "diagnostic-exit",
+    "function-return",
+    "external-send-entry",
+    "external-send-exit",
+    "external-receive-entry",
+    "external-receive-ready",
+    "external-receive-timeout",
+    "external-receive-disconnected",
+];
+
+impl DeliveryEvent {
+    const fn index(self) -> usize {
+        match self {
+            Self::ResultComputed => 0,
+            Self::DiagnosticEntry => 1,
+            Self::DiagnosticExit => 2,
+            Self::FunctionReturn => 3,
+            Self::ExternalSendEntry => 4,
+            Self::ExternalSendExit => 5,
+            Self::ExternalReceiveEntry => 6,
+            Self::ExternalReceiveReady => 7,
+            Self::ExternalReceiveTimeout => 8,
+            Self::ExternalReceiveDisconnected => 9,
+        }
+    }
+}
+
 pub(super) struct Trace {
     entered: Instant,
     stages: Mutex<VecDeque<(&'static str, u32, u128)>>,
+    delivery_enabled: AtomicBool,
+    delivery_times: [AtomicU64; DELIVERY_EVENTS.len()],
+    delivery_counts: [AtomicU64; DELIVERY_EVENTS.len()],
 }
 
 impl Trace {
@@ -75,7 +123,44 @@ impl Trace {
         Self {
             entered: Instant::now(),
             stages: Mutex::new(VecDeque::with_capacity(24)),
+            delivery_enabled: AtomicBool::new(false),
+            delivery_times: std::array::from_fn(|_| AtomicU64::new(0)),
+            delivery_counts: std::array::from_fn(|_| AtomicU64::new(0)),
         }
+    }
+
+    pub(super) fn enable_delivery(&self) {
+        self.delivery_enabled.store(true, Ordering::Release);
+    }
+
+    pub(super) fn delivery_event(&self, event: DeliveryEvent) {
+        if !self.delivery_enabled.load(Ordering::Acquire) {
+            return;
+        }
+        let index = event.index();
+        let micros = u64::try_from(self.entered.elapsed().as_micros())
+            .unwrap_or(u64::MAX)
+            .saturating_add(1);
+        self.delivery_times[index].store(micros, Ordering::Release);
+        self.delivery_counts[index].fetch_add(1, Ordering::Release);
+    }
+
+    pub(super) fn delivery_snapshot(
+        &self,
+    ) -> [(&'static str, u64, Option<u64>); DELIVERY_EVENTS.len()] {
+        std::array::from_fn(|index| {
+            let count = self.delivery_counts[index].load(Ordering::Acquire);
+            let micros = self.delivery_times[index].load(Ordering::Acquire);
+            (
+                DELIVERY_EVENTS[index],
+                count,
+                if count == 0 {
+                    None
+                } else {
+                    micros.checked_sub(1)
+                },
+            )
+        })
     }
 
     pub(super) fn record(&self, phase: &'static str, pid: u32) {
@@ -100,11 +185,13 @@ impl Trace {
     }
 
     pub(super) fn report(&self, phase: &'static str) {
+        self.delivery_event(DeliveryEvent::DiagnosticEntry);
         self.record(phase, 0);
         if let Ok(stages) = self.stages.try_lock() {
             // Fixed names/counters only. Raw exception stderr stays in the existing error result.
             eprintln!("locron generic adapter phases: {stages:?}");
         }
+        self.delivery_event(DeliveryEvent::DiagnosticExit);
     }
 
     #[cfg(test)]
