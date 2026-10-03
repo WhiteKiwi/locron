@@ -2,10 +2,12 @@
 """Offline tests for paired Windows package evidence coherence."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import windows_release
 
@@ -49,6 +51,24 @@ def rustc(target):
         "release: 1.94.0",
         "LLVM version: 21.1.0",
     ])
+
+
+class BoundedReader:
+    def __init__(self, stream, limit, reads):
+        self.stream, self.limit, self.reads = stream, limit, reads
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return self.stream.__exit__(*args)
+
+    def read(self, size=-1):
+        if not isinstance(size, int) or not 0 <= size <= self.limit:
+            raise AssertionError(f"unbounded artifact read: {size}")
+        value = self.stream.read(size)
+        self.reads.append((size, len(value)))
+        return value
 
 
 class PairedEvidence(unittest.TestCase):
@@ -138,9 +158,96 @@ class PairedEvidence(unittest.TestCase):
             "run_attempt": RUN_ATTEMPT,
         }
 
+    def audit_reads(self, limits, reads):
+        real_open = Path.open
+        def opened(path, *args, **kwargs):
+            stream = real_open(path, *args, **kwargs)
+            if path in limits:
+                return BoundedReader(stream, limits[path], reads.setdefault(path, []))
+            return stream
+        return opened
+
+    def stale_size(self, path):
+        real_stat = Path.stat
+        def observed(item, *args, **kwargs):
+            facts = real_stat(item, *args, **kwargs)
+            if item == path:
+                values = list(facts)
+                values[6] = 0
+                return os.stat_result(values)
+            return facts
+        return observed
+
     def test_exact_x64_arm64_pair_matches_current_context(self):
         result = paired.verify(self.root, self.expected())
         self.assertEqual(set(result), set(paired.TARGETS))
+
+    def test_oversized_json_refuses_with_bounded_read_before_decode_or_parse(self):
+        # The first sorted architecture record must refuse before any JSON parse.
+        path, _ = self.read(paired.TARGETS[1])
+        limit = 128 * 1024
+        path.write_bytes(b"\xff" * (limit + 1))
+        reads = {}
+        with patch.object(Path, "stat", new=self.stale_size(path)), \
+                patch.object(Path, "open", new=self.audit_reads({path: limit + 1}, reads)), \
+                patch.object(Path, "read_bytes", side_effect=AssertionError("whole-file JSON read")), \
+                patch.object(paired.json, "loads", side_effect=AssertionError("oversized JSON parsed")):
+            with self.assertRaisesRegex(ValueError, "exceeds 128 KiB"):
+                paired.verify(self.root, self.expected())
+        self.assertEqual(reads, {path: [(limit + 1, limit + 1)]})
+
+    def test_exact_limit_json_is_accepted(self):
+        target = paired.TARGETS[0]
+        path, value = self.read(target)
+        raw = json.dumps(value).encode("utf-8")
+        path.write_bytes(raw + b" " * (128 * 1024 - len(raw)))
+        result = paired.verify(self.root, self.expected())
+        self.assertEqual(set(result), set(paired.TARGETS))
+
+    def test_oversized_zip_refuses_before_whole_file_read(self):
+        target = paired.TARGETS[0]
+        archive = self.directory(target) / f"locron-v{VERSION}-{target}.zip"
+        with archive.open("r+b") as stream:
+            stream.truncate(64 * 1024 * 1024 + 1)
+        real_read = Path.read_bytes
+        def reject_zip_read(path):
+            if path == archive:
+                raise AssertionError("whole-file ZIP read")
+            return real_read(path)
+        with patch.object(Path, "read_bytes", new=reject_zip_read):
+            with self.assertRaisesRegex(ValueError, "oversized Windows archive"):
+                paired._record(self.directory(target))
+
+    def test_oversized_zip_with_stale_size_refuses_after_bounded_read_before_hash(self):
+        target = paired.TARGETS[0]
+        archive = self.directory(target) / f"locron-v{VERSION}-{target}.zip"
+        limit = 64 * 1024 * 1024
+        # Leave bytes beyond the refusal byte unread, as a growing input could.
+        with archive.open("r+b") as stream:
+            stream.truncate(limit + 8192)
+        reads = {}
+        with patch.object(Path, "stat", new=self.stale_size(archive)), \
+                patch.object(Path, "open", new=self.audit_reads({archive: limit + 1}, reads)), \
+                patch.object(Path, "read_bytes", side_effect=AssertionError("whole-file artifact read")), \
+                patch.object(windows_release.hashlib, "sha256", side_effect=AssertionError("oversized ZIP hashed")):
+            with self.assertRaisesRegex(ValueError, "archive exceeds its byte limit"):
+                paired._record(self.directory(target))
+        self.assertEqual(reads, {archive: [(limit + 1, limit + 1)]})
+
+    def test_valid_archives_use_one_bounded_snapshot_each(self):
+        archives = {
+            self.directory(target) / f"locron-v{VERSION}-{target}.zip"
+            for target in paired.TARGETS
+        }
+        limit = 64 * 1024 * 1024
+        reads = {}
+        with patch.object(Path, "open", new=self.audit_reads({path: limit + 1 for path in archives}, reads)), \
+                patch.object(Path, "read_bytes", side_effect=AssertionError("whole-file artifact read")):
+            result = paired.verify(self.root, self.expected())
+        self.assertEqual(set(result), set(paired.TARGETS))
+        self.assertEqual(set(reads), archives)
+        for path, calls in reads.items():
+            self.assertEqual(calls, [(limit + 1, path.stat().st_size)])
 
     def test_every_shared_build_identity_must_match(self):
         changes = {

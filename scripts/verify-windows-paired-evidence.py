@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Verify that the two paired Windows package artifacts form one coherent CI build."""
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -39,7 +38,8 @@ def _unique_object(pairs):
 
 
 def _load(path):
-    raw = path.read_bytes()
+    with path.open("rb") as stream:
+        raw = stream.read(128 * 1024 + 1)
     if len(raw) > 128 * 1024:
         raise ValueError("paired verification document exceeds 128 KiB")
     try:
@@ -185,9 +185,6 @@ def _record(directory):
     expected_name = f"locron-v{value['version']}-{target}.zip"
     if len(zips) != 1 or zips[0].name != expected_name:
         raise ValueError("paired artifact directory must contain one exact ZIP")
-    actual = hashlib.sha256(zips[0].read_bytes()).hexdigest()
-    if actual != digest:
-        raise ValueError("paired ZIP bytes differ from verification digest")
     static = windows_release.inspect_archive(
         zips[0], f"v{value['version']}", target, paired=True, expected_sha256=digest
     )
