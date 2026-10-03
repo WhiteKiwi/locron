@@ -4557,3 +4557,32 @@ Sources: [PowerShell 5.1 member and getter semantics](https://learn.microsoft.co
 [Framework MainModule getter](https://github.com/microsoft/referencesource/blob/main/System/services/monitoring/system/diagnosticts/Process.cs#L441),
 [MainModule availability](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.mainmodule?view=netframework-4.8.1),
 [process-handle and identifier lifetime](https://learn.microsoft.com/en-us/windows/win32/procthread/process-handles-and-identifiers).
+
+### GUI companion entry and bounded probe refinement (2026-10-03)
+
+Microsoft documents CONOUT$ as the active console-screen-buffer device even when ordinary
+stdout is redirected. Its CreateFileW console contract requires an attached process but does
+not guarantee an exact error for an unattached caller. OPEN_EXISTING's generic missing-device
+raw-2 rule cannot settle that console-specific behavior. GUI processes start without console
+attachment, whereas an explicit CREATE_NEW_CONSOLE control can give a console process a separate
+console. Preserve raw facts as opened:boolean/error:i32|null, success/null versus failure/nonzero;
+never convert a failed open into an attachment assertion. Missing raw code/zero errors refuse
+probe output. Actual PE subsystem 2/3, native GUI/DETACHED_PROCESS absence-code controls and a
+real successful console control remain independent hosted gates; unrelated permission/sharing
+errors cannot qualify headless operation. The exact absence code remains a native qualification
+fact, not an API guarantee.
+Sources: [Console device handles](https://learn.microsoft.com/en-us/windows/console/console-handles),
+[OPEN_EXISTING and sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[GUI and explicit console creation](https://learn.microsoft.com/en-us/windows/console/creation-of-a-console).
+
+Cargo required-features can keep the companion out of ordinary builds, and default-run preserves
+the existing console selection when the explicit companion feature is present. Rust's
+windows_subsystem attribute selects the Windows GUI image without changing the primary command.
+The proposed sole --version line and exact <=4 KiB locron.windows-launcher-probe/v1 JSON object
+are bounded read-only metadata/entry facts, not file ownership or automatic activation proof.
+One owned worker contains potentially blocking console-open/stdout work under the pre-worker
+30-second entry deadline; expiry cannot join unfinished I/O or infer a timely success from
+queued bytes. Native classification, timeout and package-pair qualification are still pending.
+Sources: [Cargo target feature admission](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-required-features-field),
+[Default command selection](https://doc.rust-lang.org/cargo/reference/manifest.html#the-default-run-field),
+[Rust Windows subsystem](https://doc.rust-lang.org/reference/runtime.html#the-windows_subsystem-attribute).

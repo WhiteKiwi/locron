@@ -1518,6 +1518,64 @@ guards through its entire lifetime. Propagate its genuine i32 status, including 
 infrastructure failure is direct 70 without a public renderer or unfinished-worker join. The
 launcher neither owns the daemon/dashboard lock nor adds a second four-start retry policy.
 
+The thin companion entry is an explicit second [[bin]] in the existing CLI package, with
+required-features = [windows-service-launcher] and default-run = locron. The feature is absent
+from default features. Its crate-root cfg_attr(windows, windows_subsystem = "windows") applies
+only to that image; ordinary CLI and non-Windows default builds remain unchanged. Capture its
+original startup Instant before SID, path, runtime or registration work. The first owned worker
+operation opens only the reserved CONOUT$ device read-only with OPEN_EXISTING and compatible
+read/write sharing, then closes that handle. Record only raw open/error facts: success requires
+opened=true/error=null; failure requires opened=false/an actual nonzero i32 OS error. Errors
+without an actual nonzero raw code refuse without emitting a probe object. A failed open never
+becomes a boolean claim about attachment, and primary APIs do not guarantee the unattached
+error code. No AttachConsole, AllocConsole or GetConsoleWindow path is introduced. Native GUI
+and attached/detached console controls must establish the actual expected absence code; unrelated
+permission/sharing/path failures refuse qualification and cannot authorize role dispatch.
+
+Freeze the read-only modes as sole --version and sole --identity-probe. Version emits exactly
+locron-service-launcher <workspaceVersion> followed by one newline. Identity emits one strict
+JSON object with exactly schema=locron.windows-launcher-probe/v1, version, target,
+launcher_abi=native-gui-v1, initial_conout_opened:boolean and initial_conout_error:i32|null,
+with no extra/trailing bytes. Support only the documented native x64/ARM64 MSVC release targets.
+The target fact derives from actual target_arch and target_env; unsupported targets refuse
+probes, and an unsupported GNU build never advertises MSVC. These are actual process/first-entry
+facts plus compiled release metadata, not receipt ownership, file-ID authentication, successful
+registration or an activation witness. The caller must independently verify guarded pair bytes,
+versions and actual PE subsystem.
+Neither probe discovers/creates state, queries SID, connects to an activation pipe or starts a
+child. Keep serialized output <=4 KiB and all worker/output work under its original 30-second
+startup deadline, captured before the worker is admitted. Expired/uncancellable output is a
+direct 70 refusal with retained worker ownership until process exit, never timely success
+inferred from queued bytes. Version stdout uses the same finite worker/deadline.
+
+The role mode accepts only the fixed ordered state-dir, role and optional run-capability
+arguments. Its parser errors never render argv or raw capability bytes; reject extra/duplicate
+options or trailing data with the fixed invalid-arguments exit. The service-owned standalone
+windows_activation_wire models/validators supply the exact capability/Hello/Permit/Child/Seal
+ABI to both bins, with no dependency on service.rs or a public renderer. Do not wire an
+unavailable consumer or synthesize a success path. Only the existing reviewed timely Permit
+and actual peer/child/lifetime seal admit child dispatch or witness construction.
+
+Verify: Cargo metadata exposes the required-features gate and default-run=locron; ordinary
+builds/default cargo run select the console command. Explicit feature builds the same-version
+GUI target on native x64/ARM64/MSRV. Independent PE inspection plus
+the real first-entry CONOUT$ fact establish the entry policy. Strict parsing exercises missing,
+duplicate, reordered, invalid-Unicode option/role/capability and secret-bearing extra arguments
+with no raw secret in errors/output; state paths remain OsString data under the existing guarded
+path policy. Test strict success/null versus failure/nonzero raw facts, non-OS/zero-error refusal,
+and qualification's rejection of unrelated raw-3/5/32 errors. Native real GUI and separately
+owned DETACHED_PROCESS console helpers must establish the actual absent-device error; an owned
+CREATE_NEW_CONSOLE helper must observe a real successful CONOUT$ open. Preserve those exact raw
+receipts; neither error equality alone nor a failed open proves attachment/visible-window geometry.
+Inspect actual mapped PE 2/3 independently; no error swallowing or GetConsoleWindow surrogate
+is permitted. Owned probes keep no state/task/PATH
+mutations, emit the exact finite schema and refuse stalled/late output under the original bound.
+Run the required feature-gated Windows launcher semantic target serially on all three existing
+native rows after cold Core succeeds; keep the cold gate, existing job names and independent
+service/library conditions. The distribution owner's native package checks separately consume
+these exact two read-only modes and verify the full installed pair. Producer/service effects
+remain separately held until native runtime qualification and the shared wire ABI/source review.
+
 Read back one versioned action: Path is the guarded companion; Arguments is exactly generated
 `--state-dir "<recorded root>" --role daemon|dashboard --run-capability "v1:$(Arg0)"`; and
 WorkingDirectory is the recorded guarded root. Use the existing exact native argv escaping,
