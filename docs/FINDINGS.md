@@ -5120,3 +5120,41 @@ errors were removed. Accepted main through #129 contributes staged APIs and test
 beyond the earlier29-diagnostic baseline. These warnings remain denied and outside this
 single-helper correction. The87 measured integration failures, distinct Core admission/Server
 WAL-reopen observations, stock-crash heartbeat work and public acceptance remain open.
+
+### Native integration positive-root research and new Store initialization failure (2026-10-04)
+
+Head302b1bf full run37145285065 reaches301 CLI unit cases, all passing on native x64 stable,
+ARM64 stable and x64 Rust1.94, zero ignored/filtered. The previously failing ten MCP cases
+now reach their unchanged definition/queue assertions; no scheduled child is exercised there.
+It next reaches71 CLI integration cases,12 passed/59 failed on each architecture/compiler.
+Complete logs print private-root refusals and the Windows `locron.exe` help basename. Cargo
+then stops; this does not qualify later binaries. Both full Clippy rows retain41 CLI diagnostics.
+
+Separate read-only research pins the four CLI/dashboard/feedback/service integration files to
+the earlier measured543 source. Those blobs remain exact through302 ande4d2ca1. The earlier
+complete run37140952254 records102 cases in these files,31 passed/71 failed;59 errors actually
+print the private-directory refusal. A positive TempDir inherited broad Windows permissions,
+while the existing DirectoryGuard::private API can create a missing private child. Setup should
+normalize that child and release guards before subprocesses, keeping TempDir cleanup ownership.
+The constructor inventory distinguishes state roots from discovery working directories,
+advisory inputs, ordinary fake-manager JSON/log parents and intentionally absent paths. Dry-run
+root-empty/DB-absence tests must not preseed state. Stored token bytes need private-new creation;
+the manual-owner positive needs a genuine Windows DaemonLock and its owner metadata, rather
+than a broad plain File lock. Existing missing-token/status refusal paths remain absent.
+Feedback's extensionless `bin/http` placeholder is advisory-only: execution.rs checks the exact
+file before PATHEXT candidates, so a new PE/extension requirement is not supported by the source.
+
+Remaining POSIX execution fixtures, target display expectations and wake.sock readiness need
+their own selected equivalence plan. A held lock precedes engine wake binding and cannot prove
+a named-pipe endpoint or ACK. Native send_wake can consume a separate30-second identity budget;
+calling it inside a5-second fixture would not preserve that fixture's original bound. The
+[positive-fixture plan](planning/WINDOWS_INTEGRATION_PRIVATE_FIXTURES_2026-10-04.md) therefore
+changes only five test files and three help basename expectations before measuring downstream.
+
+Ordinary302 run37145289162 passes15 actual rows and fails x64 stable job111267842987. Its
+two dashboard-exit cases stop at windows_lifecycle.rs48 Store fixture initialization, before
+dashboard exit. The actual diagnostic is operation=2, stage=sqlite-configure-wal, category=io,
+kind=TimedOut, raw_os=None, followed by SQLite configuration deadline elapsed. Its cause remains
+unconfirmed; the distinct earlier Server SQLITE_PROTOCOL15 reopen failure is preserved under
+Issue #25. Neither this positive-root correction nor an unrelated later pass repairs that
+observed required-gate failure. No unchanged rerun, timeout increase or broad retry is selected.

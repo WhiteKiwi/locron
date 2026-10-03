@@ -5002,3 +5002,29 @@ then publishes fresh ordinary CI and the original five full native rows. Ten int
 assertions must actually run and pass on x64 stable, ARM64 stable and x64 Rust1.94; any newly
 reached integration/lint failure is retained. Separate stock-crash, integration, Core/Server
 and public distribution work remain outside this slice and keep their unfinished Verify gates.
+
+### Native integration positive setup and platform help expectations (2026-10-04)
+
+Continue #31 under the [private-fixture plan](planning/WINDOWS_INTEGRATION_PRIVATE_FIXTURES_2026-10-04.md).
+FINDINGS records the newly reached301-pass CLI unit binary,71-case integration failure and
+independent required x64 Store-initialization timeout. Frozen SPEC and production privacy stay
+unchanged. The parent reviews docs and exact Issue Verify readback before separate development.
+
+Use one narrow test helper to retain TempDir cleanup while exposing a newly created guarded
+private Windows child. Capture its normalized path and drop setup guards before child execution;
+Unix keeps its original root. Adopt only selected state-bearing factories in CLI/feedback and
+five dashboard positive cases. Keep advisory/discovery inputs, fake-manager parents and absent
+paths separate. Use the existing private-new helper for stored tokens. The Windows manual-owner
+positive creates real DaemonLock/current-PID/unique-lifetime metadata on its fresh private root
+and retains that lock through fake install; Unix's original setup remains. Only three help
+expectations change their Windows basename to locron.exe, retaining all canonical assertions.
+
+Source is limited to four existing integration files and one shared private_state helper. Keep
+all original case names, counts, negative contracts, dry-run absence/redaction/order checks and
+deadlines. No production change, dependency, workflow, skip or warning allowance is selected.
+Parent verifies exact inverse transformations and every other tracked blob, then publishes
+fresh ordinary/full native results and complete per-binary discovery on the separate temporary
+verification branch. Report downstream assumptions instead of masking failures or claiming all
+102 integration cases are repaired. Real process/shell/wake equivalence, Store timeout/reopen,
+stock-crash publication, actual two-user/registered-task and public distribution acceptance keep
+their distinct plans and unfinished Verify criteria. No owner-PC effectful operation is selected.
