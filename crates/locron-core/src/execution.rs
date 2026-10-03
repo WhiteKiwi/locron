@@ -251,7 +251,10 @@ pub fn validate_direct_executable(executable: &Path) -> Result<(), String> {
 fn is_ambiguous_windows_path(path: &Path) -> bool {
     !path.is_absolute()
         && (path.has_root()
-            || matches!(path.components().next(), Some(std::path::Component::Prefix(_))))
+            || matches!(
+                path.components().next(),
+                Some(std::path::Component::Prefix(_))
+            ))
 }
 
 /// Resolves only the effective PATH/PATHEXT, relative entries being based on job cwd.
