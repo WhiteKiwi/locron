@@ -4922,3 +4922,27 @@ commands and ordinary protected PR checks on the next exact head. Preserve any n
 runtime failure in #31 instead of widening cfgs, adding allow/ignore, or changing deadlines.
 Existing component/GUI/distribution gates remain separately required. Frozen SPEC and first
 unsigned-release/signing policy remain unchanged; compile success is not full support evidence.
+
+### Native runtime-fixture correction and bounded timing evidence (2026-10-04)
+
+Continue #31 through [the measured follow-up plan](planning/WINDOWS_RUNTIME_FIXTURE_FOLLOWUP_2026-10-04.md).
+Research distinguishes invalid managed-root setup, shared test-owner interference and a real
+field-help omission from unmeasured production faults. Keep Unix MCP setup exact and create a
+missing guarded private Windows child. Isolate only five Gate parent fixtures before setup and
+deadline creation; retain actual release and the uncertain case's internal second refusal.
+Add the hidden supervise field's description, and match seven backend helpers/imports/Drop to
+their existing macOS/Linux consumers while preserving Windows reporting cases. Keep all other
+CLI staged-code lint diagnostics visible rather than broadening this handoff.
+
+For the independent Core stall failure, add fixed-size lock-free in-memory observation of the
+test-only result/diagnostic/return/send/receive interval. Leave the production adapter, original
+timed receives, trace output ordering, native stalled read/retention, second refusal, late-work
+and cleanup assertions intact. Event output belongs after known delivery/cleanup or the existing
+failed receive message, never synchronously added to timed delivery. This is diagnostic Source;
+one passing observation cannot retrospectively establish the failed run's cause.
+
+Parent reviews docs and exact issue Verify readback before seven Source files are handed to a
+separate development session. Reconcile accepted current-main changes without altering reviewed
+patches, then collect fresh normal protected CI and five full native rows on the final exact head.
+The unchanged-source no-fail-fast verification branch remains separate evidence. Preserve all
+old/new failures and unfinished native/public-release scope; no owner-PC effectful acceptance.
