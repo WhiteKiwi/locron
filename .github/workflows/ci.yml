@@ -74,6 +74,15 @@ jobs:
         run: cargo check --workspace --locked
       - name: Verify cold core contracts with isolated fault fixtures
         run: cargo test -p locron-core --lib --locked -- --test-threads=1
+      - name: Verify isolated stock adapter policy and parent containment
+        shell: pwsh
+        run: |
+          foreach ($proofMode in @('restricted-driver', 'parent-exit-driver')) {
+            $env:LOCRON_STOCK_LOADER_FIXTURE = $proofMode
+            Write-Output "Isolated stock adapter proof: $proofMode"
+            cargo test -p locron-core --lib --locked windows::loader_tests::owned_loader_fixture_child -- --exact --nocapture --test-threads=1
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Verify durable store library contracts
         run: cargo test -p locron-store --lib --locked
       - name: Diagnose the stock Windows adapter after cold contracts
