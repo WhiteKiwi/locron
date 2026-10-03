@@ -93,6 +93,10 @@ mod windows_launch_transport;
 #[path = "windows_launch_gate.rs"]
 mod windows_launch_gate;
 
+#[cfg(all(windows, test))]
+#[path = "windows_paired_receipt.rs"]
+mod windows_paired_receipt;
+
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";
