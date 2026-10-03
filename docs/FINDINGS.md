@@ -3633,6 +3633,23 @@ new-root creation, adoption and deletion remain held.
 [pinned fs_at source](https://docs.rs/fs_at/0.2.1/src/fs_at/win.rs.html),
 [native create dispositions](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile).
 
+The held GUI proposal changes a service binding from one image to an exact console/launcher
+pair; the previously qualified pure version-one record cannot describe that pair or a sealed
+Run context. The proposed service record therefore uses an unpublished version-two schema and
+keeps native ownership distinct from decoding. A GUID-only hint or a first authenticated
+launcher connection is insufficient: the producer must durably observe the sole SDK Run GUID
+before sending a remaining-budget Permit for actual hidden child creation. Runtime's proposed
+consumer receives only a service-minted Serialize-only witness after the second kernel peer and
+held supervisor lease/control proof. No raw capability or arbitrary PID is recovery authority.
+
+The exact fixed JSON ActivationFact (context/digest, three UUID options and unknown_start) has
+a 317-byte maximum versus null's four bytes. The optional RuntimeFacts witness (context/digest,
+Scheduler GUID and maximum u32 launcher PID) has a 212-byte maximum versus null's four bytes.
+These pure schema counts do not prove a complete record or the sixteen-KiB facts object fits;
+actual typed full-object reservation/serialization and native handshake gates remain required.
+The two-image record/consumer/producer refinement is planning only, dependent on complete GUI
+and private Project review. It does not qualify source, activation or fresh-root effects.
+
 The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
 inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject

@@ -1844,6 +1844,85 @@ the native record filter actually runs every pure fixture and the owned binding 
 equal bytes on a different object. Qualification of these pure facts never claims COM effects,
 activation, fresh registration, rollback or live ownership; production wiring awaits those consumers.
 
+### Typed activation facts and complete restoration capacity
+
+The earlier version-one/GUID-only candidate is superseded by the source-held GUI/witness
+proposal at bdbd02fc. Freeze the service producer's concrete refinement before any effect source:
+
+- ServiceRestoreRecord version two stores previous and optional next ExecutablePair objects,
+  each with exactly console and launcher ExecutableBindings (normalized path plus full volume
+  and file ID). Both names are fixed siblings, locron.exe and locron-service-launcher.exe.
+  Reject missing/extra/same-object members and old single-image schema; there is no published
+  Windows baseline to adopt. The live owner additionally verifies both bytes, PE architecture/
+  subsystem, package version and launcher ABI. Pure decoding never supplies those native facts.
+  Existing console path/identity readbacks keep their meaning; add typed previous/next launcher
+  path and full-ID readbacks. same_original and validate_successor bind the ordered pair as well
+  as every existing original role fact, and a once-set next pair/fingerprint remains immutable.
+- Each originally enabled role may gain one ActivationFact with exactly context, digest,
+  observed_instance, unknown_start, confirmed_instance and lifetime. Context is a fresh canonical
+  nonnil UUID, digest is 64 lowercase hex; the existing GUID/lifetime rules stay unchanged.
+  Reserve distinct contexts across roles. RunIntent sets only context/digest; UUID observations
+  are null and unknown_start is false. Neither raw capability nor a claimed process PID is
+  serialized in this record. Disabled roles always retain null and never Run. Earlier ability
+  to confirm a different unrelated automatic GUID is removed: confirmation must carry the same
+  authenticated operation context/digest. Lost-before-auth intent remains pending, never replayed.
+- The digest domain is locron-activation/v1 followed by a NUL and unambiguous length-framed
+  operation UUID, context UUID, verified SID, full state volume/file identity, fixed role and
+  32 freshly generated OS-random nonce bytes. It binds the caller's operation and root, rather
+  than only a task GUID. Raw context:nonce Run data exists only in the live producer/transport;
+  no Debug/error/log/journal/fact path may render it. Entropy failure refuses before RunIntent.
+- ServicesReadyToActivate retains both verified future images, every existing root and the
+  validated registrations after refresh/enable readback. activate_roles consumes that owner,
+  the canonical operation UUID and one owned Send + 'static persist callback. Its thirty-second
+  phase deadline starts before SID/COM/pipe/native work. Close the phase's sole generic/COM
+  session before returning to distribution's registry/PATH/package operations; callbacks only
+  serialize and flush the already-owned Rust journal, never recurse into PowerShell/COM.
+- Persist intent, invoke SDK Run once, persist its actual nonnil GUID, then authorize the GUI
+  child through the protected first-instance pipe. The first actual kernel peer PID/capability
+  exchange alone cannot spawn the supervisor. A timely Permit follows durable SDK observation
+  and exact owned-task/single-instance readback. Its remaining duration shortens the launcher's
+  pre-SID entry deadline (entry plus duration, never receipt time plus a fresh duration).
+  Preserve the raw fixed action's v1: data parser and both guarded executable identities.
+  Launcher then owns the exact hidden Child; the second kernel peer PID must match that live
+  retained child and its newly held supervisor activation/control UUID. No claimed PID or CLI
+  scheduler-instance text substitutes. Expiry/unknown native completion admits no newly
+  dispatched Run, child, callback or replay, and retains quarantined ownership rather than
+  joining it. An already queued native effect can finish late and remains uncertain.
+- Expose only service-owned authenticate_supervisor(paths, role, actual_supervisor_lifetime,
+  optional untrusted private-stdin Bootstrap, original Instant) returning
+  Result<Option<AuthenticatedActivation>, ServiceError>. Absence is unwitnessed startup.
+  Bootstrap stays bounded to 1 KiB and is never an authority value. AuthenticatedActivation is
+  Clone/Debug/Serialize only, with private fields and no Deserialize/public constructor; only
+  the timely live exchange and matching held lease mint Some. Its serialized fields are exactly
+  context, digest, scheduler_instance and actual launcher_pid. Runtime stores this immutable
+  optional value within its existing finite I/O/lifecycle owner and 16 KiB RuntimeFacts; pure
+  protected-fact decoding remains a different readback type and cannot mint authentication.
+- Keep S <=4R+2: Restoring entry, four ordered refresh/enable intent/result edges per role and
+  terminal Activating with every fact null. A <=4E+2: unchanged Activating admission, at most
+  intent/SDK-observation/one-unknown/owned-confirmation per enabled role and terminal Restored.
+  Witness frames add no callbacks. Unknown is set at most once; confirmation does not erase it
+  or rewrite the observed GUID. Existing intent always selects readback, never another SDK Run.
+  Persist only one exact successor or unchanged admission; root/tree/role readiness is still
+  independent live proof. Pre-receipt old-byte rollback and post-receipt new-byte forward
+  activation remain mutually exclusive; post-receipt failure stays pending Restoring/Activating.
+- ServicePersistencePlan's checked max_record_bytes reserves the actual complete version-two
+  object, both future path maxima, all pair IDs/fingerprints, forced/progress fields and optional
+  activation facts. The fixed maximum fact object is 317 ASCII bytes, versus null's four;
+  the RuntimeFacts witness object is 212 bytes, versus null's four. These are schema checks,
+  never substitutes for serializing the complete typed worst object across every legal phase.
+  Preserve private record 128 KiB/frame 128 KiB limits, and consume the GUI proposal's checked
+  eight-leaf 140-frame/18 MiB outer reservation. Full preflight covers every repeated service
+  slot and the maximum legal forward/earlier rollback branch before any installed-state effect.
+
+Verify the actual typed v2 maximum/successor matrix, both high/low identity bits and sibling/path
+tampering, old-schema refusal, disabled/zero-role cases and every context/digest/GUID immutability
+edge. Native qualification must prove Permit-before-spawn (no marker before SDK persistence),
+actual two kernel peers/retained child/held control seal and manual valid-GUID refusal, plus lost
+pre-auth/no-replay and already-authenticated live recovery. Count actual callbacks and complete
+objects through both eight-leaf legal branches; overflow has zero effects. This refinement and
+the complete GUI proposal require parent/Project review before producer/model/consumer source;
+fresh-root creation/task rollback remains a separate held typed effect plan.
+
 Distribution must reserve all repeated service records, frame overhead, file/receipt/inventory
 transitions and the worst rollback path against the revised 140 frames/18 MiB before any task,
 registry or file mutation. Reserve the actual validated remaining path again at recovery entry.
