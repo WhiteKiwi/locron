@@ -2542,7 +2542,7 @@ mod tests {
         assert_eq!(plist.matches("<true/>").count(), 2);
         let log = format!(
             "<string>{}</string>",
-            home.join("Library/Logs/locron/daemon.log").display()
+            escape_xml(&home.join(LOG_DIR).join("daemon.log").display().to_string())
         );
         assert_eq!(plist.matches(&log).count(), 2);
         assert!(plist.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
@@ -2560,12 +2560,19 @@ mod tests {
         assert!(plist.contains("<string>serve</string>"));
         assert!(plist.contains("<string>--service-mode</string>"));
         assert!(plist.contains("<string>--state-dir</string>"));
-        assert!(plist.contains("<string>/Users/tester/state</string>"));
+        let state = escape_xml(&ctx.paths.as_ref().unwrap().root.display().to_string());
+        assert!(plist.contains(&format!("<string>{state}</string>")));
         assert!(!plist.contains("dev.locron.daemon"));
         assert!(!plist.contains("<string>daemon</string>\n    <string>run</string>"));
         let log = format!(
             "<string>{}</string>",
-            home.join("Library/Logs/locron/dashboard.log").display()
+            escape_xml(
+                &home
+                    .join(LOG_DIR)
+                    .join("dashboard.log")
+                    .display()
+                    .to_string()
+            )
         );
         assert_eq!(plist.matches(&log).count(), 2);
     }
@@ -2614,9 +2621,10 @@ mod tests {
         );
         let unit = render_unit(&ctx).unwrap();
         assert!(unit.contains("Description=locron web dashboard"));
-        assert!(unit.contains(
-            "ExecStart=\"/opt/locron/bin/locron\" --state-dir \"/home/tester/state\" dashboard serve --service-mode"
-        ));
+        let state = escape_systemd_path(&ctx.paths.as_ref().unwrap().root.display().to_string());
+        assert!(unit.contains(&format!(
+            "ExecStart=\"/opt/locron/bin/locron\" --state-dir \"{state}\" dashboard serve --service-mode"
+        )));
         assert!(!unit.contains("daemon run"));
         assert!(!unit.contains("locron scheduler daemon"));
     }
@@ -2819,7 +2827,7 @@ mod tests {
     #[test]
     fn install_defers_start_when_a_manual_daemon_holds_the_lock() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = StatePaths::new(tmp.path().to_path_buf());
+        let paths = StatePaths::new(tmp.path().join("private"));
         let _lock = DaemonLock::acquire(
             &paths.daemon_lock,
             &LockMetadata {
