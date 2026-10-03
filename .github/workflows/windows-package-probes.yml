@@ -1,0 +1,37 @@
+name: Bounded package probes
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-package-probes.yml'
+      - 'scripts/windows_probe.py'
+      - 'scripts/windows_release.py'
+      - 'scripts/test-windows-probe.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-package-probes.yml'
+      - 'scripts/windows_probe.py'
+      - 'scripts/windows_release.py'
+      - 'scripts/test-windows-probe.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bounded-package-probes-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bounded-probes:
+    name: Bounded package probes / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Verify real child capture and package integration
+        run: python -B scripts/test-windows-probe.py
