@@ -2352,6 +2352,18 @@ cross-bitness query or adapter error refuses qualification. The name query suppl
 check; the pre-launch guard interval is what connects the mapped image to the selected file.
 Neither current_exe, a reopened path/hash, an arbitrary process lookup nor Bootstrap alone proves
 that interval. No new raw FFI or runtime source compilation is required.
+The fixed script must read the Core adapter's parsed `$request.pid`, not its test-only raw
+stdin String. Require the supplied PID to be an Int32/Int64 in 1..Int32.MaxValue before conversion
+or process lookup; missing/null, text, Boolean, fractional, nonpositive and out-of-range values
+refuse. Invoke get_MainModule/get_FileName explicitly to preserve getter exceptions rather than
+letting PowerShell property access turn them into a misleading missing-module result. The parent
+still compares the returned PID with its retained Child and retains every live/guard/deadline
+check; the query occurs after actual Ready and receives only that phase's remaining budget.
+Verify this fixed-adapter boundary with malformed PID inputs and the unchanged real copied-child
+positive/exit/full-identity/retention cases on both native architectures. Source review identifies
+the input mismatch behind the 7871c983 run's 92/93 result; successful mapped-image qualification
+requires a fresh exact-revision native result. No query retry or fallback is part of this
+correction.
 
 Freeze a private locron.windows-helper-launch/v1 Challenge -> Ready -> Permit -> Qualified
 exchange on two private one-way byte pipes. Each strict, deny-unknown frame is at

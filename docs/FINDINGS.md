@@ -4522,3 +4522,38 @@ Sources: [pinned listener replacement](https://github.com/kotauskas/interprocess
 [mio native completion/drop ownership](https://github.com/tokio-rs/mio/blob/v1.2.2/src/sys/windows/named_pipe.rs),
 [asynchronous cancellation](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex),
 [server buffered-byte flush](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
+
+### Mapped-image query input binding (2026-10-03)
+
+PR #44 revision 7871c983, run 37095934375, exercised 93 distribution fixtures on each native
+architecture. Jobs 111125738916 (x64) and 111125738927 (ARM64) each passed 92 and failed only
+actual_copied_child_guard_overlap_and_terminal_eof_qualify_without_effects, with
+`stock Windows adapter failed: No initialized main module filename`. Both logs have zero ignored
+cases. The parent had already received the actual Ready frame before the image readback; these
+logs do not establish an executable-loader startup race or justify retrying the query.
+
+The fixed Core adapter's caller input is the parsed `$request` object. Its test-only diagnostic
+wrapper also keeps raw stdin in the String `$locronInput`. MODULE_QUERY instead reads
+`[int]$locronInput.pid`. A String has no pid property: documented PowerShell member access returns
+null for a missing property, and conversion to Int32 changes null to zero. The production wrapper
+does not define that raw-input variable either. This source-established mismatch therefore selects
+PID zero rather than the retained Child's actual PID. Framework reference source identifies zero
+as the idle process and rejects its module enumeration. PowerShell property access can also hide
+getter exceptions as null, explaining why the script's own missing-filename error loses the
+underlying module-query reason. The logs do not contain a sampled query PID; corrected native
+qualification remains pending.
+
+Select the existing parsed `$request.pid`, require an actual Int32/Int64 value in the positive
+Int32 range before conversion, and invoke the Framework module/filename getter methods explicitly
+so their exceptions remain refusals. Preserve one actual Child, live brackets, Ready ordering,
+continuous helper/ancestor guards, actual path/full identity/hash comparison and the original
+30-second deadline. A real missing module, exit, unsupported query or mismatch still refuses.
+No alternate path source, default PID, query retry, sleep or new phase budget is selected.
+
+Sources: [PowerShell 5.1 member and getter semantics](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_operators?view=powershell-5.1#member-access-operator-),
+[null-to-integer conversion](https://learn.microsoft.com/en-us/powershell/scripting/learn/deep-dives/everything-about-null#value-types),
+[Framework idle-process and module enumeration](https://github.com/microsoft/referencesource/blob/main/System/services/monitoring/system/diagnosticts/ProcessManager.cs#L432),
+[Framework MainModule getter](https://github.com/microsoft/referencesource/blob/main/System/services/monitoring/system/diagnosticts/Process.cs#L441),
+[MainModule availability](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.mainmodule?view=netframework-4.8.1),
+[process-handle and identifier lifetime](https://learn.microsoft.com/en-us/windows/win32/procthread/process-handles-and-identifiers).
