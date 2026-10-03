@@ -212,6 +212,15 @@ pub(in crate::windows) fn driver() {
     assert!(super::DISPATCHER.get().is_none());
     assert!(crate::windows::USER_SID.get().is_none());
     let deadline = Instant::now() + Duration::from_secs(40);
+    // Refuse an unrelated holder before attributing any sharing violation to this fixture.
+    crate::windows::remaining(deadline).unwrap();
+    let baseline = OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(crate::windows::stock_powershell().unwrap())
+        .unwrap();
+    crate::windows::remaining(deadline).unwrap();
+    drop(baseline);
     let directory = tempfile::tempdir().unwrap();
     let stdout = directory.path().join("stdout");
     let stderr = directory.path().join("stderr");
@@ -262,6 +271,7 @@ pub(in crate::windows) fn driver() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+    crate::windows::remaining(deadline).unwrap();
     let released = OpenOptions::new()
         .read(true)
         .share_mode(0)

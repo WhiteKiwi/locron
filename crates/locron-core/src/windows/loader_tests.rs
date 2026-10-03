@@ -126,16 +126,12 @@ fn actual_cold_sid_preserves_the_forwarded_qualification_deadline() {
 }
 
 #[test]
-fn private_worker_eof_retains_real_pending_io_and_stock_guards() {
-    isolated("eof-driver", "private-worker-eof-retained-io-confirmed");
-}
-
-#[test]
 fn owned_loader_fixture_child() {
     let Ok(mode) = std::env::var("LOCRON_STOCK_LOADER_FIXTURE") else {
         return;
     };
     match mode.as_str() {
+        "eof-release-driver" => isolated("eof-driver", "private-worker-eof-retained-io-confirmed"),
         "eof-driver" => super::filesystem_worker::eof_probe::driver(),
         "eof-helper" => super::filesystem_worker::eof_probe::helper(),
         "diagnostic-bootstrap" | "diagnostic-small" | "diagnostic-60k" => {
