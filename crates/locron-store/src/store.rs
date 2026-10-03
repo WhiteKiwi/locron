@@ -62,6 +62,68 @@ fn prepare_sqlite_leaf(
 }
 
 #[cfg(windows)]
+#[derive(Debug)]
+struct DatabaseAdmission<'a> {
+    file: &'a std::fs::File,
+    locked: bool,
+}
+
+#[cfg(windows)]
+impl<'a> DatabaseAdmission<'a> {
+    fn acquire_until(
+        file: &'a std::fs::File,
+        deadline: std::time::Instant,
+    ) -> std::io::Result<Self> {
+        use std::fs::TryLockError;
+        use std::time::Duration;
+
+        loop {
+            Self::remaining(deadline)?;
+            match file.try_lock_shared() {
+                Ok(()) => {
+                    let admission = Self { file, locked: true };
+                    Self::remaining(deadline)?;
+                    return Ok(admission);
+                }
+                Err(TryLockError::WouldBlock) => {
+                    let remaining = Self::remaining(deadline)?;
+                    std::thread::sleep(remaining.min(Duration::from_millis(10)));
+                }
+                Err(TryLockError::Error(error)) => return Err(error),
+            }
+        }
+    }
+
+    fn remaining(deadline: std::time::Instant) -> std::io::Result<std::time::Duration> {
+        deadline
+            .checked_duration_since(std::time::Instant::now())
+            .filter(|duration| !duration.is_zero())
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "SQLite database admission deadline elapsed",
+                )
+            })
+    }
+
+    fn release(mut self) -> std::io::Result<()> {
+        self.file.unlock()?;
+        self.locked = false;
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+impl Drop for DatabaseAdmission<'_> {
+    fn drop(&mut self) {
+        if self.locked {
+            // A preparation error also closes the enclosing retained database handle.
+            let _ = self.file.unlock();
+        }
+    }
+}
+
+#[cfg(windows)]
 struct SqlitePreparation {
     leaves: [locron_core::filesystem::GuardedFile; 3],
     fresh: bool,
@@ -80,6 +142,27 @@ impl SqlitePreparation {
             trace,
             create_private_new,
         )?;
+        let deadline = std::time::Instant::now()
+            .checked_add(std::time::Duration::from_secs(5))
+            .ok_or_else(|| std::io::Error::other("SQLite admission deadline overflow"))?;
+        Self::prepare_sidecars(database, fresh, trace, deadline)
+    }
+
+    fn prepare_sidecars(
+        database: locron_core::filesystem::GuardedFile,
+        fresh: bool,
+        trace: &crate::windows_open::OpenTrace,
+        admission_deadline: std::time::Instant,
+    ) -> std::io::Result<Self> {
+        use crate::windows_open::Stage;
+        use locron_core::filesystem::create_private_new;
+
+        // SQLite's last-writer cleanup must own an exclusive DB lock. Retain this
+        // overlapping shared lock until both no-delete sidecar handles are live.
+        let admission = trace.io(
+            Stage::DatabaseAdmission,
+            DatabaseAdmission::acquire_until(&database, admission_deadline),
+        )?;
         let (wal, _) = prepare_sqlite_leaf(
             &sqlite_sidecar(database.normalized_path(), "-wal"),
             Stage::WalOpen,
@@ -94,6 +177,7 @@ impl SqlitePreparation {
             trace,
             create_private_new,
         )?;
+        trace.io(Stage::DatabaseAdmission, admission.release())?;
         Ok(Self {
             leaves: [database, wal, shm],
             fresh,
@@ -3959,6 +4043,179 @@ mod tests {
         let identity = locron_core::filesystem::file_identity(&actual).unwrap();
         assert_eq!(identity, sqlite_leaf_identity(&store.paths().database));
         identity
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn database_admission_preserves_sidecars_across_actual_final_close() {
+        use crate::windows_open::OpenTrace;
+        use locron_core::filesystem::open_private;
+        use std::fs::OpenOptions;
+        use std::time::{Duration, Instant};
+
+        let (_temporary, closing) = store();
+        create(
+            &closing,
+            "00000000-0000-4000-8000-000000000001",
+            "before-close",
+        );
+        let paths = closing.paths().clone();
+        let database_identity = assert_writable_sqlite_identity(&closing);
+        let sidecars = [
+            sqlite_sidecar(&paths.database, "-wal"),
+            sqlite_sidecar(&paths.database, "-shm"),
+        ];
+        let identities = sidecars.each_ref().map(|path| sqlite_leaf_identity(path));
+        let database = open_private(&paths.database, OpenOptions::new().read(true)).unwrap();
+        let admission = DatabaseAdmission::acquire_until(
+            &database,
+            Instant::now().checked_add(Duration::from_secs(5)).unwrap(),
+        )
+        .unwrap();
+        // No WAL/SHM inspection handle remains here: only the real DB byte-range
+        // gate excludes the actual last connection's exclusive cleanup protocol.
+        drop(closing);
+        for (path, identity) in sidecars.iter().zip(identities) {
+            assert!(path.is_file());
+            assert_eq!(sqlite_leaf_identity(path), identity);
+            assert!(locron_core::filesystem::is_private(path, false).unwrap());
+        }
+        let preparation = SqlitePreparation::new(&paths.database, &OpenTrace::new()).unwrap();
+        for (leaf, identity) in preparation.leaves[1..].iter().zip(identities) {
+            assert_eq!(
+                locron_core::filesystem::file_identity(leaf).unwrap(),
+                identity
+            );
+        }
+        admission.release().unwrap();
+        drop(database);
+        let opened = Store::open(paths.clone(), "test", 2).unwrap();
+        drop(preparation);
+        assert_eq!(assert_writable_sqlite_identity(&opened), database_identity);
+        create(
+            &opened,
+            "00000000-0000-4000-8000-000000000002",
+            "after-handoff",
+        );
+        assert_eq!(opened.list_jobs(false).unwrap().len(), 2);
+        drop(opened);
+        assert_no_sqlite_journals(&paths.database);
+        let observed = Store::open_read_only(&paths.database).unwrap();
+        assert_eq!(observed.list_jobs(false).unwrap().len(), 2);
+        drop(observed);
+        assert_no_sqlite_journals(&paths.database);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn database_admission_refuses_contention_before_sidecars_and_accepts_same_budget_release() {
+        use crate::windows_open::OpenTrace;
+        use locron_core::filesystem::{create_private_new, file_identity, open_private};
+        use std::fs::OpenOptions;
+        use std::sync::{Arc, Barrier};
+        use std::time::{Duration, Instant};
+
+        let temporary = private_tempdir();
+        let paths = StatePaths::new(temporary.path().into());
+        let exclusive = create_private_new(&paths.database).unwrap();
+        let identity = file_identity(&exclusive).unwrap();
+        exclusive.try_lock().unwrap();
+        let database = open_private(&paths.database, OpenOptions::new().read(true)).unwrap();
+        let deadline = Instant::now()
+            .checked_add(Duration::from_millis(80))
+            .unwrap();
+        let error =
+            SqlitePreparation::prepare_sidecars(database, false, &OpenTrace::new(), deadline)
+                .err()
+                .unwrap();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        assert!(Instant::now() >= deadline);
+        assert_no_sqlite_journals(&paths.database);
+
+        let database = open_private(&paths.database, OpenOptions::new().read(true)).unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+        let released = std::thread::spawn({
+            let barrier = Arc::clone(&barrier);
+            move || {
+                barrier.wait();
+                std::thread::sleep(Duration::from_millis(30));
+                exclusive.unlock().unwrap();
+            }
+        });
+        let deadline = Instant::now().checked_add(Duration::from_secs(5)).unwrap();
+        barrier.wait();
+        let preparation =
+            SqlitePreparation::prepare_sidecars(database, false, &OpenTrace::new(), deadline)
+                .unwrap();
+        released.join().unwrap();
+        assert!(Instant::now() < deadline);
+        assert_eq!(file_identity(&preparation.leaves[0]).unwrap(), identity);
+        drop(preparation);
+        let accepted = Store::open(paths, "test", 1).unwrap();
+        create(
+            &accepted,
+            "00000000-0000-4000-8000-000000000001",
+            "accepted",
+        );
+        assert_eq!(accepted.list_jobs(false).unwrap().len(), 1);
+        assert_eq!(assert_writable_sqlite_identity(&accepted), identity);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn database_admission_releases_after_strict_sidecar_failure() {
+        use locron_core::filesystem::{DirectoryGuard, create_private_new};
+
+        let temporary = private_tempdir();
+        let paths = StatePaths::new(temporary.path().into());
+        let database = create_private_new(&paths.database).unwrap();
+        let shm = sqlite_sidecar(&paths.database, "-shm");
+        drop(DirectoryGuard::private(&shm).unwrap());
+        let error = SqlitePreparation::new(&paths.database, &crate::windows_open::OpenTrace::new())
+            .err()
+            .unwrap();
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(shm.is_dir());
+        assert!(std::fs::read_dir(&shm).unwrap().next().is_none());
+        // The independent handle can acquire exclusive byte-range ownership only
+        // after the failed preparation's temporary shared gate actually released.
+        database.try_lock().unwrap();
+        database.unlock().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn database_admission_propagates_native_non_contention_failure_and_refuses_expired_entry() {
+        use std::fs::{File, TryLockError};
+        use std::os::windows::io::OwnedHandle;
+        use std::time::{Duration, Instant};
+
+        let (reader, _writer) = std::io::pipe().unwrap();
+        let handle: OwnedHandle = reader.into();
+        let pipe = File::from(handle);
+        let TryLockError::Error(expected) = pipe.try_lock_shared().unwrap_err() else {
+            panic!("an actual native pipe lock unexpectedly reported contention");
+        };
+        let error = DatabaseAdmission::acquire_until(
+            &pipe,
+            Instant::now().checked_add(Duration::from_secs(5)).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), expected.kind());
+        assert_eq!(error.raw_os_error(), expected.raw_os_error());
+
+        let temporary = private_tempdir();
+        let database =
+            locron_core::filesystem::create_private_new(&temporary.path().join("expired.db"))
+                .unwrap();
+        assert_eq!(
+            DatabaseAdmission::acquire_until(&database, Instant::now())
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::TimedOut
+        );
+        database.try_lock().unwrap();
+        database.unlock().unwrap();
     }
 
     #[cfg(windows)]
