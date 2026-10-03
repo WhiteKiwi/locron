@@ -5049,3 +5049,24 @@ Fresh exact-head ordinary native rows must exercise the original parent crash an
 publication proofs. Preserve old unknown raw-error/timeout facts and full-discovery failures;
 no required red check is bypassed. Reviewed docs and owning Issue Verify readback precede
 the separate development handoff. All public acceptance gates remain unfinished.
+
+### First-open WAL failure boundary diagnostics (2026-10-04)
+
+Follow WINDOWS_WAL_CONFIGURE_DIAGNOSTICS_2026-10-04 and Issues #25/#31. Before
+changing retry/ownership policy, a separate developer instruments only existing
+Windows configuration/OpenTrace boundaries with a fixed owner-local debug
+snapshot. Preserve the configure-entry5s clock and its WAL/settings scope,
+fixed SQL, explicit finalization, idle-autocommit5/261 retry/error precedence,
+10ms maximum contention yield and direct15 refusal. No added SQLite/FS call,
+global synchronization, timed-path log or work after expiry. Release native
+call policy remains exact. Debug stamps consume normal elapsed time.
+
+After a failed result is known, emit one bounded768-byte ASCII receipt through
+the existing debug error route: actual PID/local operation, fixed gate/phase,
+attempt count, available numeric error/autocommit/mode categories and native
+entry/return timing. No private strings or unbounded event history. Existing
+control assertions and12 lifecycle cases retain their clocks/concurrency;
+parent reviews full Source then publishes fresh ordinary/full/per-binary native
+evidence. A passing later scenario does not diagnose an earlier failure. Missing
+Server SSE-reopen connection/file ownership correlation remains separate, and
+required red checks continue blocking merge.

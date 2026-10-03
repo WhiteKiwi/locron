@@ -5197,3 +5197,33 @@ Sources: [CreateProcessW](https://learn.microsoft.com/en-us/windows/win32/api/pr
 [NullString](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.language.nullstring),
 [Framework File.Replace](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.replace?view=netframework-4.8.1),
 and retained actual job logs under the private PR review evidence directory.
+
+### Initial lifecycle WAL timeout observations and diagnostic scope (2026-10-04)
+
+Read-only research at unchanged Store Source302b1bf separates two first-open
+failures from dashboard shutdown and the older Server SSE reopen. Correction to
+the compressed integration note above: idle-client local operation3 and
+active-SSE operation2 both fail at Fixture::new's first Store::open, before any
+daemon/dashboard/job/client/shutdown activity. They report ConfigureWal IO
+TimedOut/raw_os=None, not PROTOCOL15. These process-local counters do not
+correlate databases. Complete logs are retained; no missing cause is inferred.
+
+Private/SID/DB-admission and new Connection preparation end before the original
+configure-entry5s clock. That one clock covers WAL and remaining settings. Fixed
+PRAGMA query_one consumes ROW and DONE and explicitly finalizes even on errors.
+Only idle-autocommit5/261 retry after finalization; exhaustion preserves the
+SQLite code and15 is immediately returned. The observed IO timeout can be an
+entry/pre-call gate or a refused late success. Pinned SQLite3.53.2 has native
+WAL/VFS retry paths independent of busy_timeout(0), but current logs do not show
+which boundary ran slowly. No retry, serialization or larger timeout is justified.
+
+Select a bounded debug-only owner-local failure snapshot before a cause fix,
+using only existing gates/calls and fixed numeric/category data. Capture native
+prepare/query_one/ROW callback/finalize boundaries, query_one success-confirmed
+DONE, attempt count and timeout
+gate without timed-path logs or new native work. PID/local operation correlation
+is not file identity. The prior Server15 needs separate owned connection/file
+facts. Research receipt SHA256
+f66dfe9b0007d33afe5ac294974c1191e0f48320bb376cf519a02b9bf69a7f17 and the reviewed
+WINDOWS_WAL_CONFIGURE_DIAGNOSTICS_2026-10-04 plan preserve original policy and
+all unqualified acceptance gates. No Source was implemented by the planning parent.
