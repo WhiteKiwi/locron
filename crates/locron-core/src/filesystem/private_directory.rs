@@ -1,23 +1,20 @@
 //! Existing-only fresh-root inspection with retained native ancestry.
 
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io;
-use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use windows_permissions::constants::{AceType, SeObjectType, SecurityInformation};
 use windows_permissions::{SecurityDescriptor, wrappers};
 
-use super::{DirectoryGuard, FileIdentity};
+use super::{DirectoryGuard, FileIdentity, open_directory_guard_handle};
 
 const PATH_UNITS: usize = 4096;
 const SYSTEM: &str = "S-1-5-18";
 const ADMIN: &str = "S-1-5-32-544";
 const INSTALLER: &str = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464";
-const READ_CONTROL_ATTRIBUTES: u32 = 0x0002_0080;
-const BACKUP_SEMANTICS: u32 = 0x0200_0000;
-const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const REPARSE_POINT: u32 = 0x400;
 const FULL_CONTROL: u32 = 0x001f_01ff;
 // Creating a sibling is distinct from mutating a retained existing directory object/child.
@@ -92,13 +89,7 @@ fn inspect_observed_until(
     let mut missing = Vec::new();
     let mut existing_path = None;
     for (index, component) in chain.iter().enumerate() {
-        let file = match checked(deadline, || {
-            OpenOptions::new()
-                .access_mode(READ_CONTROL_ATTRIBUTES)
-                .share_mode(1)
-                .custom_flags(BACKUP_SEMANTICS | OPEN_REPARSE_POINT)
-                .open(component)
-        }) {
+        let file = match checked(deadline, || open_directory_guard_handle(component)) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound && !handles.is_empty() => {
                 for absent in &chain[index..] {
@@ -332,6 +323,7 @@ fn full_identity(path: &Path) -> io::Result<FileIdentity> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::OpenOptions;
     use std::io::{Read, Write};
     use std::os::windows::ffi::OsStringExt;
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
@@ -342,11 +334,13 @@ mod tests {
     use windows_permissions::LocalBox;
 
     use super::{
-        BACKUP_SEMANTICS, DirectoryGuard, Instant, OPEN_REPARSE_POINT, OpenOptions, PATH_UNITS,
-        Path, PathBuf, PrivateDirectoryPlan, REPARSE_POINT, SeObjectType, SecurityDescriptor,
-        SecurityInformation, fs, full_identity, inspect_observed_until, io, validate_descriptor,
-        validated_absolute, wrappers,
+        DirectoryGuard, Instant, PATH_UNITS, Path, PathBuf, PrivateDirectoryPlan, REPARSE_POINT,
+        SeObjectType, SecurityDescriptor, SecurityInformation, fs, full_identity,
+        inspect_observed_until, io, validate_descriptor, validated_absolute, wrappers,
     };
+
+    const BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
     fn private_fixture() -> (tempfile::TempDir, PathBuf) {
         let temporary = tempfile::tempdir().unwrap();
@@ -531,6 +525,59 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(descriptor_text(&root), mutable);
         assert!(!root.join("still missing").exists());
+    }
+
+    #[test]
+    fn list_denied_existing_prefix_refuses_without_repair_or_missing_suffix_creation() {
+        let (_temporary, ancestor) = private_fixture();
+        let sid = crate::windows::current_user_sid().unwrap();
+        let mut metadata = OpenOptions::new()
+            .access_mode(0x0006_0080)
+            .share_mode(3)
+            .custom_flags(BACKUP_SEMANTICS | OPEN_REPARSE_POINT)
+            .open(&ancestor)
+            .unwrap();
+        let original = wrappers::GetSecurityInfo(
+            &metadata,
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Owner | SecurityInformation::Dacl,
+        )
+        .unwrap();
+        let denied: LocalBox<SecurityDescriptor> =
+            format!("D:P(D;;0x00000001;;;{sid})(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)")
+                .parse()
+                .unwrap();
+        wrappers::SetSecurityInfo(
+            &mut metadata,
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+            None,
+            None,
+            denied.dacl(),
+            None,
+        )
+        .unwrap();
+        let before = descriptor_text(&ancestor);
+        let missing = ancestor.join("missing suffix").join("private");
+        let refused = PrivateDirectoryPlan::inspect_until(
+            &missing,
+            Instant::now().checked_add(Duration::from_secs(30)).unwrap(),
+        );
+        let unchanged = descriptor_text(&ancestor) == before;
+        wrappers::SetSecurityInfo(
+            &mut metadata,
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+            None,
+            None,
+            original.dacl(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(refused.unwrap_err().raw_os_error(), Some(5));
+        assert!(unchanged);
+        assert!(!ancestor.join("missing suffix").exists());
+        assert!(fs::read_dir(&ancestor).unwrap().next().is_none());
     }
 
     #[test]
