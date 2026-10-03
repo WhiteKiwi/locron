@@ -5099,3 +5099,29 @@ Bind the exact path equality once to a named boolean and assert that boolean wit
 failure message. This reports the identity failure without formatting either private path.
 No warning allowance, identity weakening, or other Source/clock change is permitted.
 The separate developer applies this single assertion-style correction after this plan.
+
+
+## Real Windows identities before cross-user acceptance (2026-10-04)
+
+Frozen SPEC remains unchanged. Continue Issues#27/#29 with the reviewed
+[first prerequisite plan](planning/WINDOWS_TWO_USER_PREREQUISITE_2026-10-04.md), based on
+`55859361892a422c7d3868b741431480ec435503`. In a separate verification worktree/branch, permit exactly five Source paths:
+one public-API engine example, explicit Windows-only dev dependency on the already locked
+windows-permissions0.2.4, its lock dependency mapping, one stock PS5.1 orchestrator, and a
+manual-only replacement of the existing ci.yml. Never import that replacement into main.
+
+The four ordered steps first qualify compiler/OS/module/policy substrate, then two real
+Users-only credential tokens, then root-exit/tree-live negative confirmation and actual
+OwnedChild termination, and finally exact created-account removal with bounded sanitized
+receipt. Each step has explicit Verify in the plan and Issues. A finite retained runspace
+and Rust owner keep original 180/30/15/45-second caps; no unfinished join/Stop/Dispose or
+fresh cleanup clock may disguise unknown native work. Unknown ownership and late results
+fail. Two-hop containment precedes adapter work, and only actual channels/token/Job/process
+facts support the receipt. Secrets and private identity frames never reach logs/artifacts.
+
+Root records exact Issue Verify readback before handing separate development Source.
+Review every Source file, conserve all application tests/dependencies outside the selected
+dev edge, then explicitly dispatch native x64 Server2025 and Win11 ARM64 Rust1.94 jobs.
+Compilation/zero-case libtest output contributes zero prerequisite cases. Confirm both
+actual actors and exact cleanup; retain failures without unchanged rerun. This stage does
+not complete cross-user state/pipe protection or clean standard-user Win11 installation.

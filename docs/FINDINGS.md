@@ -5261,3 +5261,26 @@ remain unchanged and require their own native evidence. Sources: locked tempfile
 [Microsoft rename processing](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/rename-and-hard-link-processing);
 [Win32 errors5/32](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-);
 [actual CI](https://github.com/WhiteKiwi/locron/actions/runs/37148405286).
+
+
+## Native two-user prerequisite selection (2026-10-04)
+
+The separate research session audited the pinned public OwnedChild and process-wrap APIs:
+configured stdio is preserved while containment/creation flags are added. Safe already-locked
+windows-permissions0.2.4 can obtain the actual process primary SID. A credential .NET Process
+with SecureString password and explicit profile loading is selected for real A/B accounts;
+redirected inherited handles, group membership and native Job behavior require actual proof.
+The detailed [plan](planning/WINDOWS_TWO_USER_PREREQUISITE_2026-10-04.md) freezes the ABI,
+finite retained owners, clocks and sanitized receipt before Source.
+
+Cargo test=false controls default selection, while explicit --example/--examples/--all-targets
+can build an example under libtest. Keep harness=true and no test functions: zero-case output
+qualifies zero native prerequisite cases. Only the explicit normal-example orchestrator can
+prove the selected two real credential executions. Evidence: [Cargo target selection](https://doc.rust-lang.org/cargo/commands/cargo-test.html#target-selection)
+and [Rust1.94 unit selection](https://github.com/rust-lang/cargo/blob/rust-1.94.0/src/cargo/ops/cargo_compile/unit_generator.rs#L71-L80).
+
+Exact account removal is distinct from deleting a profile or unloading HKCU. The first stage
+only confirms the created accounts' removal after actual actor/tree/EOF confirmation;
+profile/hive disposal belongs to the disposable hosted VM. No unknown owner, killed outer,
+closed Job handle, PID or EOF alone proves authoritative cleanup. It remains a prerequisite
+for future two-user private-state/named-pipe acceptance, not acceptance of those features.
