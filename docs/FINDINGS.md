@@ -4850,3 +4850,26 @@ Sources: [CREATE_NEW and Windows sharing](https://learn.microsoft.com/en-us/wind
 [SQLite read-only WAL](https://sqlite.org/wal.html#read_only_databases).
 The selected bundle's concrete implementation is libsqlite3-sys 0.38.2 sqlite3.c, SQLite 3.53.2;
 research preserves exact local source anchors without introducing a dependency update.
+
+### Windows dashboard wake diagnostic parity (2026-10-03)
+
+At merged main 1441b7b, Core WakeFacts deliberately reports transport named_pipe,
+socket_present None and availability unprobed on Windows. The diagnostics API serializes the
+legacy wake_socket as null and adds those passive facts under wake. Unix keeps its established
+filesystem-presence boolean without the additive object. The read never connects to a pipe,
+sends a hint or creates state; transport selection is not endpoint-health evidence.
+
+The Diagnostics route still declares wake_socket as a boolean and uses its truthiness for the
+present/absent badge. Consequently the actual Windows payload renders Wake socket: absent,
+discarding the named-pipe/unprobed facts. The generic JSON API client performs no conversion
+that could correct this mismatch. This is an observed display defect within #29's existing
+accurate-platform-facts criterion, not a new protocol or product-scope decision.
+
+Consume the existing nullable field and optional passive wake object in the route. Preserve
+both Unix boolean results, display named-pipe transport with unprobed availability on Windows,
+and render missing/unsupported facts as unknown rather than inventing absence or availability.
+No backend, IPC, permission, state-discovery or diagnostics polling change is required.
+
+Evidence: crates/locron-core/src/notification.rs WakeFacts/wake_facts and its missing-state test;
+crates/locron-server/src/api.rs diagnostics response; frontend/src/routes/Diagnostics.tsx and
+frontend/src/api.ts; the root acceptance audit recorded on #29 before implementation.

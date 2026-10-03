@@ -4,7 +4,12 @@ import { RouteHeader, StatusBadge } from "../ui";
 
 type DiagnosticsData = {
   daemon_running: boolean;
-  wake_socket: boolean;
+  wake_socket?: boolean | null;
+  wake?: {
+    transport?: string | null;
+    socket_present?: boolean | null;
+    availability?: string | null;
+  } | null;
   state_dir: string;
   database: string;
   execution_path: string;
@@ -19,8 +24,15 @@ export function Diagnostics() {
     api.get<DiagnosticsData>("/api/v1/diagnostics", { signal: controller.signal }).then(({ data: value }) => setData(value)).catch((issue) => setError(issue.message));
     return () => controller.abort();
   }, []);
+  const namedPipe = data?.wake?.transport === "named_pipe";
+  let socketStatus = "unknown";
+  if (data?.wake_socket === true) {
+    socketStatus = "present";
+  } else if (data?.wake_socket === false) {
+    socketStatus = "absent";
+  }
   return <>
     <RouteHeader title="Diagnostics" description="Read-only health, exposure, paths, and integrity." />
-    {error ? <p className="error-block" role="alert">{error}</p> : !data ? <div aria-busy="true">Loading diagnostics…</div> : <section className="card"><h2>Health & exposure</h2><dl className="facts"><dt>Daemon</dt><dd><StatusBadge status={data.daemon_running ? "running" : "not running"}/></dd><dt>Wake socket</dt><dd><StatusBadge status={data.wake_socket ? "present" : "absent"}/></dd><dt>State directory</dt><dd><code>{data.state_dir}</code></dd><dt>Database</dt><dd><code>{data.database}</code></dd><dt>Execution path</dt><dd><code>{data.execution_path}</code></dd></dl><h3>Integrity</h3><ul>{data.checks?.map((item) => <li key={item}>{item}</li>)}</ul></section>}
+    {error ? <p className="error-block" role="alert">{error}</p> : !data ? <div aria-busy="true">Loading diagnostics…</div> : <section className="card"><h2>Health & exposure</h2><dl className="facts"><dt>Daemon</dt><dd><StatusBadge status={data.daemon_running ? "running" : "not running"}/></dd><dt>{namedPipe ? "Wake transport" : "Wake socket"}</dt><dd><StatusBadge status={namedPipe ? "Named pipe" : socketStatus}/></dd>{namedPipe && <><dt>Wake availability</dt><dd><StatusBadge status={data.wake?.availability === "unprobed" ? "Not probed" : "unknown"}/></dd></>}<dt>State directory</dt><dd><code>{data.state_dir}</code></dd><dt>Database</dt><dd><code>{data.database}</code></dd><dt>Execution path</dt><dd><code>{data.execution_path}</code></dd></dl><h3>Integrity</h3><ul>{data.checks?.map((item) => <li key={item}>{item}</li>)}</ul></section>}
   </>;
 }
