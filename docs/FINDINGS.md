@@ -3519,6 +3519,23 @@ failure. Keep the original owned native read, root/Job confirmation, timer, late
 retained handles and finite waits; do not retire production caches or reinterpret error 32 as
 successful release.
 
+Exact Root44 c64832d native CI 37093718551 reports 120/122 Core tests passing on every native
+row. Both passive inspector rename assertions fail because fs::rename returns success while
+their metadata-only retained directory handle remains live (MSRV job 111119246570, ARM64
+111119246407, x64 111119246523). The shared DirectoryGuard and stock ancestry open paths use the
+same READ_CONTROL|FILE_READ_ATTRIBUTES access mask, so this is not solely a new inspector issue.
+No-delete flags on a metadata observation alone are insufficient evidence of object retention.
+
+CreateFileW distinguishes attribute-only requests from sharing-controlled read/write/delete
+access. FILE_LIST_DIRECTORY and FILE_READ_DATA are the same native bit 1 for directory data,
+whereas FILE_READ_ATTRIBUTES is bit 128. Select the minimal data/list bit in addition to existing
+READ_CONTROL/attributes, with the existing read-only sharing and no-reparse directory flags.
+This source-grounded correction must still prove actual empty-directory rename/reparse refusal,
+late owned-handle retention and refusal when list access is denied. The proposed access change
+is not native qualification and does not authorize takeover or fresh-root creation.
+[CreateFileW access and sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[file and directory access rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants).
+
 The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
 inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject

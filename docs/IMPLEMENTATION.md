@@ -739,6 +739,36 @@ with independently identified concurrent operation counters and no extra retry/a
 native x64/ARM64/MSRV and lint preserve all current cold gates, managed ACL refusal and SQLite
 tests; the exact failed stage is recorded before selecting any behavioral correction.
 
+Native directory-sharing correction: exact Root44 c64832d fails both passive inspector rename
+assertions on x64, ARM64 and Rust 1.94, while the other five inspector fixtures and expired-SID
+proof pass. Metadata-only READ_CONTROL|FILE_READ_ATTRIBUTES handles did not prevent an empty
+retained directory from being renamed. Correct the shared directory-opening primitive rather
+than weakening those assertions or compensating only inside PrivateDirectoryPlan. Request
+READ_CONTROL|FILE_READ_ATTRIBUTES|FILE_LIST_DIRECTORY (0x00020081), preserving FILE_SHARE_READ
+only and BACKUP_SEMANTICS|OPEN_REPARSE_POINT. The list/data access is the minimal additional
+directory right that participates in read-sharing accounting; it does not enumerate entries.
+There is no metadata-only fallback when the caller lacks that access.
+
+Use this same primitive for DirectoryGuard's existing/creating ancestor chains, the passive
+inspector and StockAdapterGuard's retained ancestry. The explicit owner-only repair path may
+add its existing WRITE_DAC right; do not add mutation access to ordinary guards. Descriptor-only
+regular-file queries remain observations, with existing actual data-access leaf handles still
+providing their sharing boundary. Preserve owner/DACL/reparse/full-ID checks, existing-only and
+NotFound behavior, the original absolute deadline and finite-worker quarantine. This correction
+does not create or repair a root, enable a privilege, relax a sharing failure, or alter Unix.
+
+Verify: (1) bare DirectoryGuard and the passive missing-root plan retain an empty disposable
+directory with no open child file; real ancestor rename and junction replacement fail with the
+original object/descriptor/full identity intact, then succeed only after the guard is dropped.
+Keep both originally failing passive assertions, including the delayed owned observation whose
+driver deadline expires while its native handle stays live. (2) a current-SID-owned ancestor
+that permits metadata/security reads but denies directory-list access refuses immediately,
+without descriptor repair or creating its missing suffix; ordinary private child creation and
+managed file/SQLite operations still succeed under retained directory guards. (3) qualify all
+existing stock guard/full-ID, cold adapter, Restricted-policy and abrupt-parent proofs on native
+x64, ARM64 and MSRV. Never attempt destructive rename/reparse changes on the actual stock tree;
+the disposable shared-primitive fixtures establish that boundary. Native proof remains pending.
+
 Use Windows-only windows-permissions =0.2.4 explicit GetSecurityInfo/SetSecurityInfo wrappers with
 SE_FILE_OBJECT, Owner/Dacl and ProtectedDacl flags; avoid the audited-buggy convenience trait.
 Safe Windows File open flags permit no-follow handle readback and directory guards. Reject every
