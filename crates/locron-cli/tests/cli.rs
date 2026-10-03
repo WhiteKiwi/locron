@@ -1,5 +1,10 @@
 //! End-to-end command contract tests.
 
+#[path = "support/private_state.rs"]
+mod private_state;
+
+use private_state::{PrivateState, private_state_fixture};
+
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -32,13 +37,13 @@ fn startup_owner_matches_pid(path: &std::path::Path, pid: u32) -> bool {
         .is_some_and(|owner| owner.metadata.pid == pid)
 }
 
-fn locron(state: &tempfile::TempDir) -> Command {
+fn locron(state: &PrivateState) -> Command {
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("locron"));
     command.arg("--state-dir").arg(state.path());
     command
 }
 
-fn invoke_json(state: &tempfile::TempDir, arguments: &[&str]) -> serde_json::Value {
+fn invoke_json(state: &PrivateState, arguments: &[&str]) -> serde_json::Value {
     let output = locron(state)
         .arg("--json")
         .args(arguments)
@@ -165,7 +170,7 @@ fn timestamp_after(duration: Duration) -> String {
     locron_core::Timestamp::from_epoch_micros(micros).to_string()
 }
 
-fn start_daemon(state: &tempfile::TempDir) -> Child {
+fn start_daemon(state: &PrivateState) -> Child {
     let mut diagnostics = tempfile::tempfile().unwrap();
     let mut daemon = locron(state)
         .args(["daemon", "run"])
@@ -215,7 +220,7 @@ fn stream_records(output: &[u8]) -> Vec<serde_json::Value> {
         .collect()
 }
 
-fn wait_for_run_state(state: &tempfile::TempDir, name: &str, expected: &str) -> String {
+fn wait_for_run_state(state: &PrivateState, name: &str, expected: &str) -> String {
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         let history = locron(state)
@@ -239,7 +244,7 @@ fn wait_for_run_state(state: &tempfile::TempDir, name: &str, expected: &str) -> 
     }
 }
 
-fn help_output(state: &tempfile::TempDir, arguments: &[String]) -> std::process::Output {
+fn help_output(state: &PrivateState, arguments: &[String]) -> std::process::Output {
     locron(state).args(arguments).output().unwrap()
 }
 
@@ -284,7 +289,7 @@ fn assert_help_contract(path: &[String], spelling: &str, output: std::process::O
 
 #[test]
 fn complete_command_tree_has_consistent_help_surface() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let mut pending = vec![Vec::<String>::new()];
     let mut commands = Vec::new();
 
@@ -344,7 +349,7 @@ fn complete_command_tree_has_consistent_help_surface() {
 
 #[test]
 fn logs_follow_reads_partial_then_final_without_duplicate_frames() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let paths = StatePaths::new(state.path().to_path_buf());
     let run_id = Uuid::now_v7().to_string();
     let partial = paths.partial_output(&run_id, 1).unwrap();
@@ -407,7 +412,7 @@ fn logs_follow_reads_partial_then_final_without_duplicate_frames() {
 
 #[test]
 fn run_wait_streams_all_attempts_and_maps_target_outcomes() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let marker = state.path().join("retry-marker");
     let marker_environment = format!("MARKER={}", marker.display());
     assert_cmd::assert::Assert::new(
@@ -527,7 +532,7 @@ fn run_wait_streams_all_attempts_and_maps_target_outcomes() {
 
 #[test]
 fn disconnecting_run_wait_does_not_cancel_the_durable_run() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -584,7 +589,7 @@ fn disconnecting_run_wait_does_not_cancel_the_durable_run() {
 
 #[test]
 fn add_dry_run_is_non_mutating_and_machine_readable() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let mut command = locron(&state);
     command.args([
         "--json",
@@ -605,7 +610,7 @@ fn add_dry_run_is_non_mutating_and_machine_readable() {
 
 #[test]
 fn config_and_prune_dry_runs_do_not_initialize_state() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["config", "set", "global_concurrency", "32", "--dry-run"])
@@ -625,7 +630,7 @@ fn config_and_prune_dry_runs_do_not_initialize_state() {
 
 #[test]
 fn manual_run_is_durable_while_daemon_is_offline() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "sample", "--every", "1m", "--", "/usr/bin/true"])
@@ -653,7 +658,7 @@ fn manual_run_is_durable_while_daemon_is_offline() {
 
 #[test]
 fn offline_queued_run_can_be_cancelled_terminally() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -705,7 +710,7 @@ fn offline_queued_run_can_be_cancelled_terminally() {
 
 #[test]
 fn quarantine_requires_explicit_acknowledgement_and_is_visible_in_why_and_history() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -798,7 +803,7 @@ fn quarantine_requires_explicit_acknowledgement_and_is_visible_in_why_and_histor
 
 #[test]
 fn missing_runtime_env_file_terminalizes_admitted_attempt() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let env_file = state.path().join("runtime.env");
     std::fs::write(&env_file, "VALUE=present\n").unwrap();
     assert_cmd::assert::Assert::new(
@@ -865,7 +870,7 @@ fn missing_runtime_env_file_terminalizes_admitted_attempt() {
 
 #[test]
 fn future_one_time_job_stays_enabled_without_a_run() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let at = timestamp_after(Duration::from_secs(60));
     assert_cmd::assert::Assert::new(
         locron(&state)
@@ -903,7 +908,7 @@ fn future_one_time_job_stays_enabled_without_a_run() {
 
 #[test]
 fn manual_run_does_not_resolve_future_one_time_schedule() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let at = timestamp_after(Duration::from_secs(60));
     assert_cmd::assert::Assert::new(
         locron(&state)
@@ -924,7 +929,7 @@ fn manual_run_does_not_resolve_future_one_time_schedule() {
 
 #[test]
 fn due_one_time_job_catches_up_once_and_disables() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let at = timestamp_after(Duration::from_secs(2));
     assert_cmd::assert::Assert::new(
         locron(&state)
@@ -985,7 +990,7 @@ fn due_one_time_job_catches_up_once_and_disables() {
 
 #[test]
 fn normal_inspection_redacts_inline_environment_values() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -1016,7 +1021,7 @@ fn normal_inspection_redacts_inline_environment_values() {
 
 #[test]
 fn conflicting_schedule_selectors_fail_without_state() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -1042,7 +1047,7 @@ fn conflicting_schedule_selectors_fail_without_state() {
 
 #[test]
 fn wake_socket_makes_new_manual_run_promptly_visible_to_daemon() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let mut daemon = locron(&state)
         .args(["daemon", "run"])
         .stdout(std::process::Stdio::null())
@@ -1087,7 +1092,7 @@ fn wake_socket_makes_new_manual_run_promptly_visible_to_daemon() {
 
 #[test]
 fn durable_cancel_terminates_a_running_process() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let mut daemon = locron(&state)
         .args(["daemon", "run"])
         .stdout(std::process::Stdio::null())
@@ -1147,7 +1152,7 @@ fn durable_cancel_terminates_a_running_process() {
 
 #[test]
 fn update_dry_run_reports_sorted_changes_without_leaking_values() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -1215,7 +1220,7 @@ fn update_dry_run_reports_sorted_changes_without_leaking_values() {
 
 #[test]
 fn export_requires_plaintext_ack_and_omits_redacted_values() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -1283,8 +1288,8 @@ fn export_requires_plaintext_ack_and_omits_redacted_values() {
 
 #[test]
 fn plaintext_export_import_round_trips_and_second_import_is_no_op() {
-    let source = tempfile::tempdir().unwrap();
-    let destination = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
+    let destination = private_state_fixture();
     let export_path = source.path().join("export.json");
     assert_cmd::assert::Assert::new(
         locron(&source)
@@ -1371,8 +1376,8 @@ fn plaintext_export_import_round_trips_and_second_import_is_no_op() {
 
 #[test]
 fn import_dry_run_and_rejected_redacted_import_do_not_initialize_state() {
-    let source = tempfile::tempdir().unwrap();
-    let destination = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
+    let destination = private_state_fixture();
     let export_path = source.path().join("export.json");
     assert_cmd::assert::Assert::new(
         locron(&source)
@@ -1395,7 +1400,7 @@ fn import_dry_run_and_rejected_redacted_import_do_not_initialize_state() {
     .stdout(predicate::str::contains("<non-durable").not());
     assert!(!destination.path().join("state.db").exists());
 
-    let secret = tempfile::tempdir().unwrap();
+    let secret = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&secret)
             .args([
@@ -1430,8 +1435,8 @@ fn import_dry_run_and_rejected_redacted_import_do_not_initialize_state() {
 
 #[test]
 fn import_maps_by_live_name_and_reallocates_a_removed_id_collision() {
-    let source = tempfile::tempdir().unwrap();
-    let destination = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
+    let destination = private_state_fixture();
     let export_path = source.path().join("mapping.json");
     assert_cmd::assert::Assert::new(
         locron(&source)
@@ -1491,7 +1496,7 @@ fn import_maps_by_live_name_and_reallocates_a_removed_id_collision() {
     assert_eq!(mapped["data"]["id"], local_id);
     assert_eq!(mapped["data"]["description"], "source-definition");
 
-    let collision = tempfile::tempdir().unwrap();
+    let collision = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&collision)
             .arg("import")
@@ -1531,7 +1536,7 @@ fn import_maps_by_live_name_and_reallocates_a_removed_id_collision() {
 fn broad_env_file_permissions_warn_without_reading_or_mutating_on_dry_run() {
     use std::os::unix::fs::PermissionsExt as _;
 
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let env_file = state.path().join("broad.env");
     std::fs::write(&env_file, "SECRET=warning-must-not-read-this\n").unwrap();
     std::fs::set_permissions(&env_file, std::fs::Permissions::from_mode(0o644)).unwrap();
@@ -1555,7 +1560,7 @@ fn broad_env_file_permissions_warn_without_reading_or_mutating_on_dry_run() {
 
 #[test]
 fn per_job_concurrency_uses_current_durable_global_limit() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["config", "set", "global_concurrency", "2"])
@@ -1595,7 +1600,7 @@ fn per_job_concurrency_uses_current_durable_global_limit() {
 
 #[test]
 fn partial_json_body_update_preserves_explicit_content_type() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -1658,7 +1663,7 @@ fn partial_json_body_update_preserves_explicit_content_type() {
 
 #[test]
 fn repeated_overlap_selector_preserves_custom_concurrency_and_is_a_no_op() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -1747,7 +1752,7 @@ fn selector_specific_schedule_options_are_rejected_without_state() {
             "/usr/bin/true",
         ],
     ] {
-        let state = tempfile::tempdir().unwrap();
+        let state = private_state_fixture();
         assert_cmd::assert::Assert::new(locron(&state).args(arguments).output().unwrap())
             .failure()
             .code(2);
@@ -1757,7 +1762,7 @@ fn selector_specific_schedule_options_are_rejected_without_state() {
 
 #[test]
 fn import_rejects_source_id_name_destination_ambiguity_as_durable_conflict() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for name in ["alpha", "beta"] {
         assert_cmd::assert::Assert::new(
             locron(&state)
@@ -1805,7 +1810,7 @@ fn import_rejects_source_id_name_destination_ambiguity_as_durable_conflict() {
 
 #[test]
 fn alias_ls_renders_identical_output_to_list() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for name in ["backup", "ping"] {
         assert_cmd::assert::Assert::new(
             locron(&state)
@@ -1842,7 +1847,7 @@ fn alias_ls_renders_identical_output_to_list() {
 
 #[test]
 fn alias_ls_json_envelope_reports_the_canonical_list_command() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -1862,7 +1867,7 @@ fn alias_ls_json_envelope_reports_the_canonical_list_command() {
 
 #[test]
 fn alias_rm_json_envelope_reports_the_canonical_remove_command() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -1888,7 +1893,7 @@ fn alias_rm_json_envelope_reports_the_canonical_remove_command() {
 
 #[test]
 fn help_advertises_the_list_and_remove_aliases() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(locron(&state).arg("--help").output().unwrap())
         .success()
         .stdout(predicate::str::contains("[alias: ls]"))
@@ -1897,7 +1902,12 @@ fn help_advertises_the_list_and_remove_aliases() {
 
 #[test]
 fn alias_help_exits_zero_with_the_canonical_surface() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
+    let executable = if cfg!(windows) {
+        "locron.exe"
+    } else {
+        "locron"
+    };
     for (alias, canonical) in [("ls", "list"), ("rm", "remove")] {
         let stdout = assert_help_contract(
             &[alias.into()],
@@ -1905,7 +1915,7 @@ fn alias_help_exits_zero_with_the_canonical_surface() {
             help_output(&state, &[alias.into(), "-h".into()]),
         );
         assert!(
-            stdout.contains(&format!("Usage: locron {canonical}")),
+            stdout.contains(&format!("Usage: {executable} {canonical}")),
             "alias {alias} help must show the canonical usage:\n{stdout}"
         );
     }
@@ -1913,7 +1923,7 @@ fn alias_help_exits_zero_with_the_canonical_surface() {
 
 #[test]
 fn empty_list_prints_the_header_only() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
         .stdout("NAME SCHEDULE TARGET ENABLED LAST RUN\n")
@@ -1922,7 +1932,7 @@ fn empty_list_prints_the_header_only() {
 
 #[test]
 fn human_list_aligns_columns_across_name_widths() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for (name, expression) in [("a", "* * * * *"), ("longname", "0 9 * * MON-FRI")] {
         assert_cmd::assert::Assert::new(
             locron(&state)
@@ -1943,7 +1953,7 @@ fn human_list_aligns_columns_across_name_widths() {
 
 #[test]
 fn piped_human_list_prints_full_targets_byte_identically() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -1972,7 +1982,7 @@ fn piped_human_list_prints_full_targets_byte_identically() {
 
 #[test]
 fn list_help_advertises_no_trunc_for_list_and_its_alias() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for path in ["list", "ls"] {
         let arguments = [path.to_owned(), "--help".to_owned()];
         let stdout = assert_help_contract(&arguments, "list help", help_output(&state, &arguments));
@@ -1985,7 +1995,7 @@ fn list_help_advertises_no_trunc_for_list_and_its_alias() {
 
 #[test]
 fn list_no_trunc_is_accepted_with_json_and_ignored() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2012,7 +2022,7 @@ fn list_no_trunc_is_accepted_with_json_and_ignored() {
 
 #[test]
 fn human_list_all_marks_disabled_jobs_no() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for name in ["backup", "ping"] {
         assert_cmd::assert::Assert::new(
             locron(&state)
@@ -2040,7 +2050,7 @@ fn human_list_all_marks_disabled_jobs_no() {
 
 #[test]
 fn human_list_never_leaks_configured_values() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -2077,7 +2087,7 @@ fn human_list_never_leaks_configured_values() {
 
 #[test]
 fn human_add_update_enable_disable_remove_print_outcome_lines() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2110,7 +2120,7 @@ fn human_add_update_enable_disable_remove_print_outcome_lines() {
 
     // Dry runs print the outcome line and the summaries, write nothing, and
     // do not initialize state.
-    let dry = tempfile::tempdir().unwrap();
+    let dry = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&dry)
             .args([
@@ -2168,7 +2178,7 @@ fn human_add_update_enable_disable_remove_print_outcome_lines() {
 
 #[test]
 fn human_history_prints_the_aligned_table_with_header_always() {
-    let empty = tempfile::tempdir().unwrap();
+    let empty = private_state_fixture();
     assert_cmd::assert::Assert::new(locron(&empty).args(["history"]).output().unwrap())
         .success()
         .stdout("TIME | JOB | TRIGGER | STATE | DURATION\n");
@@ -2193,7 +2203,7 @@ fn human_history_prints_the_aligned_table_with_header_always() {
     assert!(json_no_trunc.status.success());
     assert_eq!(json.stdout, json_no_trunc.stdout);
 
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2255,7 +2265,7 @@ fn human_history_prints_the_aligned_table_with_header_always() {
 
 #[test]
 fn human_run_prints_the_dry_run_decision_and_queued_lines() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -2315,7 +2325,7 @@ fn human_run_prints_the_dry_run_decision_and_queued_lines() {
 
 #[test]
 fn human_cancel_prints_the_resolution_line() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2358,7 +2368,7 @@ fn human_cancel_prints_the_resolution_line() {
 
 #[test]
 fn human_show_prints_labeled_sections() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -2406,7 +2416,7 @@ fn human_show_prints_labeled_sections() {
 
 #[test]
 fn human_show_why_and_list_never_leak_configured_values() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -2456,7 +2466,7 @@ fn human_show_why_and_list_never_leak_configured_values() {
 
 #[test]
 fn human_preview_prints_the_schedule_line_then_occurrences() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let output = locron(&state)
         .args(["preview", "--cron", "0 9 * * *", "--count", "2"])
         .output()
@@ -2483,7 +2493,7 @@ fn human_preview_prints_the_schedule_line_then_occurrences() {
 
 #[test]
 fn human_why_job_prints_labeled_sections() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2516,7 +2526,7 @@ fn human_why_job_prints_labeled_sections() {
 
 #[test]
 fn explain_no_history_is_explicit_redacted_and_human_json_equivalent() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args([
@@ -2600,7 +2610,7 @@ fn explain_no_history_is_explicit_redacted_and_human_json_equivalent() {
 
 #[test]
 fn explain_distinguishes_success_only_history_from_an_active_latest_run() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "work", "--every", "1h", "--", "/usr/bin/true"])
@@ -2662,7 +2672,7 @@ fn explain_distinguishes_success_only_history_from_an_active_latest_run() {
 
 #[test]
 fn explain_allows_latest_run_and_anomaly_to_match_then_retains_an_older_anomaly() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "mixed", "--every", "1h", "--", "/usr/bin/true"])
@@ -2698,7 +2708,7 @@ fn explain_allows_latest_run_and_anomaly_to_match_then_retains_an_older_anomaly(
 
 #[test]
 fn explain_respects_removed_job_history_and_reused_name_identity() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let first = invoke_json(
         &state,
         &["add", "reused", "--every", "1h", "--", "/usr/bin/true"],
@@ -2742,7 +2752,7 @@ fn explain_respects_removed_job_history_and_reused_name_identity() {
 
 #[test]
 fn human_run_wait_streams_and_prints_the_terminal_outcome_line() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2777,7 +2787,7 @@ fn human_run_wait_streams_and_prints_the_terminal_outcome_line() {
 
 #[test]
 fn human_why_run_prints_immutable_run_facts() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2823,7 +2833,7 @@ fn human_why_run_prints_immutable_run_facts() {
 
 #[test]
 fn human_doctor_prints_one_level_line_per_check() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2857,7 +2867,7 @@ fn human_doctor_prints_one_level_line_per_check() {
 
 #[test]
 fn human_config_forms_print_key_value_and_action_lines() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
             .args(["config", "get", "global_concurrency"])
@@ -2948,7 +2958,7 @@ fn human_config_forms_print_key_value_and_action_lines() {
 
 #[test]
 fn human_import_prints_counts_then_action_lines() {
-    let source = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&source)
             .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
@@ -2960,7 +2970,7 @@ fn human_import_prints_counts_then_action_lines() {
     let path = source.path().join("backup.json");
     std::fs::write(&path, &export.stdout).unwrap();
 
-    let destination = tempfile::tempdir().unwrap();
+    let destination = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&destination)
             .arg("import")
@@ -2986,7 +2996,7 @@ fn human_import_prints_counts_then_action_lines() {
     ))
     .stdout(predicate::str::contains("unchanged: backup ("));
 
-    let dry = tempfile::tempdir().unwrap();
+    let dry = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&dry)
             .arg("import")
@@ -3005,7 +3015,7 @@ fn human_import_prints_counts_then_action_lines() {
 
 #[test]
 fn human_prune_prints_the_pruned_counts() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     assert_cmd::assert::Assert::new(locron(&state).args(["prune"]).output().unwrap())
         .success()
         .stdout("pruned: 0 runs, 0 outputs (0 bytes)\n");
@@ -3017,7 +3027,7 @@ fn human_prune_prints_the_pruned_counts() {
     )
     .success()
     .stdout("dry run: would prune 0 runs, 0 outputs (0 bytes)\n");
-    let empty = tempfile::tempdir().unwrap();
+    let empty = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&empty)
             .args(["prune", "--dry-run"])
@@ -3031,7 +3041,7 @@ fn human_prune_prints_the_pruned_counts() {
 
 #[test]
 fn human_forms_leave_the_json_envelope_untouched() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     let json = locron(&state)
         .args([
             "--json",
@@ -3091,7 +3101,7 @@ fn human_forms_leave_the_json_envelope_untouched() {
 
 #[test]
 fn duplicate_add_and_rename_are_stable_durable_conflicts() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for name in ["alpha", "beta"] {
         assert_cmd::assert::Assert::new(
             locron(&state)
@@ -3131,7 +3141,7 @@ fn duplicate_add_and_rename_are_stable_durable_conflicts() {
 
 #[test]
 fn export_selectors_union_dedup_and_no_match_rejected() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for (name, tag) in [
         ("alpha", "nightly"),
         ("beta", "nightly"),
@@ -3227,7 +3237,7 @@ fn export_selectors_union_dedup_and_no_match_rejected() {
 
 #[test]
 fn export_selectors_redaction_parity_with_full_export() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for (name, secret) in [("secret", "hunter2"), ("plain", "")] {
         assert_cmd::assert::Assert::new(
             locron(&state)
@@ -3277,7 +3287,7 @@ fn export_selectors_redaction_parity_with_full_export() {
 
 #[test]
 fn export_jobs_round_trip_import_reproduces_exactly_the_selected_jobs() {
-    let source = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
     for (name, schedule) in [("alpha", "1h"), ("beta", "2h"), ("gamma", "30m")] {
         assert_cmd::assert::Assert::new(
             locron(&source)
@@ -3299,7 +3309,7 @@ fn export_jobs_round_trip_import_reproduces_exactly_the_selected_jobs() {
     let path = source.path().join("subset.json");
     std::fs::write(&path, &export.stdout).unwrap();
 
-    let destination = tempfile::tempdir().unwrap();
+    let destination = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&destination)
             .arg("import")
@@ -3344,7 +3354,7 @@ fn export_jobs_round_trip_import_reproduces_exactly_the_selected_jobs() {
 
 #[test]
 fn export_picker_hook_keeps_stdout_for_the_document_and_stderr_for_the_picker() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for name in ["alpha", "beta", "gamma"] {
         assert_cmd::assert::Assert::new(
             locron(&state)
@@ -3626,13 +3636,13 @@ fn static_handler(status: u16, body: Vec<u8>) -> impl Fn(&str) -> FixtureRespons
     move |_| (status, Vec::new(), body.clone())
 }
 
-fn export_document_bytes(state: &tempfile::TempDir) -> Vec<u8> {
+fn export_document_bytes(state: &PrivateState) -> Vec<u8> {
     locron(state).arg("export").output().unwrap().stdout
 }
 
 #[test]
 fn import_url_matches_file_import_byte_for_byte() {
-    let source = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&source)
             .args([
@@ -3652,7 +3662,7 @@ fn import_url_matches_file_import_byte_for_byte() {
     let document = export_document_bytes(&source);
     let fixture = ImportFixture::start(static_handler(200, document.clone()));
 
-    let from_url = tempfile::tempdir().unwrap();
+    let from_url = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&from_url)
             .arg("import")
@@ -3665,7 +3675,7 @@ fn import_url_matches_file_import_byte_for_byte() {
         "created 1, updated 0, unchanged 0",
     ));
 
-    let from_file = tempfile::tempdir().unwrap();
+    let from_file = private_state_fixture();
     let path = source.path().join("doc.json");
     std::fs::write(&path, &document).unwrap();
     assert_cmd::assert::Assert::new(
@@ -3712,7 +3722,7 @@ fn import_url_matches_file_import_byte_for_byte() {
 
 #[test]
 fn import_url_dry_run_does_not_mutate() {
-    let source = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&source)
             .args(["add", "alpha", "--every", "1h", "--", "/usr/bin/true"])
@@ -3721,7 +3731,7 @@ fn import_url_dry_run_does_not_mutate() {
     )
     .success();
     let fixture = ImportFixture::start(static_handler(200, export_document_bytes(&source)));
-    let destination = tempfile::tempdir().unwrap();
+    let destination = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&destination)
             .args(["import", &fixture.url("/doc.json"), "--dry-run"])
@@ -3736,7 +3746,7 @@ fn import_url_dry_run_does_not_mutate() {
 
 #[test]
 fn import_url_rejects_redacted_plaintext_and_malformed_bodies() {
-    let source = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&source)
             .args([
@@ -3756,7 +3766,7 @@ fn import_url_rejects_redacted_plaintext_and_malformed_bodies() {
 
     // A redacted document with omissions is rejected exactly like a file.
     let redacted = ImportFixture::start(static_handler(200, export_document_bytes(&source)));
-    let destination = tempfile::tempdir().unwrap();
+    let destination = private_state_fixture();
     let output = locron(&destination)
         .arg("import")
         .arg(redacted.url("/redacted.json"))
@@ -3810,7 +3820,7 @@ fn import_url_rejects_redacted_plaintext_and_malformed_bodies() {
 fn import_url_oversized_body_is_a_fetch_failure() {
     let oversized = vec![b'x'; 16 * 1024 * 1024 + 1];
     let fixture = ImportFixture::start(static_handler(200, oversized));
-    let destination = tempfile::tempdir().unwrap();
+    let destination = private_state_fixture();
     let output = locron(&destination)
         .arg("import")
         .arg(fixture.url("/huge.json"))
@@ -3827,7 +3837,7 @@ fn import_url_oversized_body_is_a_fetch_failure() {
 
 #[test]
 fn import_url_redirect_chain_succeeds_and_redirect_loop_fails() {
-    let source = tempfile::tempdir().unwrap();
+    let source = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&source)
             .args(["add", "alpha", "--every", "1h", "--", "/usr/bin/true"])
@@ -3855,7 +3865,7 @@ fn import_url_redirect_chain_succeeds_and_redirect_loop_fails() {
         ),
         _ => (404, Vec::new(), Vec::new()),
     });
-    let destination = tempfile::tempdir().unwrap();
+    let destination = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&destination)
             .arg("import")
@@ -3903,7 +3913,7 @@ fn import_url_http_errors_map_to_category_5() {
         _ => (200, Vec::new(), b"{}".to_vec()),
     });
     for (path, status) in [("/missing.json", "HTTP 404"), ("/broken.json", "HTTP 500")] {
-        let destination = tempfile::tempdir().unwrap();
+        let destination = private_state_fixture();
         let output = locron(&destination)
             .arg("import")
             .arg(fixture.url(path))
@@ -3926,7 +3936,7 @@ fn import_url_http_errors_map_to_category_5() {
 #[test]
 fn import_url_userinfo_and_unsupported_scheme_rejected_without_requests() {
     let fixture = ImportFixture::start(static_handler(200, b"{}".to_vec()));
-    let destination = tempfile::tempdir().unwrap();
+    let destination = private_state_fixture();
 
     // Userinfo is rejected at parse time as a validation error, before any
     // request is attempted.
@@ -3967,7 +3977,7 @@ fn import_url_userinfo_and_unsupported_scheme_rejected_without_requests() {
 
 #[test]
 fn import_url_rolls_back_on_late_destination_conflict() {
-    let state = tempfile::tempdir().unwrap();
+    let state = private_state_fixture();
     for name in ["alpha", "beta"] {
         assert_cmd::assert::Assert::new(
             locron(&state)

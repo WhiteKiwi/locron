@@ -46,7 +46,16 @@ jobs:
         if: runner.os == 'Windows' && steps.inventory.outputs.windows == 'true'
         env:
           RUSTFLAGS: '-C target-feature=+crt-static'
-        run: cargo build --release --locked -p locron --target '${{ matrix.target }}'
+          RUSTUP_TOOLCHAIN: 1.94.0
+        shell: pwsh
+        run: |
+          $compiler = rustc -vV
+          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
+          $compiler | Write-Output
+          if ($compiler -cnotcontains 'release: 1.94.0') { throw 'native release requires Rust 1.94.0' }
+          if ($compiler -cnotcontains 'host: ${{ matrix.target }}') { throw 'release target must equal native rustc host' }
+          cargo build --release --locked -p locron --target '${{ matrix.target }}'
+          if ($LASTEXITCODE -ne 0) { throw 'native release build failed' }
       - name: Package tarball archive
         if: runner.os != 'Windows'
         shell: bash

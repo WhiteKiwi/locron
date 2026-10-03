@@ -6,6 +6,11 @@
 //! and token output, bind refusal, and explicit-port strictness), the `token`
 //! display command, and the doctor exposure facts.
 
+#[path = "support/private_state.rs"]
+mod private_state;
+
+use private_state::private_state_fixture;
+
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
@@ -17,6 +22,15 @@ use std::time::Duration;
 use assert_cmd::cargo::cargo_bin;
 use locron_server::DEFAULT_PORT;
 use serde_json::Value;
+
+/// Seeds a private token and releases its guarded handle before child execution.
+fn seed_private_token(path: &std::path::Path, token: &str) {
+    use std::io::Write;
+
+    let mut file = locron_core::filesystem::create_private_new(path).unwrap();
+    file.write_all(token.as_bytes()).unwrap();
+    file.flush().unwrap();
+}
 
 fn locron() -> Command {
     Command::new(cargo_bin("locron"))
@@ -179,7 +193,7 @@ fn http_status(port: u16) -> Option<u16> {
 
 #[test]
 fn foreground_serve_prints_the_url_and_token_then_serves() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = private_state_fixture();
     let port = free_port();
     let mut child = locron()
         .arg("--state-dir")
@@ -228,7 +242,7 @@ fn foreground_serve_prints_the_url_and_token_then_serves() {
 
 #[test]
 fn foreground_serve_machine_envelope_reports_facts_not_the_token() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = private_state_fixture();
     let port = free_port();
     let mut child = locron()
         .arg("--state-dir")
@@ -287,7 +301,7 @@ fn non_loopback_bind_is_refused() {
 fn explicit_port_is_strict_when_occupied() {
     let held = hold_port();
     let port = held.port;
-    let dir = tempfile::tempdir().unwrap();
+    let dir = private_state_fixture();
     let mut command = locron();
     command.arg("--state-dir").arg(dir.path());
     command.args(["dashboard", "--port", &port.to_string(), "--json"]);
@@ -326,9 +340,9 @@ fn port_and_bind_are_refused_on_service_subcommands() {
 
 #[test]
 fn dashboard_token_displays_the_stored_token() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = private_state_fixture();
     let token = "0123456789abcdef".repeat(4);
-    fs::write(dir.path().join("dashboard.token"), &token).unwrap();
+    seed_private_token(&dir.path().join("dashboard.token"), &token);
 
     let output = locron()
         .arg("--state-dir")
@@ -360,7 +374,7 @@ fn dashboard_token_displays_the_stored_token() {
 
 #[test]
 fn dashboard_token_generates_a_missing_token() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = private_state_fixture();
     let output = locron()
         .arg("--state-dir")
         .arg(dir.path())
@@ -384,13 +398,7 @@ fn dashboard_token_generates_a_missing_token() {
 fn doctor_reports_the_dashboard_exposure_facts() {
     let tmp = tempfile::tempdir().unwrap();
     let state_dir = tmp.path().join("state");
-    fs::create_dir_all(&state_dir).unwrap();
-    let token_path = state_dir.join("dashboard.token");
-    fs::write(&token_path, "c".repeat(64)).unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&token_path, fs::Permissions::from_mode(0o600)).unwrap();
-    }
+    seed_private_token(&state_dir.join("dashboard.token"), &"c".repeat(64));
     let fake_state = tmp.path().join("state.json");
     let fake_log = tmp.path().join("calls.log");
     fs::write(

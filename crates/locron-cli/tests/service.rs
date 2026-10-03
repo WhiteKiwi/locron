@@ -38,6 +38,15 @@ fn seeded(dir: &Path, body: &str) -> (PathBuf, PathBuf) {
     (state, log)
 }
 
+/// Seeds a private token and releases its guarded handle before child execution.
+fn seed_private_token(path: &Path, token: &str) {
+    use std::io::Write;
+
+    let mut file = locron_core::filesystem::create_private_new(path).unwrap();
+    file.write_all(token.as_bytes()).unwrap();
+    file.flush().unwrap();
+}
+
 fn envelope(output: &std::process::Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("locron.cli/v1 envelope on stdout")
 }
@@ -149,12 +158,38 @@ fn install_defers_the_start_when_a_manual_daemon_holds_the_state_lock() {
     let _serial = serialized();
     let tmp = tempfile::tempdir().unwrap();
     let state_dir = tmp.path().join("state");
+    #[cfg(windows)]
+    let state_dir = {
+        let guard = locron_core::filesystem::DirectoryGuard::private(&state_dir).unwrap();
+        let path = guard.normalized_path().to_path_buf();
+        drop(guard);
+        path
+    };
+    #[cfg(not(windows))]
     fs::create_dir_all(&state_dir).unwrap();
     // Hold the state lock from this process, exactly as a manual
     // `locron daemon run` would.
     let lock_path = state_dir.join("daemon.lock");
+    #[cfg(not(windows))]
     let lock_file = fs::File::create(&lock_path).unwrap();
+    #[cfg(not(windows))]
     lock_file.lock().unwrap();
+    #[cfg(windows)]
+    let _manual_lock = locron_store::DaemonLock::acquire(
+        &lock_path,
+        &locron_store::LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: uuid::Uuid::now_v7().to_string(),
+            started_at_us: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_micros()
+                .try_into()
+                .unwrap(),
+            binary_version: env!("CARGO_PKG_VERSION").into(),
+        },
+    )
+    .unwrap();
     let (state, log) = seeded(
         tmp.path(),
         "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
@@ -337,16 +372,7 @@ fn lifecycle_human_modes_render_labeled_reports_instead_of_json() {
         assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
     }
 
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("dashboard.token"), "d".repeat(64)).unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            state_dir.join("dashboard.token"),
-            fs::Permissions::from_mode(0o600),
-        )
-        .unwrap();
-    }
+    seed_private_token(&state_dir.join("dashboard.token"), &"d".repeat(64));
     for (command, expected) in [
         ("enable", "Registered: yes"),
         ("status", "Access token permissions: owner_only"),
@@ -431,6 +457,11 @@ fn forcing_an_unsupported_backend_is_a_stable_platform_error() {
 #[test]
 fn every_service_subcommand_has_help_text() {
     let _serial = serialized();
+    let executable = if cfg!(windows) {
+        "locron.exe"
+    } else {
+        "locron"
+    };
     for subcommand in ["install", "uninstall", "status"] {
         let output = Command::cargo_bin("locron")
             .unwrap()
@@ -440,7 +471,7 @@ fn every_service_subcommand_has_help_text() {
         assert!(output.status.success(), "{subcommand} --help must succeed");
         let help = String::from_utf8_lossy(&output.stdout);
         assert!(
-            help.contains("Usage: locron service"),
+            help.contains(&format!("Usage: {executable} service")),
             "{subcommand} help usage"
         );
         assert!(help.contains("Examples:"), "{subcommand} help examples");
@@ -550,8 +581,16 @@ fn dashboard_disable_unregisters_then_removes_the_token() {
     let _serial = serialized();
     let tmp = tempfile::tempdir().unwrap();
     let state_dir = tmp.path().join("state");
+    #[cfg(windows)]
+    let state_dir = {
+        let guard = locron_core::filesystem::DirectoryGuard::private(&state_dir).unwrap();
+        let path = guard.normalized_path().to_path_buf();
+        drop(guard);
+        path
+    };
+    #[cfg(not(windows))]
     fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("dashboard.token"), "a".repeat(64)).unwrap();
+    seed_private_token(&state_dir.join("dashboard.token"), &"a".repeat(64));
     let (state, log) = seeded(
         tmp.path(),
         "{\"session\":true,\"loaded\":true,\"enabled\":true,\"registered\":true}",
@@ -592,19 +631,11 @@ fn dashboard_status_reports_service_state_url_and_token_facts() {
     let _serial = serialized();
     let tmp = tempfile::tempdir().unwrap();
     let state_dir = tmp.path().join("state");
-    fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("dashboard.token"), "b".repeat(64)).unwrap();
+    seed_private_token(&state_dir.join("dashboard.token"), &"b".repeat(64));
     let (state, log) = seeded(
         tmp.path(),
         "{\"session\":true,\"loaded\":true,\"enabled\":true,\"registered\":true}",
     );
-    // The real flow writes the token with 0600; mirror that here so the
-    // posture fact is observable (fs::write would use the umask).
-    let token_path = state_dir.join("dashboard.token");
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&token_path, fs::Permissions::from_mode(0o600)).unwrap();
-    }
     let output = fake_dashboard_command(&state, &log, &state_dir)
         .arg("status")
         .arg("--json")
@@ -698,6 +729,11 @@ fn dashboard_enable_refuses_managed_binaries_before_generating_the_token() {
 #[test]
 fn every_dashboard_subcommand_has_help_text() {
     let _serial = serialized();
+    let executable = if cfg!(windows) {
+        "locron.exe"
+    } else {
+        "locron"
+    };
     for subcommand in ["enable", "disable", "status"] {
         let output = Command::cargo_bin("locron")
             .unwrap()
@@ -707,7 +743,7 @@ fn every_dashboard_subcommand_has_help_text() {
         assert!(output.status.success(), "{subcommand} --help must succeed");
         let help = String::from_utf8_lossy(&output.stdout);
         assert!(
-            help.contains("Usage: locron dashboard"),
+            help.contains(&format!("Usage: {executable} dashboard")),
             "{subcommand} help usage"
         );
         assert!(help.contains("Examples:"), "{subcommand} help examples");

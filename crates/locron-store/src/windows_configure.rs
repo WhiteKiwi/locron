@@ -7,6 +7,9 @@ use rusqlite::Connection;
 use crate::windows_open::{OpenTrace, Stage};
 use crate::{StoreError, StoreResult};
 
+#[cfg(debug_assertions)]
+use diagnostics::{Gate, Snapshot, Stamp};
+
 const CONFIGURE_ALLOWANCE: Duration = Duration::from_secs(5);
 const CONTENTION_YIELD: Duration = Duration::from_millis(10);
 
@@ -27,13 +30,32 @@ fn configure_until(
     deadline: Instant,
     on_busy: impl FnMut(&rusqlite::Error),
 ) -> StoreResult<()> {
-    trace.store(
+    #[cfg(debug_assertions)]
+    let mut observations = Snapshot::new(deadline);
+    let wal = admit_wal_until(
+        connection,
+        deadline,
+        on_busy,
+        #[cfg(debug_assertions)]
+        &mut observations,
+    );
+    trace.configuration(
         Stage::ConfigureWal,
-        admit_wal_until(connection, deadline, on_busy),
+        wal,
+        #[cfg(debug_assertions)]
+        &observations,
     )?;
-    trace.store(
+    let settings = configure_remaining(
+        connection,
+        deadline,
+        #[cfg(debug_assertions)]
+        &mut observations,
+    );
+    trace.configuration(
         Stage::ConfigureSettings,
-        configure_remaining(connection, deadline),
+        settings,
+        #[cfg(debug_assertions)]
+        &observations,
     )
 }
 
@@ -52,6 +74,17 @@ fn check_deadline(deadline: Instant) -> StoreResult<Duration> {
         .ok_or_else(deadline_error)
 }
 
+fn observed_deadline(
+    deadline: Instant,
+    #[cfg(debug_assertions)] observations: &mut Snapshot,
+    #[cfg(debug_assertions)] gate: Gate,
+) -> StoreResult<Duration> {
+    let result = check_deadline(deadline);
+    #[cfg(debug_assertions)]
+    observations.gate(gate, &result);
+    result
+}
+
 #[cfg(test)]
 fn is_exact_busy(error: &rusqlite::Error) -> bool {
     matches!(error, rusqlite::Error::SqliteFailure(code, _) if code.extended_code == 5)
@@ -61,12 +94,59 @@ fn is_wal_contention(error: &rusqlite::Error) -> bool {
     matches!(error, rusqlite::Error::SqliteFailure(code, _) if matches!(code.extended_code, 5 | 261))
 }
 
+#[cfg(test)]
 fn wal_attempt(connection: &Connection) -> rusqlite::Result<String> {
+    #[cfg(debug_assertions)]
+    let mut observations = Snapshot::new(Instant::now());
+    wal_attempt_observed(
+        connection,
+        #[cfg(debug_assertions)]
+        &mut observations,
+    )
+}
+
+fn wal_attempt_observed(
+    connection: &Connection,
+    #[cfg(debug_assertions)] observations: &mut Snapshot,
+) -> rusqlite::Result<String> {
     // query_one steps through DONE rather than accepting only SQLITE_ROW. Finalize
     // explicitly even when stepping failed; no prepared statement escapes this call.
-    let mut statement = connection.prepare("PRAGMA main.journal_mode=WAL;")?;
-    let stepped = statement.query_one([], |row| row.get(0));
+    #[cfg(debug_assertions)]
+    observations.mark(Stamp::PrepareEnter);
+    let prepared = connection.prepare("PRAGMA main.journal_mode=WAL;");
+    #[cfg(debug_assertions)]
+    {
+        observations.mark(Stamp::PrepareReturn);
+        observations.sqlite_result(&prepared);
+    }
+    let mut statement = prepared?;
+    #[cfg(debug_assertions)]
+    observations.mark(Stamp::QueryEnter);
+    let stepped = statement.query_one([], |row| {
+        #[cfg(debug_assertions)]
+        observations.mark(Stamp::RowEnter);
+        let result = row.get(0);
+        #[cfg(debug_assertions)]
+        {
+            observations.mark(Stamp::RowReturn);
+            observations.sqlite_result(&result);
+        }
+        result
+    });
+    #[cfg(debug_assertions)]
+    {
+        observations.mark(Stamp::QueryReturn);
+        observations.sqlite_result(&stepped);
+        // Only successful query_one confirms its internal second step reached DONE.
+        observations.query_returned(&stepped);
+        observations.mark(Stamp::FinalizeEnter);
+    }
     let finalized = statement.finalize();
+    #[cfg(debug_assertions)]
+    {
+        observations.mark(Stamp::FinalizeReturn);
+        observations.sqlite_result(&finalized);
+    }
     match (stepped, finalized) {
         (Ok(mode), Ok(())) => Ok(mode),
         (Err(step), Err(finalize)) if is_wal_contention(&step) && !is_wal_contention(&finalize) => {
@@ -81,26 +161,72 @@ fn admit_wal_until(
     connection: &Connection,
     deadline: Instant,
     mut on_busy: impl FnMut(&rusqlite::Error),
+    #[cfg(debug_assertions)] observations: &mut Snapshot,
 ) -> StoreResult<()> {
     // Refuse the caller's explicit transaction before changing its timeout.
-    if !connection.is_autocommit() {
+    let autocommit = connection.is_autocommit();
+    #[cfg(debug_assertions)]
+    {
+        observations.autocommit = Some(autocommit);
+    }
+    if !autocommit {
         return Err(StoreError::Conflict(
             "WAL admission requires an idle autocommit connection".into(),
         ));
     }
-    check_deadline(deadline)?;
+    observed_deadline(
+        deadline,
+        #[cfg(debug_assertions)]
+        observations,
+        #[cfg(debug_assertions)]
+        Gate::Entry,
+    )?;
     // Internal busy handlers wait per locking event. The outer, finalized-statement
     // loop owns the one admission allowance instead of multiplying those waits.
-    connection.busy_timeout(Duration::ZERO)?;
-    check_deadline(deadline)?;
+    #[cfg(debug_assertions)]
+    observations.phase("busy-zero-enter");
+    let zero_timeout = connection.busy_timeout(Duration::ZERO);
+    #[cfg(debug_assertions)]
+    {
+        observations.phase("busy-zero-return");
+        observations.sqlite_result(&zero_timeout);
+    }
+    zero_timeout?;
+    observed_deadline(
+        deadline,
+        #[cfg(debug_assertions)]
+        observations,
+        #[cfg(debug_assertions)]
+        Gate::AfterZero,
+    )?;
     let mut last_busy = None;
     loop {
-        if check_deadline(deadline).is_err() {
+        if observed_deadline(
+            deadline,
+            #[cfg(debug_assertions)]
+            observations,
+            #[cfg(debug_assertions)]
+            Gate::BeforeAttempt,
+        )
+        .is_err()
+        {
             return Err(last_busy.map_or_else(deadline_error, StoreError::Sqlite));
         }
-        match wal_attempt(connection) {
+        #[cfg(debug_assertions)]
+        observations.begin_attempt();
+        match wal_attempt_observed(
+            connection,
+            #[cfg(debug_assertions)]
+            observations,
+        ) {
             Ok(mode) => {
-                check_deadline(deadline)?;
+                observed_deadline(
+                    deadline,
+                    #[cfg(debug_assertions)]
+                    observations,
+                    #[cfg(debug_assertions)]
+                    Gate::AfterWal,
+                )?;
                 if mode != "wal" {
                     return Err(StoreError::Conflict(
                         "SQLite did not accept WAL journal mode".into(),
@@ -109,13 +235,24 @@ fn admit_wal_until(
                 return Ok(());
             }
             Err(error) if is_wal_contention(&error) => {
-                if !connection.is_autocommit() {
+                let autocommit = connection.is_autocommit();
+                #[cfg(debug_assertions)]
+                {
+                    observations.autocommit = Some(autocommit);
+                }
+                if !autocommit {
                     return Err(error.into());
                 }
                 // Only tests supply an observer; production supplies a no-op. It sees
                 // the genuine native BUSY only after the statement has finalized.
                 on_busy(&error);
-                let Ok(remaining) = check_deadline(deadline) else {
+                let Ok(remaining) = observed_deadline(
+                    deadline,
+                    #[cfg(debug_assertions)]
+                    observations,
+                    #[cfg(debug_assertions)]
+                    Gate::AfterBusy,
+                ) else {
                     return Err(error.into());
                 };
                 last_busy = Some(error);
@@ -126,13 +263,304 @@ fn admit_wal_until(
     }
 }
 
-fn configure_remaining(connection: &Connection, deadline: Instant) -> StoreResult<()> {
-    check_deadline(deadline)?;
-    connection.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA locking_mode=NORMAL; PRAGMA trusted_schema=OFF;")?;
-    check_deadline(deadline)?;
-    connection.busy_timeout(CONFIGURE_ALLOWANCE)?;
-    check_deadline(deadline)?;
+fn configure_remaining(
+    connection: &Connection,
+    deadline: Instant,
+    #[cfg(debug_assertions)] observations: &mut Snapshot,
+) -> StoreResult<()> {
+    observed_deadline(
+        deadline,
+        #[cfg(debug_assertions)]
+        observations,
+        #[cfg(debug_assertions)]
+        Gate::BeforeSettings,
+    )?;
+    #[cfg(debug_assertions)]
+    observations.phase("settings-enter");
+    let settings = connection.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA locking_mode=NORMAL; PRAGMA trusted_schema=OFF;");
+    #[cfg(debug_assertions)]
+    {
+        observations.phase("settings-return");
+        observations.sqlite_result(&settings);
+    }
+    settings?;
+    observed_deadline(
+        deadline,
+        #[cfg(debug_assertions)]
+        observations,
+        #[cfg(debug_assertions)]
+        Gate::AfterSettings,
+    )?;
+    #[cfg(debug_assertions)]
+    observations.phase("timeout-restore-enter");
+    let timeout = connection.busy_timeout(CONFIGURE_ALLOWANCE);
+    #[cfg(debug_assertions)]
+    {
+        observations.phase("timeout-restore-return");
+        observations.sqlite_result(&timeout);
+    }
+    timeout?;
+    observed_deadline(
+        deadline,
+        #[cfg(debug_assertions)]
+        observations,
+        #[cfg(debug_assertions)]
+        Gate::AfterRestore,
+    )?;
     Ok(())
+}
+
+#[cfg(debug_assertions)]
+pub(crate) mod diagnostics {
+    use std::fmt::{self, Display};
+    use std::time::{Duration, Instant};
+
+    use crate::StoreResult;
+
+    #[derive(Clone, Copy)]
+    pub(super) enum Gate {
+        Entry,
+        AfterZero,
+        BeforeAttempt,
+        AfterWal,
+        AfterBusy,
+        BeforeSettings,
+        AfterSettings,
+        AfterRestore,
+    }
+
+    impl Gate {
+        fn label(self) -> &'static str {
+            match self {
+                Self::Entry => "entry",
+                Self::AfterZero => "after-zero",
+                Self::BeforeAttempt => "before-attempt",
+                Self::AfterWal => "after-wal",
+                Self::AfterBusy => "after-busy",
+                Self::BeforeSettings => "before-settings",
+                Self::AfterSettings => "after-settings",
+                Self::AfterRestore => "after-restore",
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub(super) enum Stamp {
+        PrepareEnter,
+        PrepareReturn,
+        QueryEnter,
+        RowEnter,
+        RowReturn,
+        QueryReturn,
+        FinalizeEnter,
+        FinalizeReturn,
+    }
+
+    impl Stamp {
+        fn label(self) -> &'static str {
+            match self {
+                Self::PrepareEnter => "prepare-enter",
+                Self::PrepareReturn => "prepare-return",
+                Self::QueryEnter => "query-enter",
+                Self::RowEnter => "row-enter",
+                Self::RowReturn => "row-return",
+                Self::QueryReturn => "query-return",
+                Self::FinalizeEnter => "finalize-enter",
+                Self::FinalizeReturn => "finalize-return",
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum Mode {
+        Unobserved,
+        Wal,
+        Memory,
+        Other,
+    }
+
+    impl Mode {
+        fn label(self) -> &'static str {
+            match self {
+                Self::Unobserved => "unobserved",
+                Self::Wal => "wal",
+                Self::Memory => "memory",
+                Self::Other => "other",
+            }
+        }
+    }
+
+    // Only the last attempt is retained. No strings from SQLite or native owners are stored.
+    pub(crate) struct Snapshot {
+        entered: Instant,
+        entry_remaining_us: u64,
+        gate: Option<Gate>,
+        gate_us: Option<u64>,
+        remaining_us: Option<u64>,
+        phase: &'static str,
+        phase_us: u64,
+        attempts: u64,
+        pub(super) autocommit: Option<bool>,
+        mode: Mode,
+        done: Option<bool>,
+        observed_primary: Option<i32>,
+        observed_extended: Option<i32>,
+        stamps: [Option<u64>; 8],
+    }
+
+    fn micros(duration: Duration) -> u64 {
+        u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
+    }
+
+    impl Snapshot {
+        pub(super) fn new(deadline: Instant) -> Self {
+            let entered = Instant::now();
+            Self {
+                entered,
+                entry_remaining_us: micros(deadline.saturating_duration_since(entered)),
+                gate: None,
+                gate_us: None,
+                remaining_us: None,
+                phase: "entry",
+                phase_us: 0,
+                attempts: 0,
+                autocommit: None,
+                mode: Mode::Unobserved,
+                done: None,
+                observed_primary: None,
+                observed_extended: None,
+                stamps: [None; 8],
+            }
+        }
+
+        pub(super) fn gate(&mut self, gate: Gate, result: &StoreResult<Duration>) {
+            self.gate = Some(gate);
+            self.gate_us = Some(micros(self.entered.elapsed()));
+            // This is the original check's result, not a new native check after expiry.
+            self.remaining_us = Some(result.as_ref().map_or(0, |remaining| micros(*remaining)));
+        }
+
+        pub(super) fn phase(&mut self, phase: &'static str) {
+            self.phase = phase;
+            self.phase_us = micros(self.entered.elapsed());
+        }
+
+        pub(super) fn mark(&mut self, stamp: Stamp) {
+            self.phase(stamp.label());
+            self.stamps[stamp as usize] = Some(self.phase_us);
+        }
+
+        pub(super) fn begin_attempt(&mut self) {
+            self.attempts = self.attempts.saturating_add(1);
+            self.stamps = [None; 8];
+            self.mode = Mode::Unobserved;
+            self.done = None;
+        }
+
+        pub(super) fn sqlite_result<T>(&mut self, result: &rusqlite::Result<T>) {
+            if let Err(rusqlite::Error::SqliteFailure(code, _)) = result {
+                self.observed_primary = Some(code.extended_code & 0xff);
+                self.observed_extended = Some(code.extended_code);
+            }
+        }
+
+        pub(super) fn query_returned(&mut self, result: &rusqlite::Result<String>) {
+            if let Ok(mode) = result {
+                self.done = Some(true);
+                self.mode = match mode.as_str() {
+                    "wal" => Mode::Wal,
+                    "memory" => Mode::Memory,
+                    _ => Mode::Other,
+                };
+            }
+        }
+
+        #[cfg(test)]
+        pub(crate) fn maximum_fixture() -> Self {
+            let mut snapshot = Self::new(Instant::now());
+            snapshot.entry_remaining_us = u64::MAX;
+            snapshot.gate = Some(Gate::BeforeSettings);
+            snapshot.gate_us = Some(u64::MAX);
+            snapshot.remaining_us = Some(u64::MAX);
+            snapshot.phase = "timeout-restore-return";
+            snapshot.phase_us = u64::MAX;
+            snapshot.attempts = u64::MAX;
+            snapshot.observed_primary = Some(255);
+            snapshot.observed_extended = Some(i32::MIN);
+            snapshot.stamps = [Some(u64::MAX); 8];
+            snapshot
+        }
+    }
+
+    struct Fact<T>(Option<T>);
+
+    impl<T: Display> Display for Fact<T> {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match &self.0 {
+                Some(value) => value.fmt(formatter),
+                None => formatter.write_str("unobserved"),
+            }
+        }
+    }
+
+    impl Display for Snapshot {
+        fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                formatter,
+                " gate={} phase={} attempts={} entry_rem_us={} phase_us={} gate_us={} remaining_us={} autocommit={} mode={} done={} observed_primary={} observed_extended={} prepare_us={},{} query_us={},{} row_us={},{} finalize_us={},{}",
+                self.gate.map_or("unobserved", Gate::label),
+                self.phase,
+                self.attempts,
+                self.entry_remaining_us,
+                self.phase_us,
+                Fact(self.gate_us),
+                Fact(self.remaining_us),
+                Fact(self.autocommit),
+                self.mode.label(),
+                Fact(self.done),
+                Fact(self.observed_primary),
+                Fact(self.observed_extended),
+                Fact(self.stamps[0]),
+                Fact(self.stamps[1]),
+                Fact(self.stamps[2]),
+                Fact(self.stamps[5]),
+                Fact(self.stamps[3]),
+                Fact(self.stamps[4]),
+                Fact(self.stamps[6]),
+                Fact(self.stamps[7]),
+            )
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{Snapshot, Stamp};
+        use std::time::Instant;
+
+        #[test]
+        fn unobserved_native_facts_and_done_are_not_invented_or_reused() {
+            let mut snapshot = Snapshot::new(Instant::now());
+            let initial = snapshot.to_string();
+            assert!(initial.contains("gate=unobserved"));
+            assert!(initial.contains("autocommit=unobserved mode=unobserved done=unobserved"));
+            assert!(initial.contains("prepare_us=unobserved,unobserved"));
+            snapshot.begin_attempt();
+            snapshot.mark(Stamp::RowEnter);
+            snapshot.mark(Stamp::RowReturn);
+            snapshot.query_returned(&Ok("private-mode-must-not-render".to_owned()));
+            let complete = snapshot.to_string();
+            assert!(complete.contains("mode=other done=true"));
+            assert!(!complete.contains("private-mode-must-not-render"));
+            snapshot.begin_attempt();
+            let next = snapshot.to_string();
+            assert!(next.contains("attempts=2"));
+            assert!(next.contains("mode=unobserved done=unobserved"));
+            assert!(next.contains("row_us=unobserved,unobserved"));
+            snapshot.attempts = u64::MAX;
+            snapshot.begin_attempt();
+            assert_eq!(snapshot.attempts, u64::MAX);
+        }
+    }
 }
 
 #[cfg(test)]
