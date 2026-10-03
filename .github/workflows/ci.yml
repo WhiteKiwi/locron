@@ -1,344 +1,15 @@
-name: CI
+name: Windows real-user prerequisite
 
 on:
   workflow_dispatch:
-    inputs:
-      full_windows:
-        description: Run exploratory full native Windows tests and Clippy
-        type: boolean
-        required: false
-        default: false
-  push:
-    branches:
-      - main
-  pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  frontend:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
-    name: Dashboard frontend / Node 24.21.0
-    timeout-minutes: 15
-    runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: crates/locron-server/frontend
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-        env:
-          TMPDIR: ${{ runner.temp }}
-        with:
-          working_directory: crates/locron-server/frontend
-          cache: false
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm build
-      - name: Verify committed dashboard assets
-        run: |
-          git diff --exit-code -- dist
-          test -z "$(git ls-files --others -- dist)"
-
-  windows-foundation:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
-    name: Windows foundation / ${{ matrix.platform }} / Rust ${{ matrix.rust }}
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: x86_64-pc-windows-msvc
-            os: windows-2025
-            rust: stable
-          - platform: aarch64-pc-windows-msvc
-            os: windows-11-arm
-            rust: stable
-          - platform: x86_64-pc-windows-msvc
-            os: windows-2025
-            rust: 1.94.0
-    runs-on: ${{ matrix.os }}
-    env:
-      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Verify native toolchain
-        shell: pwsh
-        run: |
-          Get-ComputerInfo -Property WindowsProductName, WindowsVersion, OsArchitecture
-          rustc -vV
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $hostTriple = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
-          if ($hostTriple -ne '${{ matrix.platform }}') { throw "Wrong native toolchain: $hostTriple" }
-      - name: Compile staged Windows workspace
-        run: cargo check --workspace --locked
-      - name: Verify cold core contracts with isolated fault fixtures
-        id: native_core
-        run: cargo test -p locron-core --lib --locked -- --test-threads=1
-      - name: Verify isolated stock adapter policy and parent containment
-        shell: pwsh
-        run: |
-          foreach ($proofMode in @('eof-release-driver', 'restricted-driver', 'parent-exit-driver')) {
-            $env:LOCRON_STOCK_LOADER_FIXTURE = $proofMode
-            Write-Output "Isolated stock adapter proof: $proofMode"
-            cargo test -p locron-core --lib --locked windows::loader_tests::owned_loader_fixture_child -- --exact --nocapture --test-threads=1
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-      - name: Verify durable store and runtime library contracts
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
-        run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
-      - name: Verify native registered service semantics
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
-        run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=1'
-      - name: Verify optional native GUI launcher semantics
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
-        run: cargo test -p locron --test windows_service_launcher --features windows-service-launcher --locked -- --test-threads=1
-      - name: Diagnose the stock Windows adapter after cold contracts
-        if: always()
-        shell: pwsh
-        run: ./.github/scripts/windows-adapter-diagnostic.ps1
-      - name: Build the native CLI for isolated Windows acceptance
-        run: cargo build -p locron --locked
-      - name: Verify actual registered daemon lifetimes
-        run: cargo test -p locron --test windows_lifecycle --locked
-      - name: Verify registered dashboard composition contracts
-        run: cargo test -p locron --bin locron --locked -- service::windows_dashboard_tests
-      - name: Verify guarded Windows output pruning
-        run: cargo test -p locron --bin locron --locked -- tests::windows_prune_tests
-      - name: Verify all output maintenance and recovery contracts
-        run: cargo test -p locron --bin locron --locked -- maintenance::tests
-      - name: Verify native MCP stdio contracts
-        run: cargo test -p locron --test mcp --locked
-      - name: Verify native HTTP API and stream contracts
-        run: cargo test -p locron-server --test contract --locked
-      - name: Record native artifact evidence
-        shell: pwsh
-        run: |
-          $facts = @{
-            revision = '${{ github.sha }}'
-            runnerImage = '${{ matrix.os }}'
-            nativeTarget = '${{ matrix.platform }}'
-            rust = '${{ matrix.rust }}'
-            compiler = (rustc -vV | Out-String)
-            windows = (Get-ComputerInfo -Property WindowsProductName, WindowsVersion, OsArchitecture | Out-String)
-            account = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-            elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-          }
-          $facts | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath windows-native-evidence.json -Encoding utf8
-          Get-FileHash -Algorithm SHA256 -LiteralPath target/debug/locron.exe | Format-List | Out-File -FilePath windows-native-sha256.txt -Encoding utf8
-      - uses: actions/upload-artifact@v7
-        with:
-          name: windows-native-${{ matrix.platform }}-rust-${{ matrix.rust }}
-          if-no-files-found: error
-          retention-days: 14
-          path: |
-            target/debug/locron.exe
-            target/debug/locron-service-launcher.exe
-            target/debug/deps/locron_core-*.exe
-            target/debug/deps/locron_store-*.exe
-            target/debug/deps/locron_engine-*.exe
-            target/debug/deps/locron_server-*.exe
-            target/debug/deps/windows_lifecycle-*.exe
-            target/debug/deps/windows_service_launcher-*.exe
-            target/debug/deps/mcp-*.exe
-            target/debug/deps/contract-*.exe
-            windows-native-evidence.json
-            windows-native-sha256.txt
-
-  windows-lint-foundation:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
-    name: Windows lint foundation / Rust 1.98.0
-    timeout-minutes: 35
-    runs-on: windows-2025
-    env:
-      RUSTUP_TOOLCHAIN: 1.98.0
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.98.0
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --locked -- -D warnings
-      - run: cargo clippy -p locron-core -p locron-store -p locron-engine -p locron-server --lib --tests --locked -- -D warnings
-      - run: cargo clippy -p locron --bin locron --test windows_lifecycle --test mcp --locked -- -D warnings
-      - run: cargo clippy -p locron --bin locron-service-launcher --test windows_service_launcher --features windows-service-launcher --locked -- -D warnings
-
-  windows-full-test:
-    name: Windows exploratory tests / ${{ matrix.platform }} / Rust ${{ matrix.rust }}
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_windows }}
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: x86_64-pc-windows-msvc
-            os: windows-2025
-            rust: stable
-          - platform: aarch64-pc-windows-msvc
-            os: windows-11-arm
-            rust: stable
-          - platform: x86_64-pc-windows-msvc
-            os: windows-2025
-            rust: 1.94.0
-    runs-on: ${{ matrix.os }}
-    env:
-      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
-        with:
-          toolchain: ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          save-if: false
-      - name: Verify requested native compiler
-        shell: pwsh
-        run: |
-          $compiler = rustc -vV
-          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
-          $compiler | Write-Output
-          $requestedCompiler = rustup run '${{ matrix.rust }}' rustc -vV
-          if ($LASTEXITCODE -ne 0) { throw 'requested toolchain facts unavailable' }
-          $requestedRelease = @($requestedCompiler | Where-Object { $_ -clike 'release: *' })
-          if ($requestedRelease.Count -ne 1 -or $compiler -cnotcontains $requestedRelease[0]) { throw 'actual compiler must match requested toolchain release' }
-          if ($compiler -cnotcontains 'host: ${{ matrix.platform }}') { throw 'test target must equal native rustc host' }
-      - name: Run full native workspace tests
-        run: cargo test --workspace --all-targets --locked
-
-  windows-full-clippy:
-    name: Windows exploratory Clippy / ${{ matrix.platform }} / Rust 1.98.0
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_windows }}
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: x86_64-pc-windows-msvc
-            os: windows-2025
-          - platform: aarch64-pc-windows-msvc
-            os: windows-11-arm
-    runs-on: ${{ matrix.os }}
-    env:
-      RUSTUP_TOOLCHAIN: 1.98.0
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
-        with:
-          toolchain: 1.98.0
-          components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          save-if: false
-      - name: Verify requested native compiler
-        shell: pwsh
-        run: |
-          $compiler = rustc -vV
-          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
-          $compiler | Write-Output
-          if ($compiler -cnotcontains 'release: 1.98.0') { throw 'full Clippy requires Rust 1.98.0' }
-          if ($compiler -cnotcontains 'host: ${{ matrix.platform }}') { throw 'Clippy target must equal native rustc host' }
-      - name: Run warnings-denied full native workspace Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-  test:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
-    name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
-    timeout-minutes: 30
-    env:
-      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - rust: stable
-            runner:
-              platform: linux-x86_64
-              os: ubuntu-24.04
-          - rust: stable
-            runner:
-              platform: linux-aarch64
-              os: ubuntu-24.04-arm
-          - rust: stable
-            runner:
-              platform: macos-x86_64
-              os: macos-15-intel
-          - rust: stable
-            runner:
-              platform: macos-aarch64
-              os: macos-14
-          - rust: 1.94.0
-            runner:
-              platform: linux-x86_64
-              os: ubuntu-24.04
-    runs-on: ${{ matrix.runner.os }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Record platform
-        run: |
-          uname -a
-          rustc -vV
-          test "$(rustup which rustc)" = "$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)"
-      - run: cargo test --workspace --all-targets
-
-  lint:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
-    name: Lint / ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
-    timeout-minutes: 30
-    env:
-      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - rust: 1.98.0
-            runner:
-              platform: linux-x86_64
-              os: ubuntu-24.04
-          - rust: 1.98.0
-            runner:
-              platform: macos-aarch64
-              os: macos-14
-    runs-on: ${{ matrix.runner.os }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Record toolchain
-        run: |
-          rustc -vV
-          test "$(rustup which rustc)" = "$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)"
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Dependency direction
-        run: bash scripts/check-dependency-direction.sh
-
-  windows-package:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
-    name: Windows package / ${{ matrix.target }}
-    timeout-minutes: 45
+  windows-real-user-prerequisite:
+    name: Manual real-user prerequisite / ${{ matrix.target }} / Rust 1.94.0
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -348,258 +19,57 @@ jobs:
           - target: aarch64-pc-windows-msvc
             os: windows-11-arm
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
     env:
       RUSTUP_TOOLCHAIN: 1.94.0
+      LOCRON_PREREQUISITE_MODE: two-user-v1
+      LOCRON_PREREQUISITE_TARGET: ${{ matrix.target }}
+      LOCRON_PREREQUISITE_BASE_SHA: 2f7cea6934de0faa873d8301d58ff98fe07abab0
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
         with:
           toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.8.2
         with:
           save-if: false
-      - name: Build native executable pair with static CRT
+      - name: Verify exact source and native compiler
         env:
-          RUSTFLAGS: '-C target-feature=+crt-static'
-        shell: powershell
+          LOCRON_PREREQUISITE_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: cmd
         run: |
-          $compiler = rustc -vV
-          if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
-          $compiler | Write-Output
-          if ($compiler -cnotcontains 'release: 1.94.0') { throw 'native packages require Rust 1.94.0' }
-          if ($compiler -cnotcontains 'host: ${{ matrix.target }}') { throw 'package target must equal native rustc host' }
-          cargo build --release --locked -p locron --bins --features windows-service-launcher --target '${{ matrix.target }}'
-          if ($LASTEXITCODE -ne 0) { throw 'native release build failed' }
-      - name: Verify native Windows archive and ownership contracts
+          @echo off
+          if not "%GITHUB_ACTIONS%"=="true" exit /b 1
+          if not "%LOCRON_PREREQUISITE_RUNNER_ENVIRONMENT%"=="github-hosted" exit /b 1
+          set "PREREQUISITE_SOURCE="
+          for /f %%S in ('git rev-parse HEAD') do set "PREREQUISITE_SOURCE=%%S"
+          if not "%PREREQUISITE_SOURCE%"=="%GITHUB_SHA%" exit /b 1
+          rustc +1.94.0 -vV
+          if errorlevel 1 exit /b 1
+          set "PREREQUISITE_HOST="
+          set "PREREQUISITE_RELEASE="
+          for /f "tokens=2" %%H in ('rustc +1.94.0 -vV ^| findstr /B "host:"') do set "PREREQUISITE_HOST=%%H"
+          for /f "tokens=2" %%V in ('rustc +1.94.0 -vV ^| findstr /B "release:"') do set "PREREQUISITE_RELEASE=%%V"
+          if not "%PREREQUISITE_HOST%"=="%LOCRON_PREREQUISITE_TARGET%" exit /b 1
+          if not "%PREREQUISITE_RELEASE%"=="1.94.0" exit /b 1
+      - name: Build the normal prerequisite example
+        shell: cmd
+        run: cargo +1.94.0 build -p locron-engine --example windows_user_prerequisite --locked --target ${{ matrix.target }}
+      - name: Verify two actual credential identities and owned descendant trees
         env:
-          RUSTFLAGS: '-C target-feature=+crt-static'
-        shell: powershell
-        run: |
-          cargo test --locked -p locron --bin locron --target '${{ matrix.target }}' self_update::windows_ -- --test-threads=1
-          if ($LASTEXITCODE -ne 0) { throw 'native Windows distribution contract fixtures failed' }
-      - name: Verify stock PowerShell installer bootstrap
-        shell: powershell
-        run: |
-          if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) { throw 'installer fixtures require stock PowerShell 5.1' }
-          Get-ExecutionPolicy -List | Format-Table | Out-String | Write-Output
-          python -B scripts/render-windows-uninstaller.py --check
-          if ($LASTEXITCODE -ne 0) { throw 'retained uninstaller bootstrap differs from reviewed source' }
-          & './scripts/test-windows-installer.ps1'
-          if (-not $?) { throw 'stock PowerShell installer bootstrap fixtures failed' }
-      - name: Package and verify current-version ZIP without developer PATH
-        shell: powershell
-        run: |
-          $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed' }
-          $package = @($metadata.packages | Where-Object { $_.name -eq 'locron' })
-          if ($package.Count -ne 1) { throw 'expected exactly one locron package' }
-          $tag = 'v' + $package[0].version
-          $target = '${{ matrix.target }}'
-          python -B scripts/windows_release.py package $tag $target "target/$target/release/locron.exe" package-artifacts
-          if ($LASTEXITCODE -ne 0) { throw 'native ZIP packaging failed' }
-          $archive = "package-artifacts/locron-$tag-$target.zip"
-          $facts = python -B scripts/windows_release.py validate $tag $target $archive | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'native ZIP validation failed' }
-          $verification = [ordered]@{
-            version = $facts.version
-            target = $facts.target
-            unsigned = $facts.unsigned
-            imports = $facts.imports
-            binary_sha256 = $facts.binary_sha256
-            archive_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
-            rustc = (rustc -vV | Out-String).Trim()
-            rustflags = '-C target-feature=+crt-static'
-            version_check_path = 'Windows system directories only'
-          }
-          $verification | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 package-artifacts/verification.json
-      - name: Preserve native package verification
-        uses: actions/upload-artifact@v7
+          LOCRON_PREREQUISITE_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        shell: cmd
+        run: '"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -File scripts/test-windows-user-prerequisite.ps1 -HostedPrerequisite'
+      - name: Upload bounded sanitized prerequisite evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: windows-package-${{ matrix.target }}
+          name: real-user-prerequisite-${{ matrix.target }}-${{ github.sha }}
           path: |
-            package-artifacts/*.zip
-            package-artifacts/verification.json
+            prerequisite-evidence/receipt.json
+            prerequisite-evidence/built-example.json
           if-no-files-found: error
-      - name: Package and probe paired Windows draft ZIP
-        env:
-          LOCRON_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-        shell: powershell
-        run: |
-          $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed' }
-          $package = @($metadata.packages | Where-Object { $_.name -eq 'locron' })
-          if ($package.Count -ne 1) { throw 'expected exactly one locron package' }
-          $tag = 'v' + $package[0].version
-          $target = '${{ matrix.target }}'
-          python -B scripts/windows_release.py package $tag $target "target/$target/release/locron.exe" paired-draft-artifacts --launcher "target/$target/release/locron-service-launcher.exe"
-          if ($LASTEXITCODE -ne 0) { throw 'paired draft ZIP packaging or native probes failed' }
-          $archive = "paired-draft-artifacts/locron-$tag-$target.zip"
-          $facts = python -B scripts/windows_release.py validate $tag $target $archive --paired | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'paired draft ZIP validation or native probes failed' }
-          $verification = [ordered]@{
-            schema = 'locron.windows-paired-package-verification/v1'
-            artifact_kind = 'draft-paired-windows-package'
-            source_repository = $env:GITHUB_REPOSITORY
-            source_revision = $env:GITHUB_SHA
-            source_head_revision = $env:LOCRON_SOURCE_HEAD
-            source_ref = $env:GITHUB_REF
-            source_workflow = $env:GITHUB_WORKFLOW_REF
-            run_id = $env:GITHUB_RUN_ID
-            run_attempt = $env:GITHUB_RUN_ATTEMPT
-            version = $facts.version
-            target = $facts.target
-            unsigned = $facts.unsigned
-            binaries = $facts.binaries
-            version_probes = $facts.version_probes
-            launcher_abi = $facts.launcher_abi
-            launcher_identity = $facts.launcher_identity
-            archive_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
-            rustc = (rustc -vV | Out-String).Trim()
-            rustflags = '-C target-feature=+crt-static'
-            probe_path = 'Windows system directories only'
-            probe_bytes = 'staged final ZIP members'
-          }
-          $verification | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 paired-draft-artifacts/verification.json
-      - name: Preserve paired Windows draft package verification
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-paired-package-draft-${{ matrix.target }}
-          path: |
-            paired-draft-artifacts/*.zip
-            paired-draft-artifacts/verification.json
-          if-no-files-found: error
-
-  installer:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
-    name: Installer / ubuntu-latest
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Shellcheck installer and release scripts
-        run: |
-          sudo apt-get install -y shellcheck
-          shellcheck install.sh scripts/generate-release-checksums.sh scripts/test-generate-release-checksums.sh scripts/render-homebrew-formula.sh scripts/test-render-homebrew-formula.sh scripts/crates-version-inventory.sh scripts/test-crates-version-inventory.sh scripts/check-release-version.sh scripts/test-check-release-version.sh
-      - name: Test crates.io inventory classification
-        run: |
-          sh scripts/test-crates-version-inventory.sh
-          sh scripts/test-check-release-version.sh
-      - name: Shellcheck usage.sh
-        run: |
-          shellcheck scripts/usage.sh
-      - name: Test Homebrew formula rendering
-        run: sh scripts/test-render-homebrew-formula.sh
-      - name: Test signing, immutable release and updater boundaries
-        run: python3 -B scripts/test-release-scripts.py
-      - name: Test Windows archive and versioned release boundaries
-        run: python3 -B scripts/test-windows-distribution.py
-      - name: Check release checksum filenames
-        run: sh scripts/test-generate-release-checksums.sh
-      - name: Refuse unsupported platforms and musl
-        run: |
-          set -eu
-          mkdir -p fakebin
-
-          cat > fakebin/uname <<'EOF'
-          #!/bin/sh
-          case "$1" in
-            -s) echo "Windows" ;;
-            -m) echo "x86_64" ;;
-            *) /usr/bin/uname "$@" ;;
-          esac
-          EOF
-          chmod +x fakebin/uname
-          if PATH="$PWD/fakebin:$PATH" sh install.sh >unsupported-os.log 2>&1; then
-            echo "expected refusal for unsupported OS"; cat unsupported-os.log; exit 1
-          fi
-          grep -q "unsupported operating system 'Windows'" unsupported-os.log
-
-          cat > fakebin/uname <<'EOF'
-          #!/bin/sh
-          case "$1" in
-            -s) echo "Linux" ;;
-            -m) echo "sparc64" ;;
-            *) /usr/bin/uname "$@" ;;
-          esac
-          EOF
-          if PATH="$PWD/fakebin:$PATH" sh install.sh >unsupported-arch.log 2>&1; then
-            echo "expected refusal for unsupported arch"; cat unsupported-arch.log; exit 1
-          fi
-          grep -q "unsupported CPU architecture 'sparc64'" unsupported-arch.log
-
-          cat > fakebin/uname <<'EOF'
-          #!/bin/sh
-          case "$1" in
-            -s) echo "Linux" ;;
-            -m) echo "x86_64" ;;
-            *) /usr/bin/uname "$@" ;;
-          esac
-          EOF
-          cat > fakebin/ldd <<'EOF'
-          #!/bin/sh
-          echo "musl libc (x86_64)"; exit 0
-          EOF
-          chmod +x fakebin/ldd
-          if PATH="$PWD/fakebin:$PATH" sh install.sh >musl.log 2>&1; then
-            echo "expected refusal for musl"; cat musl.log; exit 1
-          fi
-          grep -q "musl-based Linux is not supported" musl.log
-      - name: Install a pinned release on Linux
-        run: |
-          set -eu
-          LOCRON_VERSION=v0.2.0 LOCRON_INSTALL_DIR="$PWD/test-bin/locron" sh install.sh
-          "$PWD/test-bin/locron" -V
-
-  source-package:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
-    name: Source packages / Rust 1.94.0
-    timeout-minutes: 30
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.94.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Verify package inventory
-        shell: bash
-        run: |
-          mapfile -t packages < <(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name' | sort)
-          expected=(locron locron-core locron-engine locron-server locron-store)
-          diff -u <(printf '%s\n' "${expected[@]}") <(printf '%s\n' "${packages[@]}")
-          cargo metadata --no-deps --locked --format-version 1 | jq -e '
-            [.packages[] | select(.name == "locron")] as $cli
-            | ($cli | length) == 1
-              and ([.packages[].targets[] | select(.kind | index("bin")) | .name] | sort)
-                == ["locron", "locron-service-launcher"]
-              and $cli[0].default_run == "locron"
-              and $cli[0].features == {"windows-service-launcher": []}
-              and ([$cli[0].targets[] | select(.kind | index("bin"))
-                | {name, required: (."required-features" // []), test}] | sort_by(.name)) == [
-                  {name: "locron", required: [], test: true},
-                  {name: "locron-service-launcher", required: ["windows-service-launcher"], test: false}
-                ]
-          '
-      - name: Package and inspect archives
-        shell: bash
-        run: |
-          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-          cargo package --workspace --locked
-          for package in locron-core locron-store locron-engine locron-server locron; do
-            archive="target/package/${package}-${VERSION}.crate"
-            tar -tf "$archive" > "$RUNNER_TEMP/${package}.files"
-            grep -q "/README.md$" "$RUNNER_TEMP/${package}.files"
-            grep -q "/LICENSE-MIT$" "$RUNNER_TEMP/${package}.files"
-            grep -q "/LICENSE-APACHE$" "$RUNNER_TEMP/${package}.files"
-            if grep -E '/(target|\.git|\.env|dashboard/node_modules)/' "$RUNNER_TEMP/${package}.files"; then
-              echo "unexpected repository/build material in $archive" >&2
-              exit 1
-            fi
-          done
-          grep -q '/dist/index.html$' "$RUNNER_TEMP/locron-server.files"
-      - name: Rehearse workspace publication
-        run: cargo publish --workspace --dry-run --locked
+          retention-days: 7

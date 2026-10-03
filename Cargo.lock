@@ -1363,6 +1363,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -1373,6 +1374,7 @@ dependencies = [
  "uuid",
  "widestring",
  "win32job",
+ "windows-permissions",
 ]
 
 [[package]]

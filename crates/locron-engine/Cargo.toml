@@ -41,5 +41,14 @@ tokio-rustls = { version = "=0.26.4", default-features = false, features = ["aws
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
+[target.'cfg(windows)'.dev-dependencies]
+sha2.workspace = true
+windows-permissions = "=0.2.4"
+
+[[example]]
+name = "windows_user_prerequisite"
+test = false
+bench = false
+
 [lints]
 workspace = true
