@@ -1,6 +1,6 @@
-#![cfg(unix)]
-
 //! End-to-end global environment and executable-resolution contracts.
+
+#![cfg(unix)]
 
 use std::io::Read as _;
 use std::ops::{Deref, DerefMut};

@@ -317,7 +317,7 @@ pub(crate) enum ServiceCommand {
     #[cfg(windows)]
     #[command(hide = true)]
     Supervise {
-        #[arg(long, value_enum)]
+        #[arg(long, value_enum, help = "Role managed by this internal supervisor")]
         role: Target,
     },
 }

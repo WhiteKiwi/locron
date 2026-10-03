@@ -59,6 +59,8 @@ impl Stage {
 pub(crate) struct OpenTrace {
     #[cfg(debug_assertions)]
     id: u64,
+    #[cfg(debug_assertions)]
+    pid: u32,
 }
 
 impl OpenTrace {
@@ -66,6 +68,8 @@ impl OpenTrace {
         Self {
             #[cfg(debug_assertions)]
             id: NEXT_OPEN.fetch_add(1, Ordering::Relaxed),
+            #[cfg(debug_assertions)]
+            pid: std::process::id(),
         }
     }
 
@@ -82,6 +86,54 @@ impl OpenTrace {
                 eprintln!("{} category=store", self.prefix(stage));
             }
         })
+    }
+
+    pub(crate) fn configuration<T>(
+        &self,
+        stage: Stage,
+        result: StoreResult<T>,
+        #[cfg(debug_assertions)] observations: &crate::windows_configure::diagnostics::Snapshot,
+    ) -> StoreResult<T> {
+        #[cfg(debug_assertions)]
+        {
+            result.inspect_err(|error| {
+                eprintln!("{}", self.configuration_line(stage, error, observations));
+            })
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            self.store(stage, result)
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn configuration_line(
+        &self,
+        stage: Stage,
+        error: &StoreError,
+        observations: &crate::windows_configure::diagnostics::Snapshot,
+    ) -> String {
+        // Returned-error fields retain their original classification; observed numeric
+        // fields describe the last native error and cannot substitute for this result.
+        let original = match error {
+            StoreError::Io(error) => self.io_line(stage, error),
+            StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, _)) => format!(
+                "{} category=sqlite primary={:?} extended={}",
+                self.prefix(stage),
+                code.code,
+                code.extended_code,
+            ),
+            StoreError::Sqlite(_) => format!("{} category=sqlite", self.prefix(stage)),
+            _ => format!("{} category=store", self.prefix(stage)),
+        };
+        let line = format!("{original} pid={}{observations}", self.pid);
+        if line.len() <= 768 {
+            line
+        } else {
+            // Future fixed-field growth must not change the operation's result or emit
+            // a partial observation. Current maximum-width contract tests fit in full.
+            format!("{original} pid={} configuration=unobserved", self.pid)
+        }
     }
 
     pub(crate) fn sqlite<T>(
@@ -181,5 +233,38 @@ mod tests {
                 .io_line(Stage::WalOpen, &error)
                 .contains("missing-private-content")
         );
+    }
+    #[test]
+    fn configuration_receipts_are_bounded_redacted_and_preserve_returned_codes() {
+        let trace = OpenTrace {
+            id: u64::MAX,
+            pid: u32::MAX,
+        };
+        let observations = crate::windows_configure::diagnostics::Snapshot::maximum_fixture();
+        let secret = "private-path-SID-token-SQL-mode-must-not-render";
+        for stage in [Stage::ConfigureWal, Stage::ConfigureSettings] {
+            for code in 0..=255 {
+                let error = crate::StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(code),
+                    Some(secret.to_owned()),
+                ));
+                let line = trace.configuration_line(stage, &error, &observations);
+                assert!(line.is_ascii());
+                assert!(line.len() <= 768);
+                assert!(!line.contains(secret));
+                assert!(!line.contains("configuration=unobserved"));
+                assert!(line.contains(&format!("extended={code} pid=")));
+                assert!(line.contains("observed_primary=255 observed_extended=-2147483648"));
+                assert!(line.contains("autocommit=unobserved mode=unobserved done=unobserved"));
+            }
+            let error =
+                crate::StoreError::Io(std::io::Error::new(std::io::ErrorKind::TimedOut, secret));
+            let line = trace.configuration_line(stage, &error, &observations);
+            assert!(line.is_ascii());
+            assert!(line.len() <= 768);
+            assert!(!line.contains(secret));
+            assert!(!line.contains("configuration=unobserved"));
+            assert!(line.contains("category=io kind=TimedOut raw_os=None"));
+        }
     }
 }

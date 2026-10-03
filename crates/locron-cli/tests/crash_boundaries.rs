@@ -1,6 +1,6 @@
-#![cfg(unix)]
-
 //! Cross-process crash recovery acceptance fixtures for Unix daemon lifetimes.
+
+#![cfg(unix)]
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
