@@ -351,9 +351,12 @@ class WindowsDistributionTests(unittest.TestCase):
                              else {"install.sh"} if tag not in ("v0.1.0", "v0.1.1", "v0.2.0") else set())
         directory = self.root / "release"
         directory.mkdir()
-        self.package(output="release")
+        self.binary.write_bytes(executable())
+        self.launcher.write_bytes(executable(subsystem=2))
+        self.paired_package(output="release")
         self.binary.write_bytes(executable(0xAA64))
-        self.package("aarch64-pc-windows-msvc", output="release")
+        self.launcher.write_bytes(executable(0xAA64, subsystem=2))
+        self.paired_package("aarch64-pc-windows-msvc", output="release")
         for name in assets.expected_assets(TAG):
             if not name.endswith(".zip"):
                 (directory / name).write_text("final archive/package fixture", encoding="utf-8")
@@ -365,6 +368,18 @@ class WindowsDistributionTests(unittest.TestCase):
                                        windows_installer=self.root / "install.ps1",
                                        windows_uninstaller=self.root / "uninstall.ps1")
         self.assertEqual(len(hashes), 14)
+        # The public names stay unchanged, but v0.10+ publication refuses the
+        # historical console-only ZIP even when it is otherwise well-formed.
+        x64_name = f"locron-{TAG}-{TARGET}.zip"
+        paired_x64 = (directory / x64_name).read_bytes()
+        self.binary.write_bytes(executable())
+        legacy = self.package(output="legacy-release")
+        (directory / x64_name).write_bytes(legacy.read_bytes())
+        with self.assertRaises(ValueError):
+            assets.validate_inputs(TAG, directory, self.root / "install.sh",
+                                  windows_installer=self.root / "install.ps1",
+                                  windows_uninstaller=self.root / "uninstall.ps1")
+        (directory / x64_name).write_bytes(paired_x64)
         release = {"assets": [{"name": name, "digest": "sha256:" + digest} for name, digest in hashes.items()]}
         assets.verify_existing(release, hashes)
         release["assets"][0]["digest"] = "sha256:" + "0" * 64
