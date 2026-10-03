@@ -13,6 +13,8 @@ import subprocess
 import tempfile
 import zipfile
 
+from windows_zip import read_member, validate_catalog
+
 TARGETS = {"x86_64-pc-windows-msvc": 0x8664, "aarch64-pc-windows-msvc": 0xAA64}
 FILES = ("locron.exe", "README.md", "LICENSE-MIT", "LICENSE-APACHE")
 PAIRED_FILES = (FILES[0], "locron-service-launcher.exe", *FILES[1:])
@@ -212,6 +214,7 @@ def _inspect_archive(path, tag, target, paired=False, expected_sha256=None):
     root = f"locron-{tag}-{target}"
     files = PAIRED_FILES if paired else FILES
     allowed = {root + "/" + name for name in files}
+    sizes = validate_catalog(archive_bytes, allowed, MAX_ARCHIVE_BYTES)
     with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
         entries = archive.infolist()
         if paired and any(entry.orig_filename != entry.filename for entry in entries):
@@ -229,8 +232,13 @@ def _inspect_archive(path, tag, target, paired=False, expected_sha256=None):
                 raise ValueError("Windows ZIP contains an unexpected directory")
             if entry.external_attr & 0x400:
                 raise ValueError("Windows ZIP contains a reparse attribute")
+        # Consume every member, not only the legacy executable: CRC errors in
+        # documentation must not pass release/WinGet admission either.
+        contents = {}
+        for name in files:
+            member = root + "/" + name
+            contents[name] = read_member(archive_bytes, archive.getinfo(member).header_offset, sizes[member])
         if paired:
-            contents = {name: archive.read(root + "/" + name) for name in files}
             binaries = {}
             for name, subsystem in SUBSYSTEMS.items():
                 binary = contents[name]
@@ -240,7 +248,7 @@ def _inspect_archive(path, tag, target, paired=False, expected_sha256=None):
                 binaries[name] = {"sha256": hashlib.sha256(binary).hexdigest(),
                                   "subsystem": subsystem, "imports": pe_imports(binary)}
         else:
-            binary = archive.read(root + "/locron.exe")
+            binary = contents["locron.exe"]
     if paired:
         return ({"version": version(tag), "target": target, "unsigned": True, "mode": "paired-static",
                  "binaries": binaries}, contents, digest)
