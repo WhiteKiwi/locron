@@ -4769,3 +4769,38 @@ Sources: [Windows normalization, relative components and character trimming](htt
 [Framework GetFullPath and normalization dispatch](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/path.cs#L301),
 [Framework terminal dot/space handling](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/path.cs#L681),
 [Windows trailing-character and reserved-name rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#naming-conventions).
+
+### Atomic private bootstrap file ownership (2026-10-03)
+
+PR #44 at 60e2fcc passed all 105 distribution cases on each native x64/ARM64 MSRV package row
+and then failed its stock PowerShell bootstrap with the existing foreign-owner refusal at
+install.ps1:52. The completed logs record no actual owner SID, object path
+or detailed caller stack, so it does not establish an Administrators-owned leaf or a particular
+failed object. Keep that measurement gap explicit rather than weakening the refusal.
+
+The source establishes a fresh-file creation gap: New-LocronPrivateDirectory supplies an explicit
+current-user owner and protected current-user/SYSTEM DACL, but Write-LocronPrivateFile uses plain
+File.Open(CreateNew) before asserting the returned handle's owner. Windows selects a new object's
+default owner from the creating token; inherited access rules do not independently bind that
+owner to the current user. An elevated runner's different default owner is therefore a plausible
+explanation, not a measured diagnosis of this run.
+
+Stock .NET Framework provides the seven-argument FileStream constructor accepting FileSecurity.
+Its reference implementation passes the descriptor to the native creation call; the existing
+Core filesystem worker already uses that overload for fresh private files. Supply the current
+SID owner, protected DACL and exactly current-user/SYSTEM FullControl before CreateNew. Preserve
+exclusive FileShare.None, the strict post-creation handle check, bytes/Flush(true)/finally, parent
+validation, collision refusal and no existing-object adoption or ACL repair. FullControl on the
+new private handle also admits its descriptor readback; it grants no additional principal access.
+
+The uninstaller renderer does not select Write-LocronPrivateFile, so the generated uninstaller
+must remain exact. Retain every existing positive Unicode-path write/read/hash, receipt roundtrip,
+collision, unsafe ACL/owner/junction refusal and bounded owned cleanup assertion. Add only fixed
+stage labels before/after the existing positive private-root and private-leaf creation so a future
+native refusal can be located without logging paths or SIDs. Static review/renderer checks cannot
+qualify filesystem behavior; fresh exact-head native x64/ARM64 stock-5.1 bootstrap is required.
+
+Sources: [Windows default owner selection](https://learn.microsoft.com/en-us/windows/win32/secauthz/owner-of-a-new-object),
+[CreateFile security descriptor at creation](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[Framework FileStream security overload](https://learn.microsoft.com/en-us/dotnet/api/system.io.filestream.-ctor?view=netframework-4.8.1#system-io-filestream-ctor(system-string-system-io-filemode-system-security-accesscontrol-filesystemrights-system-io-fileshare-system-int32-system-io-fileoptions-system-security-accesscontrol-filesecurity)),
+[Microsoft Framework implementation](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/filestream.cs).

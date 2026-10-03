@@ -4602,3 +4602,25 @@ Everyone-Read rule, all refusal/recovery/prune/marker assertions, cleanup and de
 reviews the complete diff and surrounding fixture; production maintenance/loader/filesystem
 source stays byte-identical. Fresh exact-head native maintenance 11/11 on x64/ARM64/MSRV must
 pass with pruning 3/3, the complete Server/Store suites and all other checks before merge.
+
+## Atomic private bootstrap file creation (2026-10-03)
+
+Native PR44 60e2fcc reaches the existing strict foreign-owner refusal in the stock-5.1 bootstrap.
+Close the source-established missing creation descriptor within the frozen private-installation
+contract. The failing object's actual owner/caller is unmeasured; retain strict ownership refusal.
+
+1. Prepare FileSecurity with current SID owner, a protected DACL and exactly current SID/SYSTEM
+   FullControl, then pass it to the Framework FileStream constructor at CreateNew. **Verify:**
+   complete source review preserves normalized parent validation, FileShare.None, handle owner/ACL
+   check, exact write/Flush(true)/finally and existing-file collision refusal; there is no later
+   SetAccessControl repair, adoption, privilege change or execution-policy change.
+2. Keep the original positive and negative bootstrap assertions and add fixed stage labels around
+   existing positive root/leaf creation. **Verify:** all prior fixture bytes remain after removing
+   only those labels; no path/SID is logged, no assertion/cleanup is removed and generated
+   uninstall.ps1 remains byte-identical after the renderer check. No local native fixture or
+   PowerShell inspection workaround is authorized after the recorded execution-policy refusal.
+3. Hand the issue Verify plan to a separate development session and root-review/select its source.
+   **Verify:** fresh exact-head hosted x64/ARM64 stock-5.1 bootstrap, all distribution cases and
+   complete CI pass before merge; report measured stage/result on issues #32/#33. Standard-user
+   installation/reboot/paired activation/publication remain separate acceptance gates, and the
+   initial release stays unsigned with signing deferred in #37.
