@@ -142,7 +142,10 @@ impl Diagnostic {
 
 #[cfg(test)]
 #[derive(Default)]
-struct ChildPhases(std::sync::Mutex<std::collections::VecDeque<(&'static str, Instant)>>);
+struct ChildPhases(
+    std::sync::Mutex<std::collections::VecDeque<(&'static str, Instant)>>,
+    AtomicBool,
+);
 
 #[cfg(test)]
 impl ChildPhases {
@@ -151,7 +154,10 @@ impl ChildPhases {
         let phase = match line {
             b"locron-fs-phase:source-entry" => "child-source-entry",
             b"locron-fs-phase:encoding-ready" => "child-encoding-ready",
-            b"locron-fs-phase:policy-confirmed" => "child-policy-confirmed",
+            b"locron-fs-phase:policy-confirmed" => {
+                self.1.store(true, Ordering::Release);
+                "child-policy-confirmed"
+            }
             b"locron-fs-phase:utility-import-start" => "child-utility-import-start",
             b"locron-fs-phase:utility-import-ready" => "child-utility-import-ready",
             b"locron-fs-phase:input-line" => "child-input-line",
@@ -242,14 +248,11 @@ fn instrumented_source_with_policy(restricted: bool) -> String {
 #[cfg(test)]
 pub(super) fn policy_observation() -> (u32, bool) {
     let pid = LAST_PID.load(Ordering::Acquire);
-    let confirmed = LAST_PHASES.lock().unwrap().as_ref().is_some_and(|phases| {
-        phases
-            .0
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|(phase, _)| *phase == "child-policy-confirmed")
-    });
+    let confirmed = LAST_PHASES
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|phases| phases.1.load(Ordering::Acquire));
     (pid, confirmed)
 }
 
@@ -860,6 +863,43 @@ mod tests {
         assert_eq!(source.matches(&phase_token("policy-confirmed")).count(), 1);
         assert!(!worker_source().contains("stock child effective policy"));
         assert!(!source.contains("Set-ExecutionPolicy"));
+    }
+
+    #[test]
+    fn observed_policy_receipt_survives_ring_overflow_and_never_crosses_children() {
+        let phases = ChildPhases::default();
+        for unknown in [
+            b"locron-fs-phase:policy-confirmed suffix".as_slice(),
+            b"locron-fs-phase:policy-confirmed-other".as_slice(),
+            b"Restricted".as_slice(),
+        ] {
+            phases.observe(unknown);
+        }
+        assert!(!phases.1.load(Ordering::Acquire));
+        phases.observe(b"locron-fs-phase:policy-confirmed\r");
+        for _ in 0..4 {
+            for phase in [
+                b"locron-fs-phase:input-line".as_slice(),
+                b"locron-fs-phase:json-parsed".as_slice(),
+                b"locron-fs-phase:sid-resolved".as_slice(),
+                b"locron-fs-phase:reply-serialized".as_slice(),
+                b"locron-fs-phase:reply-flushed".as_slice(),
+            ] {
+                phases.observe(phase);
+            }
+        }
+        assert!(phases.1.load(Ordering::Acquire));
+        let recent = phases.0.lock().unwrap();
+        assert_eq!(recent.len(), 16);
+        assert!(
+            recent
+                .iter()
+                .all(|(phase, _)| *phase != "child-policy-confirmed")
+        );
+        let next = ChildPhases::default();
+        next.observe(b"locron-fs-phase:sid-resolved");
+        assert!(!next.1.load(Ordering::Acquire));
+        assert!(phases.1.load(Ordering::Acquire));
     }
 
     #[test]
