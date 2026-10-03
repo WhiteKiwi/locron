@@ -5044,3 +5044,11 @@ blobs, runs applicable Windows-target compilation and formatting, then publishes
 ordinary plus full-discovery native evidence. The unchanged original proof and both new
 publication proofs must pass all three ordinary native rows before merge. Retain every
 full-suite failure and old unknown failure; broad Issues#31/#32 remain unfinished.
+
+
+The same-candidate identity assertion must retain privacy and the warnings-denied lint
+contract. Native lint111281642758 at f1cc5dc rejects assert!(left == right) as manual_assert_eq.
+Bind the exact path equality once to a named boolean and assert that boolean with a fixed
+failure message. This reports the identity failure without formatting either private path.
+No warning allowance, identity weakening, or other Source/clock change is permitted.
+The separate developer applies this single assertion-style correction after this plan.

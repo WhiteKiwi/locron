@@ -206,3 +206,11 @@ later cases are unqualified. Keep its failures rather than treating cancellation
    checks pass. All three ordinary native rows exercise the original crash plus complete
    Rust and Framework5.1 proofs; five full-discovery rows retain their actual outcomes.
    Required checks must pass before merge; old45s cause and public acceptance stay open.
+
+
+The same-candidate identity assertion must retain privacy and the warnings-denied lint
+contract. Native lint111281642758 at f1cc5dc rejects assert!(left == right) as manual_assert_eq.
+Bind the exact path equality once to a named boolean and assert that boolean with a fixed
+failure message. This reports the identity failure without formatting either private path.
+No warning allowance, identity weakening, or other Source/clock change is permitted.
+The separate developer applies this single assertion-style correction after this plan.
