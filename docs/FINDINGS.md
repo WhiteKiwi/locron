@@ -5261,3 +5261,30 @@ remain unchanged and require their own native evidence. Sources: locked tempfile
 [Microsoft rename processing](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/rename-and-hard-link-processing);
 [Win32 errors5/32](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-);
 [actual CI](https://github.com/WhiteKiwi/locron/actions/runs/37148405286).
+
+
+### Stable cfg statement syntax after native compile refusal (2026-10-04)
+
+Source5585936 ordinary37151318184, full37151330037 and isolated discovery37151378233
+finished red before the requested application runtime tests. Separate always-run stock
+bootstrap/small/60k diagnostics passed on the three foundation rows; these do not qualify
+the failed compilation or application suite. Actual Rust1.94/stable/1.98 reject #[cfg] directly on
+the two assignment expressions at windows_configure.rs168/237 with E0658. Release builds
+also retain unresolved observations assignments (E0425). The immutable release-token inverse
+and formatting checks could not establish compiler validity; Root's prior review missed this.
+
+Select only a syntax correction: wrap those two existing debug observations in cfg-gated
+blocks. Keep assignment expressions, captured existing autocommit results, cfg condition,
+release erasure and every native call/result/gate/error/deadline byte-equivalent after inverse.
+No feature/nightly/warning allowance, production/query/test/dependency/workflow change is selected.
+Separate development owns only windows_configure.rs after Issue25/31 exact Verify readback.
+
+1. Reproduce/repair the two stable cfg statement sites. Verify: Rust1.94 native Windows debug
+   and release compilation both succeed; no unresolved observations or experimental syntax.
+2. Conserve observation and native policy. Verify: two exact block-only transformations invert
+   the whole prior file; all other tracked blobs/modes and old/native/new diagnostic tests remain
+   exact; cfg-erased release policy still equals the ce641 original.
+3. Review/publish fresh changed Source. Verify: Root reviews the one-file diff and static checks,
+   then records actual ordinary/full/every-binary results at the new source. These previous runs
+   reached no requested app suite cases and produced no new paired ZIP; separate stock
+   diagnostics remain their own evidence. All runs remain failures, not skipped validations.

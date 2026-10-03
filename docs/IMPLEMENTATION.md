@@ -5100,6 +5100,46 @@ failure message. This reports the identity failure without formatting either pri
 No warning allowance, identity weakening, or other Source/clock change is permitted.
 The separate developer applies this single assertion-style correction after this plan.
 
+
+### Stable cfg statement syntax after native compile refusal (2026-10-04)
+
+Source5585936 ordinary37151318184, full37151330037 and isolated discovery37151378233
+finished red before the requested application runtime tests. Separate always-run stock
+bootstrap/small/60k diagnostics passed on the three foundation rows; these do not qualify
+the failed compilation or application suite. Actual Rust1.94/stable/1.98 reject #[cfg] directly on
+the two assignment expressions at windows_configure.rs168/237 with E0658. Release builds
+also retain unresolved observations assignments (E0425). The immutable release-token inverse
+and formatting checks could not establish compiler validity; Root's prior review missed this.
+
+Select only a syntax correction: wrap those two existing debug observations in cfg-gated
+blocks. Keep assignment expressions, captured existing autocommit results, cfg condition,
+release erasure and every native call/result/gate/error/deadline byte-equivalent after inverse.
+No feature/nightly/warning allowance, production/query/test/dependency/workflow change is selected.
+Separate development owns only windows_configure.rs after Issue25/31 exact Verify readback.
+
+1. Reproduce/repair the two stable cfg statement sites. Verify: Rust1.94 native Windows debug
+   and release compilation both succeed; no unresolved observations or experimental syntax.
+2. Conserve observation and native policy. Verify: two exact block-only transformations invert
+   the whole prior file; all other tracked blobs/modes and old/native/new diagnostic tests remain
+   exact; cfg-erased release policy still equals the ce641 original.
+3. Review/publish fresh changed Source. Verify: Root reviews the one-file diff and static checks,
+   then records actual ordinary/full/every-binary results at the new source. These previous runs
+   reached no requested app suite cases and produced no new paired ZIP; separate stock
+   diagnostics remain their own evidence. All runs remain failures, not skipped validations.
+
+
+## Stable Rust syntax continuation before Source
+
+Ordinary558 run37151318184 fails compilation, before native controls: Rust1.94
+job111285640711 and Rust1.98 lint111285640451 report E0658 at windows_configure.rs
+168 and237. The two cfg attributes attach directly to assignment expressions.
+A separate developer may only enclose those same assignments in cfg-gated
+statement blocks, keeping their exact debug-only evaluation points and values.
+Verify the two-assignment inverse, unchanged release/native policy and all other
+blobs, stable Rust1.94/1.98 syntax, formatting and fresh native compilation.
+No feature gate, allow, clock, SQL, retry, diagnostic field or selector changes.
+The original five-step plan and owning Issue criteria remain required.
+
 ### Fresh per-binary native inventory after fixture changes (2026-10-04)
 
 Continue the already reviewed manual-only discovery on an isolated verification
