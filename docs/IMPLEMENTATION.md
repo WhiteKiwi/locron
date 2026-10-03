@@ -5199,3 +5199,71 @@ SID retrieval/conversion separately under that original deadline. Verify all
 package identities/features, original protocols/owners/clocks/error categories
 and hosted identity/cleanup receipts. Product scope and five-path lease remain;
 Root exact Issues27/29 readback precedes development release.
+### Stable cfg statement syntax after native compile refusal (2026-10-04)
+
+Source5585936 ordinary37151318184, full37151330037 and isolated discovery37151378233
+finished red before the requested application runtime tests. Separate always-run stock
+bootstrap/small/60k diagnostics passed on the three foundation rows; these do not qualify
+the failed compilation or application suite. Actual Rust1.94/stable/1.98 reject #[cfg] directly on
+the two assignment expressions at windows_configure.rs168/237 with E0658. Release builds
+also retain unresolved observations assignments (E0425). The immutable release-token inverse
+and formatting checks could not establish compiler validity; Root's prior review missed this.
+
+Select only a syntax correction: wrap those two existing debug observations in cfg-gated
+blocks. Keep assignment expressions, captured existing autocommit results, cfg condition,
+release erasure and every native call/result/gate/error/deadline byte-equivalent after inverse.
+No feature/nightly/warning allowance, production/query/test/dependency/workflow change is selected.
+Separate development owns only windows_configure.rs after Issue25/31 exact Verify readback.
+
+1. Reproduce/repair the two stable cfg statement sites. Verify: Rust1.94 native Windows debug
+   and release compilation both succeed; no unresolved observations or experimental syntax.
+2. Conserve observation and native policy. Verify: two exact block-only transformations invert
+   the whole prior file; all other tracked blobs/modes and old/native/new diagnostic tests remain
+   exact; cfg-erased release policy still equals the ce641 original.
+3. Review/publish fresh changed Source. Verify: Root reviews the one-file diff and static checks,
+   then records actual ordinary/full/every-binary results at the new source. These previous runs
+   reached no requested app suite cases and produced no new paired ZIP; separate stock
+   diagnostics remain their own evidence. All runs remain failures, not skipped validations.
+
+
+## Stable Rust syntax continuation before Source
+
+Ordinary558 run37151318184 fails compilation, before native controls: Rust1.94
+job111285640711 and Rust1.98 lint111285640451 report E0658 at windows_configure.rs
+168 and237. The two cfg attributes attach directly to assignment expressions.
+A separate developer may only enclose those same assignments in cfg-gated
+statement blocks, keeping their exact debug-only evaluation points and values.
+Verify the two-assignment inverse, unchanged release/native policy and all other
+blobs, stable Rust1.94/1.98 syntax, formatting and fresh native compilation.
+No feature gate, allow, clock, SQL, retry, diagnostic field or selector changes.
+The original five-step plan and owning Issue criteria remain required.
+
+
+### Native CLI process/shell/render fixture continuation (2026-10-04)
+
+Select the one-file input-only plan in planning/WINDOWS_NATIVE_CLI_FIXTURE_PORTABILITY_2026-10-04.md
+after complete native14-case/41-lint/later-binary triage in FINDINGS. Base main4ab equals
+reviewed10fe. Root records exact Issue31 Verify before separate development. Windows success
+targets use the actual cargo-built CLI with --help, and3 Target::Shell contracts use supported
+explicit stock PowerShell static .NET output/sleep/marker/exit semantics. Preserve every Unix
+value/body/argv,71 selectors, assertions, retry/clock/private-state/native cleanup; complete
+human target/table byte oracles use actual target+argv without the production renderer.
+Only11 listed existing test functions and narrow helpers may change. Wake readiness, both
+doctor cases,41 full lint diagnoses and later distribution/Core cases remain unqualified.
+Four ordered Verify criteria require reversible Source conservation, genuine native behavior,
+exact human bytes and reviewed fresh native/ordinary CI results; no local native effects.
+
+
+### PR134 lifecycle failure observation before Source (2026-10-04)
+
+Apply the three Verify steps in planning/WINDOWS_DAEMON_CRASH_TREE_RECOVERY.md
+to the existing test-only native lifecycle fixture. eae776 ordinary37157605645
+x64 MSRV observes failed after running+heartbeat and dashboard exit/ownership proof,
+but saved logs cannot identify the durable attempt or publication cause. Preserve
+this failed qualification. Add fail-only bounded fixed durable facts and path-free
+heartbeat failure facts; qualify the actual same-candidate held rename refusal and
+release positive control under the existing bound. Keep immediate refusal, original
+assertions/selectors/clocks, production/dependency/workflow blobs and frozen SPEC.
+Separate development starts only after Issue30 exact Verify readback and parent plan
+review. No retry, guard release, prewarm, warning allowance or success weakening is
+authorized. Fresh exact-head ordinary native CI is required before PR134 merge.

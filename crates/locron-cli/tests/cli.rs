@@ -16,6 +16,72 @@ use locron_store::{AttemptCompletion, DaemonLock, StatePaths, Store};
 use predicates::prelude::*;
 use uuid::Uuid;
 
+// A finite real target: the cargo-built CLI on Windows, the original true on Unix.
+fn success_process_args() -> Vec<String> {
+    #[cfg(unix)]
+    {
+        vec!["/usr/bin/true".to_owned()]
+    }
+    #[cfg(windows)]
+    {
+        let executable = std::path::Path::new(assert_cmd::cargo::cargo_bin!("locron"));
+        assert!(
+            executable.is_absolute(),
+            "cargo-built locron path is not absolute"
+        );
+        assert!(
+            executable
+                .components()
+                .all(|component| !matches!(component, std::path::Component::ParentDir)),
+            "cargo-built locron path contains a parent component"
+        );
+        let executable: std::path::PathBuf = executable.components().collect();
+        vec![
+            executable
+                .to_str()
+                .expect("cargo-built locron path is not valid UTF-8")
+                .to_owned(),
+            "--help".to_owned(),
+        ]
+    }
+}
+
+// Expected text comes from the chosen fixture argv, not from a CLI response/renderer.
+fn success_process_summary() -> String {
+    #[cfg(unix)]
+    {
+        "process: /usr/bin/true".to_owned()
+    }
+    #[cfg(windows)]
+    {
+        let command = success_process_args();
+        format!("process: {} --help", command[0])
+    }
+}
+
+fn shell_fixture_args(unix: &str, windows: &str) -> Vec<String> {
+    let command = if cfg!(windows) { windows } else { unix };
+    let args = vec!["--shell".to_owned(), command.to_owned()];
+    #[cfg(unix)]
+    {
+        args
+    }
+    #[cfg(windows)]
+    {
+        let executable = locron_core::windows::stock_powershell()
+            .expect("absolute stock PowerShell path is unavailable");
+        let mut args = args;
+        args.extend([
+            "--shell-executable".to_owned(),
+            executable
+                .to_str()
+                .expect("stock PowerShell path is not valid UTF-8")
+                .to_owned(),
+        ]);
+        args
+    }
+}
+
 #[cfg(unix)]
 fn startup_owner_matches_pid(path: &std::path::Path, pid: u32) -> bool {
     let Ok(file) = std::fs::File::open(path) else {
@@ -428,23 +494,22 @@ fn run_wait_streams_all_attempts_and_maps_target_outcomes() {
                 "1s",
                 "--env",
                 &marker_environment,
-                "--shell",
-                "if [ -e \"$MARKER\" ]; then printf second; else : > \"$MARKER\"; printf first; exit 7; fi",
             ])
+            .args(shell_fixture_args(
+                "if [ -e \"$MARKER\" ]; then printf second; else : > \"$MARKER\"; printf first; exit 7; fi",
+                "if ([IO.File]::Exists($env:MARKER)) { [Console]::Write('second'); exit 0 } else { [IO.File]::WriteAllText($env:MARKER,''); [Console]::Write('first'); exit 7 }",
+            ))
             .output()
             .unwrap(),
     )
     .success();
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args([
-                "add",
-                "wait-failure",
-                "--every",
-                "1h",
-                "--shell",
+            .args(["add", "wait-failure", "--every", "1h"])
+            .args(shell_fixture_args(
                 "printf failure; exit 9",
-            ])
+                "[Console]::Write('failure'); exit 9",
+            ))
             .output()
             .unwrap(),
     )
@@ -535,14 +600,11 @@ fn disconnecting_run_wait_does_not_cancel_the_durable_run() {
     let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args([
-                "add",
-                "wait-disconnect",
-                "--every",
-                "1h",
-                "--shell",
+            .args(["add", "wait-disconnect", "--every", "1h"])
+            .args(shell_fixture_args(
                 "sleep 1; printf survived",
-            ])
+                "[Threading.Thread]::Sleep(1000); [Console]::Write('survived')",
+            ))
             .output()
             .unwrap(),
     )
@@ -933,7 +995,8 @@ fn due_one_time_job_catches_up_once_and_disables() {
     let at = timestamp_after(Duration::from_secs(2));
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["add", "due-at", "--at", &at, "--", "/usr/bin/true"])
+            .args(["add", "due-at", "--at", &at, "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
@@ -1105,7 +1168,11 @@ fn durable_cancel_terminates_a_running_process() {
     }
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["add", "cancel", "--every", "1h", "--shell", "sleep 30"])
+            .args(["add", "cancel", "--every", "1h"])
+            .args(shell_fixture_args(
+                "sleep 30",
+                "[Threading.Thread]::Sleep(30000)",
+            ))
             .output()
             .unwrap(),
     )
@@ -1936,19 +2003,31 @@ fn human_list_aligns_columns_across_name_widths() {
     for (name, expression) in [("a", "* * * * *"), ("longname", "0 9 * * MON-FRI")] {
         assert_cmd::assert::Assert::new(
             locron(&state)
-                .args(["add", name, "--cron", expression, "--", "/usr/bin/true"])
+                .args(["add", name, "--cron", expression, "--"])
+                .args(success_process_args())
                 .output()
                 .unwrap(),
         )
         .success();
     }
+    #[cfg(unix)]
+    let expected = "NAME     SCHEDULE               TARGET                 ENABLED LAST RUN\n\
+         a        cron '* * * * *'       process: /usr/bin/true yes     none\n\
+         longname cron '0 9 * * MON-FRI' process: /usr/bin/true yes     none\n";
+    #[cfg(windows)]
+    let expected = {
+        let target = success_process_summary();
+        format!(
+            "NAME     SCHEDULE               {:<target_width$} ENABLED LAST RUN\n\
+             a        cron '* * * * *'       {target} yes     none\n\
+             longname cron '0 9 * * MON-FRI' {target} yes     none\n",
+            "TARGET",
+            target_width = target.len(),
+        )
+    };
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
-        .stdout(
-            "NAME     SCHEDULE               TARGET                 ENABLED LAST RUN\n\
-         a        cron '* * * * *'       process: /usr/bin/true yes     none\n\
-         longname cron '0 9 * * MON-FRI' process: /usr/bin/true yes     none\n",
-        );
+        .stdout(expected);
 }
 
 #[test]
@@ -2026,7 +2105,8 @@ fn human_list_all_marks_disabled_jobs_no() {
     for name in ["backup", "ping"] {
         assert_cmd::assert::Assert::new(
             locron(&state)
-                .args(["add", name, "--every", "1h", "--", "/usr/bin/true"])
+                .args(["add", name, "--every", "1h", "--"])
+                .args(success_process_args())
                 .output()
                 .unwrap(),
         )
@@ -2034,18 +2114,30 @@ fn human_list_all_marks_disabled_jobs_no() {
     }
     assert_cmd::assert::Assert::new(locron(&state).args(["disable", "ping"]).output().unwrap())
         .success();
+    #[cfg(unix)]
+    let enabled_expected = "NAME   SCHEDULE TARGET                 ENABLED LAST RUN\nbackup every 1h process: /usr/bin/true yes     none\n";
+    #[cfg(unix)]
+    let all_expected = "NAME   SCHEDULE TARGET                 ENABLED LAST RUN\n\
+         backup every 1h process: /usr/bin/true yes     none\n\
+         ping   every 1h process: /usr/bin/true no      none\n";
+    #[cfg(windows)]
+    let (enabled_expected, all_expected) = {
+        let target = success_process_summary();
+        let header = format!(
+            "NAME   SCHEDULE {:<target_width$} ENABLED LAST RUN\n",
+            "TARGET",
+            target_width = target.len(),
+        );
+        let enabled = format!("{header}backup every 1h {target} yes     none\n");
+        let all = format!("{enabled}ping   every 1h {target} no      none\n");
+        (enabled, all)
+    };
     assert_cmd::assert::Assert::new(locron(&state).args(["list"]).output().unwrap())
         .success()
-        .stdout(
-            "NAME   SCHEDULE TARGET                 ENABLED LAST RUN\nbackup every 1h process: /usr/bin/true yes     none\n",
-        );
+        .stdout(enabled_expected);
     assert_cmd::assert::Assert::new(locron(&state).args(["list", "--all"]).output().unwrap())
         .success()
-        .stdout(
-            "NAME   SCHEDULE TARGET                 ENABLED LAST RUN\n\
-         backup every 1h process: /usr/bin/true yes     none\n\
-         ping   every 1h process: /usr/bin/true no      none\n",
-        );
+        .stdout(all_expected);
 }
 
 #[test]
@@ -2088,19 +2180,22 @@ fn human_list_never_leaks_configured_values() {
 #[test]
 fn human_add_update_enable_disable_remove_print_outcome_lines() {
     let state = private_state_fixture();
+    let expected_target = format!("target: {}", success_process_summary());
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .args(["add", "backup", "--every", "1h", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
     .success()
     .stdout(predicate::str::contains("job added: backup ("))
     .stdout(predicate::str::contains("schedule: every 1h"))
-    .stdout(predicate::str::contains("target: process: /usr/bin/true"));
+    .stdout(predicate::str::contains(expected_target.as_str()));
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["update", "backup", "--every", "2h", "--", "/usr/bin/true"])
+            .args(["update", "backup", "--every", "2h", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
@@ -2123,15 +2218,8 @@ fn human_add_update_enable_disable_remove_print_outcome_lines() {
     let dry = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&dry)
-            .args([
-                "add",
-                "dry",
-                "--every",
-                "1h",
-                "--dry-run",
-                "--",
-                "/usr/bin/true",
-            ])
+            .args(["add", "dry", "--every", "1h", "--dry-run", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
@@ -2140,26 +2228,20 @@ fn human_add_update_enable_disable_remove_print_outcome_lines() {
         "job added: dry (dry run; no changes made)",
     ))
     .stdout(predicate::str::contains("schedule: every 1h"))
-    .stdout(predicate::str::contains("target: process: /usr/bin/true"));
+    .stdout(predicate::str::contains(expected_target.as_str()));
     assert!(!dry.path().join("state.db").exists());
     assert_cmd::assert::Assert::new(
         locron(&dry)
-            .args(["add", "dry", "--every", "1h", "--", "/usr/bin/true"])
+            .args(["add", "dry", "--every", "1h", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
     .success();
     assert_cmd::assert::Assert::new(
         locron(&dry)
-            .args([
-                "update",
-                "dry",
-                "--every",
-                "2h",
-                "--dry-run",
-                "--",
-                "/usr/bin/true",
-            ])
+            .args(["update", "dry", "--every", "2h", "--dry-run", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
@@ -2613,7 +2695,8 @@ fn explain_distinguishes_success_only_history_from_an_active_latest_run() {
     let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["add", "work", "--every", "1h", "--", "/usr/bin/true"])
+            .args(["add", "work", "--every", "1h", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
@@ -2675,7 +2758,8 @@ fn explain_allows_latest_run_and_anomaly_to_match_then_retains_an_older_anomaly(
     let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["add", "mixed", "--every", "1h", "--", "/usr/bin/true"])
+            .args(["add", "mixed", "--every", "1h", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
@@ -2755,7 +2839,8 @@ fn human_run_wait_streams_and_prints_the_terminal_outcome_line() {
     let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .args(["add", "backup", "--every", "1h", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
@@ -2790,7 +2875,8 @@ fn human_why_run_prints_immutable_run_facts() {
     let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .args(["add", "backup", "--every", "1h", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
