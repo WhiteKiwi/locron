@@ -15,6 +15,14 @@ pub struct StatePaths {
     pub database: PathBuf,
     /// Daemon exclusive-lock file.
     pub daemon_lock: PathBuf,
+    /// Registered daemon activation lifetime, including waiting for a manual daemon.
+    pub daemon_activation_lock: PathBuf,
+    /// Registered dashboard supervisor lifetime, including startup and retry gaps.
+    pub dashboard_activation_lock: PathBuf,
+    /// Supervised daemon child lifetime, including waiting for actual role ownership.
+    pub daemon_worker_activation_lock: PathBuf,
+    /// Supervised dashboard child lifetime, including waiting for actual role ownership.
+    pub dashboard_worker_activation_lock: PathBuf,
     /// Dashboard lifetime lock, independent of scheduler ownership.
     pub dashboard_lock: PathBuf,
     /// Socket used to wake a running daemon.
@@ -44,6 +52,10 @@ impl StatePaths {
         Self {
             database: root.join("state.db"),
             daemon_lock: root.join("daemon.lock"),
+            daemon_activation_lock: root.join("daemon.activation.lock"),
+            dashboard_activation_lock: root.join("dashboard.activation.lock"),
+            daemon_worker_activation_lock: root.join("daemon.worker.activation.lock"),
+            dashboard_worker_activation_lock: root.join("dashboard.worker.activation.lock"),
             dashboard_lock: root.join("dashboard.lock"),
             wake_socket: root.join("wake.sock"),
             outputs: root.join("outputs"),
@@ -54,9 +66,28 @@ impl StatePaths {
 
     /// Creates the state layout without following an existing symlink at any managed root.
     pub fn ensure(&self) -> Result<(), StoreError> {
-        ensure_private_directory(&self.root)?;
-        ensure_private_directory(&self.outputs)?;
-        ensure_private_directory(&self.temporary)?;
+        #[cfg(windows)]
+        {
+            self.ensure_with_trace(&crate::windows_open::OpenTrace::new())
+        }
+        #[cfg(not(windows))]
+        {
+            ensure_private_directory(&self.root)?;
+            ensure_private_directory(&self.outputs)?;
+            ensure_private_directory(&self.temporary)?;
+            Ok(())
+        }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn ensure_with_trace(
+        &self,
+        trace: &crate::windows_open::OpenTrace,
+    ) -> Result<(), StoreError> {
+        use crate::windows_open::Stage;
+        trace.store(Stage::Root, ensure_private_directory(&self.root))?;
+        trace.store(Stage::Outputs, ensure_private_directory(&self.outputs))?;
+        trace.store(Stage::Temporary, ensure_private_directory(&self.temporary))?;
         Ok(())
     }
 

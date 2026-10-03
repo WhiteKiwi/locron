@@ -10,6 +10,8 @@ use std::time::Instant;
 use windows_permissions::constants::{AceType, SeObjectType, SecurityInformation};
 use windows_permissions::{SecurityDescriptor, wrappers};
 
+use crate::filesystem::open_directory_guard_handle;
+
 use super::remaining;
 
 const TRUSTED: [&str; 3] = [
@@ -18,9 +20,7 @@ const TRUSTED: [&str; 3] = [
     "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464",
 ];
 const VERSION: &str = "v4.0_3.0.0.0__31bf3856ad364e35";
-const READ_CONTROL_ATTRIBUTES: u32 = 0x0002_0080;
 const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-const BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const REPARSE_POINT: u32 = 0x400;
 const FILE_MUTATION: u32 = 0x500d_0156;
 // Sibling creation is not mutation of this existing directory object or its retained child.
@@ -257,13 +257,7 @@ fn guard_file(path: &Path, deadline: Instant) -> io::Result<StockFile> {
     let parent = path.parent().ok_or_else(unsafe_stock)?;
     let mut ancestors = Vec::new();
     for component in parent.ancestors().collect::<Vec<_>>().iter().rev() {
-        let file = checked(deadline, || {
-            OpenOptions::new()
-                .access_mode(READ_CONTROL_ATTRIBUTES)
-                .share_mode(1)
-                .custom_flags(BACKUP_SEMANTICS | OPEN_REPARSE_POINT)
-                .open(component)
-        })?;
+        let file = checked(deadline, || open_directory_guard_handle(component))?;
         verify_file(&file, true, deadline)?;
         ancestors.push(file);
     }
@@ -275,7 +269,7 @@ fn guard_file(path: &Path, deadline: Instant) -> io::Result<StockFile> {
             .open(&path)
     })?;
     verify_file(&file, false, deadline)?;
-    // All queried path components/leaf remain protected against write/delete while queried.
+    // Ancestry retains object names and its trusted-mutation policy; the leaf excludes writes.
     let path = checked(deadline, || fs::canonicalize(&path))?;
     let identity = checked(deadline, || file_id::get_high_res_file_id(&path))?;
     if !matches!(identity, file_id::FileId::HighRes { .. }) {

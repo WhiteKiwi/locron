@@ -29,6 +29,19 @@ pub struct RoleLockMetadata {
     pub service_mode: bool,
 }
 
+/// A nonmutating observation of an existing permanent Windows role lock.
+/// These facts do not authenticate an owner; metadata/lifetime checks remain separate.
+#[cfg(windows)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LockProbe {
+    /// The lock or its existing private parent is absent.
+    Missing,
+    /// An exclusive probe lock was acquired and immediately released.
+    Free,
+    /// Another handle currently holds the lock.
+    Held,
+}
+
 /// A permanent file whose OS lock is held until this value is dropped.
 pub struct DaemonLock {
     file: File,
@@ -148,6 +161,30 @@ impl DaemonLock {
         Ok(())
     }
 
+    /// Observes an existing lock without creating a parent/file or writing diagnostic bytes.
+    /// A successful free observation is instantaneous and does not reserve ownership.
+    #[cfg(windows)]
+    pub fn probe_existing(path: &Path) -> StoreResult<LockProbe> {
+        let file = match locron_core::filesystem::open_private(
+            path,
+            OpenOptions::new().read(true).write(true),
+        ) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(LockProbe::Missing);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        match file.try_lock() {
+            Ok(()) => {
+                File::unlock(&file)?;
+                Ok(LockProbe::Free)
+            }
+            Err(std::fs::TryLockError::WouldBlock) => Ok(LockProbe::Held),
+            Err(std::fs::TryLockError::Error(error)) => Err(error.into()),
+        }
+    }
+
     /// Returns a reference to the underlying locked file.
     #[must_use]
     pub fn file(&self) -> &File {
@@ -166,6 +203,74 @@ impl Drop for DaemonLock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn existing_lock_probe_is_passive_and_does_not_change_the_owner() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("absent");
+        let path = root.join("daemon.activation.lock");
+        assert_eq!(
+            DaemonLock::probe_existing(&path).unwrap(),
+            LockProbe::Missing
+        );
+        assert!(!root.exists());
+        let guard = locron_core::filesystem::DirectoryGuard::private(&root).unwrap();
+        assert_eq!(
+            DaemonLock::probe_existing(&path).unwrap(),
+            LockProbe::Missing
+        );
+        assert!(!path.exists());
+        assert!(!DaemonLock::owner_sidecar(&path).exists());
+        let metadata = LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: uuid::Uuid::now_v7().to_string(),
+            started_at_us: 1,
+            binary_version: "test".into(),
+        };
+        let lock = DaemonLock::acquire_role(&path, &metadata, true).unwrap();
+        for _ in 0..3 {
+            assert_eq!(DaemonLock::probe_existing(&path).unwrap(), LockProbe::Held);
+        }
+        let observed = DaemonLock::read_role_metadata(&path).unwrap().unwrap();
+        assert_eq!(observed.metadata, metadata);
+        assert!(observed.service_mode);
+        drop(lock);
+        let before = std::fs::read(&path).unwrap();
+        assert_eq!(DaemonLock::probe_existing(&path).unwrap(), LockProbe::Free);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(!DaemonLock::owner_sidecar(&path).exists());
+        let second = DaemonLock::acquire_role(&path, &metadata, true).unwrap();
+        assert_eq!(DaemonLock::probe_existing(&path).unwrap(), LockProbe::Held);
+        drop(second);
+        drop(guard);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn missing_role_observation_does_not_create_its_state_root() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("absent");
+        let path = root.join("daemon.lock");
+        assert_eq!(DaemonLock::read_role_metadata(&path).unwrap(), None);
+        assert!(!root.exists());
+        let metadata = LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: uuid::Uuid::now_v7().to_string(),
+            started_at_us: 1,
+            binary_version: "test".into(),
+        };
+        let lock = DaemonLock::acquire_role(&path, &metadata, true).unwrap();
+        assert!(locron_core::filesystem::is_private(&root, true).unwrap());
+        assert_eq!(
+            DaemonLock::read_role_metadata(&path)
+                .unwrap()
+                .unwrap()
+                .metadata,
+            metadata
+        );
+        drop(lock);
+    }
 
     #[test]
     fn ownership_observer_does_not_read_windows_locked_bytes() {

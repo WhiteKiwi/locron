@@ -34,6 +34,11 @@ use serde_json::{Value, json};
 
 use crate::{Format, render};
 
+#[cfg(windows)]
+mod windows_supervisor;
+#[cfg(windows)]
+pub(crate) use windows_supervisor::supervise;
+
 /// launchd label of the registered daemon (kept on all test builds so the
 /// plist template tests run everywhere).
 #[cfg(any(target_os = "macos", test))]
@@ -74,6 +79,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// file, service arguments, and deferral behavior; the two registrations are
 /// independent and never touch each other.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(windows, derive(clap::ValueEnum))]
 pub(crate) enum Target {
     /// The scheduler daemon (`locron daemon run`).
     Daemon,
@@ -82,6 +88,22 @@ pub(crate) enum Target {
 }
 
 impl Target {
+    #[cfg(windows)]
+    fn activation_lock(self, paths: &StatePaths) -> &Path {
+        match self {
+            Self::Daemon => &paths.daemon_activation_lock,
+            Self::Dashboard => &paths.dashboard_activation_lock,
+        }
+    }
+
+    #[cfg(windows)]
+    fn worker_activation_lock(self, paths: &StatePaths) -> &Path {
+        match self {
+            Self::Daemon => &paths.daemon_worker_activation_lock,
+            Self::Dashboard => &paths.dashboard_worker_activation_lock,
+        }
+    }
+
     /// The name the target carries in the current platform's manager.
     pub(crate) fn service_name(self) -> &'static str {
         match self {
@@ -281,6 +303,13 @@ pub(crate) enum ServiceCommand {
     Uninstall,
     #[command(about = "Report the daemon service registration state", after_help = SERVICE_STATUS_HELP)]
     Status,
+    /// Internal registered-role owner; public service commands keep their existing behavior.
+    #[cfg(windows)]
+    #[command(hide = true)]
+    Supervise {
+        #[arg(long, value_enum)]
+        role: Target,
+    },
 }
 
 /// Everything a backend needs to register the running binary as a service.
@@ -612,6 +641,13 @@ pub(crate) fn execute(
     command: ServiceCommand,
     format: Format,
 ) -> Result<()> {
+    #[cfg(windows)]
+    if matches!(command, ServiceCommand::Supervise { .. }) {
+        return Err(ServiceError::Io(
+            "the internal supervisor requires asynchronous dispatch".into(),
+        )
+        .into());
+    }
     let port = select_port()?;
     let ctx = ServiceContext::new(state_dir, Target::Daemon)?;
     match command {
@@ -627,6 +663,8 @@ pub(crate) fn execute(
             let outcome = status(&ctx, port.as_ref())?;
             render_status(format, Target::Daemon, "service status", &outcome);
         }
+        #[cfg(windows)]
+        ServiceCommand::Supervise { .. } => unreachable!("handled before manager discovery"),
     }
     Ok(())
 }
@@ -695,13 +733,22 @@ Navigation:
 
 /// The `locron dashboard` subcommands. The bare `locron dashboard` form (no
 /// subcommand) serves in the foreground, identical to [`DashboardCommand::Serve`].
-#[derive(Clone, Copy, Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
+#[cfg_attr(not(windows), derive(Copy))]
 pub(crate) enum DashboardCommand {
     #[command(about = "Run the dashboard server in the foreground", after_help = DASHBOARD_SERVE_HELP)]
     Serve {
         /// Internal marker used only by the registered per-user service
         #[arg(long, hide = true)]
         service_mode: bool,
+        /// Exact registered supervisor lifetime; valid only as a paired internal argument.
+        #[cfg(windows)]
+        #[arg(long, hide = true, requires_all = ["service_mode", "worker_lifetime"])]
+        supervisor_lifetime: Option<String>,
+        /// This child owns one lifetime while waiting and while serving.
+        #[cfg(windows)]
+        #[arg(long, hide = true, requires_all = ["service_mode", "supervisor_lifetime"])]
+        worker_lifetime: Option<String>,
     },
     #[command(about = "Register and start the dashboard as a per-user service", after_help = DASHBOARD_ENABLE_HELP)]
     Enable {
@@ -886,6 +933,86 @@ fn serve_paths(state_dir: Option<PathBuf>) -> Result<StatePaths, ServiceError> {
     }
 }
 
+/// Internally supplied identities bind a supervised worker to one existing activation lease.
+#[cfg(windows)]
+pub(crate) struct SupervisedLifetimes {
+    pub(crate) supervisor: String,
+    pub(crate) worker: String,
+}
+
+#[cfg(windows)]
+pub(crate) fn supervised_lifetimes(
+    service_mode: bool,
+    supervisor: Option<String>,
+    worker: Option<String>,
+) -> Result<Option<SupervisedLifetimes>, ServiceError> {
+    match (supervisor, worker) {
+        (None, None) => Ok(None),
+        (Some(supervisor), Some(worker)) if service_mode => {
+            for value in [&supervisor, &worker] {
+                let parsed = uuid::Uuid::parse_str(value).map_err(|_| {
+                    ServiceError::Io("service lifetime must be a canonical UUID".into())
+                })?;
+                if parsed.is_nil() || parsed.hyphenated().to_string() != *value {
+                    return Err(ServiceError::Io(
+                        "service lifetime must be a nonzero lowercase canonical UUID".into(),
+                    ));
+                }
+            }
+            if supervisor == worker {
+                return Err(ServiceError::Io(
+                    "supervisor and worker lifetimes must be distinct".into(),
+                ));
+            }
+            Ok(Some(SupervisedLifetimes { supervisor, worker }))
+        }
+        _ => Err(ServiceError::Io(
+            "supervised lifetimes require both internal arguments and service mode".into(),
+        )),
+    }
+}
+
+/// Validates an existing parent's metadata around the nonmutating actual-lock observation.
+/// Retain the returned state guard through the worker lifetime, including waiting and teardown.
+#[cfg(windows)]
+pub(crate) fn validate_supervisor(
+    paths: &StatePaths,
+    target: Target,
+    lifetime: &str,
+) -> Result<locron_core::filesystem::DirectoryGuard, ServiceError> {
+    let parsed = uuid::Uuid::parse_str(lifetime)
+        .map_err(|_| ServiceError::Io("supervisor lifetime must be a canonical UUID".into()))?;
+    if parsed.is_nil() || parsed.hyphenated().to_string() != lifetime {
+        return Err(ServiceError::Io(
+            "supervisor lifetime must be a nonzero lowercase canonical UUID".into(),
+        ));
+    }
+    let guard = locron_core::filesystem::DirectoryGuard::existing_private(&paths.root)
+        .map_err(|error| ServiceError::Io(error.to_string()))?;
+    let path = target.activation_lock(paths);
+    let before = DaemonLock::read_role_metadata(path)
+        .map_err(|error| ServiceError::Io(error.to_string()))?
+        .ok_or_else(|| ServiceError::Io("supervisor activation owner is absent".into()))?;
+    if !before.service_mode
+        || before.metadata.pid == 0
+        || before.metadata.lifetime_id != lifetime
+        || DaemonLock::probe_existing(path).map_err(|error| ServiceError::Io(error.to_string()))?
+            != locron_store::LockProbe::Held
+    {
+        return Err(ServiceError::Io(
+            "supervisor activation lifetime is not held by the expected registered owner".into(),
+        ));
+    }
+    let after = DaemonLock::read_role_metadata(path)
+        .map_err(|error| ServiceError::Io(error.to_string()))?;
+    if after.as_ref() != Some(&before) {
+        return Err(ServiceError::Io(
+            "supervisor activation identity changed during validation".into(),
+        ));
+    }
+    Ok(guard)
+}
+
 /// `locron dashboard` / `locron dashboard serve`: bind loopback, print the
 /// access URL, then serve until a signal.
 async fn foreground_serve(
@@ -896,6 +1023,129 @@ async fn foreground_serve(
     format: Format,
 ) -> Result<()> {
     let paths = serve_paths(state_dir)?;
+    #[cfg(windows)]
+    {
+        owned_dashboard(paths, port_arg, bind_arg, service_mode, None, format).await
+    }
+    #[cfg(not(windows))]
+    {
+        serve_dashboard(
+            paths,
+            port_arg,
+            bind_arg,
+            service_mode,
+            format,
+            std::future::pending(),
+        )
+        .await
+    }
+}
+
+#[cfg(windows)]
+async fn owned_dashboard(
+    paths: StatePaths,
+    port_arg: Option<u16>,
+    bind_arg: Option<String>,
+    service_mode: bool,
+    lifetimes: Option<SupervisedLifetimes>,
+    format: Format,
+) -> Result<()> {
+    // This is deliberately before acquire_role or token/state bootstrap.
+    let parent_guard = lifetimes
+        .as_ref()
+        .map(|ids| validate_supervisor(&paths, Target::Dashboard, &ids.supervisor))
+        .transpose()?;
+    let metadata = locron_store::LockMetadata {
+        pid: std::process::id(),
+        lifetime_id: lifetimes.as_ref().map_or_else(
+            || uuid::Uuid::now_v7().to_string(),
+            |ids| ids.worker.clone(),
+        ),
+        started_at_us: crate::now_us(),
+        binary_version: env!("CARGO_PKG_VERSION").to_owned(),
+    };
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    let worker_lease = if lifetimes.is_some() {
+        let lease = DaemonLock::acquire_role(
+            Target::Dashboard.worker_activation_lock(&paths),
+            &metadata,
+            true,
+        )?;
+        let control = locron_engine::ipc::bind_role_control(
+            &paths.root,
+            "dashboard-worker",
+            &metadata.lifetime_id,
+            cancellation.clone(),
+        )?;
+        Some((lease, control))
+    } else {
+        None
+    };
+    let result = async {
+        let lock = loop {
+            if cancellation.is_cancelled() {
+                return Ok(());
+            }
+            match DaemonLock::acquire_role(&paths.dashboard_lock, &metadata, service_mode) {
+                Ok(lock) => break lock,
+                Err(StoreError::DaemonAlreadyRunning) if lifetimes.is_some() => {
+                    tokio::select! {
+                        () = cancellation.cancelled() => return Ok(()),
+                        () = tokio::time::sleep(POLL_INTERVAL) => {},
+                    }
+                }
+                Err(error) => {
+                    return Err(ServiceError::Io(format!(
+                        "cannot own the dashboard lifetime: {error}"
+                    ))
+                    .into());
+                }
+            }
+        };
+        let control = if service_mode {
+            Some(locron_engine::ipc::bind_role_control(
+                &paths.root,
+                "dashboard",
+                &metadata.lifetime_id,
+                cancellation.clone(),
+            )?)
+        } else {
+            None
+        };
+        let result = serve_dashboard(
+            paths,
+            port_arg,
+            bind_arg,
+            service_mode,
+            format,
+            cancellation.clone().cancelled_owned(),
+        )
+        .await;
+        if let Some(control) = control {
+            control.abort();
+            let _ = control.await;
+        }
+        drop(lock);
+        result
+    }
+    .await;
+    if let Some((lease, control)) = worker_lease {
+        control.abort();
+        let _ = control.await;
+        drop(lease);
+    }
+    drop(parent_guard);
+    result
+}
+
+async fn serve_dashboard(
+    paths: StatePaths,
+    port_arg: Option<u16>,
+    bind_arg: Option<String>,
+    service_mode: bool,
+    format: Format,
+    shutdown: impl std::future::Future<Output = ()> + Send,
+) -> Result<()> {
     let bind = parse_bind(bind_arg.as_deref()).map_err(|message| anyhow!(message))?;
     let config = Config {
         bind,
@@ -941,7 +1191,7 @@ async fn foreground_serve(
             );
         }
     }
-    locron_server::serve(bound, paths)
+    locron_server::serve_until(bound, paths, shutdown)
         .await
         .map_err(|error| ServiceError::Io(format!("the dashboard server failed: {error}")))?;
     Ok(())
@@ -998,8 +1248,27 @@ pub(crate) async fn execute_dashboard(
 ) -> Result<()> {
     match command {
         None => foreground_serve(state_dir, port_arg, bind_arg, false, format).await,
+        #[cfg(not(windows))]
         Some(DashboardCommand::Serve { service_mode }) => {
             foreground_serve(state_dir, port_arg, bind_arg, service_mode, format).await
+        }
+        #[cfg(windows)]
+        Some(DashboardCommand::Serve {
+            service_mode,
+            supervisor_lifetime,
+            worker_lifetime,
+        }) => {
+            let lifetimes =
+                supervised_lifetimes(service_mode, supervisor_lifetime, worker_lifetime)?;
+            owned_dashboard(
+                serve_paths(state_dir)?,
+                port_arg,
+                bind_arg,
+                service_mode,
+                lifetimes,
+                format,
+            )
+            .await
         }
         Some(DashboardCommand::Token) => dashboard_token(state_dir, format).map_err(Into::into),
         Some(
@@ -1887,6 +2156,286 @@ impl ServicePort for FakeServicePort {
     }
 }
 
+#[cfg(all(test, windows))]
+mod windows_dashboard_tests {
+    use super::{
+        SupervisedLifetimes, Target, foreground_serve, owned_dashboard, supervised_lifetimes,
+        validate_supervisor,
+    };
+    use crate::Format;
+    use locron_store::{DaemonLock, LockMetadata, LockProbe, StatePaths, StoreError};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn supervised_dashboard_refuses_invalid_parent_before_creating_state() {
+        let temporary = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temporary.path().join("absent"));
+        let parent = uuid::Uuid::now_v7().to_string();
+        let worker = uuid::Uuid::now_v7().to_string();
+        for (service_mode, supervisor, child) in [
+            (false, Some(parent.clone()), Some(worker.clone())),
+            (true, Some(parent.clone()), None),
+            (true, None, Some(worker.clone())),
+            (
+                true,
+                Some(uuid::Uuid::nil().to_string()),
+                Some(worker.clone()),
+            ),
+            (
+                true,
+                Some(parent.clone()),
+                Some(uuid::Uuid::nil().to_string()),
+            ),
+            (
+                true,
+                Some("018F3F74-8D70-7CC0-98A2-EEF43F17EAB4".into()),
+                Some(worker.clone()),
+            ),
+            (true, Some(parent.clone()), Some(parent.clone())),
+        ] {
+            assert!(supervised_lifetimes(service_mode, supervisor, child).is_err());
+            assert!(!paths.root.exists());
+        }
+        assert!(
+            validate_supervisor(&paths, Target::Dashboard, &uuid::Uuid::nil().to_string()).is_err()
+        );
+        assert!(!paths.root.exists());
+        assert!(
+            owned_dashboard(
+                paths.clone(),
+                Some(0),
+                Some("127.0.0.1".into()),
+                true,
+                Some(SupervisedLifetimes {
+                    supervisor: parent.clone(),
+                    worker,
+                }),
+                Format::Json,
+            )
+            .await
+            .is_err()
+        );
+        assert!(!paths.root.exists());
+        let metadata = LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: parent.clone(),
+            started_at_us: 1,
+            binary_version: "test".into(),
+        };
+        let lease =
+            DaemonLock::acquire_role(&paths.dashboard_activation_lock, &metadata, false).unwrap();
+        assert!(validate_supervisor(&paths, Target::Dashboard, &parent).is_err());
+        drop(lease);
+        let lease =
+            DaemonLock::acquire_role(&paths.dashboard_activation_lock, &metadata, true).unwrap();
+        assert!(validate_supervisor(&paths, Target::Dashboard, &parent).is_ok());
+        assert!(
+            validate_supervisor(&paths, Target::Dashboard, &uuid::Uuid::now_v7().to_string())
+                .is_err()
+        );
+        drop(lease);
+        assert!(validate_supervisor(&paths, Target::Dashboard, &parent).is_err());
+        assert!(!paths.dashboard_worker_activation_lock.exists());
+        assert!(!paths.dashboard_lock.exists());
+        assert!(!paths.database.exists());
+    }
+
+    #[tokio::test]
+    async fn supervised_dashboard_waiter_stops_without_signalling_manual_owner() {
+        let temporary = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temporary.path().join("private"));
+        let parent = uuid::Uuid::now_v7().to_string();
+        let worker = uuid::Uuid::now_v7().to_string();
+        let parent_metadata = LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: parent.clone(),
+            started_at_us: 1,
+            binary_version: "test".into(),
+        };
+        let parent_lease =
+            DaemonLock::acquire_role(&paths.dashboard_activation_lock, &parent_metadata, true)
+                .unwrap();
+        let manual_metadata = LockMetadata {
+            lifetime_id: uuid::Uuid::now_v7().to_string(),
+            ..parent_metadata
+        };
+        let manual =
+            DaemonLock::acquire_role(&paths.dashboard_lock, &manual_metadata, false).unwrap();
+        let serving = owned_dashboard(
+            paths.clone(),
+            Some(0),
+            Some("127.0.0.1".into()),
+            true,
+            Some(SupervisedLifetimes {
+                supervisor: parent,
+                worker: worker.clone(),
+            }),
+            Format::Json,
+        );
+        let observer = async {
+            loop {
+                if let Some(owner) =
+                    DaemonLock::read_role_metadata(&paths.dashboard_worker_activation_lock).unwrap()
+                {
+                    assert_eq!(owner.metadata.lifetime_id, worker);
+                    assert!(owner.service_mode);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            assert_eq!(
+                DaemonLock::read_role_metadata(&paths.dashboard_lock)
+                    .unwrap()
+                    .unwrap()
+                    .metadata,
+                manual_metadata
+            );
+            let root = paths.root.clone();
+            let identity = worker.clone();
+            tokio::task::spawn_blocking(move || {
+                locron_core::notification::request_shutdown(&root, "dashboard-worker", &identity)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        };
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(30), async {
+            tokio::join!(serving, observer)
+        })
+        .await
+        .unwrap();
+        result.unwrap();
+        assert_eq!(
+            DaemonLock::probe_existing(&paths.dashboard_lock).unwrap(),
+            LockProbe::Held
+        );
+        assert_eq!(
+            DaemonLock::read_role_metadata(&paths.dashboard_lock)
+                .unwrap()
+                .unwrap()
+                .metadata,
+            manual_metadata
+        );
+        assert_eq!(
+            DaemonLock::probe_existing(&paths.dashboard_worker_activation_lock).unwrap(),
+            LockProbe::Free
+        );
+        assert!(
+            DaemonLock::read_role_metadata(&paths.dashboard_worker_activation_lock)
+                .unwrap()
+                .is_none()
+        );
+        assert!(!locron_server::token::token_path(&paths).exists());
+        drop(manual);
+        drop(parent_lease);
+    }
+
+    #[tokio::test]
+    async fn registered_dashboard_control_waits_for_actual_lifetime_exit() {
+        let temporary = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temporary.path().join("private"));
+        let observer = async {
+            let metadata = tokio::time::timeout(Duration::from_secs(30), async {
+                loop {
+                    if let Some(owner) =
+                        DaemonLock::read_role_metadata(&paths.dashboard_lock).unwrap()
+                    {
+                        break owner;
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(metadata.service_mode);
+            assert!(matches!(
+                DaemonLock::try_prove_free(&paths.dashboard_lock),
+                Err(StoreError::MigrationRequiresDaemonRestart)
+            ));
+            assert!(
+                foreground_serve(
+                    Some(paths.root.clone()),
+                    Some(0),
+                    Some("127.0.0.1".into()),
+                    true,
+                    Format::Json
+                )
+                .await
+                .is_err()
+            );
+            assert_eq!(
+                DaemonLock::read_role_metadata(&paths.dashboard_lock)
+                    .unwrap()
+                    .unwrap(),
+                metadata
+            );
+            let root = paths.root.clone();
+            let lifetime = metadata.metadata.lifetime_id;
+            tokio::time::timeout(Duration::from_secs(30), async move {
+                loop {
+                    let root = root.clone();
+                    let lifetime = lifetime.clone();
+                    let delivered = tokio::task::spawn_blocking(move || {
+                        locron_core::notification::request_shutdown(&root, "dashboard", &lifetime)
+                    })
+                    .await
+                    .unwrap();
+                    if delivered.is_ok() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            })
+            .await
+            .unwrap();
+        };
+        let serving = foreground_serve(
+            Some(paths.root.clone()),
+            Some(0),
+            Some("127.0.0.1".into()),
+            true,
+            Format::Json,
+        );
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(45), async {
+            tokio::join!(serving, observer)
+        })
+        .await
+        .unwrap();
+        result.unwrap();
+        assert!(
+            DaemonLock::read_role_metadata(&paths.dashboard_lock)
+                .unwrap()
+                .is_none()
+        );
+        DaemonLock::try_prove_free(&paths.dashboard_lock).unwrap();
+    }
+
+    #[tokio::test]
+    async fn dashboard_startup_failure_releases_its_lifetime() {
+        let temporary = tempfile::tempdir().unwrap();
+        let paths = StatePaths::new(temporary.path().join("private"));
+        let occupied = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        assert!(
+            foreground_serve(
+                Some(paths.root.clone()),
+                Some(port),
+                Some("127.0.0.1".into()),
+                true,
+                Format::Json
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            DaemonLock::read_role_metadata(&paths.dashboard_lock)
+                .unwrap()
+                .is_none()
+        );
+        DaemonLock::try_prove_free(&paths.dashboard_lock).unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use locron_store::LockMetadata;
@@ -1993,7 +2542,7 @@ mod tests {
         assert_eq!(plist.matches("<true/>").count(), 2);
         let log = format!(
             "<string>{}</string>",
-            home.join("Library/Logs/locron/daemon.log").display()
+            escape_xml(&home.join(LOG_DIR).join("daemon.log").display().to_string())
         );
         assert_eq!(plist.matches(&log).count(), 2);
         assert!(plist.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
@@ -2011,12 +2560,19 @@ mod tests {
         assert!(plist.contains("<string>serve</string>"));
         assert!(plist.contains("<string>--service-mode</string>"));
         assert!(plist.contains("<string>--state-dir</string>"));
-        assert!(plist.contains("<string>/Users/tester/state</string>"));
+        let state = escape_xml(&ctx.paths.as_ref().unwrap().root.display().to_string());
+        assert!(plist.contains(&format!("<string>{state}</string>")));
         assert!(!plist.contains("dev.locron.daemon"));
         assert!(!plist.contains("<string>daemon</string>\n    <string>run</string>"));
         let log = format!(
             "<string>{}</string>",
-            home.join("Library/Logs/locron/dashboard.log").display()
+            escape_xml(
+                &home
+                    .join(LOG_DIR)
+                    .join("dashboard.log")
+                    .display()
+                    .to_string()
+            )
         );
         assert_eq!(plist.matches(&log).count(), 2);
     }
@@ -2065,9 +2621,10 @@ mod tests {
         );
         let unit = render_unit(&ctx).unwrap();
         assert!(unit.contains("Description=locron web dashboard"));
-        assert!(unit.contains(
-            "ExecStart=\"/opt/locron/bin/locron\" --state-dir \"/home/tester/state\" dashboard serve --service-mode"
-        ));
+        let state = escape_systemd_path(&ctx.paths.as_ref().unwrap().root.display().to_string());
+        assert!(unit.contains(&format!(
+            "ExecStart=\"/opt/locron/bin/locron\" --state-dir \"{state}\" dashboard serve --service-mode"
+        )));
         assert!(!unit.contains("daemon run"));
         assert!(!unit.contains("locron scheduler daemon"));
     }
@@ -2270,7 +2827,7 @@ mod tests {
     #[test]
     fn install_defers_start_when_a_manual_daemon_holds_the_lock() {
         let tmp = tempfile::tempdir().unwrap();
-        let paths = StatePaths::new(tmp.path().to_path_buf());
+        let paths = StatePaths::new(tmp.path().join("private"));
         let _lock = DaemonLock::acquire(
             &paths.daemon_lock,
             &LockMetadata {

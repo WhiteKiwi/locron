@@ -24,6 +24,12 @@ tickets. This administrative migration changes no Locron product behavior, platf
 release scope. Existing task requirements, verification criteria, completion states, and historical
 evidence must be preserved; creating repository issues is outside this migration.
 
+Repository workflow amendment (2026-10-03): maintainer execution planning, Verify criteria and
+progress return to repository Issues. Preserve every Project task and its completion evidence,
+reuse matching existing Windows issues, and close the private Project after verifying the
+migration. This supersedes the 2026-10-02 tracking policy without changing product behavior,
+platform support or release scope. Completed task history remains completed.
+
 ## Goal
 
 Build a local-first job scheduler that lets one user register, inspect, run, and manage scheduled work consistently on macOS, Linux and the planned Windows 11 platform.
@@ -564,8 +570,11 @@ Store distribution remain outside this milestone.
 - Daemon and dashboard startup registration uses the current interactive user's login session,
   least privilege and no stored password. The daemon runs while the user is logged in, including
   a locked session; signed-out execution is outside this milestone. Registrations impose no
-  arbitrary execution-duration, battery, idle or network-availability stop condition, restart
-  unexpected failures with a bounded policy, and can be installed/refreshed/removed without admin.
+  arbitrary execution-duration, battery, idle or network-availability stop condition and can be
+  installed/refreshed/removed without admin. One activation admits at most four role starts, with
+  one-minute waits before the three eligible retries. A known failure before execution or a
+  confirmed nonzero role exit may consume that budget. Privacy, infrastructure and unconfirmed
+  cleanup failures stop explicitly; a new activation requires operator action or the next logon.
 - Local wake notifications are restricted to the owning account and state instance. IPC failure
   retains periodic durable reconciliation and never becomes a correctness prerequisite.
 - The initial distribution uses immutable unsigned x64/ARM64 ZIPs from the canonical HTTPS GitHub
@@ -577,6 +586,10 @@ Store distribution remain outside this milestone.
   coordinate owned executable holders and automatic restarts before replacement; preserve rollback,
   enabled/disabled registration state and durable jobs/history; and report confirmed completion
   only after replacement succeeds. Remaining unowned holders produce an actionable bounded refusal.
+- Windows install/update/package maintenance accepts recorded normalized local paths of at most
+  4,096 UTF-16 units. Longer or unsupported paths and an oversized recovery snapshot refuse before
+  stopping services or changing installation state; Unicode and paths beyond 260 characters remain
+  supported within that bound. Ordinary job/runtime state access keeps its existing path contract.
 - Completion requires the same reviewed revision to pass native x64/ARM64 CI and standard-user
   Windows 11 install/run/update/uninstall acceptance without a Rust/Visual Studio/Git Bash/pwsh
   dependency, including descendants, permissions, reboot/login, stock shells and security policy.

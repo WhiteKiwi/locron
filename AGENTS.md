@@ -2,14 +2,14 @@
 
 ## Core Workflow
 
-Product and design documentation remains the source of truth for this repository. Execution scope, tasks, verification evidence, and progress live in the private Locron GitHub Project as Project-only draft tickets. Before changing code, read `docs/SPEC.md`, `docs/IMPLEMENTATION.md`, `docs/PROJECTS.md`, and the relevant Project drafts. For a new or materially changed body of work, update the relevant planning document before implementation begins.
+Product and design documentation remains the source of truth for this repository. Execution scope, tasks, verification evidence, and progress live in the [repository Issues](https://github.com/WhiteKiwi/locron/issues). Before changing code, read `docs/SPEC.md`, `docs/IMPLEMENTATION.md`, `docs/ISSUES.md`, and the relevant issues. For a new or materially changed body of work, update the relevant planning document before implementation begins.
 
 The required planning order is:
 
 1. Draft or update `docs/SPEC.md`.
 2. Resolve its open questions through research and record supporting evidence in `docs/FINDINGS.md` when research is needed.
 3. Complete or update `docs/IMPLEMENTATION.md`.
-4. Create or update the relevant Project draft tickets. Include a concrete `Verify` criterion for every step in a plan with three or more steps; use Phase and Status to track execution.
+4. Create or update the relevant repository issues. Include a concrete `Verify` criterion for every step in a plan with three or more steps; keep phase and progress metadata current.
 5. Review the completed plan once more before implementation.
 6. Hand implementation to a separate development sub-session. The parent planning session does not implement code after drafting the specification.
 
@@ -30,20 +30,19 @@ If a decision changes during implementation, update the applicable planning docu
 - Keep the change plan limited to this repository.
 - Record why an approach was selected, not only what will be changed.
 
-### Project Draft Tickets — Execution and Verification
+### Repository Issues — Execution and Verification
 
-- Use the private [Locron Project](https://github.com/users/WhiteKiwi/projects/4) for maintainer execution scope, phased tasks, verification criteria, evidence, and progress.
-- Use Project-only drafts; do not convert internal tasks to repository issues. Public contributor bug reports remain on the repository issue tracker.
+- Use the [repository issue tracker](https://github.com/WhiteKiwi/locron/issues) for maintainer execution scope, phased tasks, verification criteria, evidence, and progress, alongside contributor bug reports.
+- Review the existing issue inventory before creating a task and continue a matching issue when its scope already covers the work.
 - Record concrete `Verify` criteria for every step of a plan with three or more steps.
-- Set Status to Done only after Verify criteria succeed, evidence is recorded, and any PR merge or publication required by that ticket is complete. A ticket requesting an opened PR can complete at that deliverable.
-- Keep task status current throughout the work. Review the relevant drafts before implementation deviations.
-- `docs/PROJECTS.md` owns workflow and the static migration map. `docs/TODO.md` is a pointer, not a second live checklist.
-- The Project is private. Without access, use public product/design documents and ask a maintainer for task context; do not create a parallel execution checklist.
+- Close a task as completed only after its Verify criteria succeed, evidence is recorded, and any PR merge or publication required by that issue is complete. An issue requesting an opened PR can complete at that deliverable. Partial implementation leaves remaining acceptance work open.
+- Keep task status current throughout the work. Review the relevant issues before implementation deviations.
+- `docs/ISSUES.md` owns workflow and the static migration map. `docs/TODO.md` is a pointer, not a second live checklist. The retired Project and its preserved snapshot remain historical evidence.
 
 ## Sub-session Handoff
 
 - Immediately after the initial specification draft, continue research or development in a separate sub-session.
-- When specification questions remain, the research sub-session produces `docs/FINDINGS.md` before the planning documents and relevant Project draft tasks are finalized.
+- When specification questions remain, the research sub-session produces `docs/FINDINGS.md` before the planning documents and relevant repository issues are finalized.
 - The development sub-session owns documentation updates caused by implementation decisions and reports its changes and verification results back to the parent session.
 - The parent session reviews the report and handles repository-level publication work.
 

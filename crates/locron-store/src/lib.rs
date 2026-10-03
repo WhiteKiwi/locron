@@ -9,7 +9,13 @@ mod migration;
 mod output;
 mod paths;
 mod store;
+#[cfg(windows)]
+mod windows_configure;
+#[cfg(windows)]
+mod windows_open;
 
+#[cfg(windows)]
+pub use lock::LockProbe;
 pub use lock::{DaemonLock, LockMetadata, RoleLockMetadata};
 pub use migration::{APPLICATION_ID, LATEST_SCHEMA_VERSION};
 pub use output::{

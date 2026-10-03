@@ -19,7 +19,7 @@ release contracts stay unchanged, so the frozen product SPEC needs no amendment.
    pass without publication. Preserve historical npm verification receipts.
 3. Qualify and integrate the source change. **Verify:** complete final diff and
    changed-file review, expected-head hosted CI and the ordered PR38 merge.
-   Record exact commands/revisions/results on the private Project draft before
+   Record exact commands/revisions/results on the relevant repository issue before
    Done. Hosted Rust-cache follow-up LOCRON-TODO-041 remains a separate task.
 
 ### Frontend verification and installation policy
@@ -56,7 +56,7 @@ foundation job definitions: their three native build/scheduling matrix legs and
 one pinned lint leg are a staged build foundation, not Windows product acceptance.
 Keep all existing Unix Rust, installer and source-package gates unchanged and
 add the independent frontend job beside them. Windows ownership, implementation
-scope and private acceptance drafts remain with their existing workstream.
+scope and acceptance issues remain with their existing workstream.
 
 Verify every pre-existing job against this exact main revision and retain the
 reviewed frontend job from published PR38 head `c07a854`. Recheck frozen frontend
@@ -65,7 +65,7 @@ Rust 1.98 formatting/Clippy plus Rust 1.94 and stable full workspace tests on th
 integrated macOS source. Reuse the unchanged dependency graph and asset proof;
 record a separate integration handoff before parent publication and exact-head CI.
 
-After this reviewed plan and Project handoff, a separate development sub-session
+After this reviewed plan and issue handoff, a separate development sub-session
 owns implementation and documentation updates for any new decision. The parent
 reviews and publishes. No tags, signing, registry upload, installer execution,
 live jobs/services, Windows acceptance or broad storage deletion belongs here.
@@ -76,7 +76,7 @@ This document plans the first program milestone against the frozen behavior in `
 
 Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, the official platform matrix, the four-crate dependency direction, one `locron` binary, and an engine-owned daemon entered through `locron daemon run`. Those decisions are not Draft.
 
-> **Review state:** milestone-1 implementation choices are accepted. Update this document and the relevant Project draft tickets before deviating in code. A change to observable behavior or scope updates `docs/SPEC.md` first; a change to durable component boundaries or invariants updates `docs/ARCHITECTURE.md` first. Reviewed CLI and storage contracts live in `docs/CLI.md` and `docs/STORAGE.md`.
+> **Review state:** milestone-1 implementation choices are accepted. Update this document and the relevant repository issues before deviating in code. A change to observable behavior or scope updates `docs/SPEC.md` first; a change to durable component boundaries or invariants updates `docs/ARCHITECTURE.md` first. Reviewed CLI and storage contracts live in `docs/CLI.md` and `docs/STORAGE.md`.
 
 `docs/FINDINGS.md` preserves the research path and does not override the frozen specification. In particular, v1 has no `queue-one` overlap policy and global concurrency defaults to 16, not 4.
 
@@ -85,8 +85,9 @@ Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, th
 The Windows amendment in SPEC and adapter boundaries in ARCHITECTURE are the authority for this
 milestone. FINDINGS §46 records the selected safe interfaces, source audit and limitations. The
 initial release is unsigned; signing remains deferred in public proposal #37 and is not part of
-this milestone's dependency graph. Execution progress/evidence belongs in private Project drafts;
-public #23–#36 remain proposal and review context rather than a second live execution checklist.
+this milestone's dependency graph. Execution progress/evidence belongs in repository Issues.
+The 2026-10-03 migration reuses #24–#36 for the Windows tasks while retaining the original public
+#23–#36 proposal and review text as history.
 
 The first portability commit is explicitly a build foundation: native `windows-2025` x64 and
 `windows-11-arm` ARM64 jobs check the workspace, exercise the portable scheduling domain, and
@@ -102,9 +103,41 @@ nix/Unix imports target-specific and bring native Windows x64/ARM64 CI alongside
 Use LocalAppData for default machine-local state. Retain explicit state overrides, file-lock
 ownership and SQLite WAL semantics; path strings never imply safe ownership by themselves.
 
-Historical migration SQL/checksums stay immutable. Only a newly created Windows database receives
-the captured Windows execution PATH after migration, guarded by its untouched default/zero-update
-settings state; existing configured PATH values are preserved on reopen.
+Historical migration SQL/checksums stay immutable. A Windows database receives its captured
+execution PATH in the transaction that creates its initial schema. The logical initial-schema
+winner owns this default, independently of which opener created the empty physical file.
+Already migrated settings, including an unchanged historical PATH, are preserved on reopen.
+
+#### Atomic first Windows execution path (2026-10-03)
+
+Exact Root43 `7c4e136` native lifecycle evidence read the historical POSIX seed before the first
+Windows opener returned. A readable settings row and published daemon owner metadata do not prove
+that Store initialization has finished. Merely waiting for an expected PATH would conceal the
+separate product window: a competing writable opener can return before the physical creator's
+post-migration update, or that creator can exit after committing the schema but before the update.
+
+Capture the Windows default once for an opening migration, then parameterize the platform default
+inside the existing initial step's `BEGIN IMMEDIATE` transaction, after its admitted version-zero
+recheck and before its commit. Initial settings, platform PATH, application/schema markers and the
+unchanged historical migration checksum become visible together. An interrupted uncommitted step
+can roll back and be initialized by the next logical winner; a committed step already has the
+correct PATH even if later migration steps have not finished. A stale loser rechecks admission and
+never rewrites the winner's default. A valid empty database can receive its first logical schema;
+version-one or newer databases keep their previous PATH, including POSIX or customized values.
+
+Remove only the later physical-fresh settings update, its unused retained flag and diagnostic
+stage. Keep guarded file creation, DB/WAL/SHM admission, later migration transactions, all SQL
+source/checksums and Unix default behavior unchanged. A private initializer accepts explicit test
+data so competing default values can be tested without changing the host/process environment.
+
+Verify with two real WAL connections: before the admitted initial commit, an independent reader
+cannot observe settings and a competing writer cannot initialize them; after commit, the reader
+sees the winner's platform PATH and a stale opener with a different default preserves it. Cover
+rollback before commit and closing the creator immediately after the initial commit, then complete
+recovery on another connection with the correct default/checksum retained. Cover an existing empty
+private file, completed fresh Store opening, and reopening versioned historical/custom settings.
+Keep the native first-run lifecycle's original PATH assertion, actual target/control/exit checks
+and thirty-second readiness deadline; qualify on x64, ARM64 and MSRV alongside the Unix suites.
 
 Shared environment/path helpers normalize Windows environment keys case-insensitively, reject
 same-layer collisions and reserved-name variants, and apply precedence consistently across CLI,
@@ -113,6 +146,18 @@ separator paths, preserve argv/Unicode/spaces, and reject implicit .cmd/.bat dir
 Build shell snapshots by explicit family: cmd.exe /D /S /C, PowerShell/pwsh -NoProfile
 -NonInteractive -Command, and POSIX shells -c. Unknown ambiguous Windows shell families produce
 an actionable configuration failure. Persist absolute selected executables before spawn.
+
+For the cmd /D /S /C snapshot, construct the final command tail with Windows CommandExt::raw_arg
+and one outer quote pair; cmd's /S parser strips that pair and receives the original command text.
+Do not apply C-runtime argv escaping to that command tail. Other executable arguments continue
+through the ordinary argv serializer; the persisted executable/args snapshot format is unchanged.
+
+Windows user-selected import/body/environment inputs use the same no-follow read helper with
+retained ancestor/leaf guards until bytes have been read; relative CLI input paths resolve against
+the current directory. Existing Unix reads retain their established behavior. Diagnostics share
+transport facts: Unix wake_socket keeps its filesystem-presence boolean, while Windows reports
+named_pipe, no filesystem socket, and unprobed availability. A diagnostics read never sends a hint
+or creates a pipe/state directory just to claim availability.
 
 ### Race-free process-tree supervision
 
@@ -126,9 +171,47 @@ The root child and output streams are not tree-exit evidence. Query the retained
 list under a bounded deadline on completion, timeout, cancellation, replacement and output-error
 cleanup. Query errors or capacity overflow remain unconfirmed and retain existing quarantine/
 interrupted-unknown rules. Do not rely on process-wrap's completion-port wait as proof of an empty
-tree. Keep handles through confirmation/finalization so daemon crash triggers kill-on-close.
+tree. The safe ChildWrapper::try_wait supplies only the root status; do not use its unsafe mutable
+native-child accessor. Keep handles through confirmation/finalization so daemon crash triggers kill-on-close.
 Use ordinary bounded natural completion/drain; hard tree termination is explicit where Windows
 has no generic cooperative target signal. Keep Unix signal-group behavior in its existing backend.
+
+On root exit, permit descendants the configured termination-grace window to finish naturally;
+if they outlive it, stop the owned tree and classify the attempt as a non-retryable failure rather
+than reporting the root's zero status as complete success. Cancellation and timeout similarly
+permit bounded natural exit before hard termination, without claiming a delivered generic signal.
+Post-spawn enrollment/resume failures preserve an unconfirmed termination outcome because the
+suspended native child cannot be independently recovered after a wrapper failure. Query failures
+never become proof of tree exit. After confirmed empty-tree/root exit, output drain has its own
+finite grace deadline; leaked external pipe holders cannot indefinitely retain an attempt.
+
+The shared Windows engine factory is windows_child::OwnedChild::spawn(Command, ChildWindow),
+with Hidden/Inherit policies and no mutable native-child escape. Exact argv, environment, cwd
+and stdio remain caller-owned inputs; raw creation_flags on that Command are unsupported.
+Register CreationFlags through the audited wrapper: Hidden selects CREATE_NO_WINDOW and Inherit
+selects zero, then JobObject adds its temporary suspension. At the final native spawn closure,
+after all wrapper pre_spawn hooks, explicitly apply that selected value plus CREATE_SUSPENDED
+with the safe setter. Keep the logical CreationFlags wrapper free of explicit suspension so
+JobObject resumes only after the external enrollment and its own Job assignment. This final
+boundary must preserve CREATE_NO_WINDOW for Hidden and exclude NEW_CONSOLE/DETACHED flags;
+Inherit retains zero user flags plus temporary suspension. The runner keeps Inherit behavior.
+The native fixture records the actual last-set mask at that spawn boundary. A direct
+CREATE_NO_WINDOW control and a direct DETACHED_PROCESS negative control establish that a
+windowless private console can expose CONOUT$; absence of that device is not the Hidden
+contract. Compare the wrapped child's real device behavior to those controls and retain exact
+actual status/root reaping/empty Job/enrollment-failure assertions. Do not claim the device
+probe proves window visibility or replace the mask with DETACHED_PROCESS/GetConsoleWindow.
+Expose id, cached root try_wait, authoritative tree_empty, start_kill and
+async confirm_exit_until/terminate_until accepting one std::time::Instant deadline. Only the
+runner can take stdout/stderr through crate-private accessors. Confirmation polls both root
+reaping and retained-Job emptiness, never the completion-port wrapper's wait result.
+SpawnFailure::NotStarted carries the pre-spawn error; ExecutionMayHaveStarted carries the error
+and SpawnContainment retaining the independent kill-on-close Job. Wrapper failure has lost the
+root-wait capability, so even an empty retained Job cannot confirm that root exit. Keep that
+guard through refusal/quarantine and never retry the uncertain child. Dropping it is emergency
+kernel containment, not a successful cleanup result. Native fixtures preserve suspended enrollment,
+uncertain refusal, immediate descendants, root-before-descendant exit, one absolute stop budget,
+and headless policy through wrapper composition.
 
 ### Private state and guarded filesystem access
 
@@ -573,6 +656,16 @@ helper error before an absent-marker assertion can hide it. Stop waiting when th
 exited; this shortens failure reporting without changing either adapter budget or mapped-handle
 acceptance. Never turn a missing marker into a passing mapped-file assertion.
 
+The joined native mapping helper now reports an empty map-name argument before its entry marker.
+Pass [System.Management.Automation.Language.NullString]::Value as only that fixture's mapName
+argument, preserving an unnamed real writable mapping. PowerShell otherwise converts raw $null
+to an empty .NET string, which the Framework mapping constructor rejects. Keep the six-argument
+FileStream overload, writable view, explicit original FileStream disposal, release/join and exact
+stable-gate sharing refusal/bytes assertions. Verify: native x64/ARM64/MSRV must reach the original-
+handle-closed marker, refuse the stable gate while the real writable mapping remains, then accept
+it only after helper/view disposal with payload intact. A binder/setup error still fails visibly;
+this fixture-only correction changes no production adapter, deadline or cold-loader behavior.
+
 Verify: (1) original native ARM64 broad-file cold failure now identifies the actual generic child
 phase under the same thirty-plus-three bound without warming/replaying state creation. (2) the
 mapping fixture reports its actual setup/stall error and independent temporary-parent status after
@@ -586,6 +679,173 @@ descriptor and validate them again after configuration/migration, before accepti
 operations. Normal SQLite sidecar deletion on the last close remains intact; the next writable
 open precreates missing sidecars again. Read-only validation uses the actual supplied database
 filename and its sidecars, and performs final readback without changing the file-creation contract.
+
+Refine writable bootstrap for the measured concurrent wal-create-new error 80. Existing private
+DB/WAL/SHM admission remains strict. If a missing-leaf CreateNew returns only AlreadyExists,
+perform one existing-only handle open with the same current-SID/protected-DACL/regular/no-reparse
+validation; a private verified winner is accepted under the ordinary existing-leaf contract.
+Unknown, broad, disappeared or changed leaves refuse; no permission repair, truncation, second
+creation or general retry follows. Mark a database fresh only when this caller's explicit
+CreateNew succeeded, preserving configured PATH and historical migration checksums.
+
+Retain all three validated preparation handles and their ancestor guards until SQLite open,
+configuration/migration and reported-filename/full-object-ID readback finish. Open the normalized
+verified main file with READWRITE without CREATE through the existing win32-longpath VFS and
+reject a read-only fallback. Rust creates the empty database explicitly before this call; SQLite
+cannot create a different database behind a missing path. Preparation handles deny delete sharing
+across this handoff. SQLite's actual ordinary DB/WAL/SHM handles then retain that no-delete policy
+during connection use; release the preparation guards after acceptance so normal final-close
+checkpoint/sidecar deletion stays intact. Do not retain writable guards past SQLite close or change
+the separately reviewed read-only WAL/immutable gate.
+
+Verify: (1) an exact private-leaf CreateNew winner race preserves its bytes/full ID, while a broad,
+reparse or vanished winner refuses unchanged; no other error triggers the existing-leaf branch.
+(2) actual concurrent first writable opens and final-writer-close/open races preserve committed
+rows, current-SID ownership and reported full database identity. Native incompatible renames after
+the preparation handoff still refuse while SQLite owns live DB/WAL/SHM handles. (3) the measured
+server SSE shutdown fixture succeeds on all three native rows, and existing cold closed/no-journal
+Unicode-long-path reads, live WAL commits, final-close cleanup and unsafe-sidecar refusal retain
+their original assertions. Record other failures by their precise stage rather than treating
+error 80 or a successful reopened handle as evidence that every concurrency failure is resolved.
+
+Correct the separately measured simultaneous-migration and final-close admission failures before
+qualifying writable Store concurrency. Keep each historical migration's existing transaction,
+SQL bytes, checksum and durable record; do not catch MigrationConflict and reopen the database.
+For every pending step, obtain BEGIN IMMEDIATE and re-read application_id/user_version under that
+write transaction. Apply only the exact expected predecessor. If another initializer already
+advanced to a supported version, strictly verify the applicable recorded migration checksum
+under the transaction and skip that already applied step without changing its metadata. Existing
+application-ID, too-new, missing/checksum and unexpected backward-version failures remain errors.
+Refresh/verify later steps from the authoritative state; ordinary concurrent advance is not a
+synthetic conflict. Preserve configured values and exact once-per-version migration records.
+
+For Windows writable preparation, temporarily retain a shared byte-range lock on the already
+strictly validated native database handle before any WAL/SHM lookup or creation. Use the safe
+Rust 1.94 File::try_lock_shared API: its native range has offset zero and length u64::MAX, including
+SQLite's database-lock bytes. Pinned sqlite3WalClose must own an exclusive database lock while
+checkpointing and deleting SHM/WAL, and keeps that lock through deletion. This temporary shared
+gate therefore excludes that cleanup window; it is not a replacement for SQLite's own lifetime
+locks or authority to ignore a permission error. Retain the same full database identity and
+ancestor guard throughout admission. No new permanent lock file, custom VFS, FFI or Drop policy.
+
+Retry only TryLockError::WouldBlock on that same retained handle under one absolute five-second
+admission bound, established before its first try. Check pre/post operation, cap sleeps to the
+remaining duration, and return bounded contention on expiry. Other lock errors and every native
+permission/raw-5/reparse/descriptor failure propagate immediately. Once both strictly private
+no-delete WAL and SHM guards are live, explicitly and fallibly unlock the database before SQLite
+connection/configuration/write. Keep all three leaf guards through existing exact native handoff
+confirmation. RAII unlock/handle close covers every preparation error; no live Store escapes a
+failed unlock. The gate denies ordinary database writes while held, so keep it limited to sidecar
+preparation, never configuration, migration or normal store use. Normal final-close checkpoint
+and journal deletion remain SQLite-owned; read-only passive/immutable rules stay unchanged.
+
+Verify: (1) force a stale migration observation using two actual SQLite connections, advance with
+the other initializer, then verify correct strict catch-up, exactly five immutable records and
+preserved rows. Tampered/missing checksums, foreign/too-new markers and a backward observation
+remain failures, not retry success. Keep the real simultaneous first Store-open barrier fixture.
+(2) with the temporary native shared database gate actually held, close the real last writable
+connection before sidecar preparation. Prove both sidecars still exist, retain full private IDs,
+then complete handoff and ordinary writes. After dropping the accepted Store, verify durable
+rows and actual final-sidecar removal; the existing raced final-close fixture retains every
+iteration and assertion. (3) hold an actual exclusive database lock, prove bounded shared-gate
+contention with no sidecar creation; release it inside the same budget and prove admission/write.
+Exercise immediate non-contention failure and error-path lock release; hostile sidecar/ACL/reparse
+fixtures remain fail-closed. Run all three native Store rows and Unix migration suites; no timing
+exemptions, global-budget increase or blanket raw-5/AlreadyExists/SQLite-error retry is admitted.
+
+Correct the measured Windows configuration contention separately from sidecar preparation and
+migration catch-up. Keep the existing database/sidecar guards, no-CREATE connection, migration
+ownership and read-only behavior. Windows startup owns its connection before returning a Store;
+no other statement or explicit transaction may be active while admitting WAL. Split the fixed
+WAL PRAGMA from the remaining connection settings. Consume exactly its effective-mode row through
+statement completion and explicitly finalize on success and failure, even when stepping fails.
+Require the effective mode to be WAL. A completion/finalization error cannot be replaced by an
+earlier row; any non-BUSY finalization error prevents retry. Refuse an explicit transaction or
+unexpected mode without changing it to success. No retry of Store::open, a SQL batch, migrations,
+settings writes, native permission errors or SQLite errors other than exact BUSY/extended 5.
+
+Establish one absolute five-second configuration deadline before its first attempt. Disable
+SQLite's internal busy handler for this owned startup phase with a zero timeout: one statement's
+internal locking-event waits must not reset or multiply the caller's allowance. Before every
+WAL attempt and remaining-settings stage, check expiry. After finalization, check expiry
+before accepting success or dispatching again. An exact BUSY 5 from the standalone WAL attempt
+may yield for at most ten milliseconds capped to the remaining budget, with its failed statement
+already finalized and autocommit verified. Reprepare the same WAL request against the current
+committed header, so another initializer's durable WAL transition is observed rather than
+replayed as an assumed failure. On persistent contention return the last original BUSY error;
+an already expired entry or late successful completion refuses as a deadline error. Apply the
+unchanged FULL/foreign-keys/NORMAL/trusted-schema settings once after WAL acceptance, within the
+remaining allowance and without retries; restore the ordinary five-second busy timeout before
+returning an accepted Store. Do not claim cancellation of stalled native I/O from deadline checks.
+
+Add only fixed debug failure substages for WAL admission and remaining connection settings,
+sharing the existing operation counter and original error category/raw code. No path, SQL text,
+exception payload, row contents or new filesystem query. Unix configuration keeps its existing
+behavior. A failed finalization or post-deadline response never releases a usable Store.
+
+Verify: (1) use real independent SQLite connections on a disposable private rollback database.
+Hold a reserved writer, prove an actual WAL-promotion BUSY result, and prove its explicitly
+finalized failed statement no longer prevents the other connection from committing. A test-only
+observation after a genuine finalized BUSY may signal that writer to release; it must not inject
+results or replace the production statement/timeout path. Release within the original bound and
+prove successful WAL acceptance, exact remaining settings, committed rows and final cleanup.
+(2) retain the writer past a short supplied deadline and verify bounded original BUSY refusal,
+autocommit/lock release and no subsequent attempt. An expired entry, explicit transaction,
+non-WAL in-memory result and genuine non-BUSY SQLite error refuse without retries or unrelated
+changes. Successful already-WAL admission must also consume/finalize its result. (3) retain every
+assertion and iteration in simultaneous first Store opens and raced final-close fixtures: both
+rows, full database identity, private sidecars, real SQLite no-delete handoff and final journal
+removal. Qualify all three native Store/Core/server rows plus Unix suites and lint; if another
+configuration failure remains, report its fixed substage instead of broadening retry policy.
+
+Add fixed, bounded failure-stage diagnostics to Windows debug builds at writable Store::open
+and StatePaths.ensure. Record only the selected root/outputs/tmp directory stage, state guard,
+database/WAL/SHM existing-open versus explicit CreateNew, SQLite connection/configuration/migration,
+fresh settings initialization and final leaf validation. Emit one fixed stage plus original
+I/O kind/raw OS code or SQLite primary/extended error code when an admitted operation fails.
+Include a process-local operation counter for concurrent opens; no path, SID, contents, SQL text,
+token, environment or exception payload is rendered. Release builds and Unix behavior stay as
+before. Return the original error without wrapping or changing its raw code, and perform no
+new filesystem query, permission repair, retry or CreatedNew-to-existing adoption for diagnostics.
+The SSE shutdown fixture's observed native 80 does not yet establish which leaf or operation
+failed; cancellation of an async polling future also does not prove its admitted blocking Store
+operation stopped. The diagnostics establish that boundary before any race-handling proposal.
+Verify: (1) a private owned native fixture makes each existing-open/CreateNew failure explicit
+and preserves the original error kind/raw code, while all successful facts stay silent. (2) the
+actual server shutdown fixture reports the failing directory/database/WAL/SHM or SQLite stage,
+with independently identified concurrent operation counters and no extra retry/adoption. (3)
+native x64/ARM64/MSRV and lint preserve all current cold gates, managed ACL refusal and SQLite
+tests; the exact failed stage is recorded before selecting any behavioral correction.
+
+Native directory-sharing correction: exact Root44 c64832d fails both passive inspector rename
+assertions on x64, ARM64 and Rust 1.94, while the other five inspector fixtures and expired-SID
+proof pass. Metadata-only READ_CONTROL|FILE_READ_ATTRIBUTES handles did not prevent an empty
+retained directory from being renamed. Correct the shared directory-opening primitive rather
+than weakening those assertions or compensating only inside PrivateDirectoryPlan. Request
+READ_CONTROL|FILE_READ_ATTRIBUTES|FILE_LIST_DIRECTORY (0x00020081), preserving FILE_SHARE_READ
+only and BACKUP_SEMANTICS|OPEN_REPARSE_POINT. The list/data access is the minimal additional
+directory right that participates in read-sharing accounting; it does not enumerate entries.
+There is no metadata-only fallback when the caller lacks that access.
+
+Use this same primitive for DirectoryGuard's existing/creating ancestor chains, the passive
+inspector and StockAdapterGuard's retained ancestry. The explicit owner-only repair path may
+add its existing WRITE_DAC right; do not add mutation access to ordinary guards. Descriptor-only
+regular-file queries remain observations, with existing actual data-access leaf handles still
+providing their sharing boundary. Preserve owner/DACL/reparse/full-ID checks, existing-only and
+NotFound behavior, the original absolute deadline and finite-worker quarantine. This correction
+does not create or repair a root, enable a privilege, relax a sharing failure, or alter Unix.
+
+Verify: (1) bare DirectoryGuard and the passive missing-root plan retain an empty disposable
+directory with no open child file; real ancestor rename and junction replacement fail with the
+original object/descriptor/full identity intact, then succeed only after the guard is dropped.
+Keep both originally failing passive assertions, including the delayed owned observation whose
+driver deadline expires while its native handle stays live. (2) a current-SID-owned ancestor
+that permits metadata/security reads but denies directory-list access refuses immediately,
+without descriptor repair or creating its missing suffix; ordinary private child creation and
+managed file/SQLite operations still succeed under retained directory guards. (3) qualify all
+existing stock guard/full-ID, cold adapter, Restricted-policy and abrupt-parent proofs on native
+x64, ARM64 and MSRV. Never attempt destructive rename/reparse changes on the actual stock tree;
+the disposable shared-primitive fixtures establish that boundary. Native proof remains pending.
 
 Use Windows-only windows-permissions =0.2.4 explicit GetSecurityInfo/SetSecurityInfo wrappers with
 SE_FILE_OBJECT, Owner/Dacl and ProtectedDacl flags; avoid the audited-buggy convenience trait.
@@ -605,6 +865,50 @@ composition path. Preserve Unix permission/open semantics. Native fixtures inspe
 absent root before and after each passive operation, verify NotFound/None/idempotent deletion,
 and prove that the separate writable first-run path still creates correctly owned state.
 
+Read-only SQLite needs a retained leaf boundary in addition to existing-only directory guards:
+SQLITE_OPEN_READ_ONLY alone may create WAL/SHM in a writable private directory. On Windows,
+first try a narrow open_private_read_stable helper using an existing private parent and regular
+no-reparse file, GENERIC_READ and FILE_SHARE_READ only. Validate the private descriptor on that
+exact retained handle; deny existing/future database write and delete sharing, with no repair.
+Only explicit native sharing violations permit the live-read fallback; ownership, path and
+other errors stay immediate. A complete existing validated WAL/SHM pair also selects ordinary
+WAL reads even when the stable main-file open succeeds. When that stable handle succeeds and WAL,
+SHM and rollback journal
+are all absent under the guarded root, hold it for the whole read connection and use immutable=1.
+This is a closed-database choice backed by the live write exclusion, not a way to ignore committed
+WAL data. A present journal or incomplete sidecar pair is never discarded or treated as immutable.
+
+For an active database, retain existing private no-delete-sharing read handles for the database,
+WAL and SHM while permitting ordinary writer access. Require both sidecars to exist and validate
+their current-SID/private descriptors before SQLite opens. Refuse a missing/unsafe sidecar rather
+than creating, preinitializing or taking it over; callers can retry through their normal flow.
+Open ordinary read-only SQLite with locking/change detection and the existing five-second busy
+timeout, retaining its ability to see later WAL commits. Keep all retained leaves until after
+SQLite closes so the last writer cannot unlink/recreate a sidecar in the validation/open gap.
+Ordinary SQLite shared-memory bookkeeping can still modify existing SHM bytes; the passive
+contract is no state/sidecar creation, deletion, permission repair or migration. Retention can
+leave the already existing WAL/SHM for a later writable close to clean up. Native proof must
+confirm durable writer close and accurate reads across that transition before acceptance.
+
+Enable SQLITE_OPEN_URI only for an internally constructed immutable URI. Percent-encode every
+byte of the exact guarded UTF-8 Windows path after file:, including the verbatim prefix; append
+only fixed mode=ro&immutable=1 parameters and select the bundled win32-longpath VFS explicitly.
+Reject NUL or non-UTF-8 paths rather than changing their identity. The audited bundled URI parser
+decodes escaped bytes directly without treating escaped query characters as options; the native
+Windows long-path VFS preserves that filename through its wide-character open. Validate SQLite's
+reported database filename against the retained full object identity before admitting reads.
+Keep this adapter Windows-only and preserve Unix connection semantics and immutable migrations.
+
+Native Verify: (1) a closed database with no sidecars, including a greater-than-260-character
+Unicode/percent/hash path, returns the committed rows and remains free of WAL/SHM/journal creation;
+new writable opens and a preexisting writable mapping refuse the stable gate until its release.
+(2) an ordinary live reader sees uncheckpointed and later committed WAL rows; concurrent final
+writer close cannot replace sidecar identities/owners, closes durably, and a subsequent writable
+open/close cleans up the retained original sidecars after reader release. (3) missing roots,
+partial/foreign-owned/broad sidecars and close/open races either produce accurate committed rows
+under the verified boundary or refuse without state/ACL mutation; no immutable live fallback or
+unexpected sidecar recreation is accepted. Record these as native evidence, not source-only proof.
+
 During the build-foundation stage, unimplemented Windows permission changes fail with an explicit
 unsupported-capability error, and permission diagnostics report `unsupported`. Compilation alone
 must never turn a no-op permission adapter or a numeric placeholder into an owner-only fact.
@@ -613,11 +917,41 @@ Managed directories and data files accept only the current SID as owner and only
 SYSTEM allow entries; existing broad descriptors are refused rather than silently tightened. A
 test that begins with an ordinary temporary directory creates a private managed child. Ancestor
 directories may have trusted current-user, SYSTEM, Administrators or Windows TrustedInstaller
-ownership. Retained no-delete/no-write-sharing handles protect even foreign-writable ancestors;
+ownership, with the existing Stock/passive trusted-mutation ACE policy also applied to common
+ancestors. Refuse nontrusted mutation grants instead of claiming that write-sharing directory
+handles protect foreign-writable ancestry. Retained directory handles exclude delete sharing;
 an incompatible existing handle is an actionable refusal, never a reason to drop the guard.
 Resolve relative state overrides lexically against the current directory before opening guards;
 reject drive-relative/root-relative ambiguity and network state roots. Canonicalize identity only
 after every component has passed no-reparse handle inspection and the guards remain live.
+
+The native 18ed2e23 correction keeps the minimal LIST | READ_CONTROL | READ_ATTRIBUTES access
+0x20081 but shares READ | WRITE (3), never DELETE. Microsoft's rename/link target-directory
+admission needs a parent write open; the earlier share-READ-only list guard also blocked legitimate
+child hard-link creation and captured-output finalization after the file reader had exited.
+Change only the shared directory helper's sharing policy, consumed by common, Stock and passive
+ancestry; keep every existing leaf sharing policy and explicit repair access separate. Reuse the
+existing Stock/passive directory-mutation ACE mask/deny/inherit-only semantics for common
+trusted-owner ancestry. Current SID/SYSTEM/Administrators/TrustedInstaller are trusted; reject
+nontrusted actual mutation, null DACL and unknown ACE types before creating a suffix. Permitted
+sibling creation alone does not authorize changing the retained directory or existing child.
+No ACL takeover/repair, temporary guard release, new worker, retry class or larger deadline is
+introduced. Directory write-sharing is not a claim that trusted-account in-place mutation is
+impossible. Retained no-delete object identity plus explicit ACL/no-reparse checks protects the
+selected user boundary; ordinary leaf readers/gates continue enforcing their own write/delete
+policy. Update stale no-write directory descriptions without weakening their actual proof.
+
+Verify: (1) all three native rows retain the original five complete hard-link/rename fixtures and
+their payload, alias-count/identity, held-reader refusal, eventual release and one-/five-second
+budgets; they must pass with the parent guards still live. (2) the unchanged bare-empty-directory,
+ancestor rename/junction replacement, list-denied and passive retained-prefix assertions still
+refuse replacement while held and permit owned cleanup only after release; complete directory
+IDs/descriptors remain unchanged. (3) on disposable current-SID-owned ancestry, actual nontrusted
+generic write/all, delete/delete-child, EA/attribute and owner/DACL mutation allow grants refuse
+before suffix creation without changing the original descriptor; read and inherit-only entries
+and the existing sibling-creation-only rights remain acceptable. After restoring only the owned
+fixture ACL, verify actual empty ancestry and strict private leaf behavior. Stock cold/Restricted/
+parent-loss/guard-release and SQLite sidecar admission gates remain required and unchanged.
 
 Managed file readers retain no-delete sharing. Dashboard/CLI follow reads release their handles
 after each frame snapshot, but a concurrent snapshot can briefly prevent Windows finalization.
@@ -626,25 +960,151 @@ again on each guarded rename attempt. Keep all other failures immediate. A reade
 that bound leaves the synced partial intact and reports a real infrastructure failure for normal
 recovery; never claim finalization or discard captured bytes when the rename has not succeeded.
 
+Windows output pruning uses the shared guarded private-file deletion primitive after committing
+the existing pending-retention transition. Derive the canonical output path from validated run
+identity and attempt number; refuse an inconsistent durable relative path before marking pending.
+Validate the private parent chain and existing leaf before deleting it; refuse reparse/non-file/
+unsafe-descriptor paths, and mark retention complete
+only after successful deletion or an already-missing leaf. Keep the existing Unix deletion path.
+Native CLI fixtures prove valid output deletion, idempotent missing output, and unsafe-leaf
+refusal with the pending state preserved and the unrelated object left intact.
+
+Automatic Windows maintenance retains existing-only private guards for the output root and each
+run directory while enumerating, recovering or removing artifacts. Canonical run/attempt names
+and durable reference checks remain required. Use the shared guarded rename for repaired partials
+and private deletion for retained/orphan files; preserve the five-second sharing-violation bound
+and never recreate a missing run directory. Unsafe parents/leaves fail before repair or deletion,
+and a failed removal keeps the existing pending transition for a later maintenance pass.
+Repaired file contents still sync before rename, matching ordinary Windows output finalization.
+The Unix directory fsync path remains Unix-only: Windows does not call a read-only directory
+handle a successful metadata flush or require a privileged volume flush. Record rename/deletion
+results before the existing SQLite completion transition; this does not claim a hardware-power-loss
+directory-fsync guarantee. Native maintenance fixtures use private managed children and cover
+partial-tail repair, already-renamed/missing recovery, protection of live attempts, retention and
+pending-prune restart, canonical orphan deletion, unsafe-object refusal and bounded reader sharing.
+Run the full maintenance harness on native x64/ARM64/MSRV as well as the existing Unix suite.
+Age orphan fixtures with the observed clock plus two hours, preserving their grace/budget
+assertions without requesting a SystemTime value beyond the Windows representation.
+
 ### Wake, cooperative role control and Task Scheduler
 
 Use Windows-only interprocess =2.4.4 with tokio, safe SDDL SecurityDescriptor deserialization and
 PipeListenerOptions security_descriptor/accept_remote(false). The audited source establishes the
 first-instance flag and remote rejection; do not use instance_limit=1 because accept creates a
-replacement listener. Derive names from verified SID + normalized guarded state + endpoint role.
+replacement listener. Derive names from verified SID + guarded directory file identity + endpoint role.
 Owner/SYSTEM-only descriptors apply at creation. Both CLI and dashboard notification senders use
-the same bounded versioned-hint backend; bind after the owner lock and retain reconciliation on
+the same bounded versioned-hint backend with a fixed length prefix and consumption acknowledgement;
+the duplex pipe carries no other responses. Dispatch control only after the client consumes and
+confirms the acknowledgement, so immediate idle-role shutdown cannot abort its own reply.
+A drop guard always clears the pipe's flush obligation,
+including listener abort during acknowledgement; accepted-client cleanup never creates an
+unbounded FlushFileBuffers worker. Bind after the owner lock and retain reconciliation on
 absent/busy/occupied endpoints. Bound reads and avoid unnecessary server impersonation.
+
+The pinned Tokio listener lacks the dead-on-arrival ERROR_NO_DATA reset implemented by its
+synchronous counterpart. Retain a creation-time-secured synchronous listener with nonblocking
+accept; poll WouldBlock at five-millisecond runtime yields. The library resets a disconnected
+stored instance and creates its replacement before returning the accepted stream, preserving
+continuous name ownership and first-instance collision protection. Change only that accepted
+stream to blocking wait mode and move its handle through the safe OwnedHandle and Tokio
+DuplexPipeStream conversions; all payload I/O remains asynchronous with the original 200 ms
+deadline. A genuine listener accept failure remains explicit and fails the endpoint closed.
+After accept has replenished the protected listening instance, a conversion failure rejects
+only that accepted handle. Preserve the original listener, retained state/role lifetime and
+collision refusal; log the exact wait-mode/ownership-transfer/Tokio conversion stage and native
+cause. Yield five milliseconds before the next accept so a disconnected-peer storm cannot
+starve cancellation. Do not retry conversion of that handle, connect to another owner, rebuild
+the endpoint or start a new payload deadline. No FILE_NOT_FOUND client retry or full name rebind
+is used. Aborting and awaiting the listener
+task releases both accepted and listening handles before the lifetime lock drops. Native fixtures
+open/drop a peer synchronously before the listener's first poll, prove another bind is still
+refused, then deliver valid wake and exact-lifetime control. Existing malformed, idle, nonreading,
+remote, collision and teardown assertions remain mandatory. Add an owned current-thread native
+fixture that closes a connected peer after acceptance but before conversion, then proves the
+same listener remains alive and collision-protected and delivers a fresh valid wake/control.
+For each malformed-frame peer, assert listener liveness and duplicate-bind refusal before the
+next open; preserve the exact never-as-wake and subsequent valid-message assertions.
+
+Shared notification::instance_identity(root) and instance_identity_guarded(DirectoryGuard) return
+the lowercase SHA-256 hex of the fixed locron-instance/v1 domain, SID length (LE32)/UTF-8 bytes,
+volume serial (LE64) and full file ID (LE128). Windows-only file-id =0.2.3 supplies its reviewed
+get_high_res_file_id safe API. Query the normalized path while the complete no-delete,
+trusted-mutation-checked directory guard remains retained; reject an unsupported query instead
+of using its low-resolution
+fallback. No path text, Unicode folding, DefaultHasher or Rust enum/hash representation enters
+the digest. Scheduler task names use this shared identity to avoid duplicate alias registrations.
+Pipe names add an explicit protocol version, role and canonical UUID lifetime for control roles;
+wake has no lifetime. Listener construction derives its name from the same guard it retains.
+
+Path-based identity and client endpoint derivation use DirectoryGuard::existing_private and
+never create or repair a missing state root. Ordinary first-run composition creates private state
+explicitly while acquiring its role lock or opening its store, before deriving identity; listener
+construction then retains that established guard. Registration/status/maintenance callers use
+the guarded form after their explicit existing-state or installation boundary. Missing or stale
+hint/control lookups fail without recreating an old root. Native tests call identity, endpoint,
+wake and exact-lifetime stop with an absent private-child path and assert both refusal and that
+the path remains absent; first-run CLI activation and dashboard tests continue proving explicit
+creation and cross-binary identity on existing roots.
+First-run test observers wait for an existing owner sidecar or database before calling their
+guarded readers. These filesystem-presence checks are passive readiness hints only: expected
+child PID, bounded metadata reads and authoritative locks still establish role ownership. The
+test harness must never create the state it is proving the CLI creates.
 
 Separate secured control endpoints bind role/lifetime identity and deliver only graceful shutdown
 requests to that role's existing cancellation token. Lifecycle coordination first disables automatic
 task activation, requests stop, and waits for confirmed role/lock exit. A failed request/remaining
 holder is an actionable bounded failure; task-state alone cannot report graceful completion.
 
-Keep core free of public async-runtime types: it shares normalized user/state endpoint identity, fixed
-message framing and a bounded synchronous hint sender. Engine owns the asynchronous named-pipe
+Keep core's public boundary free of async-runtime types: it shares normalized user/state endpoint
+identity, fixed message framing and a bounded synchronous hint sender. Its Windows client uses
+Tokio ClientOptions with identification-only SQOS, rather than interprocess's default impersonation
+capability. One short-lived current-thread runtime executes on a dedicated worker, with a finite
+connect/write/ack deadline and joined cleanup; it never nests block_on inside a caller's runtime
+or leaves a background writer/flush thread. Engine owns the asynchronous named-pipe
 listener and role-control cancellation adapter. Server uses the core sender without gaining an
 engine dependency; CLI composes engine listeners after acquiring the owning lifetime lock.
+
+The remote-pipe engine fixture is a reviewed generic PowerShell adapter caller. The accepted
+stock-binary bootstrap retains verified JSON CmdletInfo objects; its input already becomes
+$request through &$locronFromJson. Port both fixture output branches to
+`| & $locronToJson -Compress`, without rediscovering ConvertTo-Json by command name. Keep the
+localhost remote view, 200ms connection bound, rejected boolean, private listener guards and
+actual remote-refusal assertion unchanged. The loader's security, worker limits and original
+cold gate remain authoritative. Verify native x64/ARM64/MSRV engine tests execute this exact
+fixture with the accepted loader and still reject the remote pipe view.
+
+Maintenance and the registered supervisor use the Windows-only synchronous
+notification::request_shutdown_guarded_until(&DirectoryGuard, role, lifetime, std::time::Instant).
+Capture min(caller deadline, API-entry plus 200ms) once, before endpoint naming, worker spawn or
+runtime startup, and pass that absolute value through the exchange. Reuse the retained existing
+state guard and windows::cached_current_user_sid(), a crate-private OnceLock::get-only accessor
+which never starts or waits for SID initialization and refuses when no verified SID is cached.
+Runtime owns the notification implementation; filesystem development owns that cached accessor.
+Check expiry before naming/spawn, after runtime startup and before each pipe-open attempt. Gate
+every actual poll of the frame read/write futures, including a final consumption receipt which
+was previously Pending; check the clock again when an I/O future returns Ready. Keep timeout_at
+alongside those gates because Tokio polls the inner future before its timer. An expired poll
+must never initiate another receipt write. An OS write queued before expiry can still complete
+later, so a timeout means uncertain delivery, never proof of no shutdown dispatch or permission
+to replay. No new guard, directory, SID adapter or detached worker is created on this path.
+Join the short-lived worker on every result. Delivery acknowledgement still never proves exit.
+The existing ordinary request_shutdown and wake sender keep their current behavior.
+
+Native Verify: (1) a past caller deadline refuses before worker/connection creation; the
+cached-only accessor refuses a fresh empty cache without an initializer or filesystem request.
+(2) a stalled acknowledgement consumes at most the remaining caller budget and cleanup leaves
+no background sender; saturated endpoints cannot reset that budget across retries. (3) a receipt
+future returning Pending before expiry is not polled again when made ready after expiry; a ready
+acknowledgement crossing the deadline never initiates a receipt. An on-time exchange cancels only
+the exact registered role lifetime and still requires actual lock/process exit confirmation.
+Keep timeout diagnostics consistent with potentially queued delivery rather than claiming an
+absence of shutdown from the client's clock.
+
+Headless Windows roles retain cooperative control when console Ctrl-C registration is unavailable;
+that diagnostic alone cannot terminate a registered dashboard before its control future runs.
+Dashboard shutdown publishes a private watch signal to close live SSE responses, then stops new
+connections and drains finite HTTP work. A bounded connection-drain deadline aborts remaining
+HTTP tasks; this affects only dashboard transport and never cancels durable scheduler jobs.
 
 Windows role locks retain actual OS byte-range ownership and publish a separate private, atomic
 owner sidecar containing diagnostic lifetime identity and whether the process is a registered
@@ -654,11 +1114,12 @@ and lifecycle completion still requires the corresponding daemon/dashboard lock 
 
 Use stock PowerShell Schedule.Service COM with structured inputs/output, deterministic SID/state/
 role task names, current SID LogonTrigger, INTERACTIVE_TOKEN, LUA, no password, and create/update
-registration. Set PT0S execution limit, no battery/idle/network gates, IgnoreNew, and bounded
-RestartOnFailure (three retries, PT1M). Definitions use absolute ExecAction path and correctly
+registration. Set PT0S execution limit, no battery/idle/network gates, IgnoreNew, and disabled
+RestartOnFailure (Count=0/no interval); the reviewed native owner supplies three PT1M retries.
+Definitions use absolute ExecAction path and correctly
 escaped state/role arguments. Read semantic settings/status rather than localized schtasks text.
 Preserve enabled/disabled role state on refresh; run roles directly or use a fixed hidden launcher
-that waits and propagates exit status so restart works. Task.Stop is a documented hard fallback
+that waits and propagates the exact exit status. Task.Stop is a documented hard fallback
 after cooperative timeout, with kill-on-close/recovery behavior, not graceful-drain evidence.
 
 Registered `daemon run --service-mode` first acquires the private daemon.activation.lock and its
@@ -679,7 +1140,345 @@ remaining manual holder is untouched and can still refuse executable replacement
 main/waiter/core-control allowlist wiring; store owns the activation path and service owns the
 guarded observer/inventory/quiescence. No new public product role or CLI command is introduced.
 
+### Registered Windows role supervisor
+
+The earlier Count=3 Scheduler restart candidate is superseded: read back RestartCount=0 with
+no restart interval. Scheduler never restarts the entire native owner's four-start policy.
+The fixed hidden PowerShell launcher
+waits for a native Locron supervisor; Rust owns ordinary daemon/dashboard failure retries and
+private exit facts. Introduce only the hidden Windows entry `service supervise --role daemon` or
+`service supervise --role dashboard`, with the existing global state directory. Registration uses
+the fixed dashboard port. Keep visible install/enable/uninstall/status syntax unchanged.
+
+The supervisor creates the selected private daemon.activation.lock or dashboard.activation.lock
+lease with its own canonical UUID, PID and registered-service marker, then binds the matching
+daemon-activation/dashboard-activation cancellation endpoint. Retain this lease, its state-chain
+guard and verified executable read guard throughout child startup, manual-owner waiting, running,
+retry gaps and teardown. It is activation ownership; only the child daemon.lock or dashboard.lock
+proves actual role ownership. Scheduler status must distinguish those conditions.
+
+Each child gets a new canonical UUID through paired hidden `--supervisor-lifetime` and
+`--worker-lifetime` arguments on `daemon run --service-mode` or `dashboard serve --service-mode`.
+Require both options together and only in service mode, with exact internally generated argv.
+Before creating any child state, validate the existing selected supervisor activation sidecar,
+registered marker, UUID and held actual activation lock. An existing-only nonmutating lock probe
+DaemonLock::probe_existing reports LockProbe::Missing/Free/Held without creating/truncating a
+lock or writing metadata; Held alone is never PID authorization. Reject an absent/mismatched
+parent lease and recheck its UUID around the held-lock observation.
+The child owns daemon.worker.activation.lock or dashboard.worker.activation.lock and the
+daemon-worker/dashboard-worker endpoint for its UUID before waiting for the actual role lock.
+Use that same child UUID in the actual role metadata/control after acquisition. Keep the worker
+lease/control through complete role teardown, abort and await all listeners before dropping it.
+The ordinary service-mode path without these paired options retains its approved activation
+waiter. Supervised waiting never signals a manual role or claims its lock; the registered daemon
+still activates automatically after the manual daemon exits.
+
+Share a Windows-only engine OwnedChild factory with the runner. It accepts the caller's exact
+Tokio argv/stdio Command and ChildWindow::Hidden/Inherit policy, registers the safe CreationFlags
+wrapper for headless service children, and uses
+the reviewed suspended Enroll plus independent kill-on-close Job before resume. Expose only id,
+try_wait, authoritative tree_empty and start_kill, plus async confirm_exit_until/terminate_until.
+Confirmation requires both reaped root and empty retained Job PID list under one supplied deadline.
+Classify spawn failure as NotStarted or ExecutionMayHaveStarted; enrollment/resume uncertainty
+must carry retained cleanup ownership, quarantine and refuse retry of an unconfirmed worker.
+The runner keeps its existing window policy. Do not expose the
+raw mutable ChildWrapper. Drop's kernel Job cleanup is emergency containment, not reported proof.
+Runtime owns this shared process factory and main/worker flag composition; service owns the
+supervisor, dashboard worker composition and guarded registration/quiescence; store owns paths
+and existing-only probe. Core adds only the fixed role allowlist, without public async types.
+
+After a genuine nonzero child exit and confirmed complete tree exit, or a typed NotStarted spawn
+with no execution possible, retry at most three times in the same combined four-start budget,
+each after a cancellable sixty-second wait. Privacy, diagnostic/infrastructure failure and
+ExecutionMayHaveStarted refuse without automatic replay. Never retry a still-mapped/unconfirmed old worker or
+replay an uncertain spawn. Exit zero or cooperative cancellation ends the registration lifetime.
+Eligible known-not-started retry requires the factory's typed NotStarted and only NotFound,
+Interrupted or WouldBlock after the retained program/root/privacy/log prechecks succeeded.
+PermissionDenied, InvalidInput, Other, Job setup, control and diagnostic failures refuse even
+when no native child exists. Keep separate bounded completed and not_started fact entries, with
+their combined count at most four. Exhausted NotStarted is infrastructure failure 70, without
+inventing a child exit code; actual child i32 statuses remain unchanged.
+During shutdown, cancel the exact worker endpoint once its PID/UUID/held lease match this owned
+child, including manual-owner waiting. Forward cancellation while startup establishes that lease;
+wait for actual child/tree/role/worker lease exit under one thirty-second budget. A remaining
+child is an explicit refusal; a validated unchanged Task instance may then use the separately
+documented forced Task.Stop fallback. Keep the parent activation endpoint available until child
+and listener teardown completes, including retry gaps. Manual PIDs are never terminated.
+
+Write bounded private Rust facts at phase transitions and after verified exit: schema version,
+supervisor/child UUIDs, attempt count, waiting/running/retry/stopping/exhausted/error phase and the
+actual child exit code. Use fixed service.daemon.runtime.json/service.dashboard.runtime.json paths
+and at most four attempt entries, preserving every completed child UUID/PID/exit code.
+Facts are diagnostics, never owner proof or arbitrary task source. Record
+exhaustion before releasing activation ownership; do not replace actual exit diagnostics with a
+synthetic successful Task result. Supervisor infrastructure failures remain explicit errors;
+ordinary completed-role retry is proved by this live owner, not inferred from Scheduler settings.
+After owned teardown, supervisor exhaustion returns the final actual child exit code and the
+static PowerShell launcher propagates it. Infrastructure/fact-write failures return a distinct
+failure with retained diagnostics, never a fabricated child outcome or successful registration.
+
+The hidden supervisor entry dispatches before ordinary state opening and awaits the service's
+`Result<i32, ServiceError>` teardown result. An `Ok` code reaches the process boundary unchanged,
+including a genuine child exit of 70 or a negative status. Every `Err` reaches direct process exit
+70 without the public renderer or a join of unfinished quarantined work. Private runtime facts
+retain the typed cause that distinguishes infrastructure refusal from child completion. Preserve
+existing public service error codes (unsupported 2, managed 3, command/I/O 5) and unrelated generic
+error handling; invalid Clap arguments still exit 2 before this hidden dispatch.
+
+Move all potentially blocking native child/Job observations and private file operations to one
+runtime-owned worker per registered activation. This worker owns the guarded root/executable,
+activation lease and exact child/uncertain Job, with one finite command slot; it is not a
+per-observation detached thread or a second PowerShell adapter. Keep the secured cancellation
+listener on the main async runtime. Startup uses a bounded entry request; cancellation captures
+one absolute thirty-second deadline before the first stopping observation or fact/log flush.
+Propagate it through queue admission, handle read/probe/re-read, native wait/Job query, exact
+shutdown delivery, role/worker lease confirmation, diagnostics, sync and listener teardown.
+Check expiry before new operations and after responses, including already-ready responses.
+
+Retain permanent lock handles and validated sidecar handles once the exact child PID/UUID owns
+them. Re-read that retained metadata around the nonblocking actual-lock probe; an unrelated
+manual role's sidecar is never retained across its exit, because doing so could obstruct the
+next child's atomic sidecar publication. Missing startup leaves are observed under the retained
+existing root; they never trigger directory creation or a fresh SID initialization. Handle
+opens/readback still verify the actual private descriptor and no-reparse identity.
+
+Once the authoritative owned root is reaped and its retained Job reports empty, release the
+retained shared daemon/dashboard role-sidecar handle before subsequent fact/log I/O. Keep it
+while either proof is uncertain. The combined native proof establishes that the old root and
+descendants released their kernel handles; a now-held shared role lock cannot be attributed to
+that completed child using its retained stale PID/UUID. Do not probe, signal, terminate or wait
+for a new manual owner. Keep the independent owned worker-activation lease exit check, guarded
+activation/control lifetime and all existing normal teardown proof. Fact-write failure still
+refuses and quarantines remaining ownership rather than fabricating a child result.
+
+Verify the gap with an actual registered fixture: authenticate its running role, finish its
+root and descendants, then withhold completion-fact I/O under the same deadline while activation
+remains held. A separate native manual owner must acquire that shared role lock and publish its
+new PID/UUID sidecar. Release the I/O gate and confirm that supervisor completion and control/
+activation teardown preserve the manual owner's live lock, new metadata and process; only the
+fixture's own independent teardown may stop that manual process. An unconfirmed root/Job must
+never release the old guard or admit an ordinary retry.
+
+The driver awaits each worker response only within the remaining caller deadline. If a native
+operation remains in flight at expiry, close worker admission and quarantine its retained root,
+executable, activation and child/Job ownership. Do not join an unfinished worker, replay its
+operation, claim cancellation/exit, start a replacement child, or schedule a post-deadline error
+write. Already-queued writes may complete later; uncertainty stays an explicit infrastructure
+failure. The dedicated hidden CLI exits 70 without a blocking renderer after expiry; process
+exit closes its owned handles, and kernel Job containment is emergency cleanup, never proof.
+A still-live in-process fixture keeps the quarantined ownership until its blocked worker exits,
+so another activation/replacement remains refused. Normal completion confirms worker response,
+real root plus empty Job, role/worker lease exit and listener teardown before releasing activation.
+
+Preserve registered child stdout and stderr in current-SID/SYSTEM-only service.daemon.log or
+service.dashboard.log under the retained state root. Initialize/open append handles before
+spawning, pass safe cloned handles as exact child Stdio, and retain their guards through child
+tree exit; registered output is not discarded. Runtime facts and log sync/rename are owned worker
+operations under the same deadline. Never invoke the independent five-second rename retry on
+the shutdown path; any retry uses only its remaining absolute budget. Failed/uncertain diagnostic
+persistence cannot fabricate an actual child outcome. At most four attempt facts distinguish
+actual completed exits from known-not-started attempts and infrastructure/refusal causes.
+
+Expose Windows-only filesystem::rename_private_until(source, destination, std::time::Instant)
+for this owned worker. Preserve the existing rename_private five-second contract. The new helper
+uses the same retained existing-parent/no-reparse/private-leaf validation and retries only native
+sharing codes 32/33; check expiry before dispatch and after each result, and cap every retry sleep
+to the caller's remaining time. An expired or late successful native rename is an explicit
+uncertain diagnostic failure, not evidence that no rename happened. The caller still quarantines
+an in-flight uncancellable operation and never retries it from a second owner. Verify a held
+reader released before the deadline succeeds, a retained reader refuses at the shared deadline
+with the partial intact, and an already expired deadline performs no rename or directory creation.
+After the approved development handoff, runtime owns only service/windows_supervisor.rs plus
+its existing shared-child/main boundaries; service.rs, COM registration and typed maintenance
+remain with the privacy/lifecycle developer.
+
+Verify: (1) actual native fixtures stall the owned I/O operation before metadata read, during
+fact/rename/sync and at a ready response crossing expiry; each caller refuses under one budget,
+keeps quarantined guards/Job, sends no late/replayed control, and launches no later child. Normal
+release proves exact owned locks/tree/listeners exit; manual ownership remains unchanged.
+(2) four genuine role exits with three real sixty-second waits preserve every actual code,
+including child 70 and negative status, with no descendant overlap. Read back Count=0 and observe
+no fifth child/whole-supervisor SDK restart beyond the former restart interval. A known NotStarted
+uses the same four-start ceiling; uncertain spawn and infrastructure failure never retry.
+(3) startup/wait/running/retry cancellation and fact-write failure share the one deadline; bounded
+stdout/stderr marker fixtures prove logs survive successful and failed roles privately, while
+exhaustion and infrastructure 70 remain distinct. This supersedes the initial source's synchronous
+deadline/fact behavior before publication or registration consumers.
+
+Native Verify: (1) invalid/missing/stale parent and child lifetimes refuse without creating state;
+manual ownership survives registered waiting, exact cancellation stops the waiter, and manual
+exit admits the registered daemon with a new actual owner. (2) suspended enrollment, failed/uncertain
+spawn, immediate grandchildren and root-before-descendant exit prove bounded root-plus-tree
+ownership; headless flags survive wrapper composition. (3) one initial role failure plus three
+actual sixty-second retries preserve all four exit facts, have no old descendant overlap and
+exhaust observably; cancellation during startup, waiting, running or any retry gap confirms all
+owned locks/processes exit while disabled registrations stay disabled. Actual Scheduler wrapper
+exit/PID and task state must not be confused with daemon ownership or graceful exit.
+
+Native CLI qualification selects the complete `service::` unit-test namespace with
+`cargo test -p locron --bin locron --locked -- service:: --test-threads=1` on every existing
+Windows foundation row: native x64 stable, native ARM64 stable and x64 Rust 1.94.0. Add one
+semantic-test step after the original cold core gate; preserve the required job names, the
+existing job deadline and the independent package/positive-distribution harness. Library tests
+and targeted CLI filters do not select service::windows_supervisor, so successful package
+compilation alone is insufficient qualification for this owner.
+
+Give the unchanged cold core step the identifier `native_core`. Gate only the service semantic
+step with `if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}`. GitHub's explicit
+status function permits this independent private-fixture harness after an unrelated library
+failure, while requiring a genuinely successful original cold gate. A failed/skipped cold gate
+or workflow cancellation prevents new service admission. Keep the service command, step order,
+required names and all deadlines unchanged; use no continue-on-error, so any preceding library
+failure still makes the whole required job fail.
+
+Verify the condition matrix: successful cold core plus a library failure executes the full
+service assertions and retains job failure; cold failure/skip or cancellation excludes that
+step; ordinary success still selects the same complete serial harness. Native logs must show
+actual service execution/test results, not a skipped-step or package-build qualification.
+
+Give the existing durable store/engine/server library-contract step that same independent
+`if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}` admission condition. It runs
+only after the unchanged cold core gate succeeds, in its original position after the required
+isolated proof step. A failed Restricted/parent/EOF proof still fails the required job, but no
+longer hides independent Store/Engine/Server results behind GitHub's implicit success condition.
+Keep the exact cargo command, default library harness concurrency, cold/proof commands, all
+assertions, required context names and existing job/operation deadlines. No continue-on-error,
+retry, skipped assertion, duplicate test invocation or warmed replacement gate is introduced.
+
+Verify: cold success plus an isolated proof failure actually executes both the unchanged
+library harness and serial service harness while preserving job failure; cold failure/skip or
+cancellation admits neither independent harness; ordinary success executes the same existing
+tests once. Record native library counts and failures as independent qualification evidence,
+never as success for the still-failed isolated proof.
+
+Serial selection belongs only to this service harness. Every fixture uses a unique current-SID
+private temporary child root and owned executable/processes; no live registration or shared
+state is used. Keep real process/Job/lease/cancellation/log/fact/manual-owner assertions. The
+genuine four-exit and known-not-started exhaustion fixtures each retain three actual sixty-second
+waits; their serial execution therefore includes at least six minutes of real retry waits.
+Do not skip, retry, warm the adapter before the cold gate, shorten those waits or widen operation
+budgets to obtain a green run. The existing library suites retain their selected harness policy.
+
+Verify all three native rows actually list and run service::windows_supervisor semantic tests,
+including real child 70/negative codes, four combined attempts, I/O quarantine, startup/wait/run/
+retry cancellation, private stdout/stderr, diagnostic refusal and the new-manual-publication gap.
+Record exact revision/runner/toolchain and the service test count/results; failed native
+compilation, an empty filter or a package-only pass cannot satisfy this qualification.
+
+The hosted supervisor fixture's observed refusal is its source reader: DirectoryGuard::private
+for the destination already succeeded, then open_read_no_follow(std::env::current_exe()) rejected
+the native runner's D: source-image ancestry. This evidence does not show a temporary-directory
+refusal. Preserve the existing unique disposable TempDir and final private child creation, add
+an explicit is_private assertion for its current-SID/SYSTEM descriptor, and retain the normalized
+child path. Never repair/adopt the workspace volume or weaken managed ancestry checks.
+Each real supervisor must still acquire and retain its own live guards under its original budget.
+
+The corrected fixture source is only the OS-reported already-running native test executable.
+Copy it through a retained read-only std::File into create_private_new in that private child,
+flush the copied image and retain the existing runtime executable validation. This test-only
+reader does not authorize a managed state root or a production input/executable on the runner's
+workspace volume. No arbitrary caller path can select the fixture source. The temporary
+container remains disposable cleanup ownership rather than runtime security authority.
+
+Verify: every existing supervisor fixture passes the private destination assertion and known
+source-copy boundary, then reaches its intended native child/I/O/lease assertions with the real
+three sixty-second retry waits on x64, ARM64 and MSRV. Broad ancestry/private-leaf refusals remain
+enforced by existing Core contracts; no skip, setup retry, warming or longer lifecycle/test budget
+is selected. A successful setup alone does not qualify supervisor effects. A future genuine
+temporary-parent refusal needs its own measured fixture correction; this change does not infer it.
+
+The bundled font license has a frozen byte digest. Apply `text eol=lf` only to
+`crates/locron-server/assets/fonts/OFL.txt` and
+`crates/locron-server/frontend/dist/fonts/OFL.txt` in repository attributes, so native Windows
+checkout preserves the already committed LF bytes before embedding/building. Keep the existing
+license digest, upstream provenance, font binaries and license blob unchanged; broader repository
+normalization is outside this correction.
+
+Verify both exact paths report the selected attributes and retain the original blob/digest in a
+checkout with core.autocrlf=true. The unchanged official-font/license/provenance assertion must
+pass on native x64, ARM64 and MSRV; record native results without accepting a normalized runtime
+digest or removing the original source pin.
+
 Windows registration uses the shared full-file-identity/SID digest for role-specific task names.
+
+### Phase-scoped Task Scheduler transport and persistence ownership
+
+Use one explicit owned Schedule.Service session per snapshot, quiesce, restore or remove phase.
+Each session runs one fixed stock PowerShell 5.1 dispatch loop, not a new process per COM call.
+Do not cache it globally or retain it across updater registry/PATH/WinGet work. Snapshot closes
+and confirms its helper before returning the pure preflight input; quiesce closes before returning
+QuiescedServices; restore/remove open fresh sessions and close before returning. State-root guards
+and frozen semantic registration facts remain live independently of that transport. Registration
+guards mean current-SID ACL proof plus a complete semantic compare before each effect; COM has
+no exclusive registration handle, and holding an old COM object is not replacement protection.
+
+The core Windows adapter exposes a narrow ScriptWorkerPermit acquired against the phase's
+absolute deadline. Hold the existing single generic permit throughout COM helper ownership,
+including confirmed cleanup or quarantine; never acquire another generic permit from that owner.
+This retains the ceiling of one filesystem child plus one generic-or-COM child per CLI process.
+All non-COM generic reads happen before opening or after confirmed session close. Journal callbacks
+perform typed serialization and Rust private-handle writes only, with no PowerShell/COM/registry
+calls. Filesystem dispatch uses its separate slot and remains available. An unconfirmed session
+refuses the phase and retains its permit/guards; it does not continue to final PATH/WinGet reads.
+
+Reuse the engine's approved OwnedChild with ChildWindow::Hidden, exact stock executable and
+NoLogo/NoProfile/NonInteractive/EncodedCommand; remove PSModulePath, change no execution policy.
+Configure the child Stdio with safe std::io::pipe child ends, available before the Rust 1.94 MSRV.
+No raw mutable child or newly public output-pipe capability is needed. The phase owner retains
+the suspended-before-resume Job and confirmed spawn result before sending private requests.
+Three fixed I/O threads own the parent stdin/stdout/stderr ends. Each has a finite channel; one
+command is active at a time, input is at most 64 KiB, each output frame and total diagnostic stderr
+are at most 128 KiB. Read/write concurrently, recognize the cap at limit+1 without EOF, and never
+spawn a waiting thread per request. A single phase worker owns the native child/Job and the exact
+state/executable guards through close. Pipe EOF is not root/tree proof; join only finished I/O
+workers after actual root reaping plus an empty Job, within the remaining phase deadline.
+
+The fixed COM script uses only reviewed selectors for inventory/read/create/refresh/enable/run/
+stop-exact-instance/delete and structured version/monotonic-ID/owned-PID input/replies. Reject
+unknown fields/selectors, mismatched IDs/PIDs, malformed or oversized frames and unexpected extra
+replies. Caller paths and task arguments are data; only compiled fixed source reaches EncodedCommand.
+The new loop uses the already selected absolute stock Utility import and qualified JSON commands
+with module autoload disabled; it does not change the existing generic adapter's unqualified
+converter or assert Restricted-policy acceptance. A stock policy refusal remains explicit, with
+no fallback, policy change or mutation replay. Check every task's current owner/protected ACL,
+complete expected semantic definition and enabled transition immediately before its effect.
+Task registration/start/stop timeout can leave a Scheduler effect in flight outside the helper
+Job; saved intent and live readback determine recovery, never automatic replay or fabricated exit.
+
+Capture one absolute thirty-second caller deadline at phase entry, including admission, cold
+guard/SID verification, spawn, callback persistence, COM requests, role-control/lock observations
+and session teardown. Core permit admission and every request accept that existing deadline,
+with no fresh timeout per action. Before each new native or I/O operation and after every ready
+response, check cancellation/expiry. The caller driver refuses at expiry without joining an
+unfinished owned worker. That worker quarantines its retained guard/Job/permit, sends no next
+mutation or callback after a late completion, and never treats emergency Job close as confirmed
+cleanup. This is a bounded refusal; already queued COM/file I/O may still complete later.
+
+The persistence callback is owned, Send + 'static, and moves into this phase worker; an arbitrary
+borrowed synchronous callback cannot be made time-bounded by an outer timer. Distribution supplies
+an owned journal writer or an Arc to its serialized writer, and on an unconfirmed phase returns
+pending/refusal without blocking on that writer, appending another frame, or attempting rollback
+behind still-live guards. Normal phase completion returns only after all admitted callbacks and
+owned helper teardown are confirmed. Preserve the already frozen complete-record/count capacity
+plan and before-effect intent/result ordering. No additional retry/failure callbacks are admitted
+past expiry, and no background phase may start another helper or task after refusal.
+
+Before creating or changing any task, validate the exact encoded action's Windows command-line
+length against the native 32,767-UTF-16-unit ceiling, including executable and terminator. The
+4,096-unit maintenance path ceiling does not promise that every pair of maximum-sized paths can
+fit the nested transport; an oversized complete action refuses with zero task effects.
+
+Verify: (1) actual cold COM inventory plus multiple semantic reads reuse one owned PID under one
+entry budget; concurrent generic use remains within the two-child ceiling, and snapshot/quiesce/
+restore closure permits subsequent real registry/PATH reads without self-deadlock. (2) stalled
+startup/stdin/output/COM/callback and a ready response crossing expiry refuse under one deadline,
+retain quarantine, send no later effect/callback and never replay a mutation. Wrong-ID/extra/
+oversized frames and abrupt parent exit preserve Job containment and honest pending recovery.
+(3) private Unicode/quote/backslash paths round-trip exact argv, action length overflow refuses
+before task creation, changed task definitions/ACLs refuse before effects, and forced stopping
+addresses only the unchanged RunningTask.InstanceGuid. Confirm actual role/activation locks and
+task-instance exit independently; instance state, engine PID or helper EOF cannot substitute.
+
 Select a fixed hidden stock PowerShell 5.1 launcher: `-EncodedCommand` carries only static source,
 and `-EncodedArguments` carries a serialized CLIXML array containing one base64 JSON request.
 The launcher validates the current SID and uses ProcessStartInfo with UseShellExecute=false,
@@ -713,6 +1512,92 @@ Restore reconstructs guards and checks every existing definition against the rec
 before the first write, then binds only prior registered roles to the new verified executable and
 restores their exact enabled flags. Changed definitions/roots/SIDs fail closed; disabled roles stay
 disabled. Missing registrations are not silently recreated from a stale record.
+
+Freeze the CLI-private Windows maintenance protocol as snapshot_executable_roles(executable),
+ServiceSnapshot::{restore_record,persistence_plan}(), quiesce_roles(snapshot, persist),
+QuiescedServices::restore_record(), recover_quiesced(record, persist),
+ServiceRestoreRecord::persistence_plan(), restore_roles(quiesced, new_executable, persist),
+restore_record(record, new_executable, persist) and remove_roles(quiesced, persist).
+The persist callback receives a typed ServiceRestoreRecord and returns
+ServiceError on a failed private-journal write. Invoke it with the complete original snapshot
+before disabling the first task; callback failure changes nothing. Persist confirmed quiescence
+and each explicit forced-stop fact before releasing the old executable read guard. Consuming the
+live snapshot retains state-root and registration guards in QuiescedServices but releases that
+old executable guard only after actual all-task exit, so it cannot collide with the updater's
+exclusive replacement gate.
+
+ServiceRestoreRecord uses a deny-unknown-fields versioned schema: current SID, previous absolute
+executable, its full volume/file identity, prior roles, explicit phase and bounded
+explicit forced Task instance identities. Each role stores its fixed daemon/dashboard selector,
+existing root, shared full instance digest, deterministic task name, original enabled flag and
+semantic definition fingerprint. Encode full identities and SHA-256 fingerprints as fixed-width
+lowercase hexadecimal strings to preserve every bit through JSON/PowerShell. Bound the inventory
+at 256 distinct registered bindings and refuse overflow before mutation. Records contain no
+arbitrary executable source, command template or role arguments.
+
+Maintenance records admit only normalized UTF-8 local Windows paths of at most 4,096 UTF-16 units,
+including prefixes/separators. Refuse control and forbidden filename characters in normal
+components, unsupported prefixes, relative components or overflow before effects. The bound for
+a future valid executable path's JSON representation is 3*4096+2 bytes, preserving Unicode and
+greater-than-260-character paths without increasing journal limits. Compute the maximum serialized
+record from the complete frozen snapshot plus the bounded future binding/definition, progress
+and forced-instance fields; refuse if it cannot fit the 128 KiB private-record limit.
+
+Expose a pure ServiceRestoreRecord::same_original(&other) comparison for the private journal's
+typed service slot. Compare the version, SID, previous executable path/full volume/file binding,
+and the ordered roles' original role/root/instance/task name/enabled flag/definition fingerprint.
+Ignore only mutable phase, next binding, forced facts, role progress and future-definition fields.
+This accessor establishes a common frozen snapshot origin; each record must still pass account/
+phase validation, allowed transition checks and live guarded ownership before any effect.
+Verify: tampering with SID, either full-ID component, path/root/name, original enabled state,
+definition or role order refuses the comparison; valid forward progress/future fields preserve
+the same origin without independently authorizing a filesystem or task operation.
+
+Also expose the pure ServiceRestoreRecord::matches_previous_identity(&FileIdentity) boundary.
+Compare both full volume/file components of the frozen previous binding with distribution's
+typed original executable inventory identity, without exposing mutable wire fields. Two
+individually valid records do not establish that they refer to the same original executable.
+Verify: the exact original identity matches; identical bytes or path paired with a different
+volume or any different file-ID bit refuses. This comparison performs no I/O and does not
+authorize replacement, restoration or any task effect.
+
+The persistence plan exposes that maximum record byte count and finite callback ceilings for R
+frozen roles: quiesce <=4R+2, restore <=4R+2, remove <=2R+2. These include per-effect intent/result,
+forced-stop facts and initial/terminal records; retries/polling do not append unbounded snapshots.
+Distribution must reserve all repeated service records, frame overhead, file/receipt/inventory
+transitions and the worst rollback path against 128 frames/16 MiB before any task, registry or
+file mutation. Reserve the actual validated remaining path again at recovery entry. Failure to
+prove the complete budget refuses with zero effects; initial callback success alone is not a
+reservation. The 256-binding inventory limit is only a ceiling, not a promise that it fits.
+
+An interrupted unconfirmed record can resume disabling/quiescing only after reconstructing all
+existing root guards and matching the old executable object plus unchanged definitions; an
+originally disabled role must still be disabled. A confirmed quiescent record reconstructs
+existing roots/task guards and requires old definitions disabled/stopped without reopening the
+old executable: postreplacement/WinGet Complete may legitimately find it absent or replaced.
+Restoration retains the new executable already verified by distribution's protected receipt/
+package proof, validates its full object and all existing registrations, then flushes a typed
+Restoring intent with that new binding before refreshing any task. Only this phase plus fresh
+verified new bytes admits an exact deterministic new definition or its original enabled flag as
+idempotent recovery. A merely quiescent record requires original disabled definitions and cannot
+adopt an unexplained new action. Never treat saved journal source as a task definition.
+Removal likewise records exact per-role delete intent before the effect; only that recorded
+intent permits an absent prior task during removal recovery, and no missing task is recreated.
+Preserve original enabled flags and refuse a missing/changed root, SID, registration outside
+that exact removal intent, or unexpected enable transition before any
+write. This permits recovery after a completed per-role refresh without adopting unrelated tasks.
+
+Native Verify: (1) failed initial persistence leaves every task/enabled flag/process unchanged,
+and simulated abrupt helper exit after each disable resumes from the frozen original flags.
+(2) missing/replaced roots, foreign SID, changed task action and unexpected enabling refuse
+before task or state/journal creation. (3) two roots with both enabled and disabled roles quiesce
+before the old executable guard releases; restore across a changed versioned path, including an
+interrupted one-role refresh, returns every original enabled flag without creating missing roles.
+Also verify confirmed recovery with a genuinely absent old executable, new-definition refusal
+outside Restoring, failed restore-intent persistence with zero refreshes, 4,096/4,097-unit Unicode
+path boundaries, worst future-path serialization and oversized full forward/rollback reservations
+with zero disables/registry writes/file replacements. Callback observations must remain within
+the published ceilings through graceful, forced and interrupted recovery paths.
 
 The package flow composes these same APIs through the existing installer maintenance modes:
 Prepare snapshots/quiesces all bindings for one verified executable and journals an operation UUID;
@@ -876,11 +1761,69 @@ retained handle without taking ownership or silently repairing the package. Help
 standalone destination paths keep their stricter current-SID/SYSTEM-only private policy. Native
 tests must preserve permitted package read access and refuse broad write/delete/control rights.
 
+WinGet maintenance obtains a separate Windows-only `open_owned_executable_exclusive` proof gate
+after recorded all-executable quiescence. Use existing-only guarded, trusted-owner ancestors and
+a regular no-reparse leaf opened with read/write/DELETE access and share_mode(0); validate the
+same current-SID owner and no nontrusted mutation grants as `read_owned_executable` on that exact
+handle. Permit trusted SYSTEM/Administrators rights and foreign read/execute without requiring
+the standalone private descriptor. Refuse read-only attributes, multiple hard links and missing
+full file identity. Never create, repair, write or delete package bytes through this API; it only
+proves mapped holders are gone and blocks new opens until the caller releases the gate for the
+external package manager. Keep the standalone replacement APIs' protected SID/SYSTEM policy.
+Native Verify: a disposable owned executable with Administrators write/foreign read-execute is
+accepted, every nontrusted mutation grant is refused without byte/ACL changes, a mapped process
+refuses the gate, the live gate blocks launch/read/write/rename, and release permits the original
+executable to run with unchanged bytes and descriptor. Missing roots remain absent throughout.
+
+### Native runtime fixtures
+
+Keep portable process/output/HTTP behavior under native Windows tests, with a private managed
+child of each temporary fixture root. A self-spawned native Rust test fixture exercises exact argv,
+raw stdout/stderr, immediate descendant creation, root-first exit, cancellation, timeout and
+kill-on-close without Git Bash or an installed scripting runtime. Signal-number/Unix process-group
+assertions remain Unix-specific; equivalent Windows tests prove owned Job tree behavior.
+
+Intentional native orphan/crash fixtures transfer each spawned descendant's process handle with
+the safe `From<std::process::Child> for OwnedHandle` conversion into a shared test-only helper,
+capturing its PID first when the fixture needs a marker. Retain the typed handle during the
+intended fixture phase; ordinary scope exit closes that handle without waiting or terminating,
+and abrupt parent exit lets Windows close it. Do not add a waiter, kill-on-drop helper, raw-handle
+leak or lint exemption: those would alter the root-first/abandonment scenario or obscure ownership.
+Ordinary tree/branch fixtures still wait normally. Verify the existing native contracts: a reaped
+root with a live descendant cannot confirm completion, releasing that descendant allows success,
+hard stop confirms root plus empty Job and stops its heartbeat, and runner cancellation/timeout/
+kill-on-close preserve whole-tree termination. Native lint and the x64/ARM64/MSRV suites must pass
+with the same assertions and deadlines.
+
+The TLS trust fixture uses the already-locked tokio-rustls =0.26.4 with an explicit AWS-LC provider
+and repository test-only self-signed DER certificate/key. It never installs a certificate into a
+trust store, invokes external OpenSSL, or changes production trust policy. All architectures verify
+an untrusted local TLS peer is a retryable transport failure. Bounded native IPC tests cover valid
+wake/cooperative control, malformed frames, idle/nonreading clients, first-instance collisions,
+role/lifetime separation and listener teardown while preserving durable reconciliation.
+
+Separate headless CLI fixtures verify registered dashboard control against actual process exit
+and a subsequently free dashboard lock, with both an active SSE stream and incomplete HTTP
+headers/body. A gated native job publishes a heartbeat before and after dashboard exit; the
+manual daemon retains its original lifetime and the durable run has no cancellation request.
+Only after these observations does the fixture release the job's gate and confirm success.
+Capture bounded startup JSON without exposing its token value and retain/reap every owned child.
+An explicit absolute LOCRON_TEST_BINARY override belongs only to the integration-test harness,
+so the downloaded same-revision CLI and test artifacts can run on a standard-user host. The
+production CLI never reads this override. Native CI also runs the registered-dashboard unit
+contracts after the actual lifecycle suite, keeping the established job names and deadlines.
+
+Portable CLI composition unit fixtures create a private child state directory and use a real
+native executable plus an absolute fixture working directory. A self-spawned Rust unit target
+returns the same failure status as the Unix shell fixture, preserving the durable completion /
+response-loss and retry-deadline contracts without requiring a Unix shell on Windows. Path-list
+normalization tests construct the platform delimiter and assert each resolved entry separately.
+
 ### Change order and verification
 
-1. Review SPEC, source-backed FINDINGS, these decisions and Project drafts; freeze the minimum
+1. Review SPEC, source-backed FINDINGS, these decisions and repository issues; freeze the minimum
    contract and safe interface versions before implementation. Verify: review resolves all contract
-   gaps and each draft has concrete criteria; no premature support claim.
+   gaps and each issue has concrete criteria; no premature support claim.
 2. Add build/state/configuration foundations with native x64/ARM64 compile/core/store CI, then
    process-tree/wake behavior and shared Windows fixtures. Verify: Rust 1.94 build, platform
    environment parity and real descendants/cancel/timeout/recovery pass on both architectures.
@@ -899,7 +1842,42 @@ Windows equivalents must cover the same observable contract. Do not skip schedul
 process-tree or ownership coverage merely to get a green Windows job. Signing eligibility,
 credentials and business-history checks remain outside these steps.
 
-## Project-only execution tracking migration (2026-10-02)
+## Repository Issue execution tracking migration (2026-10-03)
+
+The owner selected repository Issues for all maintainer TODOs and requested that the private
+Locron Project be closed. This supersedes its live-tracking policy; the earlier migration remains
+historical evidence. Product/design contracts and accepted Windows implementation decisions do
+not change. All subsequent execution plans, deviations and verification evidence belong to the
+relevant repository issue before source changes; completed historical work is not fresh proof.
+
+The exhausted Project snapshot contains 83 drafts: 70 Done, eleven In Progress and two Todo.
+Thirteen Windows drafts already have matching public issues #24–#36. Reuse those issue identities
+and preserve their earlier public text as explicitly historical migration evidence, then copy the
+full current draft body without dropping scope, checklist state, Verify criteria, dependencies or
+progress. Convert the remaining seventy drafts through GitHub's supported draft-to-issue API,
+retaining original Project item links. Map Done to a closed/completed issue, and preserve Todo
+versus In Progress on open issues with explicit labels. Existing issue #4, Windows umbrella #23
+and deferred unsigned-release signing follow-up #37 remain separate existing records.
+
+1. Capture the exact exhausted source, Project metadata/fields and all existing issue identities
+   before writes. Build a unique source-to-issue map and preserve original task text and status.
+   Verify: 83 unique unarchived drafts, 13 unambiguous existing Windows identities, no omitted page
+   or duplicate task destination; record source hashes and preserve unrelated existing issues.
+2. Reuse/convert sequentially with destination and body readback after every write. Keep existing
+   Windows numbers, prior issue text, Phase/Legacy ID, source order and all meaningful links.
+   Verify: all 83 mappings have exact source bodies, titles and Verify/checklist content, 70 closed
+   completed histories and thirteen open tasks (eleven active, two planned); no duplicate issue.
+3. Update repository agent/contributor/TODO guidance and static migration links, then close the
+   Project through the CLI with a retired README pointing to Issues. Preserve the closed Project
+   as history, without deleting it or reclassifying pending work as complete.
+   Verify: new instructions consistently use Issues, immutable source snapshots stay byte-exact,
+   task/PR links are preserved, the final Project reads closed, and future progress goes to issue
+   comments. Review and publish the documentation with the current PR work.
+
+## Project-only execution tracking migration (historical; superseded 2026-10-03)
+
+The following preserves the accepted 2026-10-02 plan and readbacks. Current task rules are in
+[`ISSUES.md`](ISSUES.md); its source snapshot preserves the complete former Project workflow.
 
 This is an administrative workflow change within the unchanged product specification. FINDINGS
 §45 establishes the frozen source and the Project API constraints. Move execution scope, ordered
@@ -984,6 +1962,17 @@ on Rust 1.94 and the pinned lint toolchain, plus formatting, locked warnings-den
 checks. The parent reviews the scoped branch and exact hosted PR/main CI and Audit before tagging;
 a blind rerun of the failed unchanged test is not this correction. No manager, Keychain, installed
 binary, publication, dependency or product source operation belongs to the development session.
+
+The Windows-support CI audit also found active readiness probes in global_environment,
+attempt_history and service_lifetime. Apply this same passive PID/liveness contract to their
+helpers, retaining owned-child cleanup and bounded startup stderr before reporting a failure.
+Keep their real command, output and graceful-exit assertions under the original deadlines.
+
+The general CLI startup helper must also use a plain bounded existing-file metadata read on
+Unix: the production private-file helper retains its original parent-creation/permission behavior
+there and is inappropriate for a passive fixture observer. Windows keeps the protected owner
+sidecar because exclusive byte-range locking prevents reading the live lock bytes. Both branches
+require the expected live child PID; retain the actual-lock ownership assertion after readiness.
 
 ## Second feedback and v0.9.6 signed macOS release (2026-09-30)
 
@@ -1664,7 +2653,7 @@ Implementation deviations, all confined to `locron` and confined to human branch
 
 ## Change plan
 
-The plan is restricted to this repository. Before an implementation deviation, update `docs/IMPLEMENTATION.md` and the relevant Project draft tickets; update `docs/ARCHITECTURE.md` first when the durable structure or invariant changes.
+The plan is restricted to this repository. Before an implementation deviation, update `docs/IMPLEMENTATION.md` and the relevant repository issues; update `docs/ARCHITECTURE.md` first when the durable structure or invariant changes.
 
 1. Keep the reviewed decisions in this document, `docs/CLI.md`, and `docs/STORAGE.md` synchronized before implementation deviations.
 2. Create the edition-2024, resolver-3 virtual workspace with the four accepted crates, `rust-version = "1.94"`, one `locron` binary, workspace lint/profile/dependency policy, and CI on Rust 1.94 plus latest stable.
@@ -2250,9 +3239,9 @@ registry-install verification without trying to overwrite them. Later tags use O
 
 ### Documentation and TODO compaction (historical; superseded 2026-10-02)
 
-The following compaction policy records the former repository-checklist workflow. Execution tasks
-now live in Project-only drafts; see [`PROJECTS.md`](PROJECTS.md). Preserve the archived source and
-evidence, but do not resume a live TODO checklist or move new completed Project tasks into it.
+The following compaction policy records the former repository-checklist workflow. Current execution
+tasks live in repository Issues; see [`ISSUES.md`](ISSUES.md). Preserve the archived source and
+evidence without resuming a live TODO checklist or moving new completed issues into it.
 
 README and installation/release documentation list the prebuilt installer and Homebrew before
 `cargo install --locked locron`, explain the Rust 1.94 source-build requirement, distinguish Cargo
@@ -2460,3 +3449,52 @@ complete workspace all-target test suite, frontend focused/full tests plus typec
 build, workspace package and publish dry-runs with the lockfile enforced, and final status/diff
 inspection including `git diff --check`. The parent session owns the release commit, immutable tag,
 push, hosted release workflow, registry/GitHub/Homebrew publication, and post-publication checks.
+
+## Native pruning ACL fixture correction (2026-10-03)
+
+Root43 `c2a7495` reached the original unsafe-output pruning fixture after the corrected initial Store
+and PATH contracts passed. Its Get-Acl setup fails under the intentionally fixed stock binary
+loader. This is a test-fixture compatibility correction within the frozen product and approved
+ACL/reparse refusal plan; do not expand production module loading or alter pruning admission.
+
+1. Keep the original fixture's JSON path input and Everyone-Read ACL mutation, replacing its
+   unavailable Security cmdlets with .NET Framework File.GetAccessControl/SetAccessControl.
+   **Verify:** stock PowerShell 5.1 parses the fixed literal; documented signatures match;
+   production loader, filesystem and Store source remain byte-identical. AST/type inspection
+   is not native execution, and local permission mutation is not part of this correction.
+2. Preserve all existing negative-case assertions and owned-object cleanup. **Verify:** exact
+   source review retains unsafe-file refusal, pending SQLite state and original bytes plus
+   junction/directory refusal and unrelated-marker preservation; no test is skipped or softened.
+3. Hand the recorded issue plan to a separate development session, then root-review/select it.
+   **Verify:** fresh exact-head hosted native x64/ARM64/MSRV pruning 3/3 and the remaining CI
+   pass before merge. Record actual revision/commands/results on issues #27/#31; initial releases
+   stay unsigned and this fixture does not complete standard-user/reboot/release acceptance.
+
+## Native WAL recovery contention correction (2026-10-03)
+
+The measured Root43 `bfe7b8d` Server failure returns real SQLITE_BUSY_RECOVERY (261) from the
+fixed WAL setup before its original five-second budget is used. The current predicate admits
+only exact 5. This is a correction within the frozen SQLite/private-state product contract;
+retain dashboard shutdown behavior and its actual active-SSE/durable-run fixture.
+
+1. Extend only the finalized idle WAL admission predicate to explicit codes 5 and 261, including
+   the existing step/finalize error-precedence boundary. **Verify:** full source review shows the
+   same entry deadline, zero internal busy timeout, bounded ten-millisecond yields, autocommit
+   checks, effective WAL readback and one-shot remaining settings; no other operation is replayed.
+2. Preserve the four original real SQLite controls and their exact-5 assertions, immutable SQL,
+   physical DB/sidecar admission and the Server regression fixture. **Verify:** unchanged control
+   assertions and production boundaries; snapshot 517, timeout 773, LOCKED, read-only and I/O
+   errors still refuse. Do not add a fake-error or unproven overlap fixture. Existing native 261
+   is recorded failure evidence; a later passing run is not claimed to force the same error.
+3. Record the issue plan, hand implementation to a separate developer and root-review/select it.
+   **Verify:** source coverage is complete and all protected blobs/deltas match; fresh exact-head
+   x64/ARM64/MSRV Server 31, Store 90, original concurrency/PATH/lifecycle and guarded-prune 3/3
+   pass with all remaining checks before merge. Keep unfinished acceptance/release issues open.
+
+Extend the already reviewed Framework ACL fixture correction to the later maintenance unsafe-
+object setup at maintenance.rs:919/921, observed only after guarded pruning now passed.
+**Verify:** a separate developer replaces those two statements, retaining the exact JSON input,
+Everyone-Read rule, all refusal/recovery/prune/marker assertions, cleanup and deadlines. Root
+reviews the complete diff and surrounding fixture; production maintenance/loader/filesystem
+source stays byte-identical. Fresh exact-head native maintenance 11/11 on x64/ARM64/MSRV must
+pass with pruning 3/3, the complete Server/Store suites and all other checks before merge.

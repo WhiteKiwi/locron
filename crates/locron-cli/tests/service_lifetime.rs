@@ -17,24 +17,81 @@ const FORCED_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(50);
 
 struct DaemonChild {
     child: Option<Child>,
+    stderr: tempfile::NamedTempFile,
+}
+
+fn lock_metadata_matches_pid(path: &Path, pid: u32) -> bool {
+    let Ok(file) = fs::File::open(path) else {
+        return false;
+    };
+    let mut bytes = Vec::new();
+    if file.take(16 * 1024 + 1).read_to_end(&mut bytes).is_err() || bytes.len() > 16 * 1024 {
+        return false;
+    }
+    serde_json::from_slice::<LockMetadata>(&bytes).is_ok_and(|metadata| metadata.pid == pid)
 }
 
 impl DaemonChild {
     fn start(state: &tempfile::TempDir) -> Self {
+        let stderr = tempfile::NamedTempFile::new().unwrap();
         let child = locron(state)
             .args(["daemon", "run"])
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(stderr.reopen().unwrap())
             .spawn()
             .expect("spawn daemon");
-        let daemon = Self { child: Some(child) };
-        wait_until("daemon lock acquisition", STARTUP_TIMEOUT, || {
-            DaemonLock::try_prove_free(&state.path().join("daemon.lock")).is_err()
+        let mut daemon = Self {
+            child: Some(child),
+            stderr,
+        };
+        let lock_path = state.path().join("daemon.lock");
+        let pid = daemon.pid();
+        daemon.wait_for_startup("daemon metadata", || {
+            lock_metadata_matches_pid(&lock_path, pid)
         });
-        wait_until("daemon wake socket", STARTUP_TIMEOUT, || {
+        daemon.wait_for_startup("daemon wake socket", || {
             state.path().join("wake.sock").exists()
         });
         daemon
+    }
+
+    fn startup_diagnostic(&self) -> String {
+        const LIMIT: usize = 8192;
+        let mut bytes = Vec::new();
+        self.stderr
+            .reopen()
+            .unwrap()
+            .take((LIMIT + 1) as u64)
+            .read_to_end(&mut bytes)
+            .unwrap();
+        let truncated = bytes.len() > LIMIT;
+        bytes.truncate(LIMIT);
+        let mut diagnostic = String::from_utf8_lossy(&bytes).into_owned();
+        if truncated {
+            diagnostic.push_str("\n[stderr truncated]");
+        }
+        diagnostic
+    }
+
+    fn wait_for_startup(&mut self, description: &str, mut predicate: impl FnMut() -> bool) {
+        let deadline = Instant::now() + STARTUP_TIMEOUT;
+        loop {
+            if let Some(status) = self.child.as_mut().unwrap().try_wait().unwrap() {
+                panic!(
+                    "daemon exited during {description} ({status}): {}",
+                    self.startup_diagnostic()
+                );
+            }
+            if predicate() && self.child.as_mut().unwrap().try_wait().unwrap().is_none() {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for {description}: {}",
+                self.startup_diagnostic()
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 
     fn pid(&self) -> u32 {
@@ -74,9 +131,8 @@ impl DaemonChild {
             .expect("captured daemon stdout")
             .read_to_end(&mut stdout)
             .expect("read daemon stdout");
-        child
-            .stderr
-            .take()
+        self.stderr
+            .reopen()
             .expect("captured daemon stderr")
             .read_to_end(&mut stderr)
             .expect("read daemon stderr");
@@ -92,8 +148,17 @@ impl DaemonChild {
 impl Drop for DaemonChild {
     fn drop(&mut self) {
         if let Some(child) = self.child.as_mut() {
+            if child.try_wait().is_ok_and(|status| status.is_some()) {
+                return;
+            }
             let _ = child.kill();
-            let _ = child.wait();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < deadline {
+                if child.try_wait().is_ok_and(|status| status.is_some()) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
         }
     }
 }

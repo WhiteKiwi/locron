@@ -567,7 +567,19 @@ enum ConfigCommand {
 #[derive(Subcommand, Debug)]
 enum DaemonCommand {
     #[command(about = "Run the scheduler in the foreground", after_help = DAEMON_RUN_HELP)]
-    Run,
+    Run {
+        /// Internal registration marker used by lifetime-scoped cooperative control.
+        #[arg(long, hide = true)]
+        service_mode: bool,
+        /// Existing registered supervisor activation UUID.
+        #[cfg(windows)]
+        #[arg(long, hide = true, requires_all = ["service_mode", "worker_lifetime"])]
+        supervisor_lifetime: Option<String>,
+        /// This owned worker's activation and actual role UUID.
+        #[cfg(windows)]
+        #[arg(long, hide = true, requires_all = ["service_mode", "supervisor_lifetime"])]
+        worker_lifetime: Option<String>,
+    },
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum LogChannel {
@@ -926,6 +938,18 @@ async fn main() {
     let Some(command) = command else {
         missing_subcommand_error().exit();
     };
+    #[cfg(windows)]
+    if let Command::Service {
+        command: service::ServiceCommand::Supervise { role },
+    } = &command
+    {
+        // This hidden owner may have quarantined uncancellable I/O. Its error path must
+        // reach process exit without the public renderer or a join of unfinished work.
+        match service::supervise(state_dir, *role).await {
+            Ok(code) => std::process::exit(code),
+            Err(_) => std::process::exit(70),
+        }
+    }
     init_tracing(verbose, debug);
     let command_name = command_name(&command);
     let streaming = format == Format::Json && command_uses_stream(&command);
@@ -1165,8 +1189,27 @@ async fn execute(state_dir: Option<PathBuf>, command: Command, format: Format) -
         Command::Prune { dry_run } => prune(&paths, dry_run, format),
         Command::Doctor => doctor(&paths, format),
         Command::Daemon {
-            command: DaemonCommand::Run,
-        } => daemon(paths).await,
+            command:
+                DaemonCommand::Run {
+                    service_mode,
+                    #[cfg(windows)]
+                    supervisor_lifetime,
+                    #[cfg(windows)]
+                    worker_lifetime,
+                },
+        } => {
+            #[cfg(windows)]
+            {
+                let lifetimes = service::supervised_lifetimes(
+                    service_mode,
+                    supervisor_lifetime,
+                    worker_lifetime,
+                )?;
+                daemon_supervised(paths, service_mode, lifetimes).await
+            }
+            #[cfg(not(windows))]
+            daemon(paths, service_mode).await
+        }
         Command::Mcp => mcp::run_mcp_server(paths).await,
         Command::SelfUpdate => {
             let outcome = self_update::update(&paths.root).await?;
@@ -3166,7 +3209,8 @@ fn export_job(job: JobRecord, mode: ValuesMode) -> Result<ExportJob> {
 }
 
 fn parse_import_document(path: &Path, accept_plaintext: bool) -> Result<ExportDocument> {
-    let bytes = std::fs::read(path).context("cannot read import document")?;
+    let bytes =
+        locron_core::execution::read_input_file(path).context("cannot read import document")?;
     parse_import_bytes(&bytes, accept_plaintext)
 }
 
@@ -3522,25 +3566,28 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
     }
     let checks = store.integrity_check()?;
     let dashboard = service::dashboard_doctor_facts(Some(paths.root.clone()))?;
+    let wake = locron_core::notification::wake_facts(&paths.root);
     if format == Format::Human {
         render_doctor_human(paths, &settings, &resolutions, &checks, &dashboard);
     } else {
-        render(
-            format,
-            "doctor",
-            json!({
-                "state_dir":paths.root,
-                "database":paths.database,
-                "daemon_running":!daemon_lock_free(paths),
-                "wake_socket":paths.wake_socket.exists(),
-                "execution_path":settings.execution_path,
-                "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
-                "process_resolution":resolutions,
-                "dashboard":dashboard,
-                "checks":checks
-            }),
-            &[],
-        );
+        let data = json!({
+            "state_dir":paths.root,
+            "database":paths.database,
+            "daemon_running":!daemon_lock_free(paths),
+            "wake_socket":wake.socket_present,
+            "execution_path":settings.execution_path,
+            "global_environment_names":settings.environment.keys().collect::<Vec<_>>(),
+            "process_resolution":resolutions,
+            "dashboard":dashboard,
+            "checks":checks
+        });
+        #[cfg(windows)]
+        let data = {
+            let mut data = data;
+            data["wake"] = serde_json::to_value(wake)?;
+            data
+        };
+        render(format, "doctor", data, &[]);
     }
     Ok(())
 }
@@ -3576,8 +3623,23 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         .collect::<Vec<_>>();
     if !dry_run {
         for candidate in &candidates {
+            #[cfg(windows)]
+            let path = {
+                let attempt = u16::try_from(candidate.attempt_number)?;
+                let path = paths.final_output(&candidate.run_id, attempt)?;
+                if candidate.relative_path != format!("{}/{attempt}.log", candidate.run_id) {
+                    return Err(anyhow!(
+                        "database output path is not the canonical final path"
+                    ));
+                }
+                path
+            };
             store.mark_output_prune_pending(candidate, now_us())?;
+            #[cfg(not(windows))]
             let path = paths.outputs.join(&candidate.relative_path);
+            #[cfg(windows)]
+            locron_core::filesystem::remove_private_file(&path)?;
+            #[cfg(not(windows))]
             match std::fs::symlink_metadata(&path) {
                 Ok(metadata) if metadata.file_type().is_symlink() => {
                     return Err(anyhow!("refusing to prune symbolic-link output"));
@@ -3618,13 +3680,82 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
     Ok(())
 }
 
-async fn daemon(paths: StatePaths) -> Result<()> {
+async fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {
+    let lifetime = SchedulerLifetimeId::new().to_string();
+    let cancellation = CancellationToken::new();
+    #[cfg(windows)]
+    if service_mode {
+        let activation = RegisteredDaemonActivation::acquire(&paths, cancellation.clone())?;
+        let result = async {
+            let Some(lock) =
+                wait_for_registered_daemon_lock(&paths, &lifetime, &cancellation).await?
+            else {
+                return Ok(());
+            };
+            daemon_with_lock(paths, service_mode, lifetime, cancellation, Some(lock)).await
+        }
+        .await;
+        // Retain this identity through waiting and running, with no maintenance handover gap.
+        activation.close().await;
+        return result;
+    }
+    #[cfg(windows)]
+    let lock = Some(acquire_daemon_role_lock(&paths, &lifetime, false)?);
+    #[cfg(not(windows))]
+    let lock = None;
+    daemon_with_lock(paths, service_mode, lifetime, cancellation, lock).await
+}
+
+#[cfg(windows)]
+async fn daemon_supervised(
+    paths: StatePaths,
+    service_mode: bool,
+    lifetimes: Option<service::SupervisedLifetimes>,
+) -> Result<()> {
+    let Some(lifetimes) = lifetimes else {
+        return daemon(paths, service_mode).await;
+    };
+    // Parent validation is existing-only and precedes all child state writes.
+    let parent_guard =
+        service::validate_supervisor(&paths, service::Target::Daemon, &lifetimes.supervisor)?;
+    let cancellation = CancellationToken::new();
+    let activation = RegisteredDaemonActivation::acquire_at(
+        &paths,
+        &paths.daemon_worker_activation_lock,
+        "daemon-worker",
+        &lifetimes.worker,
+        cancellation.clone(),
+    )?;
+    let result = async {
+        let Some(lock) =
+            wait_for_registered_daemon_lock(&paths, &lifetimes.worker, &cancellation).await?
+        else {
+            return Ok(());
+        };
+        daemon_with_lock(paths, true, lifetimes.worker, cancellation, Some(lock)).await
+    }
+    .await;
+    // daemon_with_lock has already awaited wake/role listeners and released daemon.lock.
+    activation.close().await;
+    drop(parent_guard);
+    result
+}
+
+async fn daemon_with_lock(
+    paths: StatePaths,
+    service_mode: bool,
+    lifetime: String,
+    cancellation: CancellationToken,
+    lock: Option<locron_store::DaemonLock>,
+) -> Result<()> {
+    if cancellation.is_cancelled() {
+        return Ok(());
+    }
     let store = Arc::new(Store::open(
         paths.clone(),
         env!("CARGO_PKG_VERSION"),
         now_us(),
     )?);
-    let lifetime = SchedulerLifetimeId::new().to_string();
     let global_concurrency = usize::try_from(store.settings()?.global_concurrency)?;
     let adapter = Arc::new(StoreAdapter {
         store,
@@ -3637,7 +3768,11 @@ async fn daemon(paths: StatePaths) -> Result<()> {
         compiled_schedules: Mutex::new(BTreeMap::new()),
         wake: Mutex::new(None),
         wake_task: Mutex::new(None),
-        lock: Mutex::new(None),
+        service_mode,
+        #[cfg(windows)]
+        cancellation: cancellation.clone(),
+        control_task: Mutex::new(None),
+        lock: Mutex::new(lock),
     });
     let daemon = Daemon::new(
         Arc::clone(&adapter),
@@ -3653,21 +3788,154 @@ async fn daemon(paths: StatePaths) -> Result<()> {
         .lock()
         .map_err(|_| anyhow!("wake mutex poisoned"))? = Some(wake);
     tracing::info!(state_dir = %paths.root.display(), "daemon started");
-    daemon.run(CancellationToken::new()).await?;
-    Ok(())
+    let result = daemon.run(cancellation).await;
+    // Includes startup or durable-transition errors, before releasing role ownership.
+    adapter.close_endpoints().await;
+    adapter
+        .lock
+        .lock()
+        .map_err(|_| anyhow!("lock mutex poisoned"))?
+        .take();
+    result.map_err(Into::into)
 }
 
-#[cfg(not(unix))]
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "the staged wake adapter preserves the fallible Unix port until Windows IPC is implemented"
-)]
+#[cfg(windows)]
+fn acquire_daemon_role_lock(
+    paths: &StatePaths,
+    lifetime: &str,
+    service_mode: bool,
+) -> locron_store::StoreResult<locron_store::DaemonLock> {
+    locron_store::DaemonLock::acquire_role(
+        &paths.daemon_lock,
+        &LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: lifetime.to_owned(),
+            started_at_us: now_us(),
+            binary_version: env!("CARGO_PKG_VERSION").into(),
+        },
+        service_mode,
+    )
+}
+
+#[cfg(windows)]
+async fn wait_for_registered_daemon_lock(
+    paths: &StatePaths,
+    lifetime: &str,
+    cancellation: &CancellationToken,
+) -> Result<Option<locron_store::DaemonLock>> {
+    let mut waiting = false;
+    loop {
+        if cancellation.is_cancelled() {
+            return Ok(None);
+        }
+        match acquire_daemon_role_lock(paths, lifetime, true) {
+            Ok(lock) => {
+                if cancellation.is_cancelled() {
+                    return Ok(None);
+                }
+                return Ok(Some(lock));
+            }
+            Err(StoreError::DaemonAlreadyRunning) => {
+                if !waiting {
+                    tracing::info!(
+                        state_dir = %paths.root.display(),
+                        "registered daemon waits for the existing scheduler owner"
+                    );
+                    waiting = true;
+                }
+            }
+            Err(error) => return Err(error.into()),
+        }
+        tokio::select! {
+            biased;
+            () = cancellation.cancelled() => return Ok(None),
+            () = tokio::time::sleep(Duration::from_millis(200)) => {},
+        }
+    }
+}
+
+#[cfg(windows)]
+struct RegisteredDaemonActivation {
+    lock: locron_store::DaemonLock,
+    control: tokio::task::JoinHandle<()>,
+    signal: tokio::task::JoinHandle<()>,
+}
+
+#[cfg(windows)]
+impl RegisteredDaemonActivation {
+    fn acquire(paths: &StatePaths, cancellation: CancellationToken) -> Result<Self> {
+        let lifetime = Uuid::now_v7().to_string();
+        Self::acquire_at(
+            paths,
+            &paths.daemon_activation_lock,
+            "daemon-activation",
+            &lifetime,
+            cancellation,
+        )
+    }
+
+    fn acquire_at(
+        paths: &StatePaths,
+        lease_path: &Path,
+        control_role: &str,
+        lifetime: &str,
+        cancellation: CancellationToken,
+    ) -> Result<Self> {
+        let lock = locron_store::DaemonLock::acquire_role(
+            lease_path,
+            &LockMetadata {
+                pid: std::process::id(),
+                lifetime_id: lifetime.to_owned(),
+                started_at_us: now_us(),
+                binary_version: env!("CARGO_PKG_VERSION").into(),
+            },
+            true,
+        )?;
+        let control = locron_engine::ipc::bind_role_control(
+            &paths.root,
+            control_role,
+            lifetime,
+            cancellation.clone(),
+        )?;
+        let signal = tokio::spawn(async move {
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => cancellation.cancel(),
+                Err(error) => {
+                    tracing::warn!(%error, "console shutdown unavailable; registered activation control remains active");
+                    std::future::pending::<()>().await;
+                }
+            }
+        });
+        Ok(Self {
+            lock,
+            control,
+            signal,
+        })
+    }
+
+    async fn close(self) {
+        // The actual daemon role and wake/control listeners have already exited at this point.
+        for task in [self.control, self.signal] {
+            task.abort();
+            let _ = task.await;
+        }
+        drop(self.lock);
+    }
+}
+
+#[cfg(windows)]
 fn bind_wake_socket(
-    _paths: &StatePaths,
-    _wake: Arc<tokio::sync::Notify>,
+    paths: &StatePaths,
+    wake: Arc<tokio::sync::Notify>,
 ) -> Result<tokio::task::JoinHandle<()>> {
-    tracing::warn!("local wake adapter pending; safety reconciliation remains active");
-    Ok(tokio::spawn(async {}))
+    let _guard = paths.guard()?;
+    match locron_engine::ipc::bind_wake(&paths.root, wake) {
+        Ok(task) => Ok(task),
+        Err(error) => {
+            tracing::warn!(%error, "local wake endpoint unavailable; safety reconciliation remains active");
+            Ok(tokio::spawn(async {}))
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -3704,17 +3972,8 @@ fn bind_wake_socket(
     }))
 }
 
-#[cfg(not(unix))]
-pub(crate) fn send_wake(_paths: &StatePaths) {}
-
-#[cfg(unix)]
 pub(crate) fn send_wake(paths: &StatePaths) {
-    use std::os::unix::net::UnixDatagram;
-    let result = UnixDatagram::unbound().and_then(|socket| {
-        socket.connect(&paths.wake_socket)?;
-        socket.send(b"locron-wake/v1").map(|_| ())
-    });
-    if let Err(error) = result {
+    if let Err(error) = locron_core::notification::send_wake(&paths.root) {
         tracing::debug!(%error, "wake notification unavailable; command is already durable");
     }
 }
@@ -3730,10 +3989,27 @@ struct StoreAdapter {
     compiled_schedules: Mutex<BTreeMap<(String, i64), locron_core::CompiledSchedule>>,
     wake: Mutex<Option<Arc<tokio::sync::Notify>>>,
     wake_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    service_mode: bool,
+    #[cfg(windows)]
+    cancellation: CancellationToken,
+    control_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     lock: Mutex<Option<locron_store::DaemonLock>>,
 }
 
 impl StoreAdapter {
+    async fn close_endpoints(&self) {
+        let wake = self.wake_task.lock().ok().and_then(|mut task| task.take());
+        let control = self
+            .control_task
+            .lock()
+            .ok()
+            .and_then(|mut task| task.take());
+        for task in [wake, control].into_iter().flatten() {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+
     fn now_us(&self) -> i64 {
         self.clock.now().epoch_micros()
     }
@@ -3812,11 +4088,19 @@ impl DaemonStore for StoreAdapter {
             started_at_us: self.now_us(),
             binary_version: env!("CARGO_PKG_VERSION").into(),
         };
-        let lock = self
-            .store
-            .acquire_daemon_lock(&metadata)
-            .map_err(|error| error.to_string())?;
-        *self.lock.lock().map_err(|_| "lock mutex poisoned")? = Some(lock);
+        {
+            let mut owned = self.lock.lock().map_err(|_| "lock mutex poisoned")?;
+            if owned.is_none() {
+                *owned = Some(
+                    locron_store::DaemonLock::acquire_role(
+                        &self.paths.daemon_lock,
+                        &metadata,
+                        self.service_mode,
+                    )
+                    .map_err(|error| error.to_string())?,
+                );
+            }
+        }
         let wake = self
             .wake
             .lock()
@@ -3828,6 +4112,20 @@ impl DaemonStore for StoreAdapter {
             .wake_task
             .lock()
             .map_err(|_| "wake task mutex poisoned")? = Some(task);
+        #[cfg(windows)]
+        if self.service_mode {
+            let control = locron_engine::ipc::bind_role_control(
+                &self.paths.root,
+                "daemon",
+                &self.lifetime,
+                self.cancellation.clone(),
+            )
+            .map_err(|error| format!("cannot bind registered daemon control: {error}"))?;
+            *self
+                .control_task
+                .lock()
+                .map_err(|_| "control task mutex poisoned")? = Some(control);
+        }
         self.store
             .begin_lifetime(&self.lifetime, self.now_us(), env!("CARGO_PKG_VERSION"))
             .map(|_| ())
@@ -4161,14 +4459,8 @@ impl DaemonStore for StoreAdapter {
         self.store
             .end_lifetime(&self.lifetime, self.now_us())
             .map_err(|e| e.to_string())?;
-        if let Some(task) = self
-            .wake_task
-            .lock()
-            .map_err(|_| "wake task mutex poisoned")?
-            .take()
-        {
-            task.abort();
-        }
+        self.close_endpoints().await;
+        #[cfg(unix)]
         if self.paths.wake_socket.exists() {
             std::fs::remove_file(&self.paths.wake_socket).map_err(|error| error.to_string())?;
         }
@@ -4248,7 +4540,8 @@ pub(crate) fn engine_target(
                 body: match (&http.body, &http.body_file) {
                     (Some(body), None) => Some(body.clone()),
                     (None, Some(path)) => Some(
-                        std::fs::read(path).map_err(|error| format!("HTTP body file: {error}"))?,
+                        locron_core::execution::read_input_file(path)
+                            .map_err(|error| format!("HTTP body file: {error}"))?,
                     ),
                     (None, None) => None,
                     (Some(_), Some(_)) => return Err("conflicting HTTP body sources".into()),
@@ -5289,6 +5582,9 @@ fn render_doctor_human(
     } else {
         println!("ok   daemon: running");
     }
+    #[cfg(windows)]
+    println!("info local wake: named pipe (availability is unprobed)");
+    #[cfg(unix)]
     if paths.wake_socket.exists() {
         println!("ok   wake socket: {}", paths.wake_socket.display());
     } else {
@@ -5645,6 +5941,73 @@ mod tests {
     use clap::CommandFactory;
     use std::sync::atomic::{AtomicI64, AtomicU64};
 
+    struct PrivateTempDir {
+        root: PathBuf,
+        _temporary: tempfile::TempDir,
+    }
+
+    impl PrivateTempDir {
+        fn new() -> Self {
+            let temporary = tempfile::tempdir().unwrap();
+            let guard = locron_core::filesystem::DirectoryGuard::private(
+                &temporary.path().join("private CLI fixture"),
+            )
+            .unwrap();
+            Self {
+                root: guard.normalized_path().to_path_buf(),
+                _temporary: temporary,
+            }
+        }
+
+        fn path(&self) -> &Path {
+            &self.root
+        }
+    }
+
+    fn fixture_executable() -> String {
+        #[cfg(windows)]
+        {
+            std::env::current_exe()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        }
+        #[cfg(not(windows))]
+        {
+            "/usr/bin/true".into()
+        }
+    }
+
+    fn retry_failure_target() -> Target {
+        #[cfg(windows)]
+        {
+            Target::Process {
+                executable: fixture_executable(),
+                args: vec![
+                    "--exact".into(),
+                    "tests::windows_retry_target_fixture".into(),
+                    "--nocapture".into(),
+                    "--test-threads=1".into(),
+                ],
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            Target::Process {
+                executable: "/bin/sh".into(),
+                args: vec!["-c".into(), "exit 7".into()],
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_retry_target_fixture() {
+        if std::env::var("WINDOWS_RETRY_FIXTURE").as_deref() == Ok("1") {
+            std::process::exit(7);
+        }
+    }
+
     #[test]
     fn every_argument_of_every_command_has_a_description() {
         assert_command_descriptions(&Cli::command());
@@ -5743,6 +6106,10 @@ mod tests {
             compiled_schedules: Mutex::new(BTreeMap::new()),
             wake: Mutex::new(None),
             wake_task: Mutex::new(None),
+            service_mode: false,
+            #[cfg(windows)]
+            cancellation: CancellationToken::new(),
+            control_task: Mutex::new(None),
             lock: Mutex::new(None),
         }
     }
@@ -5776,7 +6143,7 @@ mod tests {
 
     #[tokio::test]
     async fn catch_up_limit_one_thousand_materializes_compactly_and_admits_oldest_first() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
         let job_id = JobId::new().to_string();
@@ -5786,10 +6153,10 @@ mod tests {
                 anchor: Timestamp::UNIX_EPOCH,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: fixture_executable(),
                 args: Vec::new(),
             },
-            cwd: PathBuf::from("/tmp"),
+            cwd: temp.path().into(),
             environment: Environment::default(),
             policy: locron_core::policy::ExecutionPolicy {
                 missed_run: MissedRunPolicy::All,
@@ -5915,7 +6282,7 @@ mod tests {
 
     #[tokio::test]
     async fn injected_clock_handles_recovery_reenable_and_backward_wall_move() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
         let job_id = JobId::new().to_string();
@@ -5925,10 +6292,10 @@ mod tests {
                 anchor: Timestamp::UNIX_EPOCH,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: fixture_executable(),
                 args: Vec::new(),
             },
-            cwd: PathBuf::from("/tmp"),
+            cwd: temp.path().into(),
             environment: Environment::default(),
             policy: locron_core::policy::ExecutionPolicy {
                 missed_run: MissedRunPolicy::Latest,
@@ -5977,7 +6344,7 @@ mod tests {
 
     #[tokio::test]
     async fn injected_local_timezone_change_recalculates_without_duplicates() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let cursor: Timestamp = "2026-08-20T00:00:00Z".parse().unwrap();
         let first_now: Timestamp = "2026-08-21T10:00:00Z".parse().unwrap();
@@ -5989,10 +6356,10 @@ mod tests {
                 timezone: ScheduleTimeZone::Local,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: fixture_executable(),
                 args: Vec::new(),
             },
-            cwd: PathBuf::from("/tmp"),
+            cwd: temp.path().into(),
             environment: Environment::default(),
             policy: locron_core::policy::ExecutionPolicy {
                 missed_run: MissedRunPolicy::All,
@@ -6045,7 +6412,7 @@ mod tests {
 
     #[tokio::test]
     async fn real_store_completion_command_survives_applied_then_response_lost() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
         let definition = JobDefinition {
@@ -6053,12 +6420,12 @@ mod tests {
                 interval: "1h".parse().unwrap(),
                 anchor: Timestamp::UNIX_EPOCH,
             },
-            target: Target::Process {
-                executable: "/bin/sh".into(),
-                args: vec!["-c".into(), "exit 7".into()],
-            },
+            target: retry_failure_target(),
             cwd: temp.path().into(),
-            environment: Environment::default(),
+            environment: Environment {
+                values: BTreeMap::from([("WINDOWS_RETRY_FIXTURE".into(), "1".into())]),
+                ..Environment::default()
+            },
             policy: locron_core::policy::ExecutionPolicy {
                 retries: 1,
                 ..Default::default()
@@ -6120,7 +6487,7 @@ mod tests {
 
     #[tokio::test]
     async fn durable_retry_remains_eligible_beyond_original_start_deadline() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let paths = StatePaths::new(temp.path().into());
         let store = Arc::new(Store::open(paths.clone(), "test", 0).unwrap());
         let job_id = JobId::new().to_string();
@@ -6130,7 +6497,7 @@ mod tests {
                 anchor: Timestamp::UNIX_EPOCH,
             },
             target: Target::Process {
-                executable: "/usr/bin/true".into(),
+                executable: fixture_executable(),
                 args: Vec::new(),
             },
             cwd: temp.path().into(),
@@ -6277,10 +6644,15 @@ mod tests {
 
     #[test]
     fn process_executable_and_path_list_normalize_against_registration_context() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = PrivateTempDir::new();
         let target = TargetArgs {
             cwd: Some(temp.path().to_path_buf()),
-            path: Some(format!("./tools{}../bin", std::path::MAIN_SEPARATOR)),
+            path: Some(
+                std::env::join_paths([Path::new("./tools"), Path::new("../bin")])
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
             command: vec!["./scripts/task".into()],
             ..TargetArgs::default()
         };
@@ -6300,19 +6672,22 @@ mod tests {
             panic!("expected process target");
         };
         assert_eq!(PathBuf::from(executable), temp.path().join("scripts/task"));
-        assert!(
-            definition
-                .environment
-                .path
-                .as_deref()
-                .is_some_and(|path| Path::new(path).is_absolute())
+        let path_entries = std::env::split_paths(definition.environment.path.as_ref().unwrap())
+            .collect::<Vec<_>>();
+        let registration_cwd = std::env::current_dir().unwrap();
+        assert_eq!(
+            path_entries,
+            [
+                registration_cwd.join("tools"),
+                registration_cwd.parent().unwrap().join("bin")
+            ]
         );
     }
 
     #[test]
     fn delete_after_run_requires_one_time_schedule_and_is_snapshotted() {
         let target = TargetArgs {
-            command: vec!["/usr/bin/true".into()],
+            command: vec![fixture_executable()],
             ..TargetArgs::default()
         };
         let (definition, _) = normalize_definition(
@@ -6595,8 +6970,9 @@ mod tests {
             ImportSource::Path(path) => assert_eq!(path, Path::new("backup.json")),
             ImportSource::Url(_) => panic!("relative name classified as URL"),
         }
-        match import_source(Path::new("/tmp/backup.json")).unwrap() {
-            ImportSource::Path(path) => assert_eq!(path, Path::new("/tmp/backup.json")),
+        let absolute_path = std::env::current_dir().unwrap().join("backup.json");
+        match import_source(&absolute_path).unwrap() {
+            ImportSource::Path(path) => assert_eq!(path, absolute_path),
             ImportSource::Url(_) => panic!("absolute path classified as URL"),
         }
         // A colon in a name without `://` is a path, not a scheme.
@@ -6805,5 +7181,215 @@ mod tests {
             overlap_decision(1, OverlapPolicy::Allow),
             "eligible_subject_to_capacity"
         );
+    }
+
+    #[cfg(windows)]
+    mod windows_prune_tests {
+        use super::*;
+        use std::io::Write as _;
+
+        struct Fixture {
+            // Close SQLite and its state guard before removing the fixture directory.
+            store: Store,
+            paths: StatePaths,
+            run_id: String,
+            _temporary: tempfile::TempDir,
+        }
+
+        impl Fixture {
+            fn new() -> Self {
+                let temporary = tempfile::tempdir().unwrap();
+                let paths = StatePaths::new(temporary.path().join("private prune 工具"));
+                let store = Store::open(paths.clone(), "test", 1).unwrap();
+                let run_id = Uuid::now_v7().to_string();
+                let definition = JobDefinition {
+                    schedule: Schedule::Every {
+                        interval: "1h".parse().unwrap(),
+                        anchor: Timestamp::UNIX_EPOCH,
+                    },
+                    target: Target::Process {
+                        executable: fixture_executable(),
+                        args: Vec::new(),
+                    },
+                    cwd: paths.root.clone(),
+                    environment: Environment::default(),
+                    policy: Default::default(),
+                    completion_action: CompletionAction::Retain,
+                };
+                store
+                    .create_job(&CreateJob {
+                        id: Uuid::now_v7().to_string(),
+                        name: "prune-fixture".into(),
+                        description: None,
+                        tags_json: "[]".into(),
+                        enabled: true,
+                        definition_json: serde_json::to_string(&definition).unwrap(),
+                        now_us: 1,
+                        cursor_us: 1,
+                    })
+                    .unwrap();
+                store.enqueue_manual("prune-fixture", &run_id, 2).unwrap();
+                let lifetime = Uuid::now_v7().to_string();
+                store.begin_lifetime(&lifetime, 3, "test").unwrap();
+                assert_eq!(store.admit(&lifetime, 3, 1).unwrap().attempts.len(), 1);
+                store
+                    .finalize_output(
+                        &OutputRecord {
+                            run_id: run_id.clone(),
+                            attempt_number: 1,
+                            relative_path: format!("{run_id}/1.log"),
+                            state: "finalized".into(),
+                            retained_payload_bytes: 8,
+                            physical_bytes: 8,
+                            discarded_bytes: 0,
+                            truncated: false,
+                        },
+                        4,
+                    )
+                    .unwrap();
+                store
+                    .complete_attempt(&AttemptCompletion {
+                        run_id: run_id.clone(),
+                        attempt_number: 1,
+                        now_us: 5,
+                        duration_us: 2,
+                        state: "succeeded".into(),
+                        exit_code: Some(0),
+                        http_status: None,
+                        http_content_type: None,
+                        reason: "fixture".into(),
+                        retry: None,
+                    })
+                    .unwrap();
+                Self {
+                    store,
+                    paths,
+                    run_id,
+                    _temporary: temporary,
+                }
+            }
+
+            fn path(&self) -> PathBuf {
+                self.paths.final_output(&self.run_id, 1).unwrap()
+            }
+
+            fn assert_output(&self, expected_state: &str, expected_bytes: i64) {
+                let output = self.store.attempts_for_run(&self.run_id).unwrap()[0]
+                    .output
+                    .clone()
+                    .unwrap();
+                assert_eq!(output.state, expected_state);
+                assert_eq!(output.physical_bytes, expected_bytes);
+            }
+
+            fn seed_file(&self) {
+                write_private(&self.path(), b"captured");
+            }
+
+            fn assert_pending(&self) {
+                self.assert_output("prune_pending", 8);
+                assert_eq!(self.store.pending_output_prunes(10).unwrap().len(), 1);
+                let reopened = Store::open_read_only(&self.paths.database).unwrap();
+                assert_eq!(
+                    reopened.attempts_for_run(&self.run_id).unwrap()[0]
+                        .output
+                        .as_ref()
+                        .unwrap()
+                        .state,
+                    "prune_pending"
+                );
+            }
+        }
+
+        fn write_private(path: &Path, content: &[u8]) {
+            let mut file = locron_core::filesystem::create_private_new(path).unwrap();
+            file.write_all(content).unwrap();
+            file.sync_all().unwrap();
+        }
+
+        #[test]
+        fn removes_private_output_before_committing_pruned_state() {
+            let fixture = Fixture::new();
+            fixture.seed_file();
+            assert!(locron_core::filesystem::is_private(&fixture.path(), false).unwrap());
+            let unrelated = fixture.paths.root.join("preserve.txt");
+            write_private(&unrelated, b"unrelated");
+
+            prune(&fixture.paths, false, Format::Json).unwrap();
+
+            assert!(!fixture.path().exists());
+            fixture.assert_output("pruned", 0);
+            assert!(fixture.store.pending_output_prunes(10).unwrap().is_empty());
+            assert_eq!(std::fs::read(unrelated).unwrap(), b"unrelated");
+        }
+
+        #[test]
+        fn missing_output_is_idempotent_without_recreating_its_parent() {
+            let fixture = Fixture::new();
+            let directory = fixture.paths.output_directory(&fixture.run_id).unwrap();
+            assert!(!directory.exists());
+
+            prune(&fixture.paths, false, Format::Json).unwrap();
+            prune(&fixture.paths, false, Format::Json).unwrap();
+
+            assert!(!directory.exists());
+            fixture.assert_output("pruned", 0);
+            assert!(fixture.store.pending_output_prunes(10).unwrap().is_empty());
+        }
+
+        // Deliberate descriptor/junction setup runs sequentially in this one case;
+        // other native prune cases need no generic PowerShell fixture worker.
+        #[test]
+        fn unsafe_output_keeps_pending_state_and_preserves_unrelated_objects() {
+            let fixture = Fixture::new();
+            fixture.seed_file();
+            let path = fixture.path();
+            locron_core::windows::run_script_json(
+                r"$acl=[System.IO.File]::GetAccessControl([string]$request.path);
+                $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'),'Read','Allow'));
+                [System.IO.File]::SetAccessControl([string]$request.path,$acl);
+                @{changed=$true} | ConvertTo-Json -Compress",
+                &json!({"path":path}),
+            )
+            .unwrap();
+            assert!(!locron_core::filesystem::is_private(&path, false).unwrap());
+            assert!(prune(&fixture.paths, false, Format::Json).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), b"captured");
+            assert!(!locron_core::filesystem::is_private(&path, false).unwrap());
+            fixture.assert_pending();
+
+            let junction_fixture = Fixture::new();
+            let target = junction_fixture
+                ._temporary
+                .path()
+                .join("outside private target");
+            drop(locron_core::filesystem::DirectoryGuard::private(&target).unwrap());
+            let target_file = target.join("1.log");
+            write_private(&target_file, b"unrelated");
+            let link = junction_fixture
+                .paths
+                .output_directory(&junction_fixture.run_id)
+                .unwrap();
+            locron_core::windows::run_script_json(
+                "New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null; @{created=$true} | ConvertTo-Json -Compress",
+                &json!({"link":link,"target":target}),
+            )
+            .unwrap();
+            let refusal = prune(&junction_fixture.paths, false, Format::Json);
+            // Remove this exact junction before recursive fixture cleanup.
+            std::fs::remove_dir(&link).unwrap();
+            assert!(refusal.is_err());
+            assert_eq!(std::fs::read(target_file).unwrap(), b"unrelated");
+            junction_fixture.assert_pending();
+
+            let directory_fixture = Fixture::new();
+            let directory = directory_fixture.path();
+            drop(locron_core::filesystem::DirectoryGuard::private(&directory).unwrap());
+            let child = directory.join("preserve.txt");
+            write_private(&child, b"preserve");
+            assert!(prune(&directory_fixture.paths, false, Format::Json).is_err());
+            assert_eq!(std::fs::read(child).unwrap(), b"preserve");
+            directory_fixture.assert_pending();
+        }
     }
 }

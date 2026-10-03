@@ -501,11 +501,54 @@ fn next_retry_delay(current: Duration, cap: Duration) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, VecDeque};
+    #[cfg(unix)]
+    use std::collections::BTreeMap;
+    use std::collections::VecDeque;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+
+    struct TestRoot {
+        _temporary: tempfile::TempDir,
+        root: std::path::PathBuf,
+    }
+    impl TestRoot {
+        fn path(&self) -> &std::path::Path {
+            &self.root
+        }
+    }
+    fn test_root() -> TestRoot {
+        let temporary = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let root = temporary.path().join("private");
+        #[cfg(not(windows))]
+        let root = temporary.path().to_path_buf();
+        let _guard = locron_core::filesystem::DirectoryGuard::private(&root).unwrap();
+        TestRoot {
+            _temporary: temporary,
+            root,
+        }
+    }
+
+    fn side_effect_target(root: &std::path::Path) -> crate::runner::ProcessSpec {
+        #[cfg(unix)]
+        {
+            crate::runner::ProcessSpec {
+                executable: "/bin/sh".into(),
+                args: vec![
+                    "-c".into(),
+                    format!("printf x >> '{}'", root.join("side-effect").display()),
+                ],
+                cwd: root.into(),
+                env: BTreeMap::new(),
+            }
+        }
+        #[cfg(windows)]
+        {
+            crate::runner::native_fixture_spec(root, "append")
+        }
+    }
 
     #[derive(Default)]
     struct FakeStore {
@@ -570,16 +613,20 @@ mod tests {
             }
         }
 
-        fn process(temp: &tempfile::TempDir, script: String) -> Self {
+        fn process(temp: &TestRoot, script: &str) -> Self {
+            #[cfg(unix)]
+            let target = crate::runner::ProcessSpec {
+                executable: "/bin/sh".into(),
+                args: vec!["-c".into(), script.into()],
+                cwd: temp.path().into(),
+                env: BTreeMap::new(),
+            };
+            #[cfg(windows)]
+            let target = crate::runner::native_fixture_spec(temp.path(), script);
             let store = Self::empty();
             *store.attempt.lock().unwrap() = Some(AdmittedAttempt {
                 run_id: "shutdown-run".into(),
-                target: TargetSpec::Process(crate::runner::ProcessSpec {
-                    executable: "/bin/sh".into(),
-                    args: vec!["-c".into(), script],
-                    cwd: temp.path().into(),
-                    env: BTreeMap::new(),
-                }),
+                target: TargetSpec::Process(target),
                 context: AttemptContext {
                     run_id: "shutdown-run".into(),
                     attempt: 1,
@@ -607,22 +654,11 @@ mod tests {
     }
 
     impl ScriptedStore {
-        fn new(temp: &tempfile::TempDir, marks: Vec<Result<bool, String>>) -> Self {
+        fn new(temp: &TestRoot, marks: Vec<Result<bool, String>>) -> Self {
             Self {
                 attempt: Mutex::new(Some(AdmittedAttempt {
                     run_id: "run".into(),
-                    target: TargetSpec::Process(crate::runner::ProcessSpec {
-                        executable: "/bin/sh".into(),
-                        args: vec![
-                            "-c".into(),
-                            format!(
-                                "printf x >> '{}'",
-                                temp.path().join("side-effect").display()
-                            ),
-                        ],
-                        cwd: temp.path().into(),
-                        env: BTreeMap::new(),
-                    }),
+                    target: TargetSpec::Process(side_effect_target(temp.path())),
                     context: AttemptContext {
                         run_id: "run".into(),
                         attempt: 1,
@@ -1145,13 +1181,16 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_drain_allows_natural_completion_before_lifetime_end() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let done = temp.path().join("done");
         let term = temp.path().join("term");
+        #[cfg(unix)]
         let store = Arc::new(ShutdownStore::process(
             &temp,
-            "trap 'printf term > term' TERM; sleep 0.05; printf done > done".into(),
+            "trap 'printf term > term' TERM; sleep 0.05; printf done > done",
         ));
+        #[cfg(windows)]
+        let store = Arc::new(ShutdownStore::process(&temp, "natural"));
         let daemon = Daemon::new(
             Arc::clone(&store),
             Runner::new(crate::runner::RunnerConfig {
@@ -1186,14 +1225,18 @@ mod tests {
 
     #[tokio::test]
     async fn elapsed_shutdown_drain_cancels_runner_before_lifetime_end() {
-        let temp = tempfile::tempdir().unwrap();
-        let ready = temp.path().join("ready");
+        let temp = test_root();
+        let ready = temp
+            .path()
+            .join(if cfg!(windows) { "leaf-ready" } else { "ready" });
         let term = temp.path().join("term");
+        #[cfg(unix)]
         let store = Arc::new(ShutdownStore::process(
             &temp,
-            "trap 'printf term > term; exit 0' TERM; printf ready > ready; while :; do :; done"
-                .into(),
+            "trap 'printf term > term; exit 0' TERM; printf ready > ready; while :; do :; done",
         ));
+        #[cfg(windows)]
+        let store = Arc::new(ShutdownStore::process(&temp, "leaf"));
         let daemon = Daemon::new(
             Arc::clone(&store),
             Runner::new(crate::runner::RunnerConfig {
@@ -1213,7 +1256,7 @@ mod tests {
             signal_for_wait.cancelled().await;
         }));
 
-        for _ in 0..100 {
+        for _ in 0..if cfg!(windows) { 1000 } else { 100 } {
             if ready.is_file() {
                 break;
             }
@@ -1227,7 +1270,22 @@ mod tests {
             *store.outcome.lock().unwrap(),
             Some(crate::runner::OutcomeKind::Cancelled)
         );
+        #[cfg(unix)]
         assert!(term.is_file());
+        #[cfg(windows)]
+        {
+            assert!(
+                !term.exists(),
+                "Windows did not claim a generic target TERM signal"
+            );
+            assert!(!temp.path().join("late-completion").exists());
+            let heartbeat = std::fs::read(temp.path().join("heartbeat")).unwrap();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert_eq!(
+                heartbeat,
+                std::fs::read(temp.path().join("heartbeat")).unwrap()
+            );
+        }
         let events = store.events.lock().unwrap();
         assert_eq!(events.last(), Some(&"end"));
         assert!(
@@ -1241,7 +1299,7 @@ mod tests {
 
     #[tokio::test]
     async fn transient_mark_running_failure_retries_before_spawn() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let store = Arc::new(ScriptedStore::new(
             &temp,
             vec![Err("busy".into()), Ok(true)],
@@ -1273,7 +1331,7 @@ mod tests {
 
     #[tokio::test]
     async fn admission_failure_marks_persistence_degraded_without_starting_target() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let store = Arc::new(
             ScriptedStore::new(&temp, vec![Ok(true)])
                 .with_admission_error("injected failure before admission"),
@@ -1299,7 +1357,7 @@ mod tests {
 
     #[tokio::test]
     async fn transient_failure_then_durable_cancellation_never_spawns() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let store = Arc::new(ScriptedStore::new(
             &temp,
             vec![Err("busy".into()), Ok(false)],
@@ -1325,7 +1383,7 @@ mod tests {
 
     #[tokio::test]
     async fn persistent_mark_running_failure_waits_for_shutdown_without_spawn() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let store = Arc::new(ScriptedStore::new(&temp, Vec::new()));
         let daemon = Daemon::new(
             Arc::clone(&store),
@@ -1350,7 +1408,7 @@ mod tests {
 
     #[tokio::test]
     async fn transient_completion_failure_retries_without_reexecuting_target() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let store = Arc::new(
             ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(vec![
                 Err(CompletionError::Transient("busy after target exit".into())),
@@ -1382,7 +1440,7 @@ mod tests {
 
     #[tokio::test]
     async fn output_preparation_failure_is_completed_durably_without_spawning() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let blocked_parent = temp.path().join("blocked-output-parent");
         std::fs::write(&blocked_parent, b"not a directory").unwrap();
         let store = Arc::new(
@@ -1429,7 +1487,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_spawn_output_failure_is_unknown_and_completion_does_not_reexecute() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let store = Arc::new(
             ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(vec![
                 Err(CompletionError::Transient("busy".into())),
@@ -1479,7 +1537,7 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_after_target_outcome_leaves_completion_uncommitted_without_reexecution() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let completion_failures = (0..100)
             .map(|_| {
                 Err(CompletionError::Transient(
@@ -1559,7 +1617,7 @@ mod tests {
 
     #[tokio::test]
     async fn attempt_completion_notifies_the_wake_handle() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let store = Arc::new(ScriptedStore::new(&temp, vec![Ok(true)]));
         let daemon = Daemon::new(
             Arc::clone(&store),
@@ -1588,7 +1646,7 @@ mod tests {
 
     #[tokio::test]
     async fn permanent_completion_conflict_falls_back_once_and_never_retries() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let store = Arc::new(
             ScriptedStore::new(&temp, vec![Ok(true)]).with_completion_results(vec![
                 Err(CompletionError::Conflict("output already missing".into())),
@@ -1628,7 +1686,7 @@ mod tests {
 
     #[tokio::test]
     async fn permanent_runner_failure_conflict_breaks_without_retry() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = test_root();
         let blocked_parent = temp.path().join("blocked-output-parent");
         std::fs::write(&blocked_parent, b"not a directory").unwrap();
         let store = Arc::new(

@@ -12,12 +12,12 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
 use axum_extra::extract::cookie::{CookieJar, SameSite};
 use base64::Engine;
 use cookie::Cookie;
@@ -177,17 +177,9 @@ fn now_us() -> i64 {
 }
 
 /// Best-effort wake hint to a running daemon; the command is already durable
-/// when the socket is unavailable, so failures are ignored.
-#[cfg(not(unix))]
-fn send_wake(_paths: &StatePaths) {}
-
-#[cfg(unix)]
+/// when the endpoint is unavailable, so failures preserve durable reconciliation.
 fn send_wake(paths: &StatePaths) {
-    use std::os::unix::net::UnixDatagram;
-    let _ = UnixDatagram::unbound().and_then(|socket| {
-        socket.connect(&paths.wake_socket)?;
-        socket.send(b"locron-wake/v1").map(|_| ())
-    });
+    let _ = locron_core::notification::send_wake(&paths.root);
 }
 
 /// Whether a daemon currently owns the state directory, probed through the
@@ -1138,7 +1130,11 @@ pub(crate) async fn runs_cancel(
 /// idempotent on EventSource reconnect: a reconnecting client is re-sent the
 /// current run/attempt states, all frames from the start, and a single
 /// terminal event.
-pub(crate) async fn runs_stream(State(state): State<AppState>, Path(id): Path<String>) -> Response {
+pub(crate) async fn runs_stream(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    shutdown: Option<Extension<tokio::sync::watch::Receiver<bool>>>,
+) -> Response {
     if uuid::Uuid::parse_str(&id).is_err() {
         return envelope::error(
             StatusCode::BAD_REQUEST,
@@ -1279,7 +1275,8 @@ pub(crate) async fn runs_stream(State(state): State<AppState>, Path(id): Path<St
         }
     })
     .flat_map(futures_util::stream::iter)
-    .map(Ok::<Event, std::convert::Infallible>);
+    .map(Ok::<Event, std::convert::Infallible>)
+    .take_until(crate::wait_for_server_shutdown(shutdown.map(|Extension(receiver)| receiver)));
 
     Sse::new(stream)
         .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
@@ -1891,16 +1888,24 @@ pub(crate) async fn diagnostics(State(state): State<AppState>) -> Response {
                 }
             }
         }
-        Ok(json!({
+        let wake = locron_core::notification::wake_facts(&paths.root);
+        let data = json!({
             "state_dir": paths.root,
             "database": paths.database,
             "daemon_running": daemon_running(&paths),
-            "wake_socket": paths.wake_socket.exists(),
+            "wake_socket": wake.socket_present,
             "execution_path": settings.execution_path,
             "global_environment_names": settings.environment.keys().cloned().collect::<Vec<_>>(),
             "process_resolution": resolutions,
             "checks": checks,
-        }))
+        });
+        #[cfg(windows)]
+        let data = {
+            let mut data = data;
+            data["wake"] = serde_json::to_value(wake).map_err(StoreError::Json)?;
+            data
+        };
+        Ok(data)
     })
     .await;
     respond(result, &[])

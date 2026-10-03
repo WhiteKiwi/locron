@@ -88,6 +88,10 @@ pub fn maintain(
     if store.paths() != paths {
         bail!("maintenance store and state paths do not match");
     }
+    #[cfg(windows)]
+    let _output_guard = locron_core::filesystem::DirectoryGuard::existing_private(&paths.outputs)
+        .context("validate managed output root")?;
+    #[cfg(not(windows))]
     require_directory(&paths.outputs).context("validate managed output root")?;
 
     let mut pass = Pass::new();
@@ -192,6 +196,17 @@ fn recover_output(
     let directory = partial
         .parent()
         .ok_or_else(|| anyhow!("output path has no parent"))?;
+    #[cfg(windows)]
+    let _directory_guard =
+        match locron_core::filesystem::DirectoryGuard::existing_private(directory) {
+            Ok(guard) => guard,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                store.reconcile_output_missing(run_id, attempt_number, now_us)?;
+                return Ok(false);
+            }
+            Err(error) => return Err(error).context("validate managed output directory"),
+        };
+    #[cfg(not(windows))]
     if !is_safe_directory(directory)? {
         store.reconcile_output_missing(run_id, attempt_number, now_us)?;
         return Ok(false);
@@ -199,10 +214,19 @@ fn recover_output(
 
     let partial_kind = file_kind(&partial)?;
     let final_kind = file_kind(&final_path)?;
+    #[cfg(windows)]
+    if partial_kind == FileKind::Unsafe || final_kind == FileKind::Unsafe {
+        bail!("refusing to recover unsafe output objects");
+    }
     let repaired = match (partial_kind, final_kind) {
         (FileKind::Regular, FileKind::Missing) => {
             let repair = repair_partial(&partial).context("repair partial frame tail")?;
+            #[cfg(windows)]
+            locron_core::filesystem::rename_private(&partial, &final_path)
+                .context("atomically finalize repaired output")?;
+            #[cfg(not(windows))]
             fs::rename(&partial, &final_path).context("atomically finalize repaired output")?;
+            #[cfg(unix)]
             sync_directory(directory)?;
             repair
         }
@@ -313,30 +337,36 @@ fn remove_and_finish_output(
     if candidate.relative_path != expected_relative {
         bail!("database output path is not the canonical final path");
     }
-    let directory = path
-        .parent()
-        .ok_or_else(|| anyhow!("output path has no parent"))?;
     if mark_pending {
         store.mark_output_prune_pending(candidate, now_us)?;
     }
-    match fs::symlink_metadata(directory) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            store.finish_output_prune(candidate, now_us)?;
-            return Ok(());
+    #[cfg(windows)]
+    locron_core::filesystem::remove_private_file(&path).context("remove retained output")?;
+    #[cfg(not(windows))]
+    {
+        let directory = path
+            .parent()
+            .ok_or_else(|| anyhow!("output path has no parent"))?;
+        match fs::symlink_metadata(directory) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                store.finish_output_prune(candidate, now_us)?;
+                return Ok(());
+            }
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                bail!("refusing to traverse unsafe output parent")
+            }
+            Ok(_) => {}
+            Err(error) => return Err(error.into()),
         }
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
-            bail!("refusing to traverse unsafe output parent")
+        match file_kind(&path)? {
+            FileKind::Regular => {
+                fs::remove_file(&path).context("remove retained output")?;
+                #[cfg(unix)]
+                sync_directory(directory)?;
+            }
+            FileKind::Missing => {}
+            FileKind::Unsafe => bail!("refusing to remove symbolic link or non-file output"),
         }
-        Ok(_) => {}
-        Err(error) => return Err(error.into()),
-    }
-    match file_kind(&path)? {
-        FileKind::Regular => {
-            fs::remove_file(&path).context("remove retained output")?;
-            sync_directory(directory)?;
-        }
-        FileKind::Missing => {}
-        FileKind::Unsafe => bail!("refusing to remove symbolic link or non-file output"),
     }
     store.finish_output_prune(candidate, now_us)?;
     Ok(())
@@ -385,7 +415,26 @@ fn remove_verified_orphans(
         let Some(run_id) = directory_name.to_str() else {
             continue;
         };
-        if !is_canonical_uuid(run_id) || !is_safe_directory(&directory.path())? {
+        if !is_canonical_uuid(run_id) {
+            continue;
+        }
+        let directory_path = directory.path();
+        #[cfg(windows)]
+        let _directory_guard =
+            match locron_core::filesystem::DirectoryGuard::existing_private(&directory_path) {
+                Ok(guard) => guard,
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+                    ) =>
+                {
+                    continue;
+                }
+                Err(error) => return Err(error).context("validate orphan output directory"),
+            };
+        #[cfg(not(windows))]
+        if !is_safe_directory(&directory_path)? {
             continue;
         }
         let run_exists = match store.run(run_id) {
@@ -396,7 +445,7 @@ fn remove_verified_orphans(
                 continue;
             }
         };
-        for entry in sorted_entries(&directory.path())? {
+        for entry in sorted_entries(&directory_path)? {
             if pass.remaining() == 0 {
                 break;
             }
@@ -417,6 +466,11 @@ fn remove_verified_orphans(
                     }
                 }
             }
+            #[cfg(windows)]
+            let metadata =
+                locron_core::filesystem::open_private(&path, fs::OpenOptions::new().read(true))?
+                    .metadata()?;
+            #[cfg(not(windows))]
             let metadata = fs::symlink_metadata(&path)?;
             if metadata
                 .modified()
@@ -428,10 +482,15 @@ fn remove_verified_orphans(
             if !pass.take_action() {
                 break;
             }
-            match fs::remove_file(&path) {
+            #[cfg(windows)]
+            let removal = locron_core::filesystem::remove_private_file(&path);
+            #[cfg(not(windows))]
+            let removal = fs::remove_file(&path);
+            match removal {
                 Ok(()) => {
                     pass.report.orphans_removed += 1;
-                    if let Err(error) = sync_directory(&directory.path()) {
+                    #[cfg(unix)]
+                    if let Err(error) = sync_directory(&directory_path) {
                         pass.record("sync orphan output directory", error);
                     }
                 }
@@ -472,6 +531,17 @@ enum FileKind {
     Unsafe,
 }
 
+#[cfg(windows)]
+fn file_kind(path: &Path) -> Result<FileKind> {
+    match locron_core::filesystem::open_private(path, fs::OpenOptions::new().read(true)) {
+        Ok(_) => Ok(FileKind::Regular),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(FileKind::Missing),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => Ok(FileKind::Unsafe),
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(not(windows))]
 fn file_kind(path: &Path) -> Result<FileKind> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => Ok(FileKind::Unsafe),
@@ -482,6 +552,7 @@ fn file_kind(path: &Path) -> Result<FileKind> {
     }
 }
 
+#[cfg(not(windows))]
 fn is_safe_directory(path: &Path) -> Result<bool> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => Ok(!metadata.file_type().is_symlink() && metadata.is_dir()),
@@ -490,6 +561,7 @@ fn is_safe_directory(path: &Path) -> Result<bool> {
     }
 }
 
+#[cfg(not(windows))]
 fn require_directory(path: &Path) -> Result<()> {
     if is_safe_directory(path)? {
         Ok(())
@@ -501,6 +573,7 @@ fn require_directory(path: &Path) -> Result<()> {
     }
 }
 
+#[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<()> {
     fs::File::open(path)?.sync_all()?;
     Ok(())
@@ -518,9 +591,19 @@ mod tests {
 
     fn open_store() -> (tempfile::TempDir, StatePaths, Store) {
         let temp = tempfile::tempdir().unwrap();
-        let paths = StatePaths::new(temp.path().into());
+        let paths = StatePaths::new(temp.path().join("private"));
         let store = Store::open(paths.clone(), "test", 1).unwrap();
         (temp, paths, store)
+    }
+
+    fn write_private(path: &Path, bytes: &[u8]) {
+        let mut file = locron_core::filesystem::create_private_new(path).unwrap();
+        file.write_all(bytes).unwrap();
+        file.sync_all().unwrap();
+    }
+
+    fn orphan_pass_time() -> i64 {
+        i64::try_from(UNIX_EPOCH.elapsed().unwrap().as_micros()).unwrap() + 2 * 60 * 60 * 1_000_000
     }
 
     fn admit_one(store: &Store, run_id: &str) -> String {
@@ -559,15 +642,13 @@ mod tests {
         let run_id = uuid::Uuid::from_u128(3).to_string();
         admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
-        fs::create_dir(&directory).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
         let partial = paths.partial_output(&run_id, 1).unwrap();
         let mut writer = FrameWriter::create(&partial).unwrap();
         writer.write(FrameChannel::Stdout, 1, b"hello").unwrap();
         writer.sync().unwrap();
         drop(writer);
-        fs::OpenOptions::new()
-            .append(true)
-            .open(&partial)
+        locron_core::filesystem::open_private(&partial, fs::OpenOptions::new().append(true))
             .unwrap()
             .write_all(b"incomplete")
             .unwrap();
@@ -597,7 +678,7 @@ mod tests {
         let run_id = uuid::Uuid::from_u128(6).to_string();
         admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
-        fs::create_dir(&directory).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
         let final_path = paths.final_output(&run_id, 1).unwrap();
         let mut writer = FrameWriter::create(&final_path).unwrap();
         writer.write(FrameChannel::Stderr, 1, b"renamed").unwrap();
@@ -621,6 +702,12 @@ mod tests {
                 .referenced_partial_artifacts(1, &missing_restarted)
                 .unwrap()
                 .is_empty()
+        );
+        assert!(
+            !missing_paths
+                .output_directory(&missing_run)
+                .unwrap()
+                .exists()
         );
     }
 
@@ -651,7 +738,7 @@ mod tests {
         let run_id = uuid::Uuid::from_u128(8).to_string();
         let lifetime = admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
-        fs::create_dir(&directory).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
         let partial = paths.partial_output(&run_id, 1).unwrap();
         let mut writer = FrameWriter::create(&partial).unwrap();
         writer.write(FrameChannel::Stdout, 1, b"payload").unwrap();
@@ -678,7 +765,7 @@ mod tests {
         let run_id = uuid::Uuid::from_u128(9).to_string();
         let lifetime = admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
-        fs::create_dir(&directory).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
         let partial = paths.partial_output(&run_id, 1).unwrap();
         let mut writer = FrameWriter::create(&partial).unwrap();
         writer.write(FrameChannel::Body, 1, b"payload").unwrap();
@@ -704,7 +791,7 @@ mod tests {
         let run_id = uuid::Uuid::from_u128(10).to_string();
         let lifetime = admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
-        fs::create_dir(&directory).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
         let partial = paths.partial_output(&run_id, 1).unwrap();
         let mut writer = FrameWriter::create(&partial).unwrap();
         writer.write(FrameChannel::Stdout, 1, b"payload").unwrap();
@@ -720,6 +807,7 @@ mod tests {
 
         assert_eq!(report.outputs_pruned, 1);
         assert!(store.pending_output_prunes(1).unwrap().is_empty());
+        assert!(!directory.exists());
     }
 
     #[test]
@@ -727,13 +815,13 @@ mod tests {
         let (_temp, paths, store) = open_store();
         let run_id = uuid::Uuid::from_u128(4).to_string();
         let directory = paths.output_directory(&run_id).unwrap();
-        fs::create_dir(&directory).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
         for attempt in 1..=101 {
-            fs::write(directory.join(format!("{attempt}.log")), b"old").unwrap();
+            write_private(&directory.join(format!("{attempt}.log")), b"old");
         }
         fs::create_dir(directory.join("unexpected")).unwrap();
 
-        let report = maintain(&store, &paths, "no-lifetime", i64::MAX / 2).unwrap();
+        let report = maintain(&store, &paths, "no-lifetime", orphan_pass_time()).unwrap();
 
         assert_eq!(report.actions, MAX_ACTIONS);
         assert_eq!(report.orphans_removed, MAX_ACTIONS);
@@ -754,7 +842,7 @@ mod tests {
         let run_id = uuid::Uuid::from_u128(11).to_string();
         admit_one(&store, &run_id);
         let directory = paths.output_directory(&run_id).unwrap();
-        fs::create_dir(&directory).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
         let partial = paths.partial_output(&run_id, 1).unwrap();
         let mut writer = FrameWriter::create(&partial).unwrap();
         writer
@@ -763,12 +851,12 @@ mod tests {
         writer.sync().unwrap();
         drop(writer);
         let orphan = directory.join("2.log");
-        fs::write(&orphan, b"unreferenced").unwrap();
+        write_private(&orphan, b"unreferenced");
 
         // The owning daemon dies; the restarted daemon recovers the
         // referenced partial and removes the unreferenced 2.log.
         let restarted = restart_lifetime(&store, 9);
-        let report = maintain(&store, &paths, &restarted, i64::MAX / 2).unwrap();
+        let report = maintain(&store, &paths, &restarted, orphan_pass_time()).unwrap();
 
         assert_eq!(report.outputs_recovered, 1);
         assert_eq!(report.orphans_removed, 1);
@@ -784,13 +872,13 @@ mod tests {
         let (_temp, paths, store) = open_store();
         let run_id = uuid::Uuid::from_u128(5).to_string();
         let directory = paths.output_directory(&run_id).unwrap();
-        fs::create_dir(&directory).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
         let target = paths.root.join("target");
         fs::write(&target, b"keep").unwrap();
         let link = directory.join("1.log");
         symlink(&target, &link).unwrap();
 
-        let report = maintain(&store, &paths, "no-lifetime", i64::MAX / 2).unwrap();
+        let report = maintain(&store, &paths, "no-lifetime", orphan_pass_time()).unwrap();
 
         assert_eq!(report.orphans_removed, 0);
         assert!(
@@ -800,5 +888,233 @@ mod tests {
                 .is_symlink()
         );
         assert_eq!(fs::read(target).unwrap(), b"keep");
+    }
+
+    #[cfg(windows)]
+    mod windows_contracts {
+        use std::path::PathBuf;
+        use std::sync::{Arc, mpsc};
+        use std::time::{Duration, Instant};
+
+        use super::*;
+
+        fn partial_fixture(
+            run_id: &str,
+        ) -> (tempfile::TempDir, StatePaths, Store, String, PathBuf) {
+            let (temporary, paths, store) = open_store();
+            admit_one(&store, run_id);
+            let partial = paths.partial_output(run_id, 1).unwrap();
+            let mut writer = FrameWriter::create(&partial).unwrap();
+            writer
+                .write(FrameChannel::Stdout, 1, b"recover me")
+                .unwrap();
+            writer.sync().unwrap();
+            drop(writer);
+            let lifetime = restart_lifetime(&store, 9);
+            (temporary, paths, store, lifetime, partial)
+        }
+
+        fn add_world_read(path: &Path) {
+            locron_core::windows::run_script_json(
+                r"$acl=[System.IO.File]::GetAccessControl([string]$request.path);
+                $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'),'Read','Allow'));
+                [System.IO.File]::SetAccessControl([string]$request.path,$acl);
+                @{changed=$true} | ConvertTo-Json -Compress",
+                &serde_json::json!({"path":path}),
+            )
+            .unwrap();
+        }
+
+        fn junction(link: &Path, target: &Path) {
+            locron_core::windows::run_script_json(
+                "New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null; @{created=$true} | ConvertTo-Json -Compress",
+                &serde_json::json!({"link":link,"target":target}),
+            )
+            .unwrap();
+        }
+
+        #[test]
+        fn missing_output_root_is_not_recreated_by_maintenance() {
+            let (_temporary, paths, store) = open_store();
+            fs::remove_dir(&paths.outputs).unwrap();
+
+            assert!(maintain(&store, &paths, "no-lifetime", 10).is_err());
+            assert!(!paths.outputs.exists());
+            assert!(maintain(&store, &paths, "no-lifetime", 11).is_err());
+            assert!(!paths.outputs.exists());
+        }
+
+        #[test]
+        fn recovery_waits_for_an_owned_reader_and_preserves_frames() {
+            let run_id = uuid::Uuid::from_u128(22).to_string();
+            let (_temporary, paths, store, lifetime, partial) = partial_fixture(&run_id);
+            let final_path = paths.final_output(&run_id, 1).unwrap();
+            let mut reader = FrameReader::open(&partial).unwrap();
+            assert_eq!(reader.next_frame().unwrap().unwrap().payload, b"recover me");
+            assert!(matches!(
+                fs::rename(&partial, &final_path)
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(32 | 33)
+            ));
+            let store = Arc::new(store);
+            let maintenance_store = store.clone();
+            let maintenance_paths = paths.clone();
+            let maintenance_lifetime = lifetime.clone();
+            let (sender, receiver) = mpsc::channel();
+            let recovery = std::thread::spawn(move || {
+                sender
+                    .send(maintain(
+                        &maintenance_store,
+                        &maintenance_paths,
+                        &maintenance_lifetime,
+                        10,
+                    ))
+                    .unwrap();
+            });
+            assert!(matches!(
+                receiver.recv_timeout(Duration::from_millis(150)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ));
+            drop(reader);
+            let report = receiver
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap()
+                .unwrap();
+            recovery.join().unwrap();
+
+            assert_eq!(report.outputs_recovered, 1);
+            assert!(!partial.exists());
+            assert!(
+                store
+                    .referenced_partial_artifacts(10, &lifetime)
+                    .unwrap()
+                    .is_empty()
+            );
+            let mut finalized = FrameReader::open(&final_path).unwrap();
+            assert_eq!(
+                finalized.next_frame().unwrap().unwrap().payload,
+                b"recover me"
+            );
+            assert!(finalized.next_frame().unwrap().is_none());
+        }
+
+        #[test]
+        fn reader_sharing_timeout_keeps_recovery_pending_until_a_later_pass() {
+            let run_id = uuid::Uuid::from_u128(23).to_string();
+            let (_temporary, paths, store, lifetime, partial) = partial_fixture(&run_id);
+            let final_path = paths.final_output(&run_id, 1).unwrap();
+            let reader = FrameReader::open(&partial).unwrap();
+            assert!(matches!(
+                fs::rename(&partial, &final_path)
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(32 | 33)
+            ));
+            let started = Instant::now();
+            assert!(maintain(&store, &paths, &lifetime, 10).is_err());
+            let elapsed = started.elapsed();
+            assert!(
+                elapsed >= Duration::from_millis(4500),
+                "elapsed={elapsed:?}"
+            );
+            assert!(elapsed < Duration::from_secs(8), "elapsed={elapsed:?}");
+            assert!(partial.is_file());
+            assert!(!final_path.exists());
+            assert_eq!(
+                store
+                    .referenced_partial_artifacts(10, &lifetime)
+                    .unwrap()
+                    .len(),
+                1
+            );
+            drop(reader);
+
+            let report = maintain(&store, &paths, &lifetime, 11).unwrap();
+
+            assert_eq!(report.outputs_recovered, 1);
+            assert!(!partial.exists());
+            let mut finalized = FrameReader::open(&final_path).unwrap();
+            assert_eq!(
+                finalized.next_frame().unwrap().unwrap().payload,
+                b"recover me"
+            );
+            assert!(finalized.next_frame().unwrap().is_none());
+        }
+
+        // Descriptor and junction setup uses the one generic adapter sequentially;
+        // the other cases exercise actual filesystem sharing without that adapter.
+        #[test]
+        fn unsafe_objects_preserve_recovery_prunes_and_unrelated_targets() {
+            for unsafe_parent in [false, true] {
+                let run_id = uuid::Uuid::from_u128(24).to_string();
+                let (_temporary, paths, store, lifetime, partial) = partial_fixture(&run_id);
+                let original = fs::read(&partial).unwrap();
+                let directory = partial.parent().unwrap();
+                let unsafe_path = if unsafe_parent { directory } else { &partial };
+                add_world_read(unsafe_path);
+                assert!(!locron_core::filesystem::is_private(unsafe_path, unsafe_parent).unwrap());
+
+                assert!(maintain(&store, &paths, &lifetime, 10).is_err());
+
+                assert_eq!(fs::read(&partial).unwrap(), original);
+                assert!(!paths.final_output(&run_id, 1).unwrap().exists());
+                assert_eq!(
+                    store
+                        .referenced_partial_artifacts(10, &lifetime)
+                        .unwrap()
+                        .len(),
+                    1
+                );
+                assert!(!locron_core::filesystem::is_private(unsafe_path, unsafe_parent).unwrap());
+            }
+
+            let run_id = uuid::Uuid::from_u128(25).to_string();
+            let (_temporary, paths, store, lifetime, _partial) = partial_fixture(&run_id);
+            maintain(&store, &paths, &lifetime, 10).unwrap();
+            let final_path = paths.final_output(&run_id, 1).unwrap();
+            let original = fs::read(&final_path).unwrap();
+            let output = store.output_retention_candidates(1).unwrap().remove(0);
+            store.mark_output_prune_pending(&output, 11).unwrap();
+            add_world_read(&final_path);
+
+            assert!(maintain(&store, &paths, &lifetime, 12).is_err());
+
+            assert_eq!(fs::read(&final_path).unwrap(), original);
+            assert_eq!(store.pending_output_prunes(1).unwrap().len(), 1);
+            drop(store);
+            let store = Store::open(paths.clone(), "test", 13).unwrap();
+            assert_eq!(store.pending_output_prunes(1).unwrap().len(), 1);
+            drop(store);
+
+            let (temporary, paths, store) = open_store();
+            let target = temporary.path().join("outside private target");
+            locron_core::filesystem::DirectoryGuard::private(&target).unwrap();
+            let target_file = target.join("1.log");
+            write_private(&target_file, b"keep target");
+            let directory_link = paths
+                .output_directory(&uuid::Uuid::from_u128(26).to_string())
+                .unwrap();
+            junction(&directory_link, &target);
+            let directory = paths
+                .output_directory(&uuid::Uuid::from_u128(27).to_string())
+                .unwrap();
+            locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
+            let leaf_link = directory.join("1.log");
+            junction(&leaf_link, &target);
+            let broad_leaf = directory.join("2.log");
+            write_private(&broad_leaf, b"keep broad leaf");
+            add_world_read(&broad_leaf);
+
+            let result = maintain(&store, &paths, "no-lifetime", orphan_pass_time());
+            // Remove only these exact fixture junctions before temporary-tree cleanup.
+            fs::remove_dir(&leaf_link).unwrap();
+            fs::remove_dir(&directory_link).unwrap();
+            let report = result.unwrap();
+
+            assert_eq!(report.orphans_removed, 0);
+            assert_eq!(fs::read(target_file).unwrap(), b"keep target");
+            assert_eq!(fs::read(broad_leaf).unwrap(), b"keep broad leaf");
+        }
     }
 }

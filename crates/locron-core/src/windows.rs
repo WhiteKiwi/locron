@@ -85,6 +85,25 @@ struct WorkerPermit<'a> {
     pool: &'a WorkerPermits,
 }
 
+/// Ownership of the process-wide generic-or-COM child slot.
+///
+/// Hold this permit through confirmed child/I/O cleanup or quarantine. Never call a generic
+/// script adapter while retaining it: that adapter needs the same single slot.
+pub struct ScriptWorkerPermit {
+    _permit: WorkerPermit<'static>,
+}
+
+impl ScriptWorkerPermit {
+    /// Admits one caller-owned fixed adapter against its existing absolute operation deadline.
+    /// Queueing occurs on the caller without creating a waiting thread or native child.
+    pub fn acquire_until(deadline: Instant) -> io::Result<Self> {
+        remaining(deadline)?;
+        let permit = ADAPTER_WORKERS.acquire(deadline)?;
+        remaining(deadline)?;
+        Ok(Self { _permit: permit })
+    }
+}
+
 impl Drop for WorkerPermit<'_> {
     fn drop(&mut self) {
         let mut active = self
@@ -551,12 +570,25 @@ async fn capture_output(stream: impl tokio::io::AsyncRead + Unpin) -> io::Result
 
 /// Returns the actual current token's SID, independent of username environment text.
 pub fn current_user_sid() -> io::Result<String> {
-    cached_sid(
-        &USER_SID,
-        &SID_INITIALIZER,
-        Instant::now() + ADAPTER_TIMEOUT,
-        query_sid,
-    )
+    let deadline = Instant::now() + ADAPTER_TIMEOUT;
+    if let Ok(sid) = cached_current_user_sid() {
+        return Ok(sid);
+    }
+    cached_sid(&USER_SID, &SID_INITIALIZER, deadline, query_sid)
+}
+
+/// Returns only an already verified SID, without starting or waiting for its initializer.
+pub(crate) fn cached_current_user_sid() -> io::Result<String> {
+    cached_verified_sid(&USER_SID)
+}
+
+fn cached_verified_sid(cache: &OnceLock<String>) -> io::Result<String> {
+    cache.get().cloned().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotConnected,
+            "verified Windows SID is not cached",
+        )
+    })
 }
 
 /// Returns the verified token SID within an existing caller deadline, capped at thirty seconds.
@@ -739,6 +771,31 @@ mod tests {
     }
 
     #[test]
+    fn owned_com_permit_refuses_generic_admission_without_starting_another_child() {
+        let permit = ScriptWorkerPermit::acquire_until(Instant::now() + ADAPTER_TIMEOUT).unwrap();
+        let entered = Instant::now();
+        let error = run_script_with_deadline(
+            "throw 'a saturated generic slot must not execute this source'",
+            &json!({}),
+            entered + Duration::from_millis(40),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(entered.elapsed() < Duration::from_secs(1));
+        drop(permit);
+        let expired = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .expect("fixture clock supports a one-millisecond subtraction");
+        assert_eq!(
+            ScriptWorkerPermit::acquire_until(expired)
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+    }
+
+    #[test]
     fn actual_generic_adapter_emits_ordered_child_phases_without_rendering_input() {
         let request = prepare_adapter(
             "@{echo=[string]$request.echo}|& $locronToJson -Compress",
@@ -766,6 +823,34 @@ mod tests {
                 "caller-complete"
             ]
         );
+    }
+
+    #[test]
+    fn cached_sid_lookup_does_not_wait_for_an_initializer() {
+        let cache = OnceLock::new();
+        let entered = std::sync::Barrier::new(2);
+        let (release, released) = std::sync::mpsc::channel();
+        let result = std::thread::scope(|scope| {
+            let cache_ref = &cache;
+            let entered_ref = &entered;
+            let initializer = scope.spawn(move || {
+                cache_ref.get_or_init(|| {
+                    entered_ref.wait();
+                    released
+                        .recv_timeout(Duration::from_secs(3))
+                        .expect("cached-only lookup must not wait for initialization");
+                    "S-1-5-21-1234".to_owned()
+                });
+            });
+            entered.wait();
+            let result = cached_verified_sid(&cache);
+            // Always release the owned fixture thread before checking the result.
+            let _ = release.send(());
+            initializer.join().unwrap();
+            result
+        });
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotConnected);
+        assert_eq!(cached_verified_sid(&cache).unwrap(), "S-1-5-21-1234");
     }
 
     #[test]

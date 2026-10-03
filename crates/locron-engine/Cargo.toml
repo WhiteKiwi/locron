@@ -29,7 +29,15 @@ uuid.workspace = true
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+interprocess.workspace = true
+process-wrap.workspace = true
+win32job.workspace = true
+widestring.workspace = true
+
 [dev-dependencies]
+serde_json.workspace = true
+tokio-rustls = { version = "=0.26.4", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 

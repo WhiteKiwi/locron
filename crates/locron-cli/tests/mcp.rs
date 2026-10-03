@@ -19,6 +19,7 @@ struct McpClient {
     child: Child,
     stdin: Option<ChildStdin>,
     stdout_lines: mpsc::Receiver<String>,
+    stdout_reader: Option<thread::JoinHandle<()>>,
     stderr: Option<ChildStderr>,
     next_id: u64,
     received: Vec<String>,
@@ -40,7 +41,7 @@ impl McpClient {
         let stdout = child.stdout.take().expect("stdout pipe");
         let stderr = child.stderr.take().expect("stderr pipe");
         let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || {
+        let stdout_reader = thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines() {
                 let Ok(line) = line else { break };
@@ -53,6 +54,7 @@ impl McpClient {
             child,
             stdin: Some(stdin),
             stdout_lines: receiver,
+            stdout_reader: Some(stdout_reader),
             stderr: Some(stderr),
             next_id: 1,
             received: Vec::new(),
@@ -179,19 +181,36 @@ impl McpClient {
     }
 }
 
+impl Drop for McpClient {
+    fn drop(&mut self) {
+        self.stdin.take();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Some(reader) = self.stdout_reader.take() {
+            let _ = reader.join();
+        }
+    }
+}
+
 fn spawn_mcp() -> (tempfile::TempDir, McpClient) {
     let state = tempfile::tempdir().expect("tempdir");
-    let client = McpClient::spawn(state.path());
+    let guard = locron_core::filesystem::DirectoryGuard::private(&state.path().join("private"))
+        .expect("private MCP fixture");
+    let client = McpClient::spawn(guard.normalized_path());
     (state, client)
 }
 
 fn add_job_arguments(name: &str) -> Value {
+    #[cfg(unix)]
+    let executable = std::path::PathBuf::from("/bin/echo");
+    #[cfg(windows)]
+    let executable = std::env::current_exe().expect("native process fixture");
     json!({
         "name": name,
         "schedule_type": "interval",
         "schedule_expr": "15m",
         "target_type": "process",
-        "command": ["/bin/echo", "hello"],
+        "command": [executable, "hello"],
         "description": "integration test job",
         "tags": ["test"]
     })
@@ -469,6 +488,7 @@ fn full_tool_and_resource_flow() {
 }
 
 #[test]
+#[cfg(unix)]
 fn terminates_cleanly_on_sigterm() {
     let (_state, mut client) = spawn_mcp();
     client.request("initialize", json!({}));
