@@ -279,3 +279,23 @@ and complete Root Source review are still required.
 Research: pinned [sha2 API](https://docs.rs/sha2/0.10.9/sha2/),
 [RustCrypto source](https://github.com/RustCrypto/hashes/blob/82c36a428f8d6f05f3bfccdedb243e9d1f85359d/sha2/src/lib.rs),
 [File clone cursor contract](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_clone).
+
+### Reviewed current-main integration before hosted publication (2026-10-04)
+
+The first actual hosted qualification uses application main
+e6eb8879e927a631cce707cb1e6aacb3c08ebb3b, whose whole tree equals the independently
+reviewed PR134456524b. Original5585936 remains the research starting point;
+2f7cea6 is the frozen Source planning parent, not a claim about the final application
+revision. Root reviewed all five prerequisite Source files at620712d and the
+excluded lockfile, independently verified287 protected blob/modes, full patch
+inverse and the354-package/feature graph. Static results contribute zero actual
+token, Job, account or cleanup acceptance.
+
+Integration preserves all five reviewed prerequisite Source blobs exactly.
+Every other non-document blob/mode equals reviewed main, including release
+workflow, fixture portability and the two existing cfg(debug_assertions) braces.
+Conflicting append-only planning documents retain both sides in order. This
+isolated branch still has the reviewed manual-only ci.yml and must never create
+a PR or replace main CI. Both actual native rows, normal-example type checking,
+strict fixed-principal bootstrap and all original four Verify criteria remain
+pending; no bootstrap fallback, owner-PC effect or changed deadline is selected.
