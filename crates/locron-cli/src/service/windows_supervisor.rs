@@ -1406,11 +1406,12 @@ mod tests {
             let temporary = tempfile::tempdir().unwrap();
             let root = temporary.path().join("private 状態 % #");
             let guard = DirectoryGuard::private(&root).unwrap();
+            assert!(filesystem::is_private(guard.normalized_path(), true).unwrap());
             let executable = guard.normalized_path().join("native role fixture.exe");
-            let mut source =
-                filesystem::open_read_no_follow(&std::env::current_exe().unwrap()).unwrap();
+            // Only the OS-reported running test image supplies these fixture bytes.
+            let mut source = std::fs::File::open(std::env::current_exe().unwrap()).unwrap();
             let mut destination = filesystem::create_private_new(&executable).unwrap();
-            std::io::copy(&mut *source, &mut *destination).unwrap();
+            std::io::copy(&mut source, &mut *destination).unwrap();
             destination.sync_all().unwrap();
             drop(destination);
             drop(source);
