@@ -40,7 +40,13 @@ struct StockFile {
     path: PathBuf,
     _file: File,
     _ancestors: Vec<File>,
-    _identity: file_id::FileId,
+    identity: file_id::FileId,
+}
+
+#[derive(Debug)]
+struct StockLibrary {
+    path: PathBuf,
+    _native: StockFile,
 }
 
 /// Retained exact stock files and every ancestor, independent of current-SID discovery.
@@ -50,8 +56,8 @@ struct StockFile {
 #[derive(Debug)]
 pub struct StockAdapterGuard {
     powershell: StockFile,
-    utility: StockFile,
-    management: Option<StockFile>,
+    utility: StockLibrary,
+    management: Option<StockLibrary>,
 }
 
 impl StockAdapterGuard {
@@ -63,11 +69,11 @@ impl StockAdapterGuard {
             .filter(|path| path.is_absolute())
             .ok_or_else(|| io::Error::other("Windows SystemRoot is unavailable"))?;
         let powershell = guard_file(&powershell_path(&root), deadline)?;
-        let utility = guard_file(&library_path(&root, "Utility"), deadline)?;
+        let utility = guard_library(&library_path(&root, "Utility"), deadline)?;
         let management = match modules {
             StockModuleSet::Utility => None,
             StockModuleSet::UtilityAndManagement => {
-                Some(guard_file(&library_path(&root, "Management"), deadline)?)
+                Some(guard_library(&library_path(&root, "Management"), deadline)?)
             }
         };
         remaining(deadline)?;
@@ -99,13 +105,13 @@ impl StockAdapterGuard {
         &self.powershell.path
     }
 
-    /// Exact retained Utility path supplied as data to the fixed binary bootstrap.
+    /// Verified DOS spelling of the retained Utility file for Framework assembly loading.
     #[must_use]
     pub fn utility(&self) -> &Path {
         &self.utility.path
     }
 
-    /// Optional exact retained Management path; remove inherited data when absent.
+    /// Verified DOS spelling of retained Management; remove inherited data when absent.
     #[must_use]
     pub fn management(&self) -> Option<&Path> {
         self.management.as_ref().map(|file| file.path.as_path())
@@ -178,6 +184,73 @@ fn absolute_local(path: &Path) -> io::Result<PathBuf> {
     Ok(absolute)
 }
 
+/// Framework's `CodeBase` parser treats a verbatim prefix as a UNC file URI. Convert only
+/// canonical native local paths whose components do not change under ordinary DOS parsing.
+fn framework_local(path: &Path) -> io::Result<PathBuf> {
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return Err(unsafe_stock());
+    };
+    let Prefix::VerbatimDisk(volume) = prefix.kind() else {
+        return Err(unsafe_stock());
+    };
+    if components.next() != Some(Component::RootDir) {
+        return Err(unsafe_stock());
+    }
+    let mut ordinary = PathBuf::from(format!("{}:\\", char::from(volume)));
+    for component in components {
+        let Component::Normal(value) = component else {
+            return Err(unsafe_stock());
+        };
+        let name = value.to_str().ok_or_else(unsafe_stock)?;
+        if name.ends_with(['.', ' '])
+            || name.chars().any(|ch| {
+                ch <= '\u{1f}' || matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*' | '/' | '\\')
+            })
+        {
+            return Err(unsafe_stock());
+        }
+        let device = name
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_uppercase();
+        let port = device
+            .strip_prefix("COM")
+            .or_else(|| device.strip_prefix("LPT"));
+        if matches!(
+            device.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" | "CLOCK$"
+        ) || port.is_some_and(|number| {
+            matches!(
+                number,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        }) {
+            return Err(unsafe_stock());
+        }
+        ordinary.push(value);
+    }
+    if ordinary.file_name().is_none() {
+        return Err(unsafe_stock());
+    }
+    Ok(ordinary)
+}
+
+fn guard_library(path: &Path, deadline: Instant) -> io::Result<StockLibrary> {
+    let stock = guard_file(path, deadline)?;
+    let framework = framework_local(&stock.path)?;
+    let identity = checked(deadline, || file_id::get_high_res_file_id(&framework))?;
+    if identity != stock.identity {
+        return Err(unsafe_stock());
+    }
+    remaining(deadline)?;
+    Ok(StockLibrary {
+        path: framework,
+        _native: stock,
+    })
+}
+
 fn guard_file(path: &Path, deadline: Instant) -> io::Result<StockFile> {
     remaining(deadline)?;
     let path = absolute_local(path)?;
@@ -215,7 +288,7 @@ fn guard_file(path: &Path, deadline: Instant) -> io::Result<StockFile> {
         path,
         _file: file,
         _ancestors: ancestors,
-        _identity: identity,
+        identity,
     })
 }
 
@@ -267,8 +340,8 @@ fn verify_descriptor(descriptor: &SecurityDescriptor, directory: bool) -> io::Re
 #[cfg(test)]
 mod tests {
     use super::{
-        StockAdapterGuard, StockFile, StockModuleSet, absolute_local, library_path,
-        powershell_path, verify_descriptor,
+        StockAdapterGuard, StockLibrary, StockModuleSet, absolute_local, framework_local,
+        library_path, powershell_path, verify_descriptor,
     };
     use std::os::windows::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
@@ -353,6 +426,42 @@ mod tests {
     }
 
     #[test]
+    fn framework_spelling_preserves_canonical_local_components_without_uri_parsing() {
+        for native in [
+            r"\\?\C:\Windows\Microsoft.NET\assembly\Utility.dll",
+            r"\\?\D:\윈도우 日本語\100% # $ & ` [test]\Utility.dll",
+        ] {
+            let ordinary = framework_local(Path::new(native)).unwrap();
+            assert_eq!(ordinary, PathBuf::from(&native[4..]));
+            assert_eq!(absolute_local(&ordinary).unwrap(), PathBuf::from(native));
+        }
+        for rejected in [
+            "relative.dll",
+            r"C:\Windows\Utility.dll",
+            r"C:Utility.dll",
+            r"\\server\share\Utility.dll",
+            r"\\?\UNC\server\share\Utility.dll",
+            r"\\.\C:\Windows\Utility.dll",
+            "file:///C:/Windows/Utility.dll",
+            r"\\?\C:\",
+            r"\\?\C:\Windows\..\Utility.dll",
+            r"\\?\C:\Windows\.\Utility.dll",
+            r"\\?\C:\Windows \Utility.dll",
+            r"\\?\C:\Windows.\Utility.dll",
+            r"\\?\C:\Windows\Utility.dll:stream",
+            r"\\?\C:\Windows\Utility/other.dll",
+            r"\\?\C:\Windows\NUL.dll",
+            r"\\?\C:\CON\Utility.dll",
+            r"\\?\C:\Windows\com1.dll",
+            r"\\?\C:\Windows\LPT².dll",
+            r"\\?\C:\Windows\CONOUT$.dll",
+            "\\\\?\\C:\\Windows\\bad\u{1f}name.dll",
+        ] {
+            assert!(framework_local(Path::new(rejected)).is_err(), "{rejected}");
+        }
+    }
+
+    #[test]
     fn actual_stock_files_have_full_guarded_identity_without_sid_dependency() {
         let deadline = Instant::now() + Duration::from_secs(30);
         let permit = super::super::ADAPTER_WORKERS.acquire(deadline).unwrap();
@@ -360,7 +469,24 @@ mod tests {
         let worker = std::thread::spawn(move || {
             let _permit = permit;
             let guard =
-                StockAdapterGuard::acquire_until(StockModuleSet::UtilityAndManagement, deadline);
+                StockAdapterGuard::acquire_until(StockModuleSet::UtilityAndManagement, deadline)
+                    .and_then(|guard| {
+                        for library in [&guard.utility, guard.management.as_ref().unwrap()] {
+                            let StockLibrary {
+                                _native: native,
+                                path: framework,
+                            } = library;
+                            let identity = super::checked(deadline, || {
+                                file_id::get_high_res_file_id(framework)
+                            })?;
+                            let canonical =
+                                super::checked(deadline, || std::fs::canonicalize(framework))?;
+                            if identity != native.identity || canonical != native.path {
+                                return Err(super::unsafe_stock());
+                            }
+                        }
+                        Ok(guard)
+                    });
             let _ = reply.send(guard);
         });
         let guard = receiver
@@ -385,10 +511,19 @@ mod tests {
                 .unwrap()
                 .ends_with("Microsoft.PowerShell.Commands.Management.dll")
         );
-        let StockFile {
-            _identity: identity,
-            ..
-        } = &guard.utility;
-        assert!(matches!(identity, file_id::FileId::HighRes { .. }));
+        for library in [&guard.utility, guard.management.as_ref().unwrap()] {
+            let StockLibrary {
+                _native: native,
+                path: framework,
+            } = library;
+            assert!(matches!(native.identity, file_id::FileId::HighRes { .. }));
+            assert!(
+                !framework
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>()
+                    .starts_with(&[92, 92])
+            );
+        }
     }
 }

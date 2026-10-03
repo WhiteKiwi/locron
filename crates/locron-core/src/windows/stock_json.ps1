@@ -6,12 +6,11 @@ $locronLibraries = @(
 foreach ($locronLibrary in $locronLibraries) {
     if ($locronLibrary[0] -eq 'Management' -and [string]::IsNullOrEmpty($locronLibrary[1])) { continue }
     $locronPath = [string]$locronLibrary[1]
-    if ([string]::IsNullOrEmpty($locronPath) -or -not [IO.Path]::IsPathRooted($locronPath)) { throw 'missing guarded stock binary' }
+    if ([string]::IsNullOrEmpty($locronPath) -or -not [Text.RegularExpressions.Regex]::IsMatch($locronPath, '^[A-Za-z]:\\')) { throw 'invalid guarded Framework binary path' }
     $locronName = 'Microsoft.PowerShell.Commands.' + $locronLibrary[0]
     $locronExpected = $locronName + ', Version=3.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35'
     $locronAssembly = [Reflection.Assembly]::LoadFrom($locronPath)
     $locronLoadedPath = $locronAssembly.Location
-    if ($locronPath.StartsWith('\\?\')) { $locronPath = $locronPath.Substring(4) }
     if ($locronLoadedPath.StartsWith('\\?\')) { $locronLoadedPath = $locronLoadedPath.Substring(4) }
     if ($locronAssembly.FullName -cne $locronExpected -or -not [string]::Equals([IO.Path]::GetFullPath($locronLoadedPath), [IO.Path]::GetFullPath($locronPath), [StringComparison]::OrdinalIgnoreCase)) { throw 'stock binary binding mismatch' }
     $locronImported = @(Microsoft.PowerShell.Core\Import-Module -Assembly $locronAssembly -PassThru -Function @() -Alias @())
