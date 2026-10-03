@@ -3416,6 +3416,34 @@ fallback must also refuse. Other final-open failures remain distinct until nativ
 them. Sources: [SQLite open flags](https://www.sqlite.org/c3ref/open.html),
 [Windows VFS source](https://sqlite.org/src/file?name=src/os_win.c).
 
+Exact runtime head 823bd240 fails concurrent first writable opens at sqlite-migrate with
+MigrationConflict on all three native rows. The MSRV row additionally fails a raced final close
+at shm-open with PermissionDenied/raw Windows 5; the same race passed on the other two rows.
+The migration code reads a version before BEGIN IMMEDIATE, then treats a later checked version
+as a conflict. SQLite serializes writers: an already completed, strictly verified supported step
+can be accepted under the acquired write transaction without replaying SQL or rewriting history.
+Move that authoritative re-read/verification into each step's write ownership. This source-grounded
+cause is distinct from the SHM failure; neither passing rows nor CreateNew winner handling proves
+all Store concurrency is fixed. [SQLite transaction contract](https://sqlite.org/lang_transaction.html).
+
+The pinned libsqlite3-sys 0.38.2 bundle is SQLite 3.53.2, source ID d6e03d8c777cfa2d35e3b60d8ec3e0187f3e9f99d8e2ee9cac695fd6fcdf1a24.
+Its sqlite3WalClose implementation first obtains an exclusive database lock before
+checkpoint/SHM/WAL deletion and explicitly keeps it until returning. Its Windows SHM purge unmaps
+regions and closes shared handles before calling winDelete. Win32 documents access-denied opens
+for files marked for deletion, but raw error 5 alone cannot prove that condition or justify retry.
+Select a temporary shared database-handle admission gate before any sidecar lookup, rather than
+classifying or blindly retrying that error. Rust 1.94's safe try_lock_shared uses immediate
+LockFileEx over offset zero and two u32::MAX length words; it overlaps the VFS lock bytes.
+Shared locks permit reads and deny ordinary writes, including by their owner; mapped I/O bypasses
+that byte-range rule, so the proof relies on SQLite's actual exclusive cleanup protocol, not a
+general claim that all writes are impossible. Release the gate before SQLite configuration/write.
+Native held-cleanup/queue/handoff/final-removal proof remains pending; permission/identity failures
+still refuse immediately. Sources:
+[pinned bundled SQLite source](https://docs.rs/crate/libsqlite3-sys/0.38.2/source/sqlite3/sqlite3.c),
+[Rust 1.94 lock implementation](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs#L451),
+[LockFileEx rules](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex),
+[Win32 deletion contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-deletefilew).
+
 Exact head 608ab19's ARM64 native job 111026239366 entered the actual generic script at about
 210 ms and its JSON conversion at 219 ms, but never reached json-parsed before the original
 30-second deadline; owned cleanup finished at 30.042 seconds. The preceding 4887 trace measured

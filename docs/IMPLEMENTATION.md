@@ -675,6 +675,51 @@ Unicode-long-path reads, live WAL commits, final-close cleanup and unsafe-sideca
 their original assertions. Record other failures by their precise stage rather than treating
 error 80 or a successful reopened handle as evidence that every concurrency failure is resolved.
 
+Correct the separately measured simultaneous-migration and final-close admission failures before
+qualifying writable Store concurrency. Keep each historical migration's existing transaction,
+SQL bytes, checksum and durable record; do not catch MigrationConflict and reopen the database.
+For every pending step, obtain BEGIN IMMEDIATE and re-read application_id/user_version under that
+write transaction. Apply only the exact expected predecessor. If another initializer already
+advanced to a supported version, strictly verify the applicable recorded migration checksum
+under the transaction and skip that already applied step without changing its metadata. Existing
+application-ID, too-new, missing/checksum and unexpected backward-version failures remain errors.
+Refresh/verify later steps from the authoritative state; ordinary concurrent advance is not a
+synthetic conflict. Preserve configured values and exact once-per-version migration records.
+
+For Windows writable preparation, temporarily retain a shared byte-range lock on the already
+strictly validated native database handle before any WAL/SHM lookup or creation. Use the safe
+Rust 1.94 File::try_lock_shared API: its native range has offset zero and length u64::MAX, including
+SQLite's database-lock bytes. Pinned sqlite3WalClose must own an exclusive database lock while
+checkpointing and deleting SHM/WAL, and keeps that lock through deletion. This temporary shared
+gate therefore excludes that cleanup window; it is not a replacement for SQLite's own lifetime
+locks or authority to ignore a permission error. Retain the same full database identity and
+ancestor guard throughout admission. No new permanent lock file, custom VFS, FFI or Drop policy.
+
+Retry only TryLockError::WouldBlock on that same retained handle under one absolute five-second
+admission bound, established before its first try. Check pre/post operation, cap sleeps to the
+remaining duration, and return bounded contention on expiry. Other lock errors and every native
+permission/raw-5/reparse/descriptor failure propagate immediately. Once both strictly private
+no-delete WAL and SHM guards are live, explicitly and fallibly unlock the database before SQLite
+connection/configuration/write. Keep all three leaf guards through existing exact native handoff
+confirmation. RAII unlock/handle close covers every preparation error; no live Store escapes a
+failed unlock. The gate denies ordinary database writes while held, so keep it limited to sidecar
+preparation, never configuration, migration or normal store use. Normal final-close checkpoint
+and journal deletion remain SQLite-owned; read-only passive/immutable rules stay unchanged.
+
+Verify: (1) force a stale migration observation using two actual SQLite connections, advance with
+the other initializer, then verify correct strict catch-up, exactly five immutable records and
+preserved rows. Tampered/missing checksums, foreign/too-new markers and a backward observation
+remain failures, not retry success. Keep the real simultaneous first Store-open barrier fixture.
+(2) with the temporary native shared database gate actually held, close the real last writable
+connection before sidecar preparation. Prove both sidecars still exist, retain full private IDs,
+then complete handoff and ordinary writes. After dropping the accepted Store, verify durable
+rows and actual final-sidecar removal; the existing raced final-close fixture retains every
+iteration and assertion. (3) hold an actual exclusive database lock, prove bounded shared-gate
+contention with no sidecar creation; release it inside the same budget and prove admission/write.
+Exercise immediate non-contention failure and error-path lock release; hostile sidecar/ACL/reparse
+fixtures remain fail-closed. Run all three native Store rows and Unix migration suites; no timing
+exemptions, global-budget increase or blanket raw-5/AlreadyExists/SQLite-error retry is admitted.
+
 Add fixed, bounded failure-stage diagnostics to Windows debug builds at writable Store::open
 and StatePaths.ensure. Record only the selected root/outputs/tmp directory stage, state guard,
 database/WAL/SHM existing-open versus explicit CreateNew, SQLite connection/configuration/migration,
