@@ -18,6 +18,9 @@ pub(super) mod paired;
 #[path = "windows_payloads/paired_handoff.rs"]
 pub(super) mod paired_handoff;
 
+#[path = "windows_payloads/paired_update.rs"]
+pub(super) mod paired_update;
+
 pub(super) struct Payloads {
     pub version: String,
     pub target: String,
