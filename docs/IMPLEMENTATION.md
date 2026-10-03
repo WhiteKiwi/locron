@@ -2124,6 +2124,18 @@ This receipt is Windows-only; the existing Unix receipt bytes remain
 unchanged. Operation status uses locron.windows-status/v1 with operation_id, SID, canonical
 executable, phase, current/new version, updated, prepared and warnings; the status file alone
 cannot authorize changes, and is read only after validating its protected operation request.
+Qualify the paired receipt and five-member ZIP as separate Windows-test-only pure modules before
+connecting the effectful installer, updater or service provider. The existing six-payload launch
+qualification and prerelease Windows v1 fixtures stay frozen as historical test evidence; their
+presence does not provide a production v1 adoption or compatibility route. Production consumers
+must use only the strict paired schema and five-member verifier, rejecting v1 and incomplete
+pairs. Share the already-qualified path, hash, version and ZIP-catalog parsing primitives where
+possible rather than weakening them or duplicating an effect authority. Do not manufacture a
+paired ServiceSnapshot or wire public dispatch to make the pure qualification compile. The next
+native gates exercise the v2 ordered paths/digests, exact seven-file map, v1/missing/extra/swapped
+rejection and both PE subsystem/architecture/import checks without task, filesystem, PATH or
+journal effects; full paired ownership and activation remain separate provider-dependent gates.
+
 The strict receipt fields are schema, sid, channel, directory, executables (a two-member ordered
 console/launcher list, each with path and sha256), target, version, launcher_abi (native-gui-v1),
 archive_url, archive_sha256, files (the seven exact bare names mapped to hashes), and
