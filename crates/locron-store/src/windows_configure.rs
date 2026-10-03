@@ -52,8 +52,13 @@ fn check_deadline(deadline: Instant) -> StoreResult<Duration> {
         .ok_or_else(deadline_error)
 }
 
+#[cfg(test)]
 fn is_exact_busy(error: &rusqlite::Error) -> bool {
     matches!(error, rusqlite::Error::SqliteFailure(code, _) if code.extended_code == 5)
+}
+
+fn is_wal_contention(error: &rusqlite::Error) -> bool {
+    matches!(error, rusqlite::Error::SqliteFailure(code, _) if matches!(code.extended_code, 5 | 261))
 }
 
 fn wal_attempt(connection: &Connection) -> rusqlite::Result<String> {
@@ -64,7 +69,7 @@ fn wal_attempt(connection: &Connection) -> rusqlite::Result<String> {
     let finalized = statement.finalize();
     match (stepped, finalized) {
         (Ok(mode), Ok(())) => Ok(mode),
-        (Err(step), Err(finalize)) if is_exact_busy(&step) && !is_exact_busy(&finalize) => {
+        (Err(step), Err(finalize)) if is_wal_contention(&step) && !is_wal_contention(&finalize) => {
             Err(finalize)
         }
         (Err(step), _) => Err(step),
@@ -103,7 +108,7 @@ fn admit_wal_until(
                 }
                 return Ok(());
             }
-            Err(error) if is_exact_busy(&error) => {
+            Err(error) if is_wal_contention(&error) => {
                 if !connection.is_autocommit() {
                     return Err(error.into());
                 }
