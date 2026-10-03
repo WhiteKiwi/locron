@@ -1857,12 +1857,26 @@ mod tests {
     }
 
     fn valid_add_args(name: &str) -> Value {
+        #[cfg(windows)]
+        let command = {
+            let executable = std::env::current_exe().expect("current test executable");
+            assert!(
+                executable.is_absolute(),
+                "current test executable must be absolute"
+            );
+            let executable = executable
+                .to_str()
+                .expect("current test executable path must be UTF-8");
+            json!([executable, "--help"])
+        };
+        #[cfg(not(windows))]
+        let command = json!(["/bin/echo", "hello"]);
         json!({
             "name": name,
             "schedule_type": "interval",
             "schedule_expr": "15m",
             "target_type": "process",
-            "command": ["/bin/echo", "hello"],
+            "command": command,
             "description": "test job",
             "tags": ["test", "ops"]
         })
