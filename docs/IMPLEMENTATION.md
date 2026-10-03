@@ -4653,3 +4653,25 @@ private-state/first-run contract; no product specification or creation ownership
    head-matched merge. No local native/PowerShell workaround is used. Whole Windows 11 standard-user,
    paired install/update/activation, reboot and public release/WinGet acceptance stay open; signing
    remains deferred in #37.
+
+### Windows dashboard wake diagnostic parity (2026-10-03)
+
+Correct the confirmed Diagnostics display defect within the frozen read-only health and shared
+platform-facts contract. SPEC, serialized API/CLI/MCP output, IPC and backend behavior stay fixed.
+Use the existing Windows-only additive wake object; retain legacy Unix boolean compatibility.
+
+1. Model the nullable legacy wake_socket and optional passive wake facts in the route. Present
+   named-pipe transport and unprobed availability without a filesystem-socket health claim; keep
+   Unix true/false as the existing present/absent facts. **Verify:** actual Windows-shaped JSON
+   renders named pipe and not probed, each Unix boolean retains its old result, and null with
+   missing or unsupported transport facts renders unknown rather than absent/healthy.
+2. Add focused rendering regressions using the current API client boundary. **Verify:** those
+   payload cases reach the rendered diagnostics facts and one existing GET; no extra mutation,
+   endpoint probe or fallback request is introduced. Preserve loading/error handling and all
+   existing facts. Tests qualify observable behavior rather than duplicate a formatter's logic.
+3. Record these Verify criteria on #29 before a separate developer changes source; parent-review
+   every changed file and publish through a normal PR. **Verify:** locked frontend tests, type
+   checking/build and diff checks pass; root confirms no Rust/backend/protocol/lockfile changes,
+   then the exact reviewed head passes the repository CI/Audit checks before head-matched merge.
+   Broader two-user/two-root IPC, durable fallback, Windows 11 and public-release acceptance
+   remain the existing open issue criteria; this correction completes only the display slice.
