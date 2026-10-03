@@ -1999,7 +1999,9 @@ unknown child's protection to perform effects. This follows the existing user-ac
 boundary and does not claim protection against arbitrary code or debugger control as that user.
 The narrow private ABI is LaunchLease::spawn -> PendingLaunch, PendingLaunch::qualify ->
 QualifiedLaunch, begin_child(selector) -> ChildExchange and
-qualify_child(Bootstrap, ChildExchange) -> QualifiedBootstrap; the latter owns its Bootstrap.
+qualify_child(Bootstrap, ChildExchange) -> ChildQualification -> QualifiedBootstrap; the latter
+owns its Bootstrap. ChildQualification is retained owner state, not a live token: its asynchronous
+finish borrows that state, then checked success permits the private QualifiedBootstrap constructor.
 These tokens have private constructors and no Serialize/Deserialize/Clone implementation.
 ChildExchange owns the actual receive endpoint, validated Challenge and a clock born before its
 first selector/pipe/SID/guard work. After receiving Challenge, shorten that clock by the parent's
@@ -2016,6 +2018,14 @@ new-payload, package and recovery integration remain separate consumers; recover
 needs its validated original journal source and cannot rebuild authority from a replaced receipt.
 The initial qualification fixture consumer stops there; none of these functions takes, creates
 or casts a ServiceSnapshot, and none can dispatch the future operation engine.
+Place parent and child retained ownership outside the unwind/wait boundary before polling any
+fallible qualification future. A panic or timed-out close cannot drop its guard state or detach
+an unknown native flush. Existing standalone/removal inventory verification receives the same
+original deadline, initializes only the real bounded SID cache and checks that clock around each
+retained receipt/payload read and inventory step. Expired verification refuses before spawning.
+Its existing ordinary verification entrypoints keep their behavior; the launch gate never calls
+an entrypoint that creates a nested phase budget. Verify expired inventory admission has no native
+child or changed bytes and that both owner states retain protection during uncertainty.
 The original deadline is born before launch-context guard/SID work, not after lease construction.
 Propagate its remaining budget into Bootstrap's cold SID initialization and every adapter call;
 do not warm the cache first or use a nested default 30-second initializer. Challenge carries only

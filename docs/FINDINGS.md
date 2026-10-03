@@ -4288,6 +4288,13 @@ Pending/Qualified token retains the sole owner connection, while that owner reta
 native Child/lease/guards and uncertain I/O. This is ownership plumbing, not a new process-ID
 authentication API. The first real copied-helper fixture consumes existing standalone/removal
 proof; canonical payload/package/recovery authority and all operation effects remain unqualified.
+The concrete async implementation must place those owned resources outside its unwind/wait
+boundary. ChildQualification first owns Bootstrap plus ChildExchange; asynchronous finish borrows
+that state, and only checked success can mint QualifiedBootstrap. This prevents a future's panic
+or timeout from discarding guard/close ownership. The existing inventory verifier likewise needs
+the caller's original clock around each receipt/payload step rather than an unbounded outer call;
+its normal entrypoints retain their behavior. These are retention/deadline refinements, not new
+service authority, effects or native qualification evidence.
 
 The source-feasibility audit found that cold current_user_sid currently creates its own 30-second
 deadline. A bounded initializer must initialize that same cache with the launch phase's remaining
