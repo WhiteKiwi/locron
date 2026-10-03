@@ -16,12 +16,13 @@ function Publish-LocronHeartbeatSnapshot([string]$candidate, [string]$path, [boo
     if ($first) {
         [IO.File]::Move($candidate, $path)
     } else {
-        [IO.File]::Replace($candidate, $path, $null, $false)
+        [IO.File]::Replace($candidate, $path, [System.Management.Automation.Language.NullString]::Value, $false)
     }
 }
 '@
 . ([scriptblock]::Create($heartbeatSource))
 
+# locron-heartbeat-proof-body
 if ([string]$request.operation -eq 'heartbeat-publication-proof') {
     $budget = [int]$request.budget_ms
     if ($budget -le 0 -or $budget -gt 30000) { throw 'invalid heartbeat proof budget' }
@@ -142,6 +143,7 @@ throw 'staged publisher was not terminated'
     return
 }
 
+# locron-heartbeat-normal-body
 $info = [Diagnostics.ProcessStartInfo]::new()
 $info.FileName = [string]$request.executable
 $info.Arguments = '--exact windows::loader_tests::owned_loader_fixture_child --nocapture'
