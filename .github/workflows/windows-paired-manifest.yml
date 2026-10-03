@@ -1,0 +1,42 @@
+name: Windows paired manifest fixtures
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/windows-paired-manifest.yml'
+      - 'scripts/windows_release.py'
+      - 'scripts/windows_zip.py'
+      - 'scripts/test-windows-zip-catalog.py'
+      - 'crates/locron-cli/src/windows_package.rs'
+      - 'scripts/release-assets.py'
+      - 'scripts/render-winget-manifest.py'
+      - 'scripts/test-winget-paired.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-paired-manifest.yml'
+      - 'scripts/windows_release.py'
+      - 'scripts/windows_zip.py'
+      - 'scripts/test-windows-zip-catalog.py'
+      - 'crates/locron-cli/src/windows_package.rs'
+      - 'scripts/release-assets.py'
+      - 'scripts/render-winget-manifest.py'
+      - 'scripts/test-winget-paired.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paired-manifest-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-paired-manifests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test static manifests and retained native probe contract
+        run: python3 -B scripts/test-winget-paired.py
+      - name: Test raw ZIP records and bounded complete member decoding
+        run: python3 -B scripts/test-windows-zip-catalog.py

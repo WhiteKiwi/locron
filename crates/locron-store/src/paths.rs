@@ -133,19 +133,11 @@ fn platform_default() -> Result<PathBuf, StoreError> {
     #[cfg(windows)]
     {
         // KnownFolder discovery avoids trusting HOME/XDG or a mutable LocalAppData value.
-        let value = locron_core::windows::run_script_json(
+        let result = locron_core::windows::run_script_json(
             "[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData) | & $locronToJson -Compress",
             &serde_json::json!({}),
-        )?;
-        let path = value
-            .as_str()
-            .filter(|value| !value.is_empty())
-            .ok_or(StoreError::StateDirectoryUnavailable)?;
-        let path = PathBuf::from(path);
-        if !path.is_absolute() {
-            return Err(StoreError::StateDirectoryUnavailable);
-        }
-        Ok(path.join("locron"))
+        );
+        windows_default_directory(result)
     }
     #[cfg(not(windows))]
     {
@@ -162,6 +154,20 @@ fn platform_default() -> Result<PathBuf, StoreError> {
             }
         }
     }
+}
+
+#[cfg(any(windows, test))]
+fn windows_default_directory(result: io::Result<serde_json::Value>) -> Result<PathBuf, StoreError> {
+    let value = result.map_err(StoreError::StateDirectoryDiscoveryFailed)?;
+    let path = value
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .ok_or(StoreError::StateDirectoryUnavailable)?;
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err(StoreError::StateDirectoryUnavailable);
+    }
+    Ok(path.join("locron"))
 }
 
 pub(crate) fn validate_uuid(value: &str) -> Result<(), StoreError> {
@@ -231,6 +237,52 @@ pub(crate) fn set_owner_only(path: &Path, directory: bool) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_discovery_guidance(error: &StoreError) {
+        let message = error.to_string();
+        assert!(message.contains("state directory cannot be discovered"));
+        assert!(message.contains("--state-dir <PATH>"));
+        assert!(message.contains("LOCRON_STATE_DIR"));
+    }
+
+    #[test]
+    fn unavailable_known_folder_results_offer_explicit_state_overrides() {
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(""),
+            serde_json::json!("relative/path"),
+        ] {
+            let error = windows_default_directory(Ok(value)).unwrap_err();
+            assert!(matches!(error, StoreError::StateDirectoryUnavailable));
+            assert_discovery_guidance(&error);
+        }
+    }
+
+    #[test]
+    fn failed_known_folder_probe_preserves_its_source_and_offers_recovery() {
+        let error = windows_default_directory(Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "KnownFolder probe refused",
+        )))
+        .unwrap_err();
+
+        assert_discovery_guidance(&error);
+        let source = std::error::Error::source(&error)
+            .unwrap()
+            .downcast_ref::<io::Error>()
+            .unwrap();
+        assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(source.to_string(), "KnownFolder probe refused");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn absolute_known_folder_preserves_spaces_and_unicode() {
+        let local_app_data = PathBuf::from(r"C:\Users\Test User\AppData\Local\한글");
+        let root = windows_default_directory(Ok(serde_json::json!(local_app_data))).unwrap();
+        assert_eq!(root, local_app_data.join("locron"));
+    }
 
     #[test]
     fn output_paths_require_canonical_components() {
