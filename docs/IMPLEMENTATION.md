@@ -4793,3 +4793,43 @@ Implementation and verification order:
    privacy, bounds, v1 fixtures or cfg gates. Record unavailable local Rust/Windows execution
    honestly; installer/update/activation, runtime version/ABI probes, immutable publication and
    standard-user Windows acceptance remain separate owning-issue gates.
+
+### Paired Windows package producer in draft CI (2026-10-03, #32)
+
+The five-member archive and native GUI probe contracts above are already selected. The current
+producer still emits the historical console-only four-member archive, so add an explicit paired
+mode to qualify actual packaged bytes before installation or public release integration. Keep
+the default producer, release workflow, immutable public inventories and existing CI job names
+unchanged. A separate CI artifact records a development candidate, not a published Windows release.
+
+1. Add opt-in `package --launcher PATH` and `validate --paired` to the Windows package tool.
+   Require exactly the console, GUI companion, README and two licenses under the existing
+   version/target root. Validate both PE32+ machines, unsigned status, console/GUI subsystems
+   3/2 and finite normal/delay imports before executing either image. Preserve the shared
+   64 MiB archive/expanded bound. **Verify:** x64 and ARM64 fixtures pass; missing/extra/duplicate
+   members, wrong architecture/subsystem, certificates, non-stock imports and size overflow
+   fail before any native probe. Reject raw ZIP names changed by the ZIP reader's NUL handling
+   before inventory acceptance. Default four-member validation and all historic asset tests pass.
+2. Stage only verified archive bytes into a disposable directory and execute sole `--version`
+   for each image and sole `--identity-probe` for the GUI companion. Use that directory as cwd,
+   system-only child PATH, a 30-second subprocess timeout and at most 4 KiB accepted UTF-8 output
+   with empty stderr. The output limit is checked after standard subprocess capture; it is not
+   a capture-memory ceiling. This gate verifies the bounded probe contract of CI-built images.
+   Require exact version lines and the existing strict six-field JSON object,
+   including target, version, native-gui-v1 and consistent raw CONOUT facts; duplicate, omitted,
+   unknown or trailing fields/bytes refuse. CONOUT facts do not establish activation or attachment.
+   Validate a temporary candidate ZIP and read its final bytes before exclusively creating any
+   final artifact path; copy/write/close failure cleans up only the new file from that attempt.
+   **Verify:** injected execution fixtures inspect staged bytes, cwd, PATH and timeout; version,
+   ABI, schema/type, trailing-output, timeout, unsuccessful-exit and final-copy failures leave no
+   artifact; an existing final file remains unchanged when exclusive creation refuses.
+   Validation of the final paired archive repeats these read-only probes and reports actual
+   individual hashes, PE facts and launcher identity without deriving ABI from a requested tag.
+3. Build the optional GUI binary with the existing native MSVC/static-CRT CI builds, preserve
+   their four-member package artifact, then create a separately named paired draft artifact.
+   Record source revision/repository, native toolchain, requested target, static CRT intent,
+   actual probe facts, per-image hashes and final ZIP hash with the artifact. **Verify:** focused
+   Python distribution fixtures and workflow validation pass; both hosted Windows architectures
+   must execute the paired producer/validator on the recorded revision before native results can
+   be reported as passing. Installer/update dispatch, role activation, standard-user/reboot
+   acceptance, immutable release publication and WinGet remain their existing open gates.
