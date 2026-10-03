@@ -2965,6 +2965,14 @@ the next loader boundary; native correction remains required and does not establ
 Sources: [Framework assembly binding](https://raw.githubusercontent.com/microsoft/referencesource/main/mscorlib/system/reflection/assembly.cs),
 [Assembly.LoadFrom](https://learn.microsoft.com/en-us/dotnet/api/system.reflection.assembly.loadfrom?view=netframework-4.8.1).
 
+The existing current_user_sid entry captures a fresh thirty-second deadline. Reusing it from an
+already bounded mapped-helper qualification can extend that caller's operation after native
+bootstrap work has consumed part of its budget. Select an absolute-deadline SID entry sharing
+the same verified cache, finite initializer and fixed filesystem owner, with expiry checks around
+both cache and query results. Do not prewarm the cache or treat returned SID text as an executable
+or process-ownership proof. The existing three-second owned-cleanup allowance remains explicit;
+native cold completion under the forwarded caller deadline still requires hosted qualification.
+
 Keep verbatim native stock guard paths and handles. Derive a separate canonical absolute DOS
 library path only after those handles are retained, refuse components that ordinary Windows path
 normalization could reinterpret (including trailing dots/spaces, devices and alternate streams),

@@ -274,6 +274,22 @@ A bounded stock-adapter entry point accepts a caller's remaining duration, cappe
 thirty-second operation maximum. Service polling uses the remaining shared lifecycle deadline;
 a fresh adapter invocation cannot silently restart the complete shutdown budget.
 
+Expose current_user_sid_until(Instant) for an already bounded bootstrap qualification. Capture
+the caller's absolute deadline, cap it to API-entry plus the existing thirty-second maximum,
+and use that same value for finite SID initializer admission and the existing fixed SID dispatch.
+Check expiry before reading a verified cache, before a cold query, after its result and before
+returning. Only a verified success received before that value may enter the shared cache;
+failures remain retryable by a later independent call. Preserve the ordinary SID API and cached-only
+IPC accessor. This adds no warm-up, child, mutation replay or metadata ownership authority.
+The fixed worker retains its existing separate three-second cleanup/quarantine allowance.
+
+Verify: (1) an expired call refuses even with a verified cache and performs no query; a finite
+initializer-wait fixture consumes the caller's supplied deadline rather than starting thirty
+seconds afterward. (2) a gated query that returns success only after expiry cannot publish a
+cache value, while an in-budget result is shared by concurrent callers. (3) the actual isolated
+cold fixed SID probe records its original caller deadline and accepts only an in-budget result;
+the mapped-helper bootstrap caller forwards its existing qualification deadline without prewarming.
+
 Native ARM64 evidence measured about 22.5 seconds for every stock PowerShell 5.1 startup,
 including a no-stdin version/SID probe. Replace repeated filesystem process starts with one
 process-local fixed filesystem worker containing only SID discovery, private-directory creation
