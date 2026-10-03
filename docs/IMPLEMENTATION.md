@@ -839,11 +839,41 @@ Managed directories and data files accept only the current SID as owner and only
 SYSTEM allow entries; existing broad descriptors are refused rather than silently tightened. A
 test that begins with an ordinary temporary directory creates a private managed child. Ancestor
 directories may have trusted current-user, SYSTEM, Administrators or Windows TrustedInstaller
-ownership. Retained no-delete/no-write-sharing handles protect even foreign-writable ancestors;
+ownership, with the existing Stock/passive trusted-mutation ACE policy also applied to common
+ancestors. Refuse nontrusted mutation grants instead of claiming that write-sharing directory
+handles protect foreign-writable ancestry. Retained directory handles exclude delete sharing;
 an incompatible existing handle is an actionable refusal, never a reason to drop the guard.
 Resolve relative state overrides lexically against the current directory before opening guards;
 reject drive-relative/root-relative ambiguity and network state roots. Canonicalize identity only
 after every component has passed no-reparse handle inspection and the guards remain live.
+
+The native 18ed2e23 correction keeps the minimal LIST | READ_CONTROL | READ_ATTRIBUTES access
+0x20081 but shares READ | WRITE (3), never DELETE. Microsoft's rename/link target-directory
+admission needs a parent write open; the earlier share-READ-only list guard also blocked legitimate
+child hard-link creation and captured-output finalization after the file reader had exited.
+Change only the shared directory helper's sharing policy, consumed by common, Stock and passive
+ancestry; keep every existing leaf sharing policy and explicit repair access separate. Reuse the
+existing Stock/passive directory-mutation ACE mask/deny/inherit-only semantics for common
+trusted-owner ancestry. Current SID/SYSTEM/Administrators/TrustedInstaller are trusted; reject
+nontrusted actual mutation, null DACL and unknown ACE types before creating a suffix. Permitted
+sibling creation alone does not authorize changing the retained directory or existing child.
+No ACL takeover/repair, temporary guard release, new worker, retry class or larger deadline is
+introduced. Directory write-sharing is not a claim that trusted-account in-place mutation is
+impossible. Retained no-delete object identity plus explicit ACL/no-reparse checks protects the
+selected user boundary; ordinary leaf readers/gates continue enforcing their own write/delete
+policy. Update stale no-write directory descriptions without weakening their actual proof.
+
+Verify: (1) all three native rows retain the original five complete hard-link/rename fixtures and
+their payload, alias-count/identity, held-reader refusal, eventual release and one-/five-second
+budgets; they must pass with the parent guards still live. (2) the unchanged bare-empty-directory,
+ancestor rename/junction replacement, list-denied and passive retained-prefix assertions still
+refuse replacement while held and permit owned cleanup only after release; complete directory
+IDs/descriptors remain unchanged. (3) on disposable current-SID-owned ancestry, actual nontrusted
+generic write/all, delete/delete-child, EA/attribute and owner/DACL mutation allow grants refuse
+before suffix creation without changing the original descriptor; read and inherit-only entries
+and the existing sibling-creation-only rights remain acceptable. After restoring only the owned
+fixture ACL, verify actual empty ancestry and strict private leaf behavior. Stock cold/Restricted/
+parent-loss/guard-release and SQLite sidecar admission gates remain required and unchanged.
 
 Managed file readers retain no-delete sharing. Dashboard/CLI follow reads release their handles
 after each frame snapshot, but a concurrent snapshot can briefly prevent Windows finalization.
@@ -920,8 +950,9 @@ next open; preserve the exact never-as-wake and subsequent valid-message asserti
 Shared notification::instance_identity(root) and instance_identity_guarded(DirectoryGuard) return
 the lowercase SHA-256 hex of the fixed locron-instance/v1 domain, SID length (LE32)/UTF-8 bytes,
 volume serial (LE64) and full file ID (LE128). Windows-only file-id =0.2.3 supplies its reviewed
-get_high_res_file_id safe API. Query the normalized path while the complete no-write/no-delete
-directory guard remains retained; reject an unsupported query instead of using its low-resolution
+get_high_res_file_id safe API. Query the normalized path while the complete no-delete,
+trusted-mutation-checked directory guard remains retained; reject an unsupported query instead
+of using its low-resolution
 fallback. No path text, Unicode folding, DefaultHasher or Rust enum/hash representation enters
 the digest. Scheduler task names use this shared identity to avoid duplicate alias registrations.
 Pipe names add an explicit protocol version, role and canonical UUID lifetime for control roles;

@@ -3022,7 +3022,8 @@ Rust 1.77). Its exact registry source exposes safe `get_high_res_file_id(path)`,
 backup-semantics access-zero file, then queries `GetFileInformationByHandleEx(FileIdInfo)`.
 It returns the full `FileId::HighRes { volume_serial_number: u64, file_id: u128 }`, converting
 the 128-bit identifier from little-endian bytes. It has no public borrowed-handle query, so use
-its path API only while the complete no-write/no-delete-sharing DirectoryGuard remains live.
+its path API only while the complete no-delete-sharing, trusted-mutation-checked DirectoryGuard
+remains live. The directory-write sharing correction below supersedes the earlier no-write claim.
 Unsupported queries refuse IPC/registration; do not call the automatically falling-back API.
 
 `same-file =1.0.6` was rejected: its Windows key exposes a low 64-bit file index through equality/
@@ -3036,6 +3037,38 @@ Sources: [file-id 0.2.3 published source](https://docs.rs/crate/file-id/0.2.3/so
 [published manifest and MSRV](https://docs.rs/crate/file-id/0.2.3/source/Cargo.toml),
 [same-file Windows key limitation](https://github.com/BurntSushi/same-file/blob/1.0.6/src/win.rs),
 [Microsoft full file identity](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info).
+
+### Directory child admission and retained-object privacy (2026-10-03)
+
+Exact head 18ed2e23, native run 37098728418, fails the same five Core fixtures on x64 stable,
+x64 MSRV and ARM64: three hard-link/rename admissions return Windows 32 after their leaf handles
+are closed, the persistent-reader fixture still cannot rename after releasing its reader, and
+the caller-budget rename expires after its fifty-ms reader release. The new empty-directory
+rename/replacement and list-denied ancestry fixtures pass. This separates legitimate child-name
+mutation from the retained directory object's own rename/delete boundary; it is not a reason to
+drop guards, loosen leaf policy or extend a deadline. Microsoft's FILE_RENAME_INFORMATION explains
+that IopOpenLinkOrRenameTarget opens the target directory with FILE_WRITE_DATA | SYNCHRONIZE.
+CreateFile's no-write sharing excludes that parent open, whereas omitting FILE_SHARE_DELETE
+excludes delete/rename access to the retained directory object. FILE_LIST_DIRECTORY remains the
+data-access bit that made the directory's sharing checks effective in the previous qualification.
+
+Select directory access 0x20081 with FILE_SHARE_READ | FILE_SHARE_WRITE, without delete sharing.
+Sharing permits an otherwise authorized open; it never grants ACL rights. The earlier claim that
+no-write sharing protects foreign-mutable ancestors is no longer valid. Common ancestry must now
+apply the existing Stock/passive allow-ACE mutation rule as well as trusted-owner verification:
+current SID, SYSTEM, Administrators and TrustedInstaller may mutate; nontrusted actual-object
+generic-write/all, delete-child/delete, write-EA/attributes, WRITE_DAC or WRITE_OWNER grants refuse.
+Keep deny/inherit-only handling and the existing separate sibling-creation rights distinction;
+unknown ACE forms/null DACL refuse. Private roots/leaves still require their strict SID/SYSTEM
+descriptor, and stock leaf data remains write/delete-excluding. A directory handle with write
+sharing cannot claim to prevent all in-place writes by the trusted owner; SECURITY's account/root
+boundary is unchanged. Existing reparse points refuse, and no-delete object retention continues
+to block directory replacement. The proposed combination requires actual native proof.
+
+Sources: [CreateFile sharing and lifetime](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[rename target-directory access](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information),
+[directory access rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants),
+[per-file hard-link sharing](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createhardlinkw).
 
 The next worker run, PR41 head 762bed7/run 37038880251, passed x64 stable and MSRV core/store.
 ARM64 passed 66 core fixtures, including isolated simultaneous cold callers, but its first
@@ -3463,7 +3496,8 @@ candidate; native cold timing and policy acceptance still need proof. Sources:
 The selected stock library guard cannot depend on current_user_sid: it is also needed before
 the first filesystem SID request. Its trust policy is therefore the existing Windows servicing
 boundary of SYSTEM, Administrators and TrustedInstaller ownership/mutation only, with no current-
-SID exemption. Retained no-reparse/no-write/no-delete handles plus handle-bound descriptor checks
+SID exemption. Retained no-delete directory and write/delete-excluding binary handles, with
+explicit no-reparse/handle-bound descriptor checks and the trusted-mutation rule,
 must establish the binary location before assembly import; a GAC directory suffix, module name,
 strong-name token or post-load path string alone does not establish file ownership/privacy.
 
