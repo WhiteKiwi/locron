@@ -2365,7 +2365,16 @@ columns at eight, forbid attached databases, and stop at the original deadline o
 progress callback with the configured 1,000-instruction interval through the safe hook. This is
 a finite callback/work check, not an exact instruction or wall-clock guarantee. Fixed schema/row
 queries require ordinary tables and exact storage types; use memory-only temp storage, enable
-defensive mode and disable trusted schema. Count every new typed index/path/identity field in
+defensive mode and disable trusted schema. SQLITE_LIMIT_LENGTH also applies to encoded rows:
+select 65,664 bytes (`4 * 16,384 + 128`) for that row limit, while independently checking each
+returned TEXT/BLOB value at the unchanged 16,384-byte cap before copying. Four maximum portable
+values need at most 45 bytes of conservative record-header varints; the five-field fixed schema
+query's four texts plus integer/header need 62 extra bytes. The seven-field column query's
+three texts plus four integers/header need at most `3 * 16,384 + 104`, also below that ceiling.
+Unknown schemas and arbitrary eight-large-value rows still refuse; the eight-column cap does
+not authorize such payloads. Verify a valid combined two-path row above 16 KiB total and negative
+single-value/unsupported-shape cases without changing snapshot/work/deadline limits or source
+ownership. Count every new typed index/path/identity field in
 actual outer-record preflight before later effects. Native tests
 must preserve source/ACL bytes, refuse wrong/extra/missing/oversized/stale facts, and establish
 real selected-client directory/pair ownership across install, upgrade and removal. Public

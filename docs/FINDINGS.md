@@ -4706,3 +4706,31 @@ Sources: [official v1.29.380 release](https://github.com/microsoft/winget-cli/re
 [safe deserializer/config/progress APIs](https://docs.rs/rusqlite/0.40.2/rusqlite/struct.Connection.html),
 [safe runtime limits](https://docs.rs/rusqlite/0.40.2/rusqlite/limits/index.html),
 [VM progress callback semantics](https://www.sqlite.org/c3ref/progress_handler.html).
+
+
+### Portable-index value and encoded-row bounds (2026-10-03)
+
+SQLite's SQLITE_LIMIT_LENGTH constrains the complete encoded row as well as any individual
+String/BLOB. A 16 KiB setting therefore rejects a Symlink row containing two individually allowed
+paths whose combined encoding exceeds 16 KiB. Keep the approved per-value and SQL limits at
+16,384 bytes and select a separate finite encoded-row ceiling of 65,664 bytes:
+`4 * 16,384 + 128`. Enforce every returned TEXT/BLOB value separately before copying it.
+
+For the four-column portable record, even four maximum-size values plus a conservative
+nine-byte size varint and four nine-byte serial-type varints fit the selected ceiling. The fixed
+five-field schema query has at most four bounded text values, one eight-byte integer and six
+nine-byte header varints: its extra 62 bytes also fit the 128-byte allowance. Seven-field column
+introspection has at most three bounded text values and four eight-byte integers plus eight
+nine-byte header varints; its `3 * 16,384 + 104` ceiling is smaller still. Other fixed metadata
+and index queries return fewer bounded fields. This is no permission to accept arbitrary
+eight-column rows of eight maximum-size strings; unknown schema/shapes continue to refuse.
+
+Verify a valid two-path row above 16 KiB total with each field within its original bound, and
+refuse any single over-limit value or unsupported row/schema. The 4 MiB snapshot, eight metadata
+rows, exact two ownership rows, eight-column cap, zero attached databases, 1,024 callbacks at a
+1,000-instruction interval and original absolute deadline remain fixed. No larger source input,
+new clock, SQLite path reopen or live SID/package/source authority follows from this allowance.
+
+Sources: [SQLite complete-row length limit](https://www.sqlite.org/c3ref/c_limit_attached.html),
+[encoded record headers and integer sizes](https://www.sqlite.org/fileformat2.html#record_format),
+[safe rusqlite limits](https://docs.rs/rusqlite/0.40.2/rusqlite/limits/index.html).
