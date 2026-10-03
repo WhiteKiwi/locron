@@ -9,7 +9,7 @@ use anyhow::{Result, ensure};
 use locron_core::filesystem::{DirectoryGuard, same_file};
 use uuid::Uuid;
 
-use super::windows_ownership::{VerifiedFile, immutable_private, native_target};
+use super::windows_ownership::{VerifiedFile, immutable_private_until, native_target};
 use super::windows_protocol::{Kind, Request};
 use super::windows_receipt::same_path;
 
@@ -108,12 +108,12 @@ fn within<T>(deadline: Instant, operation: impl FnOnce() -> Result<T>) -> Result
         Instant::now() < deadline,
         "original bootstrap deadline expired"
     );
-    let result = operation()?;
+    let result = operation();
     ensure!(
         Instant::now() < deadline,
         "original bootstrap deadline expired"
     );
-    Ok(result)
+    result
 }
 
 fn verify_at(request_path: &Path, root: &Path, current_executable: &Path) -> Result<Bootstrap> {
@@ -176,13 +176,18 @@ pub(super) fn verify_at_until(
     );
     let target = native_target()?;
     let (request_file, bytes) = within(deadline, || {
-        immutable_private(&directory.normalized_path().join(name), REQUEST_LIMIT)
+        immutable_private_until(
+            &directory.normalized_path().join(name),
+            REQUEST_LIMIT,
+            deadline,
+        )
     })?;
     let request = Request::parse(&bytes, &sid, target, id)?;
     let (original_file, bytes) = within(deadline, || {
-        immutable_private(
+        immutable_private_until(
             &directory.normalized_path().join("request.json"),
             REQUEST_LIMIT,
+            deadline,
         )
     })?;
     let original = Request::parse(&bytes, &sid, target, id)?;
@@ -204,9 +209,10 @@ pub(super) fn verify_at_until(
         );
     }
     let (helper_file, _) = within(deadline, || {
-        immutable_private(
+        immutable_private_until(
             &directory.normalized_path().join("locron-helper.exe"),
             HELPER_LIMIT,
+            deadline,
         )
     })?;
     ensure!(
@@ -215,7 +221,7 @@ pub(super) fn verify_at_until(
         "retained helper bytes differ from the protected original request"
     );
     let (current_file, _) = within(deadline, || {
-        immutable_private(current_executable, HELPER_LIMIT)
+        immutable_private_until(current_executable, HELPER_LIMIT, deadline)
     })?;
     // The frontend must retain its immutable helper guard through launch and
     // acceptance, until this helper guard is acquired. current_exe is a path,

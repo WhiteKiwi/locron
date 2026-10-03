@@ -153,6 +153,22 @@ impl Frame {
         self.phase
     }
 
+    pub(super) fn bindings(&self) -> &Bindings {
+        &self.bindings
+    }
+
+    pub(super) fn parent_pid(&self) -> u32 {
+        self.parent_pid
+    }
+
+    pub(super) fn child_nonce(&self) -> Option<Uuid> {
+        self.child_nonce
+    }
+
+    pub(super) fn remaining_ms(&self) -> Option<u64> {
+        self.remaining_ms
+    }
+
     pub(super) fn challenge(
         bindings: Bindings,
         parent_pid: u32,

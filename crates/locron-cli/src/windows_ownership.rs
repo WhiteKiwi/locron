@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::time::Instant;
 
 use anyhow::{Result, ensure};
 use locron_core::filesystem::{
@@ -63,28 +64,63 @@ pub(super) fn native_target() -> Result<&'static str> {
     }
 }
 
+fn clock(deadline: Option<Instant>) -> Result<()> {
+    ensure!(
+        deadline.is_none_or(|deadline| Instant::now() < deadline),
+        "original inventory deadline expired"
+    );
+    Ok(())
+}
+
+fn observe<T>(deadline: Option<Instant>, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    clock(deadline)?;
+    let result = operation();
+    clock(deadline)?;
+    result
+}
+
 pub(super) fn immutable_private(path: &Path, limit: usize) -> Result<(VerifiedFile, Vec<u8>)> {
+    immutable_private_at(path, limit, None)
+}
+
+/// Uses only the caller's existing clock; native work belongs to its retained owner.
+pub(super) fn immutable_private_until(
+    path: &Path,
+    limit: usize,
+    deadline: Instant,
+) -> Result<(VerifiedFile, Vec<u8>)> {
+    locron_core::windows::current_user_sid_until(deadline)?;
+    immutable_private_at(path, limit, Some(deadline))
+}
+
+fn immutable_private_at(
+    path: &Path,
+    limit: usize,
+    deadline: Option<Instant>,
+) -> Result<(VerifiedFile, Vec<u8>)> {
     // This READ-only gate prevents competing writes and leaf replacement. The
     // additional strict check excludes the broader package-source descriptor.
-    let mut file = read_owned_executable(path)?;
+    let mut file = observe(deadline, || Ok(read_owned_executable(path)?))?;
     ensure!(
-        is_private(file.normalized_path(), false)?,
+        observe(deadline, || Ok(is_private(file.normalized_path(), false)?))?,
         "standalone payload does not have its strict private descriptor"
     );
-    let identity = file_identity(&file)?;
-    let size = file.metadata()?.len();
+    let identity = observe(deadline, || Ok(file_identity(&file)?))?;
+    let size = observe(deadline, || Ok(file.metadata()?.len()))?;
     ensure!(size <= limit as u64, "owned payload exceeds its byte bound");
-    file.seek(SeekFrom::Start(0))?;
+    observe(deadline, || Ok(file.seek(SeekFrom::Start(0))?))?;
     let mut bytes = Vec::new();
-    Read::by_ref(&mut *file)
-        .take(limit as u64 + 1)
-        .read_to_end(&mut bytes)?;
+    observe(deadline, || {
+        Ok(Read::by_ref(&mut *file)
+            .take(limit as u64 + 1)
+            .read_to_end(&mut bytes)?)
+    })?;
     ensure!(
-        bytes.len() as u64 == size && file_identity(&file)? == identity,
+        bytes.len() as u64 == size && observe(deadline, || Ok(file_identity(&file)?))? == identity,
         "owned payload differs from its guarded object/length"
     );
-    let sha256 = sha256_hex(&bytes);
-    file.seek(SeekFrom::Start(0))?;
+    let sha256 = observe(deadline, || Ok(sha256_hex(&bytes)))?;
+    observe(deadline, || Ok(file.seek(SeekFrom::Start(0))?))?;
     Ok((
         VerifiedFile {
             file,
@@ -95,28 +131,49 @@ pub(super) fn immutable_private(path: &Path, limit: usize) -> Result<(VerifiedFi
     ))
 }
 
-fn owned_receipt(directory: &Path) -> Result<(DirectoryGuard, Receipt, VerifiedFile)> {
-    let directory = DirectoryGuard::existing_private(directory)?;
+fn owned_receipt(
+    directory: &Path,
+    deadline: Option<Instant>,
+) -> Result<(DirectoryGuard, Receipt, VerifiedFile)> {
+    if let Some(deadline) = deadline {
+        locron_core::windows::current_user_sid_until(deadline)?;
+    }
+    let directory = observe(deadline, || {
+        Ok(DirectoryGuard::existing_private(directory)?)
+    })?;
     let root = directory.normalized_path();
-    let (receipt_file, bytes) = immutable_private(&root.join(RECEIPT), RECEIPT_LIMIT)?;
-    let sid = locron_core::windows::current_user_sid()?;
-    let receipt = Receipt::parse(
-        &bytes,
-        &sid,
-        root.to_str()
-            .ok_or_else(|| anyhow::anyhow!("standalone directory is not Unicode"))?,
-        native_target()?,
-    )?;
+    let (receipt_file, bytes) = immutable_private_at(&root.join(RECEIPT), RECEIPT_LIMIT, deadline)?;
+    let sid = match deadline {
+        Some(deadline) => locron_core::windows::current_user_sid_until(deadline)?,
+        None => locron_core::windows::current_user_sid()?,
+    };
+    let receipt = observe(deadline, || {
+        Receipt::parse(
+            &bytes,
+            &sid,
+            root.to_str()
+                .ok_or_else(|| anyhow::anyhow!("standalone directory is not Unicode"))?,
+            native_target()?,
+        )
+    })?;
     Ok((directory, receipt, receipt_file))
 }
 
 /// Verify existing standalone ownership with no filesystem/registry/task writes.
 pub(super) fn verify(directory: &Path) -> Result<Standalone> {
-    let (directory, receipt, receipt_file) = owned_receipt(directory)?;
+    verify_at(directory, None)
+}
+
+pub(super) fn verify_until(directory: &Path, deadline: Instant) -> Result<Standalone> {
+    verify_at(directory, Some(deadline))
+}
+
+fn verify_at(directory: &Path, deadline: Option<Instant>) -> Result<Standalone> {
+    let (directory, receipt, receipt_file) = owned_receipt(directory, deadline)?;
     let root = directory.normalized_path();
     let mut files = BTreeMap::new();
     for name in PAYLOADS {
-        let (file, _) = immutable_private(&root.join(name), PAYLOAD_LIMIT)?;
+        let (file, _) = immutable_private_at(&root.join(name), PAYLOAD_LIMIT, deadline)?;
         ensure!(
             receipt.files.get(name) == Some(&file.sha256),
             "owned {name} bytes differ from the exact receipt"
@@ -134,9 +191,17 @@ pub(super) fn verify(directory: &Path) -> Result<Standalone> {
 /// Qualify only unchanged listed files for later removal; no file is changed here.
 /// The protected receipt and original executable remain mandatory exact proofs.
 pub(super) fn verify_removal(directory: &Path) -> Result<Removal> {
-    let (directory, receipt, receipt_file) = owned_receipt(directory)?;
+    verify_removal_at(directory, None)
+}
+
+pub(super) fn verify_removal_until(directory: &Path, deadline: Instant) -> Result<Removal> {
+    verify_removal_at(directory, Some(deadline))
+}
+
+fn verify_removal_at(directory: &Path, deadline: Option<Instant>) -> Result<Removal> {
+    let (directory, receipt, receipt_file) = owned_receipt(directory, deadline)?;
     let root = directory.normalized_path();
-    let (binary, _) = immutable_private(&root.join("locron.exe"), PAYLOAD_LIMIT)?;
+    let (binary, _) = immutable_private_at(&root.join("locron.exe"), PAYLOAD_LIMIT, deadline)?;
     ensure!(
         binary.sha256 == receipt.binary_sha256,
         "removal requires the exact receipt-owned executable"
@@ -144,7 +209,10 @@ pub(super) fn verify_removal(directory: &Path) -> Result<Removal> {
     let mut files = BTreeMap::from([("locron.exe".to_owned(), binary)]);
     let mut retained = Vec::new();
     for name in PAYLOADS.into_iter().filter(|name| *name != "locron.exe") {
-        let reason = match immutable_private(&root.join(name), PAYLOAD_LIMIT) {
+        let result = immutable_private_at(&root.join(name), PAYLOAD_LIMIT, deadline);
+        // Expiry is a phase refusal, never an Unverifiable removal permission.
+        clock(deadline)?;
+        let reason = match result {
             Ok((file, _)) if receipt.files.get(name) == Some(&file.sha256) => {
                 files.insert(name.to_owned(), file);
                 continue;
@@ -209,6 +277,30 @@ mod tests {
             &serde_json::to_vec(&receipt).unwrap(),
         );
         (root, receipt)
+    }
+
+    #[test]
+    fn original_inventory_deadline_refuses_without_repair_or_removal_permissions() {
+        let (root, _) = fixture();
+        let bytes = fs::read(root.path().join(RECEIPT)).unwrap();
+        let deadline = Instant::now()
+            .checked_sub(std::time::Duration::from_millis(1))
+            .unwrap();
+        assert!(verify_until(root.path(), deadline).is_err());
+        assert!(verify_removal_until(root.path(), deadline).is_err());
+        assert!(
+            immutable_private_until(&root.path().join("locron.exe"), PAYLOAD_LIMIT, deadline)
+                .is_err()
+        );
+        assert_eq!(fs::read(root.path().join(RECEIPT)).unwrap(), bytes);
+        assert!(!root.path().join("journal.bin").exists());
+        assert!(!root.path().join("status.json").exists());
+        assert!(
+            OpenOptions::new()
+                .write(true)
+                .open(root.path().join("README.md"))
+                .is_ok()
+        );
     }
 
     #[test]

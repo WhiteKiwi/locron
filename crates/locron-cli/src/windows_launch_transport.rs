@@ -67,6 +67,7 @@ fn sid_text(sid: &str) -> Result<()> {
 
 /// Names select two local endpoints; this type provides no account/process proof.
 pub(super) struct PipeNames {
+    session: Uuid,
     parent: String,
     child: String,
 }
@@ -77,9 +78,50 @@ impl PipeNames {
         ensure!(!session.is_nil(), "zero launch session UUID");
         let digest = format!("{:x}", Sha256::digest(sid.as_bytes()));
         Ok(Self {
+            session,
             parent: format!("{PIPE_PREFIX}{digest}.{session}.parent"),
             child: format!("{PIPE_PREFIX}{digest}.{session}.child"),
         })
+    }
+
+    pub(super) fn selectors(&self) -> (Uuid, &str, &str) {
+        (self.session, &self.parent, &self.child)
+    }
+
+    pub(super) fn parse(session: Uuid, parent: String, child: String) -> Result<Self> {
+        ensure!(!session.is_nil(), "zero pipe selector session");
+        let rest = parent
+            .strip_prefix(PIPE_PREFIX)
+            .context("nonlocal pipe selector")?;
+        let (digest, _) = rest
+            .split_once('.')
+            .context("invalid pipe selector grammar")?;
+        ensure!(
+            digest.len() == 64
+                && digest
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            "invalid SID digest selector"
+        );
+        ensure!(
+            parent == format!("{PIPE_PREFIX}{digest}.{session}.parent")
+                && child == format!("{PIPE_PREFIX}{digest}.{session}.child"),
+            "pipe selectors have foreign scope, session or direction"
+        );
+        Ok(Self {
+            session,
+            parent,
+            child,
+        })
+    }
+
+    pub(super) fn bind_sid(&self, sid: &str) -> Result<()> {
+        let actual = Self::new(sid, self.session)?;
+        ensure!(
+            self.parent == actual.parent && self.child == actual.child,
+            "pipe selectors differ from the actual token SID"
+        );
+        Ok(())
     }
 }
 
