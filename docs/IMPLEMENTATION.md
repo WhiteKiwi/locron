@@ -1835,7 +1835,7 @@ Add the Windows-only opaque Core PrivateDirectoryPlan::inspect_until(path, deadl
 fresh installer/service's no-effect preflight. Accept only the already frozen maintenance-path
 contract: local absolute UTF-8 Windows paths, normalized valid components and at most 4,096
 UTF-16 units. Validate this shape before SID or native work. Retain all existing ancestor
-handles using the current no-reparse, trusted-owner/no-untrusted-mutation and no-write/no-delete
+handles using the current no-reparse, trusted-owner/no-untrusted-mutation and no-delete
 sharing policy. Stop only at a genuine NotFound; wrong object type, reparse, permission or other
 errors refuse. An existing final root must carry the strict private current-SID/SYSTEM posture.
 Canonicalize only that existing guarded prefix, then join the validated missing components;
