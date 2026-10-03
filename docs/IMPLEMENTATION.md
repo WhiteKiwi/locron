@@ -1758,6 +1758,40 @@ lowercase hexadecimal strings to preserve every bit through JSON/PowerShell. Bou
 at 256 distinct registered bindings and refuse overflow before mutation. Records contain no
 arbitrary executable source, command template or role arguments.
 
+Add the Windows-only opaque Core PrivateDirectoryPlan::inspect_until(path, deadline) for the
+fresh installer/service's no-effect preflight. Accept only the already frozen maintenance-path
+contract: local absolute UTF-8 Windows paths, normalized valid components and at most 4,096
+UTF-16 units. Validate this shape before SID or native work. Retain all existing ancestor
+handles using the current no-reparse, trusted-owner/no-untrusted-mutation and no-write/no-delete
+sharing policy. Stop only at a genuine NotFound; wrong object type, reparse, permission or other
+errors refuse. An existing final root must carry the strict private current-SID/SYSTEM posture.
+Canonicalize only that existing guarded prefix, then join the validated missing components;
+no missing component, managed file, task or journal is created or repaired.
+
+Expose readbacks normalized_path(), existing_guard(), existing_identity(), root_identity() and
+missing_components(). existing_identity is the nearest existing directory's full volume/file
+identity queried while its chain remains retained; root_identity is Some only for an already
+verified private final root. Missing components describe absence observed under that guard,
+not permission to adopt a later object or proof that this operation created one. No new-root
+creation or rollback/removal API is selected by this passive plan.
+
+Forward the same caller Instant into current_user_sid_until and check it before and after
+each native guard, descriptor, canonicalization and full-ID query. Use this synchronous helper
+only inside the existing finite owned phase worker: a deadline check cannot cancel blocked
+native I/O on the caller thread. An unfinished worker retains its opened handles, sends no
+later effect/callback and is never joined by the expired driver. Preserve ordinary state-path
+creation and Unix APIs; maintenance's new inspector never invokes DirectoryGuard::private.
+
+Verify: (1) existing private roots and missing multi-component Unicode/>260-character targets
+return the exact retained root/ancestor full identity and missing suffix with no managed
+directory/file/task/journal effects; an initially absent root remains absent after plan drop.
+(2) broad/foreign roots, mutable foreign ancestors, reparse chains, wrong object types and
+invalid/overlong paths refuse without repair; actual ancestor rename/reparse attempts fail
+while the returned plan is live. (3) expiry before an empty SID cache initializes refuses with
+no dispatcher admission, while a delayed owned native observation cannot admit another
+operation or effect past the original deadline. Creation/rollback qualification follows only
+after a separate atomic-created-object and finite typed fresh-record plan is approved.
+
 Maintenance records admit only normalized UTF-8 local Windows paths of at most 4,096 UTF-16 units,
 including prefixes/separators. Refuse control and forbidden filename characters in normal
 components, unsupported prefixes, relative components or overflow before effects. The bound for

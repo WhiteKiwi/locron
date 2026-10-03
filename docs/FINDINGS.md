@@ -3614,6 +3614,25 @@ is not native qualification and does not authorize takeover or fresh-root creati
 [CreateFileW access and sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 [file and directory access rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants).
 
+Fresh service preflight cannot call DirectoryGuard::private for an absent root: that existing
+entry point intentionally creates missing directories. A passive plan can retain the nearest
+existing no-reparse directory chain, its full identity and the missing suffix without making
+that suffix exist. An already-existing final root must separately satisfy the strict current-SID
+private descriptor; an unsafe existing root is not an opportunity for takeover or repair.
+
+The current stock DirectoryInfo.Create(DirectorySecurity) adapter reports created:true after
+success, but .NET's internal directory implementation also accepts a concurrent existing
+directory. That flag is not an exclusive creation receipt for fresh-install rollback. The
+pinned fs_at 0.2.1 mkdir_at implementation is create-only and returns a native directory handle,
+but it requests DELETE and hardcodes read/write/delete sharing. Its open_dir_at path supports
+an explicit FILE_CREATE disposition, FILE_DIRECTORY_FILE option and custom desired access;
+that remains a creation candidate requiring a complete descriptor/retained-identity/rollback
+audit, not an approved effect primitive. Implement the passive inspector independently while
+new-root creation, adoption and deletion remain held.
+[Framework directory source](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/directory.cs),
+[pinned fs_at source](https://docs.rs/fs_at/0.2.1/src/fs_at/win.rs.html),
+[native create dispositions](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile).
+
 The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
 inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject
