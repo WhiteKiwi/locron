@@ -5288,3 +5288,60 @@ Separate development owns only windows_configure.rs after Issue25/31 exact Verif
    then records actual ordinary/full/every-binary results at the new source. These previous runs
    reached no requested app suite cases and produced no new paired ZIP; separate stock
    diagnostics remain their own evidence. All runs remain failures, not skipped validations.
+
+
+### Complete native discovery and CLI input assumptions (2026-10-04)
+
+Frozen SPEC behavior is unchanged. Actual current ordinary run37152818444 passes16 rows;
+PR130 is merged as4ab7b9c, whole-tree equal to reviewed10fe. Full run37153461249 remains
+red: CLI301 passes, cli.rs57/14 of71, both Clippy rows41 diagnoses. Manual-only
+every-binary run37152995293 conserves all10fe application/test/dependency blobs and
+executes23 targets/17 nonempty/6 zero-case on native x64stable,ARMstable,x64MSRV:
+775PASS/34FAIL/809 cases,0 ignored/filtered. Dashboard8 and service19 pass; remaining
+failures are CLI14,feedback2,install_sh5,self_update11,Core2 per row. Core selectors
+vary and fail acquiring the capacity-one owner; the second loop iteration may already
+have executed earlier native work. The particular owner/quarantine is unobserved.
+Do not label those as proved child/output/ACL failures or erase historical observations.
+
+Separate read-only triage retained all14 full CLI bodies/three native failure blocks,
+all41 lint diagnostics on both architectures with cfg/consumers, and every later failure.
+Report SHA256 cfe17bb47dc8bc0c8207782713cb0807d9b78d8c5238eb29a319ac598787c886;
+receipt e8780a3f0175464a5880823dedbb0e292c0e71197f545d2e1e48215473b46259.
+Of14 CLI failures,12 have Unix executable/display/shell/socket assumptions and2 expose
+the native doctor path, which calls unconditional id-u/unsupported backend selection.
+Several fixtures discard the first original error, so exact first stage is not claimed.
+PrivateState already supplies the correct guarded private child/normalized path/lifetime.
+
+Select only native success-process inputs, three explicit stock PowerShell shell bodies,
+and exact human target rendering in cli.rs first. Existing shell_arguments supports
+PowerShell with -NoProfile,-NonInteractive,-Command. The actual cargo-built locron image
+with --help is a finite native successful process; no fake success/extra selector is needed.
+Keep Unix inputs/argv/scripts/render expectations exact. Passive wake_facts is always
+unprobed, and send_wake's200ms exchange is not a caller absolute5s authority; neither
+substitutes real owned listener readiness. Doctor, wake readiness, distribution and Core
+ownership/lint surfaces require distinct subsequent plans. No owner-PC native fixture is
+selected. Full failures remain visible and Issue31 remains open.
+
+
+### PR134 required native dashboard continuation failure (2026-10-04)
+
+Main133-integrated head eae776ff2bd2a3a9b1fa591139615b9a3139e48e ordinary
+37157605645 x64 Rust1.94 job111304173492 reaches all16 lifecycle selectors:
+15pass/1fail/0ignored/0filtered. actual_dashboard_exit_is_bounded_with_idle_http_clients
+fails at windows_lifecycle.rs266: durable state failed versus required running.
+wait_running had observed running and a parseable real heartbeat; dashboard process/role
+exit and manual daemon ownership checks had returned before this equality. Both other
+native foundation rows pass. Preserve the raw job log (SHA256
+a499e0366cb8c370531f7362628ae0daa95cab994f3f39b88e1ddb1304e92e43).
+The log contains no run reason, attempt exit/result or heartbeat publication error.
+A heartbeat persist panic is a possible target-exit path, not an established cause.
+Rust1.94 default File::open and tempfile named-file opens retain delete sharing, so a
+concurrent ordinary heartbeat read does not itself prove a rename-sharing failure.
+
+Full discovery37157905776 at that same head runs all301 CLI units successfully on
+x64 stable/ARM64 stable/x64 MSRV, then all71 CLI integrations with67pass/4fail and
+0ignored/filtered. Remaining failures are durable_cancel_terminates_a_running_process,
+human_doctor_prints_one_level_line_per_check, human_forms_leave_the_json_envelope_untouched
+and wake_socket_makes_new_manual_run_promptly_visible_to_daemon. Later binaries are
+not reached; both full Clippy rows retain41 errors. The failed required lifecycle
+qualification remains separate and must pass at newly reviewed Source before merge.
