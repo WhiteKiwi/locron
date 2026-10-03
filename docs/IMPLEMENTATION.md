@@ -4624,3 +4624,32 @@ contract. The failing object's actual owner/caller is unmeasured; retain strict 
    complete CI pass before merge; report measured stage/result on issues #32/#33. Standard-user
    installation/reboot/paired activation/publication remain separate acceptance gates, and the
    initial release stays unsigned with signing deferred in #37.
+
+## First-run read-only empty database admission correction (2026-10-03)
+
+The measured PR44 MSRV error 32 is reported around the complete create/reopen boundary. Source
+review establishes an empty-file observation gap before the creator's guarded writable handle;
+the same-tree latest green run does not remove it. Correct the observer within the frozen
+private-state/first-run contract; no product specification or creation ownership policy changes.
+
+1. Open an existing private database with the ordinary guarded READ/WRITE-sharing reader before
+   attempting a stable read gate. Refuse zero length as initialization pending, retain the
+   preflight handle and compare its full identity with the original admitted first handle.
+   **Verify:** empty observation never takes a write-excluding gate or creates a database/journal;
+   original ACL/reparse/owner validation precedes the length check. Keep the original stable
+   fallback, journal pairing/rechecks, immutable/normal VFS selection and reported-path identity
+   checks; propagate other errors. No creation/SQL retry, DACL change or repaired-object adoption.
+2. Add one actual Windows private-file regression through public Store::open_read_only. **Verify:**
+   a genuinely zero-byte private leaf refuses with Conflict, retaining bytes, full identity, ACL
+   and absent journals; a real writable Store subsequently initializes that exact leaf and its
+   settings are readable. Preserve all original Store tests and the entire lifecycle fixture,
+   including its settings/PATH assertions and original 30-second/20-millisecond observation bounds.
+   Valid closed snapshot writer-exclusion and live WAL observations must still pass.
+3. Record the plan on #27/#31 before handing source to a separate developer, then root-review and
+   publish the selected change. **Verify:** review covers every changed file and retained identity
+   lifetime; Rust 1.94 formatting/locked metadata facts pass, and fresh exact-head x64/ARM64/MSRV
+   Store (90 original plus the new regression), first-run lifecycle 12, remaining foundation/GUI,
+   both 105-case distribution and stock-5.1 bootstrap suites, and all 19 CI/Audit/checks pass before
+   head-matched merge. No local native/PowerShell workaround is used. Whole Windows 11 standard-user,
+   paired install/update/activation, reboot and public release/WinGet acceptance stay open; signing
+   remains deferred in #37.

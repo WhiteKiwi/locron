@@ -4804,3 +4804,49 @@ Sources: [Windows default owner selection](https://learn.microsoft.com/en-us/win
 [CreateFile security descriptor at creation](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 [Framework FileStream security overload](https://learn.microsoft.com/en-us/dotnet/api/system.io.filestream.-ctor?view=netframework-4.8.1#system-io-filestream-ctor(system-string-system-io-filemode-system-security-accesscontrol-filesystemrights-system-io-fileshare-system-int32-system-io-fileoptions-system-security-accesscontrol-filesecurity)),
 [Microsoft Framework implementation](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/filestream.cs).
+
+### First-run empty database observation and creation handoff (2026-10-03)
+
+PR44 4507d5e's completed MSRV job 111166508166 fails the original first-run registered-daemon
+fixture with `stage=database-create-new`, I/O category and native error 32. Its full tree is
+identical to 38d3c191, whose subsequent CI37110977454 and all 19 checks pass. That later pass does
+not close the source-established overlap. The earlier log does not identify the competing holder.
+
+The stage encloses all of Core create_private_new: the worker atomically creates an empty private
+file, disposes its Framework handle, and Rust then opens the guarded read/write handle. Worker
+stderr failures become Error::other without a raw OS code; only explicit collision 80/183 replies
+are mapped back to raw codes. Error 32 is compatible with the Rust reopen, rather than evidence
+that the Framework CreateNew call failed. Microsoft's CREATE_NEW contract returns existing-file
+error 80, and MS-FSA's FILE_CREATE collision precedes ordinary existing-stream share checks.
+Reducing the worker's FullControl request would not close the subsequent handle-handoff gap.
+
+The original wait_initialized_store observer opens read-only whenever the database leaf exists,
+then reads settings. Store currently admits an empty private database through its no-journal,
+immutable branch and returns a retained FILE_SHARE_READ gate. Before settings rejects the empty
+schema, that gate can exclude the creator's read/write reopen. This is a source-supported
+mechanism; the failing run's exact holder and interleaving remain unmeasured.
+
+Use an existing-only, guarded ordinary READ handle with READ/WRITE sharing before attempting a
+write-excluding gate. Refuse a zero-length database as initialization pending; retain that
+preflight handle through full file-identity comparison with the original first admitted handle.
+This check does not create, migrate, repair, retry or declare a nonempty file ready. Keep every
+original stable/ordinary-WAL branch and journal/ACL/reparse/identity refusal.
+
+The pinned SQLite 3.53.2 WAL transition initializes the first main page through the header-version
+rollback transaction before Locron migrations run (OP_JournalMode, sqlite3BtreeSetVersion and
+newDatabase). Its pagerOpenWalIfPresent zero-page branch does not admit a zero-byte main file as
+ordinary committed-WAL state. Thus this refusal covers the pre-initialization handoff, not valid
+closed snapshots or live committed WAL. External truncation is not a supported readiness proof.
+
+The new regression must use a real private zero-byte file and the public read-only Store API,
+retain bytes/full identity/ACL and journal absence, and then actually initialize a writable Store
+at the same path. Preserve the original closed snapshot writer-exclusion, live WAL later-commit,
+partial/broad-sidecar and final-close tests plus the unchanged lifecycle deadline. Native hosted
+qualification is required; a static argument or a same-tree green rerun is not regression evidence.
+
+Sources: [CREATE_NEW and Windows sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[MS-FSA existing-stream FILE_CREATE collision](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/41f3734a-5bba-4c3b-9d04-7baafc9b7bfe),
+[SQLite immutable URI behavior](https://sqlite.org/uri.html),
+[SQLite read-only WAL](https://sqlite.org/wal.html#read_only_databases).
+The selected bundle's concrete implementation is libsqlite3-sys 0.38.2 sqlite3.c, SQLite 3.53.2;
+research preserves exact local source anchors without introducing a dependency update.
