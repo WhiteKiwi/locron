@@ -255,11 +255,15 @@ $expectedRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($env:TEMP, 'locron-dis
 $fixtureRoot = $null
 $junction = $null
 try {
+    Write-Output 'locron-bootstrap-fixture stage=private-root-create-before'
     $fixtureRoot = New-LocronPrivateDirectory $expectedRoot
+    Write-Output 'locron-bootstrap-fixture stage=private-root-create-after'
     Assert-True ($fixtureRoot -ceq $expectedRoot) 'private root identity'
     $path = [IO.Path]::Combine($fixtureRoot, ('Unicode spaces ' + [char]0xd55c + [char]0xae00 + '.txt'))
     $bytes = [Text.Encoding]::UTF8.GetBytes('protected fixture')
+    Write-Output 'locron-bootstrap-fixture stage=private-leaf-write-before'
     Write-LocronPrivateFile $path $bytes
+    Write-Output 'locron-bootstrap-fixture stage=private-leaf-write-after'
     Assert-True ((Get-LocronSha256 (Read-LocronPrivateFile $path)) -ceq (Get-LocronSha256 $bytes)) 'private read/write'
     Assert-Refused { Write-LocronPrivateFile $path $bytes } 'no replacement of existing files'
     $nativeTarget = Get-LocronTarget

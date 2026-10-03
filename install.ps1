@@ -132,7 +132,16 @@ function Read-LocronPrivateFile([string]$Path) {
 function Write-LocronPrivateFile([string]$Path, [byte[]]$Bytes) {
     $full = ConvertTo-LocronPath $Path
     $null = Assert-LocronDirectory ([IO.Path]::GetDirectoryName($full)) $true
-    $stream = [IO.File]::Open($full, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    $security = [Security.AccessControl.FileSecurity]::new()
+    $sid = [Security.Principal.SecurityIdentifier]::new((Get-LocronSid))
+    $security.SetOwner($sid)
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($principal in @($sid, [Security.Principal.SecurityIdentifier]::new('S-1-5-18'))) {
+        $security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($principal,
+            [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.AccessControlType]::Allow))
+    }
+    $stream = [IO.FileStream]::new($full, [IO.FileMode]::CreateNew,
+        [Security.AccessControl.FileSystemRights]::FullControl, [IO.FileShare]::None, 4096, [IO.FileOptions]::None, $security)
     try {
         Assert-LocronDescriptor ($stream.GetAccessControl()) $true $false
         $stream.Write($Bytes, 0, $Bytes.Length)
