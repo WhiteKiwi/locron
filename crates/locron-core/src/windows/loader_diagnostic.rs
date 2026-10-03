@@ -68,11 +68,10 @@ pub(super) fn probe(mode: &str) {
     );
     assert!(result["ps_version"].as_str().unwrap().starts_with("5.1."));
     assert_eq!(result["is64bit"], true);
-    let (machine, architecture) = if cfg!(target_arch = "aarch64") {
-        (0xaa64, "ARM64")
-    } else {
-        assert!(cfg!(target_arch = "x86_64"));
-        (0x8664, "AMD64")
+    let (machine, architecture) = match std::env::consts::ARCH {
+        "aarch64" => (0xaa64, "ARM64"),
+        "x86_64" => (0x8664, "AMD64"),
+        architecture => panic!("unsupported native diagnostic architecture: {architecture}"),
     };
     assert_eq!(result["machine"], machine);
     assert_eq!(result["process_architecture"], architecture);
