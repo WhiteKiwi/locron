@@ -3078,6 +3078,18 @@ No production deadline, adapter or ownership policy changes. Source explains the
 native root/Job/read/quarantine confirmation remains required after the correction.
 [Pinned timeout implementation](https://docs.rs/tokio/1.53.1/tokio/time/fn.timeout_at.html).
 
+The corrected EOF fixture on exact 1c748ce reaches the owned read/quarantine receipt and exits
+its helper in 3.38 seconds on the MSRV row, then its final exclusive stock open fails with raw
+Windows sharing error 32. The enclosing cold Core test process has previously initialized its
+global filesystem dispatcher and retains an unrelated stock guard; a fresh child alone does
+not isolate this final release assertion from a live grandparent. Move the complete native EOF
+proof to a mandatory post-cold exact helper selection after that mixed test process exits.
+Require an actual exclusive-open baseline before its helper starts, followed by held sharing
+violations and actual helper-exit release. A failed baseline remains an honest unrelated-holder
+failure. Keep the original owned native read, root/Job confirmation, timer, late completion,
+retained handles and finite waits; do not retire production caches or reinterpret error 32 as
+successful release.
+
 The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
 inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject

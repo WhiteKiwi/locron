@@ -374,6 +374,17 @@ writer. Verify the same real root/empty-Job, late read completion, two held-stoc
 violations, owner-thread liveness and final helper-exit guard release under the existing finite
 waits. The prior forty-second circular wait is not passing evidence for any of those assertions.
 
+Select the complete EOF proof only through mandatory post-cold `eof-release-driver`, invoking
+the existing isolated `eof-driver`/`eof-helper` chain. Remove its enclosing ordinary mixed-Core
+test invocation, whose still-live cached dispatcher independently holds the stock leaf. Keep
+the original forty-five-second outer helper and forty-second driver bounds, with no production
+change. Before starting the EOF helper, the fresh driver must actually open and close the stock
+leaf with read access and share_mode(0); an unrelated holder refuses this baseline. Then retain
+the existing helper-held error 32, expiry/late-read-held error 32, exact helper kill/reap and
+final exclusive-open success assertions. Verify: all three native rows run this exact mode as
+the required first post-cold ownership proof after the cold Core process exits, followed by the
+unchanged Restricted/parent-crash proofs; no coverage, guard or deadline is weakened or skipped.
+
 Add cfg(test)-only bounded phase breadcrumbs to the actual filesystem dispatch path: API entry,
 queue admission, owned-child spawn start/completion, input write/flush completion, reply receipt,
 timeout/refusal and cleanup confirmation. Emit only fixed operation/phase names, monotonic request
