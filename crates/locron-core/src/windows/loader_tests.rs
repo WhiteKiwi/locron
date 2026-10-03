@@ -19,7 +19,7 @@ pub(super) fn restricted_child() -> bool {
     std::env::var("LOCRON_STOCK_LOADER_FIXTURE").is_ok_and(|mode| mode == "restricted-helper")
 }
 
-struct FixtureChild(Child);
+pub(super) struct FixtureChild(pub(super) Child);
 
 impl Drop for FixtureChild {
     fn drop(&mut self) {
@@ -37,7 +37,7 @@ impl Drop for FixtureChild {
     }
 }
 
-fn bounded_text(path: &Path) -> String {
+pub(super) fn bounded_text(path: &Path) -> String {
     let mut value = String::new();
     File::open(path)
         .unwrap()
@@ -121,6 +121,10 @@ fn owned_loader_fixture_child() {
     match mode.as_str() {
         "restricted-driver" => isolated("restricted-helper", "restricted-child-policies-confirmed"),
         "restricted-helper" => restricted_policy(),
+        "parent-exit-driver" => super::loader_crash::driver(),
+        "parent-exit-host" => super::loader_crash::host(),
+        "parent-exit-observer" => super::loader_crash::observer(),
+        "native-heartbeat" => super::loader_crash::heartbeat(),
         "guard-stall" => guard_stall(),
         "forged" => {
             let value = super::run_script_json(

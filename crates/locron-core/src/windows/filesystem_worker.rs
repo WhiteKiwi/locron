@@ -251,6 +251,11 @@ pub(super) fn policy_observation() -> (u32, bool) {
     (pid, confirmed)
 }
 
+#[cfg(test)]
+pub(super) fn observed_pid() -> u32 {
+    LAST_PID.load(Ordering::Acquire)
+}
+
 fn worker_source() -> String {
     SOURCE.replace("# LOCRON_STOCK_JSON_BOOTSTRAP", STOCK_JSON_BOOTSTRAP)
 }
