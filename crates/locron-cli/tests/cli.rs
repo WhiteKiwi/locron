@@ -3053,7 +3053,13 @@ fn windows_default_doctor_resolves_the_native_process_under_stock_path() {
     assert_eq!(resolutions[0]["job_name"], "backup");
     assert_eq!(resolutions[0]["status"], "resolved");
     assert_eq!(resolutions[0]["requested_executable"], target[0]);
-    assert_eq!(resolutions[0]["resolved_executable"], target[0]);
+    let canonical_target = std::fs::canonicalize(&target[0]).expect("canonical native CLI target");
+    assert_eq!(
+        resolutions[0]["resolved_executable"],
+        canonical_target
+            .to_str()
+            .expect("canonical native CLI target must be UTF-8")
+    );
     let stock_path =
         std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32");
     assert_eq!(
@@ -3144,11 +3150,10 @@ fn windows_default_doctor_refuses_an_invalid_token_leaf() {
     assert_eq!(envelope["ok"], false);
     assert_eq!(envelope["command"], "doctor");
     assert_eq!(envelope["error"]["code"], "service_io");
+    let message = envelope["error"]["message"].as_str().unwrap();
     assert!(
-        envelope["error"]["message"]
-            .as_str()
-            .unwrap()
-            .starts_with("cannot inspect token ACL:")
+        message.starts_with("service management failed: cannot inspect token ACL:"),
+        "unexpected token ACL refusal: {message}"
     );
     assert!(envelope.get("data").is_none());
     assert!(token_path.is_dir());
