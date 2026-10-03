@@ -90,6 +90,9 @@ jobs:
       - name: Verify native registered service semantics
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=1'
+      - name: Verify optional native GUI launcher semantics
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        run: cargo test -p locron --test windows_service_launcher --features windows-service-launcher --locked -- --test-threads=1
       - name: Diagnose the stock Windows adapter after cold contracts
         if: always()
         shell: pwsh
@@ -130,11 +133,13 @@ jobs:
           retention-days: 14
           path: |
             target/debug/locron.exe
+            target/debug/locron-service-launcher.exe
             target/debug/deps/locron_core-*.exe
             target/debug/deps/locron_store-*.exe
             target/debug/deps/locron_engine-*.exe
             target/debug/deps/locron_server-*.exe
             target/debug/deps/windows_lifecycle-*.exe
+            target/debug/deps/windows_service_launcher-*.exe
             target/debug/deps/mcp-*.exe
             target/debug/deps/contract-*.exe
             windows-native-evidence.json
@@ -159,6 +164,7 @@ jobs:
       - run: cargo clippy --workspace --locked -- -D warnings
       - run: cargo clippy -p locron-core -p locron-store -p locron-engine -p locron-server --lib --tests --locked -- -D warnings
       - run: cargo clippy -p locron --bin locron --test windows_lifecycle --test mcp --locked -- -D warnings
+      - run: cargo clippy -p locron --bin locron-service-launcher --test windows_service_launcher --features windows-service-launcher --locked -- -D warnings
 
   test:
     name: ${{ matrix.runner.platform }} / Rust ${{ matrix.rust }}
@@ -422,7 +428,19 @@ jobs:
           mapfile -t packages < <(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name' | sort)
           expected=(locron locron-core locron-engine locron-server locron-store)
           diff -u <(printf '%s\n' "${expected[@]}") <(printf '%s\n' "${packages[@]}")
-          test "$(cargo metadata --no-deps --format-version 1 | jq -c '[.packages[].targets[] | select(.kind | index("bin")) | .name]')" = '["locron"]'
+          cargo metadata --no-deps --locked --format-version 1 | jq -e '
+            [.packages[] | select(.name == "locron")] as $cli
+            | ($cli | length) == 1
+              and ([.packages[].targets[] | select(.kind | index("bin")) | .name] | sort)
+                == ["locron", "locron-service-launcher"]
+              and $cli[0].default_run == "locron"
+              and $cli[0].features == {"windows-service-launcher": []}
+              and ([$cli[0].targets[] | select(.kind | index("bin"))
+                | {name, required: (."required-features" // []), test}] | sort_by(.name)) == [
+                  {name: "locron", required: [], test: true},
+                  {name: "locron-service-launcher", required: ["windows-service-launcher"], test: false}
+                ]
+          '
       - name: Package and inspect archives
         shell: bash
         run: |
