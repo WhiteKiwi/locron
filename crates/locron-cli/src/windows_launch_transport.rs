@@ -290,7 +290,17 @@ impl ReceiveEndpoint {
         // performs only native metadata queries, never I/O or IOCP registration.
         // The actual Tokio client remains read-only; ReOpenFile may fail back to
         // the cloned original handle. Neither outcome supplies protocol authority.
-        let wrapper = SyncPipeStream::<pipe_mode::Bytes, pipe_mode::Bytes>::try_from(owned)?;
+        let wrapper = SyncPipeStream::<pipe_mode::Bytes, pipe_mode::Bytes>::try_from(owned)
+            .map_err(|error| {
+                // ConversionError's details implement Display, not StdError. Its
+                // returned source is still a plain OwnedHandle, never a stream.
+                let details = format!("pipe metadata handle conversion failed: {}", error.details);
+                drop(error.source);
+                match error.cause {
+                    Some(cause) => anyhow::Error::new(cause).context(details),
+                    None => anyhow::anyhow!(details),
+                }
+            })?;
         let is_client = wrapper.is_client();
         let result = wrapper.server_process_id();
         // Clear unknown flush state and close on EVERY result, including errors;
