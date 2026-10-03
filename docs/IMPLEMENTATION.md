@@ -103,6 +103,35 @@ nix/Unix imports target-specific and bring native Windows x64/ARM64 CI alongside
 Use LocalAppData for default machine-local state. Retain explicit state overrides, file-lock
 ownership and SQLite WAL semantics; path strings never imply safe ownership by themselves.
 
+#### Unavailable state discovery diagnostics (#25, 2026-10-03)
+
+The remaining unavailable-default criterion in #25 requires a recovery path in the actual CLI
+error. Missing or unusable platform discovery currently reports only that discovery failed, and
+a failed Windows KnownFolder adapter loses the state-discovery context. This correction retains
+the frozen SPEC, override precedence, platform defaults and managed-path admission policy.
+
+1. Add both supported state-directory overrides to unavailable-default errors. Wrap a failed
+   Windows KnownFolder adapter in a typed discovery error that retains its original I/O source;
+   ordinary filesystem failures remain ordinary I/O errors. Keep the existing `state_error`
+   category, exit status 5 and human/JSON/stream envelope behavior. **Verify:** missing or unusable
+   defaults and failed adapters identify state discovery and offer `--state-dir <PATH>` and
+   `LOCRON_STATE_DIR`; the adapter's original cause remains available through the error chain.
+2. Isolate only the existing KnownFolder result interpretation behind a private helper used by
+   the production Windows discovery call. **Verify:** probe failure, non-string, empty and
+   relative results fail explicitly; a native Windows absolute LocalAppData result still selects
+   its `locron` child, including spaces and Unicode, without creating state or changing privacy
+   policy. Tests supply probe results directly and do not change KnownFolder or security policy.
+3. Exercise the real CLI error renderer in Unix child processes with HOME and both state
+   environment variables removed. **Verify:** human stderr, JSON errors and terminal stream
+   errors include both recovery alternatives and retain exit status 5 and `state_error`; explicit
+   CLI and environment overrides permit recovery and retain CLI-over-environment precedence.
+   Environment isolation applies only to spawned children, never the test process or host.
+
+Run the focused store and CLI regressions, formatting and whitespace checks where the required
+Rust toolchain is available. The existing native store-library CI gate covers the Windows result
+fixtures. Record unexecuted checks explicitly. This change covers unavailable-default diagnostics;
+the remaining discovery/path acceptance cases stay with #25 and do not establish Windows support.
+
 Historical migration SQL/checksums stay immutable. A Windows database receives its captured
 execution PATH in the transaction that creates its initial schema. The logical initial-schema
 winner owns this default, independently of which opener created the empty physical file.
