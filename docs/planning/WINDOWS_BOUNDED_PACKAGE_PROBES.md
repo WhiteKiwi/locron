@@ -9,3 +9,9 @@ Python's primary documentation notes that communicate buffers data in memory and
 3. Use this adapter by default for the existing package version/identity probes while keeping explicit controlled executors available for fixtures. Retain stock-only PATH, no-shell argv, all exact output checks, ZIP generation and release publication boundaries. Add an inexpensive Python workflow for Linux and Windows; native package CI remains the actual image gate. Verify all existing distribution/manifest fixtures and unchanged accepted outputs, plus the real-child adapter suite.
 
 No dependencies, installed software, registry/PATH values, tasks, releases or catalog entries are changed. Windows runtime behavior and x64/ARM64 packaged binaries still require exact-head CI. No independent development/review session is available in this chat; describe executed checks and limitations accurately.
+
+## Integration with newer main
+
+Main advanced to `0757ed92505a20930daa3f6e657227da721f6f83` while this slice was published, adding #123's raw ZIP admission. Merge that snapshot normally with both parents preserved; do not rewrite main or either upstream PR. Retain its complete tree, `windows_zip.py`, raw-catalog workflow/fixtures and every new archive/CRC/decoded-size predicate. Apply only the already-reviewed bounded-executor import/default selections to its exact `windows_release.py` blob `13d4d5f727ca56b94aeb69f924e0f59f13270715`.
+
+Verify the fetched main baseline by Git blob hash, compare the integrated module against it, rerun the 18 real-child/integration tests with its actual raw ZIP reader, and run the existing manifest/catalog suites in fresh hosted CI. The final diff against newer main must contain only this slice's five files; no upstream payload/ownership/runtime change belongs in the resolution. This integration does not alter the output/lifecycle policy above.
