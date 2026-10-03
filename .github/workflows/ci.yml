@@ -471,6 +471,33 @@ jobs:
             paired-draft-artifacts/verification.json
           if-no-files-found: error
 
+
+  windows-paired-evidence:
+    name: Windows paired package coherence
+    needs: windows-package
+    timeout-minutes: 10
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: windows-paired-package-draft-*
+          path: paired-evidence
+      - name: Verify both architecture artifacts belong to this run
+        env:
+          LOCRON_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 -B scripts/verify-windows-paired-evidence.py paired-evidence \
+            --repository "$GITHUB_REPOSITORY" \
+            --revision "$GITHUB_SHA" \
+            --head "$LOCRON_SOURCE_HEAD" \
+            --ref "$GITHUB_REF" \
+            --workflow "$GITHUB_WORKFLOW_REF" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+
   installer:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Installer / ubuntu-latest
@@ -495,6 +522,8 @@ jobs:
         run: python3 -B scripts/test-release-scripts.py
       - name: Test Windows archive and versioned release boundaries
         run: python3 -B scripts/test-windows-distribution.py
+      - name: Test paired Windows package evidence coherence
+        run: python3 -B scripts/test-windows-paired-evidence.py
       - name: Check release checksum filenames
         run: sh scripts/test-generate-release-checksums.sh
       - name: Refuse unsupported platforms and musl
