@@ -2000,6 +2000,96 @@ objects through both eight-leaf legal branches; overflow has zero effects. This 
 the complete GUI proposal require parent/Project review before producer/model/consumer source;
 fresh-root creation/task rollback remains a separate held typed effect plan.
 
+### Shared activation wire and local authentication boundary
+
+Freeze the concrete wire shared by the service producer and internal GUI without importing the
+public CLI renderer or service manager into the GUI. Service owns the standalone
+service/windows_activation_wire.rs models, strict codecs and endpoint derivation; the GUI includes
+that file by explicit path. Runtime owns its client/retained-child composition. Service alone owns
+windows_activation.rs, the producer and authenticate_supervisor; runtime stores the resulting opaque
+witness. This refines the reviewed complete GUI/version-two plan, not the superseded GUID-only plan.
+
+- Wire Role has exactly daemon/dashboard, with a service-owned conversion to/from Target outside
+  the standalone file. UUID values are lowercase canonical nonnil hyphenated strings; digests are
+  exactly 64 lowercase hexadecimal characters and PIDs are nonzero u32. Every object requires
+  version=1, rejects unknown/duplicate/missing fields and invalid enums, and remains untrusted.
+  Protocol version one does not change the unpublished maintenance record's version two.
+- A frame is a four-byte little-endian body length followed by strict UTF-8 JSON. The complete
+  header plus body is at most 1,024 bytes; lengths zero or above 1,020 refuse before allocation.
+  Decode requires exactly one complete frame, without trailing data. Incremental transport reads
+  only that header and bounded body. Fixed schema/size errors never render serde errors, input,
+  capabilities or fields. The separate read-only GUI probe retains its reviewed four-KiB cap.
+- LauncherHello contains version/type, context, role and capability. Permit contains those public
+  bindings plus digest, scheduler_instance, producer_pid and remaining_micros, omitting capability.
+  Child contains context/role/digest/scheduler_instance and the GUI's actual retained child_pid.
+  SupervisorHello contains context/role/capability/digest/scheduler_instance, launcher_pid and
+  actual held supervisor_lifetime. Seal contains context/role/digest/scheduler_instance and both
+  launcher_pid/supervisor_pid plus supervisor_lifetime. Each type has its own fixed discriminator;
+  a valid frame at the wrong step still refuses. Frame PIDs never substitute for kernel queries.
+- Bootstrap is a separate bounded private-stdin frame containing context/role/capability, digest,
+  scheduler_instance, producer_pid, launcher_pid and remaining_micros. Missing stdin selects the
+  ordinary unwitnessed path; malformed/present bootstrap refuses. It provides only expected live
+  bindings and a shorter budget. No decoded Bootstrap, Permit, Seal or protected-fact value can
+  construct AuthenticatedActivation or establish that the SDK Run occurred.
+- Capability wraps exactly 32 bytes, encodes as 64 lowercase hex only in the fixed live Run data
+  and private frames, and has a custom redacted Debug with no Display. Derive Debug only through
+  that wrapper; parser/serialization/transport errors use fixed stage/category text. The raw Run
+  argument and serialized secret buffers are never logged or included in receipts, journals or
+  runtime facts. Keep the exact reviewed absent/empty/v1:/literal v1:$(Arg0) unwitnessed parser;
+  every other input must be v1:<canonical context>:<64-lowercase-hex capability> or refuse.
+- Pure codecs add no native I/O, admission worker or authentication constructor. Qualification
+  initially includes the standalone module only in Windows tests; production exposure follows
+  its actual GUI/service consumers, without synthetic calls or dead-code suppression. At use,
+  every frame/receipt operation has min(original deadline, operation entry+200ms), with pre-poll,
+  post-Ready and pre/post-native checks. Timeout of queued I/O remains delivery-uncertain.
+- remaining_micros is an integer from 1 through 30,000,000, floor-rounded from the producer's
+  existing remaining duration. Sub-microsecond remainder refuses. GUI computes
+  min(original_gui_deadline, pre_SID_gui_entry.checked_add(duration)); overflow, an already elapsed
+  result or any larger/zero encoding refuses. Never add it to receipt time. Bootstrap likewise
+  only shortens the supervisor's already captured entry deadline; the producer's original phase
+  deadline remains independent final authority. No frame starts a new thirty-second phase.
+- Derive the endpoint only from a retained existing private root's shared full instance digest,
+  fixed role and context: locron.activation.v1.<instance>.<role>.<context>. Never place a raw nonce
+  in its name. The producer first-instance listener precedes Run, refuses collisions/remotes,
+  retains the reviewed SID+SYSTEM descriptor/root/pair guards and admits at most two connected
+  peers plus one listener. Clients use the actual named-pipe server_process_id; the producer uses
+  each actual client_process_id. Producer PID from Permit/Bootstrap must match that kernel peer.
+- Preserve the selected order: durable intent; sole SDK Run; durable actual GUID plus unchanged
+  definition/single-instance readback; actual launcher Hello; timely Permit; retained hidden child;
+  Child report; actual matching second SupervisorHello and held activation/control proof. Hello
+  may already be buffered while the SDK observation is persisted, but no Permit is sent early.
+  Send matching Seal separately to the GUI first, require its fixed 0xff receipt after checking its
+  retained child has not exited, then send Seal to the supervisor. Its service consumer validates
+  the real server/context/capability/own PID/held UUID, writes the final fixed 0xff receipt with
+  all expiry gates, and only then privately mints Some. Producer confirms that receipt within
+  its own original budget and freshly proves actual role readiness before durable confirmation.
+  GUI keeps the child/Job and first connection through sealing. Receipt loss or late completion
+  remains pending; no second Run/child or claimed atomic cross-process commit is inferred.
+- AuthenticatedActivation stays private-field Clone/Debug/Serialize only, with exactly context,
+  digest, scheduler_instance and launcher_pid. A service-owned cfg(test)-only maximal fixture
+  factory permits runtime's actual complete RuntimeFacts serialization across None/Some, all
+  completed/not-started partitions and bounded escaped messages under 16 KiB. It is unavailable
+  in production and raw protected-fact decoding; field-only witness size is not capacity proof.
+- The producer directly uses pinned getrandom=0.4.3 fill for the 32-byte nonce, already in the
+  resolved UUID graph, through a Windows-only CLI dependency. Its audited Windows backend uses
+  ProcessPrng and reports failure; add no custom backend, fallback or unsafe repository code.
+  Generate inside the existing finite native owner with original deadline checks before/after;
+  a stalled entropy call retains/quarantines that owner and cannot admit late intent or Run.
+  Use existing SHA-256 over locron-activation/v1 plus NUL, then seven LE-u32-length-prefixed fields:
+  canonical operation, context, verified SID, volume LE64, file ID LE128, role and nonce bytes.
+
+Implementation order and Verify: (1) qualify strict pure round trips, every maximal complete
+frame/Bootstrap, duplicate/unknown/version/UTF-8/length/UUID/hex/PID failures and redacted Debug/error
+output. Verify Role/Target conversion and all empty/unsubstituted parser controls without effects.
+(2) exercise floor/overflow/expired/late-ready budget cases and exact endpoint separation; verify
+no receipt-clock extension, cold guard/SID work or frame can mint an opaque witness. (3) qualify
+actual GUI and supervisor consumers/complete facts, then producer effects: stall GUID persistence
+and Permit before expiry and prove no child marker; compare both real pipe peers with retained
+child/control and reject a manual valid-GUID process, wrong nonce/role/root/PID and collision.
+Count the unchanged S<=4R+2/A<=4E+2 callbacks and entire typed record/facts maxima; wire exchanges
+add no journal callbacks or durable raw capability. Lost/late receipts stay pending with zero
+redispatch, original phase budgets and retained uncertain ownership. Fresh-root effects remain held.
+
 Distribution must reserve all repeated service records, frame overhead, file/receipt/inventory
 transitions and the worst rollback path against the revised 140 frames/18 MiB before any task,
 registry or file mutation. Reserve the actual validated remaining path again at recovery entry.

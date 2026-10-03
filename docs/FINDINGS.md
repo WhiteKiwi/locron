@@ -3650,6 +3650,24 @@ actual typed full-object reservation/serialization and native handshake gates re
 The two-image record/consumer/producer refinement is planning only, dependent on complete GUI
 and private Project review. It does not qualify source, activation or fresh-root effects.
 
+The concrete GUI activation transport can reuse pinned interprocess 2.4.4's safe synchronous
+peer queries: its Tokio named-pipe stream client_process_id/server_process_id call the matching
+kernel functions on the actual connected handle. Claimed frame PIDs or a Scheduler GUID do not
+replace those observations, retained child/control ownership, or the fresh Run capability.
+Strict bounded JSON decoding remains a raw-data boundary and cannot mint local authentication.
+[Kernel client PID contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid),
+[pinned stream source](https://docs.rs/interprocess/2.4.4/src/interprocess/os/windows/named_pipe/tokio/stream/impl.rs.html).
+
+The resolved UUID graph already contains getrandom 0.4.3. Its safe fill API reports any failure
+and does not promise initialized bytes on error; the audited Windows backend passes the exact
+slice pointer/length to ProcessPrng in bcryptprimitives and accepts only TRUE. The crate is
+MIT/Apache-2.0, requires Rust 1.85 and introduces no additional package version for this direct
+Windows CLI edge. Generate the complete 32-byte nonce inside the existing finite native owner,
+never from UUID text or a clock. Even normally fast entropy remains uncancellable native I/O;
+late success cannot authorize intent/Run. This source audit is not native handshake qualification.
+[Pinned fill contract](https://docs.rs/getrandom/0.4.3/getrandom/fn.fill.html),
+[pinned Windows backend](https://docs.rs/getrandom/0.4.3/src/getrandom/backends/windows.rs.html).
+
 The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
 inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject
