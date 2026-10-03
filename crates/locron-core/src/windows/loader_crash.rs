@@ -7,7 +7,7 @@ use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -17,6 +17,25 @@ use super::{ADAPTER_TIMEOUT, ADAPTER_WORKERS, prepare_adapter, run_adapter_worke
 
 const HOST: &str = include_str!("loader_crash_host.ps1");
 const OBSERVER: &str = include_str!("loader_crash_observer.ps1");
+const PROOF_BODY: &str = "# locron-heartbeat-proof-body";
+const NORMAL_BODY: &str = "# locron-heartbeat-normal-body";
+
+fn select_host_source(source: &str, proof: bool) -> String {
+    assert_eq!(source.matches(PROOF_BODY).count(), 1);
+    assert_eq!(source.matches(NORMAL_BODY).count(), 1);
+    let (shared, bodies) = source.split_once(PROOF_BODY).unwrap();
+    let (proof_body, normal_body) = bodies.split_once(NORMAL_BODY).unwrap();
+    format!("{shared}{}", if proof { proof_body } else { normal_body })
+}
+
+fn host_source(proof: bool) -> &'static str {
+    static NORMAL: OnceLock<String> = OnceLock::new();
+    static PROOF: OnceLock<String> = OnceLock::new();
+    let selected = if proof { &PROOF } else { &NORMAL };
+    selected
+        .get_or_init(|| select_host_source(HOST, proof))
+        .as_str()
+}
 
 #[derive(Clone, Copy, Debug)]
 enum OwnershipFact {
@@ -611,7 +630,7 @@ pub(super) fn powershell_publication_proof() {
     let directory = directory();
     let deadline = probe_deadline();
     let request = prepare_adapter(
-        HOST,
+        host_source(true),
         &json!({"directory":directory,"operation":"heartbeat-publication-proof",
             "budget_ms":super::remaining(deadline).unwrap().as_millis()}),
     )
@@ -650,7 +669,7 @@ pub(super) fn host() {
     });
     let deadline = Instant::now() + ADAPTER_TIMEOUT;
     let request = prepare_adapter(
-        HOST,
+        host_source(false),
         &json!({"directory":directory,"executable":std::env::current_exe().unwrap()}),
     )
     .unwrap();
@@ -706,4 +725,38 @@ pub(super) fn heartbeat() {
         std::thread::sleep(Duration::from_millis(25));
     }
     panic!("native heartbeat descendant was not contained by parent Job closure");
+}
+
+#[test]
+fn stock_crash_sources_fit_the_encoded_windows_command_line() {
+    use base64::Engine as _;
+
+    let command_units = |encoded: &str| {
+        format!(
+            "\"\\\\?\\C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}\0"
+        )
+        .encode_utf16()
+        .count()
+    };
+    for proof in [false, true] {
+        let request = prepare_adapter(host_source(proof), &serde_json::Value::Null).unwrap();
+        assert!(command_units(&request.encoded) <= 32_767);
+
+        let lf_host = HOST.replace("\r\n", "\n");
+        let lf = select_host_source(&lf_host, proof);
+        let crlf = select_host_source(&lf_host.replace('\n', "\r\n"), proof);
+        assert_eq!(crlf, lf.replace('\n', "\r\n"));
+        assert!(!lf.contains(PROOF_BODY) && !lf.contains(NORMAL_BODY));
+
+        let source = super::generic_trace::source(&lf).replace("\r\n", "\n");
+        for source in [&source, &source.replace('\n', "\r\n")] {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(
+                source
+                    .encode_utf16()
+                    .flat_map(u16::to_le_bytes)
+                    .collect::<Vec<_>>(),
+            );
+            assert!(command_units(&encoded) <= 32_767);
+        }
+    }
 }
