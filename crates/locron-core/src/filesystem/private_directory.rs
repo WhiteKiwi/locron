@@ -22,7 +22,8 @@ const DIRECTORY_MUTATION: u32 = 0x500d_0156 & !0x06;
 
 /// A passive fresh-root preflight, never a creation or rollback receipt.
 ///
-/// The existing prefix remains guarded against write/delete sharing and reparse changes.
+/// The existing prefix retains directory names and rejects foreign mutation grants.
+/// Every observed component is checked for reparse points before acceptance.
 /// Missing components are observations only; a later creator must refuse unknown new objects.
 #[derive(Debug)]
 pub struct PrivateDirectoryPlan {
