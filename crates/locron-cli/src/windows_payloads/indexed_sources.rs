@@ -1,6 +1,9 @@
 //! Canonical five-file package sources bound to an actual retained WinGet index.
 //! Alias rows and structural PE checks do not grant lifecycle or execution authority.
 
+#[path = "indexed_sources/gates.rs"]
+mod gates;
+
 use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
