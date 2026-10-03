@@ -5305,3 +5305,30 @@ new A/B controls add only their corresponding actual actor SID. Do not add a ser
 writer to those new descriptors. Verify existing ancestry and exact handles without
 repair; create only the new job namespace and conserve application ACL policy. The
 original finite owner/deadline/secret/real-token/cleanup receipt contract remains.
+
+
+### Native administrative ancestry owner feasibility (2026-10-04)
+
+Separate research resolved the Framework API boundary before dependent Source: public
+FileStream rejects directory BACKUP_SEMANTICS/OPEN_REPARSE_POINT; DirectoryInfo ACL/path
+reads do not retain no-delete handles, and core open_directory_guard_handle is private.
+DirectoryGuard::ancestors is public/existing-only and retains root-to-leaf handles but
+rejects a foreign actor's writable control leaf. Existing safe std Windows OpenOptionsExt
+and locked windows-permissions0.2.4 Get/SetSecurityInfo provide the supported example-local
+combination. There is no public atomic final-SDDL CreateDirectory wrapper; DirectoryInfo.Create
+can return an existing leaf. Select create_dir Ok-only ledger under retained trusted parents,
+preflight all inheritable/creator effects with full child mutation mask including0x06,
+then exact-handle/no-reparse/initial-empty/ACL/protected-init/final-empty readback.
+
+Research amendment SHA25640b6c854390962ce8e5cb980c624344b9ef36da96a360c79a10c2f890696035e;
+ABI92837a3d4f7ba8593df8471cbd5d022e0a857301336c499cd5fd32701b78621d;
+receipt07d585fd594d601783efc867a246687c5f68e53a6caf84dea877cd3d6889fe22.
+Root read the complete candidate/ABI and selects its strict bootstrap boundary: an exact
+regular build-file read/no-write/no-delete lease and fixed trusted existing descriptor chain
+precede native guard Start; actual native source/cwd/anchor handles precede fixture/account
+mutation. This is not retained ancestry before the first native entry or mapped-image proof.
+Arbitrary current runner SID ownership/mutation may fail preflight even on hosted admin;
+no fallback repairs/adopts/stages into another unguarded path. Actual native measurements0.
+Five Source paths/production APIs/locked package versions/credential outer first OwnedChild
+and original180/30/30/15/45/30s authority remain unchanged. Existing558 application pin is
+historical; Root integrates main4ab tree=10fe only after the separate Source lease is clean.

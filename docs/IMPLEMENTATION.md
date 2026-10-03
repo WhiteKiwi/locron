@@ -5146,3 +5146,29 @@ new A/B controls add only their corresponding actual actor SID. Do not add a ser
 writer to those new descriptors. Verify existing ancestry and exact handles without
 repair; create only the new job namespace and conserve application ACL policy. The
 original finite owner/deadline/secret/real-token/cleanup receipt contract remains.
+
+
+### Real-user prerequisite administrative guard role (2026-10-04)
+
+Root selects the complete reviewed guard-admin amendment appended to
+planning/WINDOWS_TWO_USER_PREREQUISITE_2026-10-04.md before dependent Source and records
+exact Issues27/29 Verify. Same five paths only; add one credential-free administrative role
+retained by the finite .NET Process/native-worker owner. Keep credential outer's first public
+OwnedChild before SID/state/adapter. Existing trusted chains use public DirectoryGuard;
+actor controls use safe no-delete Files with exact actor-specific handle ACL checks.
+Native create_dir Ok-only ledger/all inherited child rights preflight precede protected
+initialization. Exact eight private bounded correlated request/ACKs govern acquisition,
+creation, image hold and phased release; final sanitized<=4KiB receipt adds13 actual guard
+booleans. Failure ACK is one fixed enum terminal record, never raw identity/path/native text.
+
+Order: existing chains ACK→create-only held job ACK→exact accounts/Users/SIDs→held controls
+ACK→create-new image/held ACK→actual A/B actors→tree/Process/EOF and exact account absence→
+image/marker cleanup→control release/empty removals→job release/empty removal→final guard
+release/exit0/two EOFs. All resource duplicates close at their corresponding release.
+Original setup30s includes native guard Start and creation; clocks never renew from a late
+ACK. Unknown owner retains actual Process/worker/guards, forbids unfinished join/EndInvoke/
+Stop/Dispose or another admission and yields failed unknown cleanup. Bootstrap may refuse
+hosted source/cwd rather than weakening fixed trust. Four ordered Verify additions require
+actual native bootstrap refusal/held-identity/setup/continuous actors/ordered cleanup facts,
+not compile or zero-case substitutes. Source base integrates reviewed main only after clean
+separate dev return; no temporary manual workflow is imported into main.
