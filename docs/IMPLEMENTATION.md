@@ -4704,3 +4704,31 @@ Use the existing Windows-only additive wake object; retain legacy Unix boolean c
    then the exact reviewed head passes the repository CI/Audit checks before head-matched merge.
    Broader two-user/two-root IPC, durable fallback, Windows 11 and public-release acceptance
    remain the existing open issue criteria; this correction completes only the display slice.
+
+### Windows PATH entry anchoring correction (2026-10-03)
+
+Correct the PATH-entry defect recorded in FINDINGS under #26's existing deterministic
+execution contract. SPEC already requires the effective configured PATH/PATHEXT and job
+working directory, so no product-scope amendment is needed. Before any filesystem lookup,
+classify each Windows PATH entry with the same ambiguity rule as an executable request.
+Skip drive-relative and root-relative entries; preserve absolute drive/UNC/verbatim entries
+and anchor ordinary relative entries, including empty entries, to the explicit job cwd.
+
+Skipping one unusable location preserves later usable PATH entries and the resolver's current
+Option/missing-candidate contract. Refusing the whole list would change error policy across
+entrypoints without improving job-cwd isolation. Retain PATHEXT order, absolute executable
+canonicalization, argv, environment precedence and Unix behavior; add no ambient fallback.
+
+1. Apply shared pre-lookup path admission in execution.rs. **Verify:** C:bin, C: and root-only
+   entries refuse while ordinary relative, absolute drive, UNC and verbatim entries preserve
+   their existing interpretation; ambiguous executable requests remain refused.
+2. Add an isolated native subprocess regression with distinct process/job working directories.
+   **Verify:** real files establish the ambient drive-relative/root-relative lookup control;
+   the resolver skips those entries, returns no match when they are the only entries, and
+   selects the job-relative/absolute candidate after an invalid entry. Empty PATH entries
+   resolve against the job cwd. Only the disposable child receives a changed cwd/environment.
+3. Review and qualify the focused change. **Verify:** existing mixed-case PATHEXT/Unicode/direct
+   target tests and new native regressions pass on the repository's Windows lanes; retained Unix
+   tests, formatting and diff checks pass. Pure UNC vectors prove classification, not access to
+   a live network share. Record unavailable local tools and unrun native gates honestly; publish
+   a Draft PR without claiming the broader Windows execution issue or release milestone complete.

@@ -247,7 +247,18 @@ pub fn validate_direct_executable(executable: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn is_ambiguous_windows_path(path: &Path) -> bool {
+    !path.is_absolute()
+        && (path.has_root()
+            || matches!(
+                path.components().next(),
+                Some(std::path::Component::Prefix(_))
+            ))
+}
+
 /// Resolves only the effective PATH/PATHEXT, relative entries being based on job cwd.
+/// Ambiguous Windows drive-relative/root-relative PATH entries are skipped.
 #[must_use]
 pub fn resolve_executable(
     executable: &str,
@@ -259,13 +270,8 @@ pub fn resolve_executable(
     }
     let requested = Path::new(executable);
     #[cfg(windows)]
-    if requested.has_root() && !requested.is_absolute()
-        || (matches!(
-            requested.components().next(),
-            Some(std::path::Component::Prefix(_))
-        ) && !requested.is_absolute())
-    {
-        // A drive-relative/root-relative command would consult process-global drive cwd.
+    if is_ambiguous_windows_path(requested) {
+        // These forms do not resolve relative to the complete job cwd.
         return None;
     }
     let bearing = requested.is_absolute() || requested.components().count() > 1;
@@ -276,7 +282,12 @@ pub fn resolve_executable(
             cwd.join(requested)
         }]
     } else {
-        std::env::split_paths(environment_value(environment, "PATH").map_or("", String::as_str))
+        let search_path = environment_value(environment, "PATH").map_or("", String::as_str);
+        let directories = std::env::split_paths(search_path);
+        #[cfg(windows)]
+        // Joining C:bin would discard cwd and consult the ambient drive directory.
+        let directories = directories.filter(|directory| !is_ambiguous_windows_path(directory));
+        directories
             .map(|directory| {
                 if directory.is_absolute() {
                     directory
@@ -395,5 +406,134 @@ mod tests {
         assert!(resolve_executable("missing", &root, &env).is_none());
         assert!(resolve_executable("tool", &root, &BTreeMap::new()).is_none());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_path_admission_preserves_relative_absolute_and_unc_forms() {
+        for path in [r"C:bin", "C:", r"\bin", "/bin"] {
+            assert!(is_ambiguous_windows_path(Path::new(path)), "{path}");
+        }
+        // UNC cases exercise path admission without requiring a live network share.
+        for path in [
+            "",
+            ".",
+            r"工具 bin",
+            r"..\bin",
+            r"C:\tools",
+            "C:/tools",
+            r"\\server\share\bin",
+            r"\\?\C:\tools",
+            r"\\?\UNC\server\share\bin",
+        ] {
+            assert!(!is_ambiguous_windows_path(Path::new(path)), "{path}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_path_search_ignores_ambient_directories() {
+        const CHILD_ROOT: &str = "LOCRON_TEST_PATH_SEARCH_ROOT";
+        if let Some(root) = std::env::var_os(CHILD_ROOT) {
+            assert_windows_path_search_ignores_ambient_directories(Path::new(&root));
+            std::fs::write(Path::new(&root).join("verified"), b"job cwd preserved").unwrap();
+            return;
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let ambient = root.path().join("ambient");
+        let job = root.path().join("job");
+        for directory in [
+            ambient.clone(),
+            ambient.join("bin"),
+            job.clone(),
+            job.join("工具 bin"),
+        ] {
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("tool.ExE"), b"resolution fixture").unwrap();
+        }
+        // Only this disposable child changes its cwd/environment, not the parallel test host.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "execution::tests::windows_path_search_ignores_ambient_directories",
+                "--nocapture",
+            ])
+            .env(CHILD_ROOT, std::fs::canonicalize(root.path()).unwrap())
+            .current_dir(&ambient)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child failed: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            std::fs::read(root.path().join("verified")).unwrap(),
+            b"job cwd preserved"
+        );
+    }
+
+    #[cfg(windows)]
+    fn assert_windows_path_search_ignores_ambient_directories(root: &Path) {
+        use std::path::{Component, Prefix};
+
+        let cwd = root.join("job");
+        let ambient = std::env::current_dir().unwrap();
+        assert_ne!(
+            std::fs::canonicalize(&cwd).unwrap(),
+            std::fs::canonicalize(&ambient).unwrap()
+        );
+        let drive = match ambient.components().next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => char::from(drive),
+                _ => panic!("isolated fixture must use a local drive"),
+            },
+            _ => panic!("isolated fixture must have a drive prefix"),
+        };
+        let rooted_bin: PathBuf = ambient.join("bin").components().skip(1).collect();
+        let job_bin = cwd.join("工具 bin");
+        let selected = std::fs::canonicalize(job_bin.join("tool.ExE")).unwrap();
+        let entries = [
+            (format!("{drive}:bin"), ambient.join("bin")),
+            (format!("{drive}:"), ambient.clone()),
+            (rooted_bin.to_str().unwrap().to_owned(), ambient.join("bin")),
+        ];
+        for (entry, ambient_directory) in entries {
+            // Establish the actual filesystem candidate admitted by the former cwd.join path.
+            assert_eq!(
+                std::fs::canonicalize(cwd.join(&entry).join("tool.ExE")).unwrap(),
+                std::fs::canonicalize(ambient_directory.join("tool.ExE")).unwrap()
+            );
+            let mut environment = BTreeMap::from([
+                ("PATH".into(), entry.clone()),
+                ("PATHEXT".into(), ".EXE".into()),
+            ]);
+            assert!(
+                resolve_executable("tool", &cwd, &environment).is_none(),
+                "{entry}"
+            );
+            for directory in [Path::new("工具 bin"), job_bin.as_path()] {
+                let path = std::env::join_paths([Path::new(&entry), directory])
+                    .unwrap()
+                    .into_string()
+                    .unwrap();
+                environment.insert("PATH".into(), path);
+                assert_eq!(
+                    resolve_executable("tool", &cwd, &environment),
+                    Some(selected.clone()),
+                    "ambiguous entry {entry} displaced {directory:?}"
+                );
+            }
+        }
+        let environment = BTreeMap::from([
+            ("PATH".into(), String::new()),
+            ("PATHEXT".into(), ".EXE".into()),
+        ]);
+        assert_eq!(
+            resolve_executable("tool", &cwd, &environment),
+            Some(std::fs::canonicalize(cwd.join("tool.ExE")).unwrap())
+        );
     }
 }
