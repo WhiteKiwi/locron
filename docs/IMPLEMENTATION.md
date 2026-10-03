@@ -2411,6 +2411,13 @@ with current-SID owner and an explicit protected SID+SYSTEM DACL, accept_remote(
 and instance_limit(2). Its initial creation uses FIRST_PIPE_INSTANCE; a collision refuses without
 adopting an existing endpoint. Accept once and immediately drop the listener's unused replacement
 instance; retain the connected stream. Limit 1 cannot be used because accept creates that replacement.
+Dropping that Tokio listener is not synchronous proof that its native replacement handle has
+closed: pinned mio retains native handles through pending IOCP completion records. Single accept
+is enforced by consuming the listener, with no second accepted stream or qualification path;
+an incidental later client open supplies no authority. Keep the runtime in the same finite owner
+through cleanup, retain Child/lease/guards until runtime disposal is confirmed, and release its
+admission only afterward. Any uncertain disposal remains on that owner with bounded caller refusal,
+not an untracked runtime/handle leak or a second admission.
 
 Both clients use Tokio ClientOptions read(true), write(false), explicit SECURITY_IDENTIFICATION
 SQOS and byte mode; its safe open registers one overlapped I/O handle. For the client's server-PID
@@ -2475,8 +2482,16 @@ refuse, a wrong actual image/missing module/process exit or broken/stale/oversiz
 pipe collisions/wrong peers/trailing bytes or a held-open terminal sender refuse, terminal EOF
 occurs while the original child remains live, and cold deadline/owned cleanup stays bounded.
 Exercise real creation-time ACL/remote rejection and flush/drop behavior on both architectures,
-including disconnected-reader raw-flush refusal, complete delivery before terminal close and an
+including refusal after buffered data loses its reader, complete delivery before terminal close and an
 unread/held-open endpoint timing out while retaining its worker and launch guards.
+For that negative flush fixture, use a test-owned receive-only standard File with no IOCP
+registration or background reads, write actual bytes, and observe the retained raw-flush worker
+pending before closing that known native reader. Require the final native error rather than
+assuming an empty disconnected pipe must fail. The single-accept fixture proves first-instance
+collision refusal and delivery only on its sole consumed accepted stream; a late open may fail
+or briefly reach the dropped unused instance, but must receive no qualification bytes. No repeated
+connection probe, quiet-period result or successful empty flush can qualify a peer. All fixture
+waits and cold setup retain the original deadline; native results remain hosted qualification gates.
 Assert no installed-target/state/task/PATH/journal
 mutation in every qualification fixture. Release executable qualification, actual helper
 acceptance, complete lifecycle effects and clean Windows 11 acceptance remain separate gates.

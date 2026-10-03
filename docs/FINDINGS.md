@@ -4494,3 +4494,31 @@ version/architecture/ABI/source verification, receipt/WinGet ownership, actual h
 and complete pre-receipt pair rollback. No GUI source, witness implementation or expanded journal
 limit has been qualified by this research; the revised complete plan requires parent/Project
 review before separate producer, consumer and distribution development.
+
+### Native pipe closure fixture evidence (2026-10-03)
+
+PR #44 revision 0503d55's exact run 37089833448 exercised 71 distribution fixtures on each
+native architecture: 69 passed and two transport assertions failed. A client open immediately
+after dropping the unused replacement succeeded; raw flush of a zero-byte pipe also succeeded
+after dropping its Tokio reader. These observations do not prove a second accepted peer or
+authenticated delivery. The pinned interprocess accept creates a replacement before returning
+the original stream. Tokio 1.53.1 deregisters on drop, but mio 1.2.2 retains native Arc-owned
+handles for queued read/connect/event completions and cancellation does not synchronously
+complete them. The same finite runtime owner must retain its admission and launch guards through
+confirmed disposal; the caller must not join it indefinitely or treat a late open as authority.
+
+Microsoft's server flush contract concerns buffered bytes; it does not promise failure for an
+empty disconnected pipe. The planned meaningful negative fixture therefore connects a safe
+receive-only standard File without IOCP/background reads, sends actual bytes, observes the
+owned raw flush pending, closes that known reader, and requires its final native error. Single
+accept remains enforced by the consumed listener and sole connected stream. Its native fixture
+keeps first-instance collision refusal and sole-stream delivery/terminal EOF, while any late
+open must receive no qualification bytes. No synchronous-drop, empty-flush, quiet-period or
+PID-metadata inference replaces exact frames, actual EOF, live Child and continuous guard proof.
+This is an evidence-driven fixture refinement; the actual mapped-helper gate is still unqualified.
+
+Sources: [pinned listener replacement](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/listener.rs),
+[Tokio deregistration](https://github.com/tokio-rs/tokio/blob/tokio-1.53.1/tokio/src/io/poll_evented.rs),
+[mio native completion/drop ownership](https://github.com/tokio-rs/mio/blob/v1.2.2/src/sys/windows/named_pipe.rs),
+[asynchronous cancellation](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex),
+[server buffered-byte flush](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
