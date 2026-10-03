@@ -5070,3 +5070,32 @@ parent reviews full Source then publishes fresh ordinary/full/per-binary native
 evidence. A passing later scenario does not diagnose an earlier failure. Missing
 Server SSE-reopen connection/file ownership correlation remains separate, and
 required red checks continue blocking merge.
+
+
+### Stock heartbeat same-candidate rename control (2026-10-04)
+
+Continue the existing test-only heartbeat plan after1a1's three native jobs pass the
+original crash proof but expose the new rename expectationSome(32) versus actualSome(5).
+FINDINGS records the precise operation distinction and the cancelled-run limitation.
+After reviewed docs and Issue#31 Verify readback, a separate developer changes only
+publication_proofs in loader_crash.rs. Stage one closed8 snapshot, retain its path, require
+the actual5 refusal and the returned path's identical ownership, and require published
+7/bytes7 while the target handle remains held. Close only that exact handle; publish the
+same returned TempPath to8 and verify value/bytes. Publish complete7 to restore the
+controlled baseline, then preserve the entire existing actual publisher stage/kill/reap
+and final8 sequence. Every new I/O uses the original observation pre/post deadline checks.
+
+No PowerShell/stock-open assertion, production code, dispatcher, workflow, dependency,
+selector or clock changes. Parent reviews the whole one-function diff and all protected
+blobs, runs applicable Windows-target compilation and formatting, then publishes fresh
+ordinary plus full-discovery native evidence. The unchanged original proof and both new
+publication proofs must pass all three ordinary native rows before merge. Retain every
+full-suite failure and old unknown failure; broad Issues#31/#32 remain unfinished.
+
+
+The same-candidate identity assertion must retain privacy and the warnings-denied lint
+contract. Native lint111281642758 at f1cc5dc rejects assert!(left == right) as manual_assert_eq.
+Bind the exact path equality once to a named boolean and assert that boolean with a fixed
+failure message. This reports the identity failure without formatting either private path.
+No warning allowance, identity weakening, or other Source/clock change is permitted.
+The separate developer applies this single assertion-style correction after this plan.

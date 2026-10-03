@@ -5227,3 +5227,37 @@ facts. Research receipt SHA256
 f66dfe9b0007d33afe5ac294974c1191e0f48320bb376cf519a02b9bf69a7f17 and the reviewed
 WINDOWS_WAL_CONFIGURE_DIAGNOSTICS_2026-10-04 plan preserve original policy and
 all unqualified acceptance gates. No Source was implemented by the planning parent.
+
+
+### Measured rename-refusal expectation before Source (2026-10-04)
+
+Head1a1e5967ed179ef4b43654a0dd951118b62a5a1b qualifies the command-size correction in
+ordinary CI37148405286: all three native jobs pass131 Core cases and the original
+parent-exit-targets-handles-heartbeats-guards-confirmed marker. Their new Rust publication
+proof then fails at loader_crash.rs531: actual raw OS errorSome(5), expectedSome(32).
+The x64 stable111276979316, ARM111276979308 and MSRV111276979298 logs agree. The ordinary
+run was cancelled after those actual failures to obtain logs promptly; later native
+steps and packages are not qualified by that cancelled run. Full discovery37148403193
+remains a separate failed receipt; no whole-workspace or public acceptance claim follows.
+
+The locked tempfile3.27.0 implementation retains the failed TempPath in PathPersistError.
+Its Windows persist sets candidate attributes and calls MoveFileExW with replacement;
+that envelope does not distinguish the two internal syscall failures. Microsoft rename
+processing documents access-denied refusal when replacing an open target. Win325 is
+ERROR_ACCESS_DENIED;32 is ERROR_SHARING_VIOLATION. The prior expectation imported the
+exclusive CreateFile open result into a different rename operation without evidence.
+Do not generalize that all filesystems or rename refusals always return5.
+
+For this measured fixture, require the exactSome(5) and add a same-candidate positive
+control. Retain the closed8 candidate returned in the failure, verify its identity and
+unchanged published7 while the exact held target handle remains open, then close that
+handle and publish the same TempPath successfully to8. Restore a complete7 snapshot
+before the unchanged actual child stage8/kill/reap/preserved7/publish8 proof. This control
+separates the deliberate held-target state from a permanently invalid candidate, while
+preserving failure propagation and the original45-second absolute driver deadline.
+The earlier45.01s failure remains unexplained; successful new receipts do not reconstruct
+its missing bytes. Exclusive stock-open and PowerShell File.Replace error32 assertions
+remain unchanged and require their own native evidence. Sources: locked tempfile source;
+[Microsoft rename processing](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/rename-and-hard-link-processing);
+[Win32 errors5/32](https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-);
+[actual CI](https://github.com/WhiteKiwi/locron/actions/runs/37148405286).
