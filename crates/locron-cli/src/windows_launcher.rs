@@ -184,6 +184,14 @@ fn write_probe(budget: &Budget, sink: &mut impl Write, output: &[u8]) -> Result<
     flushed.map_err(|_| Failure::Output)
 }
 
+fn duplicate_output(budget: &Budget, output: &impl AsHandle) -> Result<File, Failure> {
+    budget.check()?;
+    let duplicate = output.as_handle().try_clone_to_owned();
+    budget.check()?;
+    // A cloned NULL handle still must pass real I/O; ownership alone is not output proof.
+    duplicate.map(File::from).map_err(|_| Failure::Output)
+}
+
 fn entry_work(budget: &Budget, arguments: &[OsString]) -> Result<i32, Failure> {
     // This is the worker's first native operation, before parsing or any other entry work.
     let console = initial_console(budget)?;
@@ -192,12 +200,9 @@ fn entry_work(budget: &Budget, arguments: &[OsString]) -> Result<i32, Failure> {
     let output = probe_output(command, console)?;
     budget.check()?;
     let stdout = io::stdout();
-    budget.check()?;
-    let duplicate = stdout.as_handle().try_clone_to_owned();
-    budget.check()?;
     // Use the inherited handle without the global line buffer, which Rust exit cleanup
-    // could otherwise flush after expiry. A cloned NULL handle still must pass real I/O.
-    let mut output_handle = File::from(duplicate.map_err(|_| Failure::Output)?);
+    // could otherwise flush after expiry.
+    let mut output_handle = duplicate_output(budget, &stdout)?;
     let result = write_probe(budget, &mut output_handle, &output);
     drop(output_handle);
     budget.check()?;
@@ -274,10 +279,12 @@ pub(crate) fn run(entered: Instant, arguments: Vec<OsString>) -> i32 {
 mod tests {
     use std::io::Read;
     use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
 
     use super::{
-        Arc, AtomicBool, Budget, ConsoleFact, Duration, EntryCommand, FAILURE_EXIT, Failure,
-        Instant, Ordering, OsString, Write, drive, io, mpsc, parse, write_probe,
+        Arc, AtomicBool, Budget, ConsoleFact, Duration, EntryCommand, FAILURE_EXIT, Failure, File,
+        Instant, Ordering, OsString, PROBE_LIMIT, Write, drive, duplicate_output, io, mpsc, parse,
+        write_probe,
     };
 
     fn arguments(values: &[&str]) -> Vec<OsString> {
@@ -510,5 +517,84 @@ mod tests {
         assert!(elapsed < Duration::from_millis(800));
         assert!(unfinished);
         assert_eq!(finished.unwrap(), Err(Failure::Expired));
+    }
+
+    #[test]
+    fn blocked_native_output_stays_owned_without_fresh_writes_or_flushes() {
+        struct ObservedFile {
+            file: File,
+            writes: Arc<AtomicUsize>,
+            returned: Arc<AtomicUsize>,
+            flushes: Arc<AtomicUsize>,
+        }
+        impl Write for ObservedFile {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.writes.fetch_add(1, Ordering::SeqCst);
+                let result = self.file.write(bytes);
+                self.returned.fetch_add(1, Ordering::SeqCst);
+                result
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                self.flushes.fetch_add(1, Ordering::SeqCst);
+                self.file.flush()
+            }
+        }
+        let (reader, writer) = io::pipe().unwrap();
+        let writes = Arc::new(AtomicUsize::new(0));
+        let native_returns = Arc::new(AtomicUsize::new(0));
+        let flushes = Arc::new(AtomicUsize::new(0));
+        let worker_writes = Arc::clone(&writes);
+        let worker_returns = Arc::clone(&native_returns);
+        let worker_flushes = Arc::clone(&flushes);
+        let (finished_sender, finished_receiver) = mpsc::sync_channel(1);
+        let (returned_sender, returned_receiver) = mpsc::sync_channel(1);
+        let caller = std::thread::spawn(move || {
+            let entered = Instant::now();
+            let code = drive(entered, Duration::from_millis(200), move |budget| {
+                let result: Result<(), Failure> = (|| {
+                    // Use the exact safe duplication and unbuffered File path used for stdout.
+                    let output = duplicate_output(budget, &writer)?;
+                    drop(writer);
+                    let mut observed = ObservedFile {
+                        file: output,
+                        writes: worker_writes,
+                        returned: worker_returns,
+                        flushes: worker_flushes,
+                    };
+                    // Native anonymous capacity is unspecified. Fill it through real writes,
+                    // with <=4KiB per probe and <=1MiB total under the original driver budget.
+                    let bytes = [0x5a; PROBE_LIMIT];
+                    for _ in 0..(1024 * 1024 / PROBE_LIMIT) {
+                        write_probe(budget, &mut observed, &bytes)?;
+                    }
+                    Err(Failure::Output)
+                })();
+                // The unbuffered File has closed before this finite completion receipt.
+                finished_sender.send(result).unwrap();
+                result.map(|()| 0)
+            });
+            returned_sender.send((code, entered.elapsed())).unwrap();
+        });
+        let returned = returned_receiver.recv_timeout(Duration::from_secs(1));
+        let unfinished = matches!(finished_receiver.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let writes_at_refusal = writes.load(Ordering::SeqCst);
+        let native_returns_at_refusal = native_returns.load(Ordering::SeqCst);
+        let flushes_at_refusal = flushes.load(Ordering::SeqCst);
+        // Release only this owned read peer, including failure paths; do not cancel/replace
+        // the in-flight WriteFile or assume that queued bytes were never delivered.
+        drop(reader);
+        let finished = finished_receiver.recv_timeout(Duration::from_secs(1));
+        let _ = caller.join();
+        let (code, elapsed) = returned.unwrap();
+        assert_eq!(code, FAILURE_EXIT);
+        assert!(elapsed >= Duration::from_millis(200));
+        assert!(elapsed < Duration::from_millis(800));
+        assert!(unfinished, "native output ended before peer release");
+        assert_eq!(writes_at_refusal, native_returns_at_refusal + 1);
+        assert_eq!(finished.unwrap(), Err(Failure::Expired));
+        assert_eq!(writes.load(Ordering::SeqCst), writes_at_refusal);
+        assert_eq!(native_returns.load(Ordering::SeqCst), writes_at_refusal);
+        assert_eq!(flushes.load(Ordering::SeqCst), flushes_at_refusal);
     }
 }
