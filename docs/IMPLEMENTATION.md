@@ -5172,3 +5172,16 @@ hosted source/cwd rather than weakening fixed trust. Four ordered Verify additio
 actual native bootstrap refusal/held-identity/setup/continuous actors/ordered cleanup facts,
 not compile or zero-case substitutes. Source base integrates reviewed main only after clean
 separate dev return; no temporary manual workflow is imported into main.
+
+
+### Public two-user prerequisite evidence boundary (2026-10-04)
+
+Select the appended public sanitized publication rule in
+planning/WINDOWS_TWO_USER_PREREQUISITE_2026-10-04.md before dependent Source.
+Retain private guard-admin exact creation/removal and eight ordered ACKs.
+Public DirectoryInfo.Create is existing-or-new only, with no creation/adoption
+or removal authority; validate actual protected fixed trust/no reparse before
+CreateNew-only bounded UTF-8 artifacts and never repair/overwrite/retry.
+Verify same finite owner/original deadline, exact sanitized new descriptors and
+explicit refusal of unsafe/existing/late output or unknown cleanup. Root records
+exact Issues27/29 readback before releasing the five-path development lease.

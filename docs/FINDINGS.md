@@ -5332,3 +5332,17 @@ no fallback repairs/adopts/stages into another unguarded path. Actual native mea
 Five Source paths/production APIs/locked package versions/credential outer first OwnedChild
 and original180/30/30/15/45/30s authority remain unchanged. Existing558 application pin is
 historical; Root integrates main4ab tree=10fe only after the separate Source lease is clean.
+
+
+### Public prerequisite receipt publication before Source (2026-10-04)
+
+The private native create_dir ledger cannot be inferred from Framework
+DirectoryInfo.Create, which may return an existing directory. The selected
+public evidence boundary records that distinction without expanding credential,
+state, ancestry or removal authority: fixed trusted cwd, exact actual protected
+Admin/SYSTEM descriptor/no reparse, CreateNew-only bounded sanitized files,
+same finite owner/original deadlines and no repair/overwrite/public cleanup.
+Failed/late publication or unknown cleanup never produces a success receipt.
+This precise five-path development decision is selected in the prerequisite
+plan and owning Issues27/29 before its dependent Source; no local native/host
+effects or hosted acceptance is inferred from the composition.

@@ -196,3 +196,39 @@ DirectoryGuard's internal SID/native calls do not expose cancellation or an `unt
 - [.NET redirected Process streams](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=netframework-4.8.1): private concurrent bounded reads avoid sequential pipe deadlock; actual completion and EOF still require measurement.
 
 No native behavior, fixture/account action, PowerShell parser or test was executed during this research. PrivacyDev direct message delivery was unavailable in the current visible agent inventory; Root supplied its exact Framework/API boundary and will review this amendment before dependent Source.
+
+
+### Selected public sanitized evidence boundary before dependent Source (2026-10-04)
+
+This documents the final publication creation rule before its dependent Source.
+It adds no product scope, private-state/credential authority or fixture cleanup
+claim. The private job/control namespace continues to use only the guard-admin
+native create_dir Ok-only ledger and the exact eight-request protocol above.
+
+Publish only prerequisite-evidence/{built-example.json,receipt.json} beneath the
+exact already bootstrap-validated existing cwd; recheck that trusted parent
+without repairing it. Publication remains in the same finite native runspace
+and its original enclosing cleanup/controller deadline, with pre/post gates.
+DirectoryInfo.Create with a supplied protected Administrators/SYSTEM descriptor
+may return existing-or-new: it supplies NO created-this-run, adoption or
+directory-removal authority. Before either file open, verify actual directory
+type/no reparse, fixed Admin/SYSTEM owner, protected DACL and exactly two
+inheritable FullControl allow ACEs for Admin/SYSTEM; refuse every other/unknown
+descriptor and never repair an existing directory. Open each fixed sanitized
+output with FileMode.CreateNew plus an explicit protected Admin/SYSTEM file
+descriptor; verify the exact new handle descriptor, write bounded UTF-8 <=4KiB,
+flush, close and check deadline. Existing files refuse without overwrite/retry.
+No public artifact directory/file cleanup is performed. This public evidence
+path is not retained fixture ancestry and is not credential/state authority.
+Publish a success receipt only after all actor/account/guardian facts and
+original clocks are confirmed; failed/late publication or any unknown cleanup
+cannot produce workflow success. Failure evidence may say cleanup unknown but
+cannot satisfy the success contract.
+
+Verify this boundary with the existing plan gates: the same original finite
+owner/deadline encloses publication; only the two fixed sanitized new files are
+admitted with actual protected descriptors; existing/unsafe/reparse or late
+outputs refuse without overwrite, repair, removal or success. A partial file,
+failed upload or a syntactically valid failure receipt is not native acceptance.
+Source remains five paths and separate-session owned; actual hosted evidence
+and Root complete-source review remain required before any qualification.
