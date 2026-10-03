@@ -348,6 +348,9 @@ impl ReceiveEndpoint {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::OpenOptions;
+    use std::os::windows::fs::OpenOptionsExt;
+
     use super::super::windows_launch_codec::{Bindings, HelperIdentity};
     use super::*;
 
@@ -498,18 +501,48 @@ mod tests {
             let names = PipeNames::new(&sid, Uuid::now_v7()).unwrap();
             let listener = SendListener::parent(&names, &sid, deadline).unwrap();
             assert!(SendListener::parent(&names, &sid, deadline).is_err());
-            let receiver = ReceiveEndpoint::child(&names, deadline).await.unwrap();
-            let sender = listener.accept(deadline).await.unwrap();
-            // The replacement listener has already been dropped; no second instance.
-            assert!(
-                ClientOptions::new()
-                    .read(true)
-                    .write(false)
-                    .open(&names.parent)
-                    .is_err()
+            let mut receiver = ReceiveEndpoint::child(&names, deadline).await.unwrap();
+            // Consuming accept exposes only this stream. Native IOCP completions
+            // can retain the unused replacement after its listener is dropped.
+            let mut sender = listener.accept(deadline).await.unwrap();
+            remaining(deadline).unwrap();
+            let late = ClientOptions::new()
+                .read(true)
+                .write(false)
+                .security_qos_flags(SECURITY_IDENTIFICATION)
+                .open(&names.parent);
+            remaining(deadline).unwrap();
+            let first = frame();
+            let second = first
+                .next(Phase::Permit, std::process::id(), Uuid::now_v7())
+                .unwrap();
+            let mut sent = Codec::default();
+            sender.send(&mut sent, &first, deadline).await.unwrap();
+            sender.send(&mut sent, &second, deadline).await.unwrap();
+            let mut close = sender.close(deadline).unwrap();
+            let mut received = Codec::default();
+            assert_eq!(
+                receiver.receive(&mut received, deadline).await.unwrap(),
+                first
             );
-            drop(receiver);
-            drop(sender);
+            assert_eq!(
+                receiver.receive(&mut received, deadline).await.unwrap(),
+                second
+            );
+            close.wait_until(deadline).await.unwrap();
+            receiver.terminal_eof(deadline).await.unwrap();
+            if let Ok(mut late) = late {
+                let mut byte = [0];
+                // Require actual EOF/read failure, not a quiet interval or an
+                // assumed synchronous native close. This endpoint has no authority.
+                let result = tokio::time::timeout_at(deadline.into(), late.read(&mut byte))
+                    .await
+                    .expect("unused replacement disposal unconfirmed at original deadline");
+                assert!(
+                    !matches!(result, Ok(count) if count != 0),
+                    "unused replacement received qualification bytes"
+                );
+            }
         });
     }
 
@@ -549,14 +582,53 @@ mod tests {
     }
 
     #[test]
-    fn disconnected_reader_raw_flush_is_an_error_not_confirmation() {
+    fn buffered_reader_disconnect_raw_flush_reports_native_error() {
         owned_fixture(|deadline| async move {
-            let names = names(deadline);
-            let (sender, receiver) = endpoints(&names, deadline, false).await;
-            drop(receiver);
+            let sid = locron_core::windows::current_user_sid_until(deadline).unwrap();
+            let names = PipeNames::new(&sid, Uuid::now_v7()).unwrap();
+            let listener = SendListener::parent(&names, &sid, deadline).unwrap();
+            remaining(deadline).unwrap();
+            // Plain File owns one native receive-only handle. It is not registered
+            // with IOCP and cannot prefetch bytes behind this unread fixture.
+            let reader = OpenOptions::new()
+                .read(true)
+                .write(false)
+                .share_mode(3)
+                .security_qos_flags(SECURITY_IDENTIFICATION)
+                .open(&names.parent)
+                .unwrap();
+            remaining(deadline).unwrap();
+            let mut sender = listener.accept(deadline).await.unwrap();
+            until(deadline, async {
+                Ok(sender
+                    .stream
+                    .as_mut()
+                    .unwrap()
+                    .write_all(b"actually unread native bytes")
+                    .await?)
+            })
+            .await
+            .unwrap();
             let mut close = sender.raw_close(deadline).unwrap();
-            assert!(close.wait_until(deadline).await.is_err());
+            assert!(
+                close
+                    .wait_until(deadline.min(Instant::now() + Duration::from_millis(30)))
+                    .await
+                    .is_err()
+            );
+            assert!(
+                close.is_pending(),
+                "unread flush must remain actually owned"
+            );
+            drop(reader);
+            let error = close.wait_until(deadline).await.unwrap_err();
             assert!(!close.is_pending(), "native flush error must be observed");
+            assert!(
+                error
+                    .chain()
+                    .any(|cause| cause.downcast_ref::<std::io::Error>().is_some()),
+                "deadline/join refusal is not the required native flush error: {error:#}"
+            );
         });
     }
 
