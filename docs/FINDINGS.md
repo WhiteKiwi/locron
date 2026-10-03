@@ -2729,6 +2729,22 @@ JSON/SID/CreateNew results. Concurrent generic JSON/read-only COM and fixed file
 keeps the original thirty-second API, three-second cleanup and forty-five-second helper bounds.
 No production operation, public selector or caller-provided script enters the fixed protocol.
 
+Exact 8814d8c MSRV job 111106970873 passes cold Core 88/88 and the mandatory independent EOF
+proof in 3.42 seconds. Its next Restricted fixture times out at loader_tests.rs:201, the fixed
+thread's policy-observation loop after real SID/CreateNew/ACL assertions, then the failed join
+masks the saved generic result. This log does not show a policy, binary-binding or COM failure.
+The fixed policy observation currently scans only ChildPhases' sixteen-entry diagnostic ring:
+five startup tokens include the policy assertion receipt, followed by five tokens for each of
+SID, directory creation and file creation. Twenty tokens necessarily evict that startup receipt.
+This source-grounded explanation remains subject to the unchanged native two-child proof.
+
+Keep a separate cfg(test)-only observed-policy bit in the actual owned child's ChildPhases,
+latched exclusively by the exact successfully parsed policy-confirmed token. The recent-phase
+ring remains bounded to sixteen and a newly owned child begins false. Keep its actual PID/Arc
+association and effective enum assertion; no environment text or guessed policy can set it.
+An overflow/reset/unknown-token fixture plus the required native Restricted mode must prove
+the durable receipt without relaxing the original deadline, policy or child-lifetime gates.
+
 Root exit and PID disappearance do not prove descendant cleanup. Job kill-on-close supplies
 emergency containment when the parent closes its kernel handles; an independent observer must
 retain actual process handles while the targets are alive and wait for those associated objects.

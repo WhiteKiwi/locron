@@ -411,6 +411,19 @@ PowerShell 5.1 reflection compatibility or an overriding policy fails explicitly
 import, Set-ExecutionPolicy, bypass argument, host/registry policy change or production selector is added.
 Report a fixed bounded policy-confirmed token tied to each actual owned PID.
 
+Preserve that actual fixed-child receipt independently of its rolling diagnostic history.
+Add one cfg(test)-only observed-policy bit to each ChildPhases; latch it only when the existing
+exact policy-confirmed token is parsed from that owned child's bounded stderr. policy_observation
+reads this bit from the current retained ChildPhases/PID association, rather than searching a
+sixteen-entry ring whose startup token can be evicted by three successful requests. Keep the
+ring, production source, token/reflection and all deadlines unchanged. A fresh ChildPhases
+starts false; arbitrary stderr, another child or environment text cannot supply confirmation.
+Verify: feed the existing recognized token followed by more than sixteen recognized request phases,
+retain its confirmation while the ring stays bounded, and prove fresh/unknown-token states
+remain unconfirmed. Then require actual Restricted generic JSON/COM and fixed SID/CreateNew/
+ACL/PID proof on all native rows; the observed timeout or a saved generic result alone is not
+passing evidence. Parent-crash qualification follows only after that required mode succeeds.
+
 Within that helper, run the real generic Unicode JSON round-trip/read-only Schedule.Service
 inventory and fixed SID/CreateNew/private-ACL operations concurrently, preserving each API's
 original thirty-second entry deadline and three-second cleanup. The existing forty-five-second
