@@ -916,9 +916,9 @@ mod tests {
 
         fn add_world_read(path: &Path) {
             locron_core::windows::run_script_json(
-                r"$acl=Get-Acl -LiteralPath ([string]$request.path);
+                r"$acl=[System.IO.File]::GetAccessControl([string]$request.path);
                 $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-1-0'),'Read','Allow'));
-                Set-Acl -LiteralPath ([string]$request.path) -AclObject $acl;
+                [System.IO.File]::SetAccessControl([string]$request.path,$acl);
                 @{changed=$true} | ConvertTo-Json -Compress",
                 &serde_json::json!({"path":path}),
             )
