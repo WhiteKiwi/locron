@@ -109,6 +109,24 @@ fn locron(state: &PrivateState) -> Command {
     command
 }
 
+#[cfg(windows)]
+fn default_windows_doctor_command(state: &PrivateState) -> Command {
+    let system_root = std::path::PathBuf::from(
+        std::env::var_os("SystemRoot").expect("Windows SystemRoot is unavailable"),
+    );
+    assert!(
+        system_root.is_absolute(),
+        "Windows SystemRoot is not absolute"
+    );
+    let mut command = locron(state);
+    command
+        .env("PATH", system_root.join("System32"))
+        .env_remove("LOCRON_SERVICE_BACKEND")
+        .env_remove("LOCRON_SERVICE_FAKE_STATE")
+        .env_remove("LOCRON_SERVICE_FAKE_LOG");
+    command
+}
+
 fn invoke_json(state: &PrivateState, arguments: &[&str]) -> serde_json::Value {
     let output = locron(state)
         .arg("--json")
@@ -2917,17 +2935,242 @@ fn human_why_run_prints_immutable_run_facts() {
     let _ = daemon.wait();
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_default_doctor_reports_unprobed_service_and_missing_token_facts() {
+    let state = private_state_fixture();
+    let paths = StatePaths::new(state.path().to_path_buf());
+    let token_path = locron_server::token::token_path(&paths);
+    assert!(!token_path.exists());
+    assert!(!paths.database.exists());
+
+    let output = default_windows_doctor_command(&state)
+        .args(["--json", "doctor"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "default Windows doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["schema"], "locron.cli/v1");
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "doctor");
+    let data = &envelope["data"];
+    assert_eq!(
+        data["dashboard"].get("registered"),
+        Some(&serde_json::Value::Null)
+    );
+    assert_eq!(
+        data["dashboard"].get("loaded"),
+        Some(&serde_json::Value::Null)
+    );
+    assert_eq!(data["dashboard"]["service_status"], "unprobed");
+    assert_eq!(data["dashboard"]["access_url"], "http://127.0.0.1:10824/");
+    assert_eq!(data["dashboard"]["token"]["present"], false);
+    assert_eq!(data["dashboard"]["token"]["permissions"], "missing");
+    assert_eq!(data["daemon_running"], false);
+    assert_eq!(data["wake_socket"], serde_json::Value::Null);
+    assert_eq!(data["wake"]["transport"], "named_pipe");
+    assert_eq!(data["wake"]["availability"], "unprobed");
+    assert!(data["process_resolution"].as_array().unwrap().is_empty());
+    assert_eq!(
+        data["checks"],
+        serde_json::json!(["integrity: ok", "foreign_key_violations: 0"])
+    );
+    assert!(!token_path.exists());
+    assert!(paths.database.is_file());
+
+    let output = default_windows_doctor_command(&state)
+        .arg("doctor")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "human default Windows doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    for expected in [
+        "info local wake: named pipe (availability is unprobed)",
+        "info dashboard service: registration is unprobed",
+        "info dashboard listener: availability is unprobed",
+        "warn dashboard token: missing",
+        "ok   integrity: database integrity verified",
+        "ok   foreign key violations: 0",
+    ] {
+        assert_eq!(
+            stdout.lines().filter(|line| *line == expected).count(),
+            1,
+            "{stdout}"
+        );
+    }
+    assert!(!stdout.contains("dashboard service: not registered"));
+    assert!(!stdout.contains("dashboard listener: not running"));
+    assert!(!token_path.exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_default_doctor_resolves_the_native_process_under_stock_path() {
+    let state = private_state_fixture();
+    let target = success_process_args();
+    let output = default_windows_doctor_command(&state)
+        .args(["add", "backup", "--every", "1h", "--"])
+        .args(&target)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "native target add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = default_windows_doctor_command(&state)
+        .args(["--json", "doctor"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "native target doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "doctor");
+    let data = &envelope["data"];
+    assert_eq!(
+        data["dashboard"].get("registered"),
+        Some(&serde_json::Value::Null)
+    );
+    assert_eq!(
+        data["dashboard"].get("loaded"),
+        Some(&serde_json::Value::Null)
+    );
+    assert_eq!(data["dashboard"]["service_status"], "unprobed");
+    let resolutions = data["process_resolution"].as_array().unwrap();
+    assert_eq!(resolutions.len(), 1);
+    assert_eq!(resolutions[0]["job_name"], "backup");
+    assert_eq!(resolutions[0]["status"], "resolved");
+    assert_eq!(resolutions[0]["requested_executable"], target[0]);
+    assert_eq!(resolutions[0]["resolved_executable"], target[0]);
+    let stock_path =
+        std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32");
+    assert_eq!(
+        resolutions[0]["effective_path"],
+        stock_path.to_str().unwrap()
+    );
+    assert_eq!(data["execution_path"], stock_path.to_str().unwrap());
+    assert_eq!(
+        data["checks"],
+        serde_json::json!(["integrity: ok", "foreign_key_violations: 0"])
+    );
+    assert!(
+        !locron_server::token::token_path(&StatePaths::new(state.path().to_path_buf())).exists()
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_default_doctor_reports_private_token_without_exposing_or_changing_it() {
+    use std::io::Write;
+
+    let state = private_state_fixture();
+    let paths = StatePaths::new(state.path().to_path_buf());
+    let token_path = locron_server::token::token_path(&paths);
+    let token = "d".repeat(64);
+    let mut file = locron_core::filesystem::create_private_new(&token_path).unwrap();
+    file.write_all(token.as_bytes()).unwrap();
+    file.flush().unwrap();
+    drop(file);
+    assert!(locron_core::filesystem::is_private(&token_path, false).unwrap());
+
+    let output = default_windows_doctor_command(&state)
+        .args(["--json", "doctor"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "private token doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(&token));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(&token));
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["ok"], true);
+    assert_eq!(envelope["command"], "doctor");
+    let dashboard = &envelope["data"]["dashboard"];
+    assert_eq!(dashboard.get("registered"), Some(&serde_json::Value::Null));
+    assert_eq!(dashboard.get("loaded"), Some(&serde_json::Value::Null));
+    assert_eq!(dashboard["service_status"], "unprobed");
+    assert_eq!(dashboard["token"]["present"], true);
+    assert_eq!(dashboard["token"]["permissions"], "owner_only");
+    assert_eq!(std::fs::read(&token_path).unwrap(), token.as_bytes());
+
+    let output = default_windows_doctor_command(&state)
+        .arg("doctor")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "human private token doctor failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("ok   dashboard token: present (owner only)\n"));
+    assert!(stdout.contains("info dashboard service: registration is unprobed\n"));
+    assert!(stdout.contains("info dashboard listener: availability is unprobed\n"));
+    assert!(!stdout.contains(&token));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(&token));
+    assert_eq!(std::fs::read(&token_path).unwrap(), token.as_bytes());
+    assert!(locron_core::filesystem::is_private(&token_path, false).unwrap());
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_default_doctor_refuses_an_invalid_token_leaf() {
+    let state = private_state_fixture();
+    let token_path = locron_server::token::token_path(&StatePaths::new(state.path().to_path_buf()));
+    let guard = locron_core::filesystem::DirectoryGuard::private(&token_path).unwrap();
+    drop(guard);
+    assert!(token_path.is_dir());
+    let output = default_windows_doctor_command(&state)
+        .args(["--json", "doctor"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(5));
+    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(envelope["schema"], "locron.cli/v1");
+    assert_eq!(envelope["ok"], false);
+    assert_eq!(envelope["command"], "doctor");
+    assert_eq!(envelope["error"]["code"], "service_io");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("cannot inspect token ACL:")
+    );
+    assert!(envelope.get("data").is_none());
+    assert!(token_path.is_dir());
+}
+
 #[test]
 fn human_doctor_prints_one_level_line_per_check() {
     let state = private_state_fixture();
     assert_cmd::assert::Assert::new(
         locron(&state)
-            .args(["add", "backup", "--every", "1h", "--", "/usr/bin/true"])
+            .args(["add", "backup", "--every", "1h", "--"])
+            .args(success_process_args())
             .output()
             .unwrap(),
     )
     .success();
     let doctor = locron(&state).args(["doctor"]).output().unwrap();
+    assert!(
+        doctor.status.success(),
+        "doctor failed: {}",
+        String::from_utf8_lossy(&doctor.stderr)
+    );
     let stdout = String::from_utf8_lossy(&doctor.stdout);
     for expected in [
         "ok   state dir: ",
@@ -2945,7 +3188,16 @@ fn human_doctor_prints_one_level_line_per_check() {
     }
     for line in stdout.lines() {
         assert!(
-            line.starts_with("ok   ") || line.starts_with("warn ") || line.starts_with("fail "),
+            line.starts_with("ok   ")
+                || line.starts_with("warn ")
+                || line.starts_with("fail ")
+                || (cfg!(windows)
+                    && matches!(
+                        line,
+                        "info local wake: named pipe (availability is unprobed)"
+                            | "info dashboard service: registration is unprobed"
+                            | "info dashboard listener: availability is unprobed"
+                    )),
             "doctor line lacks a level prefix: {line:?}"
         );
     }
@@ -3129,15 +3381,8 @@ fn human_prune_prints_the_pruned_counts() {
 fn human_forms_leave_the_json_envelope_untouched() {
     let state = private_state_fixture();
     let json = locron(&state)
-        .args([
-            "--json",
-            "add",
-            "backup",
-            "--every",
-            "1h",
-            "--",
-            "/usr/bin/true",
-        ])
+        .args(["--json", "add", "backup", "--every", "1h", "--"])
+        .args(success_process_args())
         .output()
         .unwrap();
     let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
@@ -3176,6 +3421,11 @@ fn human_forms_leave_the_json_envelope_untouched() {
     assert!(envelope["data"]["job"]["id"].is_string());
     assert!(envelope["data"]["next_occurrence"].is_string());
     let json = locron(&state).args(["--json", "doctor"]).output().unwrap();
+    assert!(
+        json.status.success(),
+        "doctor failed: {}",
+        String::from_utf8_lossy(&json.stderr)
+    );
     let envelope: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
     assert_eq!(envelope["command"], "doctor");
     assert!(envelope["data"]["checks"].is_array());
