@@ -2709,6 +2709,45 @@ Sources: [atomic DirectoryInfo creation](https://learn.microsoft.com/en-us/dotne
 [CreateFile flags and sharing lifetime](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 [reparse-point mutation](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_set_reparse_point).
 
+### Native stock-adapter policy and parent-exit proof
+
+Microsoft documents that process execution policy is held in the session environment and does
+not write registry policy; Group Policy still takes precedence. The early Desktop source has
+System.Management.Automation.Internal.SecuritySupport.GetExecutionPolicy(string shellId), with
+MachinePolicy/UserPolicy/Process ordering and the actual Microsoft.PowerShell.ExecutionPolicy
+enum. This is evidence for a fixed reflection candidate, not a PowerShell 5.1 runtime claim. Use
+only the exact method in the already loaded PSObject assembly and require actual Restricted in
+both real adapter children. Missing binding or a different effective policy is a failed proof,
+never an env-text substitute, module import, policy bypass or skipped assertion.
+Sources: [process policy and precedence](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1),
+[Desktop method and scope source](https://github.com/PowerShell/PowerShell/blob/v6.0.0-alpha.18/src/System.Management.Automation/security/SecuritySupport.cs#L230).
+
+The existing fixed worker has a cfg(test)-only source-composition seam and bounded child-phase
+parser. Add the one compiled policy assertion/token only for the exact isolated Restricted mode;
+generic source uses the same assertion. Match tokens to actual generic/fixed PIDs and real
+JSON/SID/CreateNew results. Concurrent generic JSON/read-only COM and fixed filesystem proof
+keeps the original thirty-second API, three-second cleanup and forty-five-second helper bounds.
+No production operation, public selector or caller-provided script enters the fixed protocol.
+
+Root exit and PID disappearance do not prove descendant cleanup. Job kill-on-close supplies
+emergency containment when the parent closes its kernel handles; an independent observer must
+retain actual process handles while the targets are alive and wait for those associated objects.
+Select an owned crash-host with real generic/fixed children plus one native heartbeat descendant,
+and a separate real generic observer. Kill only the retained crash-host after all three target
+handles are bound. Confirm their exits, both stopped heartbeat files and actual helper cleanup
+under existing bounds; do not replace the intended crash with a normal parent wait/destructor.
+Sources: [Job child membership and kill-on-close](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
+[parent handle closure and descendant behavior](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process),
+[finite associated-process waits](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.waitforexit?view=netframework-4.8.1).
+
+The mixed Core test process can legitimately retain a prior filesystem worker's stock guard for
+sixty idle seconds. A final share=0 open there cannot identify this fixture's guard release.
+Run the two exact proof-driver modes in fresh hosted test processes after the unchanged cold
+gate, with no stock/SID call from their orchestrator. The incompatible read-only open must remain
+blocked while the observer still owns its guard and succeed only after both owned helpers have
+actually exited. A host-only exit cannot release the observer's independent guard. This adds
+native evidence rather than warming the cold gate, extending timeouts or mutating system files.
+
 ### Local named pipes with creation-time security
 
 Select target-specific `interprocess = "=2.4.4"` with its `tokio` feature and a safe widestring

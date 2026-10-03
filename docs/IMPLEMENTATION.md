@@ -336,6 +336,54 @@ production source, request framing, mutation no-replay rule and original thirty/
 bounds unchanged. Verify that native failure output identifies the last completed stage; use the
 same x64/ARM64/MSRV cold gates and distinguish post-gate startup measurements from that request.
 
+Add a separate native stock-adapter proof step after the original cold core gate on the same
+x64/ARM64/MSRV rows. Select the exact existing owned_loader_fixture_child with fixed
+restricted-driver and parent-exit-driver modes in fresh test processes; record each actual
+mode/result. The ordinary mixed Core harness can retain its earlier filesystem stock guard for
+sixty seconds, so it cannot supply the final incompatible-open release proof. The fresh proof
+orchestrator must perform no stock/SID/filesystem-dispatch call of its own. Keep required names,
+the original cold command/order and all job deadlines; run no probe before cold qualification.
+
+Restricted mode sets PSExecutionPolicyPreference=Restricted only on its owned child helper.
+Before binding JSON, a cfg(test)-only compiled assertion in both the actual generic and fixed
+PowerShell source resolves SecuritySupport from the already loaded PSObject assembly, selects
+the exact NonPublic|Static GetExecutionPolicy(string) method for Microsoft.PowerShell, and
+requires the actual Microsoft.PowerShell.ExecutionPolicy enum to be Restricted. Missing
+PowerShell 5.1 reflection compatibility or an overriding policy fails explicitly. No Security-module
+import, Set-ExecutionPolicy, bypass argument, host/registry policy change or production selector is added.
+Report a fixed bounded policy-confirmed token tied to each actual owned PID.
+
+Within that helper, run the real generic Unicode JSON round-trip/read-only Schedule.Service
+inventory and fixed SID/CreateNew/private-ACL operations concurrently, preserving each API's
+original thirty-second entry deadline and three-second cleanup. The existing forty-five-second
+isolated helper bound stays unchanged; no sequential cold-start allowance is added. Use retained
+JSON command objects and the existing forged-module/cwd marker; the marker must remain absent.
+Core source and its private policy composition/token parser remain filesystem-owner scope.
+
+Parent-exit mode owns a crash-host and an independent observer through retained native Child
+objects. The crash-host starts its real fixed worker and generic PowerShell child; the latter
+starts one exact current-test-executable heartbeat descendant with data-only argv/environment,
+UseShellExecute=false and hidden stdio. Observe actual worker/generic/descendant identities while
+alive, including real fixed replies and generic spawn facts. The observer opens and retains all
+three Process handles, then publishes the bounded handles-bound marker before any crash.
+
+The orchestrator kills/reaps only its retained crash-host, preserving abrupt kernel Job closure.
+The observer must confirm actual associated-process exits with finite WaitForExit under its
+single original adapter budget; API completion is accepted only before that deadline. Verify
+both generic/native heartbeat files stop, not merely that PID lookup fails. A read-only share=0
+stock open refuses while either helper owns the guard, including after crash-host exit while
+the observer remains live. Permit the final successful open only after both helper processes,
+all observed targets and the observer's normal adapter pipe/Job cleanup are confirmed finished;
+otherwise fail and retain bounded cleanup ownership. No system file mutation or unrelated PID signalling occurs.
+
+Verify: (1) each fresh Restricted child reports actual enum/PID proof, JSON/COM and fixed
+SID/CreateNew/private ACL succeed, and forged code remains unexecuted. (2) before-crash retained
+handles and moving heartbeats prove real live descendants; killing only the owned parent makes
+all three handles signal exit without replay or graceful-exit claims. (3) the observer-held guard
+continues refusing incompatible opens, then final confirmed helper exit permits a read-only open
+and heartbeat samples stay unchanged. Record revision/image/toolchain, modes, stages and counts;
+compile-only, unset helper mode, timeout or missing marker cannot qualify these gates.
+
 The next exact ARM64 run located the first failure in the SID exchange: spawning the owned child
 and flushing its input took 49 ms, but no reply arrived before the original thirty-second
 deadline. The fixed PowerShell source contains no Add-Type or dynamically compiled C# helper.
