@@ -3490,3 +3490,11 @@ retain dashboard shutdown behavior and its actual active-SSE/durable-run fixture
    **Verify:** source coverage is complete and all protected blobs/deltas match; fresh exact-head
    x64/ARM64/MSRV Server 31, Store 90, original concurrency/PATH/lifecycle and guarded-prune 3/3
    pass with all remaining checks before merge. Keep unfinished acceptance/release issues open.
+
+Extend the already reviewed Framework ACL fixture correction to the later maintenance unsafe-
+object setup at maintenance.rs:919/921, observed only after guarded pruning now passed.
+**Verify:** a separate developer replaces those two statements, retaining the exact JSON input,
+Everyone-Read rule, all refusal/recovery/prune/marker assertions, cleanup and deadlines. Root
+reviews the complete diff and surrounding fixture; production maintenance/loader/filesystem
+source stays byte-identical. Fresh exact-head native maintenance 11/11 on x64/ARM64/MSRV must
+pass with pruning 3/3, the complete Server/Store suites and all other checks before merge.

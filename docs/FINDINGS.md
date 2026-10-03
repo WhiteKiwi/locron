@@ -3926,3 +3926,19 @@ Sources: [completed x64 stable failure](https://github.com/WhiteKiwi/locron/acti
 [completed MSRV failure](https://github.com/WhiteKiwi/locron/actions/runs/37107116124/job/111157711755),
 [SQLite recovery and snapshot codes](https://sqlite.org/rescode.html#busy_recovery),
 [WAL close/recovery contention](https://sqlite.org/wal.html#sometimes_queries_return_sqlite_busy_in_wal_mode).
+
+### The later maintenance fixture has the same unloaded ACL cmdlet (2026-10-03)
+
+Root43 `bfe7b8d` ARM64 completes Server 31, Store 90, lifecycle 12 and guarded pruning 3/3.
+The next complete maintenance harness passes 10/11, then its unsafe-object setup fails at
+maintenance.rs:925 on Get-Acl. Root44 `60e2fcc` MSRV reaches the same failure after passing
+the corresponding Core 127, Server 31, Store 90, Service 64, GUI 12 and pruning 3/3 gates.
+The fixed loader and error are identical to the earlier main.rs fixture compatibility case.
+The only remaining Get-Acl/Set-Acl references under crates are these two maintenance setup
+statements. Apply the same documented Framework FileSecurity substitution; retain its
+Everyone-Read rule and all later recovery/prune/byte/junction/foreign-object assertions.
+Production maintenance, loader and filesystem admission remain unchanged. Fresh native
+maintenance 11/11 on all three rows is required; earlier pruning success does not qualify it.
+
+Sources: [Root43 completed ARM64 job](https://github.com/WhiteKiwi/locron/actions/runs/37107116124/job/111157711798),
+[Root44 completed MSRV job](https://github.com/WhiteKiwi/locron/actions/runs/37107738582/job/111159474352).
