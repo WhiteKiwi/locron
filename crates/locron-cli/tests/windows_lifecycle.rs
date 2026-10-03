@@ -165,6 +165,70 @@ impl Fixture {
             .to_owned()
     }
 
+    fn queue_descendant_run(&self, name: &str, gate: &Path, descendant_marker: &Path) -> String {
+        let marker = self.paths.root.join("native-completed.txt");
+        let added = Command::new(cli_executable())
+            .arg("--state-dir")
+            .arg(&self.paths.root)
+            .args([
+                "--json",
+                "add",
+                name,
+                "--every",
+                "1h",
+                "--disabled",
+                "--retries",
+                "2",
+                "--retry-delay",
+                "200ms",
+                "--cwd",
+            ])
+            .arg(&self.paths.root)
+            .args([
+                "--env",
+                &format!("WINDOWS_NATIVE_MARKER={}", marker.display()),
+                "--env",
+                &format!("WINDOWS_NATIVE_GATE={}", gate.display()),
+                "--env",
+                &format!(
+                    "WINDOWS_NATIVE_DESCENDANT_MARKER={}",
+                    descendant_marker.display()
+                ),
+            ])
+            .arg("--")
+            .arg(std::env::current_exe().expect("native fixture executable"))
+            .args([
+                "--exact",
+                "native_process_target",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .output()
+            .expect("add descendant target");
+        assert!(
+            added.status.success(),
+            "native descendant add failed: {}",
+            String::from_utf8_lossy(&added.stderr)
+        );
+        let run = Command::new(cli_executable())
+            .arg("--state-dir")
+            .arg(&self.paths.root)
+            .args(["--json", "run", name])
+            .output()
+            .expect("queue descendant target");
+        assert!(
+            run.status.success(),
+            "native descendant run failed: {}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&run.stdout).expect("descendant run envelope");
+        envelope["data"]["run_id"]
+            .as_str()
+            .expect("durable descendant run id")
+            .to_owned()
+    }
+
     fn wait_running(&self, run_id: &str) -> u64 {
         let store = Store::open(self.paths.clone(), "test", 1).expect("observe running target");
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -477,11 +541,44 @@ impl Drop for NativeProcess {
 }
 
 #[test]
+fn native_descendant_target() {
+    let Some(marker) = std::env::var_os("WINDOWS_NATIVE_DESCENDANT") else {
+        return;
+    };
+    let marker = PathBuf::from(marker);
+    std::fs::write(&marker, b"started").expect("native descendant startup fact");
+    let heartbeat = marker.with_extension("heartbeat");
+    let mut value = 0_u64;
+    loop {
+        std::fs::write(&heartbeat, value.to_string()).expect("native descendant heartbeat");
+        value = value.wrapping_add(1);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
 fn native_process_target() {
     let Some(marker) = std::env::var_os("WINDOWS_NATIVE_MARKER") else {
         return;
     };
     let marker = PathBuf::from(marker);
+    let _descendant = std::env::var_os("WINDOWS_NATIVE_DESCENDANT_MARKER").map(|path| {
+        let mut command = Command::new(std::env::current_exe().expect("native fixture executable"));
+        command
+            .args([
+                "--exact",
+                "native_descendant_target",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("WINDOWS_NATIVE_DESCENDANT", path)
+            .env_remove("WINDOWS_NATIVE_DESCENDANT_MARKER")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x0800_0000);
+        command.spawn().expect("spawn native descendant")
+    });
     if let Some(gate) = std::env::var_os("WINDOWS_NATIVE_GATE") {
         let gate = PathBuf::from(gate);
         let deadline = Instant::now() + Duration::from_secs(60);
@@ -551,6 +648,130 @@ fn activation_automatically_takes_ownership_after_the_manual_daemon_exits() {
     registered.stop_activation(&fixture.paths, &activation);
     DaemonLock::try_prove_free(&fixture.paths.daemon_lock).expect("actual daemon ownership exited");
     assert!(locron_core::notification::send_wake(&fixture.paths.root).is_err());
+}
+
+#[test]
+fn registered_daemon_crash_kills_live_tree_and_recovers_one_unknown_run_without_retry() {
+    let fixture = Fixture::new();
+    let gate = fixture.paths.root.join("crash-tree-release.gate");
+    let descendant = fixture.paths.root.join("native-descendant.txt");
+    let descendant_heartbeat = descendant.with_extension("heartbeat");
+    let name = "registered-crash-tree";
+
+    let mut registered = fixture.daemon(true);
+    let activation = registered.wait_owner(&fixture.paths.daemon_activation_lock);
+    assert!(activation.service_mode);
+    let daemon = registered.wait_owner(&fixture.paths.daemon_lock);
+    assert!(daemon.service_mode);
+
+    let run_id = fixture.queue_descendant_run(name, &gate, &descendant);
+    let root_before = fixture.wait_running(&run_id);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let descendant_before = loop {
+        if descendant.is_file()
+            && let Ok(value) = std::fs::read_to_string(&descendant_heartbeat)
+            && let Ok(value) = value.parse::<u64>()
+            && value > 0
+        {
+            break value;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "native descendant did not publish progress"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+
+    registered.hard_stop();
+    let release_deadline = Instant::now() + Duration::from_secs(30);
+    for lock in [
+        &fixture.paths.daemon_activation_lock,
+        &fixture.paths.daemon_worker_activation_lock,
+        &fixture.paths.daemon_lock,
+    ] {
+        while DaemonLock::try_prove_free(lock).is_err() {
+            assert!(
+                Instant::now() < release_deadline,
+                "registered daemon crash retained owned role state at {}",
+                lock.display()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    // Sample only after all role ownership is gone, then require both the
+    // direct target and its grandchild to remain stopped across a settle window.
+    std::thread::sleep(Duration::from_millis(100));
+    let root_stopped = fixture.heartbeat().expect("direct target heartbeat after crash");
+    let descendant_stopped = std::fs::read_to_string(&descendant_heartbeat)
+        .expect("descendant heartbeat after crash")
+        .parse::<u64>()
+        .expect("numeric descendant heartbeat");
+    assert!(root_stopped >= root_before);
+    assert!(descendant_stopped >= descendant_before);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        fixture.heartbeat(),
+        Some(root_stopped),
+        "direct target survived registered daemon crash"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&descendant_heartbeat)
+            .expect("descendant heartbeat remains readable")
+            .parse::<u64>()
+            .expect("numeric stopped descendant heartbeat"),
+        descendant_stopped,
+        "descendant survived registered daemon crash"
+    );
+    assert!(!fixture.paths.root.join("native-completed.txt").exists());
+    assert!(!gate.exists());
+
+    let mut restarted = fixture.daemon(true);
+    let restarted_activation = restarted.wait_owner(&fixture.paths.daemon_activation_lock);
+    assert!(restarted_activation.service_mode);
+    restarted.wait_owner(&fixture.paths.daemon_lock);
+
+    let recovery_deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let store = Store::open(fixture.paths.clone(), "test", 1).expect("recovery observation");
+        let run = store.run(&run_id).expect("original durable run after restart");
+        if run.state == "interrupted_unknown" {
+            assert_eq!(run.id, run_id);
+            break;
+        }
+        assert!(
+            matches!(run.state.as_str(), "running" | "starting"),
+            "crashed durable run recovered as unexpected state {}",
+            run.state
+        );
+        assert!(
+            Instant::now() < recovery_deadline,
+            "crashed durable run was not recovered"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // The job advertises retries, so waiting beyond its retry delay proves
+    // interrupted_unknown is not converted into a retry/duplicate occurrence.
+    std::thread::sleep(Duration::from_millis(750));
+    let store = Store::open(fixture.paths.clone(), "test", 1).expect("final recovery observation");
+    let history = store.history(Some(name), 10).expect("durable crash history");
+    assert_eq!(history.len(), 1, "crashed run was duplicated or retried");
+    assert_eq!(history[0].id, run_id);
+    assert_eq!(history[0].state, "interrupted_unknown");
+    assert!(!fixture.paths.root.join("native-completed.txt").exists());
+    assert_eq!(fixture.heartbeat(), Some(root_stopped));
+    assert_eq!(
+        std::fs::read_to_string(&descendant_heartbeat)
+            .expect("final descendant heartbeat")
+            .parse::<u64>()
+            .expect("numeric final descendant heartbeat"),
+        descendant_stopped
+    );
+
+    restarted.stop_activation(&fixture.paths, &restarted_activation);
+    DaemonLock::try_prove_free(&fixture.paths.daemon_lock)
+        .expect("restarted registered daemon exited");
 }
 
 #[test]
