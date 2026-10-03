@@ -98,6 +98,10 @@ mod windows_launch_gate;
 mod windows_paired_receipt;
 
 #[cfg(all(windows, test))]
+#[path = "windows_paired_ownership.rs"]
+mod windows_paired_ownership;
+
+#[cfg(all(windows, test))]
 #[path = "windows_paired_package.rs"]
 mod windows_paired_package;
 
