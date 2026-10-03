@@ -5321,3 +5321,24 @@ unprobed, and send_wake's200ms exchange is not a caller absolute5s authority; ne
 substitutes real owned listener readiness. Doctor, wake readiness, distribution and Core
 ownership/lint surfaces require distinct subsequent plans. No owner-PC native fixture is
 selected. Full failures remain visible and Issue31 remains open.
+
+
+### Default Windows doctor research and measured correction (2026-10-04)
+
+Separate committed-source report SHA25601d3ae05af66956e816cc3f21b53f386c7a7e14244427546c82210e647e9040b,
+candidatecf37e5ca1afb1e85c7c03ad33dc221896d7122c9d59aef4389feda8074b47318
+and receiptbb85cdc7b03ff7bd50b236483553d61e8f8f9153c1b454f120125049d9ce7259
+audit37 snapshots and all direct/typed clients. Doctor requires the service facts
+before rendering; that helper constructs Unix UID context before default Windows
+backend refusal. CLI main is the only caller; independent HTTP/MCP/browser DTOs
+do not consume these registered/loaded fields. Default-only null/unprobed is
+selected before Source, while Unix/fake boolean facts and actual token ACL errors
+remain exact. See planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md.
+
+Actual495f full37157212227 ARM/MSRV67/4 reaches human_doctor2941 and human_forms
+3181 after successful add prerequisites. This corrects the report's rooted-path
+inference: the first doctor exit/error code is still unprinted; do not attribute
+these runs to add rejection, UID or unsupported backend. A genuine native target
+is still necessary for resolution acceptance. x64's separate300/1 supervisor
+unit failure preempts all CLI integration cases; lint repeats the old41 sites.
+Nothing qualifies actual wake, full suite, two-user privacy or release support.

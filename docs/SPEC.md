@@ -642,3 +642,17 @@ Research resolves the second-feedback questions in FINDINGS §42 and records saf
 feasibility in §46. Native compilation, adversarial behavior and clean-account acceptance remain
 verification gates rather than assumed support. Implementation choices and their trade-offs are
 recorded separately from this product specification.
+
+
+### Default Windows diagnostic service facts (2026-10-04)
+
+With no explicitly selected service backend, Windows doctor reports available
+database, executable resolution and access-token permission facts without a
+Unix command or a service-registration provider. Registration and dashboard
+listener availability remain unprobed: machine output uses null with an explicit
+unprobed marker and human output says the checks are unprobed. A configured
+access URL does not establish a live listener. Known Unix and explicitly selected
+backend facts retain their boolean values and existing shapes; true permission
+and I/O failures still refuse. Diagnostic observation does not enable services,
+create an access token or dispatch installation/update. This qualifies a limited
+diagnostic behavior and does not advertise completed Windows support.

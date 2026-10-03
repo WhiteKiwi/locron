@@ -5154,3 +5154,20 @@ Only11 listed existing test functions and narrow helpers may change. Wake readin
 doctor cases,41 full lint diagnoses and later distribution/Core cases remain unqualified.
 Four ordered Verify criteria require reversible Source conservation, genuine native behavior,
 exact human bytes and reviewed fresh native/ordinary CI results; no local native effects.
+
+
+### Default Windows doctor continuation before Source (2026-10-04)
+
+Select planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md after the separate complete
+doctor/wake/consumer audit and actual495f phase correction. Root documents the
+default-only observable unknown facts in SPEC/CLI and exact Issues29/31 Verify
+before handing only service.rs/main.rs/tests/cli.rs to separate development.
+The facts helper uses caller StatePaths, existing token observation and fixed
+URL without default Windows UID/port/registration discovery. Unix/forced paths
+and real errors stay exact; coherent null+unprobed gets exactly two new human
+info lines beside the existing wake line. Preserve every old assertion/selector,
+Unix input, clock and ownership call; native stock-PATH default/token/resolution
+tests must execute. Four ordered Verify criteria require full Source review and
+fresh native/Unix/fake evidence. No wake API/dependency/lifecycle effects are
+authorized by this lease; remaining full lint/wake/cancellation/supervisor and
+desktop/two-user/release gates remain open, without an unchanged-source retry.
