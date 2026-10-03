@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import zipfile
 
+from windows_probe import MAX_PROBE_BYTES, run_probe
 from windows_zip import read_member, validate_catalog
 
 TARGETS = {"x86_64-pc-windows-msvc": 0x8664, "aarch64-pc-windows-msvc": 0xAA64}
@@ -20,7 +21,6 @@ FILES = ("locron.exe", "README.md", "LICENSE-MIT", "LICENSE-APACHE")
 PAIRED_FILES = (FILES[0], "locron-service-launcher.exe", *FILES[1:])
 SUBSYSTEMS = {"locron.exe": 3, "locron-service-launcher.exe": 2}
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
-MAX_PROBE_BYTES = 4 * 1024
 # Deliberately finite: a new DLL requires review against the minimum Windows 11
 # image. VC redistributables and application libraries never pass this gate.
 SYSTEM_DLLS = frozenset((
@@ -176,6 +176,7 @@ def launcher_identity(output, release, target):
 
 def probe_pair(contents, release, target, execute):
     """Probe the inspected ZIP bytes, with no developer PATH or sibling DLLs."""
+    execute = run_probe if execute is None else execute
     with tempfile.TemporaryDirectory(prefix="locron-paired-probe-") as temporary:
         staged = Path(temporary)
         for name, content in contents.items():
@@ -265,7 +266,7 @@ def inspect_archive(path, tag, target, paired=False, expected_sha256=None):
     return {**facts, "archive_sha256": digest}
 
 
-def validate_archive(path, tag, target, paired=False, execute=subprocess.run):
+def validate_archive(path, tag, target, paired=False, execute=None):
     # Native package/validate gates still require every paired runtime probe.
     facts, contents, _ = _inspect_archive(path, tag, target, paired)
     if paired:
@@ -318,10 +319,11 @@ def package_pair(tag, target, binary, launcher, directory, source, execute):
     return output
 
 
-def package(tag, target, binary, directory, source=Path("."), execute=subprocess.run, launcher=None):
+def package(tag, target, binary, directory, source=Path("."), execute=None, launcher=None):
     if launcher is not None:
         return package_pair(tag, target, binary, launcher, directory, source, execute)
     release = version(tag)
+    execute = run_probe if execute is None else execute
     if target not in TARGETS or not binary.is_file() or binary.is_symlink():
         raise ValueError("missing or unsafe supported Windows executable")
     binary_bytes = binary.read_bytes()

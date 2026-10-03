@@ -1,6 +1,9 @@
 //! Complete canonical six-file payloads and a pure strict receipt builder.
 //! No archive is extracted and no installation, staging or state object is created.
 
+#[path = "windows_payloads/indexed_sources.rs"]
+mod indexed_sources;
+
 use std::collections::BTreeMap;
 
 use anyhow::{Result, ensure};
@@ -14,6 +17,15 @@ use super::windows_release_source::{Release, Remote};
 
 #[path = "windows_payloads/paired.rs"]
 pub(super) mod paired;
+
+#[path = "windows_payloads/paired_handoff.rs"]
+pub(super) mod paired_handoff;
+
+#[path = "windows_payloads/paired_removal.rs"]
+pub(super) mod paired_removal;
+
+#[path = "windows_payloads/paired_update.rs"]
+pub(super) mod paired_update;
 
 pub(super) struct Payloads {
     pub version: String,

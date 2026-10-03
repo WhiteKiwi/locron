@@ -4885,3 +4885,257 @@ The existing native self_update::windows_ package selector must run these real-f
 on x64 and ARM64. A cloud environment without Rust/native Windows cannot claim those gates;
 record actual local checks and leave compilation, native qualification, selected-client
 install/upgrade/removal and catalog publication open in #35 and the Draft PR.
+
+### Windows native validation and actual package compiler (2026-10-03)
+
+Continue #31/#32 using [the reviewed verification plan](planning/WINDOWS_NATIVE_VALIDATION_2026-10-03.md).
+FINDINGS records current downloaded package evidence and rustup override precedence. Explicitly
+select 1.94.0 in the Windows package job and existing Windows release build step, rejecting an
+unexpected compiler release/host before building. Preserve Unix compilation and signing flows.
+Add optional manual CI discovery for native full workspace tests and warnings-denied all-target
+Clippy with explicit toolchains. Existing component/GUI/package gates remain unchanged. Full
+discovery failures must be recorded rather than hidden with skips or relaxed fixture deadlines.
+Only the five discovery rows run during full_windows=true manual events, avoiding duplicate
+ordinary CI; PR, push and default manual events retain their complete existing checks.
+
+The parent reviews the plan and issues before the separate development session edits workflows,
+then reviews Source and publishes a normal PR. Exact-head normal CI, downloaded compiler/package
+facts, local finite x64 probes and all five manual full-suite results provide the Verify receipt;
+they cannot stand in for remaining clean Windows 11 installation/reboot, public release, native
+update/recovery or catalog acceptance. No product scope, signing policy or application Source changes.
+
+### Measured native integration-test compilation follow-up (2026-10-04)
+
+Full discovery on the reviewed CI branch exposed compilation prerequisites before runtime
+testing. Continue the existing #31 portable-fixture scope and
+[validation plan](planning/WINDOWS_NATIVE_VALIDATION_2026-10-03.md) after the separate research
+receipt: reorder only crate documentation before unchanged Unix gates in four integration
+crates, and seed the three positive dashboard/service token fixtures through the existing
+private-new-file API. Preserve each test's names, body/commands, material and report assertions;
+new fixture bytes and their parent are private at creation, flushed and no longer guarded when
+the tested subprocess begins. No existing root is repaired or adopted.
+
+The new handoff is test-only and does not authorize application, toolchain, dependency or
+privacy-policy changes. Parent reviews all six Source files, documentation-prefix/body identity,
+private-new setup and protected blobs before publication. Rerun the original five native full
+commands and ordinary protected PR checks on the next exact head. Preserve any next lint or
+runtime failure in #31 instead of widening cfgs, adding allow/ignore, or changing deadlines.
+Existing component/GUI/distribution gates remain separately required. Frozen SPEC and first
+unsigned-release/signing policy remain unchanged; compile success is not full support evidence.
+
+### Native runtime-fixture correction and bounded timing evidence (2026-10-04)
+
+Continue #31 through [the measured follow-up plan](planning/WINDOWS_RUNTIME_FIXTURE_FOLLOWUP_2026-10-04.md).
+Research distinguishes invalid managed-root setup, shared test-owner interference and a real
+field-help omission from unmeasured production faults. Keep Unix MCP setup exact and create a
+missing guarded private Windows child. Isolate only five Gate parent fixtures before setup and
+deadline creation; retain actual release and the uncertain case's internal second refusal.
+Add the hidden supervise field's description, and match seven backend helpers/imports/Drop to
+their existing macOS/Linux consumers while preserving Windows reporting cases. Keep all other
+CLI staged-code lint diagnostics visible rather than broadening this handoff.
+
+For the independent Core stall failure, add fixed-size lock-free in-memory observation of the
+test-only result/diagnostic/return/send/receive interval. Leave the production adapter, original
+timed receives, trace output ordering, native stalled read/retention, second refusal, late-work
+and cleanup assertions intact. Event output belongs after known delivery/cleanup or the existing
+failed receive message, never synchronously added to timed delivery. This is diagnostic Source;
+one passing observation cannot retrospectively establish the failed run's cause.
+
+Parent reviews docs and exact issue Verify readback before seven Source files are handed to a
+separate development session. Reconcile accepted current-main changes without altering reviewed
+patches, then collect fresh normal protected CI and five full native rows on the final exact head.
+The unchanged-source no-fail-fast verification branch remains separate evidence. Preserve all
+old/new failures and unfinished native/public-release scope; no owner-PC effectful acceptance.
+
+### Stock crash-fixture counter publication and expiry observations (2026-10-04)
+
+Continue #31 under the [new measured fixture plan](planning/WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md).
+FINDINGS records the exact current-head x64 MSRV failure and unchanged Core source, the missing
+last counter/phase artifact, and the separately reproduced truncate/write hazard. The actual
+cause of that CI timeout remains unconfirmed. Frozen SPEC and the earlier validation plans stay
+unchanged; this repairs test observation/publication without changing process-security policy.
+
+After the parent publishes the reviewed documentation and owning-issue pre-Source Verify note,
+the separate development session changes only windows/loader_crash.rs and loader_crash_host.ps1.
+If an isolated actual-process regression needs new explicit mode dispatch, add only those
+cfg(test) arms in windows/loader_tests.rs; preserve every existing mode and selector. No product
+loader, owned-child, guard/admission, dependency, toolchain or workflow change belongs here.
+
+Each writer completes a new counter in the same private directory, flushes and closes it, then
+uses explicit no-clobber initial publication or replacement of the published snapshot. Use the
+already locked tempfile 3.27.0 API and stock Framework File.Move/File.Replace; propagate errors,
+including sharing/metadata failures. Never truncate the final counter, delete it before moving,
+fall back to copying/creation, or replace a failed parse with a default/saved number. Native
+qualification must confirm actual reader sharing and process-stop behavior; this is not a
+power-loss durability promise.
+
+Store bounded counter bytes/status and fixed driver phase/timing facts during permitted reads
+under the original deadline. On expiry, print only those saved observations; start no new file,
+process or stock-adapter I/O for diagnostics. Preserve the single 45-second helper budget,
+30-second adapter/observer/writer budgets, 3-second cleanup, 25-ms heartbeats, 200-ms settle
+windows, and every real PID/handle/Job/tree/pipe/share=0 guard assertion. Parent reviews complete
+source/cfg isolation and protected blobs; Verify includes controlled real-process unpublished
+snapshot hard stops, both writers' initial/replacement failures, and unchanged fresh native
+cold Core/EOF/Restricted/parent-exit gates on x64 stable, ARM64 stable and x64 Rust 1.94. Select
+the new controlled modes after the normal parent-exit proof within its original helper budget,
+without earlier cold-gate warm-up or a workflow change. Full discovery and all remaining clean
+Windows 11, user/privacy, recovery and distribution acceptance
+stay open and retain their failures; no skip, relaxed deadline, retry or quarantine reset qualifies.
+
+### MCP process-fixture continuation under native target validation (2026-10-04)
+
+Continue #31 using the [MCP fixture plan](planning/WINDOWS_MCP_NATIVE_PROCESS_FIXTURE_2026-10-04.md).
+The seven-file correction now has ordinary native passes, while full CLI discovery still has
+ten downstream MCP failures. FINDINGS distinguishes the source-backed invalid `/bin/echo`
+Windows input from the unprinted actual error envelope. Frozen SPEC and production validation
+stay unchanged; the goal is to reach the existing MCP assertions with a valid process definition.
+
+After documentation and exact Issue Verify readback, a separate development session changes
+only tests::valid_add_args in mcp.rs. Windows uses the actual running test image's absolute,
+non-lossy path and fixed finite `--help` argv; Unix keeps the original command values. Preserve
+process target type, job metadata/policy, private state setup, every test body/name/assertion
+and original request_tool success refusal. This is definition/queue acceptance, not scheduled
+process execution or echo-output proof. Add no new selector, skip, warning allowance or fallback.
+
+Parent checks the complete one-helper diff, exact inverse conservation and every other blob,
+then publishes fresh ordinary CI and the original five full native rows. Ten intended downstream
+assertions must actually run and pass on x64 stable, ARM64 stable and x64 Rust1.94; any newly
+reached integration/lint failure is retained. Separate stock-crash, integration, Core/Server
+and public distribution work remain outside this slice and keep their unfinished Verify gates.
+
+### Native integration positive setup and platform help expectations (2026-10-04)
+
+Continue #31 under the [private-fixture plan](planning/WINDOWS_INTEGRATION_PRIVATE_FIXTURES_2026-10-04.md).
+FINDINGS records the newly reached301-pass CLI unit binary,71-case integration failure and
+independent required x64 Store-initialization timeout. Frozen SPEC and production privacy stay
+unchanged. The parent reviews docs and exact Issue Verify readback before separate development.
+
+Use one narrow test helper to retain TempDir cleanup while exposing a newly created guarded
+private Windows child. Capture its normalized path and drop setup guards before child execution;
+Unix keeps its original root. Adopt only selected state-bearing factories in CLI/feedback and
+five dashboard positive cases. Keep advisory/discovery inputs, fake-manager parents and absent
+paths separate. Use the existing private-new helper for stored tokens. The Windows manual-owner
+positive creates real DaemonLock/current-PID/unique-lifetime metadata on its fresh private root
+and retains that lock through fake install; Unix's original setup remains. Only three help
+expectations change their Windows basename to locron.exe, retaining all canonical assertions.
+
+Source is limited to four existing integration files and one shared private_state helper. Keep
+all original case names, counts, negative contracts, dry-run absence/redaction/order checks and
+deadlines. No production change, dependency, workflow, skip or warning allowance is selected.
+Parent verifies exact inverse transformations and every other tracked blob, then publishes
+fresh ordinary/full native results and complete per-binary discovery on the separate temporary
+verification branch. Report downstream assumptions instead of masking failures or claiming all
+102 integration cases are repaired. Real process/shell/wake equivalence, Store timeout/reopen,
+stock-crash publication, actual two-user/registered-task and public distribution acceptance keep
+their distinct plans and unfinished Verify criteria. No owner-PC effectful operation is selected.
+
+### Stock heartbeat command-size and managed-null continuation (2026-10-04)
+
+Continue the existing stock-heartbeat plan after measured e4 native pre-spawn failures. Keep
+the three permitted Source files and original45s driver/30s adapter/owned cleanup boundaries.
+In loader_crash_host.ps1 mark the shared publication definitions, existing complete proof
+branch and unchanged normal-host tail with two unique static comment delimiters. A pure
+loader_crash.rs builder selects shared plus normal or shared plus proof before prepare_adapter.
+Two test-only OnceLock<String> slots retain those fixed strings for the existing static-lifetime
+API; no leak, unsafe bridge, user-keyed cache or production signature change is needed.
+Preserve both bodies and every actual-process assertion, using no new script file, runtime
+script read, request-code interpolation, adapter fallback or workflow selection change.
+
+Pass fully qualified NullString.Value directly as File.Replace's no-backup argument. This
+does not permit metadata errors or replace the actual collision/share/stage/kill/reap checks.
+Parent checks exact source-section conservation, both LF/CRLF full encoded command budgets,
+format/actionlint/Windows-target compilation and all unrelated blobs before normal publication.
+Fresh exact-head ordinary native rows must exercise the original parent crash and both
+publication proofs. Preserve old unknown raw-error/timeout facts and full-discovery failures;
+no required red check is bypassed. Reviewed docs and owning Issue Verify readback precede
+the separate development handoff. All public acceptance gates remain unfinished.
+
+### First-open WAL failure boundary diagnostics (2026-10-04)
+
+Follow WINDOWS_WAL_CONFIGURE_DIAGNOSTICS_2026-10-04 and Issues #25/#31. Before
+changing retry/ownership policy, a separate developer instruments only existing
+Windows configuration/OpenTrace boundaries with a fixed owner-local debug
+snapshot. Preserve the configure-entry5s clock and its WAL/settings scope,
+fixed SQL, explicit finalization, idle-autocommit5/261 retry/error precedence,
+10ms maximum contention yield and direct15 refusal. No added SQLite/FS call,
+global synchronization, timed-path log or work after expiry. Release native
+call policy remains exact. Debug stamps consume normal elapsed time.
+
+After a failed result is known, emit one bounded768-byte ASCII receipt through
+the existing debug error route: actual PID/local operation, fixed gate/phase,
+attempt count, available numeric error/autocommit/mode categories and native
+entry/return timing. No private strings or unbounded event history. Existing
+control assertions and12 lifecycle cases retain their clocks/concurrency;
+parent reviews full Source then publishes fresh ordinary/full/per-binary native
+evidence. A passing later scenario does not diagnose an earlier failure. Missing
+Server SSE-reopen connection/file ownership correlation remains separate, and
+required red checks continue blocking merge.
+
+
+### Stock heartbeat same-candidate rename control (2026-10-04)
+
+Continue the existing test-only heartbeat plan after1a1's three native jobs pass the
+original crash proof but expose the new rename expectationSome(32) versus actualSome(5).
+FINDINGS records the precise operation distinction and the cancelled-run limitation.
+After reviewed docs and Issue#31 Verify readback, a separate developer changes only
+publication_proofs in loader_crash.rs. Stage one closed8 snapshot, retain its path, require
+the actual5 refusal and the returned path's identical ownership, and require published
+7/bytes7 while the target handle remains held. Close only that exact handle; publish the
+same returned TempPath to8 and verify value/bytes. Publish complete7 to restore the
+controlled baseline, then preserve the entire existing actual publisher stage/kill/reap
+and final8 sequence. Every new I/O uses the original observation pre/post deadline checks.
+
+No PowerShell/stock-open assertion, production code, dispatcher, workflow, dependency,
+selector or clock changes. Parent reviews the whole one-function diff and all protected
+blobs, runs applicable Windows-target compilation and formatting, then publishes fresh
+ordinary plus full-discovery native evidence. The unchanged original proof and both new
+publication proofs must pass all three ordinary native rows before merge. Retain every
+full-suite failure and old unknown failure; broad Issues#31/#32 remain unfinished.
+
+
+The same-candidate identity assertion must retain privacy and the warnings-denied lint
+contract. Native lint111281642758 at f1cc5dc rejects assert!(left == right) as manual_assert_eq.
+Bind the exact path equality once to a named boolean and assert that boolean with a fixed
+failure message. This reports the identity failure without formatting either private path.
+No warning allowance, identity weakening, or other Source/clock change is permitted.
+The separate developer applies this single assertion-style correction after this plan.
+
+
+### Stable cfg statement syntax after native compile refusal (2026-10-04)
+
+Source5585936 ordinary37151318184, full37151330037 and isolated discovery37151378233
+finished red before the requested application runtime tests. Separate always-run stock
+bootstrap/small/60k diagnostics passed on the three foundation rows; these do not qualify
+the failed compilation or application suite. Actual Rust1.94/stable/1.98 reject #[cfg] directly on
+the two assignment expressions at windows_configure.rs168/237 with E0658. Release builds
+also retain unresolved observations assignments (E0425). The immutable release-token inverse
+and formatting checks could not establish compiler validity; Root's prior review missed this.
+
+Select only a syntax correction: wrap those two existing debug observations in cfg-gated
+blocks. Keep assignment expressions, captured existing autocommit results, cfg condition,
+release erasure and every native call/result/gate/error/deadline byte-equivalent after inverse.
+No feature/nightly/warning allowance, production/query/test/dependency/workflow change is selected.
+Separate development owns only windows_configure.rs after Issue25/31 exact Verify readback.
+
+1. Reproduce/repair the two stable cfg statement sites. Verify: Rust1.94 native Windows debug
+   and release compilation both succeed; no unresolved observations or experimental syntax.
+2. Conserve observation and native policy. Verify: two exact block-only transformations invert
+   the whole prior file; all other tracked blobs/modes and old/native/new diagnostic tests remain
+   exact; cfg-erased release policy still equals the ce641 original.
+3. Review/publish fresh changed Source. Verify: Root reviews the one-file diff and static checks,
+   then records actual ordinary/full/every-binary results at the new source. These previous runs
+   reached no requested app suite cases and produced no new paired ZIP; separate stock
+   diagnostics remain their own evidence. All runs remain failures, not skipped validations.
+
+
+## Stable Rust syntax continuation before Source
+
+Ordinary558 run37151318184 fails compilation, before native controls: Rust1.94
+job111285640711 and Rust1.98 lint111285640451 report E0658 at windows_configure.rs
+168 and237. The two cfg attributes attach directly to assignment expressions.
+A separate developer may only enclose those same assignments in cfg-gated
+statement blocks, keeping their exact debug-only evaluation points and values.
+Verify the two-assignment inverse, unchanged release/native policy and all other
+blobs, stable Rust1.94/1.98 syntax, formatting and fresh native compilation.
+No feature gate, allow, clock, SQL, retry, diagnostic field or selector changes.
+The original five-step plan and owning Issue criteria remain required.

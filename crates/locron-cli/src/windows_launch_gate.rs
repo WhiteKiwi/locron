@@ -759,6 +759,13 @@ mod tests {
     use super::super::windows_receipt::{PAYLOADS, RECEIPT};
     use super::*;
 
+    fn owner_fixture_lock() -> std::sync::MutexGuard<'static, ()> {
+        static OWNER_FIXTURES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        OWNER_FIXTURES
+            .lock()
+            .expect("owner-sensitive fixture mutex poisoned")
+    }
+
     fn write_new(path: &Path, bytes: &[u8]) -> FileIdentity {
         let mut file = create_private_new_exclusive(path).unwrap();
         file.write_all(bytes).unwrap();
@@ -1041,6 +1048,7 @@ mod tests {
 
     #[test]
     fn actual_copied_child_guard_overlap_and_terminal_eof_qualify_without_effects() {
+        let _owner_fixture_guard = owner_fixture_lock();
         let mut fixture = Fixture::new();
         let helper = fixture.directory.join("locron-helper.exe");
         assert!(
@@ -1080,6 +1088,7 @@ mod tests {
 
     #[test]
     fn equal_bytes_replaced_helper_object_refuses_before_native_spawn() {
+        let _owner_fixture_guard = owner_fixture_lock();
         let mut fixture = Fixture::new();
         let path = fixture.directory.join("locron-helper.exe");
         let bytes = fs::read(&path).unwrap();
@@ -1095,6 +1104,7 @@ mod tests {
 
     #[test]
     fn actual_owned_child_exit_before_readiness_refuses_and_releases_guards() {
+        let _owner_fixture_guard = owner_fixture_lock();
         let mut fixture = Fixture::new();
         let mut input = fixture.input();
         input.exit_before_ready = true;
@@ -1111,6 +1121,7 @@ mod tests {
 
     #[test]
     fn uncertain_owner_retains_actual_child_and_guards_without_late_token_or_new_admission() {
+        let _owner_fixture_guard = owner_fixture_lock();
         let mut fixture = Fixture::new();
         let (release, pause) = mpsc::sync_channel(1);
         let (reached, spawned) = mpsc::sync_channel(1);
@@ -1148,6 +1159,7 @@ mod tests {
 
     #[test]
     fn expired_phase_refuses_without_touching_the_existing_bootstrap_or_spawning() {
+        let _owner_fixture_guard = owner_fixture_lock();
         let mut fixture = Fixture::new();
         let deadline = Instant::now()
             .checked_sub(Duration::from_millis(1))

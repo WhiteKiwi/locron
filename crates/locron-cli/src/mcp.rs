@@ -1808,6 +1808,13 @@ mod tests {
 
     fn fresh_paths() -> (tempfile::TempDir, StatePaths) {
         let dir = tempfile::tempdir().expect("tempdir");
+        #[cfg(windows)]
+        let paths = {
+            let guard = locron_core::filesystem::DirectoryGuard::private(&dir.path().join("state"))
+                .expect("private state root");
+            StatePaths::new(guard.normalized_path().to_path_buf())
+        };
+        #[cfg(not(windows))]
         let paths = StatePaths::new(dir.path().to_path_buf());
         (dir, paths)
     }
@@ -1850,12 +1857,26 @@ mod tests {
     }
 
     fn valid_add_args(name: &str) -> Value {
+        #[cfg(windows)]
+        let command = {
+            let executable = std::env::current_exe().expect("current test executable");
+            assert!(
+                executable.is_absolute(),
+                "current test executable must be absolute"
+            );
+            let executable = executable
+                .to_str()
+                .expect("current test executable path must be UTF-8");
+            json!([executable, "--help"])
+        };
+        #[cfg(not(windows))]
+        let command = json!(["/bin/echo", "hello"]);
         json!({
             "name": name,
             "schedule_type": "interval",
             "schedule_expr": "15m",
             "target_type": "process",
-            "command": ["/bin/echo", "hello"],
+            "command": command,
             "description": "test job",
             "tags": ["test", "ops"]
         })
