@@ -4895,6 +4895,8 @@ unexpected compiler release/host before building. Preserve Unix compilation and 
 Add optional manual CI discovery for native full workspace tests and warnings-denied all-target
 Clippy with explicit toolchains. Existing component/GUI/package gates remain unchanged. Full
 discovery failures must be recorded rather than hidden with skips or relaxed fixture deadlines.
+Only the five discovery rows run during full_windows=true manual events, avoiding duplicate
+ordinary CI; PR, push and default manual events retain their complete existing checks.
 
 The parent reviews the plan and issues before the separate development session edits workflows,
 then reviews Source and publishes a normal PR. Exact-head normal CI, downloaded compiler/package

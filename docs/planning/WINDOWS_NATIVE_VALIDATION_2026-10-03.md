@@ -15,6 +15,9 @@ downloaded paired ZIPs' actual 1.98.0 compiler despite the intended 1.94.0 packa
    Additional jobs run only when requested: all-target locked workspace tests on native x64 stable,
    ARM64 stable and x64 1.94.0; full all-target warnings-denied Clippy with 1.98.0 on both native
    architectures. Keep toolchain overrides explicit and retain existing PR/component gates.
+   A full_windows=true manual run executes only these five discovery rows; the ordinary CI jobs
+   retain their exact behavior on PR, push and default manual events. Their event condition merely
+   avoids duplicate normal checks during this explicitly selected discovery run.
    **Verify:** normal PR CI does not run the discovery jobs; an exact-branch manual invocation
    records the intended host/compiler and runs the unmodified full commands on all five rows.
    Failures stay visible; no skip, softened assertion, deadline change or unsupported adapter
