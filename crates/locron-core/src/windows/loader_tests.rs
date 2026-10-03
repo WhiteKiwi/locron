@@ -154,6 +154,8 @@ fn owned_loader_fixture_child() {
         "parent-exit-host" => super::loader_crash::host(),
         "parent-exit-observer" => super::loader_crash::observer(),
         "native-heartbeat" => super::loader_crash::heartbeat(),
+        "heartbeat-rust-staged" => super::loader_crash::rust_staged_publisher(),
+        "heartbeat-powershell-proof" => super::loader_crash::powershell_publication_proof(),
         "private-directory-expired" => {
             assert!(super::USER_SID.get().is_none());
             assert_eq!(super::filesystem_worker::observed_pid(), 0);
