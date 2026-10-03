@@ -13,6 +13,7 @@ EXECUTABLES = ("locron.exe", "locron-service-launcher.exe")
 SCHEMA = "locron.windows-paired-package-verification/v1"
 KIND = "draft-paired-windows-package"
 HASH = re.compile(r"[0-9a-f]{64}")
+GIT_SHA = re.compile(r"[0-9a-f]{40}")
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 FIELDS = {
     "schema", "artifact_kind", "source_repository", "source_revision",
