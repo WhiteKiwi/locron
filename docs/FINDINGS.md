@@ -4586,3 +4586,17 @@ queued bytes. Native classification, timeout and package-pair qualification are 
 Sources: [Cargo target feature admission](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-required-features-field),
 [Default command selection](https://doc.rust-lang.org/cargo/reference/manifest.html#the-default-run-field),
 [Rust Windows subsystem](https://doc.rust-lang.org/reference/runtime.html#the-windows_subsystem-attribute).
+
+Rust 1.94 process::exit calls runtime cleanup. Stdout cleanup uses try_lock, but when a line
+buffer is available it replaces/drops that buffered writer; a remaining payload can therefore
+be flushed outside the expired worker. Merely containing StdoutLock in the worker is insufficient
+for the probe's no-new-output-after-expiry rule. Select safe Stdout::as_handle, BorrowedHandle's
+try_clone_to_owned and File::from(OwnedHandle), all stable since 1.63, for unbuffered owned output.
+The audited clone uses non-inheritable DuplicateHandle with the same access. Null stdout is an
+explicit supported borrowed-handle case; cloning it does not prove writable output, and actual
+File write failure must refuse. All duplicate/write/close work stays in the finite owner; this
+does not promise cancellation of an already-queued write or bypass ordinary Windows process exit.
+Native blocked-I/O and late-ready output qualification is still pending.
+Sources: [Rust exit and cleanup](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/process.rs),
+[buffered stdout cleanup](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/io/stdio.rs),
+[safe owned Windows handle conversions](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/os/windows/io/handle.rs).

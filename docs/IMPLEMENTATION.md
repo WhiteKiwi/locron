@@ -1548,6 +1548,18 @@ startup deadline, captured before the worker is admitted. Expired/uncancellable 
 direct 70 refusal with retained worker ownership until process exit, never timely success
 inferred from queued bytes. Version stdout uses the same finite worker/deadline.
 
+Use one unbuffered owned duplicate of the inherited stdout handle for probe bytes. Inside the
+existing worker, gate before/after Stdout::as_handle().try_clone_to_owned(), take safe File
+ownership and gate every write/flush/drop completion under the same deadline. Never write probe
+bytes into the process-global buffered Stdout/StdoutLock: Rust process exit can flush that buffer
+after worker expiry. A missing/invalid inherited handle or native I/O error is fixed direct 70;
+no path fallback, console attachment or public renderer is introduced. The worker retains its
+File across uncancellable I/O, and late bytes remain uncertain rather than a successful probe.
+Verify an actual blocked owned native pipe under the driver deadline, release only the held
+test peer after refusal and confirm no later admitted operation; independently cross the deadline
+inside an already-ready writer and prove no flush/success. Real GUI output is exact unbuffered
+JSON/version bytes on owned file/pipe handles, with original 30-second admission and no new budget.
+
 The role mode accepts only the fixed ordered state-dir, role and optional run-capability
 arguments. Its parser errors never render argv or raw capability bytes; reject extra/duplicate
 options or trailing data with the fixed invalid-arguments exit. The service-owned standalone
