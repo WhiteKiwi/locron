@@ -29,7 +29,7 @@ TAG = "v0.10.0"
 TARGET = "x86_64-pc-windows-msvc"
 
 
-def executable(machine=0x8664, signed=False):
+def executable(machine=0x8664, signed=False, subsystem=3):
     binary = bytearray(512)
     binary[:2] = b"MZ"
     struct.pack_into("<I", binary, 60, 128)
@@ -39,14 +39,15 @@ def executable(machine=0x8664, signed=False):
     struct.pack_into("<H", binary, 148, 240)
     struct.pack_into("<H", binary, 150, 0x22)
     struct.pack_into("<H", binary, 152, 0x20B)
+    struct.pack_into("<H", binary, 220, subsystem)
     struct.pack_into("<I", binary, 260, 16)
     if signed:
         struct.pack_into("<II", binary, 296, 480, 32)
     return bytes(binary)
 
 
-def imported_executable(dll, delayed=False):
-    binary = bytearray(executable()) + bytearray(512)
+def imported_executable(dll, delayed=False, subsystem=3):
+    binary = bytearray(executable(subsystem=subsystem)) + bytearray(512)
     # One raw-backed section, with an import descriptor and a terminated DLL name.
     struct.pack_into("<IIII", binary, 400, 512, 0x1000, 512, 512)
     if delayed:
@@ -67,12 +68,242 @@ class WindowsDistributionTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.binary = self.root / "locron.exe"
         self.binary.write_bytes(executable())
+        self.launcher = self.root / "locron-service-launcher.exe"
+        self.launcher.write_bytes(executable(subsystem=2))
+        self.probes = []
         for name in windows.FILES[1:]:
             (self.root / name).write_text("fixture documentation", encoding="utf-8")
 
     def package(self, target=TARGET, output="output", reported="locron 0.10.0\n"):
         return windows.package(TAG, target, self.binary, self.root / output, source=self.root,
                                execute=lambda *args, **kwargs: SimpleNamespace(stdout=reported))
+
+    def pair_execute(self, argv, **options):
+        image = Path(argv[0])
+        self.assertNotEqual(image.parent, self.root)
+        self.assertEqual(image.parent, options["cwd"])
+        self.assertEqual({path.name for path in image.parent.iterdir()}, set(windows.PAIRED_FILES))
+        self.assertEqual(options["env"]["PATH"], windows.system_environment()["PATH"])
+        self.assertEqual(options["timeout"], 30)
+        self.assertEqual(options["stdin"], subprocess.DEVNULL)
+        self.assertIs(options["capture_output"], True)
+        self.assertIs(options["check"], True)
+        self.probes.append((image.name, argv[1], image.read_bytes()))
+        target = next(target for target, machine in windows.TARGETS.items()
+                      if machine == windows.pe_machine(image.read_bytes()))
+        identity = {"schema": "locron.windows-launcher-probe/v1", "version": "0.10.0",
+                    "target": target, "launcher_abi": "native-gui-v1",
+                    "initial_conout_opened": False, "initial_conout_error": 2}
+        output = (json.dumps(identity) if argv[1] == "--identity-probe"
+                  else image.stem + " 0.10.0\n")
+        return SimpleNamespace(stdout=output.encode(), stderr=b"")
+
+    def paired_package(self, target=TARGET, output="paired", execute=None):
+        return windows.package(TAG, target, self.binary, self.root / output, source=self.root,
+                               execute=execute or self.pair_execute, launcher=self.launcher)
+
+    def test_paired_archive_probes_actual_bytes_for_both_native_targets(self):
+        for target, machine in windows.TARGETS.items():
+            with self.subTest(target=target):
+                self.binary.write_bytes(executable(machine))
+                self.launcher.write_bytes(executable(machine, subsystem=2))
+                archive = self.paired_package(target, output=target)
+                # Validation must use final ZIP bytes even after the build outputs change.
+                self.binary.write_bytes(b"replaced source")
+                self.launcher.write_bytes(b"replaced source")
+                self.probes.clear()
+                facts = windows.validate_archive(archive, TAG, target, paired=True, execute=self.pair_execute)
+                self.assertEqual([(name, arg) for name, arg, _ in self.probes],
+                                 [("locron.exe", "--version"), ("locron-service-launcher.exe", "--version"),
+                                  ("locron-service-launcher.exe", "--identity-probe")])
+                self.assertEqual(facts["mode"], "paired-draft")
+                self.assertEqual(facts["launcher_identity"]["target"], target)
+                self.assertEqual(facts["launcher_abi"], "native-gui-v1")
+                self.assertEqual(facts["version_probes"], {"locron.exe": "locron 0.10.0\n",
+                                                        "locron-service-launcher.exe": "locron-service-launcher 0.10.0\n"})
+                with zipfile.ZipFile(archive) as stream:
+                    self.assertEqual(len(stream.infolist()), 5)
+                    for name, subsystem in windows.SUBSYSTEMS.items():
+                        data = stream.read(f"locron-{TAG}-{target}/{name}")
+                        self.assertEqual(facts["binaries"][name],
+                                         {"sha256": hashlib.sha256(data).hexdigest(),
+                                          "subsystem": subsystem, "imports": []})
+                        self.assertIn(data, [content for _, _, content in self.probes])
+                with self.assertRaises(ValueError):
+                    windows.validate_archive(archive, TAG, target)  # Legacy consumers cannot adopt pairs.
+
+    def test_paired_invalid_binary_refuses_before_any_probe_or_artifact(self):
+        for name, subsystem in windows.SUBSYSTEMS.items():
+            path = self.root / name
+            valid = path.read_bytes()
+            invalid = [b"corrupt", executable(0xAA64, subsystem=subsystem),
+                       executable(signed=True, subsystem=subsystem), executable(subsystem=5 - subsystem)]
+            invalid += [imported_executable("VCRUNTIME140.dll", delayed, subsystem) for delayed in (False, True)]
+            for data in invalid:
+                with self.subTest(name=name, data=data[:4]):
+                    path.write_bytes(data)
+                    with self.assertRaises(ValueError):
+                        self.paired_package()
+                    self.assertFalse(self.probes)
+                    self.assertFalse((self.root / "paired").exists())
+            path.write_bytes(valid)
+        self.launcher.unlink()
+        with self.assertRaises(ValueError):
+            self.paired_package()
+        self.assertFalse(self.probes)
+        self.assertFalse((self.root / "paired").exists())
+
+    def test_paired_inventory_and_aggregate_limits_refuse_before_probes(self):
+        legacy = self.package()
+        with self.assertRaises(ValueError):
+            windows.validate_archive(legacy, TAG, TARGET, paired=True, execute=self.pair_execute)
+        archive = self.paired_package()
+        with zipfile.ZipFile(archive) as stream:
+            members = [(member, stream.read(member)) for member in stream.infolist()]
+        variants = [members[:-1], members + [members[0]],
+                    members + [(f"locron-{TAG}-{TARGET}/extra", b"extra")]]
+        for index, members_changed in enumerate(variants):
+            candidate = self.root / f"invalid-{index}.zip"
+            with zipfile.ZipFile(candidate, "w") as stream:
+                for member, data in members_changed:
+                    stream.writestr(member, data)
+            self.probes.clear()
+            with self.assertRaises(ValueError):
+                windows.validate_archive(candidate, TAG, TARGET, paired=True, execute=self.pair_execute)
+            self.assertFalse(self.probes)
+        with patch.object(windows, "MAX_ARCHIVE_BYTES", 1023):
+            with self.assertRaises(ValueError):
+                self.paired_package(output="oversized")
+        self.assertFalse((self.root / "oversized").exists())
+        self.assertFalse(self.probes)
+        # Compressible documentation isolates expanded-size refusal from the archive-byte limit.
+        (self.root / "README.md").write_bytes(b"x" * 4096)
+        large = self.paired_package(output="large")
+        self.probes.clear()
+        with patch.object(windows, "MAX_ARCHIVE_BYTES", large.stat().st_size):
+            with self.assertRaises(ValueError):
+                windows.validate_archive(large, TAG, TARGET, paired=True, execute=self.pair_execute)
+        self.assertFalse(self.probes)
+
+    def test_paired_strict_identity_and_versions_leave_no_failed_artifact(self):
+        identity = {"schema": "locron.windows-launcher-probe/v1", "version": "0.10.0",
+                    "target": TARGET, "launcher_abi": "native-gui-v1",
+                    "initial_conout_opened": False, "initial_conout_error": 2}
+        invalid = [{key: value for key, value in identity.items() if key != missing} for missing in identity]
+        invalid += [dict(identity, **{key: value}) for key, value in (
+            ("schema", "unknown"), ("version", "0.9.6"), ("target", "aarch64-pc-windows-msvc"),
+            ("launcher_abi", "unknown"), ("extra", 0), ("initial_conout_opened", 0),
+            ("initial_conout_opened", True), ("initial_conout_error", None), ("initial_conout_error", True),
+            ("initial_conout_error", 0), ("initial_conout_error", 2.0),
+            ("initial_conout_error", 2**31), ("initial_conout_error", -(2**31) - 1))]
+        encoded = json.dumps(identity).encode()
+        bad_outputs = [json.dumps(value).encode() for value in invalid]
+        bad_outputs += [b" " + encoded, encoded + b"\n", encoded + b"{}", b"[{}]", b"\xff",
+                        encoded.replace(b'"schema":', b'"schema":"duplicate","schema":')]
+        for output in bad_outputs:
+            def execute(argv, **options):
+                result = self.pair_execute(argv, **options)
+                return SimpleNamespace(stdout=output, stderr=b"") if argv[1] == "--identity-probe" else result
+            with self.subTest(output=output[:60]), self.assertRaises(ValueError):
+                self.paired_package(execute=execute)
+            self.assertFalse((self.root / "paired").exists())
+        for name in windows.SUBSYSTEMS:
+            def wrong_version(argv, **options):
+                result = self.pair_execute(argv, **options)
+                wrong = (Path(argv[0]).stem + " 0.9.6\n").encode()
+                return SimpleNamespace(stdout=wrong, stderr=b"") if Path(argv[0]).name == name else result
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.paired_package(execute=wrong_version)
+            self.assertFalse((self.root / "paired").exists())
+        # Raw error codes remain facts; only the separate native controls qualify headless behavior.
+        for opened, error in ((True, None), (False, -1), (False, 3)):
+            facts = dict(identity, initial_conout_opened=opened, initial_conout_error=error)
+            self.assertEqual(windows.launcher_identity(json.dumps(facts), "0.10.0", TARGET), facts)
+
+    def test_paired_raw_nul_name_refuses_before_probes(self):
+        archive = self.paired_package()
+        candidate = self.root / "raw-name.zip"
+        with zipfile.ZipFile(archive) as original, zipfile.ZipFile(candidate, "w") as stream:
+            for member in original.infolist():
+                name = member.filename + "Xsuffix" if member.filename.endswith("README.md") else member.filename
+                stream.writestr(name, original.read(member))
+        data = candidate.read_bytes()
+        self.assertEqual(data.count(b"README.mdXsuffix"), 2)  # Local and central directory names.
+        candidate.write_bytes(data.replace(b"README.mdXsuffix", b"README.md\0suffix"))
+        self.probes.clear()
+        with self.assertRaises(ValueError):
+            windows.validate_archive(candidate, TAG, TARGET, paired=True, execute=self.pair_execute)
+        self.assertFalse(self.probes)
+
+    def test_paired_final_copy_failures_remove_only_the_new_artifact(self):
+        read_bytes, open_file = Path.read_bytes, Path.open
+
+        def failed_read(path):
+            if path.parent.name.startswith("locron-paired-package-"):
+                raise OSError("copy fixture read failure")
+            return read_bytes(path)
+
+        with patch.object(Path, "read_bytes", failed_read), self.assertRaises(OSError):
+            self.paired_package(output="failed-read")
+        self.assertFalse((self.root / "failed-read").exists())
+
+        class BrokenOutput:
+            def __init__(self, stream, stage):
+                self.stream, self.stage = stream, stage
+
+            def __enter__(self):
+                return self
+
+            def write(self, data):
+                if self.stage == "write":
+                    self.stream.write(data[:16])
+                    raise OSError("copy fixture write failure")
+                return self.stream.write(data)
+
+            def __exit__(self, *args):
+                self.stream.__exit__(*args)
+                if self.stage == "close":
+                    raise OSError("copy fixture close failure")
+
+        for stage in ("write", "close"):
+            directory = self.root / stage
+
+            def failed_open(path, *args, **kwargs):
+                stream = open_file(path, *args, **kwargs)
+                return BrokenOutput(stream, stage) if path.parent == directory and args == ("xb",) else stream
+
+            with patch.object(Path, "open", failed_open), self.assertRaisesRegex(OSError, "copy fixture"):
+                self.paired_package(output=stage)
+            self.assertEqual(list(directory.iterdir()), [])
+
+    def test_paired_failed_probes_and_existing_output_are_not_published(self):
+        failures = [ValueError("fixture failure"), subprocess.TimeoutExpired("probe", 30),
+                    subprocess.CalledProcessError(70, "probe"),
+                    SimpleNamespace(stdout=b"x" * (windows.MAX_PROBE_BYTES + 1), stderr=b""),
+                    SimpleNamespace(stdout=b"locron 0.10.0\n", stderr=b"warning")]
+        for failure in failures:
+            def execute(argv, **options):
+                self.pair_execute(argv, **options)
+                if isinstance(failure, Exception):
+                    raise failure
+                return failure
+            with self.subTest(failure=str(failure)[:50]), self.assertRaises((ValueError, subprocess.SubprocessError)):
+                self.paired_package(execute=execute)
+            self.assertFalse((self.root / "paired").exists())
+        archive = self.paired_package()
+        original = archive.read_bytes()
+        with self.assertRaises(FileExistsError):
+            self.paired_package()
+        self.assertEqual(archive.read_bytes(), original)
+
+    def test_paired_cli_requires_explicit_correct_mode(self):
+        for mode, flags in (("package", ["--paired"]), ("validate", ["--launcher", str(self.launcher)])):
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/windows_release.py"),
+                                     mode, TAG, TARGET, str(self.binary), *flags],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("--launcher is package-only; --paired is validate-only", result.stderr)
+            self.assertFalse(result.stdout)
 
     def test_native_architecture_unsigned_version_and_exact_inventory(self):
         for target, machine in windows.TARGETS.items():
