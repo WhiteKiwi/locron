@@ -82,3 +82,16 @@ connection-close correlation for the older Server15 needs its own later plan.
    return, pre-call expiry, BUSY and15. Required red rows remain merge blockers.
    No unchanged rerun, timeout inflation, detach/kill of a SQLite owner, blanket
    retry or historical cause claim; missing Server owner/file facts stay open.
+
+
+## Stable Rust syntax continuation before Source
+
+Ordinary558 run37151318184 fails compilation, before native controls: Rust1.94
+job111285640711 and Rust1.98 lint111285640451 report E0658 at windows_configure.rs
+168 and237. The two cfg attributes attach directly to assignment expressions.
+A separate developer may only enclose those same assignments in cfg-gated
+statement blocks, keeping their exact debug-only evaluation points and values.
+Verify the two-assignment inverse, unchanged release/native policy and all other
+blobs, stable Rust1.94/1.98 syntax, formatting and fresh native compilation.
+No feature gate, allow, clock, SQL, retry, diagnostic field or selector changes.
+The original five-step plan and owning Issue criteria remain required.
