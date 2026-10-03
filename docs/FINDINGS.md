@@ -5366,3 +5366,25 @@ these runs to add rejection, UID or unsupported backend. A genuine native target
 is still necessary for resolution acceptance. x64's separate300/1 supervisor
 unit failure preempts all CLI integration cases; lint repeats the old41 sites.
 Nothing qualifies actual wake, full suite, two-user privacy or release support.
+
+
+### PR135 native doctor assertion correction before Source (2026-10-04)
+
+Current main134-integrated8644efb full37160909694 x64 job111313961833
+executes301CLI units successfully, then75CLI integrations70pass/5fail,0ignored
+and filtered. Both existing doctor tests now pass. The new process-resolution
+case compares actual canonical \\?\D:... executable to the requested ordinary
+D:... path. Core execution's existing resolve_executable returns std::fs::canonicalize
+on Windows; the expected resolved path must be independently canonicalized too.
+Requested executable and stock PATH assertions remain exact and separate.
+
+The new invalid-token-leaf test reaches exit5/service_io, then rejects its own
+unwrapped message-prefix expectation. Existing ServiceError::Io Display uses
+"service management failed: {message}"; main renders that Display without stripping
+it. Its actual message text was not printed in the failed assertion. Preserve
+the genuine ACL/type refusal and select the complete fixed display prefix, with
+an explicit failed assertion message rather than catching or downgrading errors.
+The same row also preserves cancellation/wake failures and one unchanged
+disconnect test Store after-WAL finalize deadline overrun (5469705us under the
+original5s clock, configuration modewal/done/autocommit observed). Their causes
+and broader runtime qualification are not repaired by this expectation slice.

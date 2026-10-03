@@ -5186,3 +5186,17 @@ tests must execute. Four ordered Verify criteria require full Source review and
 fresh native/Unix/fake evidence. No wake API/dependency/lifecycle effects are
 authorized by this lease; remaining full lint/wake/cancellation/supervisor and
 desktop/two-user/release gates remain open, without an unchanged-source retry.
+
+
+### PR135 native doctor expectation correction before Source (2026-10-04)
+
+Continue the original default-doctor lease after8644efb full37160909694 x64
+301unitPASS then70PASS/5FAIL of75CLI integrations. Preserve the measured canonical
+Windows resolved path and genuine exit5/service_io token refusal. Select only
+independent canonical expected path and the complete existing ServiceError Display
+prefix in the two newly added native cases, per planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md.
+Keep requested argv/stock PATH equality, private token non-disclosure and original
+selectors/clocks. No production resolver/render/error/token/guard/dependency change
+is selected. Three ordered Verify steps precede separate Source; parent reviews
+exact inverse and fresh native/ordinary results. Unchanged WAL/disconnect/wake/cancel
+and fullClippy41 failures stay visible and broader acceptance remains open.

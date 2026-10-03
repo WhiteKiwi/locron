@@ -100,3 +100,29 @@ deadline enlargement, worker reset, whole-suite serialization or protection
 override. Actual two-user prerequisite, standard-user Windows11/reboot,
 public unsigned release/install/update/remove/WinGet remain unqualified;
 signing37 is deferred. Issues remain open until all their criteria are met.
+
+
+## Native expectation correction before Source (2026-10-04)
+
+Continue the original four Verify criteria after measured full37160909694 x64
+301unitPASS/75integration70PASS5FAIL. Product, source behavior, privacy and error
+classification remain fixed. Only the two new native test expectations may change
+after this plan/Issue Verify readback and separate development handoff.
+
+1. Correct the native resolved-path oracle. **Verify:** independently canonicalize
+   the known cargo-built executable with std::fs::canonicalize, require UTF-8, and
+   compare its complete value to resolved_executable. Keep requested_executable
+   equality to the original argv and effective/execution stock PATH equality.
+   No prefix stripping, basename/suffix-only comparison or production resolver use.
+2. Correct the complete typed-error oracle. **Verify:** invalid token directory
+   still refuses with exit5, service_io, no data and the unchanged directory.
+   Require the full fixed Display prefix "service management failed: cannot inspect
+   token ACL:" and include the observed message when that assertion fails. Do not
+   match any service_io generically, catch an arbitrary error or return success.
+3. Conserve/review/qualify the two test changes. **Verify:** independent whole-file
+   inverse restores both previous functions, all75 native selectors/clocks/assertions
+   remain outside the specified oracles, and production main/service blobs and every
+   other tracked Source remain exact. Rust1.94/1.98 format/diff checks and parent
+   review pass. Fresh changed-head ordinary required CI and all four real native
+   doctor cases plus the two existing doctor cases must execute on x64/ARM/MSRV.
+   Retain original failed logs and all later CLI/full lint/acceptance failures.
