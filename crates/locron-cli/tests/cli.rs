@@ -52,6 +52,109 @@ fn invoke_json(state: &tempfile::TempDir, arguments: &[&str]) -> serde_json::Val
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
+#[cfg(unix)]
+mod state_discovery {
+    use std::process::Command;
+
+    fn without_default() -> Command {
+        let mut command = Command::new(assert_cmd::cargo::cargo_bin!("locron"));
+        command
+            .env_remove("HOME")
+            .env_remove("XDG_STATE_HOME")
+            .env_remove("LOCRON_STATE_DIR");
+        command
+    }
+
+    fn assert_recovery_guidance(message: &str) {
+        assert!(message.contains("state directory cannot be discovered"));
+        assert!(message.contains("--state-dir <PATH>"));
+        assert!(message.contains("LOCRON_STATE_DIR"));
+    }
+
+    #[test]
+    fn unavailable_default_has_actionable_human_error() {
+        let working = tempfile::tempdir().unwrap();
+        let output = without_default()
+            .current_dir(working.path())
+            .arg("list")
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.code(), Some(5));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.starts_with("error: "));
+        assert_recovery_guidance(&stderr);
+        assert_eq!(std::fs::read_dir(working.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn unavailable_default_preserves_json_and_stream_error_contracts() {
+        let working = tempfile::tempdir().unwrap();
+        for (arguments, schema, command) in [
+            (&["--json", "list"][..], "locron.cli/v1", "list"),
+            (
+                &["--json", "run", "missing", "--wait"][..],
+                "locron.stream/v1",
+                "run",
+            ),
+        ] {
+            let output = without_default()
+                .current_dir(working.path())
+                .args(arguments)
+                .output()
+                .unwrap();
+
+            assert_eq!(output.status.code(), Some(5));
+            assert!(output.stderr.is_empty());
+            let error: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(error["schema"], schema);
+            assert_eq!(error["command"], command);
+            assert_eq!(error["ok"], false);
+            assert_eq!(error["error"]["code"], "state_error");
+            assert_recovery_guidance(error["error"]["message"].as_str().unwrap());
+            if schema == "locron.stream/v1" {
+                assert_eq!(error["record"], "result");
+                assert_eq!(error["terminal"], true);
+            }
+        }
+        assert_eq!(std::fs::read_dir(working.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn explicit_overrides_recover_without_home_and_preserve_precedence() {
+        let working = tempfile::tempdir().unwrap();
+        let cli_root = working.path().join("CLI state 한글");
+        let environment_root = working.path().join("environment state 한글");
+        let cli = without_default()
+            .current_dir(working.path())
+            .env("LOCRON_STATE_DIR", &environment_root)
+            .arg("--state-dir")
+            .arg(&cli_root)
+            .args(["config", "get", "global_concurrency"])
+            .output()
+            .unwrap();
+
+        assert_cmd::assert::Assert::new(cli)
+            .success()
+            .stdout("global_concurrency=16\n");
+        assert!(cli_root.join("state.db").is_file());
+        assert!(!environment_root.exists());
+
+        let environment = without_default()
+            .current_dir(working.path())
+            .env("LOCRON_STATE_DIR", &environment_root)
+            .args(["config", "get", "global_concurrency"])
+            .output()
+            .unwrap();
+
+        assert_cmd::assert::Assert::new(environment)
+            .success()
+            .stdout("global_concurrency=16\n");
+        assert!(environment_root.join("state.db").is_file());
+    }
+}
+
 fn timestamp_after(duration: Duration) -> String {
     let micros = SystemTime::now()
         .duration_since(UNIX_EPOCH)
