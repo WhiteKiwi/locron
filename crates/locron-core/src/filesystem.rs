@@ -78,6 +78,13 @@ impl DirectoryGuard {
     }
 }
 
+/// Native directory data access participates in read/write/delete sharing accounting.
+/// Descriptor-only opens do not establish this retained-object boundary.
+#[cfg(windows)]
+pub(crate) fn open_directory_guard_handle(path: &Path) -> io::Result<File> {
+    windows::directory_handle(path, false)
+}
+
 /// A file whose parent-chain guards live as long as the file.
 #[derive(Debug)]
 pub struct GuardedFile {
@@ -536,6 +543,7 @@ mod windows {
     const READ_CONTROL: u32 = 0x0002_0000;
     const WRITE_DAC: u32 = 0x0004_0000;
     const FILE_READ_ATTRIBUTES: u32 = 0x80;
+    const FILE_LIST_DIRECTORY: u32 = 1;
     const FILE_SHARE_READ: u32 = 1;
     const FILE_SHARE_WRITE: u32 = 2;
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
@@ -627,11 +635,18 @@ mod windows {
         }
     }
 
-    fn directory_handle(path: &Path, repair: bool) -> io::Result<File> {
-        OpenOptions::new().access_mode(READ_CONTROL | FILE_READ_ATTRIBUTES | if repair { WRITE_DAC } else { 0 })
+    pub(super) fn directory_handle(path: &Path, repair: bool) -> io::Result<File> {
+        OpenOptions::new()
+            .access_mode(
+                READ_CONTROL
+                    | FILE_READ_ATTRIBUTES
+                    | FILE_LIST_DIRECTORY
+                    | if repair { WRITE_DAC } else { 0 },
+            )
             // No delete sharing prevents rename; no write sharing prevents reparse mutation.
             .share_mode(FILE_SHARE_READ)
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT).open(path)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
     }
 
     pub(super) fn reject_reparse(file: &File, path: &Path) -> io::Result<()> {
@@ -1001,6 +1016,18 @@ mod tests {
             wrappers::GetSecurityInfo(file, SeObjectType::SE_FILE_OBJECT, information).unwrap();
         wrappers::ConvertSecurityDescriptorToStringSecurityDescriptor(&descriptor, information)
             .unwrap()
+    }
+
+    fn fixture_directory_descriptor(path: &Path) -> std::ffi::OsString {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let metadata = OpenOptions::new()
+            .access_mode(0x0002_0080)
+            .share_mode(3)
+            .custom_flags(0x0220_0000)
+            .open(path)
+            .unwrap();
+        fixture_descriptor(&metadata)
     }
 
     #[test]
@@ -1509,6 +1536,111 @@ mod tests {
         assert!(fs::rename(&parent, &moved).is_err());
         drop(guard);
         fs::rename(&parent, &moved).unwrap();
+    }
+
+    #[test]
+    fn bare_empty_directory_guard_retains_identity_and_blocks_rename_and_reparse() {
+        use std::os::windows::fs::MetadataExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let parent = fs::canonicalize(temporary.path()).unwrap();
+        let empty = parent.join("empty guarded directory");
+        let target = parent.join("separate junction target");
+        drop(DirectoryGuard::private(&empty).unwrap());
+        drop(DirectoryGuard::private(&target).unwrap());
+        let guard = DirectoryGuard::existing_private(&empty).unwrap();
+        let identity = file_id::get_high_res_file_id(guard.normalized_path()).unwrap();
+        assert!(matches!(identity, file_id::FileId::HighRes { .. }));
+        let descriptor = fixture_directory_descriptor(&empty);
+        assert!(fs::read_dir(&empty).unwrap().next().is_none());
+        let moved = parent.join("moved empty directory");
+        assert_eq!(
+            fs::rename(&empty, &moved).unwrap_err().raw_os_error(),
+            Some(32)
+        );
+        assert_eq!(fs::remove_dir(&empty).unwrap_err().raw_os_error(), Some(32));
+        let replacement = r"
+            [IO.Directory]::Delete([string]$request.link);
+            New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null;
+            @{created=$true} | & $locronToJson -Compress
+        ";
+        let request = json!({"link":empty,"target":target});
+        assert!(crate::windows::run_script_json(replacement, &request).is_err());
+        assert_eq!(
+            fs::symlink_metadata(&empty).unwrap().file_attributes() & 0x400,
+            0
+        );
+        assert_eq!(file_id::get_high_res_file_id(&empty).unwrap(), identity);
+        assert_eq!(fixture_directory_descriptor(&empty), descriptor);
+        assert!(fs::read_dir(&empty).unwrap().next().is_none());
+        assert!(!moved.exists());
+        drop(guard);
+        fs::rename(&empty, &moved).unwrap();
+        fs::rename(&moved, &empty).unwrap();
+        assert_eq!(file_id::get_high_res_file_id(&empty).unwrap(), identity);
+        crate::windows::run_script_json(replacement, &request).unwrap();
+        let refused = DirectoryGuard::existing_private(&empty);
+        // Remove only this owned junction before checking the refusal and cleaning up.
+        fs::remove_dir(&empty).unwrap();
+        assert_eq!(refused.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        assert!(fs::read_dir(&target).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn list_denied_ancestor_refuses_without_creating_or_repairing_its_suffix() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let ancestor = fs::canonicalize(temporary.path())
+            .unwrap()
+            .join("list denied");
+        drop(DirectoryGuard::private(&ancestor).unwrap());
+        let sid = crate::windows::current_user_sid().unwrap();
+        let mut metadata = OpenOptions::new()
+            .access_mode(0x0006_0080)
+            .share_mode(3)
+            .custom_flags(0x0220_0000)
+            .open(&ancestor)
+            .unwrap();
+        let original = wrappers::GetSecurityInfo(
+            &metadata,
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Owner | SecurityInformation::Dacl,
+        )
+        .unwrap();
+        let denied: windows_permissions::LocalBox<windows_permissions::SecurityDescriptor> =
+            format!("D:P(D;;0x00000001;;;{sid})(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)")
+                .parse()
+                .unwrap();
+        wrappers::SetSecurityInfo(
+            &mut metadata,
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+            None,
+            None,
+            denied.dacl(),
+            None,
+        )
+        .unwrap();
+        let denied_descriptor = fixture_descriptor(&metadata);
+        let missing = ancestor.join("never created").join("private");
+        let refused = DirectoryGuard::private(&missing);
+        let suffix_absent = !ancestor.join("never created").exists();
+        let unchanged = fixture_descriptor(&metadata) == denied_descriptor;
+        wrappers::SetSecurityInfo(
+            &mut metadata,
+            SeObjectType::SE_FILE_OBJECT,
+            SecurityInformation::Dacl | SecurityInformation::ProtectedDacl,
+            None,
+            None,
+            original.dacl(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(refused.unwrap_err().raw_os_error(), Some(5));
+        assert!(suffix_absent);
+        assert!(unchanged);
+        assert!(DirectoryGuard::existing_private(&ancestor).is_ok());
     }
 
     #[test]
