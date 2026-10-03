@@ -3614,6 +3614,60 @@ is not native qualification and does not authorize takeover or fresh-root creati
 [CreateFileW access and sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
 [file and directory access rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-access-rights-constants).
 
+Fresh service preflight cannot call DirectoryGuard::private for an absent root: that existing
+entry point intentionally creates missing directories. A passive plan can retain the nearest
+existing no-reparse directory chain, its full identity and the missing suffix without making
+that suffix exist. An already-existing final root must separately satisfy the strict current-SID
+private descriptor; an unsafe existing root is not an opportunity for takeover or repair.
+
+The current stock DirectoryInfo.Create(DirectorySecurity) adapter reports created:true after
+success, but .NET's internal directory implementation also accepts a concurrent existing
+directory. That flag is not an exclusive creation receipt for fresh-install rollback. The
+pinned fs_at 0.2.1 mkdir_at implementation is create-only and returns a native directory handle,
+but it requests DELETE and hardcodes read/write/delete sharing. Its open_dir_at path supports
+an explicit FILE_CREATE disposition, FILE_DIRECTORY_FILE option and custom desired access;
+that remains a creation candidate requiring a complete descriptor/retained-identity/rollback
+audit, not an approved effect primitive. Implement the passive inspector independently while
+new-root creation, adoption and deletion remain held.
+[Framework directory source](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/directory.cs),
+[pinned fs_at source](https://docs.rs/fs_at/0.2.1/src/fs_at/win.rs.html),
+[native create dispositions](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile).
+
+The held GUI proposal changes a service binding from one image to an exact console/launcher
+pair; the previously qualified pure version-one record cannot describe that pair or a sealed
+Run context. The proposed service record therefore uses an unpublished version-two schema and
+keeps native ownership distinct from decoding. A GUID-only hint or a first authenticated
+launcher connection is insufficient: the producer must durably observe the sole SDK Run GUID
+before sending a remaining-budget Permit for actual hidden child creation. Runtime's proposed
+consumer receives only a service-minted Serialize-only witness after the second kernel peer and
+held supervisor lease/control proof. No raw capability or arbitrary PID is recovery authority.
+
+The exact fixed JSON ActivationFact (context/digest, three UUID options and unknown_start) has
+a 317-byte maximum versus null's four bytes. The optional RuntimeFacts witness (context/digest,
+Scheduler GUID and maximum u32 launcher PID) has a 212-byte maximum versus null's four bytes.
+These pure schema counts do not prove a complete record or the sixteen-KiB facts object fits;
+actual typed full-object reservation/serialization and native handshake gates remain required.
+The two-image record/consumer/producer refinement is planning only, dependent on complete GUI
+and private Project review. It does not qualify source, activation or fresh-root effects.
+
+The concrete GUI activation transport can reuse pinned interprocess 2.4.4's safe synchronous
+peer queries: its Tokio named-pipe stream client_process_id/server_process_id call the matching
+kernel functions on the actual connected handle. Claimed frame PIDs or a Scheduler GUID do not
+replace those observations, retained child/control ownership, or the fresh Run capability.
+Strict bounded JSON decoding remains a raw-data boundary and cannot mint local authentication.
+[Kernel client PID contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid),
+[pinned stream source](https://docs.rs/interprocess/2.4.4/src/interprocess/os/windows/named_pipe/tokio/stream/impl.rs.html).
+
+The resolved UUID graph already contains getrandom 0.4.3. Its safe fill API reports any failure
+and does not promise initialized bytes on error; the audited Windows backend passes the exact
+slice pointer/length to ProcessPrng in bcryptprimitives and accepts only TRUE. The crate is
+MIT/Apache-2.0, requires Rust 1.85 and introduces no additional package version for this direct
+Windows CLI edge. Generate the complete 32-byte nonce inside the existing finite native owner,
+never from UUID text or a clock. Even normally fast entropy remains uncancellable native I/O;
+late success cannot authorize intent/Run. This source audit is not native handshake qualification.
+[Pinned fill contract](https://docs.rs/getrandom/0.4.3/getrandom/fn.fill.html),
+[pinned Windows backend](https://docs.rs/getrandom/0.4.3/src/getrandom/backends/windows.rs.html).
+
 The reviewed runtime factory correction at 967fa34 selects a final safe creation_flags setter
 inside spawn_with after wrapper pre_spawn hooks. Core's local factory should preserve that same
 native boundary: hidden plus temporary suspension at actual spawn, with the logical JobObject
@@ -3942,3 +3996,857 @@ maintenance 11/11 on all three rows is required; earlier pruning success does no
 
 Sources: [Root43 completed ARM64 job](https://github.com/WhiteKiwi/locron/actions/runs/37107116124/job/111157711798),
 [Root44 completed MSRV job](https://github.com/WhiteKiwi/locron/actions/runs/37107738582/job/111159474352).
+
+### Exact executable replacement and recoverable deletion (2026-10-03)
+
+A path-based rename does not identify the source by the exact retained executable handle.
+The audited Windows implementations of cap-primitives, atomic-write-file and renamore resolve
+source/destination paths for their rename operation; they do not provide the needed consuming
+source-File replacement interface. This is an interface limitation of these audited versions,
+not evidence that safe Rust executable replacement is impossible.
+
+The concrete candidate is Windows-only `fs_at = "=0.2.1"`, Apache-2.0, declared MSRV 1.71.0.
+Its safe `fs_at::os::windows::FileExt::delete_by_handle(self: File)` returns
+`Result<(), (File, io::Error)>` and calls SetFileInformationByHandle on that exact owned File,
+first with FileDispositionInfoEx and then with a compatibility fallback when appropriate.
+Workspace call sites need no unsafe block and preserve Rust 1.94 and unsafe_code=forbid.
+It does not provide an atomic rename transaction; the design must make deletion recoverable.
+
+Acquire the old regular executable with read/write/DELETE access, OPEN_REPARSE_POINT and
+share_mode(0), under the existing strict private descriptor and retained ancestor checks.
+Microsoft documents that zero sharing denies later read/write/delete opens, delete permission
+also governs rename, and CreateNew fails on any existing entry. The exclusive old gate verifies
+the exact old receipt, bytes and complete volume/file identity and is retained until exact-handle
+deletion. The audited file-id 0.2.3 high-resolution query opens with access_mode(0), so a metadata
+query remains compatible with the live gate; the guarded leaf cannot be renamed during that query.
+Refuse a read-only or multiply linked replacement leaf rather than repairing ownership or
+mutating a second link. The shared filesystem adapter needs explicit exclusive-existing and
+exclusive-create entry points: ordinary open_private intentionally has shared read/write behavior
+and must not silently discard the replacement gate's sharing/access requirements.
+
+Before deletion, copy and flush a verified old binary, receipt and owned companion payloads into
+the private operation root. Persist the serializable all-task restore record, old leaf identities,
+backup hashes and delete intent before consuming the old File. Retain the parent guards and create
+the destination only with CreateNew, private inherited security, immediate handle-bound readback
+and the same exclusive gate. Persist the fresh complete file identity before writing; flush and
+verify every new byte and the receipt before releasing the executable gate or restoring task
+activation. Rollback applies the same exact-identity deletion and exclusive creation rules to
+recorded leaves; it never overwrites an unexpected entry.
+
+Source review found an important error boundary: the fs_at read-only compatibility branch can
+successfully mark a file for deletion and then return Err when restoring its attribute fails.
+Therefore every deletion error is ambiguous, even if ordinary supported files avoid that branch.
+Keep verified backups and the durable journal; inspect the guarded destination and reconcile the
+recorded identities instead of assuming the old path survived. If it is absent, a verified backup
+can be created exclusively. If it is an unrecognized entry, preserve it, keep activation disabled
+and report explicit recovery instructions. A crash between fresh creation and identity-record
+flush is likewise an explicit refusal boundary, not an automatic permission to delete an empty
+or partially written file. The retained verified helper resides outside the replaced directory,
+so install.ps1 -Operation UUID can inspect/recover a standalone operation even when locron.exe is
+missing. Status files are derived reporting and never authorize recovery by themselves.
+
+A tools-only rehearsal on this standard-user Windows 11 x64 host used a test-owned copy of the
+stock command interpreter, hidden owned child processes and a unique temporary directory. The
+exclusive read/write/DELETE gate refused the mapped image with sharing violation; after child
+exit it blocked a competing rename and relaunch. With a flushed verified backup and write-ahead
+record, exact-handle FileDispositionInfoEx deletion succeeded. Exclusive CreateNew kept launch
+blocked until complete bytes were flushed and checked. A competing destination made CreateNew
+fail with ERROR_FILE_EXISTS and its marker bytes and backup remained unchanged. All owned children
+and test paths were cleaned up. This establishes OS primitive behavior on one x64 host; it did
+not compile fs_at in this workspace, exercise ARM64, validate the complete ACL adapter, or prove
+crash recovery/all-task lifecycle. Native Rust fixtures and every crash phase remain release gates.
+Windows write-through plus sync_all request durable OS flushes; Microsoft's caching guidance
+explicitly limits claims about hardware write-through support.
+
+Sources: [fs_at version metadata](https://docs.rs/crate/fs_at/0.2.1),
+[exact consuming deletion source](https://docs.rs/crate/fs_at/0.2.1/source/src/win.rs),
+[CreateFile sharing, CreateNew and caching](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[handle-bound deletion and DELETE access](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle),
+[file-id metadata-only open](https://docs.rs/crate/file-id/0.2.3/source/src/lib.rs),
+[audited cap-primitives path rename](https://github.com/bytecodealliance/cap-std/blob/main/cap-primitives/src/windows/fs/rename_unchecked.rs),
+[audited atomic-write-file path rename](https://github.com/andreacorbellini/rust-atomic-write-file/blob/master/src/imp/generic.rs),
+[audited renamore path rename](https://github.com/indianakernick/renamore/blob/master/src/windows.rs).
+
+### Preserve the raw per-user PATH and its registry kind (2026-10-03)
+
+The .NET Framework user-environment getter reads Registry.GetValue with its default expansion
+behavior, while its setter uses Registry.SetValue without an explicit kind. A REG_EXPAND_SZ PATH
+containing `%USERPROFILE%` can therefore be expanded and rewritten as REG_SZ. Recording only the
+returned string cannot restore the original persistent value. Stock RegistryKey.GetValue with
+DoNotExpandEnvironmentNames, GetValueKind and SetValue with the recorded String/ExpandString kind
+provide a safe interface for exact raw-value preservation. Missing and empty values are distinct.
+Rollback also compares the current raw value and kind with the recorded result before restoring.
+
+Windows documents an Environment WM_SETTINGCHANGE broadcast for immediate shell notification.
+The audited winsafe 0.0.29 SendMessageTimeout entry point is explicitly unsafe, so it is not a
+usable call site under this workspace's unsafe_code=forbid policy. No additional native adapter
+is required for the optional persistent PATH edit: report that the new value applies after the
+next sign-in, without changing process PATH or claiming immediate shell propagation.
+
+Sources: [.NET Framework user-environment implementation](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/environment.cs),
+[unexpanded registry reads](https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.registryvalueoptions?view=netframework-4.8.1),
+[explicit registry value kinds](https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.registrykey.setvalue?view=netframework-4.8.1),
+[Environment change notification](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-settingchange),
+[audited winsafe SendMessageTimeout](https://docs.rs/crate/winsafe/0.0.29/source/src/user/handles/hwnd.rs).
+
+### Unsigned first install under stock script policy (2026-10-03)
+
+Microsoft documents that Restricted permits individual commands but blocks script files.
+RemoteSigned can also block unsigned downloaded scripts with Zone.Identifier until the operator
+selectively unblocks that reviewed asset; Unblock-File does not change execution policy and
+cannot make Restricted execute scripts. AllSigned and organizational policy can impose additional
+restrictions. This host's stock PowerShell 5.1 policy refused the test .ps1 source; source AST
+parsing succeeds, but that is not installer execution evidence.
+
+The selected route adds native Windows-only install, uninstall and UUID recovery commands to the
+same binary, sharing the strict verifier, protected request, fixed OS adapters and helper engine.
+It executes compiled procedures and does not load arbitrary .ps1 contents, select Bypass or
+change user/machine policy. It therefore removes the unsigned-script prerequisite for native
+installation while continuing to respect native executable controls. Keep the .ps1 assets as an
+optional frontend with the actual policy prerequisite stated. Test the native route on clean
+standard-user Windows 11 x64/ARM64 under Restricted before announcing support.
+The same native maintenance/status frontend supplies the already selected portable WinGet
+quiesce/restore procedure. Portable manifests execute no script/native lifecycle hook; first
+package installation has manual service configuration, and package upgrade/removal requires
+confirmed maintenance rather than assuming automatic task behavior.
+
+Sources: [PowerShell 5.1 execution policies](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-5.1),
+[selective file unblocking](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/unblock-file?view=powershell-5.1),
+[organizational policy precedence](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/set-executionpolicy?view=powershell-5.1).
+
+### Portable WinGet automatic-upgrade limitation (2026-10-03)
+
+Schema 1.12 documents RequireExplicitUpgrade as identifying packages that upgrade themselves;
+it excludes them from upgrade --all by default. Locron deliberately refuses self-update for
+WinGet-owned files, so that field cannot truthfully describe this channel merely because task
+maintenance requires an explicit workflow. Do not change the proposed manifest to assert it
+without a supporting community policy decision. Official WinGet documentation says upgrade --all
+attempts available updates and has no Locron Prepare/Complete hook.
+
+An enabled daemon/dashboard attached to a portable package therefore needs the explicit reviewed
+maintenance procedure. Unattended upgrade tools and upgrade --all do not perform it and cannot
+be advertised as supported with those roles enabled. Prefer the standalone channel when integrated
+service lifecycle/self-update is required. This limitation remains a channel-promotion review
+item; no automatic safety, pin, self-updating flag or hook is inferred from manifest validation.
+The native installer work can proceed independently without changing the portable format.
+
+Sources: [schema 1.12 RequireExplicitUpgrade meaning](https://github.com/microsoft/winget-pkgs/blob/master/doc/manifest/schema/1.12.0/installer.md#fields),
+[WinGet upgrade-all behavior](https://learn.microsoft.com/en-us/windows/package-manager/winget/upgrade#upgrade---all).
+
+### Bound the future package path before preparing maintenance (2026-10-03)
+
+WinGet Complete selects the newly registered executable after an external package upgrade, so
+Prepare cannot reserve only the old path's length. The selected maintenance scope caps both the
+normalized executable and registered location at 4,096 UTF-16 code units. Repeat the check on the
+actual guarded canonical paths, including their supported verbatim transport prefix. The four-unit
+prefix leaves at most 4,092 normalized drive-path units; it cannot be stripped from capacity checks
+merely because path comparison strips it. This string bound never grants ownership. Runtime and
+state-path handling are unchanged. A larger new package location refuses Complete before restoration, leaving
+owned tasks disabled and the protected journal available.
+
+For the native JSON encoding, each allowed BMP character takes at most three UTF-8 bytes per
+UTF-16 unit, each supplementary character takes four bytes per surrogate pair, and an escaped
+backslash takes two bytes. Local path validation rejects controls and quotes. Thus 12,288 bytes
+plus string quotes is a conservative bound per future path. Preparation must count every repeated
+path, full typed service snapshot, cumulative forced-stop fact and callback/rollback frame before
+any effects. The 128 KiB frame/16 MiB/128-frame limits and 256-binding service ceiling are retained;
+an oversized inventory refuses with zero effects rather than truncating recovery authority.
+
+This is a distribution reservation decision, not a claim that Windows has a 4,096-unit path limit.
+Native boundary fixtures must verify normalization, UTF-16 counting, JSON escaping and refusal
+before supported maintenance is promoted.
+
+Sources: [Windows path character rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file),
+[pinned serde_json UTF-8 fragments and escape table](https://docs.rs/crate/serde_json/1.0.151/source/src/ser.rs).
+
+### Native portable ownership registry references (2026-10-03)
+
+WinGet's official PortableARPEntry source selects the HKCU 64-bit uninstall view for user scope,
+including ARM64. It records WinGetPackageIdentifier, WinGetInstallerType, WinGetSourceIdentifier,
+DisplayVersion and InstallLocation as string values. TargetFullPath is the legacy single-file
+reference; indexed ZIP installations can omit it. The existing selected nested ZIP path therefore
+remains the exact expected location rather than an alias or a recursive executable search.
+
+The native maintenance verifier can read these fixed values through the reviewed stock registry
+adapter without creating a key. Retain existing trusted-owner/no-reparse location and immutable
+source-file guards, repeat the canonical path bound and compare the actual executable against
+the complete canonical release/archive digest. Registry metadata alone never authorizes task
+effects; revalidate its exact reference before lifecycle mutation. This verifies the already
+selected ownership contract, without changing manifest format or assuming a WinGet hook.
+
+Sources: [WinGet user-scope view and exact value names](https://github.com/microsoft/winget-cli/blob/b0f6209cc58841c19e432325b127ab3c33a8f6f8/src/AppInstallerCommonCore/PortableARPEntry.cpp),
+[portable archive index and legacy target behavior](https://github.com/microsoft/winget-cli/blob/b0f6209cc58841c19e432325b127ab3c33a8f6f8/src/AppInstallerCLICore/PortableInstaller.cpp).
+
+### Literal PATH insertion and frozen native state selection (2026-10-03)
+
+RegistryValueKind distinguishes literal REG_SZ from expandable REG_EXPAND_SZ. A new installation
+directory containing percent characters can be stored literally in REG_SZ, but preserving an
+existing expandable kind could reinterpret it when another process retrieves the environment.
+Refuse that insertion instead of changing the existing kind or expanding its prior fields.
+Semicolon-containing destinations remain unrepresentable as one PATH field. Detect duplicates
+only among validated normalized absolute literal fields; a match is not newly installer-owned.
+This conservative comparison does not equate environment references, aliases or arbitrary
+quoted/relative fields. Exact raw value and kind remain the conditional write/rollback predicate.
+
+Native dispatch occurs before ordinary state discovery. Its new-install state override must be
+request metadata rather than an ambient lookup by the copied helper. Clap retains whether the
+global option came from the command line or environment. Recovery can therefore reject a new
+explicit override, ignore an ambient override and retain the protected original selection.
+This closes the pre-discovery frontend contract without changing ordinary state-path behavior.
+Verify missing/empty and String/ExpandString PATH cases, literal duplicates, percent and semicolon
+refusals, an intervening registry edit, CLI/environment install selection, and UUID recovery in
+a differently configured shell before exposing the native commands.
+
+Sources: [literal and expandable registry value kinds](https://learn.microsoft.com/en-us/dotnet/api/microsoft.win32.registryvaluekind?view=netframework-4.8.1),
+[locked clap argument value provenance](https://github.com/clap-rs/clap/blob/13f2db5072d600c11d8d6298e4e9ba53ffc6c1ab/clap_builder/src/parser/matches/value_source.rs).
+
+### Native distribution fixture root ownership (2026-10-03)
+
+The exact PR #44 package run at eff2c19 built both native archives, then failed thirteen
+distribution fixture setups on each architecture at restrict_owned(temp.path(), true).
+The failure paths used RUNNER~1, but the logs did not establish that spelling as the cause.
+The source explicitly refuses repair when the object's owner is not the current SID; a
+disposable TempDir's inherited ownership is therefore not an acceptable setup assumption.
+These failures preceded journal, bootstrap, source-ownership and replacement assertions.
+
+Use the existing core fixture approach: retain a unique TempDir for cleanup, guard its existing
+ancestry, create a missing private child through DirectoryGuard::private, and use that child's
+normalized_path for all test objects. Retain the child guard and assert is_private(path, true),
+which verifies the actual current-SID owner and protected private descriptor. Do not repair or
+adopt the inherited TempDir, loosen production ownership/ancestry predicates or bypass a guard.
+This corrects fixture setup; all mapped-image, backup, unknown-leaf and crash checks still need
+actual native execution on both architectures.
+
+Evidence: [x64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37058613767/job/111009366048),
+[ARM64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37058613767/job/111009366093),
+[reviewed core guard and native private-root fixture](https://github.com/WhiteKiwi/locron/blob/eff2c19b78ddc9c7f80848c76e7eb4eee56e3b76/crates/locron-core/src/filesystem.rs).
+
+### Native positive distribution harness admission (2026-10-03)
+
+The next exact PR #44 run at 846c6c2 again built both native archives. The x64 distribution
+contracts finished with 37 passes and eight failures, all in the private-child setup at
+windows_fixture.rs:17: six reported stock Windows adapter deadline elapsed and two filesystem
+caller deadline elapsed. ARM64 finished with 44 passes and one failure: the current-user PATH
+read reported stock Windows adapter timed out. Its other distribution assertions, including the
+private-root corrections, passed. These logs establish bounded timeouts, not the specific queue,
+cold-start or host-load cause, and do not justify relaxing ownership or deadline checks.
+
+Each libtest process shares the approved one filesystem plus one generic/COM worker admission
+slots. Serialize the independent positive distribution fixtures with --test-threads=1 so setup
+success does not rely on unbounded parallel requests finishing inside each 30-second admission
+and execution deadline. Preserve explicit concurrent admission/cold-call/deadline fixtures and
+all production slots, budgets, guards and cleanup rules. Do not warm the first call, skip failed
+assertions, retry timeouts or infer completion from a deadline. A fresh reviewed revision must
+pass the complete native x64/ARM64 distribution harness once, with no ignored tests; dedicated
+concurrency/deadline gates remain separate required evidence.
+
+Evidence: [exact x64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37064979742/job/111030476464),
+[exact ARM64 package job](https://github.com/WhiteKiwi/locron/actions/runs/37064979742/job/111030476465).
+
+### Stock PowerShell ZIP assembly loading (2026-10-03)
+
+The exact PR #44 run at d34aaad passed all 45 native distribution assertions on both architectures
+with no ignored tests. Its next stock PowerShell 5.1 fixture step failed before archive assertions:
+New-ZipFixture loaded only System.IO.Compression.FileSystem, then could not resolve ZipArchive.
+The installer parser has the same load statement and must be corrected with the fixture.
+
+Microsoft's .NET Framework API reference places ZipArchive and ZipArchiveMode in
+System.IO.Compression.dll. FileSystem provides ZipFile and filesystem extension APIs; our two
+consumers use only archive/entry streams. Explicitly load the defining System.IO.Compression
+assembly before constructing those types in each consumer. Do not rely on an incidental dependency
+load or a prior profile/session. This loads an existing framework assembly, without compiling
+source, downloading a runtime or changing execution policy.
+
+Verify in the existing native x64/ARM64 stock 5.1 CI step: a fresh no-profile session constructs
+the fixture ZIP and runs every existing positive and negative archive/status assertion. AST checks
+are supplemental; fixture execution and actual bootstrap qualification remain distinct gates.
+
+Sources: [ZipArchive definition and extension separation](https://learn.microsoft.com/en-us/dotnet/api/system.io.compression.ziparchive?view=netframework-4.8.1),
+[ZipArchiveMode assembly](https://learn.microsoft.com/en-us/dotnet/api/system.io.compression.ziparchivemode?view=netframework-4.8.1),
+[Windows PowerShell 5.1 Add-Type assembly parameter](https://github.com/MicrosoftDocs/PowerShell-Docs/blob/main/reference/5.1/Microsoft.PowerShell.Utility/Add-Type.md),
+[exact native package run](https://github.com/WhiteKiwi/locron/actions/runs/37068595779).
+
+### Task activation proof and fresh-root preflight (2026-10-03)
+
+RegisteredTask.Run returns a RunningTask object, but Microsoft documents success without a start
+when AllowDemandStart is false. InstanceGuid is generated by Task Scheduler for each run; it is
+not a caller-selected transaction identifier. Enabled describes registration availability, and
+GetInstances exposes only instances at or below the caller's security context. Preserve the
+selected least-privilege definition and require actual GUID plus owned role/lifetime readback;
+neither COM success nor scheduler state proves the Locron role started.
+
+The selected existing-operation policy activates every originally enabled owned registration,
+regardless of a transient stopped state, and never starts an originally disabled registration.
+The provider must freeze distinct start intent, observed/confirmed proof and unknown-start states,
+including bounded no-redispatch recovery, before complete journal preflight can authorize effects.
+Reserve actual future typed object bytes and the longest mutually exclusive forward/rollback
+branch; the current registration-only model deliberately refuses Completed.
+
+Fresh creation needs a separate no-effect ancestry plan. DirectoryGuard::private creates missing
+components and cannot qualify that plan before the full native preflight. Existing-only guards,
+created-directory full identities and exact empty-directory removal need real safe interfaces.
+Only created exact task definitions/roots can authorize rollback; unrelated state stays intact.
+The service owner must freeze that real bounded record instead of a null or synthetic snapshot.
+
+Sources: [Run behavior](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-run),
+[generated instance identity](https://learn.microsoft.com/en-us/windows/win32/taskschd/runningtask-instanceguid),
+[enabled registration property](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-enabled),
+[instance security visibility](https://learn.microsoft.com/en-us/windows/win32/taskschd/registeredtask-getinstances),
+[reviewed directory guard interfaces](https://github.com/WhiteKiwi/locron/blob/cb5074a711a80dbf66bf04d64d8edbbb94006684/crates/locron-core/src/filesystem.rs).
+
+### Mapped-helper qualification through a guarded launch (2026-10-03)
+
+Rust current_exe returns a path and documents rename/security limitations. Microsoft
+QueryFullProcessImageName and GetMappedFileName likewise return names, not a file handle or full
+volume/file identity. Reopening such a name and hashing the current leaf cannot retrospectively
+identify an image loaded before a rename or replacement. Bootstrap's retained helper proof is
+therefore necessary but not independently sufficient to qualify its already running image.
+
+CreateFile sharing restrictions remain in force while the handle is open; FILE_SHARE_DELETE
+permits rename as well as deletion. The reviewed immutable leaf and all ancestor guards retain
+FILE_SHARE_READ without write/delete sharing. CreateProcess with an explicit application path
+selects that executable, and Rust 1.94's native Command implementation passes its resolved absolute
+.exe path as lpApplicationName. The selected inference is conditional on retaining those exact
+guards from before CreateProcess through acquisition of overlapping child guards and qualification:
+the path cannot change to a different object during that interval. This is a launch proof, not a
+new API that retrieves a mapped image's file ID. CreateProcess success precedes initialization and
+does not establish child readiness or operation acceptance.
+
+The stock Framework Process.MainModule identifies the module used to start the local process;
+its FileName is a path, can be unavailable during initialization or truncated, and MainModule can
+throw on unsupported bitness or process exit. A fixed bounded stock .NET query supplies readback
+without new Rust FFI. Bracket its PID lookup with live checks on the original native Child and
+retain that Child/lease throughout; exit or uncertainty refuses, preventing a reused PID from
+authorizing a different process. Require normalized-path and exact retained-object agreement.
+Actual native x64/ARM64 behavior, including the stock adapter's architecture, remains unverified
+for this new gate. No query failure is permission to fall back to current_exe alone.
+
+Rust 1.94's raw attribute-list spawning remains unstable, so arbitrary inherited handle-list
+transfer is not selected. A private four-frame qualification exchange keeps the parent lease alive
+until overlapping child protection is confirmed. Borrowed global Rust stdout cannot be safely
+closed independently while the child remains live; the copied libtest harness also writes its own
+stdout. Waiting for stdio EOF would require losing that live-child overlap or an indefinite wait.
+Two owned one-way named-pipe endpoints replace the earlier stdio/stderr proposal; no quiet period,
+Peek or noise filtering is selected. Live qualification tokens still come only from the native
+launch owner and its actual Child/channel, never deserialized metadata.
+The repository's existing SECURITY account boundary excludes arbitrary same-account code/debugger
+control. No unsigned publisher authentication, retrospective proof for a manually started broker,
+service snapshot authority or completed operation is inferred from this plan.
+
+The concrete child sequence needs a private ChildExchange in addition to Bootstrap: the receive
+endpoint/Challenge must be acquired before cold Bootstrap SID/guard work so the actual remaining
+budget can reach those calls. The selected private begin_child -> ChildExchange and
+qualify_child(Bootstrap, ChildExchange) sequence retains that endpoint and original shortened
+deadline; neither object has a deserialization/clone constructor for live proof. The parent
+Pending/Qualified token retains the sole owner connection, while that owner retains the actual
+native Child/lease/guards and uncertain I/O. This is ownership plumbing, not a new process-ID
+authentication API. The first real copied-helper fixture consumes existing standalone/removal
+proof; canonical payload/package/recovery authority and all operation effects remain unqualified.
+The concrete async implementation must place those owned resources outside its unwind/wait
+boundary. ChildQualification first owns Bootstrap plus ChildExchange; asynchronous finish borrows
+that state, and only checked success can mint QualifiedBootstrap. This prevents a future's panic
+or timeout from discarding guard/close ownership. The existing inventory verifier likewise needs
+the caller's original clock around each receipt/payload step rather than an unbounded outer call;
+its normal entrypoints retain their behavior. These are retention/deadline refinements, not new
+service authority, effects or native qualification evidence.
+
+The source-feasibility audit found that cold current_user_sid currently creates its own 30-second
+deadline. A bounded initializer must initialize that same cache with the launch phase's remaining
+budget; surrounding a fresh default-budget call with clock checks is insufficient. Native guards
+and pipe reads can also block, so the caller needs a finite retained owner and uncertain-cleanup
+quarantine rather than an indefinite join. These are planned refinements, not native proof.
+
+Pinned interprocess 2.4.4 exposes safe client_process_id/server_process_id on connected streams,
+safe creation-time descriptor/listener options, and safe synchronous stream/OwnedHandle conversions.
+Create the parent-to-child and child-to-parent pipes as send-only servers owned by their respective
+senders. Tokio ClientOptions safely opens receive-only overlapped clients with identification SQOS.
+Only for the server-PID query, clone the client's BorrowedHandle into OwnedHandle and wrap it in
+synchronous PipeStream<Bytes,Bytes>; after the query consume that metadata-only wrapper through
+its safe evade_limbo method on success and failure. This wrapper performs no reads/writes or
+second registration. The original Tokio client remains receive-only. The metadata wrapper's
+send-mode parameter merely exposes deterministic safe cleanup: evade_limbo clears unknown flush
+state and closes instead of entering limbo, avoiding an unexpected extraction-error leak.
+Its optional ReOpenFile may request read/write access and may fail; pinned construction then
+retains the cloned original handle. Neither outcome relaxes the required actual client direction
+and server-PID checks, and all native calls still consume the retained owner's original deadline.
+This avoids unsafe Tokio raw-handle calls in this workspace and double I/O registration. It also
+avoids wrapping an ordinary send-only handle: GetNamedPipeInfo requires additional read-attribute
+rights for a write-only pipe. Peer-PID queries are consistency checks under the original live Child
+and continuous guards, not standalone process authentication. Actual client-side server-PID
+behavior and native architecture/ACL facts remain qualification requirements.
+
+Use the already selected private SID+SYSTEM descriptor, local-only first-instance creation and
+noninheritance. Accept exactly once with a two-instance ceiling, then drop the replacement listener;
+the connected stream keeps the name reserved until its own closure. Microsoft documents that a
+server FlushFileBuffers waits for the client to consume buffered bytes. A further pinned-source
+audit found that interprocess's c_wrappers::flush calls downgrade_eof, converting BrokenPipe and
+ERROR_PIPE_NOT_CONNECTED into success. Its explicit flush result therefore cannot confirm this
+strict terminal delivery. The selected safe refinement clones the connected sender's
+BorrowedHandle into a temporary OwnedHandle, converts it to std::fs::File and runs sync_all in a
+retained blocking worker. Rust 1.94's Windows fsync calls FlushFileBuffers through cvt and preserves
+failure; the safe owned-handle File conversion has been stable since Rust 1.63. This metadata/flush
+clone performs no reads/writes or overlapped registration and closes before the original sender
+is consumed with evade_limbo. Plain interprocess drop may instead hand an unflushed stream to its
+limbo worker. A timed-out raw flush is not cancelled by dropping its join handle or evading limbo:
+the finite launch owner must retain the outstanding worker, actual Child, admission permit, lease
+and guards without an indefinite caller join or a late qualified token. Both receiver phase/EOF
+checks remain mandatory; successful raw flush alone is not launch proof. Native positive delivery,
+disconnected-reader refusal and unread/held-open timeout/retention tests on both architectures
+remain unverified and cannot be inferred from this source-feasibility check.
+After Permit and Qualified respectively, each receiver must observe exact terminal EOF within the
+original deadline and reject any extra byte before it; neither sender needs to exit its process.
+Both copied fixture stdio outputs are null, and there is no extra channel-selector ABI or need for
+a direct winapi-util dependency. Four frames and both terminal reads remain read-only qualification,
+with no helper acceptance, status/journal write or lifecycle/file effect.
+
+Sources: [Rust current_exe](https://doc.rust-lang.org/std/env/fn.current_exe.html),
+[image-name query](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew),
+[mapped-file name](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmappedfilenamew),
+[sharing/rename contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[explicit executable and initialization](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-createprocessw),
+[pinned Rust 1.94 native spawn](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/process/windows.rs),
+[Framework main module](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.mainmodule?view=netframework-4.8.1),
+[process-handle/PID lifetime](https://learn.microsoft.com/en-us/windows/win32/procthread/process-handles-and-identifiers),
+[module name/truncation](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.processmodule.filename?view=netframework-4.8.1),
+[pinned unstable attribute API](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/process.rs),
+[safe owned-handle conversion/extraction](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/stream/impl/handle.rs),
+[safe metadata-wrapper cleanup](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/stream/impl/send.rs),
+[safe peer-PID queries](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/stream/impl.rs),
+[Tokio read-only client/SQOS options](https://github.com/tokio-rs/tokio/blob/tokio-1.53.1/tokio/src/net/windows/named_pipe.rs),
+[descriptor/first-instance/remote flags](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/listener/create_instance.rs),
+[accept/replacement lifecycle](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/listener.rs),
+[explicit flush and terminal drop](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/stream/impl/send.rs),
+[retained async flush worker](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/tokio_flusher.rs),
+[pinned flush error conversion](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/c_wrappers.rs),
+[pinned disconnected-pipe downgrade](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/misc.rs),
+[Rust 1.94 owned handles](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/io/handle.rs),
+[Rust 1.94 error-preserving fsync](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs),
+[client PID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid),
+[server PID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid),
+[metadata access requirements](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-getnamedpipeinfo),
+[server flush contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers),
+[pipe terminal operations](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-operations),
+[existing account boundary](../SECURITY.md#out-of-scope).
+
+### Automatic activation witness and GUI companion proposal (2026-10-03)
+
+Task Scheduler generates InstanceGuid for each task run. It identifies an instance; no primary
+contract makes a user-supplied copy of that GUID an origin credential. IRegisteredTask::Run accepts
+VT_NULL/VT_EMPTY or BSTR parameters; a single BSTR supplies Arg0, and the returned IRunningTask
+describes the instance. Action Arguments and WorkingDirectory admit ArgN substitution. The SDK
+also documents a no-error/no-run case when AllowDemandStart is false. Therefore an SDK success,
+unique current GUID and manual argument text do not by themselves correlate a new native role.
+Sources: [Run parameters and return](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-iregisteredtask-run),
+[action variable properties](https://learn.microsoft.com/en-us/windows/win32/taskschd/task-actions),
+[generated instance identifier](https://learn.microsoft.com/en-us/windows/win32/taskschd/runningtask-instanceguid).
+
+The pinned interprocess 2.4.4 synchronous and Tokio PipeStream APIs expose safe client_process_id,
+server_process_id and peer_process_id. The upstream implementation queries the actual borrowed
+pipe handle through GetNamedPipeClientProcessId/GetNamedPipeServerProcessId and returns io::Result;
+the workspace needs no unsafe shim or dependency-version change. A server can bind the first
+authenticated peer to the GUI launcher and the second to its retained OwnedChild.id. A frame's
+claimed PID cannot replace this query, and the launcher PID must never be confused with its child.
+Sources: pinned crate src/os/windows/named_pipe/{stream,tokio/stream}/impl.rs and c_wrappers.rs,
+[pinned Tokio source](https://docs.rs/crate/interprocess/2.4.4/source/src/os/windows/named_pipe/tokio/stream/impl.rs),
+[actual named-pipe client PID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid).
+
+The proposed authority is one fresh 32-byte OS-random capability delivered only through the sole
+SDK Run and live bounded transport, then exchanged against those actual pipe peers and a new
+supervisor/control lifetime. First authenticate the real launcher peer/capability, then durably
+record the actual SDK GUID; only a timely producer Permit may authorize its retained child.
+Permit remaining time is anchored at the GUI's pre-SID entry clock, not at receipt, so it only
+shortens admission. A late queued Run without a timely Permit cannot create another child.
+The second real pipe peer must match the retained child's PID and actual owned supervisor UUID/
+control; a timely matching ACK then mints the supervisor's local opaque value in the existing
+finite lifecycle worker. Raw ACK parsing alone remains untrusted and never deserializes that
+value. These order/budget gates need native late-ready/queued-Run proof before qualification.
+A sealed service-produced optional RuntimeFacts witness holds only
+the context/digest/GUID/launcher PID; GUID-only CLI input remains unwitnessed. This follows
+SECURITY.md's user-account boundary. It does not claim protection against arbitrary code/debugging
+or theft of another same-account process's argv/state. No raw capability is journaled. Already
+authenticated live readback can recover; loss before authentication stays pending with zero Run
+replay, rather than pretending a later unparameterized Logon proves the original operation.
+
+TaskSettings.Hidden controls visibility in Scheduler UI, not initial process-console allocation.
+Run flags supply identity/session/constraint choices, with no console-suppression flag. Rust's
+console subsystem can create a new console when no console exists; its windows subsystem runs
+detached. Thus a direct action for today's console CLI cannot establish the required no-flash
+entry guarantee. Select an internal Windows-GUI-subsystem companion while preserving the console
+CLI. Actual mapped subsystem 2, first-entry CONOUT$ absence and code that never attaches/allocates
+a console qualify the GUI entry; this must not reinterpret CREATE_NO_WINDOW child behavior,
+which retains the earlier final-mask/direct-control tests and may own an invisible console host.
+Sources: [Hidden is task UI visibility](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-hidden),
+[Run flags](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/ne-taskschd-task_run_flags),
+[Rust subsystem contract](https://doc.rust-lang.org/reference/runtime.html#the-windows_subsystem-attribute),
+[MSVC subsystem](https://learn.microsoft.com/en-us/cpp/build/reference/subsystem-specify-subsystem?view=msvc-170).
+
+Raw native `v1:$(Arg0)` remains data whether a no-parameter action leaves an empty substitution or
+the literal marker; the exact parser treats only those specified absence forms as unwitnessed.
+Primary Run docs do not establish which form genuine Logon supplies. Keep the actual VT_EMPTY,
+scheduled no-parameter and later standard-user Logon gates. The prior PowerShell EncodedCommand
+launcher cannot safely gain arbitrary trailing argv, and unexpanded Arg0 can break a spliced
+EncodedArguments value before its static code runs. The companion avoids making correctness
+depend on that unproved decoding path; no dynamic script fragment or Run environment route is
+selected. Earlier hidden-PowerShell probe receipts remain historical evidence only.
+
+The current primary WinGet portable archive flow records each top-level extracted entry before creating
+links for NestedInstallerFiles; an omitted command alias on a listed executable defaults to its
+filename. The proposed manifest therefore lists only the console command as a nested portable
+alias and requires the sibling companion in the complete archive/package file index. Schema
+permission for multiple portables alone is not proof of no extra link. Validate actual ownership,
+upgrade and removal of both images with the selected native client before publication.
+Source: [WinGet portable archive file/index/link flow](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCLICore/Workflows/PortableFlow.cpp#L177).
+
+Distribution's current strict six-payload inventory plus receipt is seven managed leaves. The
+companion adds one canonical ZIP member and one managed leaf, yielding eight. The held complete
+R=E=2 reservation 12*7 + Q10 + S10 + A10 + outer10 + PATH4 reaches all 128 frames; the revised
+schedule reaches 140. Keeping 128 would refuse an ordinary daemon-plus-dashboard installation.
+The explicit proposed ceiling is 140 frames/18 MiB, with the 128 KiB complete-frame and private
+record limits unchanged. Pinned windows_journal includes its 68-byte overhead inside FRAME_LIMIT:
+maximum payload is 131,004 bytes. 140 complete maximum frames plus one bounded incomplete tail
+occupy (140+1)*(131004+68) = 18,481,152 < 18,874,368 bytes, leaving 393,216 bytes. A partial frame
+still cannot authorize effects. Checked actual serialization still covers all old/new
+pair bindings, fingerprints, escaped paths and optional witness fields before any effects; these
+numbers do not permit extra callbacks or unbounded recovery. Both native images require the same
+version/architecture/ABI/source verification, receipt/WinGet ownership, actual holder quiescence
+and complete pre-receipt pair rollback. No GUI source, witness implementation or expanded journal
+limit has been qualified by this research; the revised complete plan requires parent/Project
+review before separate producer, consumer and distribution development.
+
+### Native pipe closure fixture evidence (2026-10-03)
+
+PR #44 revision 0503d55's exact run 37089833448 exercised 71 distribution fixtures on each
+native architecture: 69 passed and two transport assertions failed. A client open immediately
+after dropping the unused replacement succeeded; raw flush of a zero-byte pipe also succeeded
+after dropping its Tokio reader. These observations do not prove a second accepted peer or
+authenticated delivery. The pinned interprocess accept creates a replacement before returning
+the original stream. Tokio 1.53.1 deregisters on drop, but mio 1.2.2 retains native Arc-owned
+handles for queued read/connect/event completions and cancellation does not synchronously
+complete them. The same finite runtime owner must retain its admission and launch guards through
+confirmed disposal; the caller must not join it indefinitely or treat a late open as authority.
+
+Microsoft's server flush contract concerns buffered bytes; it does not promise failure for an
+empty disconnected pipe. The planned meaningful negative fixture therefore connects a safe
+receive-only standard File without IOCP/background reads, sends actual bytes, observes the
+owned raw flush pending, closes that known reader, and requires its final native error. Single
+accept remains enforced by the consumed listener and sole connected stream. Its native fixture
+keeps first-instance collision refusal and sole-stream delivery/terminal EOF, while any late
+open must receive no qualification bytes. No synchronous-drop, empty-flush, quiet-period or
+PID-metadata inference replaces exact frames, actual EOF, live Child and continuous guard proof.
+This is an evidence-driven fixture refinement; the actual mapped-helper gate is still unqualified.
+
+Sources: [pinned listener replacement](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/listener.rs),
+[Tokio deregistration](https://github.com/tokio-rs/tokio/blob/tokio-1.53.1/tokio/src/io/poll_evented.rs),
+[mio native completion/drop ownership](https://github.com/tokio-rs/mio/blob/v1.2.2/src/sys/windows/named_pipe.rs),
+[asynchronous cancellation](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex),
+[server buffered-byte flush](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers).
+
+
+### Mapped-image query input binding (2026-10-03)
+
+PR #44 revision 7871c983, run 37095934375, exercised 93 distribution fixtures on each native
+architecture. Jobs 111125738916 (x64) and 111125738927 (ARM64) each passed 92 and failed only
+actual_copied_child_guard_overlap_and_terminal_eof_qualify_without_effects, with
+`stock Windows adapter failed: No initialized main module filename`. Both logs have zero ignored
+cases. The parent had already received the actual Ready frame before the image readback; these
+logs do not establish an executable-loader startup race or justify retrying the query.
+
+The fixed Core adapter's caller input is the parsed `$request` object. Its test-only diagnostic
+wrapper also keeps raw stdin in the String `$locronInput`. MODULE_QUERY instead reads
+`[int]$locronInput.pid`. A String has no pid property: documented PowerShell member access returns
+null for a missing property, and conversion to Int32 changes null to zero. The production wrapper
+does not define that raw-input variable either. This source-established mismatch therefore selects
+PID zero rather than the retained Child's actual PID. Framework reference source identifies zero
+as the idle process and rejects its module enumeration. PowerShell property access can also hide
+getter exceptions as null, explaining why the script's own missing-filename error loses the
+underlying module-query reason. The logs do not contain a sampled query PID; corrected native
+qualification remains pending.
+
+Select the existing parsed `$request.pid`, require an actual Int32/Int64 value in the positive
+Int32 range before conversion, and invoke the Framework module/filename getter methods explicitly
+so their exceptions remain refusals. Preserve one actual Child, live brackets, Ready ordering,
+continuous helper/ancestor guards, actual path/full identity/hash comparison and the original
+30-second deadline. A real missing module, exit, unsupported query or mismatch still refuses.
+No alternate path source, default PID, query retry, sleep or new phase budget is selected.
+
+Sources: [PowerShell 5.1 member and getter semantics](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_operators?view=powershell-5.1#member-access-operator-),
+[null-to-integer conversion](https://learn.microsoft.com/en-us/powershell/scripting/learn/deep-dives/everything-about-null#value-types),
+[Framework idle-process and module enumeration](https://github.com/microsoft/referencesource/blob/main/System/services/monitoring/system/diagnosticts/ProcessManager.cs#L432),
+[Framework MainModule getter](https://github.com/microsoft/referencesource/blob/main/System/services/monitoring/system/diagnosticts/Process.cs#L441),
+[MainModule availability](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process.mainmodule?view=netframework-4.8.1),
+[process-handle and identifier lifetime](https://learn.microsoft.com/en-us/windows/win32/procthread/process-handles-and-identifiers).
+
+### GUI companion entry and bounded probe refinement (2026-10-03)
+
+Microsoft documents CONOUT$ as the active console-screen-buffer device even when ordinary
+stdout is redirected. Its CreateFileW console contract requires an attached process but does
+not guarantee an exact error for an unattached caller. OPEN_EXISTING's generic missing-device
+raw-2 rule cannot settle that console-specific behavior. GUI processes start without console
+attachment, whereas an explicit CREATE_NEW_CONSOLE control can give a console process a separate
+console. Preserve raw facts as opened:boolean/error:i32|null, success/null versus failure/nonzero;
+never convert a failed open into an attachment assertion. Missing raw code/zero errors refuse
+probe output. Actual PE subsystem 2/3, native GUI/DETACHED_PROCESS absence-code controls and a
+real successful console control remain independent hosted gates; unrelated permission/sharing
+errors cannot qualify headless operation. The exact absence code remains a native qualification
+fact, not an API guarantee.
+Sources: [Console device handles](https://learn.microsoft.com/en-us/windows/console/console-handles),
+[OPEN_EXISTING and sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[GUI and explicit console creation](https://learn.microsoft.com/en-us/windows/console/creation-of-a-console).
+
+Cargo required-features can keep the companion out of ordinary builds, and default-run preserves
+the existing console selection when the explicit companion feature is present. Rust's
+windows_subsystem attribute selects the Windows GUI image without changing the primary command.
+The proposed sole --version line and exact <=4 KiB locron.windows-launcher-probe/v1 JSON object
+are bounded read-only metadata/entry facts, not file ownership or automatic activation proof.
+One owned worker contains potentially blocking console-open/stdout work under the pre-worker
+30-second entry deadline; expiry cannot join unfinished I/O or infer a timely success from
+queued bytes. Native classification, timeout and package-pair qualification are still pending.
+Sources: [Cargo target feature admission](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-required-features-field),
+[Default command selection](https://doc.rust-lang.org/cargo/reference/manifest.html#the-default-run-field),
+[Rust Windows subsystem](https://doc.rust-lang.org/reference/runtime.html#the-windows_subsystem-attribute).
+
+Rust 1.94 process::exit calls runtime cleanup. Stdout cleanup uses try_lock, but when a line
+buffer is available it replaces/drops that buffered writer; a remaining payload can therefore
+be flushed outside the expired worker. Merely containing StdoutLock in the worker is insufficient
+for the probe's rule against fresh write/flush admission or timely success after expiry. An
+already queued native write may finish late, and its bytes remain uncertain. Select safe
+Stdout::as_handle, BorrowedHandle::try_clone_to_owned and File::from(OwnedHandle), all stable
+since 1.63, for unbuffered owned output.
+The audited clone uses non-inheritable DuplicateHandle with the same access. Null stdout is an
+explicit supported borrowed-handle case; cloning it does not prove writable output, and actual
+File write failure must refuse. All duplicate/write/close work stays in the finite owner; this
+does not promise cancellation of an already-queued write or bypass ordinary Windows process exit.
+Native blocked-I/O and late-ready output qualification is still pending.
+Sources: [Rust exit and cleanup](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/process.rs),
+[buffered stdout cleanup](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/io/stdio.rs),
+[safe owned Windows handle conversions](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/os/windows/io/handle.rs).
+
+### WinGet version-root index feasibility (2026-10-03)
+
+The pinned archive flow uses nonrecursive `directory_iterator`, records a Directory entry for
+an extracted top-level directory, and later records the nested console alias. InstallFile moves
+or recursively copies that directory; ApplyDesiredState indexes the same desired entries without
+expanding them into child File rows. Our five-member ZIP has one versioned root directory.
+Consequently this source does not establish separate console/launcher File rows or their hashes
+in the portable index. The earlier top-level-entry finding must not be read as recursive file
+hash coverage. A verifier requiring both executable File/hash rows would refuse this layout.
+Keep that refusal until a reviewed selection qualifies directory-index ownership together with
+the exact canonical pair, or changes the Windows ZIP/manifest layout. No layout, ownership
+guarantee or portable lifecycle hook is changed by this research. Actual selected-client
+install/upgrade/remove index readbacks remain mandatory before a WinGet support claim.
+
+PortableInstaller selects `<ARP product code>.db` inside registered InstallLocation. Its schema
+1.0 has a `portable` table with path/type/hash/link-target fields; File is type 1 and Directory is
+type 2. The hash column's declared BLOB affinity does not prove binary hash storage: the pinned
+wrapper binds the PortableFileEntry string as SQLite TEXT. Inspect actual storage type and
+selected-client metadata/version rather than coercing arbitrary rows into executable ownership.
+
+An exact-byte, safe Rust reader is feasible without reopening the index through SQLite. The
+already locked rusqlite 0.40.2 `serialize` feature provides safe
+`deserialize_read_exact(MAIN_DB, bounded_slice, slice.len(), true)` on an in-memory connection.
+First retain existing-only source-policy ancestry/leaf guards and full identity, read a bounded
+complete byte snapshot, then parse that slice and retain the live guard. This avoids unsafe
+OwnedData construction and SQLite path/URI races. Parse only fixed ordinary-table queries with
+finite size/row/column/work limits under the original admitted deadline; no SQL comes from the
+index. WAL-mode main bytes are not directly deserializable. Refuse WAL/SHM/journal sidecars and
+WAL header versions rather than rewriting their bytes or silently discarding committed state.
+The safe API and schema are source-feasible candidates, not native client qualification or
+effect authority; dependency features and precise parser bounds require plan/Project review.
+
+Sources: [nonrecursive archive inventory](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCLICore/Workflows/PortableFlow.cpp#L177),
+[directory installation and index writes](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCLICore/PortableInstaller.cpp#L127),
+[index filename](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCLICore/PortableInstaller.h#L67),
+[portable table](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerRepositoryCore/Microsoft/Schema/Portable_1_0/PortableTable.cpp#L19),
+[file types and hash string](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCommonCore/Public/winget/PortableFileEntry.h#L9),
+[actual string binding](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerSharedLib/SQLiteWrapper.cpp#L64),
+[safe bounded-slice deserialization](https://docs.rs/rusqlite/0.40.2/rusqlite/struct.Connection.html#method.deserialize_read_exact),
+[SQLite in-memory/WAL contract](https://www.sqlite.org/c3ref/deserialize.html).
+
+### WinGet indexed-directory and canonical-pair proposal (2026-10-03)
+
+The selected validator's official v1.29.380 tag resolves to commit
+000f6b55151cb0f1afd2933bb54c62a4724b9ca8. Its archive flow also indexes top-level entries,
+including our versioned root Directory, then the sole console Symlink. Its installer moves or
+recursively copies that directory; upgrade removes previous indexed entries before installing
+the next ones, and removal recursively removes the indexed Directory. This supports retaining
+the five-member version-root ZIP and one console alias. It does not supply per-image index
+hashes. Directory index ownership and canonical-release byte integrity are separate facts.
+
+Propose binding the unique current-SID HKCU package/source/version/location registration to its
+existing `<product code>.db`, one exact Directory row for the version/target root, and the sole
+console alias row pointing at that root's console. Require the Directory's empty hash/target
+fields and strict ordinary-table schema 1.0; reject duplicate, foreign, stale or extra portable
+entries, including a GUI alias. Keep existing-only ancestry and exact index/source file guards.
+Independently enumerate exactly the five regular release leaves and verify all five against the
+strict canonical ZIP, both live executable identities, PE2/3, native architecture, version and
+launcher ABI. An indexed Directory alone cannot authenticate nested bytes or adopt an incomplete
+pair. WinGet's legitimate failed-symlink PATH fallback is not mapped-image or activation proof.
+
+The safe in-memory index parser can reuse locked rusqlite 0.40.2 with Windows-only serialize,
+limits and hooks features; no new package version or workspace crate is required. Propose a
+4 MiB complete main-file snapshot, at most eight metadata rows and exactly two portable rows,
+16 KiB SQL/value bounds, eight columns, no attached databases and at most 1,024 progress
+callbacks at the configured 1,000-instruction interval; the interval is not an exact opcode or
+wall-clock guarantee. Fixed queries inspect storage types and ordinary tables; defensive mode
+and memory-only temp storage are enabled and trusted schema is disabled. Its progress hook checks
+the original caller deadline. WAL/header and sidecar refusal remains explicit. Native guard,
+read and parse work stays inside one retained finite owner, including uncertain cleanup; no
+fresh timeout or caller join reconstructs authority.
+The proposed parser bounds and ownership contract require parent/Project review before source.
+
+Verify with genuine selected-client native x64/ARM64 install/upgrade/remove readbacks of the
+directory index, complete pair, console alias and absent GUI alias. Pure fixtures must refuse
+wrong row type/schema/storage, path/hash/source/version mismatches, missing/extra leaves,
+sidecars and over-budget work. A release-source audit or copied row DTO is not this live proof.
+
+Sources: [official v1.29.380 release](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380),
+[released archive inventory](https://github.com/microsoft/winget-cli/blob/000f6b55151cb0f1afd2933bb54c62a4724b9ca8/src/AppInstallerCLICore/Workflows/PortableFlow.cpp#L197),
+[released directory/upgrade/removal behavior](https://github.com/microsoft/winget-cli/blob/000f6b55151cb0f1afd2933bb54c62a4724b9ca8/src/AppInstallerCLICore/PortableInstaller.cpp#L111),
+[released schema fields](https://github.com/microsoft/winget-cli/blob/000f6b55151cb0f1afd2933bb54c62a4724b9ca8/src/AppInstallerRepositoryCore/Microsoft/Schema/Portable_1_0/PortableTable.cpp#L22),
+[safe deserializer/config/progress APIs](https://docs.rs/rusqlite/0.40.2/rusqlite/struct.Connection.html),
+[safe runtime limits](https://docs.rs/rusqlite/0.40.2/rusqlite/limits/index.html),
+[VM progress callback semantics](https://www.sqlite.org/c3ref/progress_handler.html).
+
+
+### Portable-index value and encoded-row bounds (2026-10-03)
+
+SQLite's SQLITE_LIMIT_LENGTH constrains the complete encoded row as well as any individual
+String/BLOB. A 16 KiB setting therefore rejects a Symlink row containing two individually allowed
+paths whose combined encoding exceeds 16 KiB. Keep the approved per-value and SQL limits at
+16,384 bytes and select a separate finite encoded-row ceiling of 65,664 bytes:
+`4 * 16,384 + 128`. Enforce every returned TEXT/BLOB value separately before copying it.
+
+For the four-column portable record, even four maximum-size values plus a conservative
+nine-byte size varint and four nine-byte serial-type varints fit the selected ceiling. The fixed
+five-field schema query has at most four bounded text values, one eight-byte integer and six
+nine-byte header varints: its extra 62 bytes also fit the 128-byte allowance. Seven-field column
+introspection has at most three bounded text values and four eight-byte integers plus eight
+nine-byte header varints; its `3 * 16,384 + 104` ceiling is smaller still. Other fixed metadata
+and index queries return fewer bounded fields. This is no permission to accept arbitrary
+eight-column rows of eight maximum-size strings; unknown schema/shapes continue to refuse.
+
+Verify a valid two-path row above 16 KiB total with each field within its original bound, and
+refuse any single over-limit value or unsupported row/schema. The 4 MiB snapshot, eight metadata
+rows, exact two ownership rows, eight-column cap, zero attached databases, 1,024 callbacks at a
+1,000-instruction interval and original absolute deadline remain fixed. No larger source input,
+new clock, SQLite path reopen or live SID/package/source authority follows from this allowance.
+
+Sources: [SQLite complete-row length limit](https://www.sqlite.org/c3ref/c_limit_attached.html),
+[encoded record headers and integer sizes](https://www.sqlite.org/fileformat2.html#record_format),
+[safe rusqlite limits](https://docs.rs/rusqlite/0.40.2/rusqlite/limits/index.html).
+
+### Bootstrap raw path refusal before Framework normalization (2026-10-03)
+
+At PR #44 revision 5041e392, native x64 job 111141838176 and ARM64 job 111141838133
+each passed all 105 distribution tests, including the corrected held-child gate and nine index
+cases. Their next stock PowerShell 5.1 bootstrap step failed with `fixture failed: ambiguous path`.
+The fixture uses the same message for five original relative, UNC, alternate-stream, trailing-dot
+and reserved-device inputs. Neither completed log identifies the input that was accepted.
+
+ConvertTo-LocronPath checks absolute-drive syntax, controls and alternate streams before calling
+Framework Path.GetFullPath, but checks component ambiguity only on the returned string. Microsoft
+documents that this normalization evaluates dot/parent segments and removes certain ending dots
+and spaces. Framework reference source routes GetFullPath through NormalizePath; its legacy
+branch explicitly drops terminal dots/spaces and handles dot segments. The active Framework
+compatibility branch is not recorded in these logs. This is a source-established ordering gap:
+normalizing first can erase the raw spelling that the later ambiguity check needs. `C:\locron.`
+is a documented candidate, not a separately observed failing input or a reason to relax the test.
+
+Check every original component before GetFullPath, treating slash and backslash as equivalent
+separators only for this inspection. Refuse dot/parent components, terminal dots or spaces and
+the existing reserved-device forms, retaining the existing prechecks and post-normalization
+component check. Accept ordinary internal dots/spaces, leading-dot names, Unicode, drive roots
+and allowed separator normalization. No trim or Framework rewrite can convert a refused input
+into an accepted installation/removal path; valid normalized text still supplies no live identity.
+
+Keep all five original refusal assertions, add case-labelled raw ambiguity and ordinary-path
+fixtures, and generate the identical uninstall check through the existing renderer. Local
+verification is stock 5.1 AST parsing plus static renderer/Python checks only. Actual x64/ARM64
+bootstrap requalification remains pending; no execution-policy or filesystem/registration gate
+is changed.
+
+Sources: [Windows normalization, relative components and character trimming](https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#path-normalization),
+[Framework GetFullPath and normalization dispatch](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/path.cs#L301),
+[Framework terminal dot/space handling](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/path.cs#L681),
+[Windows trailing-character and reserved-name rules](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#naming-conventions).
+
+### Atomic private bootstrap file ownership (2026-10-03)
+
+PR #44 at 60e2fcc passed all 105 distribution cases on each native x64/ARM64 MSRV package row
+and then failed its stock PowerShell bootstrap with the existing foreign-owner refusal at
+install.ps1:52. The completed logs record no actual owner SID, object path
+or detailed caller stack, so it does not establish an Administrators-owned leaf or a particular
+failed object. Keep that measurement gap explicit rather than weakening the refusal.
+
+The source establishes a fresh-file creation gap: New-LocronPrivateDirectory supplies an explicit
+current-user owner and protected current-user/SYSTEM DACL, but Write-LocronPrivateFile uses plain
+File.Open(CreateNew) before asserting the returned handle's owner. Windows selects a new object's
+default owner from the creating token; inherited access rules do not independently bind that
+owner to the current user. An elevated runner's different default owner is therefore a plausible
+explanation, not a measured diagnosis of this run.
+
+Stock .NET Framework provides the seven-argument FileStream constructor accepting FileSecurity.
+Its reference implementation passes the descriptor to the native creation call; the existing
+Core filesystem worker already uses that overload for fresh private files. Supply the current
+SID owner, protected DACL and exactly current-user/SYSTEM FullControl before CreateNew. Preserve
+exclusive FileShare.None, the strict post-creation handle check, bytes/Flush(true)/finally, parent
+validation, collision refusal and no existing-object adoption or ACL repair. FullControl on the
+new private handle also admits its descriptor readback; it grants no additional principal access.
+
+The uninstaller renderer does not select Write-LocronPrivateFile, so the generated uninstaller
+must remain exact. Retain every existing positive Unicode-path write/read/hash, receipt roundtrip,
+collision, unsafe ACL/owner/junction refusal and bounded owned cleanup assertion. Add only fixed
+stage labels before/after the existing positive private-root and private-leaf creation so a future
+native refusal can be located without logging paths or SIDs. Static review/renderer checks cannot
+qualify filesystem behavior; fresh exact-head native x64/ARM64 stock-5.1 bootstrap is required.
+
+Sources: [Windows default owner selection](https://learn.microsoft.com/en-us/windows/win32/secauthz/owner-of-a-new-object),
+[CreateFile security descriptor at creation](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[Framework FileStream security overload](https://learn.microsoft.com/en-us/dotnet/api/system.io.filestream.-ctor?view=netframework-4.8.1#system-io-filestream-ctor(system-string-system-io-filemode-system-security-accesscontrol-filesystemrights-system-io-fileshare-system-int32-system-io-fileoptions-system-security-accesscontrol-filesecurity)),
+[Microsoft Framework implementation](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/filestream.cs).
+
+### First-run empty database observation and creation handoff (2026-10-03)
+
+PR44 4507d5e's completed MSRV job 111166508166 fails the original first-run registered-daemon
+fixture with `stage=database-create-new`, I/O category and native error 32. Its full tree is
+identical to 38d3c191, whose subsequent CI37110977454 and all 19 checks pass. That later pass does
+not close the source-established overlap. The earlier log does not identify the competing holder.
+
+The stage encloses all of Core create_private_new: the worker atomically creates an empty private
+file, disposes its Framework handle, and Rust then opens the guarded read/write handle. Worker
+stderr failures become Error::other without a raw OS code; only explicit collision 80/183 replies
+are mapped back to raw codes. Error 32 is compatible with the Rust reopen, rather than evidence
+that the Framework CreateNew call failed. Microsoft's CREATE_NEW contract returns existing-file
+error 80, and MS-FSA's FILE_CREATE collision precedes ordinary existing-stream share checks.
+Reducing the worker's FullControl request would not close the subsequent handle-handoff gap.
+
+The original wait_initialized_store observer opens read-only whenever the database leaf exists,
+then reads settings. Store currently admits an empty private database through its no-journal,
+immutable branch and returns a retained FILE_SHARE_READ gate. Before settings rejects the empty
+schema, that gate can exclude the creator's read/write reopen. This is a source-supported
+mechanism; the failing run's exact holder and interleaving remain unmeasured.
+
+Use an existing-only, guarded ordinary READ handle with READ/WRITE sharing before attempting a
+write-excluding gate. Refuse a zero-length database as initialization pending; retain that
+preflight handle through full file-identity comparison with the original first admitted handle.
+This check does not create, migrate, repair, retry or declare a nonempty file ready. Keep every
+original stable/ordinary-WAL branch and journal/ACL/reparse/identity refusal.
+
+The pinned SQLite 3.53.2 WAL transition initializes the first main page through the header-version
+rollback transaction before Locron migrations run (OP_JournalMode, sqlite3BtreeSetVersion and
+newDatabase). Its pagerOpenWalIfPresent zero-page branch does not admit a zero-byte main file as
+ordinary committed-WAL state. Thus this refusal covers the pre-initialization handoff, not valid
+closed snapshots or live committed WAL. External truncation is not a supported readiness proof.
+
+The new regression must use a real private zero-byte file and the public read-only Store API,
+retain bytes/full identity/ACL and journal absence, and then actually initialize a writable Store
+at the same path. Preserve the original closed snapshot writer-exclusion, live WAL later-commit,
+partial/broad-sidecar and final-close tests plus the unchanged lifecycle deadline. Native hosted
+qualification is required; a static argument or a same-tree green rerun is not regression evidence.
+
+Sources: [CREATE_NEW and Windows sharing](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[MS-FSA existing-stream FILE_CREATE collision](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/41f3734a-5bba-4c3b-9d04-7baafc9b7bfe),
+[SQLite immutable URI behavior](https://sqlite.org/uri.html),
+[SQLite read-only WAL](https://sqlite.org/wal.html#read_only_databases).
+The selected bundle's concrete implementation is libsqlite3-sys 0.38.2 sqlite3.c, SQLite 3.53.2;
+research preserves exact local source anchors without introducing a dependency update.

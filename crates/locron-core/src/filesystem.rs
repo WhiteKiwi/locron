@@ -8,6 +8,11 @@ use std::io;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 
+#[cfg(windows)]
+mod private_directory;
+#[cfg(windows)]
+pub use private_directory::PrivateDirectoryPlan;
+
 /// Live directory-chain handles and the validated absolute directory identity.
 #[derive(Debug)]
 pub struct DirectoryGuard {

@@ -297,6 +297,13 @@ fn open_windows_read_only(
     use locron_core::filesystem::{open_private, open_private_read_stable, same_file};
     use std::fs::OpenOptions;
 
+    // A newly published empty leaf must not exclude its creator's writable reopen.
+    let preflight = open_private(database, OpenOptions::new().read(true))?;
+    if preflight.metadata()?.len() == 0 {
+        return Err(StoreError::Conflict(
+            "read-only database is awaiting initialization".into(),
+        ));
+    }
     let stable = match open_private_read_stable(database) {
         Ok(file) => Some(file),
         Err(error) if matches!(error.raw_os_error(), Some(32 | 33)) => None,
@@ -306,6 +313,10 @@ fn open_windows_read_only(
         Some(file) => file,
         None => open_private(database, OpenOptions::new().read(true))?,
     };
+    if !same_file(&preflight, &first)? {
+        return Err(StoreError::Conflict("database identity changed".into()));
+    }
+    drop(preflight);
     let normalized = first.normalized_path().to_path_buf();
     if optional_sqlite_leaf(&sqlite_sidecar(&normalized, "-journal"))?.is_some() {
         return Err(StoreError::Conflict(
@@ -4392,6 +4403,39 @@ mod tests {
         for suffix in ["-wal", "-shm", "-journal"] {
             assert!(!sqlite_sidecar(path, suffix).exists());
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn read_only_empty_private_database_refuses_before_stable_gate_and_preserves_leaf() {
+        let temporary = private_tempdir();
+        let paths = StatePaths::new(temporary.path().into());
+        drop(locron_core::filesystem::create_private_new(&paths.database).unwrap());
+        let identity = sqlite_leaf_identity(&paths.database);
+        assert_eq!(std::fs::read(&paths.database).unwrap(), b"");
+        assert!(locron_core::filesystem::is_private(&paths.database, false).unwrap());
+        assert_no_sqlite_journals(&paths.database);
+
+        let Err(error) = Store::open_read_only(&paths.database) else {
+            panic!("an uninitialized database must not retain a stable read gate");
+        };
+        assert!(
+            matches!(error, StoreError::Conflict(message) if message == "read-only database is awaiting initialization")
+        );
+        assert_eq!(std::fs::read(&paths.database).unwrap(), b"");
+        assert_eq!(sqlite_leaf_identity(&paths.database), identity);
+        assert!(locron_core::filesystem::is_private(&paths.database, false).unwrap());
+        assert_no_sqlite_journals(&paths.database);
+
+        let writer = Store::open(paths.clone(), "creator", 1).unwrap();
+        assert_eq!(sqlite_leaf_identity(&paths.database), identity);
+        assert!(locron_core::filesystem::is_private(&paths.database, false).unwrap());
+        assert_eq!(
+            writer.settings().unwrap().execution_path,
+            locron_core::execution::default_execution_path()
+        );
+        drop(writer);
+        assert_no_sqlite_journals(&paths.database);
     }
 
     #[cfg(windows)]

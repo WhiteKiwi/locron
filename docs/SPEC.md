@@ -18,6 +18,7 @@ Amended 2026-08-25: the completed local dashboard is prepared as a documented v0
 Amended 2026-08-25: crates.io source installation is added as an optional Rust-user distribution channel with package-manager-consistent update ownership.
 Amended 2026-08-25: terminal-width fitting extends from the human `list` table to the human `history` table.
 Amended 2026-08-25: dashboard lifecycle output and stale dashboard detail routes receive complete human-readable fallbacks.
+Amended 2026-10-03: planned Windows installations include an internal windowless service launcher and confirm the complete installed pair and requested automatic startup before reporting completion.
 
 Repository workflow note (2026-10-02): execution planning and progress move to Project-only draft
 tickets. This administrative migration changes no Locron product behavior, platform support, or
@@ -575,17 +576,55 @@ Store distribution remain outside this milestone.
   one-minute waits before the three eligible retries. A known failure before execution or a
   confirmed nonzero role exit may consume that budget. Privacy, infrastructure and unconfirmed
   cleanup failures stop explicitly; a new activation requires operator action or the next logon.
+- A Windows installation includes the console command and an internal launcher from the same
+  verified release. Automatic startup has no console-window flash; the ordinary console command
+  keeps its existing terminal and redirected-output behavior. A missing, mismatched or blocked
+  launcher produces an explicit refusal rather than a different startup mechanism.
 - Local wake notifications are restricted to the owning account and state instance. IPC failure
   retains periodic durable reconciliation and never becomes a correctness prerequisite.
 - The initial distribution uses immutable unsigned x64/ARM64 ZIPs from the canonical HTTPS GitHub
-  release, SHA-256 verification, user-scoped PowerShell installation and WinGet ownership. Code
-  signing is a deferred follow-up and cannot block the first milestone. Checksum checks are not
+  release, SHA-256 verification, native user-scoped installation, an optional PowerShell frontend
+  and WinGet ownership. Code signing is a deferred follow-up and cannot block the first milestone.
+  Checksum checks are not
   independent publisher authentication. SmartScreen warnings and policy-blocked configurations
   are documented; installation/update does not automatically disable Windows protections.
+- Windows standalone installation and offline removal are available through native commands
+  without loading an unsigned PowerShell script or changing execution policy. A fresh installation
+  defaults to the current user's ordinary local application location with the daemon enabled;
+  dashboard and persistent PATH changes are opt-in. Declining services disables both roles, and
+  selecting a dashboard while declining services is an explicit argument error. Owned interrupted
+  standalone operations can be recovered by operation UUID before ordinary state discovery.
+  The optional script route requires an existing operator policy that permits that script.
+  Installing over an existing owned receipt preserves all prior enabled role states. Fresh-only
+  service/dashboard choices refuse there with guidance to use the explicit service commands.
+  Native fresh installation honors the selected global state-directory option or environment
+  override. UUID recovery retains the protected original state selection, refuses a new explicit
+  state-directory option and ignores an ambient override. An opt-in PATH change preserves the
+  existing raw registry format and never claims ownership of a pre-existing literal entry.
+- WinGet's portable channel installs package files and its command alias; it does not automatically
+  install services or invoke lifecycle hooks. Users explicitly configure services through the
+  package executable. A native maintenance procedure records and quiesces exact owned
+  registrations before package upgrade/removal and restores prior enabled states after a verified
+  upgrade. The standalone installer and updater never adopt package-owned files. Pending native
+  handoffs are distinguishable from confirmed installation, preparation, removal or update.
+  Maintenance bounds each normalized package executable and registered location to 4,096 UTF-16
+  code units including any supported transport prefix in the actual canonical representation,
+  so preparation can reserve recovery capacity before changing tasks or files. An
+  oversized new location refuses completion and retains disabled tasks and the protected recovery
+  record. This distribution limit does not change runtime or state-path support.
 - Standalone updates positively verify ownership, source, digest, version and architecture; safely
-  coordinate owned executable holders and automatic restarts before replacement; preserve rollback,
-  enabled/disabled registration state and durable jobs/history; and report confirmed completion
-  only after replacement succeeds. Remaining unowned holders produce an actionable bounded refusal.
+  coordinate holders of both installed programs and automatic restarts before replacement;
+  preserve rollback, enabled/disabled registration state and durable jobs/history; and report completion
+  only after both replacements and the requested automatic startup are confirmed. Remaining unowned
+  holders produce an actionable bounded refusal. An uncertain automatic start remains pending;
+  a task identifier supplied to a manual process cannot establish automatic startup.
+  If task restoration fails after both verified new programs and the receipt are durable, the operation
+  remains pending restoration and can be resumed; it cannot report completed or replace a newly
+  running image behind reactivated roles.
+  Existing-operation restoration starts every originally enabled owned registration, including a
+  role that was temporarily stopped. Originally disabled registrations are never started.
+  Completion requires confirmed owned role startup; an enabled setting or accepted start request
+  alone is insufficient, and an uncertain start remains pending without automatic redispatch.
 - Windows install/update/package maintenance accepts recorded normalized local paths of at most
   4,096 UTF-16 units. Longer or unsupported paths and an oversized recovery snapshot refuse before
   stopping services or changing installation state; Unicode and paths beyond 260 characters remain

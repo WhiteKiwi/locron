@@ -11,10 +11,25 @@ publish.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Command-line interface and composition root for locron"
+default-run = "locron"
+
+[features]
+windows-service-launcher = []
 
 [[bin]]
 name = "locron"
 path = "src/main.rs"
+
+[[bin]]
+name = "locron-service-launcher"
+path = "src/windows_service_launcher_main.rs"
+required-features = ["windows-service-launcher"]
+test = false
+
+[[test]]
+name = "windows_service_launcher"
+path = "tests/windows_service_launcher.rs"
+required-features = ["windows-service-launcher"]
 
 [dependencies]
 anyhow.workspace = true
@@ -43,10 +58,18 @@ unicode-width = "0.2"
 url.workspace = true
 uuid.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+fs_at = "=0.2.1"
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
+
 [dev-dependencies]
 assert_cmd = "2.1"
 predicates = "3.1"
 tempfile.workspace = true
+
+[target.'cfg(windows)'.dev-dependencies]
+interprocess = { version = "=2.4.4", features = ["tokio"] }
+rusqlite = { workspace = true, features = ["serialize", "limits", "hooks"] }
 
 [lints]
 workspace = true

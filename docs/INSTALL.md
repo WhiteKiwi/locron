@@ -19,10 +19,79 @@ The standalone PowerShell 5.1 installer is planned to install into
 `$env:LOCALAPPDATA\Programs\locron`, start the per-user daemon and leave the dashboard disabled
 unless explicitly requested. Its documented switches are `-Version`, `-InstallDirectory`,
 `-NoService`, `-Dashboard` and `-AddToPath`. PATH changes are opt-in and affect only the user's
-persistent PATH; open terminals may require a restart. Protected ownership receipts authorize
+persistent PATH. It preserves unexpanded variables and the registry value's original format;
+the change is available after the next sign-in and does not change running processes. Protected
+ownership receipts authorize
 updates/removal of that exact executable. Uninstall retains durable state and removes only
 unchanged installer-owned files, exact owned task registrations and a PATH entry the installer
 inserted. Standalone and package-manager installations use separate locations.
+Daemon-on/dashboard-off defaults apply to a fresh installation. Reinstalling over an owned receipt
+preserves prior enabled states; fresh-only NoService/Dashboard choices refuse there and direct the
+operator to explicit service/dashboard commands.
+
+The planned native alternative starts from the manually downloaded native ZIP after checking
+its published SHA-256. Run its locron.exe install command without loading an unsigned script:
+
+```powershell
+.\locron.exe install
+.\locron.exe install --install-directory C:\Users\me\Apps\locron --no-service
+.\locron.exe uninstall --install-directory C:\Users\me\Apps\locron
+```
+
+Native install also accepts --version, --dashboard and --add-to-path. --dashboard conflicts
+with --no-service, which disables both roles. Native uninstall defaults to its receipt-owned
+directory when present, otherwise the ordinary standalone directory, and works offline.
+For fresh native installation, the global --state-dir or LOCRON_STATE_DIR selects the state
+used by the new daemon registration. Reinstallation preserves existing registrations across
+their original state roots. PATH insertion preserves the existing raw value and registry kind;
+a matching literal entry is retained without claiming it as newly installer-owned. A directory
+containing a semicolon refuses PATH insertion; one containing a percent character also refuses
+insertion when the existing PATH uses the expandable registry format.
+Native locron.exe install --operation UUID recovers an owned interrupted standalone operation;
+that form accepts no new-install options or fresh explicit --state-dir. Recovery uses the
+protected original state selection and ignores ambient LOCRON_STATE_DIR. All these planned
+commands leave execution policy unchanged and still respect the machine's native executable
+protections and organizational rules.
+When the native caller still maps the executable being changed, it reports pending acceptance
+with an operation UUID and status-file path. That is not confirmed installation/removal. A
+separately extracted native ZIP executable can wait for work against a different installation.
+Use locron maintenance status --operation UUID to read the protected operation's current phase.
+An operation with verified new files but incomplete task restoration remains in restoring and
+requires UUID recovery; it has not completed. Recovery resumes restoration against those verified
+bytes rather than replacing an image after its roles have started.
+
+Existing-operation restoration starts every originally enabled owned role, even when that role
+was temporarily stopped before maintenance. Originally disabled roles remain disabled and receive
+no start request. To keep a role stopped across maintenance, disable its registration explicitly.
+An accepted Task Scheduler start request alone cannot confirm completion; uncertain startup stays
+pending until the actual owned role is verified, and recovery does not automatically send another
+start request.
+
+The optional install.ps1/uninstall.ps1 frontend requires an operator policy that already permits
+the selected script. Restricted blocks script files; RemoteSigned can block a downloaded unsigned
+asset until the operator reviews its provenance/hash and selectively unblocks it. AllSigned or
+organizational policy can refuse it. The installer does not change that policy, paste downloaded
+script content into a command or disable Windows protections. Use the native route when script
+policy blocks this optional route.
+
+Windows self-update hands off to a verified helper and initially reports `updated=false`,
+`pending=true`, an operation UUID and a status-file path. The planned
+`locron self-update --status UUID` command reports confirmed completion separately. If interruption
+leaves the installed executable unavailable, a native ZIP executable's
+`locron install --operation UUID` uses the retained verified helper and
+backup to recover that standalone operation. Recovery restores tasks only after binary and receipt
+integrity pass. An unexpected file at the destination, including a new leaf whose identity was
+not recorded before the interruption, remains untouched and produces an explicit recovery error.
+The operation's verified backup is retained for operator recovery; a failed deletion is never
+assumed to have left the old executable in place.
+
+Planned standalone removal uses `uninstall.ps1 -InstallDirectory <owned directory>`. When invoked
+from its installed copy, the default is that copy's receipt-bearing directory; a separately
+downloaded copy defaults to LocalAppData\Programs\locron. It validates the private receipt and the
+listed hash of the retained `.locron-installer.ps1` before loading that shared bootstrap, and copies
+the still-verified owned executable to the private helper directory. Modified bootstrap/helper
+bytes refuse removal. This owned-installation removal path needs no network download, preserves
+durable state and uses the same journal, quiescence and recovery checks as an update.
 
 WinGet's proposed identifier is `WhiteKiwi.locron`; availability and community repository
 acceptance remain release gates. Its ZIP/portable manifests point at the same immutable GitHub
@@ -37,28 +106,45 @@ winget upgrade --id WhiteKiwi.locron --exact --scope user
 
 WinGet owns this installation, including its command alias and PATH behavior; standalone
 installation and `self-update` refuse to adopt it. Portable packages cannot run arbitrary task
-lifecycle hooks. Before a supported WinGet upgrade/removal, the maintenance procedure must
+lifecycle hooks and do not start a daemon or dashboard automatically. After installation, opt in
+through the package executable's locron service install and, if wanted, locron dashboard enable.
+Before a supported WinGet upgrade/removal, the maintenance procedure must
 record all exact executable-bound registrations and their enabled states, suppress activation
 and confirm graceful owned-process exit. After an upgrade it must refresh the active executable
 path and restore the recorded enabled states. A disabled dashboard stays disabled. The planned
-maintenance flow reuses the release installer asset:
+native maintenance flow can use a separately extracted native ZIP executable:
 
 ```powershell
 # $wingetExecutable is the exact package executable, rather than its command alias.
-$prepared = .\install.ps1 -Maintenance Prepare -Executable $wingetExecutable
+.\locron.exe --json maintenance prepare --executable $wingetExecutable
+# Save operation_id; wait for phase=prepared before upgrading if acceptance was pending.
+.\locron.exe --json maintenance status --operation $operationId
 winget upgrade --id WhiteKiwi.locron --exact --scope user
-.\install.ps1 -Maintenance Complete -Operation $prepared.operation_id -Executable $newWingetExecutable
+.\locron.exe maintenance complete --operation $operationId --executable $newWingetExecutable
 ```
 
-Prepare reports its durable operation UUID and status-file path after owned tasks are disabled
-and graceful exit is confirmed. They stay disabled until Complete verifies the current user,
+Prepare reports prepared=true only after owned tasks are disabled and graceful exit is confirmed.
+Pending acceptance alone is not preparation. They stay disabled until Complete verifies the current user,
 package/source registration, canonical executable path, version, architecture and canonical
 release digest, then restores the recorded enabled states. An interrupted or failed Complete can
 be retried with the same UUID and a valid package executable. Recovery reactivates only a
 verified binary; a mismatched/stale path remains disabled with an explicit recovery error.
-Before removal, use `-Maintenance Remove -Executable $wingetExecutable`, then
+Maintenance accepts normalized executable and package-location paths up to 4,096 UTF-16 code units,
+including any supported verbatim prefix in the guarded canonical representation.
+A larger new path refuses Complete and retains disabled tasks and the protected recovery record.
+Before removal, use `locron maintenance remove --executable $wingetExecutable` and wait for
+phase=removed, then
 `winget uninstall --id WhiteKiwi.locron --exact --scope user`; only exact owned registrations are
 removed. Native maintenance acceptance must pass before this channel is advertised.
+Where script policy permits, install.ps1 -Maintenance Prepare|Complete|Remove supplies the same
+procedure with -Executable and -Operation. Neither WinGet manifests nor a private package server
+automatically perform these task operations; submissions target the community winget-pkgs catalog.
+The shared release/submission sequence is recorded in [WINDOWS_DISTRIBUTION](WINDOWS_DISTRIBUTION.md).
+Unattended upgrade tools and winget upgrade --all do not perform Prepare/Complete. Automatic
+package upgrades with enabled daemon/dashboard registrations are outside this portable channel's
+supported procedure. Use the explicit maintenance workflow and exclude this package from those
+unattended tools, or choose the standalone channel for integrated service updates. The proposed
+manifest does not label the WinGet package as self-updating or promise automatic service hooks.
 
 Downloads use canonical HTTPS assets from `WhiteKiwi/locron`. Archive checksums detect changed
 or corrupted bytes; they provide no independent publisher authentication. The unsigned first

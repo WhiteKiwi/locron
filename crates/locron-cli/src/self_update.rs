@@ -23,6 +23,88 @@ use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+// The native verifier is exercised before the Windows helper is integrated.
+// Keep the existing updater inaccessible to Windows installations in this slice.
+#[cfg(all(windows, test))]
+#[path = "windows_package.rs"]
+mod windows_package;
+
+#[cfg(all(windows, test))]
+#[path = "windows_receipt.rs"]
+mod windows_receipt;
+
+#[cfg(all(windows, test))]
+#[path = "windows_protocol.rs"]
+mod windows_protocol;
+
+#[cfg(all(windows, test))]
+#[path = "windows_release_source.rs"]
+mod windows_release_source;
+
+#[cfg(all(windows, test))]
+#[path = "windows_replacement.rs"]
+mod windows_replacement;
+
+#[cfg(all(windows, test))]
+#[path = "windows_journal.rs"]
+mod windows_journal;
+
+#[cfg(all(windows, test))]
+#[path = "windows_ownership.rs"]
+mod windows_ownership;
+
+#[cfg(all(windows, test))]
+#[path = "windows_bootstrap.rs"]
+mod windows_bootstrap;
+
+#[cfg(all(windows, test))]
+#[path = "windows_package_ownership.rs"]
+mod windows_package_ownership;
+
+#[cfg(all(windows, test))]
+#[path = "windows_path.rs"]
+mod windows_path;
+
+#[cfg(all(windows, test))]
+#[path = "windows_payloads.rs"]
+mod windows_payloads;
+
+#[cfg(all(windows, test))]
+#[path = "windows_fixture.rs"]
+mod windows_fixture;
+
+#[cfg(all(windows, test))]
+#[path = "windows_transaction.rs"]
+mod windows_transaction;
+
+#[cfg(all(windows, test))]
+#[path = "windows_preparation.rs"]
+mod windows_preparation;
+
+#[cfg(all(windows, test))]
+#[path = "windows_launch_codec.rs"]
+mod windows_launch_codec;
+
+#[cfg(all(windows, test))]
+#[path = "windows_launch_transport.rs"]
+mod windows_launch_transport;
+
+#[cfg(all(windows, test))]
+#[path = "windows_launch_gate.rs"]
+mod windows_launch_gate;
+
+#[cfg(all(windows, test))]
+#[path = "windows_paired_receipt.rs"]
+mod windows_paired_receipt;
+
+#[cfg(all(windows, test))]
+#[path = "windows_paired_package.rs"]
+mod windows_paired_package;
+
+#[cfg(all(windows, test))]
+#[path = "windows_package_index.rs"]
+mod windows_package_index;
+
 const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";

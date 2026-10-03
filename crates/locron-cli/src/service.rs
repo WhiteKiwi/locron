@@ -34,8 +34,16 @@ use serde_json::{Value, json};
 
 use crate::{Format, render};
 
+#[cfg(all(windows, test))]
+mod windows_activation;
+#[cfg(all(windows, test))]
+mod windows_activation_wire;
+#[cfg(all(windows, test))]
+mod windows_record;
 #[cfg(windows)]
 mod windows_supervisor;
+#[cfg(all(windows, test))]
+pub(crate) use windows_record::ServiceRestoreRecord;
 #[cfg(windows)]
 pub(crate) use windows_supervisor::supervise;
 
@@ -80,6 +88,8 @@ const POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// independent and never touch each other.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(windows, derive(clap::ValueEnum))]
+#[cfg_attr(windows, derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(windows, serde(rename_all = "snake_case"))]
 pub(crate) enum Target {
     /// The scheduler daemon (`locron daemon run`).
     Daemon,
