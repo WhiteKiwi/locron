@@ -9,7 +9,7 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::future::Future;
 use std::num::NonZeroU8;
-use std::os::windows::io::{AsHandle, OwnedHandle};
+use std::os::windows::io::AsHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, ensure};
