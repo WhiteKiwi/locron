@@ -6,15 +6,13 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Result, ensure};
-use locron_core::filesystem::{
-    FileIdentity, file_identity, open_owned_executable_exclusive,
-};
+use locron_core::filesystem::{FileIdentity, file_identity, open_owned_executable_exclusive};
 use sha2::{Digest, Sha256};
 
-use super::{IndexedSources, Leaf, Sources, clock, observe, text};
 use super::super::super::windows_paired_receipt::EXECUTABLES;
 use super::super::super::windows_protocol::maintenance_path;
 use super::super::super::windows_receipt::same_path;
+use super::{IndexedSources, Leaf, Sources, clock, observe, text};
 
 struct ExpectedImage {
     path: PathBuf,
@@ -215,7 +213,12 @@ mod tests {
         // The parent constructor's canonical archive admission is tested separately.
         let files: BTreeMap<_, _> = PAIRED_FILES
             .into_iter()
-            .map(|name| (name.to_owned(), format!("source fixture: {name}").into_bytes()))
+            .map(|name| {
+                (
+                    name.to_owned(),
+                    format!("source fixture: {name}").into_bytes(),
+                )
+            })
             .collect();
         for (name, bytes) in &files {
             write_new(&root.path().join(name), bytes);
@@ -254,7 +257,10 @@ mod tests {
         }
         drop(exclusive);
         for name in EXECUTABLES {
-            assert_eq!(fs::read(root.path().join(name)).unwrap(), archive.files[name]);
+            assert_eq!(
+                fs::read(root.path().join(name)).unwrap(),
+                archive.files[name]
+            );
         }
     }
 
@@ -271,7 +277,10 @@ mod tests {
         assert!(open_owned_executable_exclusive(&root.path().join(EXECUTABLES[0])).is_ok());
         drop(held);
         for name in PAIRED_FILES {
-            assert_eq!(fs::read(root.path().join(name)).unwrap(), archive.files[name]);
+            assert_eq!(
+                fs::read(root.path().join(name)).unwrap(),
+                archive.files[name]
+            );
         }
     }
 
