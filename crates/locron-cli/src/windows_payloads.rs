@@ -15,6 +15,9 @@ use super::windows_release_source::{Release, Remote};
 #[path = "windows_payloads/paired.rs"]
 pub(super) mod paired;
 
+#[path = "windows_payloads/paired_handoff.rs"]
+pub(super) mod paired_handoff;
+
 pub(super) struct Payloads {
     pub version: String,
     pub target: String,
