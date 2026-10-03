@@ -126,3 +126,37 @@ after this plan/Issue Verify readback and separate development handoff.
    review pass. Fresh changed-head ordinary required CI and all four real native
    doctor cases plus the two existing doctor cases must execute on x64/ARM/MSRV.
    Retain original failed logs and all later CLI/full lint/acceptance failures.
+
+
+## Independent native doctor CI gate before Source (2026-10-04)
+
+Head cc07299 full37162098246 x64 stopped at unchanged supervisor unit
+native_io_expiry_quarantines_activation_child_and_all_later_admission:300PASS1FAIL,
+with the actual native I/O boundary not entered at windows_supervisor.rs1687.
+The CLI binary did not run. ARM executed75CLI with73PASS2FAIL and all six doctor
+cases PASS. Preserve both observations and the unresolved supervisor cause;
+repeating the unchanged full command cannot establish missing x64 doctor evidence.
+
+This continuation authorizes only one additive Windows foundation workflow step.
+Application/test/dependency bytes, existing commands, conditions, protections,
+compiler matrix and clocks remain frozen. It extends the original no-workflow-change
+lease only for the following independent native acceptance gate.
+
+1. Add a native doctor acceptance step before registered service unit tests in
+   each existing Windows foundation row, after the existing runtime library step.
+   **Verify:** x64 stable, ARM stable and x64 Rust1.94 execute the four named
+   windows_default_doctor_ CLI tests plus exact human_doctor_prints_one_level_line_
+   per_check and human_forms_leave_the_json_envelope_untouched. Keep the existing
+   !cancelled/native_core-success condition so an independent service failure
+   cannot prevent doctor qualification. Every Cargo nonzero exits immediately.
+2. Conserve the complete remaining workflow and source. **Verify:** removing
+   that one additive step exactly restores cc07299 ci.yml. All Rust blobs and
+   selectors are identical; no full exploratory rerun, continue-on-error, retry,
+   warning allowance, command replacement, deadline change or altered protection.
+   actionlint/diff and separate developer/parent reviews pass.
+3. Qualify the changed head before merge. **Verify:** actual four-plus-one-plus-one
+   test summaries and each six-case marker appear on all three native rows with
+   no ignored cases; all original ordinary execution rows and required contexts
+   pass; newly built paired package evidence matches the new head/merge tree.
+   Preserve original864 and cc07299 full logs, including unexecuted x64 CLI,
+   remaining wake/cancel/WAL/supervisor and fullClippy41 failures. Issues stay open.

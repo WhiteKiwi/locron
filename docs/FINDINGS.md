@@ -5388,3 +5388,20 @@ The same row also preserves cancellation/wake failures and one unchanged
 disconnect test Store after-WAL finalize deadline overrun (5469705us under the
 original5s clock, configuration modewal/done/autocommit observed). Their causes
 and broader runtime qualification are not repaired by this expectation slice.
+
+
+### PR135 measured early full-suite failure and missing x64 doctor evidence
+
+Changed-test head cc07299206e5ee83106d95dbcd8af13214e86765 full37162098246
+x64stable job111317472009 stops at CLI unit300PASS1FAIL: unchanged
+service::windows_supervisor::tests::native_io_expiry_quarantines_activation_child_and_all_later_admission
+panics at windows_supervisor.rs1687 because the actual native I/O boundary was not
+entered. CLI integration is unexecuted; this is not doctor qualification or a
+proved cause. Raw log SHA25633038ff578152d6ca17011b2cb78b21244714c79021e435f43557c02dc19ac6b
+is retained. ARM job111317472061 reaches301unitPASS and75CLI73PASS2FAIL with
+all four new plus two existing doctor cases PASS; only wake/cancel fail there.
+Both full Clippy rows retain exactly the prior41 diagnostic message sequence.
+Select a strictly additive independent doctor gate in the ordinary Windows
+foundation matrix before the existing service command. This avoids an unrelated
+early failure hiding doctor evidence while retaining every existing refusal.
+No application/test changes or unchanged full rerun are selected.

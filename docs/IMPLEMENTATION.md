@@ -5200,3 +5200,17 @@ selectors/clocks. No production resolver/render/error/token/guard/dependency cha
 is selected. Three ordered Verify steps precede separate Source; parent reviews
 exact inverse and fresh native/ordinary results. Unchanged WAL/disconnect/wake/cancel
 and fullClippy41 failures stay visible and broader acceptance remains open.
+
+
+### PR135 independent doctor CI gate before Source (2026-10-04)
+
+The changed-test full run37162098246 reached all six doctor cases on ARM but
+unchanged x64 supervisor expiry failed before CLI integration began. Add only an
+independent Windows foundation doctor gate per planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md,
+before the existing registered service step. Run four native default-doctor cases
+and both exact existing doctor cases on the current three-row compiler/architecture
+matrix, with immediate nonzero refusal. Existing gates, all application/test blobs,
+clocks and protections stay exact. Three Verify criteria require docs/Issues before
+separate development, whole-workflow inverse and parent review, then fresh ordinary
+native and paired-package evidence. Preserve prior full failures; do not repeat an
+unchanged exploratory command or infer an unknown supervisor/WAL cause.
