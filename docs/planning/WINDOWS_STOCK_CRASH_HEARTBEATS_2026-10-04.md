@@ -180,3 +180,29 @@ job reached it. FINDINGS records the measured bounds and primary references.
    publisher must qualify real collision/share/child termination and complete replacement.
    Record remaining full-discovery failures and no skip/allow/deadline or ownership reset.
    Required checks must pass before merge; Issue #31/#32 and public acceptance remain open.
+
+
+## Measured rename-refusal control before Source
+
+At1a1, all three native rows pass Core131 and the original actual parent crash/handle/
+heartbeat/guard proof. The new Rust rename refusal yieldsSome(5), while the test wrongly
+expects the exclusive-open codeSome(32). FINDINGS records the exact logs, tempfile failure
+ownership and primary references. The ordinary run was cancelled after these failures;
+later cases are unqualified. Keep its failures rather than treating cancellation as a pass.
+
+1. Publish reviewed docs and the owning Issue before Source. **Verify:** docs-only commit
+   and exact Issue readback preserve the actual three-row5 receipt and all unknowns.
+2. In only loader_crash.rs publication_proofs, create one complete closed8 candidate and
+   retain its path. Require exactSome(5), identical returned TempPath and unchanged7/bytes7
+   while the exact target handle remains open. **Verify:** no broad error allow-list, new
+   candidate, path reconstruction, fallback, hidden retry or weakening of old assertions.
+3. Close the exact held handle and publish that same returned candidate successfully.
+   Require8/bytes8, then publish a complete7 snapshot and require7/bytes7 before the old
+   actual retained-publisher proof. **Verify:** all new I/O has original pre/post observation
+   checks; old stage8/livePID/kill/reap/preserved7/publish8 source and45s boundary are exact.
+4. Parent reviews and publishes fresh native qualification. **Verify:** only the one test
+   function changes; all other blobs including PS/stock-open32, dispatcher and workflow
+   stay exact. Rust1.94 Windows-target check/tests compilation,1.94/1.98 fmt and whitespace
+   checks pass. All three ordinary native rows exercise the original crash plus complete
+   Rust and Framework5.1 proofs; five full-discovery rows retain their actual outcomes.
+   Required checks must pass before merge; old45s cause and public acceptance stay open.
