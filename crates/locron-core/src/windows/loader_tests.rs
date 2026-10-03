@@ -259,20 +259,42 @@ fn guard_stall() {
     ).unwrap();
     request.guard_stall = Some(super::stock::GuardStall { reader, entered });
     let trace = Arc::clone(&request.trace);
+    trace.enable_delivery();
+    let driver_trace = Arc::clone(&trace);
     let start = Instant::now();
     let deadline = start + ADAPTER_TIMEOUT;
     let permit = ADAPTER_WORKERS.acquire(deadline).unwrap();
     let (reply, receiver) = mpsc::sync_channel(1);
     let driver = std::thread::spawn(move || {
         let result = run_adapter_worker(request, deadline, permit);
+        driver_trace.delivery_event(super::generic_trace::DeliveryEvent::FunctionReturn);
+        driver_trace.delivery_event(super::generic_trace::DeliveryEvent::ExternalSendEntry);
         let _ = reply.send(result);
+        driver_trace.delivery_event(super::generic_trace::DeliveryEvent::ExternalSendExit);
     });
     entry
         .recv_timeout(ADAPTER_TIMEOUT)
         .expect("actual native guard read must enter");
-    let error = receiver
-        .recv_timeout((deadline + Duration::from_secs(4)).saturating_duration_since(Instant::now()))
-        .expect("driver must return without joining the blocked native owner")
+    trace.delivery_event(super::generic_trace::DeliveryEvent::ExternalReceiveEntry);
+    let received = receiver.recv_timeout(
+        (deadline + Duration::from_secs(4)).saturating_duration_since(Instant::now()),
+    );
+    trace.delivery_event(match &received {
+        Ok(_) => super::generic_trace::DeliveryEvent::ExternalReceiveReady,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            super::generic_trace::DeliveryEvent::ExternalReceiveTimeout
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            super::generic_trace::DeliveryEvent::ExternalReceiveDisconnected
+        }
+    });
+    let error = received
+        .unwrap_or_else(|error| {
+            panic!(
+                "driver must return without joining the blocked native owner: {error}; delivery: {:?}",
+                trace.delivery_snapshot()
+            )
+        })
         .unwrap_err();
     assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
     assert!(start.elapsed() < ADAPTER_TIMEOUT + Duration::from_secs(4));
@@ -310,4 +332,8 @@ fn guard_stall() {
         driver.join().unwrap();
     }
     println!("native-guard-stall-confirmed");
+    eprintln!(
+        "locron generic adapter delivery: {:?}",
+        trace.delivery_snapshot()
+    );
 }

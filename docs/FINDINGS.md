@@ -4956,6 +4956,50 @@ Other recorded warnings and legacy shell/state fixture assumptions remain discov
 The scoped compilation correction cannot establish full lint/runtime success, Windows11
 standard-user installation, active-crash recovery, two-user privacy/IPC or public distribution.
 
+### Measured Windows fixture interference and return visibility (2026-10-04)
+
+Separate read-only research pins7ad2256 and compares the relevant unchanged blobs at543e823.
+Full37135594179 has256/16 CLI unit results on all three native rows. Later37135898657 at543e823
+has264/15 x64 stable and263/16 ARM64/MSRV after additional unrelated main tests. The difference
+is the uncertain launch-owner case passing on x64; other owner-negative cases still fail at
+initial admission, while the positive actual copied-child case passes. No failing cleanup
+boundary or production owner-reset defect is established by those admission failures.
+
+MCP fresh_paths uses the already-created TempDir as its managed root. Eleven successful-tool
+cases fail at initial locron_add_job, with captured directory-root/PermissionDenied diagnostics.
+Production private creation verifies existing roots instead of repairing broad descriptors.
+Retaining TempDir and creating a missing private Windows child fixes the fixture prerequisite;
+Unix setup and all mutation/dry-run/report assertions can remain unchanged. No individual
+owner/ACE or 8.3 path cause is established by the captured error category.
+
+The Gate's complete caller inventory finds five parent fixtures sharing process-wide OWNER.
+The actual copied-helper selector enters a separate process, and transport uses a different
+owner atomic. A narrow test-only mutex around those five parent proofs, acquired before setup
+and deadline birth, preserves the uncertain case's actual internal second-admission refusal.
+Never clear OWNER for isolation; poison or retained ownership must remain a failure.
+
+The CLI description test identifies missing metadata on the hidden Windows supervise role
+field; add its field description without excluding hidden commands or changing parsing.
+Seven unused service_backends helpers only serve the existing macOS/Linux consumers. Gate
+those exact helpers, related imports and cleanup impl consistently; retain the crate's two
+Windows exclusion-reporting cases and every Unix body. Full543 Clippy additionally reveals29
+staged CLI diagnostics beyond those seven; this correction cannot claim full lint completion.
+
+Ordinary543 CI37135898238 x64 stable also has129/130 Core results: the isolated guard-stall
+child times out at loader_tests.rs273. Caller-failed is recorded at33001ms, before its external
+reply deadline of original+4s; the actual return/send interval is unmeasured. windows.rs joins
+only a finished worker, then test-only trace.report synchronously prints before returning.
+There is no evidence of an unconditional blocked-worker join. Add bounded in-memory timing
+for result computation, diagnostic entry/exit, function return and external send/receive under
+the unchanged30+3s/30+4s clocks. Emit only after delivery/cleanup or in the original failure
+message, with fixed event names/counters. This observes the unresolved boundary; it does not
+select a fix, suppress diagnostics, reset permits or increase any budget.
+
+Research artifacts: windows-runtime-discovery-triage-20261004/report.md and measured-evidence.json
+under the retained task review directory. They include all25 MCP fixture callers, complete
+Gate/transport owner inventories, six compared blobs and the raw Core log SHA256
+486f9ef7c416a10a5dc1ef0358623cfaf84c2b7552b73d7c1bb9b35daab23874.
+
 ### Stock parent-crash heartbeat publication and missing failure observations (2026-10-04)
 
 PR #130 head `99ea5c97ce925f41755fa86dfa54eeffb97313bb`, based on main
@@ -5040,3 +5084,39 @@ No product loader, owned-child, guard or admission source is needed for this han
 [fixture correction plan](planning/WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md) preserves the
 original budgets and all actual-process assertions; owning Issue #31 and fresh native Verify
 remain required before any support or acceptance claim.
+
+### MCP native process fixture after private-root discovery (2026-10-04)
+
+Reviewed c676e37baeb8049fae3eb65cf007bb397850253d passes all sixteen ordinary rows and
+GitGuardian in run37143494890. Original five-row full discovery37143508598 still fails:
+x64 stable job111262652892, ARM64 stable111262652865 and x64 Rust1.94 job111262652832 each
+execute301 CLI unit cases with291 passed/10 failed and zero ignored/filtered. The five
+owner-sensitive Gate fixtures, recursive argument description and separate shell at-schedule
+case now pass in all three logs. The remaining ten failures are MCP cases, all at request_tool's
+unchanged success assertion1855, reporting only `tool locron_add_job failed`. Their actual
+tool error envelope is not printed; a specific returned error is not an observed fact.
+
+Separate read-only research pins the MCP source and traces a common invalid fixture input.
+valid_add_args1859–1870 supplies process command `/bin/echo`, `hello`. parse_target877–879
+retains that executable and args; tool_add_job1021 invokes definition.validate, which reaches
+target.rs120–129. On Windows a separator-containing executable must be absolute, including
+its prefix. `/bin/echo` is rooted without a drive/UNC prefix and fails that requirement. This
+is a source-backed input-contract mismatch, not a claim to have recovered the hidden error
+envelope. All ten failed cases depend on this shared process fixture. Their add/update/read,
+dry-run and durable queued/cancel assertions do not run an Engine or spawn that scheduled
+command. The independent shell at-schedule fixture already uses default_shell and passes.
+
+A minimal test-only correction can keep Target::Process and choose the actual current test
+image's absolute Windows path with fixed `--help` argv. The image is already running; path
+lookup/encoding must fail explicitly rather than inventing or lossily encoding an executable.
+The argument remains a finite native help request if executed, while these MCP cases still
+qualify job definition/queue behavior rather than echo output or child execution. Unix retains
+the exact `/bin/echo`, `hello` values. Every case body/name/assertion stays unchanged, and no
+production validation, state/permission policy, process owner or deadline change is needed.
+The [MCP follow-up plan](planning/WINDOWS_MCP_NATIVE_PROCESS_FIXTURE_2026-10-04.md) precedes Source.
+
+The full Clippy rows now report41 CLI diagnostics per architecture after the seven Unix-helper
+errors were removed. Accepted main through #129 contributes staged APIs and test-style work
+beyond the earlier29-diagnostic baseline. These warnings remain denied and outside this
+single-helper correction. The87 measured integration failures, distinct Core admission/Server
+WAL-reopen observations, stock-crash heartbeat work and public acceptance remain open.

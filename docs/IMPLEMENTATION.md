@@ -4923,6 +4923,30 @@ runtime failure in #31 instead of widening cfgs, adding allow/ignore, or changin
 Existing component/GUI/distribution gates remain separately required. Frozen SPEC and first
 unsigned-release/signing policy remain unchanged; compile success is not full support evidence.
 
+### Native runtime-fixture correction and bounded timing evidence (2026-10-04)
+
+Continue #31 through [the measured follow-up plan](planning/WINDOWS_RUNTIME_FIXTURE_FOLLOWUP_2026-10-04.md).
+Research distinguishes invalid managed-root setup, shared test-owner interference and a real
+field-help omission from unmeasured production faults. Keep Unix MCP setup exact and create a
+missing guarded private Windows child. Isolate only five Gate parent fixtures before setup and
+deadline creation; retain actual release and the uncertain case's internal second refusal.
+Add the hidden supervise field's description, and match seven backend helpers/imports/Drop to
+their existing macOS/Linux consumers while preserving Windows reporting cases. Keep all other
+CLI staged-code lint diagnostics visible rather than broadening this handoff.
+
+For the independent Core stall failure, add fixed-size lock-free in-memory observation of the
+test-only result/diagnostic/return/send/receive interval. Leave the production adapter, original
+timed receives, trace output ordering, native stalled read/retention, second refusal, late-work
+and cleanup assertions intact. Event output belongs after known delivery/cleanup or the existing
+failed receive message, never synchronously added to timed delivery. This is diagnostic Source;
+one passing observation cannot retrospectively establish the failed run's cause.
+
+Parent reviews docs and exact issue Verify readback before seven Source files are handed to a
+separate development session. Reconcile accepted current-main changes without altering reviewed
+patches, then collect fresh normal protected CI and five full native rows on the final exact head.
+The unchanged-source no-fail-fast verification branch remains separate evidence. Preserve all
+old/new failures and unfinished native/public-release scope; no owner-PC effectful acceptance.
+
 ### Stock crash-fixture counter publication and expiry observations (2026-10-04)
 
 Continue #31 under the [new measured fixture plan](planning/WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md).
@@ -4957,3 +4981,24 @@ the new controlled modes after the normal parent-exit proof within its original 
 without earlier cold-gate warm-up or a workflow change. Full discovery and all remaining clean
 Windows 11, user/privacy, recovery and distribution acceptance
 stay open and retain their failures; no skip, relaxed deadline, retry or quarantine reset qualifies.
+
+### MCP process-fixture continuation under native target validation (2026-10-04)
+
+Continue #31 using the [MCP fixture plan](planning/WINDOWS_MCP_NATIVE_PROCESS_FIXTURE_2026-10-04.md).
+The seven-file correction now has ordinary native passes, while full CLI discovery still has
+ten downstream MCP failures. FINDINGS distinguishes the source-backed invalid `/bin/echo`
+Windows input from the unprinted actual error envelope. Frozen SPEC and production validation
+stay unchanged; the goal is to reach the existing MCP assertions with a valid process definition.
+
+After documentation and exact Issue Verify readback, a separate development session changes
+only tests::valid_add_args in mcp.rs. Windows uses the actual running test image's absolute,
+non-lossy path and fixed finite `--help` argv; Unix keeps the original command values. Preserve
+process target type, job metadata/policy, private state setup, every test body/name/assertion
+and original request_tool success refusal. This is definition/queue acceptance, not scheduled
+process execution or echo-output proof. Add no new selector, skip, warning allowance or fallback.
+
+Parent checks the complete one-helper diff, exact inverse conservation and every other blob,
+then publishes fresh ordinary CI and the original five full native rows. Ten intended downstream
+assertions must actually run and pass on x64 stable, ARM64 stable and x64 Rust1.94; any newly
+reached integration/lint failure is retained. Separate stock-crash, integration, Core/Server
+and public distribution work remain outside this slice and keep their unfinished Verify gates.
