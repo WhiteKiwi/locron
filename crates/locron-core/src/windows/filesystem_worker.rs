@@ -31,6 +31,8 @@ static DISPATCHER: OnceLock<io::Result<queue::Sender<Request>>> = OnceLock::new(
 static LAST_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 #[cfg(test)]
 static LAST_PHASES: std::sync::Mutex<Option<Arc<ChildPhases>>> = std::sync::Mutex::new(None);
+#[cfg(test)]
+pub(super) mod eof_probe;
 
 struct Request {
     id: String,
@@ -539,6 +541,10 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
         quarantine = true;
     }
     if quarantine || quarantined_spawn.is_some() {
+        #[cfg(test)]
+        if let Some(probe) = worker.as_ref().and_then(|owned| owned.eof_probe.as_ref()) {
+            probe.quarantined();
+        }
         // Even a private/fixture channel EOF cannot release uncertain native ownership.
         // This owner retains its child/Job/stock handles; process exit closes them in the kernel.
         loop {
@@ -587,6 +593,8 @@ struct Worker {
     pid: u32,
     #[cfg(test)]
     phases: Arc<ChildPhases>,
+    #[cfg(test)]
+    eof_probe: Option<eof_probe::Probe>,
 }
 
 impl Worker {
@@ -663,6 +671,8 @@ impl Worker {
             pid,
             #[cfg(test)]
             phases,
+            #[cfg(test)]
+            eof_probe: eof_probe::take(),
         })
     }
 
@@ -709,6 +719,10 @@ impl Worker {
 
     async fn cleanup(&mut self) -> io::Result<()> {
         let deadline = Instant::now() + CLEANUP;
+        #[cfg(test)]
+        if let Some(probe) = self.eof_probe.as_mut() {
+            probe.start(deadline);
+        }
         self.stderr.abort();
         remaining(deadline)?;
         let _ = self.child.start_kill();
@@ -733,6 +747,10 @@ impl Worker {
                     ));
                 }
                 remaining(deadline)?;
+                #[cfg(test)]
+                if let Some(probe) = self.eof_probe.as_mut() {
+                    probe.confirm_tree_and_read_until(deadline).await?;
+                }
                 return Ok(());
             }
             if Instant::now() >= deadline {
