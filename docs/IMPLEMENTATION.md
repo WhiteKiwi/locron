@@ -2042,14 +2042,23 @@ bracketing peer queries with original Child live checks. The child binds both op
 the actual parent PID carried by Challenge and read from the connected endpoint; a claimed PID
 alone never authorizes qualification. Query failure or wrong direction/peer refuses.
 
-Each sender explicitly flushes its own server stream after its second frame, waiting for those
-bytes to be read within the original deadline, then consumes the stream with evade_limbo. Keep
-no clones or split halves of that endpoint. The child reads Permit followed by terminal EOF before
+Each sender explicitly flushes its own server endpoint after its second frame, waiting for those
+bytes to be read within the original deadline. Do not use interprocess's flush result as that
+confirmation: its pinned Windows wrapper changes disconnected-pipe errors into success. Safely
+clone the sender's BorrowedHandle into one temporary OwnedHandle, convert that handle into
+std::fs::File and call File::sync_all in a retained blocking worker. Rust 1.94's Windows fsync
+preserves FlushFileBuffers failure. The temporary clone performs no reads/writes or I/O registration;
+retain its actual worker handle until completion, close the clone, then consume the original
+sender with evade_limbo. Keep no split halves or other endpoint clones. A successful flush is
+necessary but cannot replace the receiver's exact phase and terminal-EOF checks. The child reads
+Permit followed by terminal EOF before
 sending Qualified; the parent reads Qualified followed by terminal EOF while the original Child
 and overlapping helper guards remain live. Do not substitute a quiet period, Peek, discarded noise
 or process exit for closure. Interprocess's default send-stream drop can retain a flushing limbo
-worker, so it is not the terminal operation. A timed-out explicit flush remains owned/quarantined
-with its outstanding worker and guards; evading limbo cannot cancel an already outstanding flush.
+worker, so it is not the terminal operation. A timed-out raw flush remains owned/quarantined with
+its outstanding worker, actual Child, lease and guards; neither evading limbo nor dropping a Tokio
+join handle cancels that native operation. The finite owner keeps the admission permit and cannot
+publish a qualified token after expiry; the caller never joins an uncertain worker indefinitely.
 
 Use these same owned channels for the copied libtest fixture and null its harness stdout/stderr;
 there is no alternate stderr protocol or fixture channel selector. No qualification bytes come
@@ -2075,7 +2084,9 @@ refused across readiness/guard overlap, changed created full identity or origina
 refuse, a wrong actual image/missing module/process exit or broken/stale/oversized channel refuses,
 pipe collisions/wrong peers/trailing bytes or a held-open terminal sender refuse, terminal EOF
 occurs while the original child remains live, and cold deadline/owned cleanup stays bounded.
-Exercise real creation-time ACL/remote rejection and flush/drop behavior on both architectures.
+Exercise real creation-time ACL/remote rejection and flush/drop behavior on both architectures,
+including disconnected-reader raw-flush refusal, complete delivery before terminal close and an
+unread/held-open endpoint timing out while retaining its worker and launch guards.
 Assert no installed-target/state/task/PATH/journal
 mutation in every qualification fixture. Release executable qualification, actual helper
 acceptance, complete lifecycle effects and clean Windows 11 acceptance remain separate gates.

@@ -4303,10 +4303,21 @@ behavior and native architecture/ACL facts remain qualification requirements.
 Use the already selected private SID+SYSTEM descriptor, local-only first-instance creation and
 noninheritance. Accept exactly once with a two-instance ceiling, then drop the replacement listener;
 the connected stream keeps the name reserved until its own closure. Microsoft documents that a
-server FlushFileBuffers waits for the client to consume buffered bytes. Interprocess's explicit
-flush followed by consuming evade_limbo provides a source-feasible terminal close; plain drop may
-instead hand an unflushed stream to its limbo worker. Async flush uses a retained blocking worker
-and cannot be cancelled by evade_limbo, so uncertain timeout must retain that owner and protections.
+server FlushFileBuffers waits for the client to consume buffered bytes. A further pinned-source
+audit found that interprocess's c_wrappers::flush calls downgrade_eof, converting BrokenPipe and
+ERROR_PIPE_NOT_CONNECTED into success. Its explicit flush result therefore cannot confirm this
+strict terminal delivery. The selected safe refinement clones the connected sender's
+BorrowedHandle into a temporary OwnedHandle, converts it to std::fs::File and runs sync_all in a
+retained blocking worker. Rust 1.94's Windows fsync calls FlushFileBuffers through cvt and preserves
+failure; the safe owned-handle File conversion has been stable since Rust 1.63. This metadata/flush
+clone performs no reads/writes or overlapped registration and closes before the original sender
+is consumed with evade_limbo. Plain interprocess drop may instead hand an unflushed stream to its
+limbo worker. A timed-out raw flush is not cancelled by dropping its join handle or evading limbo:
+the finite launch owner must retain the outstanding worker, actual Child, admission permit, lease
+and guards without an indefinite caller join or a late qualified token. Both receiver phase/EOF
+checks remain mandatory; successful raw flush alone is not launch proof. Native positive delivery,
+disconnected-reader refusal and unread/held-open timeout/retention tests on both architectures
+remain unverified and cannot be inferred from this source-feasibility check.
 After Permit and Qualified respectively, each receiver must observe exact terminal EOF within the
 original deadline and reject any extra byte before it; neither sender needs to exit its process.
 Both copied fixture stdio outputs are null, and there is no extra channel-selector ABI or need for
@@ -4330,7 +4341,10 @@ Sources: [Rust current_exe](https://doc.rust-lang.org/std/env/fn.current_exe.htm
 [accept/replacement lifecycle](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/listener.rs),
 [explicit flush and terminal drop](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/named_pipe/tokio/stream/impl/send.rs),
 [retained async flush worker](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/tokio_flusher.rs),
+[pinned flush error conversion](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/c_wrappers.rs),
+[pinned disconnected-pipe downgrade](https://github.com/kotauskas/interprocess/blob/2.4.4/src/os/windows/misc.rs),
 [Rust 1.94 owned handles](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/os/windows/io/handle.rs),
+[Rust 1.94 error-preserving fsync](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs),
 [client PID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid),
 [server PID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid),
 [metadata access requirements](https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-getnamedpipeinfo),
