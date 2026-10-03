@@ -155,6 +155,21 @@ pub fn run_script_json_bounded(
     run_script_with_timeout(script, input, timeout.min(ADAPTER_TIMEOUT))
 }
 
+/// Runs the existing owned adapter without replacing the caller's absolute deadline.
+/// Admission and native work share the earlier of that deadline and the existing per-call cap.
+/// Owned child termination confirmation retains its separate three-second cleanup allowance.
+pub fn run_script_json_until(
+    script: &'static str,
+    input: &Value,
+    deadline: Instant,
+) -> io::Result<Value> {
+    let deadline = deadline.min(Instant::now() + ADAPTER_TIMEOUT);
+    remaining(deadline)?;
+    let result = run_script_with_deadline(script, input, deadline);
+    remaining(deadline)?;
+    result
+}
+
 fn run_script_with_timeout(
     script: &'static str,
     input: &Value,
@@ -960,6 +975,18 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn absolute_adapter_deadline_refuses_before_input_preparation_or_spawn() {
+        let error = run_script_json_until(
+            "throw 'expired adapter must never execute'",
+            &json!({"large": "x".repeat(70 * 1024)}),
+            Instant::now(),
+        )
+        .unwrap_err();
+        // Oversized input would produce InvalidInput if preparation had begun.
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     }
 
     #[tokio::test]
