@@ -38,86 +38,107 @@ pub(crate) fn migrate(
 
     if version == 0 {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let checked_version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if checked_version != 0 {
-            return Err(StoreError::MigrationConflict);
+        if migration_pending(&tx, 0)? {
+            tx.execute_batch(INITIAL_SCHEMA)?;
+            tx.pragma_update(None, "application_id", APPLICATION_ID)?;
+            tx.pragma_update(None, "user_version", 1)?;
+            let checksum = checksum(INITIAL_SCHEMA);
+            tx.execute(
+                "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (1, ?1, ?2, ?3, ?4)",
+                params![INITIAL_MIGRATION_NAME, checksum, binary_version, now_us],
+            )?;
         }
-        tx.execute_batch(INITIAL_SCHEMA)?;
-        tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-        tx.pragma_update(None, "user_version", 1)?;
-        let checksum = checksum(INITIAL_SCHEMA);
-        tx.execute(
-            "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (1, ?1, ?2, ?3, ?4)",
-            params![INITIAL_MIGRATION_NAME, checksum, binary_version, now_us],
-        )?;
         tx.commit()?;
     }
     verify_migration(connection, 1, INITIAL_SCHEMA)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 2 {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let checked_version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if checked_version != 1 {
-            return Err(StoreError::MigrationConflict);
+        if migration_pending(&tx, 1)? {
+            tx.execute_batch(DISABLED_CURSOR_SCHEMA)?;
+            tx.pragma_update(None, "user_version", 2)?;
+            tx.execute(
+                "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (2, ?1, ?2, ?3, ?4)",
+                params![DISABLED_CURSOR_MIGRATION_NAME, checksum(DISABLED_CURSOR_SCHEMA), binary_version, now_us],
+            )?;
         }
-        tx.execute_batch(DISABLED_CURSOR_SCHEMA)?;
-        tx.pragma_update(None, "user_version", 2)?;
-        tx.execute(
-            "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (2, ?1, ?2, ?3, ?4)",
-            params![DISABLED_CURSOR_MIGRATION_NAME, checksum(DISABLED_CURSOR_SCHEMA), binary_version, now_us],
-        )?;
         tx.commit()?;
     }
     verify_migration(connection, 2, DISABLED_CURSOR_SCHEMA)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 3 {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let checked_version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if checked_version != 2 {
-            return Err(StoreError::MigrationConflict);
+        if migration_pending(&tx, 2)? {
+            tx.execute_batch(RETENTION_RECOVERY_SCHEMA)?;
+            tx.pragma_update(None, "user_version", 3)?;
+            tx.execute(
+                "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (3, ?1, ?2, ?3, ?4)",
+                params![RETENTION_RECOVERY_MIGRATION_NAME, checksum(RETENTION_RECOVERY_SCHEMA), binary_version, now_us],
+            )?;
         }
-        tx.execute_batch(RETENTION_RECOVERY_SCHEMA)?;
-        tx.pragma_update(None, "user_version", 3)?;
-        tx.execute(
-            "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (3, ?1, ?2, ?3, ?4)",
-            params![RETENTION_RECOVERY_MIGRATION_NAME, checksum(RETENTION_RECOVERY_SCHEMA), binary_version, now_us],
-        )?;
         tx.commit()?;
     }
     verify_migration(connection, 3, RETENTION_RECOVERY_SCHEMA)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 4 {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let checked_version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if checked_version != 3 {
-            return Err(StoreError::MigrationConflict);
+        if migration_pending(&tx, 3)? {
+            tx.execute_batch(GLOBAL_ENVIRONMENT_SCHEMA)?;
+            tx.pragma_update(None, "user_version", 4)?;
+            tx.execute(
+                "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (4, ?1, ?2, ?3, ?4)",
+                params![GLOBAL_ENVIRONMENT_MIGRATION_NAME, checksum(GLOBAL_ENVIRONMENT_SCHEMA), binary_version, now_us],
+            )?;
         }
-        tx.execute_batch(GLOBAL_ENVIRONMENT_SCHEMA)?;
-        tx.pragma_update(None, "user_version", 4)?;
-        tx.execute(
-            "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (4, ?1, ?2, ?3, ?4)",
-            params![GLOBAL_ENVIRONMENT_MIGRATION_NAME, checksum(GLOBAL_ENVIRONMENT_SCHEMA), binary_version, now_us],
-        )?;
         tx.commit()?;
     }
     verify_migration(connection, 4, GLOBAL_ENVIRONMENT_SCHEMA)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 5 {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let checked_version: i64 = tx.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if checked_version != 4 {
-            return Err(StoreError::MigrationConflict);
+        if migration_pending(&tx, 4)? {
+            tx.execute_batch(HTTP_CONTENT_TYPE_SCHEMA)?;
+            tx.pragma_update(None, "user_version", 5)?;
+            tx.execute(
+                "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (5, ?1, ?2, ?3, ?4)",
+                params![HTTP_CONTENT_TYPE_MIGRATION_NAME, checksum(HTTP_CONTENT_TYPE_SCHEMA), binary_version, now_us],
+            )?;
         }
-        tx.execute_batch(HTTP_CONTENT_TYPE_SCHEMA)?;
-        tx.pragma_update(None, "user_version", 5)?;
-        tx.execute(
-            "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (5, ?1, ?2, ?3, ?4)",
-            params![HTTP_CONTENT_TYPE_MIGRATION_NAME, checksum(HTTP_CONTENT_TYPE_SCHEMA), binary_version, now_us],
-        )?;
         tx.commit()?;
     }
     verify_migration(connection, 5, HTTP_CONTENT_TYPE_SCHEMA)?;
     Ok(())
+}
+
+// Called only while the pending step's BEGIN IMMEDIATE owns write admission.
+fn migration_pending(connection: &Connection, predecessor: i64) -> StoreResult<bool> {
+    let application_id: i32 =
+        connection.pragma_query_value(None, "application_id", |row| row.get(0))?;
+    if application_id != 0 && application_id != APPLICATION_ID {
+        return Err(StoreError::NotLocronDatabase(application_id));
+    }
+    let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version > LATEST_SCHEMA_VERSION {
+        return Err(StoreError::SchemaTooNew {
+            found: version,
+            supported: LATEST_SCHEMA_VERSION,
+        });
+    }
+    if version < predecessor {
+        return Err(StoreError::MigrationConflict);
+    }
+    for (applied_version, schema) in [
+        (1, INITIAL_SCHEMA),
+        (2, DISABLED_CURSOR_SCHEMA),
+        (3, RETENTION_RECOVERY_SCHEMA),
+        (4, GLOBAL_ENVIRONMENT_SCHEMA),
+        (5, HTTP_CONTENT_TYPE_SCHEMA),
+    ] {
+        if applied_version <= version {
+            verify_migration(connection, applied_version, schema)?;
+        }
+    }
+    Ok(version == predecessor)
 }
 
 fn verify_migration(connection: &Connection, version: i64, sql: &str) -> StoreResult<()> {
@@ -148,6 +169,150 @@ fn checksum(sql: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    type MigrationRow = (i64, String, String, String, i64);
+
+    fn migration_rows(connection: &Connection) -> Vec<MigrationRow> {
+        connection
+            .prepare(
+                "SELECT version,name,checksum,binary_version,applied_at_us FROM schema_migrations ORDER BY version",
+            )
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn stale_pending_step_accepts_only_verified_concurrent_advance() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("private");
+        let _guard = locron_core::filesystem::DirectoryGuard::private(&root).unwrap();
+        let database = root.join("migration.db");
+        drop(locron_core::filesystem::create_private_new(&database).unwrap());
+        let mut first = Connection::open(&database).unwrap();
+        let mut second = Connection::open(&database).unwrap();
+        let stale_version: i64 = first
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(stale_version, 0);
+
+        migrate(&mut second, "winner", 123).unwrap();
+        second
+            .execute(
+                "UPDATE settings SET global_concurrency=7,execution_path='kept' WHERE singleton=1",
+                [],
+            )
+            .unwrap();
+        let winner_rows = migration_rows(&second);
+        assert_eq!(winner_rows.len(), 5);
+        assert!(
+            winner_rows
+                .iter()
+                .all(|row| row.3 == "winner" && row.4 == 123)
+        );
+
+        let tx = first
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        assert!(!migration_pending(&tx, stale_version).unwrap());
+        tx.commit().unwrap();
+        migrate(&mut first, "catch-up", 456).unwrap();
+
+        assert_eq!(migration_rows(&first), winner_rows);
+        assert_eq!(
+            first
+                .query_row(
+                    "SELECT global_concurrency,execution_path FROM settings WHERE singleton=1",
+                    [],
+                    |row| { Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)) }
+                )
+                .unwrap(),
+            (7, "kept".into())
+        );
+    }
+
+    #[test]
+    fn pending_step_refuses_changed_markers_and_unverified_advance() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        migrate(&mut connection, "winner", 1).unwrap();
+        let original = migration_rows(&connection);
+
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        tx.pragma_update(None, "application_id", 42).unwrap();
+        assert!(matches!(
+            migration_pending(&tx, 0),
+            Err(StoreError::NotLocronDatabase(42))
+        ));
+        drop(tx);
+
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        tx.pragma_update(None, "user_version", 6).unwrap();
+        assert!(matches!(
+            migration_pending(&tx, 0),
+            Err(StoreError::SchemaTooNew {
+                found: 6,
+                supported: 5
+            })
+        ));
+        drop(tx);
+
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        tx.execute("DELETE FROM schema_migrations WHERE version=3", [])
+            .unwrap();
+        assert!(matches!(
+            migration_pending(&tx, 0),
+            Err(StoreError::MissingMigration(3))
+        ));
+        drop(tx);
+
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        tx.execute(
+            "UPDATE schema_migrations SET checksum='tampered' WHERE version=4",
+            [],
+        )
+        .unwrap();
+        assert!(matches!(
+            migration_pending(&tx, 0),
+            Err(StoreError::MigrationChecksumMismatch { version: 4, .. })
+        ));
+        drop(tx);
+
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        tx.pragma_update(None, "user_version", 2).unwrap();
+        assert!(matches!(
+            migration_pending(&tx, 3),
+            Err(StoreError::MigrationConflict)
+        ));
+        drop(tx);
+
+        assert_eq!(migration_rows(&connection), original);
+        assert_eq!(
+            connection
+                .pragma_query_value(None, "application_id", |row| row.get::<_, i32>(0))
+                .unwrap(),
+            APPLICATION_ID
+        );
+        assert_eq!(
+            connection
+                .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            LATEST_SCHEMA_VERSION
+        );
+    }
 
     #[test]
     fn upgrades_existing_v1_database_without_inventing_disabled_history() {
