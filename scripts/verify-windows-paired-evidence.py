@@ -56,6 +56,12 @@ def _sha(value, label):
     return value
 
 
+def _git_sha(value, label):
+    if not isinstance(value, str) or not GIT_SHA.fullmatch(value):
+        raise ValueError(f"{label} is not a canonical 40-hex Git commit")
+    return value
+
+
 def _positive_decimal(value, label):
     if not isinstance(value, str) or not value.isascii() or not value.isdigit():
         raise ValueError(f"{label} is not a decimal string")
@@ -124,7 +130,7 @@ def _record(directory):
     if not isinstance(value["source_repository"], str) or not value["source_repository"]:
         raise ValueError("source repository is missing")
     for field in ("source_revision", "source_head_revision"):
-        _sha(value[field], field)
+        _git_sha(value[field], field)
     for field in ("source_ref", "source_workflow"):
         if not isinstance(value[field], str) or not value[field] or any(ord(ch) < 32 for ch in value[field]):
             raise ValueError(f"{field} is invalid")
