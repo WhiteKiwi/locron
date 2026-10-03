@@ -4489,7 +4489,7 @@ EncodedArguments value before its static code runs. The companion avoids making 
 depend on that unproved decoding path; no dynamic script fragment or Run environment route is
 selected. Earlier hidden-PowerShell probe receipts remain historical evidence only.
 
-The current primary WinGet portable archive flow records every extracted file before creating
+The current primary WinGet portable archive flow records each top-level extracted entry before creating
 links for NestedInstallerFiles; an omitted command alias on a listed executable defaults to its
 filename. The proposed manifest therefore lists only the console command as a nested portable
 alias and requires the sibling companion in the complete archive/package file index. Schema
@@ -4620,3 +4620,44 @@ Native blocked-I/O and late-ready output qualification is still pending.
 Sources: [Rust exit and cleanup](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/process.rs),
 [buffered stdout cleanup](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/io/stdio.rs),
 [safe owned Windows handle conversions](https://raw.githubusercontent.com/rust-lang/rust/1.94.0/library/std/src/os/windows/io/handle.rs).
+
+### WinGet version-root index feasibility (2026-10-03)
+
+The pinned archive flow uses nonrecursive `directory_iterator`, records a Directory entry for
+an extracted top-level directory, and later records the nested console alias. InstallFile moves
+or recursively copies that directory; ApplyDesiredState indexes the same desired entries without
+expanding them into child File rows. Our five-member ZIP has one versioned root directory.
+Consequently this source does not establish separate console/launcher File rows or their hashes
+in the portable index. The earlier top-level-entry finding must not be read as recursive file
+hash coverage. A verifier requiring both executable File/hash rows would refuse this layout.
+Keep that refusal until a reviewed selection qualifies directory-index ownership together with
+the exact canonical pair, or changes the Windows ZIP/manifest layout. No layout, ownership
+guarantee or portable lifecycle hook is changed by this research. Actual selected-client
+install/upgrade/remove index readbacks remain mandatory before a WinGet support claim.
+
+PortableInstaller selects `<ARP product code>.db` inside registered InstallLocation. Its schema
+1.0 has a `portable` table with path/type/hash/link-target fields; File is type 1 and Directory is
+type 2. The hash column's declared BLOB affinity does not prove binary hash storage: the pinned
+wrapper binds the PortableFileEntry string as SQLite TEXT. Inspect actual storage type and
+selected-client metadata/version rather than coercing arbitrary rows into executable ownership.
+
+An exact-byte, safe Rust reader is feasible without reopening the index through SQLite. The
+already locked rusqlite 0.40.2 `serialize` feature provides safe
+`deserialize_read_exact(MAIN_DB, bounded_slice, slice.len(), true)` on an in-memory connection.
+First retain existing-only source-policy ancestry/leaf guards and full identity, read a bounded
+complete byte snapshot, then parse that slice and retain the live guard. This avoids unsafe
+OwnedData construction and SQLite path/URI races. Parse only fixed ordinary-table queries with
+finite size/row/column/work limits under the original admitted deadline; no SQL comes from the
+index. WAL-mode main bytes are not directly deserializable. Refuse WAL/SHM/journal sidecars and
+WAL header versions rather than rewriting their bytes or silently discarding committed state.
+The safe API and schema are source-feasible candidates, not native client qualification or
+effect authority; dependency features and precise parser bounds require plan/Project review.
+
+Sources: [nonrecursive archive inventory](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCLICore/Workflows/PortableFlow.cpp#L177),
+[directory installation and index writes](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCLICore/PortableInstaller.cpp#L127),
+[index filename](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCLICore/PortableInstaller.h#L67),
+[portable table](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerRepositoryCore/Microsoft/Schema/Portable_1_0/PortableTable.cpp#L19),
+[file types and hash string](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCommonCore/Public/winget/PortableFileEntry.h#L9),
+[actual string binding](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerSharedLib/SQLiteWrapper.cpp#L64),
+[safe bounded-slice deserialization](https://docs.rs/rusqlite/0.40.2/rusqlite/struct.Connection.html#method.deserialize_read_exact),
+[SQLite in-memory/WAL contract](https://www.sqlite.org/c3ref/deserialize.html).

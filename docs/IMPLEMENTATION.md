@@ -2326,6 +2326,16 @@ refreshes the stored paths and restores the recorded enabled states. Its current
 canonical registered location, target, version, launcher ABI and both canonical-release binary
 hashes must agree. Require actual package-index ownership of the exact sibling launcher while
 only the console receives a WinGet alias; arbitrary or stale executable paths cannot resume tasks.
+Before implementing the paired package-index verifier, qualify the selected client's actual
+version-root layout. The pinned nonrecursive archive flow indexes our extracted root as a
+Directory, not each executable as a File/hash row. Keep a per-executable-row gate refusing this
+layout until the completed plan selects and verifies a directory binding plus canonical pair
+proof, or a revised Windows ZIP/manifest layout. Registry metadata and a copied index JSON
+object cannot replace retained existing-only index and pair guards. The source-feasible
+rusqlite bounded-slice/in-memory reader is a candidate; freeze its dependency features, schema,
+finite bounds, sidecar refusal and original-deadline ownership before source. First qualify
+missing/stale/wrong-type/hash/index/root cases and actual native client install, upgrade and
+removal; this passive reader supplies no service or package mutation authority.
 On an interrupted/failed Complete, recover the journal and restore prior state only against a
 still-valid recorded pair, or retain
 disabled registrations with an explicit recovery error until a valid package is selected. Never
