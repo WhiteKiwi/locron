@@ -14,23 +14,32 @@ spec.loader.exec_module(assets)
 IDENTIFIER = "WhiteKiwi.locron"
 SCHEMA = "1.12.0"
 SOURCE = "https://github.com/WhiteKiwi/locron"
+MAX_CHECKSUM_BYTES = 128 * 1024
 
 
-def render(tag, directory, output):
+def render(tag, directory, output, paired=False):
     release = assets.version(tag)
     if not assets.includes_windows(tag):
         raise ValueError("WinGet generation requires a Windows feature release tag")
-    sums = assets.checksums((directory / "SHA256SUMS.txt").read_text(encoding="utf-8"))
+    checksum_path = directory / "SHA256SUMS.txt"
+    if not checksum_path.is_file() or checksum_path.is_symlink():
+        raise ValueError("missing or unsafe final release checksum file")
+    with checksum_path.open("rb") as stream:
+        checksum_bytes = stream.read(MAX_CHECKSUM_BYTES + 1)
+    if len(checksum_bytes) > MAX_CHECKSUM_BYTES:
+        raise ValueError("final release checksum file exceeds its byte limit")
+    sums = assets.checksums(checksum_bytes.decode("utf-8"))
     if set(sums) != assets.expected_assets(tag):
         raise ValueError("checksum inventory differs from final release payloads")
     entries = []
     for architecture, target in (("x64", "x86_64-pc-windows-msvc"), ("arm64", "aarch64-pc-windows-msvc")):
         name = f"locron-{tag}-{target}.zip"
         archive = directory / name
-        windows_release.validate_archive(archive, tag, target)
-        digest = assets.sha(archive)
-        if sums[name] != digest:
-            raise ValueError("WinGet archive differs from the final release checksum")
+        # A manifest host must not execute either architecture. Native version/ABI
+        # evidence still comes from the architecture-specific package CI gates.
+        facts = windows_release.inspect_archive(archive, tag, target, paired=paired,
+                                                expected_sha256=sums[name])
+        digest = facts["archive_sha256"]
         entries.extend((f"- Architecture: {architecture}", f"  InstallerUrl: {SOURCE}/releases/download/{tag}/{name}",
                         f"  InstallerSha256: {digest.upper()}", "  NestedInstallerFiles:",
                         f"  - RelativeFilePath: locron-{tag}-{target}/locron.exe",
@@ -65,8 +74,10 @@ def main():
     parser.add_argument("directory", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--validate", action="store_true", help="run installed winget validate; no package installation")
+    parser.add_argument("--paired", action="store_true",
+                        help="inspect draft five-file ZIPs; keep the sole console alias and do not execute images")
     args = parser.parse_args()
-    directory = render(args.tag, args.directory, args.output)
+    directory = render(args.tag, args.directory, args.output, paired=args.paired)
     if args.validate:
         subprocess.run(["winget", "validate", "--manifest", str(directory.resolve()), "--disable-interactivity"],
                        check=True, timeout=120)
