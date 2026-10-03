@@ -158,12 +158,38 @@ fn install_defers_the_start_when_a_manual_daemon_holds_the_state_lock() {
     let _serial = serialized();
     let tmp = tempfile::tempdir().unwrap();
     let state_dir = tmp.path().join("state");
+    #[cfg(windows)]
+    let state_dir = {
+        let guard = locron_core::filesystem::DirectoryGuard::private(&state_dir).unwrap();
+        let path = guard.normalized_path().to_path_buf();
+        drop(guard);
+        path
+    };
+    #[cfg(not(windows))]
     fs::create_dir_all(&state_dir).unwrap();
     // Hold the state lock from this process, exactly as a manual
     // `locron daemon run` would.
     let lock_path = state_dir.join("daemon.lock");
+    #[cfg(not(windows))]
     let lock_file = fs::File::create(&lock_path).unwrap();
+    #[cfg(not(windows))]
     lock_file.lock().unwrap();
+    #[cfg(windows)]
+    let _manual_lock = locron_store::DaemonLock::acquire(
+        &lock_path,
+        &locron_store::LockMetadata {
+            pid: std::process::id(),
+            lifetime_id: uuid::Uuid::now_v7().to_string(),
+            started_at_us: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_micros()
+                .try_into()
+                .unwrap(),
+            binary_version: env!("CARGO_PKG_VERSION").into(),
+        },
+    )
+    .unwrap();
     let (state, log) = seeded(
         tmp.path(),
         "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
@@ -431,6 +457,11 @@ fn forcing_an_unsupported_backend_is_a_stable_platform_error() {
 #[test]
 fn every_service_subcommand_has_help_text() {
     let _serial = serialized();
+    let executable = if cfg!(windows) {
+        "locron.exe"
+    } else {
+        "locron"
+    };
     for subcommand in ["install", "uninstall", "status"] {
         let output = Command::cargo_bin("locron")
             .unwrap()
@@ -440,7 +471,7 @@ fn every_service_subcommand_has_help_text() {
         assert!(output.status.success(), "{subcommand} --help must succeed");
         let help = String::from_utf8_lossy(&output.stdout);
         assert!(
-            help.contains("Usage: locron service"),
+            help.contains(&format!("Usage: {executable} service")),
             "{subcommand} help usage"
         );
         assert!(help.contains("Examples:"), "{subcommand} help examples");
@@ -550,8 +581,16 @@ fn dashboard_disable_unregisters_then_removes_the_token() {
     let _serial = serialized();
     let tmp = tempfile::tempdir().unwrap();
     let state_dir = tmp.path().join("state");
+    #[cfg(windows)]
+    let state_dir = {
+        let guard = locron_core::filesystem::DirectoryGuard::private(&state_dir).unwrap();
+        let path = guard.normalized_path().to_path_buf();
+        drop(guard);
+        path
+    };
+    #[cfg(not(windows))]
     fs::create_dir_all(&state_dir).unwrap();
-    fs::write(state_dir.join("dashboard.token"), "a".repeat(64)).unwrap();
+    seed_private_token(&state_dir.join("dashboard.token"), &"a".repeat(64));
     let (state, log) = seeded(
         tmp.path(),
         "{\"session\":true,\"loaded\":true,\"enabled\":true,\"registered\":true}",
@@ -690,6 +729,11 @@ fn dashboard_enable_refuses_managed_binaries_before_generating_the_token() {
 #[test]
 fn every_dashboard_subcommand_has_help_text() {
     let _serial = serialized();
+    let executable = if cfg!(windows) {
+        "locron.exe"
+    } else {
+        "locron"
+    };
     for subcommand in ["enable", "disable", "status"] {
         let output = Command::cargo_bin("locron")
             .unwrap()
@@ -699,7 +743,7 @@ fn every_dashboard_subcommand_has_help_text() {
         assert!(output.status.success(), "{subcommand} --help must succeed");
         let help = String::from_utf8_lossy(&output.stdout);
         assert!(
-            help.contains("Usage: locron dashboard"),
+            help.contains(&format!("Usage: {executable} dashboard")),
             "{subcommand} help usage"
         );
         assert!(help.contains("Examples:"), "{subcommand} help examples");
