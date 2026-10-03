@@ -242,7 +242,11 @@ mod tests {
     }
 
     fn write_receipt(root: &Path, receipt: &Value) {
-        fs::write(root.join(RECEIPT), serde_json::to_vec_pretty(receipt).unwrap()).unwrap();
+        fs::write(
+            root.join(RECEIPT),
+            serde_json::to_vec_pretty(receipt).unwrap(),
+        )
+        .unwrap();
     }
 
     #[test]
