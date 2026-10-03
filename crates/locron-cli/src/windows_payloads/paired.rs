@@ -138,7 +138,10 @@ impl Payloads {
         };
         self.verify_receipt(&receipt, sid, &receipt.directory)?;
         let bytes = serde_json::to_vec(&receipt)?;
-        ensure!(bytes.len() <= 128 * 1024, "paired receipt exceeds its bound");
+        ensure!(
+            bytes.len() <= 128 * 1024,
+            "paired receipt exceeds its bound"
+        );
         Ok((receipt, bytes))
     }
 
@@ -310,7 +313,10 @@ mod tests {
             assert_eq!(decoded.launcher_abi, LAUNCHER_ABI);
             assert!(decoded.user_path.is_none());
             for (index, name) in EXECUTABLES.iter().enumerate() {
-                assert_eq!(decoded.executables[index].path, format!("{DIRECTORY}\\{name}"));
+                assert_eq!(
+                    decoded.executables[index].path,
+                    format!("{DIRECTORY}\\{name}")
+                );
                 assert_eq!(decoded.executables[index].sha256, decoded.files[*name]);
             }
             for (name, content) in payloads.files() {
@@ -419,7 +425,10 @@ mod tests {
         for (before, before_kind) in [
             (None, None),
             (Some(String::new()), Some(PathKind::String)),
-            (Some(r"%SystemRoot%\System32".into()), Some(PathKind::ExpandString)),
+            (
+                Some(r"%SystemRoot%\System32".into()),
+                Some(PathKind::ExpandString),
+            ),
         ] {
             let path = UserPath {
                 after: appended_path(before.as_deref(), DIRECTORY),
@@ -427,7 +436,9 @@ mod tests {
                 before,
                 before_kind,
             };
-            let (_, bytes) = payloads.receipt(SID, DIRECTORY, Some(path.clone())).unwrap();
+            let (_, bytes) = payloads
+                .receipt(SID, DIRECTORY, Some(path.clone()))
+                .unwrap();
             let decoded = Receipt::parse(&bytes, SID, DIRECTORY, X64).unwrap();
             assert_eq!(decoded.user_path, Some(path));
         }
