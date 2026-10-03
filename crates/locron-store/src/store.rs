@@ -126,7 +126,6 @@ impl Drop for DatabaseAdmission<'_> {
 #[cfg(windows)]
 struct SqlitePreparation {
     leaves: [locron_core::filesystem::GuardedFile; 3],
-    fresh: bool,
 }
 
 #[cfg(windows)]
@@ -135,7 +134,7 @@ impl SqlitePreparation {
         use crate::windows_open::Stage;
         use locron_core::filesystem::create_private_new;
 
-        let (database, fresh) = prepare_sqlite_leaf(
+        let (database, _) = prepare_sqlite_leaf(
             database,
             Stage::DatabaseOpen,
             Stage::DatabaseCreate,
@@ -145,12 +144,11 @@ impl SqlitePreparation {
         let deadline = std::time::Instant::now()
             .checked_add(std::time::Duration::from_secs(5))
             .ok_or_else(|| std::io::Error::other("SQLite admission deadline overflow"))?;
-        Self::prepare_sidecars(database, fresh, trace, deadline)
+        Self::prepare_sidecars(database, trace, deadline)
     }
 
     fn prepare_sidecars(
         database: locron_core::filesystem::GuardedFile,
-        fresh: bool,
         trace: &crate::windows_open::OpenTrace,
         admission_deadline: std::time::Instant,
     ) -> std::io::Result<Self> {
@@ -180,7 +178,6 @@ impl SqlitePreparation {
         trace.io(Stage::DatabaseAdmission, admission.release())?;
         Ok(Self {
             leaves: [database, wal, shm],
-            fresh,
         })
     }
 
@@ -1025,10 +1022,6 @@ impl Store {
         )?;
         #[cfg(not(windows))]
         migrate(&mut connection, binary_version, now_us)?;
-        #[cfg(windows)]
-        if preparation.fresh {
-            trace.sqlite(Stage::FreshSettings, connection.execute("UPDATE settings SET execution_path=?1 WHERE singleton=1 AND execution_path='/usr/local/bin:/usr/bin:/bin' AND updated_at_us=0", [locron_core::execution::default_execution_path()]))?;
-        }
         #[cfg(windows)]
         {
             preparation.confirm(&connection, &trace)?;
@@ -3855,6 +3848,29 @@ mod tests {
         (temp, store)
     }
 
+    #[test]
+    fn first_logical_schema_seeds_the_platform_path_in_a_new_or_precreated_private_file() {
+        for precreated in [false, true] {
+            let temporary = private_tempdir();
+            let paths = StatePaths::new(temporary.path().into());
+            if precreated {
+                drop(locron_core::filesystem::create_private_new(&paths.database).unwrap());
+            }
+            let store = Store::open(paths.clone(), "creator", 1).unwrap();
+            assert_eq!(
+                store.settings().unwrap().execution_path,
+                locron_core::execution::default_execution_path()
+            );
+            let configured_path = "configured path kept on reopen";
+            store
+                .set_setting("execution_path", configured_path, 2)
+                .unwrap();
+            drop(store);
+            let reopened = Store::open(paths, "next opener", 3).unwrap();
+            assert_eq!(reopened.settings().unwrap().execution_path, configured_path);
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn read_only_observation_leaves_a_missing_state_root_absent() {
@@ -4125,10 +4141,9 @@ mod tests {
         let deadline = Instant::now()
             .checked_add(Duration::from_millis(80))
             .unwrap();
-        let error =
-            SqlitePreparation::prepare_sidecars(database, false, &OpenTrace::new(), deadline)
-                .err()
-                .unwrap();
+        let error = SqlitePreparation::prepare_sidecars(database, &OpenTrace::new(), deadline)
+            .err()
+            .unwrap();
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         assert!(Instant::now() >= deadline);
         assert_no_sqlite_journals(&paths.database);
@@ -4146,8 +4161,7 @@ mod tests {
         let deadline = Instant::now().checked_add(Duration::from_secs(5)).unwrap();
         barrier.wait();
         let preparation =
-            SqlitePreparation::prepare_sidecars(database, false, &OpenTrace::new(), deadline)
-                .unwrap();
+            SqlitePreparation::prepare_sidecars(database, &OpenTrace::new(), deadline).unwrap();
         released.join().unwrap();
         assert!(Instant::now() < deadline);
         assert_eq!(file_identity(&preparation.leaves[0]).unwrap(), identity);

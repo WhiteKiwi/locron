@@ -1,4 +1,4 @@
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{StoreError, StoreResult};
 
@@ -23,6 +23,24 @@ pub(crate) fn migrate(
     binary_version: &str,
     now_us: i64,
 ) -> StoreResult<()> {
+    #[cfg(windows)]
+    let initial_execution_path = Some(locron_core::execution::default_execution_path());
+    #[cfg(not(windows))]
+    let initial_execution_path: Option<String> = None;
+    migrate_with_initial_execution_path(
+        connection,
+        binary_version,
+        now_us,
+        initial_execution_path.as_deref(),
+    )
+}
+
+fn migrate_with_initial_execution_path(
+    connection: &mut Connection,
+    binary_version: &str,
+    now_us: i64,
+    initial_execution_path: Option<&str>,
+) -> StoreResult<()> {
     let application_id: i32 =
         connection.pragma_query_value(None, "application_id", |row| row.get(0))?;
     if application_id != 0 && application_id != APPLICATION_ID {
@@ -38,16 +56,7 @@ pub(crate) fn migrate(
 
     if version == 0 {
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if migration_pending(&tx, 0)? {
-            tx.execute_batch(INITIAL_SCHEMA)?;
-            tx.pragma_update(None, "application_id", APPLICATION_ID)?;
-            tx.pragma_update(None, "user_version", 1)?;
-            let checksum = checksum(INITIAL_SCHEMA);
-            tx.execute(
-                "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (1, ?1, ?2, ?3, ?4)",
-                params![INITIAL_MIGRATION_NAME, checksum, binary_version, now_us],
-            )?;
-        }
+        initialize_schema(&tx, binary_version, now_us, initial_execution_path)?;
         tx.commit()?;
     }
     verify_migration(connection, 1, INITIAL_SCHEMA)?;
@@ -107,6 +116,32 @@ pub(crate) fn migrate(
         tx.commit()?;
     }
     verify_migration(connection, 5, HTTP_CONTENT_TYPE_SCHEMA)?;
+    Ok(())
+}
+
+// Recheck the logical initial-schema winner under the caller's BEGIN IMMEDIATE.
+fn initialize_schema(
+    tx: &Transaction<'_>,
+    binary_version: &str,
+    now_us: i64,
+    initial_execution_path: Option<&str>,
+) -> StoreResult<()> {
+    if !migration_pending(tx, 0)? {
+        return Ok(());
+    }
+    tx.execute_batch(INITIAL_SCHEMA)?;
+    if let Some(path) = initial_execution_path {
+        tx.execute(
+            "UPDATE settings SET execution_path=?1 WHERE singleton=1",
+            [path],
+        )?;
+    }
+    tx.pragma_update(None, "application_id", APPLICATION_ID)?;
+    tx.pragma_update(None, "user_version", 1)?;
+    tx.execute(
+        "INSERT INTO schema_migrations(version, name, checksum, binary_version, applied_at_us) VALUES (1, ?1, ?2, ?3, ?4)",
+        params![INITIAL_MIGRATION_NAME, checksum(INITIAL_SCHEMA), binary_version, now_us],
+    )?;
     Ok(())
 }
 
@@ -184,6 +219,201 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap()
+    }
+
+    struct InitialDatabase {
+        path: std::path::PathBuf,
+        _guard: locron_core::filesystem::DirectoryGuard,
+        _temporary: tempfile::TempDir,
+    }
+
+    impl InitialDatabase {
+        fn new() -> Self {
+            let temporary = tempfile::tempdir().unwrap();
+            let root = temporary.path().join("private");
+            let guard = locron_core::filesystem::DirectoryGuard::private(&root).unwrap();
+            let path = root.join("initial.db");
+            drop(locron_core::filesystem::create_private_new(&path).unwrap());
+            Self {
+                path,
+                _guard: guard,
+                _temporary: temporary,
+            }
+        }
+
+        fn open(&self) -> Connection {
+            let connection = Connection::open(&self.path).unwrap();
+            let mode: String = connection
+                .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(mode, "wal");
+            connection
+        }
+    }
+
+    fn stored_execution_path(connection: &Connection) -> String {
+        connection
+            .query_row(
+                "SELECT execution_path FROM settings WHERE singleton=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn settings_tables(connection: &Connection) -> i64 {
+        connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='settings'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn initial_path_commits_atomically_and_stale_initializer_preserves_the_winner() {
+        let database = InitialDatabase::new();
+        let mut creator = database.open();
+        let mut observer = database.open();
+        observer.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let winner_path = r"C:\initial 路径;C:\Windows\System32";
+        let loser_path = r"C:\different opener";
+        assert_eq!(settings_tables(&observer), 0);
+
+        let tx = creator
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        initialize_schema(&tx, "winner", 123, Some(winner_path)).unwrap();
+        assert_eq!(stored_execution_path(&tx), winner_path);
+        assert_eq!(settings_tables(&observer), 0);
+        let error = observer
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .err()
+            .expect("another writer cannot enter the initial transaction");
+        assert!(matches!(
+            error,
+            rusqlite::Error::SqliteFailure(code, _)
+                if code.code == rusqlite::ErrorCode::DatabaseBusy
+        ));
+        tx.commit().unwrap();
+        assert_eq!(stored_execution_path(&observer), winner_path);
+        let initial_rows = migration_rows(&observer);
+        assert_eq!(initial_rows.len(), 1);
+        assert_eq!(initial_rows[0].2, checksum(INITIAL_SCHEMA));
+
+        // This is the same admitted initializer a version-zero stale opener reaches.
+        let tx = observer
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        initialize_schema(&tx, "stale loser", 456, Some(loser_path)).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(migration_rows(&observer), initial_rows);
+        assert_eq!(stored_execution_path(&observer), winner_path);
+        migrate_with_initial_execution_path(&mut observer, "catch-up", 789, Some(loser_path))
+            .unwrap();
+        assert_eq!(stored_execution_path(&observer), winner_path);
+        assert_eq!(migration_rows(&observer)[0], initial_rows[0]);
+    }
+
+    #[test]
+    fn rolled_back_initialization_publishes_no_settings_and_next_opener_chooses_its_default() {
+        let database = InitialDatabase::new();
+        let mut creator = database.open();
+        let mut recovery = database.open();
+        let tx = creator
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        initialize_schema(&tx, "abandoned", 123, Some(r"C:\abandoned")).unwrap();
+        assert_eq!(settings_tables(&recovery), 0);
+        tx.rollback().unwrap();
+        drop(creator);
+        assert_eq!(settings_tables(&recovery), 0);
+        let version: i64 = recovery
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 0);
+
+        let recovery_path = r"C:\recovery 路径";
+        migrate_with_initial_execution_path(&mut recovery, "recovery", 456, Some(recovery_path))
+            .unwrap();
+        assert_eq!(stored_execution_path(&recovery), recovery_path);
+        let rows = migration_rows(&recovery);
+        assert_eq!(rows.len(), 5);
+        assert!(rows.iter().all(|row| row.3 == "recovery" && row.4 == 456));
+        assert_eq!(rows[0].2, checksum(INITIAL_SCHEMA));
+    }
+
+    #[test]
+    fn creator_close_after_initial_commit_keeps_the_path_through_later_migration_recovery() {
+        let database = InitialDatabase::new();
+        let mut creator = database.open();
+        let mut recovery = database.open();
+        let winner_path = r"C:\committed 路径";
+        let tx = creator
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        initialize_schema(&tx, "creator", 123, Some(winner_path)).unwrap();
+        tx.commit().unwrap();
+        drop(creator);
+        assert_eq!(stored_execution_path(&recovery), winner_path);
+        let initial_row = migration_rows(&recovery).remove(0);
+        assert_eq!(initial_row.2, checksum(INITIAL_SCHEMA));
+
+        migrate_with_initial_execution_path(
+            &mut recovery,
+            "recovery",
+            456,
+            Some(r"C:\replacement"),
+        )
+        .unwrap();
+        assert_eq!(stored_execution_path(&recovery), winner_path);
+        let rows = migration_rows(&recovery);
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0], initial_row);
+        assert!(
+            rows[1..]
+                .iter()
+                .all(|row| row.3 == "recovery" && row.4 == 456)
+        );
+    }
+
+    #[test]
+    fn versioned_historical_and_custom_paths_are_preserved_even_when_untouched() {
+        for existing_path in ["/usr/local/bin:/usr/bin:/bin", r"C:\custom 路径"] {
+            let mut connection = Connection::open_in_memory().unwrap();
+            let tx = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .unwrap();
+            initialize_schema(&tx, "old", 123, None).unwrap();
+            tx.execute(
+                "UPDATE settings SET execution_path=?1 WHERE singleton=1",
+                [existing_path],
+            )
+            .unwrap();
+            tx.commit().unwrap();
+            let initial_row = migration_rows(&connection).remove(0);
+
+            migrate_with_initial_execution_path(
+                &mut connection,
+                "new",
+                456,
+                Some(r"C:\new Windows default"),
+            )
+            .unwrap();
+            assert_eq!(stored_execution_path(&connection), existing_path);
+            assert_eq!(migration_rows(&connection)[0], initial_row);
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT updated_at_us FROM settings WHERE singleton=1",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
+                0
+            );
+        }
     }
 
     #[test]
