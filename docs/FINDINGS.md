@@ -4899,3 +4899,27 @@ Code evidence: crates/locron-core/src/execution.rs resolve_executable at main b6
 execution scope remains the existing Windows environment/resolution issue #26. The isolated
 native regression must demonstrate the actual ambient candidate and selected job candidate;
 static path reasoning alone is not native execution evidence.
+
+### Native Windows package toolchain evidence (2026-10-03)
+
+At main `00e1006b817b5442fbc9b5b79e1b736d439661a3`, completed CI
+[37129629579](https://github.com/WhiteKiwi/locron/actions/runs/37129629579) passes the existing
+native matrix. Both downloaded paired package verification records report actual `rustc 1.98.0`,
+although the package job installs 1.94.0. The checkout's rust-toolchain.toml selects 1.98.0 and
+the package job does not set RUSTUP_TOOLCHAIN. The release Windows build has the same selection
+gap. Native foundation MSRV coverage is separately explicit and does not qualify the release
+compiler. ZIP hashes, PE roles/imports and finite native version/GUI identity probes still match;
+these are development candidates rather than public immutable release assets.
+
+[Rustup override precedence](https://rust-lang.github.io/rustup/overrides.html) places the
+RUSTUP_TOOLCHAIN environment override before the checkout toolchain file, which takes precedence
+over the default toolchain. Thus installing/selecting a default does not enforce the intended
+compiler inside this checkout. Set the Windows package/build override explicitly and reject
+unexpected compiler release or native host before building. Existing Unix build and macOS signing
+selection remain unchanged.
+
+The same CI has selected native component and package gates, but not Windows all-target workspace
+tests or all-target warnings-denied Clippy. Run those full commands as explicit manual discovery
+on disposable native x64/ARM64 runners, preserving failures and original tests. Discovery results
+cannot complete clean Windows 11 standard-user installation, task/reboot, two-user access,
+public unsigned download, update/recovery or WinGet acceptance.

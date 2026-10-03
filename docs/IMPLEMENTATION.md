@@ -4885,3 +4885,19 @@ The existing native self_update::windows_ package selector must run these real-f
 on x64 and ARM64. A cloud environment without Rust/native Windows cannot claim those gates;
 record actual local checks and leave compilation, native qualification, selected-client
 install/upgrade/removal and catalog publication open in #35 and the Draft PR.
+
+### Windows native validation and actual package compiler (2026-10-03)
+
+Continue #31/#32 using [the reviewed verification plan](planning/WINDOWS_NATIVE_VALIDATION_2026-10-03.md).
+FINDINGS records current downloaded package evidence and rustup override precedence. Explicitly
+select 1.94.0 in the Windows package job and existing Windows release build step, rejecting an
+unexpected compiler release/host before building. Preserve Unix compilation and signing flows.
+Add optional manual CI discovery for native full workspace tests and warnings-denied all-target
+Clippy with explicit toolchains. Existing component/GUI/package gates remain unchanged. Full
+discovery failures must be recorded rather than hidden with skips or relaxed fixture deadlines.
+
+The parent reviews the plan and issues before the separate development session edits workflows,
+then reviews Source and publishes a normal PR. Exact-head normal CI, downloaded compiler/package
+facts, local finite x64 probes and all five manual full-suite results provide the Verify receipt;
+they cannot stand in for remaining clean Windows 11 installation/reboot, public release, native
+update/recovery or catalog acceptance. No product scope, signing policy or application Source changes.
