@@ -2336,6 +2336,37 @@ rusqlite bounded-slice/in-memory reader is a candidate; freeze its dependency fe
 finite bounds, sidecar refusal and original-deadline ownership before source. First qualify
 missing/stale/wrong-type/hash/index/root cases and actual native client install, upgrade and
 removal; this passive reader supplies no service or package mutation authority.
+The proposed next selection keeps the version-root five-member ZIP and console-only alias:
+bind actual indexed-directory ownership to independent complete canonical-release byte proof.
+For schema 1.0 require exactly the expected Directory and console Symlink rows, with empty
+Directory hash/target and no GUI alias. Bind the index filename to the exact selected ARP product
+code and registered location, never to a directory-name guess. Require current-SID ownership and
+the existing source policy on its retained regular leaf/ancestry, full index identity and digest,
+and all five guarded regular release leaves. Every leaf hash must match the verified canonical
+ZIP; both actual executable identities, PE subsystems, native version and launcher ABI must agree.
+
+Keep this new qualification separate from the historical single-image test route. Proposed
+private interfaces are `verify_index_snapshot(bytes, registration, root) -> IndexFacts` for pure
+bounded metadata and `verify_package_pair_until(console, original_deadline) -> IndexedPair` for
+the live read-only composition. IndexedPair is move-only and retains the real registration,
+index guard/digest/full identity, guarded root ancestry, five source guards and canonical archive
+proof; metadata or serde cannot construct it. It authorizes no lifecycle effect. Guard/SID/index
+reads and real pair probes share the original admitted deadline and retained owner; uncertainty
+retains resources and refuses a late proof.
+
+Use Windows-only features serialize/limits/hooks on the already locked rusqlite 0.40.2. Read a
+complete existing index of at most 4 MiB, then deserialize only that bounded slice into a read-only
+in-memory database. Refuse WAL header versions and all journal/WAL/SHM sidecars without repair.
+Limit metadata to eight rows, require exactly two portable rows, cap each SQL/value at 16 KiB and
+columns at eight, forbid attached databases, and stop at the original deadline or the 1,024th
+progress callback with the configured 1,000-instruction interval through the safe hook. This is
+a finite callback/work check, not an exact instruction or wall-clock guarantee. Fixed schema/row
+queries require ordinary tables and exact storage types; use memory-only temp storage, enable
+defensive mode and disable trusted schema. Count every new typed index/path/identity field in
+actual outer-record preflight before later effects. Native tests
+must preserve source/ACL bytes, refuse wrong/extra/missing/oversized/stale facts, and establish
+real selected-client directory/pair ownership across install, upgrade and removal. Public
+consumers and maintenance effects wait for the completed plan and relevant Project receipts.
 On an interrupted/failed Complete, recover the journal and restore prior state only against a
 still-valid recorded pair, or retain
 disabled registrations with an explicit recovery error until a valid package is selected. Never

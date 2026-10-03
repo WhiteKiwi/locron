@@ -4661,3 +4661,48 @@ Sources: [nonrecursive archive inventory](https://github.com/microsoft/winget-cl
 [actual string binding](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerSharedLib/SQLiteWrapper.cpp#L64),
 [safe bounded-slice deserialization](https://docs.rs/rusqlite/0.40.2/rusqlite/struct.Connection.html#method.deserialize_read_exact),
 [SQLite in-memory/WAL contract](https://www.sqlite.org/c3ref/deserialize.html).
+
+### WinGet indexed-directory and canonical-pair proposal (2026-10-03)
+
+The selected validator's official v1.29.380 tag resolves to commit
+000f6b55151cb0f1afd2933bb54c62a4724b9ca8. Its archive flow also indexes top-level entries,
+including our versioned root Directory, then the sole console Symlink. Its installer moves or
+recursively copies that directory; upgrade removes previous indexed entries before installing
+the next ones, and removal recursively removes the indexed Directory. This supports retaining
+the five-member version-root ZIP and one console alias. It does not supply per-image index
+hashes. Directory index ownership and canonical-release byte integrity are separate facts.
+
+Propose binding the unique current-SID HKCU package/source/version/location registration to its
+existing `<product code>.db`, one exact Directory row for the version/target root, and the sole
+console alias row pointing at that root's console. Require the Directory's empty hash/target
+fields and strict ordinary-table schema 1.0; reject duplicate, foreign, stale or extra portable
+entries, including a GUI alias. Keep existing-only ancestry and exact index/source file guards.
+Independently enumerate exactly the five regular release leaves and verify all five against the
+strict canonical ZIP, both live executable identities, PE2/3, native architecture, version and
+launcher ABI. An indexed Directory alone cannot authenticate nested bytes or adopt an incomplete
+pair. WinGet's legitimate failed-symlink PATH fallback is not mapped-image or activation proof.
+
+The safe in-memory index parser can reuse locked rusqlite 0.40.2 with Windows-only serialize,
+limits and hooks features; no new package version or workspace crate is required. Propose a
+4 MiB complete main-file snapshot, at most eight metadata rows and exactly two portable rows,
+16 KiB SQL/value bounds, eight columns, no attached databases and at most 1,024 progress
+callbacks at the configured 1,000-instruction interval; the interval is not an exact opcode or
+wall-clock guarantee. Fixed queries inspect storage types and ordinary tables; defensive mode
+and memory-only temp storage are enabled and trusted schema is disabled. Its progress hook checks
+the original caller deadline. WAL/header and sidecar refusal remains explicit. Native guard,
+read and parse work stays inside one retained finite owner, including uncertain cleanup; no
+fresh timeout or caller join reconstructs authority.
+The proposed parser bounds and ownership contract require parent/Project review before source.
+
+Verify with genuine selected-client native x64/ARM64 install/upgrade/remove readbacks of the
+directory index, complete pair, console alias and absent GUI alias. Pure fixtures must refuse
+wrong row type/schema/storage, path/hash/source/version mismatches, missing/extra leaves,
+sidecars and over-budget work. A release-source audit or copied row DTO is not this live proof.
+
+Sources: [official v1.29.380 release](https://github.com/microsoft/winget-cli/releases/tag/v1.29.380),
+[released archive inventory](https://github.com/microsoft/winget-cli/blob/000f6b55151cb0f1afd2933bb54c62a4724b9ca8/src/AppInstallerCLICore/Workflows/PortableFlow.cpp#L197),
+[released directory/upgrade/removal behavior](https://github.com/microsoft/winget-cli/blob/000f6b55151cb0f1afd2933bb54c62a4724b9ca8/src/AppInstallerCLICore/PortableInstaller.cpp#L111),
+[released schema fields](https://github.com/microsoft/winget-cli/blob/000f6b55151cb0f1afd2933bb54c62a4724b9ca8/src/AppInstallerRepositoryCore/Microsoft/Schema/Portable_1_0/PortableTable.cpp#L22),
+[safe deserializer/config/progress APIs](https://docs.rs/rusqlite/0.40.2/rusqlite/struct.Connection.html),
+[safe runtime limits](https://docs.rs/rusqlite/0.40.2/rusqlite/limits/index.html),
+[VM progress callback semantics](https://www.sqlite.org/c3ref/progress_handler.html).
