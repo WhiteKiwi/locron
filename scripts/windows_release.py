@@ -2,6 +2,7 @@
 """Build and inspect unsigned Windows ZIPs without changing installed software."""
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -194,16 +195,24 @@ def probe_pair(contents, release, target, execute):
         return versions, identity
 
 
-def validate_archive(path, tag, target, paired=False, execute=subprocess.run):
+def _inspect_archive(path, tag, target, paired=False, expected_sha256=None):
     version(tag)
     if target not in TARGETS:
         raise ValueError("unsupported Windows release target")
     if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_ARCHIVE_BYTES:
         raise ValueError("unsafe or oversized Windows archive")
+    # Hash and inspect one bounded snapshot, never two independent path reads.
+    with path.open("rb") as stream:
+        archive_bytes = stream.read(MAX_ARCHIVE_BYTES + 1)
+    if len(archive_bytes) > MAX_ARCHIVE_BYTES:
+        raise ValueError("Windows archive exceeds its byte limit")
+    digest = hashlib.sha256(archive_bytes).hexdigest()
+    if expected_sha256 is not None and digest != expected_sha256:
+        raise ValueError("WinGet archive differs from the final release checksum")
     root = f"locron-{tag}-{target}"
     files = PAIRED_FILES if paired else FILES
     allowed = {root + "/" + name for name in files}
-    with zipfile.ZipFile(path) as archive:
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
         entries = archive.infolist()
         if paired and any(entry.orig_filename != entry.filename for entry in entries):
             raise ValueError("paired Windows ZIP contains a normalized raw filename")
@@ -233,15 +242,29 @@ def validate_archive(path, tag, target, paired=False, execute=subprocess.run):
         else:
             binary = archive.read(root + "/locron.exe")
     if paired:
-        versions, identity = probe_pair(contents, version(tag), target, execute)
-        return {"version": version(tag), "target": target, "unsigned": True, "mode": "paired-draft",
-                "binaries": binaries, "version_probes": versions,
-                "launcher_abi": identity["launcher_abi"], "launcher_identity": identity}
+        return ({"version": version(tag), "target": target, "unsigned": True, "mode": "paired-static",
+                 "binaries": binaries}, contents, digest)
     if pe_machine(binary) != TARGETS[target]:
         raise ValueError("Windows archive architecture differs from its target")
     imports = pe_imports(binary)
-    return {"version": version(tag), "target": target, "unsigned": True,
-            "binary_sha256": hashlib.sha256(binary).hexdigest(), "imports": imports}
+    return ({"version": version(tag), "target": target, "unsigned": True,
+             "binary_sha256": hashlib.sha256(binary).hexdigest(), "imports": imports}, {}, digest)
+
+
+def inspect_archive(path, tag, target, paired=False, expected_sha256=None):
+    """Inspect either architecture without execution, extraction or runtime claims."""
+    facts, _, digest = _inspect_archive(path, tag, target, paired, expected_sha256)
+    return {**facts, "archive_sha256": digest}
+
+
+def validate_archive(path, tag, target, paired=False, execute=subprocess.run):
+    # Native package/validate gates still require every paired runtime probe.
+    facts, contents, _ = _inspect_archive(path, tag, target, paired)
+    if paired:
+        versions, identity = probe_pair(contents, version(tag), target, execute)
+        facts.update(mode="paired-draft", version_probes=versions,
+                     launcher_abi=identity["launcher_abi"], launcher_identity=identity)
+    return facts
 
 
 def write_archive(output, tag, target, contents, files):
