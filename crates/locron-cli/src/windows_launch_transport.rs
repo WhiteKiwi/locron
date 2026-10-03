@@ -286,16 +286,16 @@ impl ReceiveEndpoint {
     pub(super) fn peer_pid(&self, deadline: Instant) -> Result<u32> {
         remaining(deadline)?;
         let owned = self.client.as_handle().try_clone_to_owned()?;
-        let wrapper = SyncPipeStream::<pipe_mode::Bytes, pipe_mode::None>::try_from(owned)?;
+        // Both mode tags expose safe deterministic disposal. This private wrapper
+        // performs only native metadata queries, never I/O or IOCP registration.
+        // The actual Tokio client remains read-only; ReOpenFile may fail back to
+        // the cloned original handle. Neither outcome supplies protocol authority.
+        let wrapper = SyncPipeStream::<pipe_mode::Bytes, pipe_mode::Bytes>::try_from(owned)?;
         let is_client = wrapper.is_client();
         let result = wrapper.server_process_id();
-        // This private wrapper was never split. Extract even after a query error.
-        let handle = OwnedHandle::try_from(wrapper).map_err(|wrapper| {
-            // A dependency invariant failure must not enter default-drop limbo.
-            std::mem::forget(wrapper);
-            anyhow::anyhow!("unsplit pipe metadata handle could not be extracted")
-        })?;
-        drop(handle);
+        // Clear unknown flush state and close on EVERY result, including errors;
+        // plain Drop could enter limbo, and extraction needs an Err fallback.
+        wrapper.evade_limbo();
         ensure!(is_client, "incoming endpoint is not a client");
         let pid = result?;
         remaining(deadline)?;
