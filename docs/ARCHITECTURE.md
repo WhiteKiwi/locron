@@ -11,8 +11,8 @@ remaining gaps without weakening these invariants.
 - `docs/IMPLEMENTATION.md` owns milestone-specific implementation choices, trade-offs, edge cases, change order, and verification strategy.
 - `docs/CLI.md` owns the reviewed command, diagnostic, machine-output, and exit-code contract.
 - `docs/STORAGE.md` owns the reviewed state layout, logical schema, migrations, and output protocol.
-- The private [Locron Project](https://github.com/users/WhiteKiwi/projects/4) owns execution tasks, progress and evidence.
-- `docs/PROJECTS.md` describes the task workflow and static migration map; `docs/TODO.md` is only a pointer.
+- [Repository Issues](https://github.com/WhiteKiwi/locron/issues) own execution tasks, progress and evidence.
+- `docs/ISSUES.md` describes the task workflow and static migration map; `docs/TODO.md` is only a pointer. The retired Project snapshot preserves earlier tracking history.
 - `docs/FINDINGS.md` preserves research evidence; it does not override the frozen specification.
 
 Future durable architectural decisions that need their own rationale and supersession history belong under `docs/decisions/`. Do not create an ADR until there is an actual reviewed decision to record.

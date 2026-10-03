@@ -281,8 +281,8 @@ locron dashboard status
 
 Contributions are welcome. `locron` is developed **documentation-first** — planning documents
 change before code — so please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull
-request. Maintainer execution tasks are [private Project drafts](https://github.com/users/WhiteKiwi/projects/4);
-see the [task workflow](docs/PROJECTS.md). Public bug reports remain welcome below.
+request. Maintainer tasks and bug reports use [repository Issues](https://github.com/WhiteKiwi/locron/issues);
+see the [task workflow](docs/ISSUES.md).
 
 - [Report a bug or propose a feature](https://github.com/WhiteKiwi/locron/issues/new/choose)
 - [Report a security vulnerability privately](https://github.com/WhiteKiwi/locron/security/advisories/new)

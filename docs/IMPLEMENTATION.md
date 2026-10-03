@@ -19,7 +19,7 @@ release contracts stay unchanged, so the frozen product SPEC needs no amendment.
    pass without publication. Preserve historical npm verification receipts.
 3. Qualify and integrate the source change. **Verify:** complete final diff and
    changed-file review, expected-head hosted CI and the ordered PR38 merge.
-   Record exact commands/revisions/results on the private Project draft before
+   Record exact commands/revisions/results on the relevant repository issue before
    Done. Hosted Rust-cache follow-up LOCRON-TODO-041 remains a separate task.
 
 ### Frontend verification and installation policy
@@ -56,7 +56,7 @@ foundation job definitions: their three native build/scheduling matrix legs and
 one pinned lint leg are a staged build foundation, not Windows product acceptance.
 Keep all existing Unix Rust, installer and source-package gates unchanged and
 add the independent frontend job beside them. Windows ownership, implementation
-scope and private acceptance drafts remain with their existing workstream.
+scope and acceptance issues remain with their existing workstream.
 
 Verify every pre-existing job against this exact main revision and retain the
 reviewed frontend job from published PR38 head `c07a854`. Recheck frozen frontend
@@ -65,7 +65,7 @@ Rust 1.98 formatting/Clippy plus Rust 1.94 and stable full workspace tests on th
 integrated macOS source. Reuse the unchanged dependency graph and asset proof;
 record a separate integration handoff before parent publication and exact-head CI.
 
-After this reviewed plan and Project handoff, a separate development sub-session
+After this reviewed plan and issue handoff, a separate development sub-session
 owns implementation and documentation updates for any new decision. The parent
 reviews and publishes. No tags, signing, registry upload, installer execution,
 live jobs/services, Windows acceptance or broad storage deletion belongs here.
@@ -76,7 +76,7 @@ This document plans the first program milestone against the frozen behavior in `
 
 Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, the official platform matrix, the four-crate dependency direction, one `locron` binary, and an engine-owned daemon entered through `locron daemon run`. Those decisions are not Draft.
 
-> **Review state:** milestone-1 implementation choices are accepted. Update this document and the relevant Project draft tickets before deviating in code. A change to observable behavior or scope updates `docs/SPEC.md` first; a change to durable component boundaries or invariants updates `docs/ARCHITECTURE.md` first. Reviewed CLI and storage contracts live in `docs/CLI.md` and `docs/STORAGE.md`.
+> **Review state:** milestone-1 implementation choices are accepted. Update this document and the relevant repository issues before deviating in code. A change to observable behavior or scope updates `docs/SPEC.md` first; a change to durable component boundaries or invariants updates `docs/ARCHITECTURE.md` first. Reviewed CLI and storage contracts live in `docs/CLI.md` and `docs/STORAGE.md`.
 
 `docs/FINDINGS.md` preserves the research path and does not override the frozen specification. In particular, v1 has no `queue-one` overlap policy and global concurrency defaults to 16, not 4.
 
@@ -85,8 +85,9 @@ Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, th
 The Windows amendment in SPEC and adapter boundaries in ARCHITECTURE are the authority for this
 milestone. FINDINGS §46 records the selected safe interfaces, source audit and limitations. The
 initial release is unsigned; signing remains deferred in public proposal #37 and is not part of
-this milestone's dependency graph. Execution progress/evidence belongs in private Project drafts;
-public #23–#36 remain proposal and review context rather than a second live execution checklist.
+this milestone's dependency graph. Execution progress/evidence belongs in repository Issues.
+The 2026-10-03 migration reuses #24–#36 for the Windows tasks while retaining the original public
+#23–#36 proposal and review text as history.
 
 The first portability commit is explicitly a build foundation: native `windows-2025` x64 and
 `windows-11-arm` ARM64 jobs check the workspace, exercise the portable scheduling domain, and
@@ -1820,9 +1821,9 @@ normalization tests construct the platform delimiter and assert each resolved en
 
 ### Change order and verification
 
-1. Review SPEC, source-backed FINDINGS, these decisions and Project drafts; freeze the minimum
+1. Review SPEC, source-backed FINDINGS, these decisions and repository issues; freeze the minimum
    contract and safe interface versions before implementation. Verify: review resolves all contract
-   gaps and each draft has concrete criteria; no premature support claim.
+   gaps and each issue has concrete criteria; no premature support claim.
 2. Add build/state/configuration foundations with native x64/ARM64 compile/core/store CI, then
    process-tree/wake behavior and shared Windows fixtures. Verify: Rust 1.94 build, platform
    environment parity and real descendants/cancel/timeout/recovery pass on both architectures.
@@ -1873,7 +1874,10 @@ and deferred unsigned-release signing follow-up #37 remain separate existing rec
    task/PR links are preserved, the final Project reads closed, and future progress goes to issue
    comments. Review and publish the documentation with the current PR work.
 
-## Project-only execution tracking migration (2026-10-02)
+## Project-only execution tracking migration (historical; superseded 2026-10-03)
+
+The following preserves the accepted 2026-10-02 plan and readbacks. Current task rules are in
+[`ISSUES.md`](ISSUES.md); its source snapshot preserves the complete former Project workflow.
 
 This is an administrative workflow change within the unchanged product specification. FINDINGS
 §45 establishes the frozen source and the Project API constraints. Move execution scope, ordered
@@ -2649,7 +2653,7 @@ Implementation deviations, all confined to `locron` and confined to human branch
 
 ## Change plan
 
-The plan is restricted to this repository. Before an implementation deviation, update `docs/IMPLEMENTATION.md` and the relevant Project draft tickets; update `docs/ARCHITECTURE.md` first when the durable structure or invariant changes.
+The plan is restricted to this repository. Before an implementation deviation, update `docs/IMPLEMENTATION.md` and the relevant repository issues; update `docs/ARCHITECTURE.md` first when the durable structure or invariant changes.
 
 1. Keep the reviewed decisions in this document, `docs/CLI.md`, and `docs/STORAGE.md` synchronized before implementation deviations.
 2. Create the edition-2024, resolver-3 virtual workspace with the four accepted crates, `rust-version = "1.94"`, one `locron` binary, workspace lint/profile/dependency policy, and CI on Rust 1.94 plus latest stable.
@@ -3235,9 +3239,9 @@ registry-install verification without trying to overwrite them. Later tags use O
 
 ### Documentation and TODO compaction (historical; superseded 2026-10-02)
 
-The following compaction policy records the former repository-checklist workflow. Execution tasks
-now live in Project-only drafts; see [`PROJECTS.md`](PROJECTS.md). Preserve the archived source and
-evidence, but do not resume a live TODO checklist or move new completed Project tasks into it.
+The following compaction policy records the former repository-checklist workflow. Current execution
+tasks live in repository Issues; see [`ISSUES.md`](ISSUES.md). Preserve the archived source and
+evidence without resuming a live TODO checklist or moving new completed issues into it.
 
 README and installation/release documentation list the prebuilt installer and Homebrew before
 `cargo install --locked locron`, explain the Rust 1.94 source-build requirement, distinguish Cargo

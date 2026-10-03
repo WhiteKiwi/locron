@@ -1,2 +1,3 @@
 crates/locron-server/assets/fonts/OFL.txt text eol=lf
 crates/locron-server/frontend/dist/fonts/OFL.txt text eol=lf
+docs/planning/PROJECTS-2026-10-03.md -text

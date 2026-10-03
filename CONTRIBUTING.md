@@ -24,7 +24,7 @@ only then write code:
 | 1 | [`docs/SPEC.md`](docs/SPEC.md) | Goal, observable completion criteria, scope, open product questions | Filenames, modules, tables, implementation steps |
 | 2 | [`docs/FINDINGS.md`](docs/FINDINGS.md) | Research evidence that resolves the spec's open questions | Conclusions without supporting evidence |
 | 3 | [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) | Architecture, data flow, trade-offs, edge cases, change order, verification strategy | — |
-| 4 | [Project drafts](https://github.com/users/WhiteKiwi/projects/4) ([workflow](docs/PROJECTS.md)) | Maintainer execution scope, phased tasks, Verify criteria, evidence, and Status | Tasks marked Done before verification passed |
+| 4 | [Repository Issues](https://github.com/WhiteKiwi/locron/issues) ([workflow](docs/ISSUES.md)) | Maintainer execution scope, phased tasks, Verify criteria, evidence, and Status | Tasks closed as completed before verification passed |
 
 These rules follow from this:
 
@@ -32,21 +32,19 @@ These rules follow from this:
   change the code. Never implement first and reconcile the documents afterward.
 - `docs/SPEC.md` is frozen for the current milestone. Editing it means you are proposing a
   product-scope or behavior change — say so explicitly in the issue or pull request.
-- A Project draft is Done only after its `Verify` criteria succeed, evidence is recorded, and any
-  PR merge or publication required by that ticket is complete. An opened PR is sufficient when
-  that is the requested deliverable. Maintainer execution tasks stay Project-only drafts; do not
-  convert them into repository issues.
-- The execution Project is private; the repository and its product/design documents remain public.
-  Contributors without access can report bugs or discuss proposals on the public issue tracker
-  and summarize relevant context in their pull request. `docs/TODO.md` is only a pointer; historical
-  evidence stays available in the repository.
+- Close a task issue as completed only after its `Verify` criteria succeed, evidence is recorded,
+  and any PR merge or publication required by its scope is complete. An opened PR is sufficient
+  when that is the requested deliverable. Partial implementation keeps remaining acceptance open.
+- Maintainer tasks, contributor bug reports and proposal discussions use repository Issues.
+  Keep scope, phase, progress and verification evidence on the relevant issue. `docs/TODO.md` is
+  only a pointer; the retired Project and immutable snapshots preserve historical evidence.
 
 **Small changes do not need a planning cycle.** A typo, a broken link, a build fix for a new
 platform, a dependency bump, or a one-line bug fix that does not change documented behavior — open
 the pull request directly.
 
-If the scope is unclear, maintainers record the context and request review in the relevant Project
-draft. External contributors can ask through a public bug or proposal-discussion issue before
+If the scope is unclear, maintainers record the context and request review in the relevant issue.
+External contributors can ask through a bug or proposal-discussion issue before
 starting a substantial change.
 
 ---

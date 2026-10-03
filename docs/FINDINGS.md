@@ -2564,8 +2564,9 @@ were rerun for this documentation-only diff.
 This research follows the Windows amendment in SPEC. It selects feasible interfaces for Rust
 1.94 while retaining `unsafe_code = "forbid"` in every Locron workspace crate. The first Windows
 release is unsigned; Authenticode onboarding and publisher pinning are deferred and are not
-preconditions for these runtime choices. Execution tasks and verification evidence belong in the
-private Locron Project, not in a second repository checklist.
+preconditions for these runtime choices. The 2026-10-02 plan used the private Locron Project for
+execution tasks and verification evidence. The 2026-10-03 workflow amendment moves current
+progress to repository Issues; dated Project references below preserve their original context.
 
 Evidence consists of Microsoft/Rust documentation, inspection of the dependency source identified
 below, and read-only reflection confirming that stock Windows PowerShell 5.1 exposes
@@ -3813,8 +3814,8 @@ backends, not broad test skips. Runtime acceptance must include immediate grandc
 exit with descendants alive, hard kill and daemon crash, failed enrollment/query, ancestor
 junction swaps, a second user's read/write attempts, pipe occupation/remote rejection, clean
 standard-account registration, battery/locked-session operation and graceful shutdown with active
-work. This research has not performed those tests; Project drafts must name and later record
-their verification evidence before the platform is advertised as supported.
+work. This research has not performed those tests. Relevant repository issues must include Verify
+criteria and record the results before the platform is advertised as supported.
 
 ### Hosted supervisor source-image refusal before semantic execution (2026-10-03)
 

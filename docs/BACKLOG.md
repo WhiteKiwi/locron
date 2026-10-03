@@ -1,12 +1,12 @@
 # locron Backlog
 
 This document preserves deferred ideas that are not active commitments or implementation TODOs.
-Activate an item as a Project-only draft in the private [Locron Project](https://github.com/users/WhiteKiwi/projects/4)
+Activate an item as a task in [repository Issues](https://github.com/WhiteKiwi/locron/issues)
 only after deciding to pursue it and completing the repository's
 planning workflow: update `docs/SPEC.md` when observable product behavior or scope changes, record
 research in `docs/FINDINGS.md` when needed, then review `docs/IMPLEMENTATION.md` and add
-execution tasks with concrete Verify criteria to the Project before changing code. See
-[`PROJECTS.md`](PROJECTS.md). Keep these inactive ideas out of the execution Project until selected.
+execution tasks with concrete Verify criteria to Issues before changing code. See
+[`ISSUES.md`](ISSUES.md). Keep these inactive ideas deferred until selected.
 
 ## README demo screencast
 
