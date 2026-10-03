@@ -269,7 +269,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: false
-      - name: Build native executable with static CRT
+      - name: Build native executable pair with static CRT
         env:
           RUSTFLAGS: '-C target-feature=+crt-static'
         shell: powershell
@@ -277,7 +277,7 @@ jobs:
           $compiler = rustc -vV
           if ($LASTEXITCODE -ne 0) { throw 'rustc facts unavailable' }
           if ($compiler -cnotcontains 'host: ${{ matrix.target }}') { throw 'package target must equal native rustc host' }
-          cargo build --release --locked -p locron --target '${{ matrix.target }}'
+          cargo build --release --locked -p locron --bins --features windows-service-launcher --target '${{ matrix.target }}'
           if ($LASTEXITCODE -ne 0) { throw 'native release build failed' }
       - name: Verify native Windows archive and ownership contracts
         env:
@@ -328,6 +328,54 @@ jobs:
           path: |
             package-artifacts/*.zip
             package-artifacts/verification.json
+          if-no-files-found: error
+      - name: Package and probe paired Windows draft ZIP
+        env:
+          LOCRON_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: powershell
+        run: |
+          $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed' }
+          $package = @($metadata.packages | Where-Object { $_.name -eq 'locron' })
+          if ($package.Count -ne 1) { throw 'expected exactly one locron package' }
+          $tag = 'v' + $package[0].version
+          $target = '${{ matrix.target }}'
+          python -B scripts/windows_release.py package $tag $target "target/$target/release/locron.exe" paired-draft-artifacts --launcher "target/$target/release/locron-service-launcher.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'paired draft ZIP packaging or native probes failed' }
+          $archive = "paired-draft-artifacts/locron-$tag-$target.zip"
+          $facts = python -B scripts/windows_release.py validate $tag $target $archive --paired | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'paired draft ZIP validation or native probes failed' }
+          $verification = [ordered]@{
+            schema = 'locron.windows-paired-package-verification/v1'
+            artifact_kind = 'draft-paired-windows-package'
+            source_repository = $env:GITHUB_REPOSITORY
+            source_revision = $env:GITHUB_SHA
+            source_head_revision = $env:LOCRON_SOURCE_HEAD
+            source_ref = $env:GITHUB_REF
+            source_workflow = $env:GITHUB_WORKFLOW_REF
+            run_id = $env:GITHUB_RUN_ID
+            run_attempt = $env:GITHUB_RUN_ATTEMPT
+            version = $facts.version
+            target = $facts.target
+            unsigned = $facts.unsigned
+            binaries = $facts.binaries
+            version_probes = $facts.version_probes
+            launcher_abi = $facts.launcher_abi
+            launcher_identity = $facts.launcher_identity
+            archive_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+            rustc = (rustc -vV | Out-String).Trim()
+            rustflags = '-C target-feature=+crt-static'
+            probe_path = 'Windows system directories only'
+            probe_bytes = 'staged final ZIP members'
+          }
+          $verification | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 paired-draft-artifacts/verification.json
+      - name: Preserve paired Windows draft package verification
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-paired-package-draft-${{ matrix.target }}
+          path: |
+            paired-draft-artifacts/*.zip
+            paired-draft-artifacts/verification.json
           if-no-files-found: error
 
   installer:
