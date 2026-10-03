@@ -433,8 +433,13 @@ pub enum StoreError {
     #[error("migration raced another initializer")]
     MigrationConflict,
     /// The state directory cannot be discovered (no platform default).
-    #[error("state directory cannot be discovered")]
+    #[error(
+        "state directory cannot be discovered; use --state-dir <PATH> or set LOCRON_STATE_DIR to select a private local directory"
+    )]
     StateDirectoryUnavailable,
+    /// The platform state-directory probe failed before returning a usable default.
+    #[error("{unavailable}", unavailable = StoreError::StateDirectoryUnavailable)]
+    StateDirectoryDiscoveryFailed(#[source] std::io::Error),
     /// A managed path is unsafe (symlink or unexpected file type).
     #[error("unsafe managed path: {0}")]
     UnsafePath(std::path::PathBuf),
