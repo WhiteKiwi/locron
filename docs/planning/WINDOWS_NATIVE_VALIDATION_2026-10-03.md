@@ -47,3 +47,45 @@ Only .github/workflows/ci.yml and the existing Windows build step in release.yml
 for this Source handoff. If discovery exposes an application or fixture defect, report it with
 measured native evidence before any new source plan. No application, test, lockfile or toolchain
 file changes are authorized in this handoff.
+
+## Measured compilation follow-up (2026-10-04)
+
+Ordinary CI37132853263 on head63473f1 succeeds and verifies actual Rust1.94 package compilers.
+Separate full discovery37132861132 fails all five rows during compilation/lint. The research
+receipt uses standalone Rust1.94/1.98 metadata compilation and inspected existing private-file
+APIs; see FINDINGS. Frozen SPEC remains unchanged. This following test-only handoff supersedes
+the earlier workflow-only Source limitation for the six listed integration files only.
+
+1. In attempt_history.rs, crash_boundaries.rs, global_environment.rs and service_lifetime.rs,
+   place the unchanged crate docs before the existing crate-level cfg(unix). Keep the cfg and
+   everything after the initial doc/cfg prefix unchanged. **Verify:** exact reversal restores
+   each original complete blob; no test name/body, selector, deadline or platform selection
+   changes. Metadata-only warnings-denied compilation on Rust1.94/1.98 accepts the otherwise
+   empty Windows crates. Existing Unix suites still run under ordinary PR CI.
+2. In dashboard.rs and service.rs, replace only the three positive private-token seeding
+   sequences currently using Unix PermissionsExt/from_mode. A small local test helper uses
+   existing create_private_new on the absent token path, allowing that API to create a missing
+   private parent, writes the same 64-byte fixture, flushes and releases its guard before child
+   execution. Do not precede it with fs::create_dir_all/fs::write or repair an existing root.
+   Keep all commands, token values, owner_only/redaction/report assertions and other fixtures.
+   **Verify:** source review confirms exclusive new creation and guard release, no Unix-only
+   imports remain in these three setups, and all original test names/assertions remain. Actual
+   private-file behavior is qualified only by native tests, not by source/format checks.
+3. Parent reviews the completed plan and exact owning-issue Verify note before handing these
+   six integration files to the separate development session. **Verify:** source begins after
+   the reviewed docs commit and exact CLI issue readback; Source receipt preserves all other
+   tracked blobs/modes, formatting passes and git diff --check is clean.
+4. Update PR130 around its final compilation/discovery scope and run unchanged ordinary CI plus
+   all five manual full discovery commands on the new exact branch head. **Verify:** native
+   full commands either reach runtime/lint beyond the measured prerequisites or expose a
+   precise retained next failure; report per-row compiler, phase and failed contracts honestly.
+   New unused-helper, staged-code, broad-root or shell assumptions remain visible. No added
+   skips, warnings allowances, deadline enlargement or retries are authorized by this slice.
+5. Record exact results and remaining scope in #31/#32 using CLI, then use normal protected
+   review/merge requirements for the reviewed PR. **Verify:** original issue bodies/states are
+   retained, current-base ordinary checks pass on the exact head, and any full discovery
+   failures remain visible and prevent a full support/whole-issue completion claim.
+
+Only these six test files are authorized in this follow-up. Application code, other fixtures,
+workflow behavior, lockfiles/toolchain files, local effectful acceptance and release publication
+are outside it. Any further correction requires measured findings and a docs/issue plan first.

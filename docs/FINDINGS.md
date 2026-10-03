@@ -4923,3 +4923,35 @@ tests or all-target warnings-denied Clippy. Run those full commands as explicit 
 on disposable native x64/ARM64 runners, preserving failures and original tests. Discovery results
 cannot complete clean Windows 11 standard-user installation, task/reboot, two-user access,
 public unsigned download, update/recovery or WinGet acceptance.
+
+### Full native test compilation prerequisites (2026-10-04)
+
+Reviewed PR130 head63473f1 has successful ordinary CI37132853263, including actual Rust1.94
+on both native package rows. Separately, full discovery37132861132 failed all five native rows
+during compilation/lint, before any full runtime test body executed. x64 stable identifies
+unguarded Unix permission imports in service.rs:343/605; ARM64 stable and x64 MSRV identify
+dashboard.rs:391/392. Both Clippy rows reject missing crate docs in existing Unix-only crates.
+Keep complete failure logs and do not infer full supported behavior from selected-suite success.
+
+The separate research session reproduced the documentation failure with native Rust1.94 and
+1.98 using standalone metadata-only compilation, without linking or executing app/test code.
+Putting unchanged crate documentation before the existing crate-level cfg fixes that failure;
+both the minimal repro and the actual service_lifetime body pass warnings-denied metadata
+compilation. The research inventory finds four affected crates: attempt_history,
+crash_boundaries, global_environment and service_lifetime. Their bodies, test names and existing
+Unix selection can remain byte-identical. A module wrapper would unnecessarily change test
+namespaces. The [Rust Reference's crate-level cfg rule](https://doc.rust-lang.org/reference/conditional-compilation.html#the-cfg-attribute)
+explains that attributes before a false crate cfg survive and attributes after it are removed.
+
+The three permission blocks seed positive dashboard owner-only-token fixtures, not Unix-specific
+behavior. Existing core::filesystem::create_private_new creates missing private parent components
+and an exclusive new private leaf under validated guards: Unix creation uses 0700/0600 and
+Windows performs private creation rather than repairing an existing broad descriptor. Use that
+existing API for these seed bytes, flush and release the guard before starting the subprocess;
+do not create a broad directory/file first and chmod, skip Windows, or soften owner_only/no-secret
+assertions. This changes test setup only. Actual Windows fixture acceptance still needs the next
+native run; metadata and source inspection cannot qualify private creation or subprocess output.
+
+Other recorded warnings and legacy shell/state fixture assumptions remain discovery findings.
+The scoped compilation correction cannot establish full lint/runtime success, Windows11
+standard-user installation, active-crash recovery, two-user privacy/IPC or public distribution.

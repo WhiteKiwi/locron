@@ -4903,3 +4903,22 @@ then reviews Source and publishes a normal PR. Exact-head normal CI, downloaded 
 facts, local finite x64 probes and all five manual full-suite results provide the Verify receipt;
 they cannot stand in for remaining clean Windows 11 installation/reboot, public release, native
 update/recovery or catalog acceptance. No product scope, signing policy or application Source changes.
+
+### Measured native integration-test compilation follow-up (2026-10-04)
+
+Full discovery on the reviewed CI branch exposed compilation prerequisites before runtime
+testing. Continue the existing #31 portable-fixture scope and
+[validation plan](planning/WINDOWS_NATIVE_VALIDATION_2026-10-03.md) after the separate research
+receipt: reorder only crate documentation before unchanged Unix gates in four integration
+crates, and seed the three positive dashboard/service token fixtures through the existing
+private-new-file API. Preserve each test's names, body/commands, material and report assertions;
+new fixture bytes and their parent are private at creation, flushed and no longer guarded when
+the tested subprocess begins. No existing root is repaired or adopted.
+
+The new handoff is test-only and does not authorize application, toolchain, dependency or
+privacy-policy changes. Parent reviews all six Source files, documentation-prefix/body identity,
+private-new setup and protected blobs before publication. Rerun the original five native full
+commands and ordinary protected PR checks on the next exact head. Preserve any next lint or
+runtime failure in #31 instead of widening cfgs, adding allow/ignore, or changing deadlines.
+Existing component/GUI/distribution gates remain separately required. Frozen SPEC and first
+unsigned-release/signing policy remain unchanged; compile success is not full support evidence.
