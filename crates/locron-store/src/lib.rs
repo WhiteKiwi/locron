@@ -10,6 +10,8 @@ mod output;
 mod paths;
 mod store;
 #[cfg(windows)]
+mod windows_configure;
+#[cfg(windows)]
 mod windows_open;
 
 #[cfg(windows)]

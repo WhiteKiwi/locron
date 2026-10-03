@@ -1015,7 +1015,7 @@ impl Store {
         #[cfg(not(windows))]
         let mut connection = Connection::open(&paths.database)?;
         #[cfg(windows)]
-        trace.store(Stage::Configure, configure(&connection))?;
+        crate::windows_configure::configure(&connection, &trace)?;
         #[cfg(not(windows))]
         configure(&connection)?;
         #[cfg(windows)]
@@ -3546,6 +3546,7 @@ fn snapshot_admission_policy(snapshot: &str) -> StoreResult<SnapshotAdmissionPol
     })
 }
 
+#[cfg(not(windows))]
 fn configure(connection: &Connection) -> StoreResult<()> {
     connection.busy_timeout(std::time::Duration::from_secs(5))?;
     connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA locking_mode=NORMAL; PRAGMA trusted_schema=OFF;")?;
