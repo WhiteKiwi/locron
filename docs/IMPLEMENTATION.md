@@ -4833,3 +4833,55 @@ unchanged. A separate CI artifact records a development candidate, not a publish
    must execute the paired producer/validator on the recorded revision before native results can
    be reported as passing. Installer/update dispatch, role activation, standard-user/reboot
    acceptance, immutable release publication and WinGet remain their existing open gates.
+
+### Guarded registered WinGet index prerequisite (2026-10-03)
+
+Issue #35's bounded SQLite reader currently qualifies caller-supplied bytes. Add the actual
+read-only registration/index connection as a narrower prerequisite to the accepted IndexedPair
+composition. RegisteredIndex is an opaque, move-only observation of the actual current SID,
+selected HKCU64 portable registration and retained index object. Its fields and construction
+stay private. It is neither complete paired-file ownership nor authority to activate, install,
+update, remove or repair anything. The five canonical ZIP/source leaves, both executable
+identities/PE/version/ABI checks and actual console-link ownership remain separate work.
+
+1. Add an absolute-Instant form of the existing stock JSON adapter, forwarding the earlier of
+   the caller's original deadline and the existing thirty-second per-call cap. Keep its same
+   finite worker, queue/child/cleanup ownership and quarantine behavior. The registered reader
+   starts no replacement deadline, worker pool or native process of its own. **Verify:** an
+   expired request refuses before adapter admission, a finite actual native registry read uses
+   this API, and late returned observations cannot create a usable result. All historical
+   adapter and single-image package paths retain their existing behavior.
+2. Select the actual current-user registration for the exact console path with the existing
+   fixed HKCU64 reader. Derive the index path only from the validated product code and registered
+   location; guard that location, the exact version root and the existing index under the current
+   package-source ACL policy. Retain its full native identity and a bounded complete snapshot,
+   reject all -journal/-wal/-shm sidecars before and after the read, and call the existing <=4 MiB
+   pure parser. The explicit expected_alias argument is solely a compared metadata expectation;
+   no link is followed, opened or attested. **Verify:** real test-owned SQLite files pass without
+   byte/descriptor changes; missing roots, wrong index/root/row facts, oversized files, sidecars,
+   concurrent writers and unsafe descriptors/reparse paths refuse without creation or repair.
+3. Re-read the actual SID and exact current registration before returning. Explicit later
+   revalidation repeats registration, guarded-object identity/digest, ancestry and sidecar
+   observations while retaining the original handles. Its deadline is capped to the original
+   read's deadline even if the caller supplies a later Instant. **Verify:** changed SID or
+   selected registration, changed index facts, new sidecars and late observations refuse; unit
+   fixtures can supply metadata only through module-private test setup, while the public
+   prerequisite entry point always reads actual native registration. Native no-match coverage
+   reads existing registration without creating or modifying any registry key.
+
+This synchronous prerequisite must run inside the caller's already finite owned native phase.
+That owner must not retain the generic/COM script permit while entering this reader: its registry
+query admits through that existing slot. Retained filesystem guards stay live across the query.
+Pre/post gates surround each guard/read/query/parse boundary; they do not cancel a stalled native
+filesystem call. A timed-out driver retains that worker and its handles until completion or
+quarantine, and cannot reuse an uncertain observation. A registry snapshot is not a retained
+registry lock: revalidation observes the exact current selection and refuses changes, but cannot
+prove continuous immutability of registry metadata between calls. Stable index read handles deny
+write/delete sharing; the parser only sees copied bytes and never reopens a SQLite path.
+
+Keep the entire registered-reader source behind the existing Windows test-only distribution
+staging boundary. No CLI, receipt/journal schema, manifest, release or package effect is added.
+The existing native self_update::windows_ package selector must run these real-file regressions
+on x64 and ARM64. A cloud environment without Rust/native Windows cannot claim those gates;
+record actual local checks and leave compilation, native qualification, selected-client
+install/upgrade/removal and catalog publication open in #35 and the Draft PR.
