@@ -4373,3 +4373,80 @@ Sources: [Rust current_exe](https://doc.rust-lang.org/std/env/fn.current_exe.htm
 [server flush contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers),
 [pipe terminal operations](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-operations),
 [existing account boundary](../SECURITY.md#out-of-scope).
+
+### Automatic activation witness and GUI companion proposal (2026-10-03)
+
+Task Scheduler generates InstanceGuid for each task run. It identifies an instance; no primary
+contract makes a user-supplied copy of that GUID an origin credential. IRegisteredTask::Run accepts
+VT_NULL/VT_EMPTY or BSTR parameters; a single BSTR supplies Arg0, and the returned IRunningTask
+describes the instance. Action Arguments and WorkingDirectory admit ArgN substitution. The SDK
+also documents a no-error/no-run case when AllowDemandStart is false. Therefore an SDK success,
+unique current GUID and manual argument text do not by themselves correlate a new native role.
+Sources: [Run parameters and return](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/nf-taskschd-iregisteredtask-run),
+[action variable properties](https://learn.microsoft.com/en-us/windows/win32/taskschd/task-actions),
+[generated instance identifier](https://learn.microsoft.com/en-us/windows/win32/taskschd/runningtask-instanceguid).
+
+The pinned interprocess 2.4.4 synchronous and Tokio PipeStream APIs expose safe client_process_id,
+server_process_id and peer_process_id. The upstream implementation queries the actual borrowed
+pipe handle through GetNamedPipeClientProcessId/GetNamedPipeServerProcessId and returns io::Result;
+the workspace needs no unsafe shim or dependency-version change. A server can bind the first
+authenticated peer to the GUI launcher and the second to its retained OwnedChild.id. A frame's
+claimed PID cannot replace this query, and the launcher PID must never be confused with its child.
+Sources: pinned crate src/os/windows/named_pipe/{stream,tokio/stream}/impl.rs and c_wrappers.rs,
+[pinned Tokio source](https://docs.rs/crate/interprocess/2.4.4/source/src/os/windows/named_pipe/tokio/stream/impl.rs),
+[actual named-pipe client PID](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid).
+
+The proposed authority is one fresh 32-byte OS-random capability delivered only through the sole
+SDK Run and live bounded transport, then exchanged against those actual pipe peers and a new
+supervisor/control lifetime. A sealed service-produced optional RuntimeFacts witness holds only
+the context/digest/GUID/launcher PID; GUID-only CLI input remains unwitnessed. This follows
+SECURITY.md's user-account boundary. It does not claim protection against arbitrary code/debugging
+or theft of another same-account process's argv/state. No raw capability is journaled. Already
+authenticated live readback can recover; loss before authentication stays pending with zero Run
+replay, rather than pretending a later unparameterized Logon proves the original operation.
+
+TaskSettings.Hidden controls visibility in Scheduler UI, not initial process-console allocation.
+Run flags supply identity/session/constraint choices, with no console-suppression flag. Rust's
+console subsystem can create a new console when no console exists; its windows subsystem runs
+detached. Thus a direct action for today's console CLI cannot establish the required no-flash
+entry guarantee. Select an internal Windows-GUI-subsystem companion while preserving the console
+CLI. Actual mapped subsystem 2, first-entry CONOUT$ absence and code that never attaches/allocates
+a console qualify the GUI entry; this must not reinterpret CREATE_NO_WINDOW child behavior,
+which retains the earlier final-mask/direct-control tests and may own an invisible console host.
+Sources: [Hidden is task UI visibility](https://learn.microsoft.com/en-us/windows/win32/taskschd/tasksettings-hidden),
+[Run flags](https://learn.microsoft.com/en-us/windows/win32/api/taskschd/ne-taskschd-task_run_flags),
+[Rust subsystem contract](https://doc.rust-lang.org/reference/runtime.html#the-windows_subsystem-attribute),
+[MSVC subsystem](https://learn.microsoft.com/en-us/cpp/build/reference/subsystem-specify-subsystem?view=msvc-170).
+
+Raw native `v1:$(Arg0)` remains data whether a no-parameter action leaves an empty substitution or
+the literal marker; the exact parser treats only those specified absence forms as unwitnessed.
+Primary Run docs do not establish which form genuine Logon supplies. Keep the actual VT_EMPTY,
+scheduled no-parameter and later standard-user Logon gates. The prior PowerShell EncodedCommand
+launcher cannot safely gain arbitrary trailing argv, and unexpanded Arg0 can break a spliced
+EncodedArguments value before its static code runs. The companion avoids making correctness
+depend on that unproved decoding path; no dynamic script fragment or Run environment route is
+selected. Earlier hidden-PowerShell probe receipts remain historical evidence only.
+
+The current primary WinGet portable archive flow records every extracted file before creating
+links for NestedInstallerFiles; an omitted command alias on a listed executable defaults to its
+filename. The proposed manifest therefore lists only the console command as a nested portable
+alias and requires the sibling companion in the complete archive/package file index. Schema
+permission for multiple portables alone is not proof of no extra link. Validate actual ownership,
+upgrade and removal of both images with the selected native client before publication.
+Source: [WinGet portable archive file/index/link flow](https://github.com/microsoft/winget-cli/blob/39739564a4aaf1071b17d163ec332a08b9bcf05c/src/AppInstallerCLICore/Workflows/PortableFlow.cpp#L177).
+
+Distribution's current strict six-payload inventory plus receipt is seven managed leaves. The
+companion adds one canonical ZIP member and one managed leaf, yielding eight. The held complete
+R=E=2 reservation 12*7 + Q10 + S10 + A10 + outer10 + PATH4 reaches all 128 frames; the revised
+schedule reaches 140. Keeping 128 would refuse an ordinary daemon-plus-dashboard installation.
+The explicit proposed ceiling is 140 frames/18 MiB, with the 128 KiB complete-frame and private
+record limits unchanged. Pinned windows_journal includes its 68-byte overhead inside FRAME_LIMIT:
+maximum payload is 131,004 bytes. 140 complete maximum frames plus one bounded incomplete tail
+occupy (140+1)*(131004+68) = 18,481,152 < 18,874,368 bytes, leaving 393,216 bytes. A partial frame
+still cannot authorize effects. Checked actual serialization still covers all old/new
+pair bindings, fingerprints, escaped paths and optional witness fields before any effects; these
+numbers do not permit extra callbacks or unbounded recovery. Both native images require the same
+version/architecture/ABI/source verification, receipt/WinGet ownership, actual holder quiescence
+and complete pre-receipt pair rollback. No GUI source, witness implementation or expanded journal
+limit has been qualified by this research; the revised complete plan requires parent/Project
+review before separate producer, consumer and distribution development.

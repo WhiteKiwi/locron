@@ -18,6 +18,7 @@ Amended 2026-08-25: the completed local dashboard is prepared as a documented v0
 Amended 2026-08-25: crates.io source installation is added as an optional Rust-user distribution channel with package-manager-consistent update ownership.
 Amended 2026-08-25: terminal-width fitting extends from the human `list` table to the human `history` table.
 Amended 2026-08-25: dashboard lifecycle output and stale dashboard detail routes receive complete human-readable fallbacks.
+Amended 2026-10-03: planned Windows installations include an internal windowless service launcher and confirm the complete installed pair and requested automatic startup before reporting completion.
 
 Repository workflow note (2026-10-02): execution planning and progress move to Project-only draft
 tickets. This administrative migration changes no Locron product behavior, platform support, or
@@ -575,6 +576,10 @@ Store distribution remain outside this milestone.
   one-minute waits before the three eligible retries. A known failure before execution or a
   confirmed nonzero role exit may consume that budget. Privacy, infrastructure and unconfirmed
   cleanup failures stop explicitly; a new activation requires operator action or the next logon.
+- A Windows installation includes the console command and an internal launcher from the same
+  verified release. Automatic startup has no console-window flash; the ordinary console command
+  keeps its existing terminal and redirected-output behavior. A missing, mismatched or blocked
+  launcher produces an explicit refusal rather than a different startup mechanism.
 - Local wake notifications are restricted to the owning account and state instance. IPC failure
   retains periodic durable reconciliation and never becomes a correctness prerequisite.
 - The initial distribution uses immutable unsigned x64/ARM64 ZIPs from the canonical HTTPS GitHub
@@ -608,10 +613,12 @@ Store distribution remain outside this milestone.
   oversized new location refuses completion and retains disabled tasks and the protected recovery
   record. This distribution limit does not change runtime or state-path support.
 - Standalone updates positively verify ownership, source, digest, version and architecture; safely
-  coordinate owned executable holders and automatic restarts before replacement; preserve rollback,
-  enabled/disabled registration state and durable jobs/history; and report confirmed completion
-  only after replacement succeeds. Remaining unowned holders produce an actionable bounded refusal.
-  If task restoration fails after the verified new binary and receipt are durable, the operation
+  coordinate holders of both installed programs and automatic restarts before replacement;
+  preserve rollback, enabled/disabled registration state and durable jobs/history; and report completion
+  only after both replacements and the requested automatic startup are confirmed. Remaining unowned
+  holders produce an actionable bounded refusal. An uncertain automatic start remains pending;
+  a task identifier supplied to a manual process cannot establish automatic startup.
+  If task restoration fails after both verified new programs and the receipt are durable, the operation
   remains pending restoration and can be resumed; it cannot report completed or replace a newly
   running image behind reactivated roles.
   Existing-operation restoration starts every originally enabled owned registration, including a

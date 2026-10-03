@@ -39,10 +39,18 @@ Unsupported builds may happen to work, but they have no compatibility or release
 
 ### Windows adapter boundaries (2026-10-02)
 
-Keep the five-crate dependency graph and one distributable binary. Shared safe filesystem and
-environment primitives may live in core; they do not own job execution or operating-system service
-registration. Store owns state layout/SQLite access, engine owns process-tree supervision, CLI owns
-service setup and composition, and server retains its loopback application boundary.
+Keep the five-crate dependency graph and one user-facing `locron` command. Windows additionally
+ships an internal `locron-service-launcher.exe` from the same CLI package/release, linked with
+the Windows GUI subsystem so the first registered process starts without allocating a console.
+This is the Windows exception to the earlier one-distributable-binary foundation. The console
+CLI keeps its existing subsystem and behavior; macOS/Linux still distribute one binary.
+The launcher owns only fixed service composition, a bounded activation exchange and its retained
+engine child; it is not a second scheduler, dashboard, general command runner or shell adapter.
+Both executable identities belong to one guarded installation/receipt and replacement policy.
+Shared safe filesystem and environment primitives may live in core; they do not own job execution
+or operating-system service registration. Store owns state layout/SQLite access, engine owns
+process-tree supervision, CLI owns service setup and composition, and server retains its loopback
+application boundary.
 
 On Windows the engine establishes a kill-on-close Job Object boundary before target code runs and
 retains an independently queryable job handle until tree termination is confirmed. This changes the
@@ -65,7 +73,9 @@ listeners and composition-owned cancellation; all worker and accepted-client res
 
 ## Workspace and dependency direction
 
-The virtual Cargo workspace has five crates and one distributable binary. Milestone 1 shipped the first four; the subsequently shipped `locron-server` crate provides the web administration surface (`docs/dashboard/SPEC.md`).
+The virtual Cargo workspace has five crates and one user-facing binary, plus the internal Windows
+service launcher described above. Milestone 1 shipped the first four; the subsequently shipped
+`locron-server` crate provides the web administration surface (`docs/dashboard/SPEC.md`).
 
 | Crate | Durable responsibility | Forbidden coupling |
 |---|---|---|
@@ -99,10 +109,10 @@ There is no `locron-daemon` crate and no `locrond` binary in v1. `locron daemon 
 
 ## Runtime topology and data flow
 
-The single binary has a short-lived command role, one long-lived daemon command, and (when enabled) a separate long-lived dashboard server process. All of them use the same domain and durable state. The dashboard server is a process separate from the scheduler daemon: it reads and writes the same SQLite state through the store boundary, sends the same best-effort wake hint after durable mutations, works while the daemon is offline, and never acquires the daemon lock or a scheduler lifetime. Its restarts never affect scheduling, and daemon restarts do not stop it.
+The user-facing binary has a short-lived command role, one long-lived daemon command, and (when enabled) a separate long-lived dashboard server process. The internal Windows launcher waits for registered supervision without owning either role. All roles use the same domain and durable state. The dashboard server is a process separate from the scheduler daemon: it reads and writes the same SQLite state through the store boundary, sends the same best-effort wake hint after durable mutations, works while the daemon is offline, and never acquires the daemon lock or a scheduler lifetime. Its restarts never affect scheduling, and daemon restarts do not stop it.
 
 ```text
-single locron binary (Cargo package `locron`, source in `crates/locron-cli`)
+user-facing locron binary (Cargo package `locron`, source in `crates/locron-cli`)
         |
         +-- short-lived command
         |       |

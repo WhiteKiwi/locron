@@ -74,7 +74,7 @@ live jobs/services, Windows acceptance or broad storage deletion belongs here.
 
 This document plans the first program milestone against the frozen behavior in `docs/SPEC.md` and the durable structure in `docs/ARCHITECTURE.md`.
 
-Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, the official platform matrix, the four-crate dependency direction, one `locron` binary, and an engine-owned daemon entered through `locron daemon run`. Those decisions are not Draft.
+Accepted foundations are Rust edition 2024, Cargo resolver 3, Rust 1.94 MSRV, the official platform matrix, the four-crate dependency direction, one user-facing `locron` binary, and an engine-owned daemon entered through `locron daemon run`. The Windows internal GUI launcher is the documented exception to the earlier one-distributable-binary rule. Those decisions are not Draft.
 
 > **Review state:** milestone-1 implementation choices are accepted. Update this document and the relevant repository issues before deviating in code. A change to observable behavior or scope updates `docs/SPEC.md` first; a change to durable component boundaries or invariants updates `docs/ARCHITECTURE.md` first. Reviewed CLI and storage contracts live in `docs/CLI.md` and `docs/STORAGE.md`.
 
@@ -1144,8 +1144,8 @@ guarded observer/inventory/quiescence. No new public product role or CLI command
 
 The earlier Count=3 Scheduler restart candidate is superseded: read back RestartCount=0 with
 no restart interval. Scheduler never restarts the entire native owner's four-start policy.
-The fixed hidden PowerShell launcher
-waits for a native Locron supervisor; Rust owns ordinary daemon/dashboard failure retries and
+The internal Windows GUI launcher described below replaces the earlier fixed PowerShell launcher
+and waits for a native Locron supervisor; Rust owns ordinary daemon/dashboard failure retries and
 private exit facts. Introduce only the hidden Windows entry `service supervise --role daemon` or
 `service supervise --role dashboard`, with the existing global state directory. Registration uses
 the fixed dashboard port. Keep visible install/enable/uninstall/status syntax unchanged.
@@ -1214,7 +1214,7 @@ exhaustion before releasing activation ownership; do not replace actual exit dia
 synthetic successful Task result. Supervisor infrastructure failures remain explicit errors;
 ordinary completed-role retry is proved by this live owner, not inferred from Scheduler settings.
 After owned teardown, supervisor exhaustion returns the final actual child exit code and the
-static PowerShell launcher propagates it. Infrastructure/fact-write failures return a distinct
+internal GUI launcher propagates it. Infrastructure/fact-write failures return a distinct
 failure with retained diagnostics, never a fabricated child outcome or successful registration.
 
 The hidden supervisor entry dispatches before ordinary state opening and awaits the service's
@@ -1479,12 +1479,11 @@ before task creation, changed task definitions/ACLs refuse before effects, and f
 addresses only the unchanged RunningTask.InstanceGuid. Confirm actual role/activation locks and
 task-instance exit independently; instance state, engine PID or helper EOF cannot substitute.
 
-Select a fixed hidden stock PowerShell 5.1 launcher: `-EncodedCommand` carries only static source,
-and `-EncodedArguments` carries a serialized CLIXML array containing one base64 JSON request.
-The launcher validates the current SID and uses ProcessStartInfo with UseShellExecute=false,
-CreateNoWindow=true, exact escaped Windows argv and an explicit working directory; it waits for
-the role and returns that role's exit code. The wrapper's PID is never the role's PID. This
-keeps paths/data out of executable source and avoids a separate installed script or policy change.
+The native GUI action and sealed activation proposal below supersede the fixed stock PowerShell
+EncodedCommand/one-value EncodedArguments launcher plan. Historical probes of that launcher are
+not evidence for the revised action. Keep its source unselected while this complete proposal,
+private Project criteria, companion inventory and producer/consumer interfaces are reviewed.
+No dynamic PowerShell source, base64 fragment splice or installed script is selected instead.
 Readback compares semantic principal/trigger/power/restart/action fields and retains a disabled
 registration on refresh. COM may return account names after SID-based registration, so translate
 actual principal/logon-trigger account identifiers to SIDs before semantic comparison; environment
@@ -1493,23 +1492,208 @@ then targets only the validated owned registration with the unchanged registered
 After this hard fallback, actual role-lock exit is still required and forced completion is
 reported explicitly; unowned/manual holders remain a bounded refusal or registration deferral.
 
+### Internal GUI launcher and sealed automatic activation (proposal)
+
+This complete scope revision remains source-held until the completed documents, Project #30/#34
+criteria, companion inventory and persistence reservation have been reviewed. It replaces the
+earlier fixed PowerShell waiting-launcher choice and the held GUID-only activation candidate.
+Keep the console `locron.exe` unchanged and add `locron-service-launcher.exe`, a small internal
+Windows GUI-subsystem binary in the existing CLI package. Use the safe crate-root
+windows_subsystem attribute; do not patch a published PE image, attach/allocate a console or
+change the primary CLI subsystem. A `windows-service-launcher` feature gates the companion build
+and keeps ordinary Unix builds/Cargo installations single-binary. Windows ZIP builds and
+documented Windows Cargo service builds explicitly enable it and build both same-version
+binaries. A missing/mismatched helper refuses registration with the exact channel's repair
+guidance. No new crate, general GUI, script, policy exception, Visual Studio runtime, PowerShell 7
+or system-wide installation is introduced.
+
+The GUI launcher has only fixed role composition and bounded read-only identity/version probes.
+Its native argv parser never echoes capability values. It discovers the console binary as the
+constant sibling `locron.exe`, verifies both guarded objects, current SID, version/architecture/
+launcher ABI and the registered definition, and uses OwnedChild::spawn with ChildWindow::Hidden
+for the exact hidden `service supervise --role daemon|dashboard` child. Preserve suspended dual
+Job enrollment before resume, the final native CREATE_NO_WINDOW mask, root-reaped plus empty-Job
+proof and the original lifecycle deadlines/quarantine. Retain the exact Child and executable/root
+guards through its entire lifetime. Propagate its genuine i32 status, including 70/negative;
+infrastructure failure is direct 70 without a public renderer or unfinished-worker join. The
+launcher neither owns the daemon/dashboard lock nor adds a second four-start retry policy.
+
+Read back one versioned action: Path is the guarded companion; Arguments is exactly generated
+`--state-dir "<recorded root>" --role daemon|dashboard --run-capability "v1:$(Arg0)"`; and
+WorkingDirectory is the recorded guarded root. Use the existing exact native argv escaping,
+fixed argument order and one occurrence of every option. Both full executable identities, the
+`native-gui-v1` action kind/launcher ABI, role, normalized root, instance digest, task name,
+current-SID principal/logon trigger, task ACL, INTERACTIVE_TOKEN/LUA, PT0S, IgnoreNew and
+RestartCount=0 belong to the semantic fingerprint. Transient Run parameters, observations and
+the enabled flag do not. A definition
+for the old PowerShell action is not silently accepted as the new fingerprint.
+
+The action's Run value is data only: a canonical nonnil context UUID, one colon and 64 lowercase
+hex digits from 32 freshly generated OS-random bytes. The stored action supplies the `v1:` prefix.
+Only absent capability input, an empty string, exact `v1:` or exact `v1:$(Arg0)` selects ordinary
+unwitnessed startup; these cover native no-parameter/empty/unsubstituted Logon behavior without
+depending on base64 decoding. Any other malformed value refuses. There is no PowerShell source
+interpolation or Run-to-environment assumption. Keep ordinary unparameterized Logon functional,
+but it cannot confirm an operation's missing automatic-activation witness. Genuine Logon/reboot
+verification remains the standard-user #36 gate, without changing the caller host's session.
+
+Before one SDK Run, the service phase owner creates a protected first-instance local pipe for
+this role/context under the retained state/SID identity and captures its existing absolute
+thirty-second phase deadline. The name contains no secret. Keep the reviewed current-SID/SYSTEM
+descriptor, remote rejection, retained guards and bounded hybrid accept/conversion behavior.
+Allow only the launcher and its supervisor to authenticate; at most two accepted connections
+plus one listening instance remain live. Frames are versioned fixed data of at most 1 KiB, with
+the existing at-most-200 ms payload cap bounded again by the remaining phase time. Invalid peers
+refuse the phase without another Run. No wake/control/job protocol is widened.
+
+Persist RunIntent with an immutable context UUID and fixed-width capability digest before the
+sole SDK call. The digest uses versioned length framing of operation/context, current SID, full
+state identity, role and nonce. Raw nonce/Run capability stays only in live producer/transport;
+never put it in the journal, receipt, RuntimeFacts, application logs or diagnostics. Entropy
+failure refuses before Run. Preserve the actual SDK-returned InstanceGuid and durably confirm
+that observation before authorizing the launch exchange. Revalidate the exact owned task and
+its sole live IgnoreNew instance; an SDK return, task state or EnginePID alone is not proof.
+
+The first accepted stream must carry the fresh expected capability/context/role. Obtain the GUI
+launcher's real client_process_id from that actual pipe instance; a frame PID is not authority.
+The launcher reports its retained OwnedChild.id while the child/Job remains owned, and passes
+only a bounded private stdin bootstrap to that child. The second accepted stream comes from
+the supervisor: its kernel client PID must match the retained child's reported PID, and its
+new internally generated supervisor UUID must match the actual registered activation lease/
+control lifetime. Validate both exchanges before sealing the witness. PID/query/connection,
+registration, capability or deadline failure never falls back to GUID-only authorization.
+
+Expose a CLI-private AuthenticatedActivation value with no public constructor and no Deserialize
+conversion from argument text or raw frames. Only the service exchange creates it. RuntimeFacts
+adds one nullable serialized witness containing context UUID, digest, Scheduler InstanceGuid and
+the authenticated launcher PID; the outer actual supervisor PID/UUID and worker PID/UUID remain
+authoritative fields rather than duplicated claims. A hidden scheduler-instance argument, if
+retained as an untrusted hint, cannot construct that value. Ordinary/manual supervision with a
+valid live GUID alone remains unwitnessed. Public LockMetadata is unchanged. Keep RuntimeFacts
+within its existing 16 KiB cap; reserve and test the complete maximum object across all four
+attempts, typed causes and both absent/present witness forms before enabling the producer.
+
+Final activation confirmation requires the exact current task GUID, matching context/digest in
+protected facts, the authenticated supervisor PID/UUID with held activation/control lifetime,
+and fresh actual role/worker ownership/readiness. Bind both executable objects and the recorded
+root throughout that observation. No stale receipt, bare GUID, manual role or independent task
+state can substitute. Startup exchanges do not gain independent thirty-second budgets: preserve
+the phase owner's original deadline through SDK work, callback, transport and final observation;
+the launcher's/supervisor's existing startup/lifetime owners keep their own original finite
+admission boundaries. Check every polling/dispatch boundary and already-ready response. A queued
+delivery can still complete after caller expiry; it remains uncertain and never authorizes replay
+or a newly dispatched post-deadline callback. Quarantine in-flight uncancellable I/O and retain
+its ownership as already specified; do not claim that a timeout proves no delivery or that Drop
+confirms tree exit.
+
+The typed activation fact adds immutable context/digest at the RunIntent edge beside the existing
+one-time observed GUID, unknown-start bit and final confirmed GUID/lifetime. Original enabled
+flags remain origin; disabled roles never Run or gain a witness. Keep activation callbacks
+<=4E+2 and restore/quiesce <=4R+2: witness traffic adds no persistence callback. Recovery never
+replays Run for any existing intent. It may complete by fresh live verification of an already
+authenticated matching witness; loss before authentication remains UnknownStart/pending, with
+zero redispatch. A later unwitnessed Logon or arbitrary different GUID does not rewrite the
+original context/digest or fabricate completion. These explicit pending semantics supersede the
+held candidate's ability to confirm an unrelated fresh automatic GUID. Retain the verified new
+installation and bounded status/refusal; do not perform post-receipt file rollback merely because
+startup could not be confirmed.
+
+The canonical unsigned Windows ZIP inventory gains exactly the GUI companion beside locron.exe,
+README and the two licenses. Verify both PE32+ architectures, console subsystem 3 versus GUI
+subsystem 2, same version/launcher ABI, absent certificate tables, final individual digests and
+the unchanged stock-DLL allowlist. Preserve the existing 64 MiB aggregate download/unpacked limit.
+Standalone payload inventory becomes seven exact payload names plus its receipt: the prior six
+names plus the companion. The receipt requires both hashes/bindings and rejects missing, unknown,
+duplicate, wrong-architecture/version/ABI or reparse members. A one-executable receipt cannot
+authorize a two-executable takeover; Windows has no published baseline to migrate silently.
+Install/update/uninstall, read-only status, retained helper requests, package ownership and
+WinGet ZIP portable/package inventory all consume that same pair. Declare only locron.exe as the
+nested portable command alias; the companion remains an exact sibling archive file tracked by
+the package's complete file index. Listing a companion without an alias would still create its
+filename link, so omission of PortableCommandAlias is not a link-suppression mechanism. Native
+readback must prove WinGet owns both members; standalone never repairs or removes
+a WinGet companion independently. Source-build service instructions require the matching
+companion while preserving Cargo-managed update/removal ownership.
+
+Inventory all exact current-SID registrations bound to either member across every recorded root.
+Disable owned activation and confirm actual GUI launcher plus supervisor/worker/root/Job/control
+exit before opening both final replacement gates under the original shared deadline. Unowned
+holders of either file refuse without name-based killing. Journal each member's staged/old/new
+identity and verified bytes before its effect; keep tasks disabled across a mixed intermediate
+pair and publish a complete receipt only after both members verify. Pre-receipt rollback restores
+both verified old members and their receipt before service restoration. Refresh/read back both
+new bindings, preserve disabled roles and require sealed activation of requested enabled roles
+before final completion. Interrupted member replacement can never be treated as a complete pair.
+
+Explicitly revise the unpublished Windows journal ceiling from 128 frames/16 MiB to 140 frames/
+18 MiB. The existing seven-leaf, R=E=2 complete reservation is 12*7 + Q10 + S10 + A10 + outer10 +
+PATH4 = 128; the eighth managed leaf makes 12*8 + 10 + 10 + 10 + 10 + 4 = 140. Do not retain the
+old limit and thereby refuse the ordinary two-role installation. Keep each complete frame
+<=128 KiB, including its existing 68-byte framing overhead, and each private service record
+<=128 KiB. Maximum frame payload stays 131,004 bytes. Including one maximum incomplete tail,
+(140+1)*(131004+68) = 18,481,152 bytes < 18,874,368 bytes (18 MiB), leaving 393,216 bytes.
+This storage bound does not admit a partial frame as an authoritative record. Retain checked
+actual whole-object reservation, including both old/new file bindings, action fingerprints,
+normalized paths, all optional activation keys/digests/GUIDs/PIDs, and every legal forward or
+pre-receipt rollback branch. This ceiling is not permission for extra callbacks or unbounded
+poll snapshots. Recompute the actual remaining branch at recovery admission; every capacity
+failure occurs before disable, Run, file or PATH effects. Limits for Core IPC, records and Unix
+products remain unchanged. Review the pure reservation and complete maximum objects before
+effectful producer/consumer integration.
+
+Implementation order and Verify:
+
+1. Freeze the revised product/architecture, exact pair/action ABI, typed context/digest edges and
+   full serializer/journal reservations with Project #30/#34 readback. Verify ordinary R=E=2
+   eight-leaf forward and earlier rollback fit 140/18 MiB, while overflow has zero effects.
+2. Build/package the actual GUI companion on native x64/ARM64/MSRV and pin both inventories.
+   Verify actual mapped PE subsystems, default GUI first-entry CONOUT$ absence, exact child spawn
+   mask without DETACHED/NEW_CONSOLE, version/ABI/digests/stock imports, redirected console CLI
+   behavior and missing/foreign/blocked companion refusal. No GetConsoleWindow surrogate.
+3. Implement the producer/service launcher and sealed runtime consumer as separate reviewed
+   source slices. Verify actual SDK Run-delivered nonce, kernel launcher PID, retained Child PID,
+   new supervisor/worker UUIDs, real control/role readiness and current GUID correlation. A manual
+   native launch supplied with the same valid live GUID alone must stay unwitnessed and cannot
+   complete the operation; the manual owner survives waiting/cancellation.
+4. Exercise wrong/expired/reused capabilities, forged PID frames from another real peer,
+   nil/noncanonical UUID, wrong role/root/executable, collision/remote refusal and late-ready
+   transport under the original bounds. Verify no extra Run, operation replay or newly dispatched
+   post-deadline child/callback; an already queued uncertain operation cannot count as confirmation.
+   Verify no raw secret in durable/application output and retain actual root/tree/guard cleanup.
+5. Run native VT_EMPTY demand start and a unique no-parameter time-triggered action with exact
+   absent/empty/unsubstituted parser controls. Verify ordinary headless startup without witness,
+   genuine child status/Count=0, and unchanged four-start retries. #36 separately records actual
+   standard-user Logon/reboot/locked-session evidence on the same published pair.
+6. Crash before/after RunIntent, SDK return, observed-GUID persistence, authentication and final
+   confirmation. Verify existing intent never redispatches; authenticated live readback can finish,
+   lost pre-authentication stays pending, disabled roles stay untouched and partial pairs restore
+   correctly before receipt. Verify standalone and WinGet pair holders/rollback/capacity with
+   unique hosted fixtures; no local host policy, tasks, PATH or session changes.
+
+Service/COM/typed-record ownership remains with the privacy developer; RuntimeFacts/supervisor
+and thin main consumption remain with runtime; companion packaging/receipt/install/WinGet and
+aggregate journal ownership remain with distribution. Share only the reviewed opaque consumer
+ABI. Source stays held until these owners and the parent review the complete proposal and its
+Project criteria; no parallel legacy launcher implementation or success stub is authorized.
+
 Updater/package maintenance inventories every current-SID Locron task bound to the verified
 installed executable, across all state roots. Compare full Windows file identity while retained
 no-follow file/ancestor guards remain live; path lowercasing and filename matching do not prove
-an executable binding. Parse only the fixed launcher command plus its strictly generated one-value
-CLIXML/base64-JSON argument representation. Reconstruct the private state guard and shared full
-instance digest, and validate role, deterministic task name, marker, task ACL and executable.
+an executable binding. Parse only the exact native GUI launcher action and its strictly generated
+fixed argument template, with both executable bindings described above. Reconstruct the private
+state guard and shared full instance digest, and validate role, deterministic task name, marker,
+task ACL and both executable objects.
 Malformed, foreign or unconfirmed bindings refuse maintenance before stopping any process.
 
 Expose a guarded in-memory snapshot and a serializable versioned restore record containing the
-current SID, previous executable, and each prior registered role's state root, instance digest,
+current SID, previous executable pair, and each prior registered role's state root, instance digest,
 task name, original enabled flag and exact semantic definition fingerprint. Exclude transient
 run/result observations and the enabled flag from that fingerprint. Quiesce disables activation
 for every owned binding before requesting exact lifetime shutdown; actual role-lock and waiting
 launcher exit remain necessary. The private journal records confirmed quiescence and explicit
 forced fallback facts, without containing executable task source or arbitrary role arguments.
 Restore reconstructs guards and checks every existing definition against the recorded fingerprint
-before the first write, then binds only prior registered roles to the new verified executable and
+before the first write, then binds only prior registered roles to the new verified executable pair and
 restores their exact enabled flags. Changed definitions/roots/SIDs fail closed; disabled roles stay
 disabled. Missing registrations are not silently recreated from a stale record.
 
@@ -1521,13 +1705,13 @@ restore_record(record, new_executable, persist) and remove_roles(quiesced, persi
 The persist callback receives a typed ServiceRestoreRecord and returns
 ServiceError on a failed private-journal write. Invoke it with the complete original snapshot
 before disabling the first task; callback failure changes nothing. Persist confirmed quiescence
-and each explicit forced-stop fact before releasing the old executable read guard. Consuming the
-live snapshot retains state-root and registration guards in QuiescedServices but releases that
-old executable guard only after actual all-task exit, so it cannot collide with the updater's
+and each explicit forced-stop fact before releasing both old executable read guards. Consuming the
+live snapshot retains state-root and registration guards in QuiescedServices but releases those
+old executable guards only after actual all-task exit, so they cannot collide with the updater's
 exclusive replacement gate.
 
-ServiceRestoreRecord uses a deny-unknown-fields versioned schema: current SID, previous absolute
-executable, its full volume/file identity, prior roles, explicit phase and bounded
+ServiceRestoreRecord uses a deny-unknown-fields versioned schema: current SID, both previous
+absolute executable paths and full volume/file identities, prior roles, explicit phase and bounded
 explicit forced Task instance identities. Each role stores its fixed daemon/dashboard selector,
 existing root, shared full instance digest, deterministic task name, original enabled flag and
 semantic definition fingerprint. Encode full identities and SHA-256 fingerprints as fixed-width
@@ -1588,10 +1772,10 @@ equal bytes on a different object. Qualification of these pure facts never claim
 activation, fresh registration, rollback or live ownership; production wiring awaits those consumers.
 
 Distribution must reserve all repeated service records, frame overhead, file/receipt/inventory
-transitions and the worst rollback path against 128 frames/16 MiB before any task, registry or
-file mutation. Reserve the actual validated remaining path again at recovery entry. Failure to
-prove the complete budget refuses with zero effects; initial callback success alone is not a
-reservation. The 256-binding inventory limit is only a ceiling, not a promise that it fits.
+transitions and the worst rollback path against the revised 140 frames/18 MiB before any task,
+registry or file mutation. Reserve the actual validated remaining path again at recovery entry.
+Failure to prove the complete budget refuses with zero effects; initial callback success alone
+is not a reservation. The 256-binding inventory limit is only a ceiling, not a promise that it fits.
 
 An interrupted unconfirmed record can resume disabling/quiescing only after reconstructing all
 existing root guards and matching the old executable object plus unchanged definitions; an
