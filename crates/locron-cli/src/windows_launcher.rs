@@ -244,12 +244,9 @@ fn drive(
         // everything it is using until completion or the thin entry's immediate process exit.
         return FAILURE_EXIT;
     }
-    let result = match response {
-        Ok(result) => result,
-        Err(_) => {
-            budget.admitted.store(false, Ordering::Release);
-            return FAILURE_EXIT;
-        }
+    let Ok(result) = response else {
+        budget.admitted.store(false, Ordering::Release);
+        return FAILURE_EXIT;
     };
     while !worker.is_finished() {
         if budget.check().is_err() {

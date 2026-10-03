@@ -218,7 +218,7 @@ fn console_control(flags: u32) -> Probe {
         .env(FIXTURE_MODE, "raw-conout")
         .creation_flags(flags);
     let output = capture(command).unwrap();
-    assert!(output.status.success(), "{:?}", output);
+    assert!(output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty());
     // Only the independent Rust test harness has this fixed prelude; the real GUI output
     // below is decoded in full without trimming or accepting extra bytes.
@@ -239,7 +239,7 @@ fn native_gui_and_actual_console_controls_preserve_raw_first_entry_facts() {
     let mut command = launcher();
     command.arg("--identity-probe");
     let output = capture(command).unwrap();
-    assert!(output.status.success(), "{:?}", output);
+    assert!(output.status.success(), "{output:?}");
     assert!(output.stderr.is_empty());
     let gui = decode(&output.stdout);
     let detached = console_control(DETACHED_PROCESS);
