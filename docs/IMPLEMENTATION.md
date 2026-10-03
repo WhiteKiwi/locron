@@ -5185,3 +5185,17 @@ CreateNew-only bounded UTF-8 artifacts and never repair/overwrite/retry.
 Verify same finite owner/original deadline, exact sanitized new descriptors and
 explicit refusal of unsafe/existing/late output or unknown cleanup. Root records
 exact Issues27/29 readback before releasing the five-path development lease.
+
+
+### Two-user prerequisite vetted hashing and query gates (2026-10-04)
+
+Select the appended locked SHA-256/individual native-call amendment in
+planning/WINDOWS_TWO_USER_PREREQUISITE_2026-10-04.md before dependent Source.
+Reuse workspace sha2 0.10.9 only as a Windows engine dev edge alongside the
+existing windows-permissions edge. Stream the exact held read-only duplicate
+after explicit zero seek with original finite ownership/deadlines; remove custom
+SHA-256 code and require real .NET/Rust source/image hash agreement. Gate each
+SID retrieval/conversion separately under that original deadline. Verify all
+package identities/features, original protocols/owners/clocks/error categories
+and hosted identity/cleanup receipts. Product scope and five-path lease remain;
+Root exact Issues27/29 readback precedes development release.

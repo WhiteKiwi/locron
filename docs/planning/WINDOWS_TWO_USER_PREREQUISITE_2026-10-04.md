@@ -19,8 +19,8 @@ The allowed Source paths are exactly:
 | Path | Allowed change |
 | --- | --- |
 | `crates/locron-engine/examples/windows_user_prerequisite.rs` | New documented example, strict explicit role arguments; actual prerequisite only when directly invoked. |
-| `crates/locron-engine/Cargo.toml` | Explicit example target with `test=false`, `bench=false`; Windows-only **dev** edge `windows-permissions = "=0.2.4"`. |
-| `Cargo.lock` | Only the engine dependency mapping for that already locked package; no package/version/checksum change. |
+| `crates/locron-engine/Cargo.toml` | Explicit example target with `test=false`, `bench=false`; Windows-only **dev** edges `windows-permissions = "=0.2.4"` and `sha2.workspace = true` (locked workspace 0.10.9/std). |
+| `Cargo.lock` | Only engine dependency mappings for already locked `windows-permissions` and `sha2 0.10.9`; no package/version/checksum change. |
 | `scripts/test-windows-user-prerequisite.ps1` | New fixed stock PowerShell 5.1/.NET orchestrator, all effectful code confined to the disposable hosted job. |
 | `.github/workflows/ci.yml` | Manual-only verification-branch replacement, two native rows and bounded sanitized receipt upload. |
 
@@ -232,3 +232,50 @@ outputs refuse without overwrite, repair, removal or success. A partial file,
 failed upload or a syntactically valid failure receipt is not native acceptance.
 Source remains five paths and separate-session owned; actual hosted evidence
 and Root complete-source review remain required before any qualification.
+
+
+### Selected locked SHA-256 and individual native-call gates (2026-10-04)
+
+Root reviewed the separate held-Source audit before this dependent amendment.
+The example's source/copied-image identity must use the workspace's already
+selected RustCrypto sha2 0.10.9, with default-features=false and std, through a
+Windows-only engine dev sha2.workspace=true edge. Core/CLI/Server already use
+this locked package. Add only the disambiguated engine lock mapping sha2 0.10.9;
+retain windows-permissions 0.2.4. No new package/version/checksum, production
+dependency, asm/compress feature or handwritten SHA-256 implementation is
+selected. The locked checksum remains
+a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283.
+
+1. Reuse sha2::{Digest,Sha256} with incremental new/update/finalize. Verify:
+   compare the entire locked graph/package identities and resolved features;
+   only these two existing Windows engine dev mappings change, and custom
+   compression/constants/padding code is absent. An offline metadata/format
+   result is not example type checking or native identity acceptance.
+2. Hash the exact already held read-only regular leaf through its duplicated
+   handle, explicitly seek that duplicate to zero, then read bounded chunks.
+   Verify: clone, seek and each read have checked_native pre/post gates under
+   the same original deadline; update/finalize/final response refuse lateness.
+   File::try_clone shares the cursor: these fresh source/image handles are
+   hashed once with no concurrent reader. Keep the original handle and actual
+   ancestry alive, never reopen by pathname or add/replay an owner/clock.
+   Native late returns remain parked with the same retained result/stack.
+   Hosted actual .NET source/copy SHA-256 and Rust source/copy SHA-256 must
+   agree before image authority is acknowledged; no mocked hash substitutes.
+3. Conserve the existing every-native-call deadline contract for actual SID
+   retrieval and conversion, including ACL-owner/ACE SID conversion. Verify:
+   checked_native gates each separate OS call using the original caller
+   deadline; a late first query admits no conversion/next query. Retain the
+   actual returned owner/full stack on unknown lateness and preserve Token
+   versus Native error categories while propagating Deadline refusal.
+
+The product specification, five-path Source boundary, fixed account/Job/ACL
+protocol, original clocks, public receipt rules and strict native Verify remain
+unchanged. Local link.exe is unavailable: the earlier attempted cargo check
+stopped before example type checking; do not infer compiler/native acceptance
+or repeat owner-PC fixture execution. Root records exact Issues27/29 readback
+before releasing the held development lease. Both actual manual hosted rows
+and complete Root Source review are still required.
+
+Research: pinned [sha2 API](https://docs.rs/sha2/0.10.9/sha2/),
+[RustCrypto source](https://github.com/RustCrypto/hashes/blob/82c36a428f8d6f05f3bfccdedb243e9d1f85359d/sha2/src/lib.rs),
+[File clone cursor contract](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_clone).

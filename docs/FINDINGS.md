@@ -5346,3 +5346,20 @@ Failed/late publication or unknown cleanup never produces a success receipt.
 This precise five-path development decision is selected in the prerequisite
 plan and owning Issues27/29 before its dependent Source; no local native/host
 effects or hosted acceptance is inferred from the composition.
+
+
+### Held prerequisite hashing audit before dependent Source (2026-10-04)
+
+The exact a5fd5e8 five-path Source snapshot had a handwritten SHA-256 identity
+implementation. The workspace already locks sha2 0.10.9 (std only), used by
+Core/CLI/Server; its pinned incremental Digest/Sha256 API avoids a new custom
+cryptographic implementation or new package/version/features. File::try_clone
+shares the cursor. These retained fresh read-only handles are hashed once;
+select an explicit duplicate-handle zero seek and preserve each native/computational
+deadline gate, held ancestry and finite owner. Actual .NET/Rust hosted hashes
+must agree. Separately, each SID query/conversion must gate the same original
+deadline, rather than combining two OS calls behind one admission check.
+The separate immutable sha2-hold-audit records the five held hashes and graph.
+Earlier cargo check stopped at missing link.exe before example type checking;
+neither metadata nor this audit qualifies native behavior. The prerequisite
+plan selects these decisions before Source; Issues27/29 retain actual Verify.
