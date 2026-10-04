@@ -5426,3 +5426,8 @@ Parent and separate reviewer fully read original renderer70c9. A renamed-away ou
 
 
 Official [setup-python architecture inputs](https://github.com/actions/setup-python/blob/main/action.yml) and the [Python distribution manifest](https://github.com/actions/python-versions/blob/main/versions-manifest.json) were read before Source on2026-10-04. Stable3.14 Windows x64 and ARM64 artifacts are listed. Select setup-python@v6 with3.14 and explicit x64/arm64 inputs for the new fixture job, then require actual interpreter architecture observations; installer selection alone is not native test evidence. No freethreaded interpreter, owner-PC installation or emulation is selected.
+
+
+### PR140 concurrent existing recovery suite reconciliation
+
+Parent fully reviewed remote4a Source741/92/156 and Docs245, plus independent research4c66eb7f: renderer remains exact55f4 with missing-directory cleanup-note gap; remote tests cover32 portable/6 native but use TemporaryDirectory recursive/finalizer cleanup, restore readonly mode before root check and only print interpreter architecture. Select existing suite expansion to42/49 exact controls, an actual ID-ledger/nonrecursive/saved-mode fixture owner, checked native CPython3.14 ABI and minimal writer diagnosis. Preserve all old selectors/assertions, including actual readonly WinError5 documented by Microsoft DeleteFileW; no broader guessed error allowance. Final selection and five Verify steps are appended to WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md before new Source.

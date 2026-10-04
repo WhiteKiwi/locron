@@ -18,3 +18,6 @@ The owner requested implementation-first Drafts. Repository regression-test addi
 ## Maintainer review and control handoff (2026-10-04)
 
 The source diagnostic gap for a renamed-away directory and the missing Verify controls are selected in WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. That plan supersedes the earlier unexecuted verification proposal using available exact Source and Issue35, without claiming to read missing Docs9038. Normal reviewed main814 composition preserves the paired CLI default. Separate developer owns the three-file correction/controls/workflow; parent reviews/publishes and requires hosted32/38 control evidence, unchanged regressions and all required exact-head gates before merge. Broader WinGet publication/installation acceptance stays open.
+
+
+Concurrent4a existing output-recovery suite is retained and extended per the final reconciliation selection. Preserve every old32/6 control and add10 portable/1 native: hosted16/42 and21/49 exact key sets, actual ID-ledger nonrecursive teardown/saved-mode restoration and native CPython3.14 architecture. Correct only the missing-output-directory cleanup-note boundary; no manifest byte/validator change. Parent Docs/Issue35 readback precedes separate three-path Source lease and normal ancestry integration.
