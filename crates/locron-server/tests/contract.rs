@@ -270,7 +270,7 @@ async fn token_refusal() {
     let body: Value = response.json().await.expect("json");
     assert_eq!(
         error(&body, "unauthenticated"),
-        "a valid access token or session cookie is required for /api/v1/jobs"
+        "a valid access token or session cookie is required"
     );
 
     let response = server
@@ -287,7 +287,7 @@ async fn token_refusal() {
     let body: Value = response.json().await.expect("json");
     assert_eq!(
         error(&body, "unauthenticated"),
-        "a valid access token or session cookie is required for /api/v1/jobs"
+        "a valid access token or session cookie is required"
     );
 }
 
@@ -2253,4 +2253,102 @@ async fn sse_stream_disconnect_never_cancels() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(data(&body)["cancelled"], json!(true), "{body}");
+}
+
+// ---------------------------------------------------------------------------
+// Actual HTTP security refusal privacy
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_security_refusals_hide_token_path_query_and_header_canaries() {
+    let server = spawn_server();
+    let protected_url = format!(
+        "{}/api/v1/PATHCANARY?token={}&query=QUERYCANARY",
+        server.base, server.token
+    );
+    let paste_url = format!(
+        "{}/api/v1/session?path=PATHCANARY&query=QUERYCANARY&token={}",
+        server.base, server.token
+    );
+    let cases = [
+        (
+            "http-query",
+            server.client.get(&protected_url),
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            "a valid access token or session cookie is required",
+        ),
+        (
+            "http-host",
+            server
+                .client
+                .get(&protected_url)
+                .header(reqwest::header::HOST, "[::1]HEADERCANARY"),
+            StatusCode::FORBIDDEN,
+            "refused",
+            "request requires one valid loopback Host header",
+        ),
+        (
+            "http-origin",
+            server
+                .client
+                .post(&paste_url)
+                .header(
+                    reqwest::header::ORIGIN,
+                    format!("{}/HEADERCANARY/PATHCANARY?QUERYCANARY", server.base),
+                )
+                .json(&json!({"token": server.token})),
+            StatusCode::FORBIDDEN,
+            "refused",
+            "Origin must be one valid origin of this loopback server",
+        ),
+    ];
+    assert_eq!(cases.len(), 3);
+    let mut seen = std::collections::BTreeSet::new();
+    for (id, request, status, code, message) in cases {
+        let response = request
+            .header("x-admission-canary", "HEADERCANARY")
+            .send()
+            .await
+            .unwrap_or_else(|error| panic!("{id}: actual HTTP request failed: {error}"));
+        assert_eq!(response.status(), status, "{id}");
+        assert_eq!(
+            response.headers().get("referrer-policy").expect("policy"),
+            "no-referrer",
+            "{id}"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get_all(reqwest::header::SET_COOKIE)
+                .iter()
+                .count(),
+            0,
+            "{id}: refusal emitted a cookie"
+        );
+        let text = response.text().await.expect("HTTP response body");
+        for canary in [
+            server.token.as_str(),
+            "PATHCANARY",
+            "QUERYCANARY",
+            "HEADERCANARY",
+        ] {
+            assert!(!text.contains(canary), "{id}: response contains {canary}");
+        }
+        assert_eq!(
+            serde_json::from_str::<Value>(&text).expect("error JSON"),
+            json!({
+                "schema": "locron.api/v1",
+                "ok": false,
+                "error": {"code": code, "message": message}
+            }),
+            "{id}"
+        );
+        assert!(seen.insert(id), "duplicate HTTP completion: {id}");
+    }
+    assert_eq!(
+        seen,
+        std::collections::BTreeSet::from(["http-query", "http-host", "http-origin"]),
+        "all three actual HTTP canary rows must complete"
+    );
 }
