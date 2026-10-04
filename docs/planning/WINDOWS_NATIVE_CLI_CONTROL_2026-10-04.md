@@ -620,6 +620,11 @@ native/Child/Store/path I/O, reopen admission or translate missing data into
 success. ReleaseGate unwind and all original later assertions remain exact.
 Only fixed enum/numeric/bool formatting is allowed; no private path/PID/error
 message/frame. Each snapshot remains independent of neighboring events.
+The driver snapshot reports outcome=unobserved and reads only the existing
+phase, flags, frame_bytes, elapsed_us and ObservationSnapshot scalars directly.
+Do not construct a CaseResult with a synthetic Native or other work outcome.
+Only an actually queued completed CaseResult may render its real code/outcome.
+Record this refinement and owning Issue31 readback before changing that Source.
 The failure line combines at most two existing bounded CaseResult renderings
 and fixed notice/queued-state words; require a conservative2048 ASCII-byte bound.
 
