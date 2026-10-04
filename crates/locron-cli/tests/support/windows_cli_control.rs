@@ -51,6 +51,44 @@ enum Code {
     Panicked,
 }
 
+impl Code {
+    fn slot(self) -> u8 {
+        match self {
+            Self::Success => 0,
+            Self::Expired => 1,
+            Self::Native => 2,
+            Self::ChildExited => 3,
+            Self::Role => 4,
+            Self::ForeignPeer => 5,
+            Self::WrongDirection => 6,
+            Self::BadAck => 7,
+            Self::Cli => 8,
+            Self::Run => 9,
+            Self::Progress => 10,
+            Self::Cleanup => 11,
+            Self::Panicked => 12,
+        }
+    }
+    fn decode(slot: u8) -> Option<Self> {
+        match slot {
+            0 => Some(Self::Success),
+            1 => Some(Self::Expired),
+            2 => Some(Self::Native),
+            3 => Some(Self::ChildExited),
+            4 => Some(Self::Role),
+            5 => Some(Self::ForeignPeer),
+            6 => Some(Self::WrongDirection),
+            7 => Some(Self::BadAck),
+            8 => Some(Self::Cli),
+            9 => Some(Self::Run),
+            10 => Some(Self::Progress),
+            11 => Some(Self::Cleanup),
+            12 => Some(Self::Panicked),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 enum Phase {
@@ -91,14 +129,533 @@ impl Phase {
     }
 }
 
+// Scalar observations are independent returned facts, never ownership/readiness.
+const OP_NAMES: [&str; 53] = [
+    "unobserved",
+    "StateSetup",
+    "StateGuard",
+    "CaseCurrentExe",
+    "DaemonSpawn",
+    "PeerSpawn",
+    "ChildLiveness",
+    "ReadyOpen",
+    "ReadyRead",
+    "AddCliSpawn",
+    "RunCliSpawn",
+    "HistoryCliSpawn",
+    "CancelCliSpawn",
+    "AddCliRead",
+    "RunCliRead",
+    "HistoryCliRead",
+    "CancelCliRead",
+    "AddCliWait",
+    "RunCliWait",
+    "HistoryCliWait",
+    "CancelCliWait",
+    "HistoryJson",
+    "HistorySelect",
+    "SubmitJson",
+    "SubmitSelect",
+    "ProgressOpen",
+    "ProgressRead",
+    "ProgressValidate",
+    "RoleMetadataRead",
+    "RoleLockProbe",
+    "RoleMetadataRepeat",
+    "EndpointName",
+    "RuntimeBuild",
+    "PipeOpen",
+    "PipeClone",
+    "PipeConvert",
+    "PipeDirection",
+    "PipePid",
+    "PipeFrameWrite",
+    "PipeAckRead",
+    "PipeReceiptWrite",
+    "CleanupTryWait",
+    "CleanupKill",
+    "CleanupWait",
+    "DropStdout",
+    "DropMetadata",
+    "DropQueryHandle",
+    "DropClient",
+    "DropRuntime",
+    "DropGuard",
+    "DropState",
+    "CleanupStateExists",
+    "WorkOutcome",
+];
+
+#[derive(Clone, Copy)]
+#[repr(u8)]
+enum Operation {
+    StateSetup = 1,
+    StateGuard,
+    CaseCurrentExe,
+    DaemonSpawn,
+    PeerSpawn,
+    ChildLiveness,
+    ReadyOpen,
+    ReadyRead,
+    AddCliSpawn,
+    RunCliSpawn,
+    HistoryCliSpawn,
+    CancelCliSpawn,
+    AddCliRead,
+    RunCliRead,
+    HistoryCliRead,
+    CancelCliRead,
+    AddCliWait,
+    RunCliWait,
+    HistoryCliWait,
+    CancelCliWait,
+    HistoryJson,
+    HistorySelect,
+    SubmitJson,
+    SubmitSelect,
+    ProgressOpen,
+    ProgressRead,
+    ProgressValidate,
+    RoleMetadataRead,
+    RoleLockProbe,
+    RoleMetadataRepeat,
+    EndpointName,
+    RuntimeBuild,
+    PipeOpen,
+    PipeClone,
+    PipeConvert,
+    PipeDirection,
+    PipePid,
+    PipeFrameWrite,
+    PipeAckRead,
+    PipeReceiptWrite,
+    CleanupTryWait,
+    CleanupKill,
+    CleanupWait,
+    DropStdout,
+    DropMetadata,
+    DropQueryHandle,
+    DropClient,
+    DropRuntime,
+    DropGuard,
+    DropState,
+    CleanupStateExists,
+    WorkOutcome,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+#[repr(u8)]
+enum ChildRole {
+    NoChild,
+    Daemon,
+    NegativePeer,
+    ControlCli,
+}
+
+impl ChildRole {
+    fn name(self) -> &'static str {
+        match self {
+            Self::NoChild => "NoChild",
+            Self::Daemon => "Daemon",
+            Self::NegativePeer => "NegativePeer",
+            Self::ControlCli => "ControlCli",
+        }
+    }
+
+    fn decode(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::NoChild),
+            1 => Some(Self::Daemon),
+            2 => Some(Self::NegativePeer),
+            3 => Some(Self::ControlCli),
+            _ => None,
+        }
+    }
+}
+
+const VALID_EVENT: u64 = 1 << 63;
+const PAYLOAD_MASK: u64 = (1 << 38) - 1;
+const RAW_MASK: u64 = (1 << 32) - 1;
+const PRESENT: u64 = 1 << 32;
+const INVALID_EVENT: u64 = u64::MAX;
+
+fn event_word(tag: u8, operation: Operation, role: ChildRole, payload: u64) -> u64 {
+    let operation = operation as u8;
+    if !(1..=4).contains(&tag) || !(1..=52).contains(&operation) || payload > PAYLOAD_MASK {
+        return INVALID_EVENT;
+    }
+    VALID_EVENT
+        | (u64::from(tag) << 60)
+        | (u64::from(role as u8) << 44)
+        | (u64::from(operation) << 38)
+        | payload
+}
+
+fn signed_payload(value: Option<i32>) -> u64 {
+    value.map_or(0, |value| {
+        PRESENT | u64::from(u32::from_ne_bytes(value.to_ne_bytes()))
+    })
+}
+
+fn decode_signed(payload: u64) -> Option<Option<i32>> {
+    let bits = u32::try_from(payload & RAW_MASK).ok()?;
+    if payload & PRESENT == 0 {
+        return (bits == 0).then_some(None);
+    }
+    Some(Some(i32::from_ne_bytes(bits.to_ne_bytes())))
+}
+
+const KIND_NAMES: [&str; 18] = [
+    "invalid",
+    "Other",
+    "NotFound",
+    "PermissionDenied",
+    "AlreadyExists",
+    "WouldBlock",
+    "TimedOut",
+    "Interrupted",
+    "InvalidInput",
+    "InvalidData",
+    "UnexpectedEof",
+    "WriteZero",
+    "BrokenPipe",
+    "NotConnected",
+    "ConnectionAborted",
+    "ConnectionRefused",
+    "ConnectionReset",
+    "Unsupported",
+];
+
+fn kind_bucket(kind: io::ErrorKind) -> u8 {
+    match kind {
+        io::ErrorKind::NotFound => 2,
+        io::ErrorKind::PermissionDenied => 3,
+        io::ErrorKind::AlreadyExists => 4,
+        io::ErrorKind::WouldBlock => 5,
+        io::ErrorKind::TimedOut => 6,
+        io::ErrorKind::Interrupted => 7,
+        io::ErrorKind::InvalidInput => 8,
+        io::ErrorKind::InvalidData => 9,
+        io::ErrorKind::UnexpectedEof => 10,
+        io::ErrorKind::WriteZero => 11,
+        io::ErrorKind::BrokenPipe => 12,
+        io::ErrorKind::NotConnected => 13,
+        io::ErrorKind::ConnectionAborted => 14,
+        io::ErrorKind::ConnectionRefused => 15,
+        io::ErrorKind::ConnectionReset => 16,
+        io::ErrorKind::Unsupported => 17,
+        _ => 1,
+    }
+}
+
+struct Observations {
+    intent: AtomicU8,
+    io_error: AtomicU64,
+    daemon_status: AtomicU64,
+    peer_status: AtomicU64,
+    cli_status: AtomicU64,
+    first_work: AtomicU64,
+    ready_read: AtomicU64,
+}
+
+impl Observations {
+    fn new() -> Self {
+        Self {
+            intent: AtomicU8::new(0),
+            io_error: AtomicU64::new(0),
+            daemon_status: AtomicU64::new(0),
+            peer_status: AtomicU64::new(0),
+            cli_status: AtomicU64::new(0),
+            first_work: AtomicU64::new(0),
+            ready_read: AtomicU64::new(0),
+        }
+    }
+
+    fn intent(&self, operation: Operation) {
+        self.intent.store(operation as u8, Ordering::Release);
+    }
+
+    fn error(&self, operation: Operation, role: ChildRole, error: &io::Error) {
+        let payload =
+            signed_payload(error.raw_os_error()) | (u64::from(kind_bucket(error.kind())) << 33);
+        self.io_error
+            .store(event_word(1, operation, role, payload), Ordering::Release);
+    }
+
+    fn io<T>(&self, operation: Operation, role: ChildRole, result: &io::Result<T>) {
+        if let Err(error) = result {
+            self.error(operation, role, error);
+        }
+    }
+
+    fn status(&self, operation: Operation, role: ChildRole, status: &std::process::ExitStatus) {
+        let slot = match role {
+            ChildRole::Daemon => &self.daemon_status,
+            ChildRole::NegativePeer => &self.peer_status,
+            ChildRole::ControlCli => &self.cli_status,
+            ChildRole::NoChild => return,
+        };
+        slot.store(
+            event_word(2, operation, role, signed_payload(status.code())),
+            Ordering::Release,
+        );
+    }
+
+    fn work(&self, work: &Result<(), Code>, phase: u8) {
+        self.intent(Operation::WorkOutcome);
+        let code = match work {
+            Ok(()) => Code::Success,
+            Err(code) => *code,
+        };
+        let word = if phase <= 13 {
+            event_word(
+                3,
+                Operation::WorkOutcome,
+                ChildRole::NoChild,
+                u64::from(code.slot()) | (u64::from(phase) << 4),
+            )
+        } else {
+            INVALID_EVENT
+        };
+        // One completed work result; cleanup and Drop cannot replace it.
+        let _ = self
+            .first_work
+            .compare_exchange(0, word, Ordering::AcqRel, Ordering::Acquire);
+    }
+
+    fn ready(&self, bytes: &[u8]) {
+        let (class, length) = match bytes {
+            [] => (0_u64, 0_u64),
+            b"1" => (1, 1),
+            [_] => (2, 1),
+            [_, _] => (2, 2),
+            _ => {
+                self.ready_read.store(INVALID_EVENT, Ordering::Release);
+                return;
+            }
+        };
+        self.ready_read.store(
+            event_word(
+                4,
+                Operation::ReadyRead,
+                ChildRole::NegativePeer,
+                class | (length << 2),
+            ),
+            Ordering::Release,
+        );
+    }
+
+    fn snapshot(&self) -> ObservationSnapshot {
+        ObservationSnapshot {
+            intent: self.intent.load(Ordering::Acquire),
+            io_error: self.io_error.load(Ordering::Acquire),
+            statuses: [
+                self.daemon_status.load(Ordering::Acquire),
+                self.peer_status.load(Ordering::Acquire),
+                self.cli_status.load(Ordering::Acquire),
+            ],
+            first_work: self.first_work.load(Ordering::Acquire),
+            ready_read: self.ready_read.load(Ordering::Acquire),
+        }
+    }
+}
+
+struct ObservationSnapshot {
+    intent: u8,
+    io_error: u64,
+    statuses: [u64; 3],
+    first_work: u64,
+    ready_read: u64,
+}
+
+struct EventDisplay {
+    word: u64,
+    tag: u8,
+    expected_role: Option<ChildRole>,
+}
+
+fn event_header(word: u64, tag: u8) -> Option<(u8, ChildRole, u64)> {
+    let operation = u8::try_from((word >> 38) & 63).ok()?;
+    let role = ChildRole::decode(u8::try_from((word >> 44) & 7).ok()?)?;
+    let allowed = VALID_EVENT | (7 << 60) | (7 << 44) | (63 << 38) | PAYLOAD_MASK;
+    if word & VALID_EVENT == 0
+        || word & !allowed != 0
+        || (word >> 60) & 7 != u64::from(tag)
+        || !(1..=52).contains(&operation)
+    {
+        return None;
+    }
+    Some((operation, role, word & PAYLOAD_MASK))
+}
+
+impl fmt::Display for EventDisplay {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.word == 0 {
+            return formatter.write_str("unobserved");
+        }
+        let Some((operation, role, payload)) = event_header(self.word, self.tag) else {
+            return formatter.write_str("invalid");
+        };
+        if self.expected_role.is_some_and(|expected| expected != role) {
+            return formatter.write_str("invalid");
+        }
+        let op = OP_NAMES
+            .get(usize::from(operation))
+            .copied()
+            .unwrap_or("invalid");
+        match self.tag {
+            1 => {
+                let kind = usize::try_from(payload >> 33)
+                    .ok()
+                    .filter(|kind| (1..=17).contains(kind));
+                let Some(kind) = kind.and_then(|kind| KIND_NAMES.get(kind)) else {
+                    return formatter.write_str("invalid");
+                };
+                let Some(raw) = decode_signed(payload) else {
+                    return formatter.write_str("invalid");
+                };
+                write!(formatter, "{{op={op},role={},kind={kind},raw=", role.name())?;
+                match raw {
+                    Some(raw) => write!(formatter, "{raw}"),
+                    None => formatter.write_str("none"),
+                }?;
+                formatter.write_str("}")
+            }
+            2 => {
+                if payload >> 33 != 0
+                    || role == ChildRole::NoChild
+                    || !matches!(operation, 6 | 17..=20 | 41 | 43)
+                {
+                    return formatter.write_str("invalid");
+                }
+                let Some(code) = decode_signed(payload) else {
+                    return formatter.write_str("invalid");
+                };
+                write!(formatter, "{{op={op},role={},code=", role.name())?;
+                match code {
+                    Some(code) => write!(formatter, "{code}"),
+                    None => formatter.write_str("none"),
+                }?;
+                formatter.write_str("}")
+            }
+            3 => {
+                if operation != 52
+                    || role != ChildRole::NoChild
+                    || payload >> 8 != 0
+                    || (payload >> 4) > 13
+                {
+                    return formatter.write_str("invalid");
+                }
+                let Some(code) = u8::try_from(payload & 15).ok().and_then(Code::decode) else {
+                    return formatter.write_str("invalid");
+                };
+                let Some(phase) = u8::try_from(payload >> 4).ok() else {
+                    return formatter.write_str("invalid");
+                };
+                write!(
+                    formatter,
+                    "{{op={op},role=NoChild,code={code:?},phase={:?}}}",
+                    Phase::from_slot(phase)
+                )
+            }
+            4 => {
+                let class = payload & 3;
+                let length = (payload >> 2) & 3;
+                if operation != 8
+                    || role != ChildRole::NegativePeer
+                    || payload >> 4 != 0
+                    || !matches!((class, length), (0, 0) | (1, 1) | (2, 1 | 2))
+                {
+                    return formatter.write_str("invalid");
+                }
+                let class = match class {
+                    0 => "Empty",
+                    1 => "Expected",
+                    _ => "Unexpected",
+                };
+                write!(
+                    formatter,
+                    "{{op={op},role=NegativePeer,class={class},len={length}}}"
+                )
+            }
+            _ => formatter.write_str("invalid"),
+        }
+    }
+}
+
+impl fmt::Display for ObservationSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 577 ASCII bytes maximum including original fields, 579 with CRLF.
+        // Slots are independent observations, not same-instruction causal facts.
+        let intent = OP_NAMES
+            .get(usize::from(self.intent))
+            .copied()
+            .unwrap_or("invalid");
+        write!(
+            formatter,
+            " intent={intent} last_io={} daemon_status={} peer_status={} cli_status={} first_work={} ready={}",
+            EventDisplay {
+                word: self.io_error,
+                tag: 1,
+                expected_role: None
+            },
+            EventDisplay {
+                word: self.statuses[0],
+                tag: 2,
+                expected_role: Some(ChildRole::Daemon)
+            },
+            EventDisplay {
+                word: self.statuses[1],
+                tag: 2,
+                expected_role: Some(ChildRole::NegativePeer)
+            },
+            EventDisplay {
+                word: self.statuses[2],
+                tag: 2,
+                expected_role: Some(ChildRole::ControlCli)
+            },
+            EventDisplay {
+                word: self.first_work,
+                tag: 3,
+                expected_role: Some(ChildRole::NoChild)
+            },
+            EventDisplay {
+                word: self.ready_read,
+                tag: 4,
+                expected_role: Some(ChildRole::NegativePeer)
+            }
+        )
+    }
+}
+
+// This wrapper adds no gate, clock or I/O. The existing gated future still owns
+// entry/post-poll expiry; a late actual return is a fact, never timely success.
+async fn observed_io<T>(
+    control: &Control,
+    operation: Operation,
+    role: ChildRole,
+    future: impl Future<Output = io::Result<T>>,
+) -> io::Result<T> {
+    let mut future = pin!(future);
+    poll_fn(|context| {
+        control.observations.intent(operation);
+        let result = future.as_mut().poll(context);
+        if let Poll::Ready(result) = &result {
+            control.observations.io(operation, role, result);
+        }
+        result
+    })
+    .await
+}
+
 /// Fixed non-sensitive result; a late result cannot qualify successful cleanup.
-#[derive(Debug)]
 pub struct CaseResult {
     code: Code,
     phase: Phase,
     flags: u8,
     frame_bytes: u32,
     elapsed_us: u128,
+    observations: ObservationSnapshot,
 }
 
 impl CaseResult {
@@ -115,7 +672,14 @@ impl fmt::Display for CaseResult {
             formatter,
             "code={:?} phase={:?} flags={} frame_bytes={} elapsed_us={}",
             self.code, self.phase, self.flags, self.frame_bytes, self.elapsed_us
-        )
+        )?;
+        fmt::Display::fmt(&self.observations, formatter)
+    }
+}
+
+impl fmt::Debug for CaseResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
     }
 }
 
@@ -129,6 +693,7 @@ struct Control {
     case_expiry: AtomicU64,
     probe_expiry: AtomicU64,
     probe_complete: AtomicU64,
+    observations: Observations,
 }
 
 impl Control {
@@ -143,6 +708,7 @@ impl Control {
             case_expiry: AtomicU64::new(0),
             probe_expiry: AtomicU64::new(0),
             probe_complete: AtomicU64::new(0),
+            observations: Observations::new(),
         })
     }
 
@@ -262,6 +828,7 @@ impl Control {
             flags: self.flags.load(Ordering::Acquire),
             frame_bytes: self.frame_bytes.load(Ordering::Acquire),
             elapsed_us: self.entered.elapsed().as_micros(),
+            observations: self.observations.snapshot(),
         }
     }
 }
@@ -366,6 +933,7 @@ struct Owner {
     control: Arc<Control>,
     state: Option<PrivateState>,
     children: [Option<Child>; 2],
+    child_roles: [ChildRole; 2],
     active_cli: Option<Child>,
     guard: Option<DirectoryGuard>,
     runtime: Option<Runtime>,
@@ -384,6 +952,7 @@ impl Owner {
             state: None,
             // Reserved before any actual spawn; anchoring cannot allocate.
             children: [None, None],
+            child_roles: [ChildRole::NoChild; 2],
             active_cli: None,
             guard: None,
             runtime: None,
@@ -406,6 +975,7 @@ impl Owner {
     fn initialize_state(&mut self) -> Result<(), Code> {
         self.control.step(Phase::Setup, self.control.deadline)?;
         // The unchanged factory is invoked only on this already-admitted worker.
+        self.control.observations.intent(Operation::StateSetup);
         self.state = Some(private_state_fixture());
         self.control.check(self.control.deadline)
     }
@@ -415,17 +985,29 @@ impl Owner {
         index: usize,
         command: &mut Command,
         post_spawn: Option<Duration>,
+        role: ChildRole,
     ) -> Result<(), Code> {
         self.control.step(Phase::Setup, self.control.deadline)?;
         let slot = self.children.get_mut(index).ok_or(Code::Native)?;
         if slot.is_some() {
             return Err(Code::Native);
         }
+        let operation = match role {
+            ChildRole::NegativePeer => Operation::PeerSpawn,
+            _ => Operation::DaemonSpawn,
+        };
+        self.control.observations.intent(operation);
         let spawned = command.spawn();
         let returned = Instant::now();
         match spawned {
-            Ok(child) => *slot = Some(child),
-            Err(_) => {
+            Ok(child) => {
+                *slot = Some(child);
+                if let Some(anchored_role) = self.child_roles.get_mut(index) {
+                    *anchored_role = role;
+                }
+            }
+            Err(error) => {
+                self.control.observations.error(operation, role, &error);
                 self.control.check(self.control.deadline)?;
                 return Err(Code::Native);
             }
@@ -446,15 +1028,20 @@ impl Owner {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null()),
             post_spawn,
+            ChildRole::Daemon,
         )
     }
 
     fn retain_guard(&mut self) -> Result<(), Code> {
         self.control.step(Phase::Guard, self.control.deadline)?;
+        self.control.observations.intent(Operation::StateGuard);
         let guarded = DirectoryGuard::existing_private(self.root()?);
         let guard = match guarded {
             Ok(guard) => guard,
-            Err(_) => {
+            Err(error) => {
+                self.control
+                    .observations
+                    .error(Operation::StateGuard, ChildRole::NoChild, &error);
                 self.control.check(self.control.deadline)?;
                 return Err(Code::Native);
             }
@@ -470,7 +1057,15 @@ impl Owner {
             .get_mut(index)
             .and_then(Option::as_mut)
             .ok_or(Code::Native)?;
-        child_live(&self.control, child, deadline)
+        child_live(
+            &self.control,
+            child,
+            deadline,
+            self.child_roles
+                .get(index)
+                .copied()
+                .unwrap_or(ChildRole::NoChild),
+        )
     }
 
     fn expected_role(&mut self, index: usize) -> Result<(), Code> {
@@ -478,6 +1073,9 @@ impl Owner {
         loop {
             self.control.step(Phase::Role, self.control.deadline)?;
             self.live(index, self.control.deadline)?;
+            self.control
+                .observations
+                .intent(Operation::RoleMetadataRead);
             let metadata = DaemonLock::read_role_metadata(&path);
             self.control.check(self.control.deadline)?;
             let metadata = metadata.map_err(|_| Code::Role)?;
@@ -491,12 +1089,16 @@ impl Owner {
                     return Err(Code::Role);
                 }
                 self.control.check(self.control.deadline)?;
+                self.control.observations.intent(Operation::RoleLockProbe);
                 let held = DaemonLock::probe_existing(&path);
                 self.control.check(self.control.deadline)?;
                 let held = held.map_err(|_| Code::Role)?;
                 if held != LockProbe::Held {
                     return Err(Code::Role);
                 }
+                self.control
+                    .observations
+                    .intent(Operation::RoleMetadataRepeat);
                 let repeated = DaemonLock::read_role_metadata(&path);
                 self.control.check(self.control.deadline)?;
                 let repeated = repeated.map_err(|_| Code::Role)?;
@@ -527,10 +1129,19 @@ impl Owner {
         }
         // Retain the actual control CLI too: Command::output would conceal its
         // Child on an I/O failure. The command/JSON/status under test is unchanged.
+        let operations = cli_operations(phase);
+        if let Some((spawn, _, _)) = operations {
+            self.control.observations.intent(spawn);
+        }
         let child = command.stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
         let child = match child {
             Ok(child) => child,
-            Err(_) => {
+            Err(error) => {
+                if let Some((spawn, _, _)) = operations {
+                    self.control
+                        .observations
+                        .error(spawn, ChildRole::ControlCli, &error);
+                }
                 self.control.check(self.control.deadline)?;
                 return Err(Code::Cli);
             }
@@ -540,18 +1151,40 @@ impl Owner {
         self.cli_stdout = self.active_cli.as_mut().ok_or(Code::Cli)?.stdout.take();
         self.control.check(self.control.deadline)?;
         let mut bytes = Vec::new();
+        if let Some((_, read, _)) = operations {
+            self.control.observations.intent(read);
+        }
         let read = self
             .cli_stdout
             .as_mut()
             .ok_or(Code::Cli)?
             .read_to_end(&mut bytes);
+        if let Some((_, operation, _)) = operations {
+            self.control
+                .observations
+                .io(operation, ChildRole::ControlCli, &read);
+        }
         self.control.check(self.control.deadline)?;
         read.map_err(|_| Code::Cli)?;
         self.control.check(self.control.deadline)?;
+        if let Some((_, _, wait)) = operations {
+            self.control.observations.intent(wait);
+        }
         let status = self.active_cli.as_mut().ok_or(Code::Cli)?.wait();
+        if let Some((_, _, wait)) = operations {
+            self.control
+                .observations
+                .io(wait, ChildRole::ControlCli, &status);
+            if let Ok(status) = &status {
+                self.control
+                    .observations
+                    .status(wait, ChildRole::ControlCli, status);
+            }
+        }
         self.control.check(self.control.deadline)?;
         let status = status.map_err(|_| Code::Cli)?;
         // The actual control CLI has been reaped before its pipe is released.
+        self.control.observations.intent(Operation::DropStdout);
         drop(self.cli_stdout.take());
         drop(self.active_cli.take());
         self.control.check(self.control.deadline)?;
@@ -571,9 +1204,11 @@ impl Owner {
             Phase::History,
             self.command()?.args(["--json", "history", name]),
         )?;
+        self.control.observations.intent(Operation::HistoryJson);
         let envelope: serde_json::Value =
             serde_json::from_slice(&output.stdout).map_err(|_| Code::Run)?;
         self.control.check(self.control.deadline)?;
+        self.control.observations.intent(Operation::HistorySelect);
         envelope["data"]
             .as_array()
             .and_then(|runs| runs.iter().find(|run| run["id"] == run_id))
@@ -584,9 +1219,11 @@ impl Owner {
 
     fn submit(&mut self, name: &str) -> Result<String, Code> {
         let output = self.output(Phase::Run, self.command()?.args(["--json", "run", name]))?;
+        self.control.observations.intent(Operation::SubmitJson);
         let envelope: serde_json::Value =
             serde_json::from_slice(&output.stdout).map_err(|_| Code::Run)?;
         self.control.check(self.control.deadline)?;
+        self.control.observations.intent(Operation::SubmitSelect);
         envelope["data"]["run_id"]
             .as_str()
             .map(str::to_owned)
@@ -605,13 +1242,24 @@ impl Owner {
         self.live(index, deadline)?;
         let guard = self.guard.as_ref().ok_or(Code::Native)?;
         let endpoint = native(&self.control, deadline, Code::Native, || {
-            endpoint_name_guarded(guard, "wake", None)
+            self.control.observations.intent(Operation::EndpointName);
+            let result = endpoint_name_guarded(guard, "wake", None);
+            self.control
+                .observations
+                .io(Operation::EndpointName, ChildRole::NoChild, &result);
+            result
         })?;
         self.control.check(deadline)?;
+        self.control.observations.intent(Operation::RuntimeBuild);
         let built = Builder::new_current_thread().enable_all().build();
         self.runtime = match built {
             Ok(runtime) => Some(runtime),
-            Err(_) => {
+            Err(error) => {
+                self.control.observations.error(
+                    Operation::RuntimeBuild,
+                    ChildRole::NoChild,
+                    &error,
+                );
                 self.control.check(deadline)?;
                 return Err(Code::Native);
             }
@@ -620,6 +1268,11 @@ impl Owner {
         let gate_root = self.root()?.to_path_buf();
         let runtime = self.runtime.as_ref().ok_or(Code::Native)?;
         let control = &self.control;
+        let role = self
+            .child_roles
+            .get(index)
+            .copied()
+            .unwrap_or(ChildRole::NoChild);
         let child = self
             .children
             .get_mut(index)
@@ -631,6 +1284,7 @@ impl Owner {
         let result = runtime.block_on(async {
             loop {
                 control.check(deadline)?;
+                control.observations.intent(Operation::PipeOpen);
                 let opened = ClientOptions::new()
                     .read(true)
                     .write(true)
@@ -648,6 +1302,7 @@ impl Owner {
                         if error.kind() == io::ErrorKind::NotFound
                             || error.raw_os_error() == Some(231) =>
                     {
+                        control.observations.error(Operation::PipeOpen, role, &error);
                         control.check(deadline)?;
                         gated(control, deadline, async {
                             tokio::time::sleep(Duration::from_millis(5)).await;
@@ -655,26 +1310,30 @@ impl Owner {
                         })
                         .await?;
                     }
-                    Err(_) => {
+                    Err(error) => {
+                        control.observations.error(Operation::PipeOpen, role, &error);
                         control.check(deadline)?;
                         return Err(Code::Native);
                     }
                 }
             }
-            child_live(control, child, deadline)?;
+            child_live(control, child, deadline, role)?;
             control.step(Phase::Query, deadline)?;
             let original = client.as_mut().ok_or(Code::Native)?;
             control.check(deadline)?;
+            control.observations.intent(Operation::PipeClone);
             let duplicated = original.as_handle().try_clone_to_owned();
             match duplicated {
                 Ok(handle) => *query_handle = Some(handle),
-                Err(_) => {
+                Err(error) => {
+                    control.observations.error(Operation::PipeClone, role, &error);
                     control.check(deadline)?;
                     return Err(Code::Native);
                 }
             }
             control.check(deadline)?;
             let handle = query_handle.take().ok_or(Code::Native)?;
+            control.observations.intent(Operation::PipeConvert);
             *metadata = match PipeStream::<pipe_mode::Bytes, pipe_mode::Bytes>::try_from(handle) {
                 Ok(wrapper) => Some(MetadataPipe(Some(wrapper))),
                 Err(error) => {
@@ -686,12 +1345,15 @@ impl Owner {
             };
             control.check(deadline)?;
             let pipe = metadata.as_ref().and_then(|wrapper| wrapper.0.as_ref()).ok_or(Code::Native)?;
+            control.observations.intent(Operation::PipeDirection);
             let is_client = pipe.is_client();
             control.check(deadline)?;
+            control.observations.intent(Operation::PipePid);
             let actual_peer = pipe.server_process_id();
+            control.observations.io(Operation::PipePid, role, &actual_peer);
             control.flag(QUERIED);
             control.check(deadline)?;
-            child_live(control, child, deadline)?;
+            child_live(control, child, deadline, role)?;
             if let Some(hook) = hook {
                 if !is_client
                     || !matches!(actual_peer.as_ref(), Ok(peer) if *peer != 0 && *peer == child.id())
@@ -715,7 +1377,7 @@ impl Owner {
             // Metadata-only duplicate stays in the owner through child reaping.
             // Its every-outcome Drop consumes it with evade_limbo, never I/O.
             control.check(deadline)?;
-            child_live(control, child, deadline)?;
+            child_live(control, child, deadline, role)?;
             if !is_client {
                 return Err(Code::WrongDirection);
             }
@@ -729,20 +1391,20 @@ impl Owner {
             frame[1..].copy_from_slice(WAKE_MESSAGE);
             control.step(Phase::Frame, deadline)?;
             control.frame_bytes.store(16, Ordering::Release);
-            gated(control, deadline, original.write_all(&frame)).await?;
-            child_live(control, child, deadline)?;
+            gated(control, deadline, observed_io(control, Operation::PipeFrameWrite, role, original.write_all(&frame))).await?;
+            child_live(control, child, deadline, role)?;
             control.step(Phase::Ack, deadline)?;
             let mut acknowledgement = [0_u8; 14];
-            gated(control, deadline, original.read_exact(&mut acknowledgement)).await?;
-            child_live(control, child, deadline)?;
+            gated(control, deadline, observed_io(control, Operation::PipeAckRead, role, original.read_exact(&mut acknowledgement))).await?;
+            child_live(control, child, deadline, role)?;
             if acknowledgement != ACK_MESSAGE {
                 return Err(Code::BadAck);
             }
             control.flag(ACK);
             control.step(Phase::Receipt, deadline)?;
             control.frame_bytes.store(31, Ordering::Release);
-            gated(control, deadline, original.write_all(&[0xff])).await?;
-            child_live(control, child, deadline)?;
+            gated(control, deadline, observed_io(control, Operation::PipeReceiptWrite, role, original.write_all(&[0xff]))).await?;
+            child_live(control, child, deadline, role)?;
             control.check(deadline)
         });
         // Seal completed successes AND on-time refusals; it witnesses completion,
@@ -754,25 +1416,54 @@ impl Owner {
 
     fn reap(&mut self) -> Result<(), Code> {
         let mut actual_child = false;
-        for child in self
+        for (index, child) in self
             .children
             .iter_mut()
             .chain(std::iter::once(&mut self.active_cli))
-            .flatten()
+            .enumerate()
+            .filter_map(|(index, child)| child.as_mut().map(|child| (index, child)))
         {
             actual_child = true;
+            let role = self
+                .child_roles
+                .get(index)
+                .copied()
+                .unwrap_or(ChildRole::ControlCli);
             // Normal checks include native cleanup in the original clock. After
             // expiry, only emergency cleanup of these exact handles is admitted.
             let _ = self.control.check(self.control.deadline);
             cleanup_gate(&self.control)?;
+            self.control.observations.intent(Operation::CleanupTryWait);
             let exited = child.try_wait();
+            self.control
+                .observations
+                .io(Operation::CleanupTryWait, role, &exited);
+            if let Ok(Some(status)) = &exited {
+                self.control
+                    .observations
+                    .status(Operation::CleanupTryWait, role, status);
+            }
             cleanup_gate(&self.control)?;
             let exited = exited.map_err(|_| Code::Cleanup)?.is_some();
             if !exited {
                 cleanup_gate(&self.control)?;
-                let _ = child.kill();
+                self.control.observations.intent(Operation::CleanupKill);
+                let killed = child.kill();
+                self.control
+                    .observations
+                    .io(Operation::CleanupKill, role, &killed);
+                let _ = killed;
                 cleanup_gate(&self.control)?;
+                self.control.observations.intent(Operation::CleanupWait);
                 let waited = child.wait();
+                self.control
+                    .observations
+                    .io(Operation::CleanupWait, role, &waited);
+                if let Ok(status) = &waited {
+                    self.control
+                        .observations
+                        .status(Operation::CleanupWait, role, status);
+                }
                 cleanup_gate(&self.control)?;
                 waited.map_err(|_| Code::Cleanup)?;
             }
@@ -788,24 +1479,39 @@ impl Owner {
         let root = self.state.as_ref().map(|state| state.path().to_path_buf());
         // Reaping, not cancellation/Drop, authorizes removal of private state.
         cleanup_gate(&self.control)?;
+        self.control.observations.intent(Operation::DropStdout);
         drop(self.cli_stdout.take());
         cleanup_gate(&self.control)?;
+        self.control.observations.intent(Operation::DropMetadata);
         drop(self.metadata.take());
         cleanup_gate(&self.control)?;
+        self.control.observations.intent(Operation::DropQueryHandle);
         drop(self.query_handle.take());
         cleanup_gate(&self.control)?;
+        self.control.observations.intent(Operation::DropClient);
         drop(self.client.take());
         cleanup_gate(&self.control)?;
+        self.control.observations.intent(Operation::DropRuntime);
         drop(self.runtime.take());
         cleanup_gate(&self.control)?;
+        self.control.observations.intent(Operation::DropGuard);
         drop(self.guard.take());
         cleanup_gate(&self.control)?;
+        self.control.observations.intent(Operation::DropState);
         drop(self.state.take());
         // Cleanup of an already reaped exact owner may follow a refused probe.
         // It still has the helper/caller ORIGINAL clock, never a new duration.
         cleanup_gate(&self.control)?;
         if let Some(root) = root {
+            self.control
+                .observations
+                .intent(Operation::CleanupStateExists);
             let remains = root.try_exists();
+            self.control.observations.io(
+                Operation::CleanupStateExists,
+                ChildRole::NoChild,
+                &remains,
+            );
             cleanup_gate(&self.control)?;
             if remains.map_err(|_| Code::Cleanup)? {
                 return Err(Code::Cleanup);
@@ -824,6 +1530,7 @@ impl Owner {
 
     fn complete(&mut self, work: Result<(), Code>) -> CaseResult {
         let previous_phase = self.control.phase.load(Ordering::Acquire);
+        self.control.observations.work(&work, previous_phase);
         self.control
             .phase
             .store(Phase::Cleanup as u8, Ordering::Release);
@@ -880,6 +1587,32 @@ fn cleanup_gate(control: &Control) -> Result<(), Code> {
     }
 }
 
+fn cli_operations(phase: Phase) -> Option<(Operation, Operation, Operation)> {
+    match phase {
+        Phase::Add => Some((
+            Operation::AddCliSpawn,
+            Operation::AddCliRead,
+            Operation::AddCliWait,
+        )),
+        Phase::Run => Some((
+            Operation::RunCliSpawn,
+            Operation::RunCliRead,
+            Operation::RunCliWait,
+        )),
+        Phase::History => Some((
+            Operation::HistoryCliSpawn,
+            Operation::HistoryCliRead,
+            Operation::HistoryCliWait,
+        )),
+        Phase::Cancel => Some((
+            Operation::CancelCliSpawn,
+            Operation::CancelCliRead,
+            Operation::CancelCliWait,
+        )),
+        _ => None,
+    }
+}
+
 struct MetadataPipe(Option<PipeStream<pipe_mode::Bytes, pipe_mode::Bytes>>);
 
 impl Drop for MetadataPipe {
@@ -902,9 +1635,27 @@ fn native<T, E>(
     result.map_err(|_| error)
 }
 
-fn child_live(control: &Control, child: &mut Child, deadline: Instant) -> Result<(), Code> {
+fn child_live(
+    control: &Control,
+    child: &mut Child,
+    deadline: Instant,
+    role: ChildRole,
+) -> Result<(), Code> {
     control.check(deadline)?;
-    let exited = native(control, deadline, Code::Native, || child.try_wait())?.is_some();
+    let exited = native(control, deadline, Code::Native, || {
+        control.observations.intent(Operation::ChildLiveness);
+        let result = child.try_wait();
+        control
+            .observations
+            .io(Operation::ChildLiveness, role, &result);
+        if let Ok(Some(status)) = &result {
+            control
+                .observations
+                .status(Operation::ChildLiveness, role, status);
+        }
+        result
+    })?
+    .is_some();
     control.check(deadline)?;
     if exited {
         Err(Code::ChildExited)
@@ -1080,7 +1831,12 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
     owner.retain_guard()?;
     owner.live(0, owner.control.deadline)?;
     owner.control.check(owner.control.deadline)?;
+    owner.control.observations.intent(Operation::CaseCurrentExe);
     let executable = std::env::current_exe();
+    owner
+        .control
+        .observations
+        .io(Operation::CaseCurrentExe, ChildRole::NoChild, &executable);
     owner.control.check(owner.control.deadline)?;
     let executable = executable.map_err(|_| Code::Native)?;
     if !executable.is_absolute() || executable.to_str().is_none() {
@@ -1155,7 +1911,11 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
 
 fn read_progress(control: &Control, path: &Path) -> Result<Vec<u64>, Code> {
     control.step(Phase::Progress, control.deadline)?;
+    control.observations.intent(Operation::ProgressOpen);
     let opened = open_read_no_follow(path);
+    control
+        .observations
+        .io(Operation::ProgressOpen, ChildRole::NoChild, &opened);
     control.check(control.deadline)?;
     let mut file = match opened {
         Ok(file) => file,
@@ -1164,9 +1924,14 @@ fn read_progress(control: &Control, path: &Path) -> Result<Vec<u64>, Code> {
     };
     let mut bytes = Vec::new();
     control.check(control.deadline)?;
+    control.observations.intent(Operation::ProgressRead);
     let read = (&mut *file).take(READ_LIMIT + 1).read_to_end(&mut bytes);
+    control
+        .observations
+        .io(Operation::ProgressRead, ChildRole::NoChild, &read);
     control.check(control.deadline)?;
     read.map_err(|_| Code::Progress)?;
+    control.observations.intent(Operation::ProgressValidate);
     if bytes.len() > READ_LIMIT as usize || bytes.len() % 17 != 0 {
         return Err(Code::Progress);
     }
@@ -1333,7 +2098,12 @@ fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
 fn setup_peer(owner: &mut Owner, mode: PeerMode) -> Result<(), Code> {
     owner.retain_guard()?;
     owner.control.step(Phase::Setup, owner.control.deadline)?;
+    owner.control.observations.intent(Operation::CaseCurrentExe);
     let executable = std::env::current_exe();
+    owner
+        .control
+        .observations
+        .io(Operation::CaseCurrentExe, ChildRole::NoChild, &executable);
     owner.control.check(owner.control.deadline)?;
     let executable = executable.map_err(|_| Code::Native)?;
     owner.spawn_child(
@@ -1345,24 +2115,42 @@ fn setup_peer(owner: &mut Owner, mode: PeerMode) -> Result<(), Code> {
             .stdout(Stdio::null())
             .stderr(Stdio::null()),
         None,
+        ChildRole::NegativePeer,
     )?;
     let ready = owner.root()?.join("peer-ready");
     loop {
         owner.live(0, owner.control.deadline)?;
         owner.control.check(owner.control.deadline)?;
+        owner.control.observations.intent(Operation::ReadyOpen);
         let file = open_read_no_follow(&ready);
+        owner
+            .control
+            .observations
+            .io(Operation::ReadyOpen, ChildRole::NegativePeer, &file);
         owner.control.check(owner.control.deadline)?;
         match file {
             Ok(mut file) => {
                 let mut byte = Vec::new();
                 owner.control.check(owner.control.deadline)?;
+                owner.control.observations.intent(Operation::ReadyRead);
                 let read = (&mut *file).take(2).read_to_end(&mut byte);
+                owner
+                    .control
+                    .observations
+                    .io(Operation::ReadyRead, ChildRole::NegativePeer, &read);
+                if read.is_ok() {
+                    owner.control.observations.ready(&byte);
+                }
                 owner.control.check(owner.control.deadline)?;
                 read.map_err(|_| Code::Native)?;
-                if byte != b"1" {
-                    return Err(Code::Native);
+                // Empty is not published. It follows the original NotFound
+                // continuation with the same child/liveness/outer clock.
+                if !byte.is_empty() {
+                    if byte != b"1" {
+                        return Err(Code::Native);
+                    }
+                    break;
                 }
-                break;
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(_) => return Err(Code::Native),

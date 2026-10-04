@@ -105,20 +105,40 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test -p locron --test cli --locked human_forms_leave_the_json_envelope_untouched -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify native CLI wake and cancellation ownership
+      - name: Verify native CLI wake ownership
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked wake_socket_makes_new_manual_run_promptly_visible_to_daemon -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify native CLI cancellation ownership
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        shell: pwsh
+        run: |
           cargo test -p locron --test cli --locked durable_cancel_terminates_a_running_process -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Refuse a foreign native wake peer
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        shell: pwsh
+        run: |
           cargo test -p locron --test cli --locked windows_cli_control::foreign_wake_peer_is_refused_before_frame -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Refuse a malformed native wake acknowledgment
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        shell: pwsh
+        run: |
           cargo test -p locron --test cli --locked windows_cli_control::malformed_wake_ack_is_refused -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bound an idle native wake peer
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        shell: pwsh
+        run: |
           cargo test -p locron --test cli --locked windows_cli_control::idle_wake_peer_expires_original_probe_deadline -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain native owners across a withheld return
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        shell: pwsh
+        run: |
           cargo test -p locron --test cli --locked windows_cli_control::withheld_native_return_retains_case_owner_at_deadline -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native registered service semantics
