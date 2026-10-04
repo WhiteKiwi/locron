@@ -878,7 +878,9 @@ mod listener_control_tests {
         let value = match checked {
             Ok(Ok(value)) => value,
             Ok(Err(payload)) => std::panic::resume_unwind(payload),
-            Err(_) => panic!("owned listener control exceeded its thirteen-second fixture guard"),
+            Err(error) => {
+                panic!("owned listener control exceeded its thirteen-second fixture guard: {error}")
+            }
         };
         assert_eq!(joined, 1, "reap the actual owned controller");
         assert!(
