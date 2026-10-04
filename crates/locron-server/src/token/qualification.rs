@@ -469,10 +469,15 @@ fn atomic_failures_preserve_token_and_cleanup_owned_scratch() {
             config.cleanup_fault = cleanup_fault;
             let index = harness.spawn(config);
             harness.ready_all();
+            harness.hold_done_receipt(index);
             harness.go(&[index]);
             let result = harness.done(index);
+            harness.held_done_live(index);
             let terminal_reads = harness.done_reads(index, &result);
             harness.poll_after_terminal(index, terminal_reads);
+            harness.held_done_live(index);
+            harness.check_done_receipt_predicate(index);
+            harness.release_done_receipt(index);
             harness.finish();
             assert!(!result.ok, "controlled atomic failure became success");
             assert_eq!(

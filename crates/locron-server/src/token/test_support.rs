@@ -173,6 +173,15 @@ pub(super) struct Frame {
 enum Instruction {
     Go,
     Release,
+    DoneReceipt { pid: u32, sequence: u32 },
+}
+
+fn done_receipt_matches(instruction: Instruction, pid: u32, sequence: u32) -> bool {
+    matches!(
+        instruction,
+        Instruction::DoneReceipt { pid: actual_pid, sequence: actual_sequence }
+            if actual_pid == pid && actual_sequence == sequence
+    )
 }
 
 pub(super) fn digest(bytes: &[u8]) -> String {
@@ -695,6 +704,19 @@ pub(super) fn fixture(config: &Config) {
             }
         }
         send(&mut control.stream, &frame, control.protocol).expect("fixture done send");
+        let instruction: Instruction = receive(&mut control.stream, control.protocol)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "fixture done receipt read failed: kind={:?} raw={:?}",
+                    error.kind(),
+                    error.raw_os_error()
+                )
+            });
+        assert!(
+            done_receipt_matches(instruction, frame.pid, frame.sequence),
+            "fixture expected exact Done receipt"
+        );
+        remaining(control.protocol).expect("fixture done receipt clock");
     });
 }
 
@@ -808,6 +830,45 @@ struct Owned {
     fault: Option<Fault>,
     cleanup_fault: bool,
     delay: Delay,
+    receipt_held: bool,
+    receipt_sent: bool,
+}
+
+impl Owned {
+    fn send_done_receipt(&mut self, deadline: Instant) {
+        remaining(deadline).expect("fixture done receipt send clock");
+        assert!(!self.receipt_sent, "fixture Done receipt already sent");
+        let Peer::Done { sequence, reads } = self.peer else {
+            panic!("fixture Done receipt requires validated Done");
+        };
+        let frame = self.frames.last().expect("stored receipt Done");
+        let same_done = frame.event == Event::Done
+            && frame.pid == self.child.id()
+            && frame.sequence == sequence
+            && frame.nonce == self.nonce;
+        assert!(same_done, "fixture Done receipt owner changed");
+        let channel = self.channel.as_mut().expect("assigned receipt channel");
+        let frozen = channel.next_sequence == sequence + 1
+            && channel.bytes.is_empty()
+            && channel.read_calls == reads;
+        assert!(frozen, "fixture Done receipt read boundary changed");
+        send(
+            &mut channel.stream,
+            &Instruction::DoneReceipt {
+                pid: frame.pid,
+                sequence,
+            },
+            deadline,
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "fixture done receipt write failed: kind={:?} raw={:?}",
+                error.kind(),
+                error.raw_os_error()
+            )
+        });
+        self.receipt_sent = true;
+    }
 }
 
 fn panic_locations(text: &str) -> Option<String> {
@@ -978,6 +1039,8 @@ impl Harness {
             fault: config.fault,
             cleanup_fault: config.cleanup_fault,
             delay: config.delay,
+            receipt_held: false,
+            receipt_sent: false,
         });
         self.children.len() - 1
     }
@@ -1241,6 +1304,9 @@ impl Harness {
                     }
                 }
             }
+            if matches!(owner.peer, Peer::Done { .. }) && !owner.receipt_held {
+                owner.send_done_receipt(deadline);
+            }
             if failed.is_some() {
                 break;
             }
@@ -1357,6 +1423,66 @@ impl Harness {
     pub fn done(&mut self, index: usize) -> Frame {
         self.wait(index, Event::Done, self.deadline())
     }
+
+    pub fn hold_done_receipt(&mut self, index: usize) {
+        assert!(self.go.is_none(), "fixture receipt hold must precede GO");
+        let owner = &mut self.children[index];
+        assert!(
+            matches!(owner.peer, Peer::Active) && !owner.receipt_held && !owner.receipt_sent,
+            "fixture receipt hold requires a fresh active owner"
+        );
+        owner.receipt_held = true;
+    }
+
+    pub fn held_done_live(&mut self, index: usize) {
+        let deadline = self.deadline();
+        remaining(deadline).expect("fixture held receipt live clock");
+        let owner = &self.children[index];
+        assert!(
+            matches!(owner.peer, Peer::Done { .. }) && owner.receipt_held && !owner.receipt_sent,
+            "fixture live receipt requires held validated Done"
+        );
+        self.live(index);
+        remaining(deadline).expect("fixture held receipt live clock");
+    }
+
+    pub fn check_done_receipt_predicate(&self, index: usize) {
+        let owner = &self.children[index];
+        let Peer::Done { sequence, .. } = owner.peer else {
+            panic!("fixture receipt predicate requires validated Done");
+        };
+        let pid = owner.child.id();
+        assert!(
+            done_receipt_matches(Instruction::DoneReceipt { pid, sequence }, pid, sequence),
+            "valid fixture Done receipt refused"
+        );
+        for instruction in [
+            Instruction::DoneReceipt {
+                pid: pid ^ 1,
+                sequence,
+            },
+            Instruction::DoneReceipt {
+                pid,
+                sequence: sequence + 1,
+            },
+            Instruction::Go,
+            Instruction::Release,
+        ] {
+            assert!(
+                !done_receipt_matches(instruction, pid, sequence),
+                "invalid fixture Done receipt accepted"
+            );
+        }
+    }
+
+    pub fn release_done_receipt(&mut self, index: usize) {
+        let deadline = self.deadline();
+        let owner = &mut self.children[index];
+        assert!(owner.receipt_held, "fixture Done receipt is not held");
+        owner.send_done_receipt(deadline);
+        owner.receipt_held = false;
+    }
+
     pub fn live(&mut self, index: usize) {
         assert!(
             self.children[index]
