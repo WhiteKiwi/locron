@@ -5405,3 +5405,7 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+## Dashboard144 readonly qualification selection (2026-10-05)
+
+Source review and the separate 195-row research distinguish actual Axum422 JSON type refusal from API400 validation, readonly SQLite logical state from WAL/SHM coordination, and API wake attempts from delivered hints. Windows mixed-case previews need a fixed raw legacy seed before measurement because the production setter canonicalizes keys. New controls remain UNMEASURED. The whole selected ledger and independent inputs are in planning/DASHBOARD_BOOLEAN_QUALIFICATION_ROWS.md and DASHBOARD_BOOLEAN_FIXTURE_INPUTS.json; ownership/build/clocks are fixed in DASHBOARD_BOOLEAN_QUALIFICATION_2026-10-05.md. Original CI37178272278/1 passed17 jobs with2 optional skips and does not qualify these new controls.

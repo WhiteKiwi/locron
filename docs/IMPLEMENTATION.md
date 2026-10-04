@@ -5214,3 +5214,7 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+## Dashboard144 selected implementation and Verify (2026-10-05)
+
+Use the six-path private fixture/build lease in planning/DASHBOARD_BOOLEAN_QUALIFICATION_2026-10-05.md. Preserve the actual API/Store/core paths, dependency direction and existing gates. The Store libtest child owns real readonly typed snapshots; the Windows CLI example reuses Engine Job/child and secured wake ownership. A real scoped wake delegate distinguishes attempt0/delivery0 from live SendOk. Frozen193 Unix/195 Windows rows require actual identity, state/redaction, termination and nonrecursive cleanup evidence. The selected four steps each contain concrete Verify; Docs/Issue exact GET and final reread precede Source in a separate development sub-session. Hosted execution and full actual paired/tree proof remain required before Root merges.
