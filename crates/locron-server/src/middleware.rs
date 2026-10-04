@@ -78,17 +78,34 @@ fn loopback_port(authority: &str) -> Option<u16> {
     port.parse().ok()
 }
 
-/// Parses a named cookie value from a Cookie header; values are plain hex, no escaping involved.
+/// Both session and CSRF values have the fixed shape issued by the token surface.
+fn valid_token_value(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// Reads one named plain-hex cookie across all semicolon-separated Cookie fields.
+/// Split fields are valid, but duplicate target names are ambiguous even when equal.
 fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get(header::COOKIE)?
-        .to_str()
-        .ok()?
-        .split(';')
-        .find_map(|pair| {
-            let (key, value) = pair.trim().split_once('=')?;
-            (key == name).then(|| value.to_owned())
-        })
+    let mut found = None;
+    for header in headers.get_all(header::COOKIE).iter() {
+        let cookies = header.to_str().ok()?;
+        for pair in cookies.split(';') {
+            let pair = pair.trim();
+            let Some((key, value)) = pair.split_once('=') else {
+                if pair == name {
+                    return None;
+                }
+                continue;
+            };
+            if key.trim() == name {
+                if key != name || found.is_some() || !valid_token_value(value) {
+                    return None;
+                }
+                found = Some(value);
+            }
+        }
+    }
+    found.map(str::to_owned)
 }
 
 /// Constant-time comparison for the token; both sides are always 64 hex characters.
@@ -211,30 +228,18 @@ pub async fn csrf(State(state): State<AppState>, mut request: Request, next: Nex
         &Method::POST | &Method::PUT | &Method::PATCH | &Method::DELETE
     );
     if unsafe_method && auth == AuthKind::Session {
-        let Some(cookie) = request
-            .headers()
-            .get(header::COOKIE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|cookies| {
-                cookies.split(';').find_map(|pair| {
-                    let (key, value) = pair.trim().split_once('=')?;
-                    (key == CSRF_COOKIE).then(|| value.to_owned())
-                })
-            })
-        else {
+        let Some(cookie) = cookie_value(request.headers(), CSRF_COOKIE) else {
             return envelope::error(
                 StatusCode::FORBIDDEN,
                 "refused",
                 "cookie-authenticated mutations require a CSRF token",
             );
         };
-        let echoed = match request
-            .headers()
-            .get(CSRF_HEADER)
-            .and_then(|value| value.to_str().ok())
-        {
-            Some(value) => Some(value.to_owned()),
-            None => csrf_from_form_field(&mut request).await,
+        let echoed = match single_header(request.headers(), HeaderName::from_static(CSRF_HEADER)) {
+            Ok(Some(value)) if valid_token_value(value) => Some(value.to_owned()),
+            Ok(None) => csrf_from_form_field(&mut request).await,
+            // Supplied but invalid or ambiguous headers never fall back to form data.
+            _ => None,
         };
         if !echoed.is_some_and(|value| constant_time_eq(&value, &cookie)) {
             return envelope::error(
@@ -248,26 +253,41 @@ pub async fn csrf(State(state): State<AppState>, mut request: Request, next: Nex
     next.run(request).await
 }
 
-/// Buffers an urlencoded body (bounded) and returns its `csrf_token` field, if present. CSRF
-/// values are 64 hex characters, so no percent-decoding is needed.
+/// Buffers an urlencoded body (bounded) and returns its one plain-hex CSRF field.
+/// Successfully read bytes are restored; request headers and extensions are never taken.
 async fn csrf_from_form_field(request: &mut Request) -> Option<String> {
-    let is_form = request
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|content_type| content_type.starts_with("application/x-www-form-urlencoded"));
-    if !is_form {
+    let content_type = single_header(request.headers(), header::CONTENT_TYPE)
+        .ok()
+        .flatten()?;
+    let media_type = content_type.split(';').next()?.trim();
+    if !media_type.eq_ignore_ascii_case("application/x-www-form-urlencoded") {
         return None;
     }
-    let (parts, body) = std::mem::take(request).into_parts();
+    let body = std::mem::replace(request.body_mut(), axum::body::Body::empty());
     let bytes = axum::body::to_bytes(body, CSRF_FORM_LIMIT).await.ok()?;
-    let body_str = String::from_utf8_lossy(&bytes);
-    let field = body_str.split('&').find_map(|pair| {
-        let (key, value) = pair.split_once('=')?;
-        (key == "csrf_token").then(|| value.to_owned())
-    });
-    *request = Request::from_parts(parts, axum::body::Body::from(bytes));
+    let field = std::str::from_utf8(&bytes).ok().and_then(csrf_form_value);
+    *request.body_mut() = axum::body::Body::from(bytes);
     field
+}
+
+/// Hex values need no percent decoding; duplicate or malformed target fields refuse.
+fn csrf_form_value(body: &str) -> Option<String> {
+    let mut found = None;
+    for pair in body.split('&') {
+        let Some((key, value)) = pair.split_once('=') else {
+            if pair == CSRF_COOKIE {
+                return None;
+            }
+            continue;
+        };
+        if key == CSRF_COOKIE {
+            if found.is_some() || !valid_token_value(value) {
+                return None;
+            }
+            found = Some(value);
+        }
+    }
+    found.map(str::to_owned)
 }
 
 /// Injects `Referrer-Policy: no-referrer` on every response. Applied as the outermost layer so
