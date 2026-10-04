@@ -1,0 +1,119 @@
+name: Prepare MCP admission draft
+on:
+  push:
+    branches: [automation/mcp-160-prepare]
+    paths: ['.github/workflows/mcp-160-prepare.yml']
+permissions:
+  contents: write
+concurrency:
+  group: prepare-mcp-160
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.0
+      BASE: 7d194d33e5e88d3e41856509a387c8dbd6798298
+      TARGET: fix/mcp-mutation-argument-admission
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 7d194d33e5e88d3e41856509a387c8dbd6798298
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          save-if: false
+      - name: Apply only pinned source replacements
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          def checked(path, sha):
+              data = Path(path).read_bytes()
+              actual = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+              assert actual == sha, (path, actual)
+              return data.decode()
+          path = Path('crates/locron-cli/src/mcp.rs')
+          original = checked(path, 'd012a4e9778cb378219ec4974d0ef3f6f0848b1f')
+          text = original
+          changes = []
+          def replace(old, new):
+              global text
+              assert text.count(old) == 1, ('nonunique source anchor', old)
+              text = text.replace(old, new, 1)
+              changes.append((old, new))
+          replace('#[derive(Debug, Deserialize)]\npub(crate) struct JsonRpcRequest', '#[path = "mcp_arguments.rs"]\nmod arguments;\n\n#[derive(Debug, Deserialize)]\npub(crate) struct JsonRpcRequest')
+          for suffix in ['add_job', 'update_job', 'enable_job', 'disable_job', 'remove_job', 'cancel_run']:
+              signature = f'fn tool_{suffix}(paths: &StatePaths, args: &Value) -> Result<Value> {{\n'
+              replace(signature, signature + f'    arguments::validate("locron_{suffix}", args)?;\n')
+          signature = 'async fn tool_run_job(paths: &StatePaths, args: Value) -> Result<Value> {\n'
+          replace(signature, signature + '    arguments::validate("locron_run_job", &args)?;\n')
+          for description in ['Human-readable job description.', 'Job description.']:
+              old = '"description": {\n                            "type": "string",\n                            "description": "' + description + '"'
+              replace(old, old.replace('"type": "string"', '"type": ["string", "null"]'))
+          replace('    let store = if dry_run {\n        open_read_only(paths)?\n    } else {\n        open(paths)?\n    };\n    let existing = store.job(job_name_or_id)?;', '    // Build and validate the complete edit without creating or migrating state.\n    let store = open_read_only(paths)?;\n    let existing = store.job(job_name_or_id)?;')
+          replace('    let updated = store.update_job(&UpdateJob {', '    let updated = open(paths)?.update_job(&UpdateJob {')
+          replace('    let timeout_seconds = args\n        .get("timeout_seconds")\n        .and_then(Value::as_u64)\n        .unwrap_or(30);', '    let deadline = arguments::wait_deadline(&args, Instant::now())?;')
+          replace('        let deadline = Instant::now() + Duration::from_secs(timeout_seconds);\n', '')
+          inverse = text
+          for old, new in reversed(changes):
+              if new:
+                  assert inverse.count(new) == 1, ('nonunique inverse', new)
+                  inverse = inverse.replace(new, old, 1)
+              else:
+                  anchor = '    if wait {\n        let mut current_run = run;'
+                  assert inverse.count(anchor) == 1
+                  inverse = inverse.replace(anchor, '    if wait {\n' + old + '        let mut current_run = run;', 1)
+          assert inverse == original, 'complete source inverse differs'
+          path.write_text(text, encoding='utf-8', newline='\n')
+          tests = Path('crates/locron-cli/tests/mcp.rs')
+          original_tests = checked(tests, '16613b3af678fbe50c608cb2d21a89e772aa56ce')
+          tests.write_text(original_tests + '\n#[path = "mcp/input_validation.rs"]\nmod mutation_input_validation;\n', encoding='utf-8', newline='\n')
+          old_test = Path('crates/locron-cli/tests/mcp_input_validation.rs')
+          new_test = Path('crates/locron-cli/tests/mcp/input_validation.rs')
+          assert not new_test.exists()
+          new_test.parent.mkdir(exist_ok=True)
+          old_test.rename(new_test)
+          helper = Path('crates/locron-cli/src/mcp_arguments.rs')
+          source = helper.read_text()
+          old = 'types == &vec![Value::from("string"), Value::from("null")]'
+          assert source.count(old) == 1
+          helper.write_text(source.replace(old, 'types.len() == 2 && types[0] == "string" && types[1] == "null"'), encoding='utf-8', newline='\n')
+          PY
+      - name: Format, inspect and publish only the scoped feature commit
+        shell: bash
+        run: |
+          cargo fmt --all
+          cargo fmt --all --check
+          git diff --check
+          git add -- crates/locron-cli/src/mcp.rs crates/locron-cli/src/mcp_arguments.rs crates/locron-cli/tests/mcp.rs crates/locron-cli/tests/mcp_input_validation.rs crates/locron-cli/tests/mcp/input_validation.rs
+          python3 - <<'PY'
+          import subprocess
+          allowed = {'crates/locron-cli/src/mcp.rs', 'crates/locron-cli/src/mcp_arguments.rs', 'crates/locron-cli/tests/mcp.rs', 'crates/locron-cli/tests/mcp_input_validation.rs', 'crates/locron-cli/tests/mcp/input_validation.rs'}
+          changed = set(subprocess.check_output(['git','diff','--cached','--name-only','--no-renames'], text=True).splitlines())
+          assert changed <= allowed and 'crates/locron-cli/src/mcp.rs' in changed, changed
+          assert not subprocess.check_output(['git','diff','--name-only'], text=True).strip(), 'unrelated format drift'
+          PY
+          git diff --cached --check
+          git diff --cached --stat
+          git diff --cached -- crates/locron-cli/src/mcp.rs
+          test "$(git ls-remote origin refs/heads/$TARGET | cut -f1)" = "$BASE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          tree=$(git write-tree)
+          candidate=$(git commit-tree "$tree" -p "$BASE" -m 'fix: enforce MCP argument admission before durable effects')
+          echo "SOURCE_CANDIDATE=$candidate"
+          git push origin "$candidate:refs/heads/$TARGET"
+          git reset --hard "$candidate"
+          test ! -e .github/workflows/mcp-160-prepare.yml
+      - name: Run actual argument helper regressions
+        run: cargo test --locked -p locron --bin locron mcp::arguments::tests -- --test-threads=1
+      - name: Run complete actual MCP subprocess contracts
+        run: cargo test --locked -p locron --test mcp -- --test-threads=1
+      - name: Check CLI and MCP warnings
+        run: cargo clippy --locked -p locron --bin locron --test mcp -- -D warnings
