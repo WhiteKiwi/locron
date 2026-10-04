@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Apply exact source patch and remove this temporary workflow
+      - name: Prepare exact source commit for connector publication
         env:
           GH_TOKEN: ${{ github.token }}
         shell: python
@@ -35,7 +35,9 @@ jobs:
               if payload is not None:
                   command.extend(["--input", "-"])
               result = subprocess.run(command, input=None if payload is None else json.dumps(payload),
-                                      text=True, capture_output=True, check=True, timeout=45)
+                                      text=True, capture_output=True, timeout=45)
+              if result.returncode:
+                  raise RuntimeError(f"GitHub {method} {endpoint} failed: {result.stderr}")
               return json.loads(result.stdout)
 
           def blob_sha(data):
@@ -109,11 +111,13 @@ jobs:
                   "            store.finish_output_prune(candidate, now_us())?;\n",
               ),
               (
+                  "        .len();\n"
                   "    let bytes: i64 = candidates\n"
                   "        .iter()\n"
                   "        .map(|candidate| candidate.physical_bytes)\n"
                   "        .sum();\n"
                   "    if format == Format::Human {\n",
+                  "        .len();\n"
                   "    if format == Format::Human {\n",
               ),
           ]
@@ -154,11 +158,13 @@ jobs:
                   assert entry["sha"] == blob["sha"] and entry["mode"] == "100644"
               else:
                   assert (entry["sha"], entry["mode"]) == (entries[path]["sha"], entries[path]["mode"])
-          assert api("GET", ref)["object"]["sha"] == head, "branch changed before publication"
+          assert api("GET", ref)["object"]["sha"] == head, "branch changed before preparing commit"
           result = api("POST", f"{prefix}/git/commits", {
               "message": "fix: bound explicit CLI pruning by projected retained bytes",
               "tree": new_tree["sha"], "parents": [head],
           })
-          api("PATCH", ref, {"sha": result["sha"], "force": False})
-          print(json.dumps({"commit": result["sha"], "source_blob": blob["sha"],
-                            "temporary_workflow_removed": True, "rust_tests_executed": False}))
+          # The parent chat reviews and publishes this exact commit with the connector.
+          # The runner does not update any branch reference.
+          print(json.dumps({"candidate_commit": result["sha"], "source_blob": blob["sha"],
+                            "temporary_workflow_removed_from_candidate": True,
+                            "branch_updated": False, "rust_tests_executed": False}))
