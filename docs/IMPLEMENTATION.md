@@ -5406,3 +5406,8 @@ Verify before development: clean exact Source parent, Docs-only mode/blob diff, 
 ## PR136 bounded daemon-output diagnostics before separate Source (2026-10-04)
 
 Follow planning/WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md after Issue31 exact readback and final committed Root review. Only windows_cli_control.rs and cli.rs selected test glue may adapt; attach two independently owned CreateNew guarded files to the actual cancellation daemon, read only after exact root reap under original NORMAL admission, retain partial/late resources/quarantine, and publish at most two fixed safe scalar lines after complete closed grammar. Preserve old Display/withheld notice/publication/three output controls/selectors/CI/clocks. Append genuine held-DaemonLock Human/JSON routes, real stderr oversize/live and second-leaf collision under the original30s horizon. Full inverses/static checks precede actual unchanged three-row cancellation/native matrix. Optional unobserved data does not replace acceptance; unchanged filtered standalone workflows are honestly NOT RUN with exact qualified-main dependency binding, and original24 assertions/all required gates remain mandatory before merge.
+
+
+## Native stderr harness expectation amendment before dependent Source (2026-10-04)
+
+The complete amended WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md replaces only the new stderr companion empty-stdout expectation with genuine captured bounded libtest stdout; both actual stream attachments, normal-admission-only reads and existing live refusal remain selected. All other scoped Source/ownership/grammar/clocks/Verify stay intact. Root Docs/Issue/readback/final reread precede this dependent Source choice.

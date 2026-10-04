@@ -5627,3 +5627,8 @@ PR138 and merged main have disjoint Source changes; the original unmodified fore
 ## PR136 actual cancellation-daemon capture research before further Source (2026-10-04)
 
 Actual6e98 CI37205423514 executed24 original parent selectors with23 pass/one x64 cancellation failure: first ChildExited/Run, later daemon application5, ControlCLI0/192 stdout bytes, but no daemon output or typed Store error. Cause/instruction/holder/native errno remain unknown. Root actual246/causal66 proofb0f506e8 and grammar50 proof23dcba54 pin18 stages,44 Rust1.94/actual1.99 I/O labels,24 SQLite labels and the complete ordered configuration/fallback grammar. Select only owned optional post-reap dual-file observation and genuine Human/JSON/stderr/collision controls in planning/WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md. Preserve all original clocks/first-work/cancel assertions and historical failures; typed diagnostics are reports, not cause/permission evidence.
+
+
+## Native stderr companion libtest stdout before dependent Source (2026-10-04)
+
+The genuine existing target runs under libtest --exact/--nocapture, whose own stdout prevents the planned stderr-only oversized case from having an empty actual counterpart. The selected plan now captures both real streams: stderr must reach the sentinel cap, stdout must be genuine complete bounded harness output; live streams are never read before exact root exit. No null/synthetic empty-file substitution is selected. Human/JSON retain exact empty opposite streams. Follow the complete amended WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md before dependent Source.
