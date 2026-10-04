@@ -5334,3 +5334,8 @@ deadline relaxation, ignored test/lint, owner-PC native effect or public release
 ## PR136 concurrent ancestry integration (2026-10-04)
 
 Before Source integration, select a normal merge of remote b131 into local062aa2 plus this Docs parent. Conserve both append-only planning histories. Resolve the stock syntax overlap to the exact complete remote loader_crash.rs blob; conserve the complete local ready helper and all other Source/workflow/lockfile mode/blobs. The developer owns integration, reports full-tree conservation and formatting/metadata checks, and does not publish. Parent rechecks current remote ancestry and publishes one fast-forward head, then requires fresh ordinary CI, native six-case and lifecycle evidence plus exact paired artifacts before merge. Issue31 remains open for wider unresolved acceptance.
+
+
+## Lifecycle observer lint follow-up before separate Source (2026-10-04)
+
+Frozen SPEC. After normal reviewed integration78af945, lease only the single parse match in LifecycleProgress::read_heartbeat, as documented in WINDOWS_LIFECYCLE_PROGRESS_OBSERVATIONS_2026-10-04.md. Use if let Ok(value) ... else with identical branch bodies, one parse call and unchanged observer/formatter/assertions/16 selectors/clocks. Root Docs and Issue31 readback precede the separate one-file developer; full inverse/all other mode-blobs and formatting/actionlint/locked metadata precede parent review and ordinary changed-head publication. All original native/lifecycle and required Windows lint gates remain required; no allowance, filter, clock change, owner-PC native execution or earlier-run cause is selected.
