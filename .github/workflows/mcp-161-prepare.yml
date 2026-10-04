@@ -1,0 +1,204 @@
+name: Prepare MCP cancellation preview draft
+on:
+  push:
+    branches: [automation/mcp-161-prepare]
+    paths: ['.github/workflows/mcp-161-prepare.yml']
+permissions:
+  contents: write
+concurrency:
+  group: prepare-mcp-161
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.0
+      BASE: 9533aff5aee7c027b2577bee8f84c8e9f037b868
+      TARGET: fix/mcp-cancellation-preview
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 9533aff5aee7c027b2577bee8f84c8e9f037b868
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          save-if: false
+      - name: Apply pinned source and verify unchanged live effects
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, re
+          def read(path, sha):
+              data = Path(path).read_bytes()
+              actual = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+              assert actual == sha, (path, actual)
+              return data.decode()
+          def replace(text, old, new):
+              assert text.count(old) == 1, ('nonunique source anchor', old)
+              return text.replace(old, new, 1)
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8', newline='\n')
+          # Shared decision affects admission only; retain the old per-case SQL,
+          # event payloads and completion-action calls as extracted exact bytes.
+          path = 'crates/locron-store/src/store.rs'
+          text = read(path, 'e13f2a235434627ec958f32de73d0256cd7ae8dd')
+          start = text.index('    pub fn cancel_with_acknowledgement(\n')
+          end = text.index('    /// Returns whether a durable cancellation request', start)
+          old = text[start:end]
+          prefix = old[:old.index('        let quarantined =\n')]
+          def between(a, b):
+              assert old.count(a) == 1 and old.count(b) == 1
+              return old.split(a, 1)[1].split(b, 1)[0]
+          ack = '            let changed = tx.execute(' + between('            let changed = tx.execute(', '            tx.commit()?;\n            return Ok(CancelOutcome::AcknowledgedUnconfirmed);')
+          queued = between('            "queued" | "retry_wait" => {\n', '                CancelOutcome::CancelledBeforeExecution\n')
+          running = between('            "starting" | "running" => {\n', '                CancelOutcome::CancellationRequested\n')
+          new = prefix + '''        let outcome = cancellation::decision(id, &state, reason.as_deref(), acknowledge_unconfirmed)?;
+                  match outcome {
+                      CancelOutcome::AcknowledgedUnconfirmed => {
+          ''' + ack + '''            }
+                      CancelOutcome::CancelledBeforeExecution => {
+          ''' + queued + '''            }
+                      CancelOutcome::CancellationRequested => {
+          ''' + running + '''            }
+                  }
+                  tx.commit()?;
+                  Ok(outcome)
+              }
+
+          '''
+          for pattern in [r'"(?:SELECT|UPDATE|DELETE|INSERT)[^"\n]*"', r'r#".*?"#']:
+              assert re.findall(pattern, old) == re.findall(pattern, new), ('live effect literal drift', pattern)
+          for event in ['termination_unconfirmed_acknowledged', 'run_cancelled', 'cancellation_requested', 'soft_remove_after_one_time_completion']:
+              assert old.count(event) == new.count(event), event
+          text = text[:start] + new + text[end:]
+          text = replace(text, 'use crate::{DaemonLock, LockMetadata, StatePaths};', 'use crate::{DaemonLock, LockMetadata, StatePaths};\n\nmod cancellation;\npub use cancellation::CancellationPreview;')
+          write(path, text)
+          path = 'crates/locron-store/src/lib.rs'
+          text = read(path, 'd84db194cb8e2dd5a794161e3583551f50d57ba3')
+          write(path, replace(text, 'AttemptCompletion, CancelOutcome, CreateJob,', 'AttemptCompletion, CancelOutcome, CancellationPreview, CreateJob,'))
+          path = 'crates/locron-store/src/store/cancellation.rs'
+          text = Path(path).read_text()
+          text = replace(text, '        observe(&self.conn()?, id, acknowledge_unconfirmed)', '        let connection = self.conn()?;\n        observe(&connection, id, acknowledge_unconfirmed)')
+          # Match the error variant and domain message, without guessing the
+          # outer StoreError display prefix.
+          text = replace(text, '    #[test]\n    fn admission_preserves', '    fn conflict_message(result: StoreResult<CancelOutcome>) -> String {\n        match result {\n            Err(StoreError::Conflict(message)) => message,\n            other => panic!("expected a cancellation conflict, got {other:?}"),\n        }\n    }\n\n    #[test]\n    fn admission_preserves')
+          assert text.count('actual.unwrap_err().to_string()') == 3
+          text = text.replace('actual.unwrap_err().to_string()', 'conflict_message(actual)').replace('durable conflict: run run', 'run run')
+          write(path, text)
+          path = 'crates/locron-cli/src/mcp.rs'
+          text = read(path, '8af6e82d41340f0d9deb9ec33474828a207f7ff7')
+          start = text.index('fn tool_cancel_run(')
+          begin = text.index('    if dry_run {\n', start)
+          end = text.index('    let outcome = store.cancel_with_acknowledgement', begin)
+          old_preview = text[begin:end]
+          assert 'active && !already_requested' in old_preview
+          new_preview = '''    if dry_run {
+                  let preview = store.preview_cancellation(run_id, acknowledge_unconfirmed)?;
+                  let before_execution = preview.outcome == CancelOutcome::CancelledBeforeExecution;
+                  let risk_acknowledgement = preview.outcome == CancelOutcome::AcknowledgedUnconfirmed;
+                  let decision = match preview.outcome {
+                      CancelOutcome::CancelledBeforeExecution => "cancelled_before_execution",
+                      CancelOutcome::AcknowledgedUnconfirmed => "acknowledged_unconfirmed",
+                      CancelOutcome::CancellationRequested if preview.already_requested => "already_requested",
+                      CancelOutcome::CancellationRequested => "cancellation_requested",
+                  };
+                  let resulting_state = if before_execution {
+                      "cancelled"
+                  } else if risk_acknowledgement {
+                      "interrupted_unknown"
+                  } else {
+                      preview.state.as_str()
+                  };
+                  return Ok(json!({
+                      "dry_run": true,
+                      "run_id": run_id,
+                      "state": preview.state,
+                      "decision": decision,
+                      "already_requested": preview.already_requested,
+                      "would_request_cancellation": before_execution || (!risk_acknowledgement && !preview.already_requested),
+                      "would_cancel_before_execution": before_execution,
+                      "would_acknowledge_unconfirmed": risk_acknowledgement,
+                      "resulting_state": resulting_state
+                  }));
+              }
+          '''
+          changed = text[:begin] + new_preview + text[end:]
+          assert changed[:begin] == text[:begin] and changed[begin+len(new_preview):] == text[end:]
+          assert 'send_wake' not in new_preview
+          write(path, changed)
+          path = 'crates/locron-cli/tests/mcp.rs'
+          text = read(path, 'bc9a5ae76caf129416327c93d4465c5e50c135ce')
+          write(path, text + '\n#[path = "mcp/cancellation_preview.rs"]\nmod cancellation_preview;\n')
+          path = 'docs/mcp/SPEC.md'
+          text = read(path, '2034cbc0a126c326d88d3613584437241e65ce4f')
+          write(path, text + '''
+
+          ## Cancellation preview clarification (2026-10-04)
+
+          A `locron_cancel_run` dry-run observes the same durable cancellation admission as
+          the live Store transaction. It does not reserve that outcome or prove process
+          death. The later live operation always rechecks current state.
+
+          The preview retains `dry_run`, `run_id`, `state` and `would_request_cancellation`.
+          It adds `decision`, `already_requested`, `would_cancel_before_execution`,
+          `would_acknowledge_unconfirmed` and `resulting_state`. Queued/retry-wait runs
+          describe immediate before-execution cancellation; ordinary starting/running
+          runs describe a request, or `already_requested` when the durable request exists.
+          A running termination-unconfirmed quarantine requires explicit acknowledgement:
+          that preview uses `decision: acknowledged_unconfirmed`,
+          `would_acknowledge_unconfirmed: true`, `would_request_cancellation: false` and
+          `resulting_state: interrupted_unknown`. It never describes acknowledgement as
+          a new cancellation or confirmed termination. Terminal runs, quarantine without
+          acknowledgement and acknowledgement outside quarantine refuse with the same
+          tool-error contract as live cancellation. No preview emits a wake or changes
+          durable state. See [the reviewed decision table](../planning/MCP_CANCELLATION_PREVIEW.md).
+          ''')
+          # Audit other source surfaces, without changing them.
+          main = Path('crates/locron-cli/src/main.rs').read_text()
+          at = main.index('Command::Cancel {')
+          print('CLI cancellation dispatch:', main[at:at+400])
+          api = Path('crates/locron-server/src/api.rs').read_text()
+          for match in re.finditer(r'struct \w*Cancel\w*\s*\{[^}]*\}', api):
+              print('HTTP cancellation request:', match.group(0))
+          PY
+      - name: Format and publish only the scoped feature candidate
+        shell: bash
+        run: |
+          cargo fmt --all
+          cargo fmt --all --check
+          git diff --check
+          git add -- crates/locron-store/src/store.rs crates/locron-store/src/lib.rs crates/locron-store/src/store/cancellation.rs crates/locron-cli/src/mcp.rs crates/locron-cli/tests/mcp.rs crates/locron-cli/tests/mcp/cancellation_preview.rs docs/mcp/SPEC.md
+          python3 - <<'PY'
+          import subprocess
+          allowed = {'crates/locron-store/src/store.rs','crates/locron-store/src/lib.rs','crates/locron-store/src/store/cancellation.rs','crates/locron-cli/src/mcp.rs','crates/locron-cli/tests/mcp.rs','crates/locron-cli/tests/mcp/cancellation_preview.rs','docs/mcp/SPEC.md'}
+          changed = set(subprocess.check_output(['git','diff','--cached','--name-only'], text=True).splitlines())
+          assert changed <= allowed, changed
+          assert not subprocess.check_output(['git','diff','--name-only'], text=True).strip(), 'unrelated format drift'
+          PY
+          git diff --cached --check
+          git diff --cached --stat
+          git diff --cached -- crates/locron-store/src/store.rs crates/locron-cli/src/mcp.rs
+          test "$(git ls-remote origin refs/heads/$TARGET | cut -f1)" = "$BASE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          tree=$(git write-tree)
+          candidate=$(git commit-tree "$tree" -p "$BASE" -m 'fix: align cancellation preview and live Store admission')
+          echo "SOURCE_CANDIDATE=$candidate"
+          git push origin "$candidate:refs/heads/$TARGET"
+          git reset --hard "$candidate"
+          test ! -e .github/workflows/mcp-161-prepare.yml
+      - name: Test shared cancellation admission and read-only SQL
+        run: cargo test --locked -p locron-store --lib store::cancellation::tests -- --test-threads=1
+      - name: Test complete migrated Store regressions
+        run: cargo test --locked -p locron-store --lib -- --test-threads=1
+      - name: Test MCP input helper regressions
+        run: cargo test --locked -p locron --bin locron mcp::arguments::tests -- --test-threads=1
+      - name: Test all actual MCP subprocess regressions
+        run: cargo test --locked -p locron --test mcp -- --test-threads=1
+      - name: Check Store and MCP warnings
+        run: cargo clippy --locked -p locron-store -p locron --lib --bins --test mcp -- -D warnings
