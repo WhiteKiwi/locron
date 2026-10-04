@@ -1562,7 +1562,7 @@ fn tool_doctor(paths: &StatePaths) -> Result<Value> {
                 "job_id": job.id,
                 "job_name": job.name,
                 "requested_executable": requested,
-                "effective_path": process.env.get("PATH"),
+                "effective_path": locron_core::execution::environment_value(&process.env, "PATH"),
                 "resolved_executable": process.executable,
                 "status": "resolved"
             })),
