@@ -5379,3 +5379,17 @@ suffixes. No writer/test/workflow adaptation or newer main. Root Docs and CLI
 Issues32/35/final review precede separate integration, Root Source review and
 fresh Windows/Ubuntu CI. Clean-account/public-byte/real WinGet acceptance stays
 open, signing37 deferred and initial release unsigned.
+
+
+### PR136 continuation: owned bounded CLI output capture
+
+The Windows acceptance helper retains each actual Child and a finite fresh private capture/guard, polls actual exit under the unchanged effective clock, then reads the same actual file identity through an independent no-follow reader with64KiB+1 cap. It preserves complete bounded stdout/status; no pipe EOF wait or shared-cursor seek. A separate additive hosted gate proves real held-writer/producer/collision/cap/live-refusal/kill-reap cleanup under its own bounded controls. Parent plans/reviews/publishes; a separate developer leases only the helper and additive CI step after exact Issue31 readback. Preserve73d3 source, original six cases/deadlines, unknown failed-head causes and wider open acceptance.
+
+
+### Root capture plus genuine publication integration before Source (2026-10-04)
+
+Follow planning/WINDOWS_NATIVE_CAPTURE_PUBLICATION_2026-10-04.md: preserve
+reviewed222 private publication and fixed notice, add only734 owned-output
+capture and its genuine independent gate, and integrate exact actual main9de596f8
+without adapting its release/dashboard/WinGet Source. Fresh all-three-row
+24-selector outcomes and all required gates must qualify the resulting head.

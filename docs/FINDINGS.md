@@ -5599,3 +5599,20 @@ Git integration, preserving full new tests/workflow/renderer55f4 and incoming
 Server exactly. The appended WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md plan
 requires literal Docs-suffix union, before-Source Issues32/35, Root final reread
 and separate developer before changed-head hosted qualification/publication.
+
+
+### PR136 failed73d3 and owned stdout capture selection
+
+Fresh37191426679 confirms16/17 ordinary executed jobs, four strict Windows lint commands and17/18 original native CLI cases passed; ARM cancellation Expired/History and later GUI remove/raw5 remain failures with unknown actual call/holders. Parent re-read Owner::output: its unbounded pipe read precedes actual Child.wait. Select guarded fresh regular captures, actual child polling and full64KiB+1 bounded collection under original clocks, plus independent actual producer/held-write/collision/cap/live-negative cleanup controls. This corrects a source-backed helper boundary without claiming the measured ARM cause. Exact failure observation: Issue31#5978690173. Before-Source selection is in WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md; all production/other Source and progress semantics stay exact73d3.
+
+
+### Root actual734 capture and publication composition research (2026-10-04)
+
+Separate research and Root independent proofs dd28aa1a/138f0dd4 identify the
+disjoint capture delta, preserved private publisher/fixed-only notice, exact
+three capture-only Docs suffixes and actual ARM Expired/History failure. Actual
+run37196440237 has20PASS/1FAIL; pre/post cancellation and daemon/cleanup cause
+remain unknown. The new exact main9de596f8 retains reviewed138 tree51c7643.
+Selected before-Source composition and four Verify steps are in
+planning/WINDOWS_NATIVE_CAPTURE_PUBLICATION_2026-10-04.md. No owner-PC native
+execution or causal production repair is selected.
