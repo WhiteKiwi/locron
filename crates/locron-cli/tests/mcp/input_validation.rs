@@ -31,7 +31,8 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     files
 }
 
-fn refused(client: &mut McpClient, name: &str, arguments: Value) -> String {
+fn refused(client: &mut McpClient, name: &str, arguments: impl Into<Value>) -> String {
+    let arguments = arguments.into();
     let response = client.request("tools/call", json!({"name":name,"arguments":arguments}));
     assert!(
         response.get("error").is_none(),
