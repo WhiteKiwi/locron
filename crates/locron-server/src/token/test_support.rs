@@ -169,7 +169,7 @@ pub(super) struct Frame {
     pub elapsed_ms: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 enum Instruction {
     Go,
     Release,
@@ -339,7 +339,11 @@ impl Control {
 
 pub(super) fn begin(root: &Path, deadline: Instant) {
     controlled(root, |control| {
-        control.production = Some(deadline - super::TOKEN_LOCK_TIMEOUT);
+        control.production = Some(
+            deadline
+                .checked_sub(super::TOKEN_LOCK_TIMEOUT)
+                .expect("fixed token fixture production origin"),
+        );
         control.stats.entered += 1;
         control.emit(Event::Begin);
     });
@@ -698,6 +702,7 @@ struct Channel {
     stream: TcpStream,
     bytes: Vec<u8>,
     next_sequence: u32,
+    read_calls: Option<u64>,
 }
 impl Channel {
     fn new(stream: TcpStream) -> Self {
@@ -708,6 +713,7 @@ impl Channel {
             stream,
             bytes: Vec::new(),
             next_sequence: 1,
+            read_calls: Some(0),
         }
     }
 
@@ -730,6 +736,8 @@ impl Channel {
                 return Some(frame);
             }
             let mut byte = [0];
+            // Overflow leaves observation unknown without changing protocol or work.
+            self.read_calls = self.read_calls.and_then(|calls| calls.checked_add(1));
             match self.stream.read(&mut byte) {
                 Ok(0) => return None,
                 Ok(_) => self.bytes.push(byte[0]),
@@ -752,6 +760,26 @@ impl Channel {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Peer {
+    Active,
+    Done {
+        sequence: u32,
+        reads: Option<u64>,
+    },
+    Stopped {
+        status: ExitStatus,
+        reads: Option<u64>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct TerminalReadReceipt {
+    pid: u32,
+    sequence: Option<u32>,
+    reads: u64,
+}
+
 struct Owned {
     child: Child,
     stdout: NamedTempFile,
@@ -763,6 +791,7 @@ struct Owned {
     native_pid: Option<u32>,
     frames: Vec<Frame>,
     status: Option<ExitStatus>,
+    peer: Peer,
 }
 
 pub(super) struct Harness {
@@ -853,6 +882,7 @@ impl Harness {
             native_pid: None,
             frames: Vec::new(),
             status: None,
+            peer: Peer::Active,
         });
         self.children.len() - 1
     }
@@ -928,6 +958,9 @@ impl Harness {
             }
         }
         for owner in &mut self.children {
+            if !matches!(owner.peer, Peer::Active) {
+                continue;
+            }
             if let Some(channel) = &mut owner.channel {
                 while let Some(frame) = channel.poll(deadline) {
                     assert_eq!(
@@ -946,7 +979,15 @@ impl Harness {
                         owner.frames.len() < EVENT_LIMIT as usize,
                         "fixture event count exceeds bound"
                     );
+                    let terminal = (frame.event == Event::Done).then_some(frame.sequence);
                     owner.frames.push(frame);
+                    if let Some(sequence) = terminal {
+                        owner.peer = Peer::Done {
+                            sequence,
+                            reads: channel.read_calls,
+                        };
+                        break;
+                    }
                 }
             }
         }
@@ -1072,6 +1113,10 @@ impl Harness {
     pub fn killed(&mut self, index: usize) {
         self.live(index);
         let deadline = Instant::now() + CLEANUP;
+        assert!(
+            matches!(self.children[index].peer, Peer::Active),
+            "fixture terminal peer cannot be killed again"
+        );
         self.children[index]
             .child
             .kill()
@@ -1088,6 +1133,14 @@ impl Harness {
                     Instant::now() < deadline,
                     "killed fixture reap returned late"
                 );
+                self.children[index].peer = Peer::Stopped {
+                    status,
+                    reads: self.children[index]
+                        .channel
+                        .as_ref()
+                        .expect("retained killed fixture channel")
+                        .read_calls,
+                };
                 return;
             }
             assert!(
@@ -1096,6 +1149,90 @@ impl Harness {
             );
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+
+    fn terminal_reads(&self, index: usize) -> TerminalReadReceipt {
+        let owner = &self.children[index];
+        let channel = owner.channel.as_ref().expect("retained terminal channel");
+        let (sequence, frozen) = match owner.peer {
+            Peer::Active => panic!("fixture peer is not terminal"),
+            Peer::Done { sequence, reads } => {
+                let frame = owner.frames.last().expect("stored terminal Done");
+                assert_eq!(frame.event, Event::Done, "terminal frame is not Done");
+                assert_eq!(frame.sequence, sequence, "terminal sequence changed");
+                assert_eq!(frame.pid, owner.child.id(), "terminal Child PID changed");
+                assert!(frame.nonce == owner.nonce, "terminal nonce changed");
+                assert_eq!(
+                    channel.next_sequence,
+                    sequence + 1,
+                    "terminal next sequence changed"
+                );
+                (Some(sequence), reads)
+            }
+            Peer::Stopped { status, reads } => {
+                assert!(!status.success(), "stopped fixture reported success");
+                assert!(owner.status == Some(status), "stopped reap status changed");
+                assert!(
+                    !owner.frames.iter().any(|frame| frame.event == Event::Done),
+                    "stopped fixture fabricated Done"
+                );
+                (None, reads)
+            }
+        };
+        assert!(
+            channel.bytes.is_empty(),
+            "terminal frame buffer is not empty"
+        );
+        let reads = frozen.expect("terminal read observation is unknown");
+        assert_eq!(
+            channel.read_calls,
+            Some(reads),
+            "terminal peer admitted another read"
+        );
+        TerminalReadReceipt {
+            pid: owner.child.id(),
+            sequence,
+            reads,
+        }
+    }
+
+    pub fn done_reads(&self, index: usize, frame: &Frame) -> TerminalReadReceipt {
+        let receipt = self.terminal_reads(index);
+        assert_eq!(frame.event, Event::Done, "expected actual Done receipt");
+        assert_eq!(
+            receipt.sequence,
+            Some(frame.sequence),
+            "Done receipt sequence changed"
+        );
+        assert_eq!(receipt.pid, frame.pid, "Done receipt Child PID changed");
+        assert!(
+            frame.nonce == self.children[index].nonce,
+            "Done receipt nonce changed"
+        );
+        receipt
+    }
+
+    pub fn stopped_reads(&self, index: usize) -> TerminalReadReceipt {
+        let receipt = self.terminal_reads(index);
+        assert!(
+            receipt.sequence.is_none(),
+            "expected actual stopped receipt"
+        );
+        receipt
+    }
+
+    pub fn assert_reads_retained(&self, index: usize, receipt: TerminalReadReceipt) {
+        assert_eq!(
+            self.terminal_reads(index),
+            receipt,
+            "terminal Child read receipt changed"
+        );
+    }
+
+    pub fn poll_after_terminal(&mut self, index: usize, receipt: TerminalReadReceipt) {
+        self.assert_reads_retained(index, receipt);
+        self.poll();
+        self.assert_reads_retained(index, receipt);
     }
 
     pub fn finish(&mut self) {

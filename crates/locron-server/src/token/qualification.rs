@@ -344,8 +344,12 @@ fn killed_lock_owner_releases_cross_process() {
     harness.wait(waiter, Event::Busy, harness.interleave());
     // The control/gate stays open: this is an actual kill, not RELEASE or EOF unwind.
     harness.killed(owner);
+    let stopped_reads = harness.stopped_reads(owner);
     let result = harness.done(waiter);
+    let waiter_reads = harness.done_reads(waiter, &result);
     harness.finish();
+    harness.assert_reads_retained(owner, stopped_reads);
+    harness.assert_reads_retained(waiter, waiter_reads);
     assert_eq!(persisted(&harness, &result), support::digest(SEED));
     assert!(
         result.elapsed_ms < 5000,
@@ -467,6 +471,8 @@ fn atomic_failures_preserve_token_and_cleanup_owned_scratch() {
             harness.ready_all();
             harness.go(&[index]);
             let result = harness.done(index);
+            let terminal_reads = harness.done_reads(index, &result);
+            harness.poll_after_terminal(index, terminal_reads);
             harness.finish();
             assert!(!result.ok, "controlled atomic failure became success");
             assert_eq!(
@@ -604,6 +610,7 @@ fn permanent_lock_identity_survives_remove() {
     seed(&harness, SEED);
     let initial = run(&mut harness, Operation::Ensure);
     success(&initial);
+    let initial_reads = harness.done_reads(0, &initial);
     let old = open_private(
         &harness.paths.root.join(super::TOKEN_LOCK_FILE_NAME),
         fs::OpenOptions::new().read(true).write(true),
@@ -611,6 +618,7 @@ fn permanent_lock_identity_survives_remove() {
     .expect("retained actual old lock handle");
     let removed = run(&mut harness, Operation::Remove);
     success(&removed);
+    let removed_reads = harness.done_reads(1, &removed);
     assert!(!super::token_path(&harness.paths).exists());
     assert!(
         harness
@@ -630,7 +638,11 @@ fn permanent_lock_identity_survives_remove() {
     );
     drop(old);
     let result = harness.done(waiter);
+    let waiter_reads = harness.done_reads(waiter, &result);
     harness.finish();
+    harness.assert_reads_retained(0, initial_reads);
+    harness.assert_reads_retained(1, removed_reads);
+    harness.assert_reads_retained(waiter, waiter_reads);
     persisted(&harness, &result);
     permanent(&harness);
     harness.complete();

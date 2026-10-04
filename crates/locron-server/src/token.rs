@@ -245,18 +245,16 @@ fn open_windows_lock(root: &DirectoryGuard, deadline: Instant) -> io::Result<Gua
     let ClosedUnpublishedLock(candidate) = created.close()?;
     #[cfg(test)]
     test_support::observe(root_path, test_support::Event::ClosedUnpublished);
-    if let Err(error) = lock_remaining(deadline) {
+    lock_remaining(deadline).inspect_err(|_error| {
         #[cfg(test)]
         test_support::observe(root_path, test_support::Event::Expired);
-        return Err(error);
-    }
+    })?;
     #[cfg(test)]
     test_support::before_publish(root_path, deadline);
-    if let Err(error) = lock_remaining(deadline) {
+    lock_remaining(deadline).inspect_err(|_error| {
         #[cfg(test)]
         test_support::observe(root_path, test_support::Event::Expired);
-        return Err(error);
-    }
+    })?;
     #[cfg(not(test))]
     let published = candidate.persist_noclobber(&final_path);
     #[cfg(test)]
