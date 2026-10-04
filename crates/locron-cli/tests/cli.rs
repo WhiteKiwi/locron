@@ -1194,7 +1194,8 @@ fn durable_cancel_terminates_a_running_process() {
         let result = windows_cli_control::run_cancel_case();
         assert!(
             result.succeeded(),
-            "durable cancellation did not terminate the process: {result}"
+            "durable cancellation did not terminate the process: {result}\n{}",
+            result.daemon_output()
         );
     }
 

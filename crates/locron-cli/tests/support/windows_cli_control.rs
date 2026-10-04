@@ -10,15 +10,15 @@ use locron_store::{DaemonLock, LockProbe};
 use std::fmt;
 use std::fs::File;
 use std::future::{Future, poll_fn};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, Write};
 use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::{AsHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::process::{Child, Command, Output, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
+use std::sync::{Arc, OnceLock};
 use std::task::Poll;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -1399,6 +1399,460 @@ impl CallContext {
     }
 }
 
+// BEGIN paired daemon diagnostic domains (independent of CLI call words).
+const STORE_MARKER: &[u8] = b"windows-store-open";
+const STORE_STAGES: [&str; 18] = [
+    "directory-root",
+    "directory-outputs",
+    "directory-tmp",
+    "state-guard",
+    "database-open",
+    "database-create-new",
+    "database-admission",
+    "wal-open",
+    "wal-create-new",
+    "shm-open",
+    "shm-create-new",
+    "sqlite-connection",
+    "sqlite-configure-wal",
+    "sqlite-configure-settings",
+    "sqlite-migrate",
+    "database-final-open",
+    "wal-final-open",
+    "shm-final-open",
+];
+const STORE_IO_KINDS: [&str; 44] = [
+    "NotFound",
+    "PermissionDenied",
+    "ConnectionRefused",
+    "ConnectionReset",
+    "HostUnreachable",
+    "NetworkUnreachable",
+    "ConnectionAborted",
+    "NotConnected",
+    "AddrInUse",
+    "AddrNotAvailable",
+    "NetworkDown",
+    "BrokenPipe",
+    "AlreadyExists",
+    "WouldBlock",
+    "NotADirectory",
+    "IsADirectory",
+    "DirectoryNotEmpty",
+    "ReadOnlyFilesystem",
+    "FilesystemLoop",
+    "StaleNetworkFileHandle",
+    "InvalidInput",
+    "InvalidData",
+    "TimedOut",
+    "WriteZero",
+    "StorageFull",
+    "NotSeekable",
+    "QuotaExceeded",
+    "FileTooLarge",
+    "ResourceBusy",
+    "ExecutableFileBusy",
+    "Deadlock",
+    "CrossesDevices",
+    "TooManyLinks",
+    "InvalidFilename",
+    "ArgumentListTooLong",
+    "Interrupted",
+    "Unsupported",
+    "UnexpectedEof",
+    "OutOfMemory",
+    "InProgress",
+    "Other",
+    "Uncategorized",
+    "TooManyOpenFiles",
+    "InputOutputError",
+];
+const STORE_SQLITE_KINDS: [&str; 24] = [
+    "InternalMalfunction",
+    "PermissionDenied",
+    "OperationAborted",
+    "DatabaseBusy",
+    "DatabaseLocked",
+    "OutOfMemory",
+    "ReadOnly",
+    "OperationInterrupted",
+    "SystemIoFailure",
+    "DatabaseCorrupt",
+    "NotFound",
+    "DiskFull",
+    "CannotOpen",
+    "FileLockingProtocolFailed",
+    "SchemaChanged",
+    "TooBig",
+    "ConstraintViolation",
+    "TypeMismatch",
+    "ApiMisuse",
+    "NoLargeFileSupport",
+    "AuthorizationForStatementDenied",
+    "ParameterOutOfRange",
+    "NotADatabase",
+    "Unknown",
+];
+const STORE_GATES: [&str; 8] = [
+    "entry",
+    "after-zero",
+    "before-attempt",
+    "after-wal",
+    "after-busy",
+    "before-settings",
+    "after-settings",
+    "after-restore",
+];
+const STORE_PHASES: [&str; 15] = [
+    "entry",
+    "busy-zero-enter",
+    "busy-zero-return",
+    "settings-enter",
+    "settings-return",
+    "timeout-restore-enter",
+    "timeout-restore-return",
+    "prepare-enter",
+    "prepare-return",
+    "query-enter",
+    "row-enter",
+    "row-return",
+    "query-return",
+    "finalize-enter",
+    "finalize-return",
+];
+const STORE_MODES: [&str; 4] = ["unobserved", "wal", "memory", "other"];
+
+#[derive(Clone, Copy)]
+enum StoreReturned {
+    Store,
+    Io {
+        kind: &'static str,
+        raw: Option<i32>,
+    },
+    Sqlite,
+    SqliteCode {
+        primary: &'static str,
+        extended: i32,
+    },
+}
+
+#[derive(Clone, Copy)]
+struct StoreRecord {
+    stage: &'static str,
+    returned: StoreReturned,
+}
+
+#[derive(Clone, Copy)]
+enum PairRecognition {
+    Unobserved,
+    Recognized(StoreRecord),
+    Unrecognized,
+    Ambiguous,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum PairReadState {
+    Unobserved,
+    Complete,
+    Oversized,
+    Missing,
+    IoRefused,
+    IdentityRefused,
+}
+
+impl PairReadState {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Unobserved => "unobserved",
+            Self::Complete => "complete",
+            Self::Oversized => "oversized",
+            Self::Missing => "missing",
+            Self::IoRefused => "io_refused",
+            Self::IdentityRefused => "identity_refused",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PairFact {
+    state: PairReadState,
+    bytes: Option<u32>,
+    record: PairRecognition,
+}
+
+impl PairFact {
+    const UNOBSERVED: Self = Self {
+        state: PairReadState::Unobserved,
+        bytes: None,
+        record: PairRecognition::Unobserved,
+    };
+}
+
+#[derive(Clone, Copy, Default)]
+struct PairProof {
+    // Private fixed-size scalars for the four-original-object test, never rendered.
+    identities: [Option<locron_core::filesystem::FileIdentity>; 2],
+    zero_cursors: [bool; 2],
+    root_status: Option<i32>,
+    duplicates_held: bool,
+    live_seen: bool,
+    no_child: bool,
+    collision_preserved: bool,
+}
+
+#[derive(Clone, Copy)]
+struct PairSnapshot {
+    facts: [PairFact; 2],
+    proof: PairProof,
+}
+
+struct PairSummary(PairSnapshot);
+
+impl fmt::Display for PairSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (stream, fact) in ["stdout", "stderr"].into_iter().zip(self.0.facts) {
+            write!(
+                formatter,
+                "daemon_output stream={stream} capture={} bytes=",
+                fact.state.label()
+            )?;
+            if let Some(bytes) = fact.bytes {
+                write!(formatter, "{bytes}")?;
+            } else {
+                formatter.write_str("unobserved")?;
+            }
+            match fact.record {
+                PairRecognition::Unobserved => formatter.write_str(" record=unobserved")?,
+                PairRecognition::Unrecognized => formatter.write_str(" record=unrecognized")?,
+                PairRecognition::Ambiguous => formatter.write_str(" record=ambiguous")?,
+                PairRecognition::Recognized(record) => {
+                    write!(formatter, " record=recognized stage={}", record.stage)?;
+                    match record.returned {
+                        StoreReturned::Store => formatter.write_str(" category=store")?,
+                        StoreReturned::Io { kind, raw } => {
+                            write!(formatter, " category=io kind={kind} raw_os=")?;
+                            if let Some(raw) = raw {
+                                write!(formatter, "Some({raw})")?;
+                            } else {
+                                formatter.write_str("None")?;
+                            }
+                        }
+                        StoreReturned::Sqlite => formatter.write_str(" category=sqlite")?,
+                        StoreReturned::SqliteCode { primary, extended } => {
+                            write!(
+                                formatter,
+                                " category=sqlite primary={primary} extended={extended}"
+                            )?;
+                        }
+                    }
+                }
+            }
+            formatter.write_str("\n")?;
+        }
+        Ok(())
+    }
+}
+
+fn closed_label(value: &str, labels: &[&'static str]) -> Option<&'static str> {
+    labels.iter().copied().find(|label| *label == value)
+}
+
+fn canonical_unsigned(value: &str, maximum: u64) -> Option<u64> {
+    if value.is_empty()
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+        || (value.len() > 1 && value.starts_with('0'))
+    {
+        return None;
+    }
+    value
+        .parse::<u64>()
+        .ok()
+        .filter(|number| *number <= maximum)
+}
+
+fn canonical_signed(value: &str) -> Option<i32> {
+    let magnitude = value.strip_prefix('-').unwrap_or(value);
+    canonical_unsigned(magnitude, u64::MAX)?;
+    if value.starts_with('-') && magnitude == "0" {
+        return None;
+    }
+    value.parse::<i32>().ok()
+}
+
+fn optional_unsigned(value: &str, maximum: u64) -> Option<()> {
+    if value == "unobserved" {
+        Some(())
+    } else {
+        canonical_unsigned(value, maximum).map(|_| ())
+    }
+}
+
+fn optional_signed(value: &str) -> Option<()> {
+    if value == "unobserved" {
+        Some(())
+    } else {
+        canonical_signed(value).map(|_| ())
+    }
+}
+
+fn optional_bool(value: &str) -> Option<()> {
+    matches!(value, "unobserved" | "true" | "false").then_some(())
+}
+
+fn timestamp_pair(value: &str) -> Option<()> {
+    let (first, second) = value.split_once(',')?;
+    optional_unsigned(first, u64::MAX)?;
+    optional_unsigned(second, u64::MAX)
+}
+
+struct StoreTokens<'a>(std::iter::Peekable<std::str::Split<'a, char>>);
+
+impl<'a> StoreTokens<'a> {
+    fn field(&mut self, key: &str) -> Option<&'a str> {
+        let (actual, value) = self.0.next()?.split_once('=')?;
+        (actual == key).then_some(value)
+    }
+
+    fn configuration(&mut self) -> Option<()> {
+        canonical_unsigned(self.field("pid")?, u64::from(u32::MAX))?;
+        if self.0.peek().copied() == Some("configuration=unobserved") {
+            self.0.next();
+            return self.0.next().is_none().then_some(());
+        }
+        let gate = self.field("gate")?;
+        if gate != "unobserved" {
+            closed_label(gate, &STORE_GATES)?;
+        }
+        closed_label(self.field("phase")?, &STORE_PHASES)?;
+        canonical_unsigned(self.field("attempts")?, u64::MAX)?;
+        canonical_unsigned(self.field("entry_rem_us")?, u64::MAX)?;
+        canonical_unsigned(self.field("phase_us")?, u64::MAX)?;
+        optional_unsigned(self.field("gate_us")?, u64::MAX)?;
+        optional_unsigned(self.field("remaining_us")?, u64::MAX)?;
+        optional_bool(self.field("autocommit")?)?;
+        closed_label(self.field("mode")?, &STORE_MODES)?;
+        optional_bool(self.field("done")?)?;
+        optional_unsigned(self.field("observed_primary")?, u64::from(u8::MAX))?;
+        optional_signed(self.field("observed_extended")?)?;
+        for key in ["prepare_us", "query_us", "row_us", "finalize_us"] {
+            timestamp_pair(self.field(key)?)?;
+        }
+        self.0.next().is_none().then_some(())
+    }
+}
+
+fn parse_store_record(body: &[u8]) -> Option<StoreRecord> {
+    if body.len() > 768 || body.iter().any(|byte| !(b' '..=b'~').contains(byte)) {
+        return None;
+    }
+    let text = std::str::from_utf8(body).ok()?;
+    let mut tokens = StoreTokens(text.split(' ').peekable());
+    if tokens.0.next()? != "windows-store-open" {
+        return None;
+    }
+    canonical_unsigned(tokens.field("operation")?, u64::MAX)?;
+    let stage = closed_label(tokens.field("stage")?, &STORE_STAGES)?;
+    let returned = match tokens.field("category")? {
+        "store" => StoreReturned::Store,
+        "io" => {
+            let kind = closed_label(tokens.field("kind")?, &STORE_IO_KINDS)?;
+            let raw = match tokens.field("raw_os")? {
+                "None" => None,
+                value => Some(canonical_signed(
+                    value.strip_prefix("Some(")?.strip_suffix(')')?,
+                )?),
+            };
+            StoreReturned::Io { kind, raw }
+        }
+        "sqlite" => {
+            if tokens
+                .0
+                .peek()
+                .is_some_and(|token| token.starts_with("primary="))
+            {
+                let primary = closed_label(tokens.field("primary")?, &STORE_SQLITE_KINDS)?;
+                let extended = canonical_signed(tokens.field("extended")?)?;
+                StoreReturned::SqliteCode { primary, extended }
+            } else {
+                StoreReturned::Sqlite
+            }
+        }
+        _ => return None,
+    };
+    if matches!(stage, "sqlite-configure-wal" | "sqlite-configure-settings") {
+        tokens.configuration()?;
+    } else if tokens.0.next().is_some() {
+        return None;
+    }
+    Some(StoreRecord { stage, returned })
+}
+
+fn recognize_store_record(bytes: &[u8]) -> PairRecognition {
+    let mut candidates = 0_u32;
+    let mut result = PairRecognition::Unobserved;
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        if line
+            .windows(STORE_MARKER.len())
+            .any(|window| window == STORE_MARKER)
+        {
+            candidates += u32::try_from(
+                line.windows(STORE_MARKER.len())
+                    .filter(|window| *window == STORE_MARKER)
+                    .count(),
+            )
+            .unwrap_or(u32::MAX);
+            result = line
+                .strip_suffix(b"\n")
+                .and_then(parse_store_record)
+                .map_or(PairRecognition::Unrecognized, PairRecognition::Recognized);
+        }
+    }
+    if candidates > 1 {
+        PairRecognition::Ambiguous
+    } else {
+        result
+    }
+}
+
+// Holds only the exact files/Command on the admitted native worker. The Command
+// owns both stdout/stderr duplicates through the actual child root's exit.
+struct PairedCapture {
+    writers: [Option<GuardedFile>; 2],
+    command: Option<Command>,
+    reader: Option<GuardedFile>,
+    lock: Option<DaemonLock>,
+    sentinel: Option<GuardedFile>,
+    proof: PairProof,
+    root_exited: bool,
+    collected: bool,
+    attached: u8,
+}
+
+impl PairedCapture {
+    fn empty() -> Self {
+        Self {
+            writers: [None, None],
+            command: None,
+            reader: None,
+            lock: None,
+            sentinel: None,
+            proof: PairProof::default(),
+            root_exited: false,
+            collected: false,
+            attached: 0,
+        }
+    }
+
+    fn has_owners(&self) -> bool {
+        self.writers.iter().any(Option::is_some)
+            || self.command.is_some()
+            || self.reader.is_some()
+            || self.lock.is_some()
+            || self.sentinel.is_some()
+    }
+}
+// END paired daemon diagnostic domains.
+
 /// Fixed non-sensitive result; a late result cannot qualify successful cleanup.
 pub struct CaseResult {
     code: Code,
@@ -1411,9 +1865,16 @@ pub struct CaseResult {
     cli_live_seen: bool,
     calls: CallSnapshot,
     capture_proof: u8,
+    paired: PairSnapshot,
 }
 
 impl CaseResult {
+    /// Separate closed scalar summaries; the current CaseResult line stays literal.
+    #[must_use]
+    pub fn daemon_output(&self) -> impl fmt::Display {
+        PairSummary(self.paired)
+    }
+
     /// True only for work and confirmed owned cleanup inside the caller's clock.
     #[must_use]
     pub fn succeeded(&self) -> bool {
@@ -1468,6 +1929,8 @@ struct Control {
     stdout_bytes: AtomicU32,
     cli_live_seen: AtomicBool,
     calls: CallObservations,
+    paired_facts: [OnceLock<PairFact>; 2],
+    paired_proof: OnceLock<PairProof>,
 }
 
 impl Control {
@@ -1486,6 +1949,8 @@ impl Control {
             stdout_bytes: AtomicU32::new(UNOBSERVED_BYTES),
             cli_live_seen: AtomicBool::new(false),
             calls: CallObservations::new(),
+            paired_facts: [OnceLock::new(), OnceLock::new()],
+            paired_proof: OnceLock::new(),
         })
     }
 
@@ -1610,6 +2075,15 @@ impl Control {
             cli_live_seen: self.cli_live_seen.load(Ordering::Acquire),
             calls: self.calls.snapshot(),
             capture_proof: self.calls.capture_proof.load(Ordering::Acquire),
+            paired: PairSnapshot {
+                facts: std::array::from_fn(|index| {
+                    self.paired_facts[index]
+                        .get()
+                        .copied()
+                        .unwrap_or(PairFact::UNOBSERVED)
+                }),
+                proof: self.paired_proof.get().copied().unwrap_or_default(),
+            },
         }
     }
 }
@@ -1729,6 +2203,7 @@ struct Owner {
     reaped: bool,
     uncertain_cleanup: bool,
     call_context: CallContext,
+    paired: PairedCapture,
 }
 
 impl Owner {
@@ -1753,6 +2228,7 @@ impl Owner {
             reaped: false,
             uncertain_cleanup: false,
             call_context: CallContext::new(),
+            paired: PairedCapture::empty(),
         }
     }
 
@@ -1836,6 +2312,274 @@ impl Owner {
             ChildRole::Daemon,
         )
     }
+
+    // BEGIN additive paired methods; no CLI CallContext observation here.
+    fn pair_path(&self, index: usize) -> Result<PathBuf, Code> {
+        let name = ["daemon-stdout", "daemon-stderr"]
+            .get(index)
+            .ok_or(Code::Native)?;
+        Ok(self.root()?.join(name))
+    }
+
+    fn prepare_pair(&mut self, command: Command) -> Result<(), Code> {
+        self.control.check(self.control.deadline)?;
+        if self.paired.command.is_some() || self.paired.writers.iter().any(Option::is_some) {
+            return Err(Code::Native);
+        }
+        // The two actual Stdio duplicates are retained in this exact Command.
+        self.paired.command = Some(command);
+        for index in 0..2 {
+            self.control.check(self.control.deadline)?;
+            let path = self.pair_path(index)?;
+            let opened = create_private_new(&path);
+            match opened {
+                Ok(writer) => self.paired.writers[index] = Some(writer),
+                Err(error) => {
+                    self.control.check(self.control.deadline)?;
+                    return Err(if error.kind() == io::ErrorKind::AlreadyExists {
+                        Code::CaptureCollision
+                    } else {
+                        Code::Cli
+                    });
+                }
+            }
+            self.control.check(self.control.deadline)?;
+            let identity = file_identity(self.paired.writers[index].as_ref().ok_or(Code::Cli)?);
+            if let Ok(identity) = &identity {
+                self.paired.proof.identities[index] = Some(*identity);
+            }
+            self.control.check(self.control.deadline)?;
+            identity.map_err(|_| Code::Cli)?;
+            self.control.check(self.control.deadline)?;
+            let cloned = self.paired.writers[index]
+                .as_ref()
+                .ok_or(Code::Cli)?
+                .try_clone();
+            match cloned {
+                Ok(duplicate) => {
+                    let command = self.paired.command.as_mut().ok_or(Code::Cli)?;
+                    if index == 0 {
+                        command.stdout(Stdio::from(duplicate));
+                    } else {
+                        command.stderr(Stdio::from(duplicate));
+                    }
+                    self.paired.attached |= 1 << index;
+                }
+                Err(_) => {
+                    self.control.check(self.control.deadline)?;
+                    return Err(Code::Cli);
+                }
+            }
+            self.control.check(self.control.deadline)?;
+        }
+        if self.paired.proof.identities[0] == self.paired.proof.identities[1] {
+            return Err(Code::Cli);
+        }
+        Ok(())
+    }
+
+    fn spawn_pair(&mut self, post_spawn: Option<Duration>) -> Result<(), Code> {
+        self.control.check(self.control.deadline)?;
+        if self.paired.attached != 3 {
+            return Err(Code::Cli);
+        }
+        // Taking the Command avoids aliasing self during the unchanged primitive.
+        // A blocked call retains it on this same worker's native stack.
+        let mut command = self.paired.command.take().ok_or(Code::Cli)?;
+        let spawned = self.spawn_child(0, &mut command, post_spawn, ChildRole::Daemon);
+        self.paired.command = Some(command);
+        spawned
+    }
+
+    fn cancellation_daemon(&mut self) -> Result<(), Code> {
+        let mut command = self.command()?;
+        command.args(["daemon", "run"]);
+        self.prepare_pair(command)?;
+        self.spawn_pair(Some(Duration::from_secs(8)))
+    }
+
+    fn pair_fact(&mut self, index: usize, fact: PairFact) -> Result<(), Code> {
+        self.control.check(self.control.deadline)?;
+        self.control
+            .paired_facts
+            .get(index)
+            .ok_or(Code::Cli)?
+            .set(fact)
+            .map_err(|_| Code::Cli)
+    }
+
+    fn pair_read(&mut self, index: usize, sentinel: bool) -> Result<(PairFact, Vec<u8>), Code> {
+        self.control.check(self.control.deadline)?;
+        if (!self.paired.root_exited && !(sentinel && self.paired.proof.no_child))
+            || self.paired.reader.is_some()
+        {
+            return Err(Code::Cli);
+        }
+        let original = if sentinel {
+            self.paired.sentinel.as_ref()
+        } else {
+            self.paired.writers.get(index).and_then(Option::as_ref)
+        }
+        .ok_or(Code::Cli)?;
+        let path = original.normalized_path().to_path_buf();
+        let original_id = file_identity(original);
+        self.control.check(self.control.deadline)?;
+        let original_id = original_id.map_err(|_| Code::Cli)?;
+        self.control.check(self.control.deadline)?;
+        let opened = open_read_no_follow(&path);
+        match opened {
+            Ok(reader) => self.paired.reader = Some(reader),
+            Err(error) => {
+                self.control.check(self.control.deadline)?;
+                return Ok((
+                    PairFact {
+                        state: if error.kind() == io::ErrorKind::NotFound {
+                            PairReadState::Missing
+                        } else {
+                            PairReadState::IoRefused
+                        },
+                        bytes: None,
+                        record: PairRecognition::Unobserved,
+                    },
+                    Vec::new(),
+                ));
+            }
+        }
+        self.control.check(self.control.deadline)?;
+        let reader_id = file_identity(self.paired.reader.as_ref().ok_or(Code::Cli)?);
+        self.control.check(self.control.deadline)?;
+        let reader_id = reader_id.map_err(|_| Code::Cli)?;
+        if reader_id != original_id {
+            return Ok((
+                PairFact {
+                    state: PairReadState::IdentityRefused,
+                    bytes: None,
+                    record: PairRecognition::Unobserved,
+                },
+                Vec::new(),
+            ));
+        }
+        self.control.check(self.control.deadline)?;
+        let cursor = self
+            .paired
+            .reader
+            .as_mut()
+            .ok_or(Code::Cli)?
+            .stream_position();
+        self.control.check(self.control.deadline)?;
+        if cursor.map_err(|_| Code::Cli)? != 0 {
+            return Ok((
+                PairFact {
+                    state: PairReadState::IdentityRefused,
+                    bytes: None,
+                    record: PairRecognition::Unobserved,
+                },
+                Vec::new(),
+            ));
+        }
+        if !sentinel {
+            self.paired.proof.zero_cursors[index] = true;
+        }
+        let limit = usize::try_from(READ_LIMIT + 1).map_err(|_| Code::Cli)?;
+        let mut bytes = Vec::with_capacity(limit);
+        let mut buffer = [0_u8; 4096];
+        let state = loop {
+            self.control.check(self.control.deadline)?;
+            let count = buffer.len().min(limit - bytes.len());
+            let read = self
+                .paired
+                .reader
+                .as_mut()
+                .ok_or(Code::Cli)?
+                .read(&mut buffer[..count]);
+            if let Ok(count) = &read {
+                bytes.extend_from_slice(&buffer[..*count]);
+            }
+            self.control.check(self.control.deadline)?;
+            let Ok(count) = read else {
+                break PairReadState::IoRefused;
+            };
+            if bytes.len() == limit {
+                break PairReadState::Oversized;
+            }
+            if count == 0 {
+                break PairReadState::Complete;
+            }
+        };
+        let record = if state == PairReadState::Complete {
+            recognize_store_record(&bytes)
+        } else {
+            PairRecognition::Unobserved
+        };
+        self.control.check(self.control.deadline)?;
+        let fact = PairFact {
+            state,
+            bytes: Some(u32::try_from(bytes.len()).map_err(|_| Code::Cli)?),
+            record,
+        };
+        self.control.check(self.control.deadline)?;
+        drop(self.paired.reader.take());
+        self.control.check(self.control.deadline)?;
+        Ok((fact, bytes))
+    }
+
+    fn collect_pair(&mut self) -> Result<[Vec<u8>; 2], Code> {
+        self.control.check(self.control.deadline)?;
+        if self.paired.collected {
+            return Err(Code::Cli);
+        }
+        let (stdout_fact, stdout) = self.pair_read(0, false)?;
+        self.pair_fact(0, stdout_fact)?;
+        let (stderr_fact, stderr) = self.pair_read(1, false)?;
+        self.pair_fact(1, stderr_fact)?;
+        self.paired.collected = true;
+        self.control.check(self.control.deadline)?;
+        Ok([stdout, stderr])
+    }
+
+    fn observe_pair_after_reap(&mut self) {
+        if self.paired.command.is_none() {
+            return;
+        }
+        if self.children[0].is_some() && self.reaped {
+            self.paired.root_exited = true;
+            self.paired.proof.duplicates_held =
+                self.paired.attached == 3 && self.paired.command.is_some();
+            if let Some((_, ChildRole::Daemon, payload)) =
+                event_header(self.control.observations.snapshot().statuses[0], 2)
+            {
+                self.paired.proof.root_status = decode_signed(payload).flatten();
+            }
+        }
+        if self.paired.root_exited
+            && !self.paired.collected
+            && self.control.check(self.control.deadline).is_ok()
+        {
+            // Optional output never replaces work or uses emergency admission.
+            let _ = self.collect_pair();
+        }
+    }
+
+    fn release_pair(&mut self) -> Result<(), Code> {
+        if !self.paired.has_owners() {
+            return Ok(());
+        }
+        cleanup_gate(&self.control)?;
+        drop(self.paired.reader.take());
+        cleanup_gate(&self.control)?;
+        drop(self.paired.command.take());
+        cleanup_gate(&self.control)?;
+        for writer in &mut self.paired.writers {
+            cleanup_gate(&self.control)?;
+            drop(writer.take());
+            cleanup_gate(&self.control)?;
+        }
+        drop(self.paired.sentinel.take());
+        cleanup_gate(&self.control)?;
+        drop(self.paired.lock.take());
+        cleanup_gate(&self.control)
+    }
+    // END additive paired methods.
 
     fn retain_guard(&mut self) -> Result<(), Code> {
         self.control.step(Phase::Guard, self.control.deadline)?;
@@ -2575,6 +3319,9 @@ impl Owner {
     }
 
     fn release(&mut self) -> Result<(), Code> {
+        // BEGIN pair release before unchanged owner release.
+        self.release_pair()?;
+        // END pair release.
         let root = self.state.as_ref().map(|state| state.path().to_path_buf());
         // Reaping, not cancellation/Drop, authorizes removal of private state.
         cleanup_gate(&self.control)?;
@@ -2652,7 +3399,11 @@ impl Owner {
             // No result/field destruction while exact root exit is unknown.
             self.quarantine();
         }
+        // BEGIN normal-only optional pair observation after exact reap.
+        self.observe_pair_after_reap();
+        // END optional pair observation.
         let cleanup = self.release();
+        let _ = self.control.paired_proof.set(self.paired.proof);
         let mut code = cleanup.and(work).err().unwrap_or(Code::Success);
         if code == Code::Success && self.control.check(self.control.deadline).is_err() {
             code = Code::Expired;
@@ -2689,6 +3440,7 @@ impl Drop for Owner {
             || self.capture_reader.is_some()
             || self.capture_duplicate.is_some()
             || !self.captures.is_empty()
+            || self.paired.has_owners()
         {
             if self.release().is_err() {
                 self.quarantine();
@@ -2833,11 +3585,21 @@ enum CaptureCase {
 }
 
 #[derive(Clone, Copy)]
+enum PairedCase {
+    Human,
+    Json,
+    OversizedStderr,
+    LiveStderr,
+    Collision,
+}
+
+#[derive(Clone, Copy)]
 enum CaseKind {
     Wake,
     Cancel,
     Peer(PeerMode),
     Capture(CaptureCase),
+    Paired(PairedCase),
 }
 
 fn admit(hook: Option<ReturnGate>) -> Result<CaseAdmission, CaseResult> {
@@ -2880,7 +3642,7 @@ fn admit_control(
                         wake_work(&mut owner)
                     }
                     CaseKind::Cancel => {
-                        owner.daemon(0, Some(Duration::from_secs(8)))?;
+                        owner.cancellation_daemon()?;
                         cancel_work(&mut owner)
                     }
                     CaseKind::Peer(mode) => {
@@ -2895,6 +3657,7 @@ fn admit_control(
                         owner.probe(index, hook.take())
                     }
                     CaseKind::Capture(case) => capture_work(&mut owner, case),
+                    CaseKind::Paired(case) => paired_work(&mut owner, case),
                 }
             }))
             .unwrap_or(Err(Code::Panicked));
@@ -3288,6 +4051,332 @@ fn version_capture_work(owner: &mut Owner) -> Result<(), Code> {
     owner.control.check(owner.control.deadline)
 }
 
+// BEGIN genuine paired controls (same admitted worker and original clock).
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeldLockEnvelope {
+    schema: String,
+    ok: bool,
+    command: String,
+    error: HeldLockError,
+    warnings: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HeldLockError {
+    code: String,
+    message: String,
+}
+
+fn paired_poll_exit(owner: &mut Owner) -> Result<(), Code> {
+    loop {
+        owner.control.check(owner.control.deadline)?;
+        let waited = owner.children[0].as_mut().ok_or(Code::Cli)?.try_wait();
+        owner.control.check(owner.control.deadline)?;
+        let waited = waited.map_err(|_| Code::Cli)?;
+        if let Some(status) = waited {
+            owner.paired.root_exited = true;
+            owner.paired.proof.root_status = status.code();
+            owner.paired.proof.duplicates_held =
+                owner.paired.attached == 3 && owner.paired.command.is_some();
+            return Ok(());
+        }
+        owner.paired.proof.live_seen = true;
+        pause(
+            &owner.control,
+            owner.control.deadline,
+            Duration::from_millis(5),
+        )?;
+    }
+}
+
+fn held_lock_pair_work(owner: &mut Owner, json: bool) -> Result<(), Code> {
+    owner.control.check(owner.control.deadline)?;
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| Code::Native)?;
+    owner.control.check(owner.control.deadline)?;
+    owner.control.check(owner.control.deadline)?;
+    let pid = std::process::id();
+    owner.control.check(owner.control.deadline)?;
+    let lifetime_id = uuid::Uuid::now_v7();
+    owner.control.check(owner.control.deadline)?;
+    let metadata = locron_store::LockMetadata {
+        pid,
+        lifetime_id: lifetime_id.to_string(),
+        started_at_us: i64::try_from(started.as_micros()).map_err(|_| Code::Native)?,
+        binary_version: env!("CARGO_PKG_VERSION").to_owned(),
+    };
+    let path = owner.root()?.join("daemon.lock");
+    owner.control.check(owner.control.deadline)?;
+    let held = DaemonLock::acquire_role(&path, &metadata, false);
+    match held {
+        Ok(lock) => owner.paired.lock = Some(lock),
+        Err(_) => {
+            owner.control.check(owner.control.deadline)?;
+            return Err(Code::Role);
+        }
+    }
+    owner.control.check(owner.control.deadline)?;
+    let mut command = owner.command()?;
+    if json {
+        command.arg("--json");
+    }
+    command.args(["daemon", "run"]);
+    owner.prepare_pair(command)?;
+    owner.spawn_pair(None)?;
+    owner.control.step(Phase::Capture, owner.control.deadline)?;
+    paired_poll_exit(owner)?;
+    let [stdout, stderr] = owner.collect_pair()?;
+    if owner.paired.proof.root_status != Some(4) {
+        return Err(Code::Cli);
+    }
+    let facts = owner.control.snapshot(Code::Success).paired.facts;
+    if facts
+        .iter()
+        .any(|fact| fact.state != PairReadState::Complete)
+    {
+        return Err(Code::Cli);
+    }
+    if json {
+        if !stderr.is_empty() || stdout.iter().filter(|byte| **byte == b'\n').count() != 1 {
+            return Err(Code::Cli);
+        }
+        let body = stdout.strip_suffix(b"\n").ok_or(Code::Cli)?;
+        let envelope: HeldLockEnvelope = serde_json::from_slice(body).map_err(|_| Code::Cli)?;
+        if envelope.schema != "locron.cli/v1"
+            || envelope.ok
+            || envelope.command != "daemon"
+            || envelope.error.code != "daemon_already_running"
+            || envelope.error.message != "another locron daemon owns this state directory"
+            || !envelope.warnings.is_empty()
+        {
+            return Err(Code::Cli);
+        }
+    } else if !stdout.is_empty()
+        || stderr != b"error: another locron daemon owns this state directory\n"
+    {
+        return Err(Code::Cli);
+    }
+    owner.control.check(owner.control.deadline)
+}
+
+fn stderr_pair_work(owner: &mut Owner, live: bool) -> Result<(), Code> {
+    owner.control.check(owner.control.deadline)?;
+    let executable = std::env::current_exe();
+    owner.control.check(owner.control.deadline)?;
+    let executable = executable.map_err(|_| Code::Native)?;
+    let mut command = Command::new(executable);
+    command
+        .args([
+            "--exact",
+            OUTPUT_SELECTOR,
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(
+            "WINDOWS_CLI_OUTPUT_ROLE",
+            if live {
+                "live-stderr-v1"
+            } else {
+                "oversized-stderr-v1"
+            },
+        );
+    owner.prepare_pair(command)?;
+    owner.spawn_pair(live.then_some(Duration::from_secs(1)))?;
+    owner.control.step(Phase::Capture, owner.control.deadline)?;
+    // Live cannot enter collection: normal admission expires while real None
+    // polls are observed. Existing complete/reap owns kill and nonzero status.
+    paired_poll_exit(owner)?;
+    if live {
+        return Err(Code::ChildExited);
+    }
+    let _private_bytes = owner.collect_pair()?;
+    let facts = owner.control.snapshot(Code::Success).paired.facts;
+    if owner.paired.proof.root_status != Some(0)
+        || facts[0].state != PairReadState::Complete
+        || facts[0].bytes.is_none()
+        || facts[1].state != PairReadState::Oversized
+        || facts[1].bytes != Some(65_537)
+    {
+        return Err(Code::Cli);
+    }
+    Err(Code::CaptureOversized)
+}
+
+fn pair_collision_work(owner: &mut Owner) -> Result<(), Code> {
+    owner.control.check(owner.control.deadline)?;
+    let path = owner.pair_path(1)?;
+    let sentinel = create_private_new(&path);
+    match sentinel {
+        Ok(sentinel) => owner.paired.sentinel = Some(sentinel),
+        Err(_) => {
+            owner.control.check(owner.control.deadline)?;
+            return Err(Code::Cli);
+        }
+    }
+    owner.control.check(owner.control.deadline)?;
+    let before = file_identity(owner.paired.sentinel.as_ref().ok_or(Code::Cli)?);
+    owner.control.check(owner.control.deadline)?;
+    let before = before.map_err(|_| Code::Cli)?;
+    owner.control.check(owner.control.deadline)?;
+    let written = owner
+        .paired
+        .sentinel
+        .as_mut()
+        .ok_or(Code::Cli)?
+        .write_all(b"0");
+    owner.control.check(owner.control.deadline)?;
+    written.map_err(|_| Code::Cli)?;
+    owner.control.check(owner.control.deadline)?;
+    let flushed = owner.paired.sentinel.as_mut().ok_or(Code::Cli)?.flush();
+    owner.control.check(owner.control.deadline)?;
+    flushed.map_err(|_| Code::Cli)?;
+    let command = owner.command()?;
+    let collision = owner.prepare_pair(command);
+    if !matches!(collision, Err(Code::CaptureCollision))
+        || owner.paired.writers[0].is_none()
+        || owner.paired.writers[1].is_some()
+        || owner.children.iter().any(Option::is_some)
+        || owner.active_cli.is_some()
+    {
+        return Err(Code::Cli);
+    }
+    // This is no-child proof, not a fabricated root-exit/reap fact.
+    owner.paired.proof.no_child = true;
+    let (fact, bytes) = owner.pair_read(1, true)?;
+    if fact.state != PairReadState::Complete || bytes != b"0" {
+        return Err(Code::Cli);
+    }
+    owner.control.check(owner.control.deadline)?;
+    let after = file_identity(owner.paired.sentinel.as_ref().ok_or(Code::Cli)?);
+    owner.control.check(owner.control.deadline)?;
+    if after.map_err(|_| Code::Cli)? != before {
+        return Err(Code::Cli);
+    }
+    owner.paired.proof.collision_preserved = true;
+    Err(Code::CaptureCollision)
+}
+
+fn paired_work(owner: &mut Owner, case: PairedCase) -> Result<(), Code> {
+    owner.retain_guard()?;
+    match case {
+        PairedCase::Human => held_lock_pair_work(owner, false),
+        PairedCase::Json => held_lock_pair_work(owner, true),
+        PairedCase::OversizedStderr => stderr_pair_work(owner, false),
+        PairedCase::LiveStderr => stderr_pair_work(owner, true),
+        PairedCase::Collision => pair_collision_work(owner),
+    }
+}
+
+// Independent complete literal records exercise only the private decoder, not
+// an invented daemon error or native cause. No test selector is added.
+fn assert_pair_decoder_controls() {
+    let simple = b"windows-store-open operation=0 stage=database-open category=io kind=Uncategorized raw_os=Some(-2147483648)\n";
+    let config = concat!(
+        "windows-store-open operation=18446744073709551615 stage=sqlite-configure-wal",
+        " category=sqlite primary=DatabaseBusy extended=261 pid=4294967295",
+        " gate=after-busy phase=finalize-return attempts=18446744073709551615",
+        " entry_rem_us=0 phase_us=18446744073709551615 gate_us=unobserved remaining_us=0",
+        " autocommit=true mode=wal done=false observed_primary=255 observed_extended=5",
+        " prepare_us=0,unobserved query_us=unobserved,0 row_us=1,2 finalize_us=3,4\n",
+    )
+    .as_bytes();
+    for valid in [
+        simple.as_slice(), config,
+        b"windows-store-open operation=1 stage=shm-open category=store\n",
+        b"windows-store-open operation=1 stage=wal-open category=sqlite\n",
+        b"windows-store-open operation=1 stage=database-open category=io kind=InputOutputError raw_os=None\n",
+        b"windows-store-open operation=1 stage=sqlite-configure-settings category=io kind=TimedOut raw_os=None pid=0 configuration=unobserved\n",
+    ] {
+        assert!(matches!(recognize_store_record(valid), PairRecognition::Recognized(_)), "complete literal record refused");
+    }
+    let PairRecognition::Recognized(observed) = recognize_store_record(config) else {
+        panic!("literal configuration refused");
+    };
+    assert!(
+        matches!(
+            observed.returned,
+            StoreReturned::SqliteCode {
+                primary: "DatabaseBusy",
+                extended: 261
+            }
+        ),
+        "returned fields replaced by observed configuration"
+    );
+    let text = std::str::from_utf8(config).expect("ASCII literal");
+    for invalid in [
+        text.replace(
+            "operation=18446744073709551615",
+            "operation=18446744073709551616",
+        ),
+        text.replace("operation=18446744073709551615", "operation=01"),
+        text.replace("stage=sqlite-configure-wal", "stage=unknown"),
+        text.replace("primary=DatabaseBusy", "primary=unknown"),
+        text.replace("extended=261", "extended=-0"),
+        text.replace("extended=261", "extended=2147483648"),
+        text.replace("gate=after-busy", "gate=unknown"),
+        text.replace("phase=finalize-return", "phase=unknown"),
+        text.replace("mode=wal", "mode=unknown"),
+        text.replace("done=false", "done=False"),
+        text.replace("observed_primary=255", "observed_primary=256"),
+        text.replace("pid=4294967295", "pid=4294967296"),
+        text.replace("row_us=1,2", "row_us=1"),
+        text.replace("row_us=1,2", "row_us=1,2,3"),
+        text.replace("category=sqlite", "category=sqlite category=sqlite"),
+        text.replace(
+            "pid=4294967295 gate=after-busy",
+            "gate=after-busy pid=4294967295",
+        ),
+        text.replace(" finalize_us=3,4", ""),
+        text.replace('\n', "\r\n"),
+        text.trim_end_matches('\n').to_owned(),
+        format!("prefix {text}"),
+        format!("\u{1b}[0m{text}"),
+        text.replace('\n', " suffix\n"),
+    ] {
+        assert!(
+            matches!(
+                recognize_store_record(invalid.as_bytes()),
+                PairRecognition::Unrecognized
+            ),
+            "malformed record accepted"
+        );
+    }
+    for raw in [
+        "Some(+1)",
+        "Some(-0)",
+        "Some(2147483648)",
+        "Some(01)",
+        "unknown",
+    ] {
+        let invalid = std::str::from_utf8(simple)
+            .expect("ASCII literal")
+            .replace("Some(-2147483648)", raw);
+        assert!(matches!(
+            recognize_store_record(invalid.as_bytes()),
+            PairRecognition::Unrecognized
+        ));
+    }
+    let mut ambiguous = simple.to_vec();
+    ambiguous.extend_from_slice(simple);
+    assert!(matches!(
+        recognize_store_record(&ambiguous),
+        PairRecognition::Ambiguous
+    ));
+    assert!(matches!(
+        recognize_store_record(b"private arbitrary text\n"),
+        PairRecognition::Unobserved
+    ));
+    let overlong = format!("windows-store-open {}\n", "x".repeat(769));
+    assert!(matches!(
+        recognize_store_record(overlong.as_bytes()),
+        PairRecognition::Unrecognized
+    ));
+}
+// END genuine paired controls.
+
 // Pure masks/decoding controls are not native producer or History evidence.
 fn assert_call_word_domains() {
     for (kind, fields, expected) in [
@@ -3621,6 +4710,177 @@ fn native_cli_output_capture_contract() {
             }
         }
     }
+    // BEGIN appended genuine pair cases after the entire original f90 loop.
+    assert_pair_decoder_controls();
+    let mut original_ids = Vec::with_capacity(4);
+    for case in [
+        PairedCase::Human,
+        PairedCase::Json,
+        PairedCase::OversizedStderr,
+        PairedCase::LiveStderr,
+        PairedCase::Collision,
+    ] {
+        assert!(
+            Instant::now() < deadline,
+            "paired control expired before admission"
+        );
+        let mut driver = admit_control(Control::new(entered, deadline), None)
+            .expect("resource-free pair admission failed");
+        assert!(
+            driver.dispatch(CaseKind::Paired(case)).is_ok(),
+            "pair dispatch refused"
+        );
+        let observed = driver.receive_until(deadline);
+        let completed = if observed.flags & CLEANED == 0 {
+            driver.wait_cleanup_until(deadline)
+        } else {
+            observed
+        };
+        driver.finish_if_returned();
+        assert!(
+            Instant::now() < deadline,
+            "paired cleanup exceeded original horizon"
+        );
+        if matches!(case, PairedCase::Collision) {
+            assert_eq!(
+                completed.code,
+                Code::CaptureCollision,
+                "second-leaf collision refused incorrectly: {completed}"
+            );
+            assert!(
+                completed.paired.proof.no_child && completed.paired.proof.collision_preserved,
+                "actual no-child/sentinel proof missing: {completed}"
+            );
+            assert_eq!(
+                completed.flags & (REAPED | CLEANED),
+                CLEANED,
+                "no-child state cleanup unconfirmed: {completed}"
+            );
+            assert!(
+                completed.paired.proof.root_status.is_none(),
+                "collision invented root status"
+            );
+            println!(
+                "paired_capture_control=second_leaf_collision refusal=AlreadyExists no_child=true sentinel_bytes=1 same_full_id=true cleanup=confirmed"
+            );
+            continue;
+        }
+        assert_eq!(
+            completed.flags & (REAPED | CLEANED),
+            REAPED | CLEANED,
+            "actual paired root cleanup unconfirmed: {completed}"
+        );
+        assert!(
+            completed.paired.proof.duplicates_held,
+            "both real duplicates were not retained through root exit: {completed}"
+        );
+        match case {
+            PairedCase::Human | PairedCase::Json => {
+                assert!(
+                    completed.succeeded(),
+                    "actual held-lock route failed: {completed}"
+                );
+                assert_eq!(
+                    completed.paired.proof.root_status,
+                    Some(4),
+                    "actual daemon code4 missing: {completed}"
+                );
+                assert_eq!(
+                    completed.paired.proof.zero_cursors,
+                    [true, true],
+                    "independent zero-cursor proof missing"
+                );
+                assert!(
+                    completed
+                        .paired
+                        .facts
+                        .iter()
+                        .all(|fact| fact.state == PairReadState::Complete),
+                    "both actual streams were not complete"
+                );
+                for identity in completed.paired.proof.identities {
+                    let identity = identity.expect("complete original file identity missing");
+                    assert!(
+                        !original_ids.contains(&identity),
+                        "Human/JSON original objects collided"
+                    );
+                    original_ids.push(identity);
+                }
+                let route = if matches!(case, PairedCase::Json) {
+                    "json"
+                } else {
+                    "human"
+                };
+                println!(
+                    "paired_capture_control={route} exit=4 strict_route=true empty_counterpart=true held_duplicates=true same_reader_ids=true zero_cursors=true cleanup=confirmed"
+                );
+            }
+            PairedCase::OversizedStderr => {
+                assert_eq!(
+                    completed.code,
+                    Code::CaptureOversized,
+                    "genuine stderr cap refusal missing: {completed}"
+                );
+                assert_eq!(
+                    completed.paired.proof.root_status,
+                    Some(0),
+                    "actual stderr producer exit missing"
+                );
+                assert_eq!(
+                    completed.paired.proof.zero_cursors,
+                    [true, true],
+                    "actual independent readers missing"
+                );
+                assert!(
+                    completed.paired.facts[0].state == PairReadState::Complete
+                        && completed.paired.facts[0]
+                            .bytes
+                            .is_some_and(|count| count <= 65_536),
+                    "genuine harness stdout incomplete"
+                );
+                assert!(
+                    completed.paired.facts[1].state == PairReadState::Oversized
+                        && completed.paired.facts[1].bytes == Some(65_537),
+                    "genuine stderr sentinel read missing"
+                );
+                println!(
+                    "paired_capture_control=stderr_oversized exit=0 stderr_count=65537 refusal=CaptureOversized actual_harness_stdout=complete cleanup=confirmed"
+                );
+            }
+            PairedCase::LiveStderr => {
+                assert_eq!(
+                    completed.code,
+                    Code::Expired,
+                    "live stderr did not refuse before read: {completed}"
+                );
+                assert!(completed.paired.proof.live_seen, "actual live None missing");
+                assert!(
+                    completed
+                        .paired
+                        .proof
+                        .root_status
+                        .is_some_and(|code| code != 0),
+                    "actual killed root status missing"
+                );
+                assert!(completed.paired.facts.iter().all(|fact| fact.state == PairReadState::Unobserved && fact.bytes.is_none()), "live stream entered read");
+                assert_eq!(
+                    completed.paired.proof.zero_cursors,
+                    [false, false],
+                    "live stream opened a reader"
+                );
+                println!(
+                    "paired_capture_control=stderr_live observed=None refusal=Expired both_reads=unobserved kill_reap=confirmed cleanup=confirmed"
+                );
+            }
+            PairedCase::Collision => unreachable!("collision handled without a child"),
+        }
+    }
+    assert_eq!(
+        original_ids.len(),
+        4,
+        "four genuine original identities missing"
+    );
+    // END appended genuine pair cases.
 }
 
 #[test]
@@ -3664,6 +4924,63 @@ fn native_cli_output_target() {
                 );
             }
         }
+        // BEGIN genuine stderr companions; old target arms stay literal.
+        Some("oversized-stderr-v1") => {
+            let deadline = entered + Duration::from_secs(30);
+            let payload = vec![b'x'; 65_537];
+            assert!(
+                Instant::now() < deadline,
+                "stderr producer expired before lock"
+            );
+            let mut stderr = io::stderr().lock();
+            assert!(
+                Instant::now() < deadline,
+                "stderr producer expired before write"
+            );
+            let written = stderr.write_all(&payload);
+            assert!(
+                Instant::now() < deadline,
+                "stderr producer write returned late"
+            );
+            assert!(written.is_ok(), "stderr producer write refused");
+            let flushed = stderr.flush();
+            assert!(
+                Instant::now() < deadline,
+                "stderr producer flush returned late"
+            );
+            assert!(flushed.is_ok(), "stderr producer flush refused");
+        }
+        Some("live-stderr-v1") => {
+            let deadline = entered + Duration::from_secs(10);
+            assert!(
+                Instant::now() < deadline,
+                "live stderr producer expired before lock"
+            );
+            let mut stderr = io::stderr().lock();
+            assert!(
+                Instant::now() < deadline,
+                "live stderr producer expired before write"
+            );
+            let written = stderr.write_all(b"live\n");
+            assert!(
+                Instant::now() < deadline,
+                "live stderr producer write returned late"
+            );
+            assert!(written.is_ok(), "live stderr producer write refused");
+            let flushed = stderr.flush();
+            assert!(
+                Instant::now() < deadline,
+                "live stderr producer flush returned late"
+            );
+            assert!(flushed.is_ok(), "live stderr producer flush refused");
+            while Instant::now() < deadline {
+                thread::sleep(
+                    Duration::from_millis(25)
+                        .min(deadline.saturating_duration_since(Instant::now())),
+                );
+            }
+        }
+        // END genuine stderr companions.
         _ => panic!("invalid fixed output producer role"),
     }
 }
