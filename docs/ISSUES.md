@@ -160,3 +160,8 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Issue31 producer/attempt observation continuation, 2026-10-05
 
 Issue31 remains active/open after e9d MSRV Wake and1f5 ARM Cancel failures. Actual HTTP235 PASS belongs to Issue143/1f5, not native completion. Follow the four concrete Verify in planning/WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md; Root committed plan/exact Issue31 GET/final reread must precede separate five-path Source. Record actual changed-head controls/records and unknowns in Issue31. Signing37 and broad public release/catalog/installation/account/task/logon/reboot remain separately open.
+
+
+## Windows producer Run stderr boundary (2026-10-05)
+
+Issue31 / draftPR167 owns the before-Source narrow initial Run stderr refinement. Preserve the four incomplete Source drafts during this Docs-only amendment. Record the complete amended plan and its Verify, exact Issue GET/body/state readback, then Root whole final committed-plan reread before the separate developer resumes. Native delivery/types/control fit and first work/cleanup acceptance remain pending.
