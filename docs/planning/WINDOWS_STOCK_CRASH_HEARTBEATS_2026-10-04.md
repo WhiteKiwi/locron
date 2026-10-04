@@ -303,6 +303,11 @@ Only new Append/common variable/function identifiers and indentation may compact
 3. **Root source/geometry review. Verify:** complete two-file Source and deterministic OCR rules, no skipped paths; unknown/malformed record fails, bounded scalar grammar95/393/405 independently checked. Actual Source's complete LF/CRLF root/child commands satisfy<32,767 and new>=1,024 margin; old SnapshotProof raw/full commands exact. Static calculation/formatter/diff/locked metadata supplies no native or PS syntax result. Failure requires a Docs-first adjustment, never skipping an assertion or widening a clock.
 4. **Combined changed-head native qualification. Verify:** Root integrates only fully reviewed Source into PR136, publishes changed head once for ordinary automatic CI on all original x64 stable/ARM stable/x64 Rust1.94 rows. Named actual four-slot records and every old/new appender/reader/kill/reap/same-candidate release/root/Job/pipe/observer/guard check must succeed at that exact revision; zero-case, missing/late/unknown remains failure. Retain six independent original native CLI case outcomes and remaining library/lifecycle/package/lint regressions distinctly; no retry, warmup, standard-user install/account/privacy or release claim follows. Issue31 stays open until full Verify/required merge succeeds.
 
+
+### Before-Source syntax follow-up, 2026-10-04
+
+Actual3f5 stock parent-exit assertions passed on all three Windows rows; four managed-record assertions passed inside the nested helper while concrete values remained outer-log unobserved. The two new test Clippy syntax findings are independently planned in WINDOWS_STOCK_CLIPPY_SYNTAX_2026-10-04.md. This selects only borrowed constant-size iteration with literal old slice body and same one-call collision error capture, after exact reviewedmain139 integration. It does not change this heartbeat protocol, managed-record retention, cleanup/publication semantics or original clocks and does not select any readiness/cause repair.
+
 ## Reviewed strict lint corrections before Source (2026-10-04)
 
 Required Windows lint at3f5fb95/run37184851251 reports exactly two new

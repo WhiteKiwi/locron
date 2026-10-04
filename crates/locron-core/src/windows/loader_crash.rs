@@ -372,12 +372,13 @@ fn parse_append(bytes: &[u8]) -> Result<AppendSample, &'static str> {
         return Err("oversized");
     }
     let count = bytes.len() / APPEND_RECORD_BYTES;
-    for (index, &record) in bytes
+    for (index, record) in bytes
         .as_chunks::<APPEND_RECORD_BYTES>()
         .0
         .iter()
         .enumerate()
     {
+        let record = record.as_slice();
         if record[20] != b'\n' || !record[..20].iter().all(u8::is_ascii_digit) {
             return Err("malformed_record");
         }
