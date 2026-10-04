@@ -709,18 +709,62 @@ fn windows_actual_sharing_failures_are_owned() {
         fs::OpenOptions::new().read(true),
     )
     .expect("actual no-delete destination handle");
+    let held_identity = locron_core::filesystem::file_identity(&held)
+        .expect("actual retained destination identity");
     let result = run(&mut destination, Operation::Regenerate);
-    sharing(&result);
-    assert!(
-        result.elapsed_ms >= 5000,
-        "actual rename did not retain its existing retry clock"
-    );
+    if result.raw == Some(5) {
+        refused(&result, ErrorKind::PermissionDenied);
+    } else {
+        sharing(&result);
+        assert!(
+            result.elapsed_ms >= 5000,
+            "actual rename did not retain its existing retry clock"
+        );
+    }
     assert_eq!(result.fault, None);
     assert_eq!(result.stats.renames, 1);
     assert_eq!(result.stats.cleanup, 1);
+    assert!(
+        locron_core::filesystem::file_identity(&held)
+            .expect("actual retained destination identity after refusal")
+            == held_identity,
+        "actual held destination identity changed"
+    );
+    let lock_identity = final_identity(&destination);
     drop(held);
     assert!(scratch(&destination).is_empty());
     same_bytes(&super::token_path(&destination.paths), SEED);
+    check_sentinels(&destination);
+    permanent(&destination);
+    let regenerated = run(&mut destination, Operation::Regenerate);
+    assert!(
+        persisted(&destination, &regenerated) != support::digest(SEED),
+        "released destination did not persist a new token"
+    );
+    assert_eq!(regenerated.fault, None);
+    assert_eq!(regenerated.stats.scratch, 1);
+    assert_eq!(regenerated.stats.writes, 1);
+    assert_eq!(regenerated.stats.syncs, 1);
+    assert_eq!(regenerated.stats.closed, 1);
+    assert_eq!(regenerated.stats.renames, 1);
+    assert_eq!(regenerated.stats.cleanup, 0);
+    let replacement = open_private(
+        &super::token_path(&destination.paths),
+        fs::OpenOptions::new().read(true),
+    )
+    .expect("actual released private destination");
+    assert!(
+        locron_core::filesystem::file_identity(&replacement)
+            .expect("actual released destination identity")
+            != held_identity,
+        "released destination was not atomically replaced"
+    );
+    drop(replacement);
+    assert!(
+        final_identity(&destination) == lock_identity,
+        "permanent destination lock identity changed"
+    );
+    assert!(scratch(&destination).is_empty());
     check_sentinels(&destination);
     permanent(&destination);
     destination.complete();
