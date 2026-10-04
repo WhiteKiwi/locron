@@ -464,7 +464,7 @@ predicate and its explicit policy refusal stay distinguishable without exposing
 raw facts or adding a native query. These labels do not authorize a trust change.
 
 Append individually validated substage/failure_substage/evidence_substage to
-the existing ONE ASCII refusal line. Longest fixed label26 bytes, conservative
+the existing ONE ASCII refusal line. Longest fixed label27 bytes, conservative
 complete-line maximum413 including CRLF; retain the <=512-byte limit and fixed
 constant fallback. Preserve every original driver branch/condition/exit1 and
 success decision. No diagnostic can reopen admission or qualify late output.

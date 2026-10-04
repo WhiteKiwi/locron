@@ -5501,3 +5501,9 @@ directory/CreateNew files. None of the exact lower results/cause/counts/13guard/
 tokens/Job/EOF/cleanup is observed. SDK read/share semantics do not identify this
 instance's cause. Select only fixed operation/predicate/taken-refusal labels and
 first/evidence substage snapshots; conservative413-byte whole line, no repair.
+
+Pre-Source text audit corrects the research's maximum label from26 to27 bytes
+(evidence_directory_security). Complete bound remains413 CRLF bytes: old285 +
+47 field-key/separator bytes +3*27. Fixed fallback254, original512 bound unchanged.
+Separate audit result980975affd100ddeb23aee7704fbe11013713ff6d58119f570b29ce08b581120;
+Root independently checks the same24 labels/arithmetic before any Source write.
