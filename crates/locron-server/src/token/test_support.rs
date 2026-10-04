@@ -828,7 +828,7 @@ fn panic_locations(text: &str) -> Option<String> {
         let mut numbers = numbers.split(':');
         let line = numbers.next()?;
         let column = numbers.next()?;
-        if numbers.next()? != "" || numbers.next().is_some() {
+        if !numbers.next()?.is_empty() || numbers.next().is_some() {
             return None;
         }
         let positive = |value: &str| {
@@ -989,13 +989,24 @@ impl Harness {
         deadline: Instant,
         error: &io::Error,
     ) -> ! {
+        let report = self.read_failure_report(owner_index, snapshot, deadline, error);
+        panic!("{report}");
+    }
+
+    fn read_failure_report(
+        &mut self,
+        owner_index: Option<usize>,
+        snapshot: ReadSnapshot,
+        deadline: Instant,
+        error: &io::Error,
+    ) -> String {
         let primary = format!(
             "fixture control read failed: kind={:?} raw={:?}",
             error.kind(),
             error.raw_os_error()
         );
         if self.children.len() > 5 {
-            panic!("{primary}; diagnostic=unobserved:owner-bound");
+            return format!("{primary}; diagnostic=unobserved:owner-bound");
         }
         let role = if owner_index.is_some() {
             "child"
@@ -1106,9 +1117,9 @@ impl Harness {
         );
         // Reject the entire report, rather than truncate evidence or replace the primary error.
         if report.is_ascii() && report.len() <= 4096 {
-            panic!("{report}");
+            return report;
         }
-        panic!("{primary}; diagnostic=unobserved:report-bound");
+        format!("{primary}; diagnostic=unobserved:report-bound")
     }
 
     fn poll(&mut self) {
