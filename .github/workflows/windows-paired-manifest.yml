@@ -11,6 +11,7 @@ on:
       - 'scripts/release-assets.py'
       - 'scripts/render-winget-manifest.py'
       - 'scripts/test-winget-paired.py'
+      - 'scripts/test-winget-entrypoint.py'
   push:
     branches: [main]
     paths:
@@ -22,6 +23,7 @@ on:
       - 'scripts/release-assets.py'
       - 'scripts/render-winget-manifest.py'
       - 'scripts/test-winget-paired.py'
+      - 'scripts/test-winget-entrypoint.py'
 
 permissions:
   contents: read
@@ -40,3 +42,5 @@ jobs:
         run: python3 -B scripts/test-winget-paired.py
       - name: Test raw ZIP records and bounded complete member decoding
         run: python3 -B scripts/test-windows-zip-catalog.py
+      - name: Test the documented paired WinGet command entrypoint
+        run: python3 -B scripts/test-winget-entrypoint.py
