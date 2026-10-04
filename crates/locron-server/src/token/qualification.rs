@@ -75,7 +75,11 @@ fn scratch(harness: &Harness) -> Vec<PathBuf> {
             .file_name()
             .and_then(|value| value.to_str())
             .expect("fixture leaf UTF-8");
-        if name.starts_with("dashboard.token.") && name.ends_with(".tmp") {
+        if name.starts_with("dashboard.token.")
+            && name
+                .rsplit_once('.')
+                .is_some_and(|(_, extension)| extension == "tmp")
+        {
             found.push(path);
         }
     }
