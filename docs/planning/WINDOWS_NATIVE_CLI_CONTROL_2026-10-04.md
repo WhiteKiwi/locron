@@ -295,3 +295,261 @@ Apply the existing four Verify steps to this refinement, explicitly checking:
    No skip/retry/serialization/new dependency, owner-PC native effect or broader
    Windows11/two-user/full41-lint completion claim. Root Docs/Issue exact readback
    and final plan review precede the resumed separate developer's Source lease.
+
+## Selected observed-failure continuation before Source (2026-10-04)
+
+Root reviewed completed37172647017, the independent causal packet and the precise observation design before this decision. Only the existing CI workflow and test-private helper are leased; cli.rs/literal Unix bodies and every other Source remain unchanged. The research design below defines the selected fixed domains/slots/renderer and successful-empty transition. Its real-empty boundary controls remain a separate required acceptance gap: no deterministic publication-window mechanism or new selector is selected in this lease. The six existing native cases still run and fail normally; natural absence of an Empty event is never deterministic control proof.
+
+Split the six existing exact cargo commands into six steps in their existing order, each with the identical !cancelled() && steps.native_core.outcome == 'success' condition, pwsh and immediate original LASTEXITCODE failure propagation. All existing steps/commands outside this block remain exact. A canceled run or failed/unexecuted cold Core admits none; successful cold Core admits every one despite an earlier case failure. No continue-on-error, retry, auxiliary acceptance, new timer or selector.
+
+### Concrete Verify and independent handoff
+
+1. Docs/Issues before Source. **Verify:** exact4Docs commit, frozen SPEC/complete Source3a6 unchanged, causal22+stock32 and design4+appendix5 artifacts verified; Issue31 CLI exact readback and final Root review, then separate Source developer.
+2. Complete Source conservation and finite observation. **Verify:** only CI/helper changes, unchanged cli.rs/Unix/production/deps/private-state and every other296 blob/mode against reviewed Docs head. Preserve original calls/order/5s/8s/200ms/30s and cleanup.and(work), ignored kill, owner-only worker/channels/seals/refusal. Checked records/closed operation and role domains, signedi32 optional values and reserved bits obey the exact contract below; zero remains unobserved, first work survives cleanup, independent snapshots are not same-instruction evidence. Full CaseResult rendering stays<=579 includingCRLF and<=768; no private/error-text/status fabrication or new IO. Only successful0-byte ready read joins the existing5ms loop, exact1ready/otherdata/errors original; actual empty controls remain explicitly unqualified.
+3. Six-step conservation. **Verify:** exact same six selectors, order, each condition/shell/exit handling and all surrounding workflow bytes. No skip/error waiver/new dependency/clock or auxiliary success. Root reviews complete changed Source/rules and 1.94/1.98fmt/actionlint/locked offline graph; static checks add zero native acceptance.
+4. One combined changed-head ordinary native qualification. **Verify:** actual one-match result for each six selectors on x64stable/ARM64stable/x64Rust1.94, exact checkout/tree, raw log and paired hashes. Preserve secured real-daemon positive peer, strict actual PID/direction/frame/ACK rejection and original idle/withheld cleanup, genuine same-run Running+two counters -> durableCancelled -> stable progress+daemonlive and timelyreap/rootremoval. Any status/operation/late/unknown failure remainsFAIL; wider Issue31/release and unimplemented real empty-window controls stay open.
+
+### Fixed observation contract retained from independent design
+
+#### Empty publication and finite observations
+
+Source stays immutable/clean at `3a6efccb8b1b10989d544ca4210cb669e45a7ade`.
+Root selects this contract through the ordered Docs/Issue/final-review handoff above. It does not establish the measured cause of the MSRV failure.
+
+## Empty ready file
+
+Keep `setup_peer`'s existing actual-child liveness and clock checks, private
+no-follow open, original successful read limited to two bytes, and post-read
+gate. On **successful** read only:
+
+| Bytes observed | Meaning / action |
+| --- | --- |
+| length 0 | Unpublished; take the existing 5ms loop pause, then the next original iteration |
+| exact single byte `1` | Published; exit setup loop, then perform the original actual same-connection PID/query/ACK test |
+| any other 1 or 2 bytes | Original Native failure immediately |
+
+An open NotFound keeps its existing loop behavior. Every other open/read error
+keeps its original Native failure, including any sharing/permission/read error.
+No error is newly retried; no empty file is accepted as ready. A closed/expired
+admission still fails at the existing gates. Each continuing iteration checks
+the retained actual Child again before opening. A child exiting during the
+existing 5ms pause is detected at the next iteration's original try_wait.
+
+The existing pause already bounds itself by the one original outer30s horizon.
+The Empty branch joins exactly the existing NotFound continuation, so this adds
+no new native operation, rename, filesystem write, sleep call, clock origin or
+backoff. Repeated empty reads remain bounded by the original horizon. The ready
+file is merely auxiliary setup input: exact `1` is not daemon/pipe trust, and
+the later actual peer PID, direction and strict ACK requirements stay intact.
+The negative default-DACL peer remains deliberately untrusted.
+
+This eliminates a demonstrated Source race path: CreateNew exposes an empty
+final pathname before the auxiliary child writes/flushed `1`. It does **not**
+establish that the actual MSRV Native/Setup failure read empty bytes. A new
+observed non-NotFound native error would still fail and require a separate cause.
+
+Conservation target: only the Empty result transitions to the original loop;
+expected-byte, unexpected-byte, read/open error, liveness, expiry, ownership,
+cleanup and every downstream assertion retain their original policy.
+
+## Observation slots
+
+Use fixed scalar slots in the existing Control, initialized to zero:
+
+1. `last_intent: AtomicU8`, values 0 (unobserved) or one selected operation1..52.
+2. `last_io_error: AtomicU64`, one last returned **actual io::Error** event.
+3. Three fixed `last_exit_status` AtomicU64 slots: actual daemon, negative peer,
+   actual control CLI. Each word also contains its producing operation/role.
+   This prevents cleanup of a control CLI from erasing the daemon exit status.
+4. `first_work: AtomicU64`, first Code+Phase at work completion, before Cleanup.
+5. `last_ready_read: AtomicU64`, successful bounded read classification/length.
+
+There are six u64 slots plus one u8, with no allocation/dynamic map/handle.
+All current-intent/error/status/work/ready slots are **independent snapshots**:
+do not combine them into a claim that they came from the same instruction or
+operation invocation. Repeated operations have no fabricated sequence/time
+correlation. A last intent is not by itself proof that a native call is still
+running. Each event word is atomic and self-contained, so its own operation,
+role and value cannot be torn between two publications.
+
+Zero means unobserved, not success, alive, empty or no error. Records are never
+cleared to manufacture a newer absence fact. Only a newly returned corresponding
+event replaces its slot. Independent scalar snapshots do not authorize cleanup,
+peer trust, a new child, late success or replay.
+
+## Fixed operation/role domain
+
+Operation0 is unobserved. The following 52 operation IDs fit a six-bit field
+and the requested at-most64 domain. All values and displayed names are fixed.
+
+| ID | Existing operation |
+| --- | --- |
+| 1 | StateSetup (existing private factory) |
+| 2 | StateGuard |
+| 3 | CaseCurrentExe |
+| 4 | DaemonSpawn |
+| 5 | PeerSpawn |
+| 6 | ChildLiveness |
+| 7 | ReadyOpen |
+| 8 | ReadyRead |
+| 9–12 | AddCliSpawn, RunCliSpawn, HistoryCliSpawn, CancelCliSpawn |
+| 13–16 | AddCliRead, RunCliRead, HistoryCliRead, CancelCliRead |
+| 17–20 | AddCliWait, RunCliWait, HistoryCliWait, CancelCliWait |
+| 21–24 | HistoryJson, HistorySelect, SubmitJson, SubmitSelect |
+| 25–27 | ProgressOpen, ProgressRead, ProgressValidate |
+| 28–30 | RoleMetadataRead, RoleLockProbe, RoleMetadataRepeat |
+| 31–37 | EndpointName, RuntimeBuild, PipeOpen, PipeClone, PipeConvert, PipeDirection, PipePid |
+| 38–40 | PipeFrameWrite, PipeAckRead, PipeReceiptWrite |
+| 41–43 | CleanupTryWait, CleanupKill, CleanupWait |
+| 44–50 | DropStdout, DropMetadata, DropQueryHandle, DropClient, DropRuntime, DropGuard, DropState |
+| 51 | CleanupStateExists |
+| 52 | WorkOutcome |
+
+Role is a fixed three-bit value:0 NoChild,1 Daemon,2 NegativePeer,3 ControlCli.
+It is assigned from the actual retained slot/callsite, never supplied PID,
+serialized identity or a response. The foreign case's daemon child slot1 still
+has Daemon role; its peer child slot0 has NegativePeer role. The enum itself does
+not prove a child/status exists; only an actual returned status event does.
+
+Intent updates bracket only original operations; place entry publication after
+the original entry gate where one exists and before the original call. Do not
+move/add gates, calls, sleeps or clocks to serve the diagnostic. For validation/
+JSON/StoreError/non-io conversion failures, intent and the original work Code
+can be available while the io event remains unobserved/older. Do not fabricate
+an io::ErrorKind from those types or add an unsafe/native error bridge.
+
+## Checked self-contained u64 layout
+
+The common header is identical for every event word:
+
+| Bits | Meaning |
+| --- | --- |
+| 63 | Valid bit1; all-zero is unpublished |
+| 60–62 | Fixed tag1 IO error,2 actual ExitStatus,3 first work,4 ready read |
+| 47–59 | Reserved zero |
+| 44–46 | Fixed child role0..3 |
+| 38–43 | Producing operation1..52 |
+| 0–37 | Tag-specific payload below |
+
+IO error payload: bits0–31 are the raw i32 bit pattern, bit32 is raw-present,
+bits33–37 are a closed kind bucket1..17. If raw-present is false, raw bits must
+be zero. Capture `.kind()` and `.raw_os_error()` from the returned existing
+io::Error only; do not call GetLastError or format its message. Closed buckets:
+Other1, NotFound2, PermissionDenied3, AlreadyExists4, WouldBlock5, TimedOut6,
+Interrupted7, InvalidInput8, InvalidData9, UnexpectedEof10, WriteZero11,
+BrokenPipe12, NotConnected13, ConnectionAborted14, ConnectionRefused15,
+ConnectionReset16, Unsupported17. All other/non-exhaustive Rust kinds map to
+Other; optional raw integer remains exact.
+
+ExitStatus payload: bits0–31 are the exact returned `.code()` i32 bit pattern,
+bit32 is code-present; bits33–37 must be zero. Publish only when an original
+try_wait returns Ok(Some(actual ExitStatus)) or original wait returns Ok(actual
+ExitStatus). Ok(None) produces no status record. A returned status with codeNone
+is a valid event with code-present false; it is distinct from no status event.
+No new try_wait/wait/query occurs. Preserve negative values losslessly, no u8
+truncation. The op/role in each fixed slot must match that actual producer.
+
+First-work payload: bits0–3 are the existing Code discriminant0..12 and bits4–7
+the existing Phase0..13; bits8–37 zero. Tag3, op52, role0. Publish once from the
+already computed `work` Result and last existing phase **before** changing phase
+to Cleanup. Success here means work returned Ok, not overall case/cleanup success.
+Panic caught by the existing catch_unwind records Panicked plus the last phase.
+An admission failure or driver refusal before work returns leaves this word0.
+Cleanup and Drop never overwrite this first result. Overall original
+`cleanup.and(work)` precedence and Code remain unchanged.
+
+Ready-read payload: bits0–1 Empty0 / Expected1 / Unexpected2, bits2–3 length0..2,
+bits4–37 zero; tag4, op8, role2. Empty requires length0, Expected length1 and the
+already tested exact byte1, Unexpected length1 or2. Publish only after a
+successful existing read; a failed read with partial bytes publishes only its
+actual io error, not a complete readiness event. No content byte is rendered.
+
+Use safe lossless byte conversions for signed i32 packing, checked closed
+domains and zero-reserved bits. No unsafe casting, transmute or bridge. A
+diagnostic construction/decode problem must not panic, manufacture a value or
+change the original returned Code: render fixed `invalid` for an invalid word.
+
+## Exact capture points and unchanged priorities
+
+- current_exe/actual child spawn: capture errors from the existing result. After
+  successful spawn retain/anchor the actual child in its reserved slot before
+  any dependent metadata publication or subsequent fallible work.
+- actual liveness: record status only from the existing try_wait result. Keep
+  ChildExited / Native / Expired branch order and original post-return gates.
+- ready open/read and progress open/read: capture returned io errors; expected
+  NotFound remains expected loop/no-progress input even if last_io_error records
+  that numeric event. It must not alter overall work Code.
+- original CLI spawn/read/wait: attribute each to Add/Run/History/Cancel role3;
+  anchor Child first, retain stdout as originally, preserve status/JSON handling.
+- cleanup try_wait/kill/wait: record actual returned io errors/status, then keep
+  original policy. In particular an ignored kill error **remains ignored**;
+  last_io_error from that call is not the returned cause unless original code
+  actually uses it. Reap remains required before handles/state release.
+- drop operations: publish intent only. Drop has no returned io::Result/status
+  and must never be recorded as native-close or success proof. The existing
+  state try_exists result may supply an actual io error; its bool/flags handling
+  stays exact.
+
+A returned event can be captured immediately after the existing call returns,
+even when the subsequent original gate refuses it as late. It is then an
+observed return, **not timely success**. No extra query or native call is made
+after expiry; final output is the already selected scalar snapshot. No stderr,
+error Debug/Display, PID, path, SID, argv, env, UUID, input or private frame data.
+
+Renderer: retain the old fixed Code/Phase/flags/frame_bytes/elapsed fields, then
+append the following exact candidate shapes (no newlines):
+
+```
+ intent=<op>
+ last_io={op=<op>,role=<role>,kind=<bucket>,raw=<none|i32>}
+ daemon_status={op=<op>,role=<role>,code=<none|i32>}
+ peer_status={op=<op>,role=<role>,code=<none|i32>}
+ cli_status={op=<op>,role=<role>,code=<none|i32>}
+ first_work={op=WorkOutcome,role=NoChild,code=<Code>,phase=<Phase>}
+ ready={op=ReadyRead,role=NegativePeer,class=<class>,len=<0..2>}
+```
+
+Each event may instead be the fixed word `unobserved` or `invalid`; `none` is
+only an absent optional value in a valid event. Tag/role validation precedes
+rendering; a status in the wrong role slot renders invalid. Each complete event
+prints its own fixed operation/role, so no stale neighboring field is assumed
+to be its cause. Use maximum u8/u32/u128 decimal widths for the original fields
+and the exact signed i32 decimal width for raw/exit values. This finite shape is
+bounded well below768 ASCII bytes; `renderer-bound.json` records the exact
+conservative domain-bound arithmetic. No dynamic error formatting or arbitrary
+string participates. A formatting failure may not waive the actual test/result.
+No handles enter records, admission closures, channels, errors or the driver.
+
+## Verification needed before claiming the empty transition
+
+1. Static inverse: all existing operations/call order/SQL-free helper branches,
+   original5ms continuation/30s outer/5s wake/8s cancel/200ms probe, selectors,
+   Unix bodies, conditions and owner/drop/cleanup priorities remain exact except
+   the single successful-empty continuation and metadata observations. Check
+   construction/decoding max domains, zero-unpublished, negative raw/code round
+   trips, reserved bits and exact bounded ASCII without an implementation mirror
+   as the sole proof.
+2. Meaningful native controls must exercise a **real actual-owned peer** with a
+   visible private zero-byte marker before final `1`: observe Empty while that
+   Child remains live, no connection/frame/readiness then, followed by Expected
+   and the original real PID/query/ACK behavior. A held-empty/child-exit control
+   must still refuse at original30s or actual ChildExited; unexpected1/2byte and
+   actual read/open errors must retain original failure/no-frame policy. A
+   deterministic publication-window mechanism/new selector is **not selected
+   here** and requires a parent-reviewed finite fixture plan before Source; do
+   not use sleeps/fake readiness or call a naturally absent Empty observation
+   deterministic proof.
+3. Changed-head hosted allthree rows run all six independent exact selectors
+   despite earlier failures. Record fixed actual operation/error/status/work/
+   ready facts with unrelated snapshots explicitly separated. Expected positive
+   cancel still requires same Running run +two strict counters -> durable
+   Cancelled -> stable counters +daemon live and confirmed timely cleanup.
+   Malformed/foreign/idle/withheld assertions and their ownership/clocks remain.
+4. Original failures may persist: an observed PermissionDenied/share error or
+   daemon startup error is not eligible for empty-read handling. Root reviews a
+   separate causal plan if needed. No retry-all, timeout growth, readiness probe,
+   production mutation, result waiver or early quarantine release.
+
+The held-empty/negative controls above specify necessary evidence, not Source
+mechanisms or authority to expand the currently selected six acceptance cases.
+This packet adds no local native execution and leaves Source clean.
