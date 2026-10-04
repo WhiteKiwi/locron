@@ -5218,3 +5218,8 @@ unchanged exploratory command or infer an unknown supervisor/WAL cause.
 ## Separate output repair qualification development (2026-10-04)
 
 Follow planning/OUTPUT_REPAIR_QUALIFICATION.md in Store-then-Engine slices, with concrete Verify on all four selected steps and the original five-step research plan. Root freezes the private shared parser/opened-file seam and finite 96-key union before Issue #146 exact GET and complete plan reread. Separate Source development preserves public signatures, all writer and old-test bytes, native guards, policy differences and original clocks. Root handles full review, exact current-main Source union, normal publication and actual hosted qualification. No new public test API, dependency or workflow is selected.
+
+
+## PR147 reviewed owner Drop-order conservation
+
+Root found the shared repair wrapper destructures File and DirectoryGuard into reverse-dropped local bindings. Keep the exact returned pair as one tuple owner and borrow field0 so File still drops before its parent guards. The completed appendix in planning/OUTPUT_REPAIR_QUALIFICATION.md confines the separate two-statement correction; all functional controls, clocks, API and native claims remain unchanged.

@@ -5409,3 +5409,8 @@ No application/test changes or unchanged full rerun are selected.
 ## Output repair qualification selected after full review (2026-10-04)
 
 Issue #146 continues the retained-file Store and streaming Engine corrections under the frozen SPEC/STORAGE contract. Complete original Source, callers and the 96-key proposal were read. The original CI establishes only existing test results: #147 has 14 passes/three formatting failures/two optional skips; #148 has 17 passes/two optional skips. Parser-versus-I/O, actual retained identity/drift, terminal/stale eligibility and Linux memory qualification remain unexecuted. See planning/OUTPUT_REPAIR_QUALIFICATION.md for the selected private shared-algorithm seam, exact row ledger and empirical RSS limits. Native sharing remains actual OS proof and post-truncation sync failure remains an error after mutation.
+
+
+## PR147 reviewed owner Drop-order conservation
+
+Root found the shared repair wrapper destructures File and DirectoryGuard into reverse-dropped local bindings. Keep the exact returned pair as one tuple owner and borrow field0 so File still drops before its parent guards. The completed appendix in planning/OUTPUT_REPAIR_QUALIFICATION.md confines the separate two-statement correction; all functional controls, clocks, API and native claims remain unchanged.
