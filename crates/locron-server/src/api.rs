@@ -1033,16 +1033,8 @@ pub(crate) async fn runs_history(
     }
     let result = with_store(&state, move |store| {
         let (total, fetched) = if let Some(job) = query.job.as_deref() {
-            let total = usize::try_from(store.count_runs(Some(job))?).map_err(|_| {
-                StoreError::Conflict("run history total is outside supported range".into())
-            })?;
-            let runs = store
-                .history(Some(job), query.limit.saturating_add(query.offset))?
-                .into_iter()
-                .skip(query.offset)
-                .take(query.limit)
-                .collect();
-            (total, runs)
+            let page = store.history_page(Some(job), query.limit, query.offset)?;
+            (page.total, page.runs)
         } else {
             let page = store.search_history(
                 query.q.as_deref().unwrap_or(""),

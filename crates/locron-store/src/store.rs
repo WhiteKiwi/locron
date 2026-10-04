@@ -1778,9 +1778,61 @@ impl Store {
         )?)
     }
 
+    /// Returns a newest-first page and its total from one read transaction.
+    /// A supplied reference must identify a live job, matching the dashboard's
+    /// existing job filter. Pages are capped at 100 rows, but offsets are not
+    /// limited by the presentation cap of [`Store::history`].
+    pub fn history_page(
+        &self,
+        job: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> StoreResult<RunHistoryPage> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let job_id: Option<String> = match job {
+            Some(reference) => Some(
+                tx.query_row(
+                    "SELECT id FROM jobs WHERE (id=?1 OR name=?1) AND removed_at_us IS NULL",
+                    [reference],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StoreError::NotFound(reference.into()))?,
+            ),
+            None => None,
+        };
+        let count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM runs WHERE (?1 IS NULL OR job_id=?1)",
+            params![job_id],
+            |row| row.get(0),
+        )?;
+        let total = usize::try_from(count).map_err(|_| {
+            StoreError::Conflict("run history total is outside supported range".into())
+        })?;
+        // A huge offset is an empty page, not a wrapped SQLite integer. No
+        // offset conversion is needed after the end of this transaction's data.
+        let runs = if limit == 0 || offset >= total {
+            Vec::new()
+        } else {
+            let sql_offset = i64::try_from(offset).map_err(|_| {
+                StoreError::Conflict("run history offset is outside supported range".into())
+            })?;
+            let mut statement = tx.prepare(
+                "SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE (?1 IS NULL OR job_id=?1) ORDER BY requested_at_us DESC,id DESC LIMIT ?2 OFFSET ?3",
+            )?;
+            statement
+                .query_map(params![job_id, limit.min(100) as i64, sql_offset], map_run)?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        tx.commit()?;
+        Ok(RunHistoryPage { total, runs })
+    }
+
     /// Searches the complete run history by literal Unicode-lowercased run id
     /// or current durable job name and returns a stable page and total from one
-    /// read transaction. An empty query matches every run.
+    /// read transaction. An empty query uses SQL pagination. Nonempty searches
+    /// retain only the requested page and the current row while counting matches.
     pub fn search_history(
         &self,
         query: &str,
@@ -1788,30 +1840,34 @@ impl Store {
         offset: usize,
     ) -> StoreResult<RunHistoryPage> {
         let normalized = query.trim().to_lowercase();
+        if normalized.is_empty() {
+            return self.history_page(None, limit, offset);
+        }
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let mut statement = tx.prepare(
             "SELECT r.id,r.job_id,r.revision,r.trigger,r.nominal_us,r.requested_at_us,r.eligible_at_us,r.state,r.reason,r.snapshot_json,r.finished_at_us,j.name FROM runs r JOIN jobs j ON j.id=r.job_id ORDER BY r.requested_at_us DESC,r.id DESC",
         )?;
-        let rows = statement
-            .query_map([], |row| Ok((map_run(row)?, row.get::<_, String>(11)?)))?
-            .collect::<Result<Vec<_>, _>>()?;
-        drop(statement);
-
-        let matching = rows.into_iter().filter(|(run, job_name)| {
-            normalized.is_empty()
-                || run.id.to_lowercase().contains(&normalized)
-                || job_name.to_lowercase().contains(&normalized)
-        });
         let mut runs = Vec::new();
-        let mut total = 0;
+        let mut total = 0_usize;
         let page_end = offset.saturating_add(limit.min(100));
-        for (run, _) in matching {
+        for row in statement.query_map([], |row| {
+            Ok((map_run(row)?, row.get::<_, String>(11)?))
+        })? {
+            let (run, job_name) = row?;
+            if !run.id.to_lowercase().contains(&normalized)
+                && !job_name.to_lowercase().contains(&normalized)
+            {
+                continue;
+            }
             if total >= offset && total < page_end {
                 runs.push(run);
             }
-            total += 1;
+            total = total.checked_add(1).ok_or_else(|| {
+                StoreError::Conflict("run history total is outside supported range".into())
+            })?;
         }
+        drop(statement);
         tx.commit()?;
         Ok(RunHistoryPage { total, runs })
     }
