@@ -5447,3 +5447,7 @@ Full parent Source review at9534372 found the newly introduced scratch-name .tmp
 ## PR141 full Source review and publication selection (2026-10-04)
 
 Root full review of9534372 and exact suffix b8acdfe conserves allfive selected Source files/old3 tests/Unix literal/Core constructor/Cargo.lock and original295 protected modes-blobs. Static checks pass;13 actual functional drivers and type/lint remain hosted-unmeasured. Select normal exactc4 repository publication only, with full Source/Docs union proof and fresh original gates per planning/DASHBOARD_TOKEN_SERIALIZATION.md. Temporary receipt loss was recovered from conserved Git objects and Issue GET; no runtime acceptance is inferred.
+
+## PR141 returned-error lint prediction (2026-10-04)
+
+Three new support Err(_) panic arms match the previously observed PR139 warnings-denied lint. Select only binding the existing io::Error and printing kind()/raw_os_error() after each fixed message, preserving privacy and all operation/clock/ownership behavior. This is Source prediction, not runtime failure; see the three-step Verify in planning/DASHBOARD_TOKEN_SERIALIZATION.md.

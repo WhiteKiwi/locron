@@ -5253,3 +5253,7 @@ Retain the reviewed Windows closed candidate publication and cross-process contr
 ## PR141 reviewed Source to current-main publication (2026-10-04)
 
 Follow the three-step exactc4/current-common464 publication appendix in planning/DASHBOARD_TOKEN_SERIALIZATION.md. Root conserves every reviewed Source blob during normal repository merge, preserves both Docs histories, performs fresh remote ancestry readback and normal FF, then qualifies actual13 drivers/original tests/strict hosted gates and paired provenance before merge. Source adaptation, clock/security relaxation and live token/service effects remain outside this publication choice.
+
+## PR141 scalar failure diagnostics before qualification (2026-10-04)
+
+A separate developer changes only three support panic arms after Issue162 exact readback. Fixed-prefix ErrorKind/optional-i32 metadata uses already-returned errors; no arbitrary error Display/Debug or new I/O is introduced. Parent inverses all three arms and conserves all other Source before normal FF and fresh actual hosted acceptance per planning/DASHBOARD_TOKEN_SERIALIZATION.md.
