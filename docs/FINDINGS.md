@@ -5405,3 +5405,7 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+## PR144 HTTP qualification continuation (2026-10-04)
+
+Root independently reviewed exacta5e7 with125 immutable artifacts/63 Source snapshots, full API inverse,34 test paths and5 checksum-qualified primary members (proof6dcfb572a514dd74c5a488649552108efd5d460629115a3941a7e3d2c09ce72c). The actual bool/text/null DTO grammar and existing-environment read-only preview fix have no complete new HTTP regression matrix. Select only contract.rs genuine authenticated router controls, absent-state checks and closed-writer durable snapshots against actualmain9de. Source-proven wake exclusion is recorded; actual native wake observation/dev edge is not selected in this tranche. SPEC/runtime/API/UI/old helpers/tests/manifests/workflow remain protected.

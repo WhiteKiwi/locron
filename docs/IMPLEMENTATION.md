@@ -5214,3 +5214,7 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+## Selected dashboard HTTP verification (2026-10-04)
+
+Follow planning/DASHBOARD_DRY_RUN_HTTP_QUALIFICATION_2026-10-04.md for PR144/Issue143: Root Docs/Issue4Verify/finalreread first; separate developer integrates exactmain9de with complete Docs ancestry and adapts only server tests/contract.rs; add real body-type/env/no-state/query controls; preserve original API/tests/helper bodies and all other Source; Root entire-inverse/protected-tree review then fresh actual hosted Windows3/Unix/fullrequiredCI qualification. Additional native listener, dependency/workflow or timing/owner wrapper choices need a Root amendment first. No Source/native/merge/Issue closure is claimed by this planning commit.
