@@ -106,6 +106,14 @@ pub async fn bind(config: &Config) -> io::Result<BoundServer> {
             "at least one bind address is required",
         ));
     }
+    // Validate every address before opening any socket; callers of the library
+    // must not be able to bypass the CLI's loopback-only policy.
+    if let Some(address) = addresses.iter().find(|address| !address.is_loopback()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("dashboard bind address must be loopback: {address}"),
+        ));
+    }
     let preferred = config.port.unwrap_or(DEFAULT_PORT);
     let mut warnings = Vec::new();
     match config.port_policy {
@@ -120,7 +128,9 @@ pub async fn bind(config: &Config) -> io::Result<BoundServer> {
         }
         PortPolicy::Foreground => {
             let mut last_error = None;
-            for port in preferred..preferred + 10 {
+            // At the top of the u16 range, exhaust the remaining valid ports
+            // before requesting an ephemeral port; never overflow or wrap.
+            for port in preferred..=preferred.saturating_add(9) {
                 match bind_all(&addresses, port, &mut warnings).await {
                     Ok((address, listeners)) => {
                         return Ok(BoundServer {
@@ -283,25 +293,43 @@ where
                 .await
         });
     }
-    tokio::select! {
-        result = dashboard_ctrl_c() => result?,
-        () = shutdown => {},
-    }
+    // A failed listener must wake the owner just like an explicit stop. Retain
+    // the first error, but always notify and drain the remaining listeners.
+    let mut failure = tokio::select! {
+        result = dashboard_ctrl_c() => result.err(),
+        () = shutdown => None,
+        result = tasks.join_next() => Some(match result {
+            Some(Ok(Err(error))) => error,
+            Some(Err(error)) => io::Error::other(format!("dashboard listener task failed: {error}")),
+            Some(Ok(Ok(()))) | None => io::Error::other("dashboard listener exited before shutdown"),
+        }),
+    };
     shutdown_tx.send_replace(true);
     let drained = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         while let Some(result) = tasks.join_next().await {
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => return Err(error),
-                Err(_) => return Err(io::Error::other("dashboard listener task failed")),
+            let error = match result {
+                Ok(Ok(())) => None,
+                Ok(Err(error)) => Some(error),
+                Err(error) => Some(io::Error::other(format!(
+                    "dashboard listener task failed: {error}"
+                ))),
+            };
+            if let Some(error) = error {
+                if failure.is_none() {
+                    failure = Some(error);
+                } else {
+                    tracing::warn!(%error, "additional dashboard listener failure during drain");
+                }
             }
         }
-        Ok(())
     })
     .await;
-    if let Ok(result) = drained {
-        result
+    if drained.is_ok() {
+        failure.map_or(Ok(()), Err)
     } else {
+        if let Some(error) = failure {
+            tracing::warn!(%error, "dashboard drain timed out after listener or signal failure");
+        }
         tasks.abort_all();
         while tasks.join_next().await.is_some() {}
         Err(io::Error::new(
