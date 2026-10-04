@@ -5280,3 +5280,19 @@ other blob/mode conservation and Root review precede one changed-head hosted run
 The old failed builds/absent artifacts remain; static results count no actual
 identity/cleanup acceptance. Later type or strict bootstrap failures require new
 review before dependent Source, with no owner-PC native retry or fallback.
+
+### Fixed native prerequisite refusal evidence before Source (2026-10-04)
+
+Continue isolated e4e5db9 qualification after actual normal x64/ARM examples
+build but both owners refuse with indistinguishable native_owner_unknown and
+zero artifacts. No underlying bootstrap/module/token/guard cause is measured.
+Apply the three Verify steps and closed diagnostic sets in
+planning/WINDOWS_TWO_USER_PREREQUISITE_2026-10-04.md: only the existing PS script
+may publish inert bounded owner checkpoint/failure scalars and one <=512-byte
+fixed refusal line at existing driver exits. Original failure facts survive a
+second failed evidence write; driver never inspects live resources/streams.
+Keep every native operation, owner/guard/account/frame, original clock, fixed
+principal/public evidence policy and success/refusal condition exact. Root Docs
+review and exact Issues27/29 Verify readback precede separate Source development;
+Root full one-file/inverse review precedes one changed-head hosted dispatch.
+Diagnostic evidence counts zero acceptance and cannot authorize a behavior fix.

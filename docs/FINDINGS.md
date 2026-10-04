@@ -5461,3 +5461,21 @@ named binding in static review. Select only Read as _ -> Read before separate
 Source; keep Seek as _. This is the emitted error, not proof of future type success.
 [Rust Reference underscore imports](https://doc.rust-lang.org/reference/items/use-declarations.html#underscore-imports)
 distinguishes an anonymous trait import from its usable name.
+
+### Actual prerequisite unknown-owner observation boundary (2026-10-04)
+
+e4e5db965f27f35d2448875b4edcf5f369d42c12/manual37164778853 passes both normal
+Rust1.94 builds, then both real verification steps exit1 native_owner_unknown.
+Both missing-evidence uploads fail and artifact_count=0. x64 raw log SHA256
+006df642a9eab26e8a6ee7ba29ad97c7773cf22c679c91fbd4bf44e9ee68689e;
+ARM 699e24f0dd906eeba002b535901862d4f7c42d47e981b6d15d212b9ce8191575.
+Separate read-only report d43ccc6f0b630109cf00e149009b259c9c23b532dd68c52da218782dfb1ede15, unapplied diagnostic candidate
+4deb98e542680bef8720d657de38835ef074cf77f1bfc7175a1e4f7818dac0aa, final receipt 4db28d40df8e211e23e7d13d5685e6405886577ce33e017dcc5ab8bc562d175f; every artifact byte hash verified.
+PS879/886 share the exact public line for unfinished owner/phase expiry versus
+completed EndInvoke exception. PS889 rejection is silent. Owner catch841 hides
+the exception and Write-Evidence684 can independently refuse checkout bootstrap
+at692 before Keep-Unknown860. Actual setup/token/account/guard/cleanup facts are
+unobserved, never zero/PASS. No behavior fix or strict-principal fallback follows.
+Select only fixed operation-intent checkpoint, branch and allowlisted exception
+kind, preserving unknown retention and original clocks. EndInvoke must not be
+called on unfinished work. [Microsoft EndInvoke contract](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.powershell.endinvoke?view=powershellsdk-7.4.0).

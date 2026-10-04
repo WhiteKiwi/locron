@@ -323,3 +323,90 @@ candidate. This evidence does not prove that no later type error can exist.
    criteria execute successfully on x64 and ARM. Any later compile, strict
    bootstrap, logon or unknown-owner failure remains a failure needing review.
    Keep missing-evidence upload refusal and the original clocks. Issues stay open.
+
+### Fixed failure diagnostics before another changed-Source run (2026-10-04)
+
+Actual e4e5db9/run37164778853 builds both normal Rust1.94 examples successfully.
+Both actual verification steps exit1 with the same native_owner_unknown line;
+artifacts=0. PS879 emits it for unfinished shared-unknown/phase-expiry, PS886
+for completed EndInvoke exception. The raw logs cannot distinguish the branch,
+last setup operation, hidden exception, token/Job/account counts or cleanup.
+The failure Write-Evidence can itself fail its existing checkout Bootstrap-Chain.
+No bootstrap/ACL/module/token fix is justified by those logs. Frozen SPEC and all
+original native acceptance remain unchanged. Select observation only.
+
+Only scripts/test-windows-user-prerequisite.ps1 may change. Every other tracked
+blob/mode, Rust example, five-path original prerequisite graph, manual workflow,
+metadata/frame/public artifact schema and existing operation/condition remain
+exact. Root does not implement Source. No local native/PS/parser/account/ACL/
+policy operation; separate development follows exact Issues27/29 Verify readback.
+
+The owner publishes bounded scalar diagnostics only. Checkpoint is dispatch
+intent immediately before the already selected operation, never its completion,
+authority, account count or cleanup. Fixed checkpoint set:
+
+entry, metadata, stock_preflight, stock_utility_open, stock_utility_import,
+stock_accounts_open, stock_accounts_import, stock_exports, runner_identity,
+os_metadata, checkout_bootstrap, image_open, image_hash, anchor_bootstrap,
+guardian_start, guard_acquire_anchor, guard_create_job, account_a_create,
+account_b_create, guard_create_controls, image_copy, guard_hold_image,
+actor_start, actor_read, cleanup_accounts, cleanup_release_image,
+cleanup_remove_image, cleanup_remove_markers, cleanup_release_controls,
+cleanup_remove_controls, cleanup_release_job, cleanup_remove_job,
+cleanup_finish_guard, cleanup_guard_eof, cleanup_dispose, evidence_publish,
+confirmed. Missing/unrecognized values render unknown. actor_start/read repeats
+for A/B without rendering any actor identity; the checkpoint is not a token proof.
+
+Before failure-evidence publication, freeze the first owner's failure_checkpoint,
+existing selected category and fixed exception kind. category remains exactly
+the already existing allowlist preflight, account, credential_start, token,
+protocol, containment, deadline, cleanup, guard_setup, native_owner_unknown.
+No exception message is printed or copied into shared state. Use only safe
+managed -is type checks and at most four InnerException links (five nodes), no
+reflection/native inspector. Fixed kind set: unauthorized, security, io, win32,
+argument, invalid_operation, timeout, method_invocation, runtime, pipeline,
+unknown. Prefer the deepest recognized specific kind; wrapper kinds do not
+overwrite a specific kind. Unknown types render unknown. Never publish a type
+name, FullyQualifiedErrorId, Message/ToString, native error text or stack.
+
+Keep independent failure_evidence scalar not_attempted/attempting/written/refused
+and evidence_kind from the same kind allowlist. Failure-evidence's exception may
+only set evidence_kind/refused; it cannot overwrite the original failure facts.
+No retry/new artifact/parent repair is added. All diagnostic defaults are fixed
+unknown/entry/not_attempted. The synchronized table supplies scalar snapshots,
+not an atomic cross-field transaction or inferred causal/cleanup proof.
+
+Distinguish these existing driver refusal paths with fixed branch literals:
+shared_unknown, phase_expired_pending, phase_expired_completed,
+endinvoke_exception, result_rejected, phase_expired_after_dispose,
+phase_expired_after_success_print. Keep each original decision expression and
+exit1 exactly; shared_unknown takes priority only when the existing combined
+condition already refused. For a completed EndInvoke exception, classify that
+driver exception locally without reading the invocation's Error/Output stream.
+No unfinished EndInvoke/Stop/Dispose/join or resource-list access is added.
+
+Each existing failure exit may emit ONE fixed ASCII stderr line at most512 bytes,
+preserving the native_owner_unknown prefix and appending only validated fixed
+checkpoint/failure_checkpoint/branch/category/kind/evidence/evidence_kind values.
+Validate every field against its frozen set immediately before rendering; any
+unrecognized value becomes unknown. No PID/SID/path/account/UUID/channel/raw
+frame/credential/hash/environment/argv/descriptor or counter is rendered.
+The line is refusal evidence and supplies ZERO native prerequisite acceptance.
+No diagnostic helper can reopen admission or turn a late failure into success.
+
+1. Add fixed owner checkpoints and failure scalars. Verify: text-only whole-file
+   inverse strips only those inert assignments/helpers, leaving every existing
+   native operation/order/conditions and same owner/resources/unknown parking.
+   Original180/30/15/45/30/100ms and publication limits stay exact; all other
+   tracked blob/modes and workflow stay exact. No new effectful native calls.
+2. Add bounded refusal rendering only. Verify: each existing driver refusal uses
+   only the closed sets above and <=512-byte ASCII; first owner failure survives
+   a second evidence failure; existing success/exit decisions and original clocks
+   remain exact. Source/type/text checks disclose no private values or extra
+   streams. Root reviews the complete one-file patch and preserved-source inverse.
+3. Qualify changed observation on the two native rows. Verify: the normal examples
+   still actually build; each failure distinguishes a branch/checkpoint/fixed
+   kind without a raw secret/path/identity. Preserve e4e failed logs and absent
+   artifacts. A diagnostic failure remains FAIL with cleanup unconfirmed and
+   Issues27/29 open; only all original token/Job/account/guard/EOF criteria can
+   qualify. Any newly measured cause needs another Docs-first plan before repair.
