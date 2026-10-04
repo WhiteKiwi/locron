@@ -14,6 +14,10 @@ The renderer validates its inputs, creates the requested output directory, then 
 
 The owner requested implementation-first Drafts. Repository regression-test additions and native validation remain explicit PR/issue handoff items; small local writer smoke checks may be recorded separately. This is best-effort recovery from ordinary exceptions, not atomic visibility, crash recovery, durability after power loss, or a security sandbox against hostile same-user path races. Ambiguous cleanup leaves output for manual inspection. No new dependency, package installation, catalog submission, release, merge or issue closure. Independent development/review sessions are unavailable here; maintainer review remains required.
 
+## Selected finite control completion before Source (2026-10-04)
+
+The parent now has the separately researched/reviewed14-method38-control design in WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. Current main137 paired default composes through exact renderer-region preservation, not a writer policy rewrite. Frozen SPEC stays unchanged. Docs/Issues/final Root review precede the separate developer; actual hosted portable and Windows filesystem evidence and all required exact-head checks precede a merge decision. The prior missing Verify remains open until these outcomes are recorded; no account/install/catalog/release completion follows from this suite.
+
 
 ## Maintainer review and control handoff (2026-10-04)
 
