@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 1349d5fea68d8016fb37374c0ea470b724119670
+          ref: 640c3aa971f66a3a2aa32aa07034ad79b598fa89
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
         with:
@@ -28,15 +28,16 @@ jobs:
           save-if: false
       - name: Verify exact source and formatting
         run: |
-          test "$(git rev-parse HEAD)" = 1349d5fea68d8016fb37374c0ea470b724119670
+          test "$(git rev-parse HEAD)" = 640c3aa971f66a3a2aa32aa07034ad79b598fa89
           test ! -e .github/workflows/mcp-161-validation.yml
           cargo fmt --all --check
           git diff --check
       - name: Test all actual MCP subprocess regressions
-        run: cargo test --locked -p locron --test mcp -- --test-threads=1
-      - name: Test MCP admission helpers
         if: ${{ !cancelled() }}
-        run: cargo test --locked -p locron --bin locron mcp::arguments::tests -- --test-threads=1
+        run: cargo test --locked -p locron --test mcp -- --test-threads=1
+      - name: Test all MCP unit regressions
+        if: ${{ !cancelled() }}
+        run: cargo test --locked -p locron --bin locron mcp:: -- --test-threads=1
       - name: Test all migrated Store regressions
         if: ${{ !cancelled() }}
         run: cargo test --locked -p locron-store --lib -- --test-threads=1
