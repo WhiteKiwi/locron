@@ -2,7 +2,9 @@
 
 use super::private_state::{PrivateState, private_state_fixture};
 use interprocess::os::windows::named_pipe::{PipeStream, pipe_mode};
-use locron_core::filesystem::{DirectoryGuard, create_private_new, open_read_no_follow};
+use locron_core::filesystem::{
+    DirectoryGuard, GuardedFile, create_private_new, open_read_no_follow,
+};
 use locron_core::notification::{ACK_MESSAGE, WAKE_MESSAGE, endpoint_name_guarded};
 use locron_store::{DaemonLock, LockProbe};
 use std::fmt;
@@ -18,6 +20,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::task::Poll;
 use std::thread;
 use std::time::{Duration, Instant};
+use tempfile::TempPath;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient, PipeMode, ServerOptions};
 use tokio::runtime::{Builder, Runtime};
@@ -2035,6 +2038,101 @@ fn native_wake_peer_target() {
     assert!(result.is_ok(), "native peer refused: {:?}", result.err());
 }
 
+fn ready_writer(control: &Control, path: &Path, byte: u8) -> Result<GuardedFile, Code> {
+    let deadline = control.deadline;
+    control.check(deadline)?;
+    let created = create_private_new(path);
+    control.check(deadline)?;
+    let mut writer = created.map_err(|_| Code::Native)?;
+    control.check(deadline)?;
+    let written = writer.write_all(&[byte]);
+    control.check(deadline)?;
+    written.map_err(|_| Code::Native)?;
+    control.check(deadline)?;
+    let flushed = writer.flush();
+    control.check(deadline)?;
+    flushed.map_err(|_| Code::Native)?;
+    Ok(writer)
+}
+
+fn ready_bytes(control: &Control, path: &Path) -> Result<Vec<u8>, Code> {
+    let deadline = control.deadline;
+    control.check(deadline)?;
+    let opened = open_read_no_follow(path);
+    control.check(deadline)?;
+    let mut reader = opened.map_err(|_| Code::Native)?;
+    let mut bytes = Vec::new();
+    control.check(deadline)?;
+    let read = (&mut *reader).take(2).read_to_end(&mut bytes);
+    control.check(deadline)?;
+    read.map_err(|_| Code::Native)?;
+    Ok(bytes)
+}
+
+fn publish_peer_ready(control: &Control, root: &Path) -> Result<(), Code> {
+    let deadline = control.deadline;
+    if !root.is_absolute() {
+        return Err(Code::Native);
+    }
+    let collision_final = root.join("peer-ready-collision");
+    let candidate_path = root.join("peer-ready-collision.pending");
+    let writer = ready_writer(control, &collision_final, b'0')?;
+    control.check(deadline)?;
+    drop(writer);
+    control.check(deadline)?;
+    let writer = ready_writer(control, &candidate_path, b'1')?;
+    control.check(deadline)?;
+    drop(writer);
+    control.check(deadline)?;
+    // Adopt only this successfully created, closed, private candidate.
+    let candidate = TempPath::try_from_path(candidate_path.clone()).map_err(|_| Code::Native)?;
+    control.check(deadline)?;
+    let published = candidate.persist_noclobber(&collision_final);
+    control.check(deadline)?;
+    let Err(collision) = published else {
+        return Err(Code::Native);
+    };
+    if collision.error.kind() != io::ErrorKind::AlreadyExists {
+        return Err(Code::Native);
+    }
+    let same_candidate = collision.path.as_os_str() == candidate_path.as_os_str();
+    if !same_candidate {
+        return Err(Code::Native);
+    }
+    if ready_bytes(control, &collision_final)? != b"0"
+        || ready_bytes(control, &candidate_path)? != b"1"
+    {
+        return Err(Code::Native);
+    }
+    control.check(deadline)?;
+    let closed = collision.path.close();
+    control.check(deadline)?;
+    closed.map_err(|_| Code::Native)?;
+
+    let ready_path = root.join("peer-ready");
+    let candidate_path = root.join("peer-ready.pending");
+    let writer = ready_writer(control, &candidate_path, b'1')?;
+    control.check(deadline)?;
+    let opened = open_read_no_follow(&ready_path);
+    control.check(deadline)?;
+    match opened {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        _ => return Err(Code::Native),
+    }
+    control.check(deadline)?;
+    drop(writer);
+    control.check(deadline)?;
+    let candidate = TempPath::try_from_path(candidate_path).map_err(|_| Code::Native)?;
+    control.check(deadline)?;
+    let published = candidate.persist_noclobber(&ready_path);
+    control.check(deadline)?;
+    published.map_err(|_| Code::Native)?;
+    if ready_bytes(control, &ready_path)? != b"1" {
+        return Err(Code::Native);
+    }
+    Ok(())
+}
+
 fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
     let deadline = control.deadline;
     control.check(deadline)?;
@@ -2061,19 +2159,7 @@ fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
             .create(&endpoint);
         control.check(deadline)?;
         let mut server = created.map_err(|_| Code::Native)?;
-        control.check(deadline)?;
-        let created = create_private_new(&root.join("peer-ready"));
-        control.check(deadline)?;
-        let mut ready = created.map_err(|_| Code::Native)?;
-        control.check(deadline)?;
-        let written = ready.write_all(b"1");
-        control.check(deadline)?;
-        written.map_err(|_| Code::Native)?;
-        control.check(deadline)?;
-        let flushed = ready.flush();
-        control.check(deadline)?;
-        flushed.map_err(|_| Code::Native)?;
-        drop(ready);
+        publish_peer_ready(control, &root)?;
         gated(control, deadline, server.connect()).await?;
         match mode {
             PeerMode::Malformed => {
@@ -2270,9 +2356,25 @@ fn withheld_native_return_retains_case_owner_at_deadline() {
         driver.dispatch(CaseKind::Peer(PeerMode::Withheld)).is_ok(),
         "peer command refused"
     );
-    let notice = notice
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .expect("actual native query did not reach the controlled return gate");
+    let notice = match notice.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(notice) => notice,
+        Err(error) => {
+            let control = &driver.control;
+            let phase = Phase::from_slot(control.phase.load(Ordering::Acquire));
+            let flags = control.flags.load(Ordering::Acquire);
+            let frame_bytes = control.frame_bytes.load(Ordering::Acquire);
+            let elapsed_us = control.entered.elapsed().as_micros();
+            let snapshot = control.observations.snapshot();
+            match driver.result.try_recv() {
+                Ok(result) => panic!(
+                    "actual native query did not reach the controlled return gate: {error:?}; driver_snapshot=outcome=unobserved phase={phase:?} flags={flags} frame_bytes={frame_bytes} elapsed_us={elapsed_us}{snapshot}; completed_result={result}"
+                ),
+                Err(queued) => panic!(
+                    "actual native query did not reach the controlled return gate: {error:?}; driver_snapshot=outcome=unobserved phase={phase:?} flags={flags} frame_bytes={frame_bytes} elapsed_us={elapsed_us}{snapshot}; completed_result=unobserved; queued_state={queued:?}"
+                ),
+            }
+        }
+    };
     // The caller supplies only the original outer horizon. The driver must
     // independently discover and refuse the published 200 ms incomplete probe.
     let refused = driver.receive_until(deadline);
