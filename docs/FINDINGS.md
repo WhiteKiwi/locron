@@ -5648,3 +5648,8 @@ PR136 is merged as f90a9d5 with exact reviewed/tested tree and actual ordinary/n
 ## Store147 actual receiver lint and separate failures (2026-10-05)
 
 CI37217661880/1 completed12PASS/5FAIL/2optional. All3Clippy diagnostics select a single needless-borrow receiver correction in the private real-file adapter; Source/store policy remains unchanged. Windows Store42 rows passed all3drivers, caller6 passed MSRV and were skipped x64/ARM after separate wake failures; do not claim48 on those two. Native History/Ack expiry and later x64 GUI retaining-handle cause remain UNKNOWN. planning/OUTPUT_REPAIR_READ_RECEIVER_2026-10-05.md binds the sole expression/Verify before Source.
+
+
+## Measured caller branch lint (2026-10-05)
+
+Completed fresh hosted Linux/macOS Rust1.98 Clippy jobs111490407950/111490407940 on Sourcee50106ac038937877776c9cafdbec834d54e095c expose clippy::if_not_else at the caller fixture outer condition maintenance.rs1324; the previous receiver warning is absent, and Windows lint111490407874 passed. The original &str case condition can be inverted to equality while exchanging its two complete literal bodies without changing any case operation. This does not establish or repair the still-pending native wake/cancellation failures. Preserve raw logs and actual partial-run scope.

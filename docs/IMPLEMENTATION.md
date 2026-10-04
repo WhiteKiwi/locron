@@ -5427,3 +5427,8 @@ SPEC remains frozen. [The complete five-step plan](planning/OUTPUT_REPAIR_MAIN13
 ## Store147 selected receiver correction (2026-10-05)
 
 Apply only the actual Clippy receiver autoref suggestion under planning/OUTPUT_REPAIR_READ_RECEIVER_2026-10-05.md after exact Issue146 readback and Root final reread. Preserve complete parent inverse, fixed47/48 controls, errors, guards and every old gate/clock; separate Source implementation and Root review precede normal publication/fresh hosted acceptance. This syntax change supplies no repair claim for unrelated Windows wake/Ack/GUI failures.
+
+
+## Measured caller branch lint (2026-10-05)
+
+Follow OUTPUT_CALLER_BRANCH_ORDER_2026-10-05.md under Issue146: Docs/Issue exact readback and whole final-plan reread before a separate one-block maintenance.rs test-only branch exchange; whole parent inverse and both literal branch bodies, protected mode/blob inventory,47/48 ledger, all clocks/assertions/cleanup and static fmt/diff evidence; then Root full review, normal publication and actual changed-head hosted/Guardian/native/paired qualification. All other Source and broad acceptance remain unchanged.
