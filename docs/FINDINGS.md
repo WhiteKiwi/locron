@@ -5448,3 +5448,7 @@ Official [setup-python architecture inputs](https://github.com/actions/setup-pyt
 ### PR140 concurrent existing recovery suite reconciliation
 
 Parent fully reviewed remote4a Source741/92/156 and Docs245, plus independent research4c66eb7f: renderer remains exact55f4 with missing-directory cleanup-note gap; remote tests cover32 portable/6 native but use TemporaryDirectory recursive/finalizer cleanup, restore readonly mode before root check and only print interpreter architecture. Select existing suite expansion to42/49 exact controls, an actual ID-ledger/nonrecursive/saved-mode fixture owner, checked native CPython3.14 ABI and minimal writer diagnosis. Preserve all old selectors/assertions, including actual readonly WinError5 documented by Microsoft DeleteFileW; no broader guessed error allowance. Final selection and five Verify steps are appended to WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md before new Source.
+
+## WinGet output recovery follow-up after concurrent merge (2026-10-04)
+
+PR 140 merged as c4ef8b9 with reviewed 4a tree. The separate developer's2d6a1c4d follow-up adds missing-directory cleanup diagnostics and extends the existing suite to 42 portable/49 native controls with checked identity-ledger teardown. Parent read all three Source files and independently verified299 protected paths and149 preserved assertion calls. These controls remain unexecuted; original PR 140 success is not their qualification. Follow the publication appendix under Issue 35 before normal main reconciliation and a separate follow-up Draft.

@@ -5251,3 +5251,7 @@ Freeze SPEC and follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. N
 ### PR140 continuation: expand the existing recovered-output suite
 
 Integrate reviewed remote4a normally and preserve its exact main139/old32+6 tests; archive our uncommitted alternative suite privately and use only existing test-winget-output.py. Add ten portable/one native controls and freeze42/49 exact keys; actual owned mkdtemp/identity-ledger teardown and original mode restoration replace automatic recursive repair. Separate missing-directory cleanup diagnostics without changing successful writer/validator bytes. Keep old readonly WinError5 assertion; qualify actual native CPython3.14 x64/arm64 using setup-python@v6 and hard architecture/ABI checks. Parent plans/reviews/publishes, separate developer leases only renderer/existingtest/workflow after exact Issue35 readback; effectful tests execute hosted, wider release acceptance remains open.
+
+## Publish reviewed WinGet recovery follow-up (2026-10-04)
+
+PR 140 is already merged. Follow the publication appendix in planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md: normal-compose published c4ef8b9 with reviewed 2d6a1c4d, preserve the exact three leased Source blobs and every other main Source, keep canonical Docs plus unique literal planning appendices, then publish a follow-up Draft linked to Issue 35/PR 140. New 42/49 controls and native CPython3.14/ABI facts require fresh exact-head hosted evidence; no prior result, local fixture execution, real WinGet installation or public release is adopted.
