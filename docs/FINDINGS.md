@@ -5521,3 +5521,18 @@ Select one Source file and two private seams: exact production bind/preflight/po
 Ordinary changed-head run37183332242, exact PR head4852c51ae38cf28568db34d861e7b22e85b339df/attempt1, completed FAILURE. Saved completed job metadata shows three Windows foundation jobs SUCCESS, while Windows/Linux/macOS lint jobs fail. The first Windows and Linux raw lint logs both identify exactly one new locron-server lib-test error at lib.rs881: the fixture's Err(_) panic arm triggers match_wild_err_arm under -D warnings. MacOS's specific diagnostic and the new42-case native evidence remain under separate read-only qualification; their content is not inferred from these two logs. The real result does not waive any required lint or native gate.
 
 The helper already aborts/reaps its owned controller and observes captured yielding-task Drop receipts before handling the timeout result. Select only binding the returned Elapsed value and including its Display in the existing failure panic after that cleanup. This uses an already-returned error and adds no call, query, retry, clock, task or owner. Existing13s fixture/10s supervisor guards, eleven control oracles and production behavior remain unchanged. No allow attribute or warning suppression is selected.
+
+
+## Root-reviewed private peer publication research (2026-10-04)
+
+Issue31: Root independently verified readiness43/13 Git snapshots and retained
+prior192 files, plus lifecycle syntax19/raw42100. Actual raw32 holder/path/native
+instruction and withheld Disconnected cause remain unobserved. Fixed FullControl
+DELETE/share3 vs consumer share3 is a primary-Source/API inference, not observed
+runtime cause. Select private created stage -> leaf-close -> one disabled-cleanup
+tempfile3.27 no-clobber move under retained parents, with a new genuine standalone
+control, independent failure-only notice snapshot and captured lifecycle if-let.
+Root proof hashes are recorded in WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md;
+the complete selected plan precedes Source and adds no product scope. Parent-
+observed final-Empty/held-exit lane remains unselected/unqualified. No source/API
+or native qualification was produced by this research.

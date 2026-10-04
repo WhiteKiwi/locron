@@ -553,3 +553,16 @@ No handles enter records, admission closures, channels, errors or the driver.
 The held-empty/negative controls above specify necessary evidence, not Source
 mechanisms or authority to expand the currently selected six acceptance cases.
 This packet adds no local native execution and leaves Source clean.
+
+
+## Selected successor plan at b131 (2026-10-04)
+
+The original six selectors and fixed control/refusal/cleanup protocol remain
+unchanged. docs/planning/WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md explicitly
+selects a test-private completed-stage/no-clobber publisher, one genuine seventh
+independent control command, separate existing-scalar notice failure rendering,
+and one unrelated lifecycle lint syntax site. Its303-path base already contains
+main139 and stock Clippy fixes. This successor preserves all measured failures
+and unobserved causes; research is not native proof. The earlier parent-observed
+live Empty/held-exit lane stays unselected/unqualified. Root records Issue31 and
+rereads the plan before handing any Source to the separate developer.

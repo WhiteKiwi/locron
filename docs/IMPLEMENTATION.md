@@ -5307,3 +5307,17 @@ Add11 meaningfully controlled tests in that same private lib module: three bind 
 ## PR139 elapsed-payload lint repair before separate Source (2026-10-04)
 
 The existing frozen SPEC is unchanged. Follow the measured-failure appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md. Select only the new test helper's outer timeout match in crates/locron-server/src/lib.rs: change the Err(_) panic arm to Err(error) and include : {error} after the original panic text. Preserve the actual abort/reap/Drop ordering before this arm and every other Source byte apart from rustfmt of this arm. Root Docs/Issue30/final plan review precede a separate developer lease; Root then reviews the full one-arm inverse and all other mode/blob conservation before one ordinary changed-head push. Fresh native and all warnings-denied lint outcomes are required before merge; the previous failed head remains failed.
+
+
+## Windows test-private readiness selection after b131 (2026-10-04)
+
+Follow docs/planning/WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md on exactb131.
+Three Source selections: test-private staged publisher+genuine seventh control+
+separate notice failure snapshot; one additive original-matrix CI command; and
+one lifecycle parse syntax site. Preserve original controller non-NotFound error
+refusal, six commands/owners/3s-30s-200ms-5ms clocks, complete main139/stock and
+all other mode/blob paths. Root recomputed notice bound654 including separator.
+No new transport/dependency/native binding/production or timing waiver. Root
+Docs/Issue31/final review precede the separate development lease, then immutable
+Source review and genuinely changed-head hosted verification. Failed gates stay
+held; wide installer/account/logon/reboot/public release acceptance is pending.
