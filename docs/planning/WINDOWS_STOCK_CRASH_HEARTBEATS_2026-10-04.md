@@ -313,6 +313,13 @@ These failures are not the old41 exploratory diagnostics or native proof.
 Lease only those two syntax sites in loader_crash.rs. Iterate the same complete
 21-byte records using as_chunks::<APPEND_RECORD_BYTES>().0.iter(), preserving
 the existing independently checked tail, ordering, count and overflow predicates.
+Bind each enumerated item as `(index, &record)`: the iterator returns a reference
+to a 21-byte array, while the existing comparison returns an array value. Copy
+the same complete bytes into the binding so the original comparison, indexing
+and digit predicates remain unchanged. This refinement changes only the leased
+loop binding and introduces no I/O, allocation, clock or acceptance change.
+This documented refinement must precede its Source edit and owning Issue31
+readback; the other Source work remains uncommitted until that readback.
 Express the actual CreateNew collision using let Err(collision)=... else with the
 identical panic and AlreadyExists assertion. No allow, changed expected value,
 extra call, clock, helper mode, parser, PowerShell source or proof weakening.
