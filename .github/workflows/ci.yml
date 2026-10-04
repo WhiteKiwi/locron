@@ -92,9 +92,95 @@ jobs:
             cargo test -p locron-core --lib --locked windows::loader_tests::owned_loader_fixture_child -- --exact --nocapture --test-threads=1
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+      - name: Build pinned PR144 fixture artifacts and record provenance
+        id: pr144_helpers
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, sys, tempfile, zlib
+
+          def command(args):
+              result = subprocess.run(args, check=False, text=True, encoding="utf-8", capture_output=True)
+              if result.returncode:
+                  sys.stderr.write(result.stderr)
+                  raise SystemExit(result.returncode)
+              return result.stdout
+
+          compiler = command(["rustc", "-vV"])
+          hosts = [line[6:] for line in compiler.splitlines() if line.startswith("host: ")]
+          assert len(hosts) == 1
+          host = hosts[0]
+          target = os.environ.get("CARGO_BUILD_TARGET") or host
+          assert target == host
+          metadata = json.loads(command(["cargo", "metadata", "--locked", "--no-deps", "--format-version=1"]))
+
+          def package(name):
+              matches = [item["id"] for item in metadata["packages"] if item["name"] == name]
+              assert len(matches) == 1
+              return matches[0]
+
+          def artifact(args, package_id, kind, target_name, test):
+              messages = [json.loads(line) for line in command(args).splitlines() if line]
+              matches = [item for item in messages if item.get("reason") == "compiler-artifact"
+                         and item.get("package_id") == package_id and item["target"]["kind"] == [kind]
+                         and item["target"]["name"] == target_name and item["profile"]["test"] is test
+                         and item.get("executable")]
+              assert len(matches) == 1
+              item = matches[0]
+              original_path = pathlib.Path(item["executable"])
+              assert original_path.is_absolute() and not original_path.is_symlink()
+              path = original_path.resolve(strict=True)
+              assert path.is_file() and not path.is_symlink()
+              digest = hashlib.sha256()
+              crc = 0
+              with path.open("rb") as file:
+                  while chunk := file.read(65536):
+                      digest.update(chunk)
+                      crc = zlib.crc32(chunk, crc)
+              return {"path":str(path), "sha256":digest.hexdigest(), "crc32":f"{crc:08x}",
+                      "package_id":package_id, "target_kind":item["target"]["kind"],
+                      "profile_test":test, "features":item["features"]}
+
+          store = artifact(["cargo", "test", "-p", "locron-store", "--lib", "--no-run", "--locked", "--message-format=json"],
+                           package("locron-store"), "lib", "locron_store", True)
+          controller = None
+          if os.name == "nt":
+              controller = artifact(["cargo", "build", "-p", "locron", "--example", "dashboard_pr144_wake_fixture", "--locked", "--message-format=json"],
+                                    package("locron"), "example", "dashboard_pr144_wake_fixture", False)
+          checkout = command(["git", "rev-parse", "HEAD"]).strip()
+          assert len(checkout) == 40
+          parent = pathlib.Path(tempfile.mkdtemp(prefix="locron-pr144-build-", dir=os.environ["RUNNER_TEMP"]))
+          if os.name != "nt":
+              parent.chmod(0o700)
+          facts = {"schema":"locron.pr144-build/v1", "checkout":checkout,
+                   "run":os.environ["GITHUB_RUN_ID"], "attempt":os.environ["GITHUB_RUN_ATTEMPT"],
+                   "job":os.environ["GITHUB_JOB"], "compiler":compiler, "host":host, "target":target,
+                   "store":store, "controller":controller}
+          encoded = (json.dumps(facts, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+          assert len(encoded) <= 16384
+          facts_path = parent / "build-facts.json"
+          with facts_path.open("xb") as file:
+              file.write(encoded)
+          # Rust creates the fresh evidence directory privately. Full SQL/captures are elsewhere.
+          evidence = parent / "redacted-evidence"
+          assert not evidence.exists()
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"LOCRON_PR144_BUILD_FACTS={facts_path}\n")
+              env.write(f"LOCRON_PR144_EVIDENCE_DIR={evidence}\n")
+          print("PR144 exact compiler artifacts pinned; native target=" + target)
+          PY
       - name: Verify durable store and runtime library contracts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
+      - name: Upload redacted PR144 row completion evidence
+        if: ${{ always() && steps.pr144_helpers.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr144-windows-${{ matrix.platform }}-rust-${{ matrix.rust }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ env.LOCRON_PR144_EVIDENCE_DIR }}/*.json
       - name: Verify native default doctor facts and output
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         shell: pwsh
@@ -272,8 +358,93 @@ jobs:
           $requestedRelease = @($requestedCompiler | Where-Object { $_ -clike 'release: *' })
           if ($requestedRelease.Count -ne 1 -or $compiler -cnotcontains $requestedRelease[0]) { throw 'actual compiler must match requested toolchain release' }
           if ($compiler -cnotcontains 'host: ${{ matrix.platform }}') { throw 'test target must equal native rustc host' }
+      - name: Build pinned PR144 fixture artifacts and record provenance
+        id: pr144_helpers
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, sys, tempfile, zlib
+
+          def command(args):
+              result = subprocess.run(args, check=False, text=True, encoding="utf-8", capture_output=True)
+              if result.returncode:
+                  sys.stderr.write(result.stderr)
+                  raise SystemExit(result.returncode)
+              return result.stdout
+
+          compiler = command(["rustc", "-vV"])
+          hosts = [line[6:] for line in compiler.splitlines() if line.startswith("host: ")]
+          assert len(hosts) == 1
+          host = hosts[0]
+          target = os.environ.get("CARGO_BUILD_TARGET") or host
+          assert target == host
+          metadata = json.loads(command(["cargo", "metadata", "--locked", "--no-deps", "--format-version=1"]))
+
+          def package(name):
+              matches = [item["id"] for item in metadata["packages"] if item["name"] == name]
+              assert len(matches) == 1
+              return matches[0]
+
+          def artifact(args, package_id, kind, target_name, test):
+              messages = [json.loads(line) for line in command(args).splitlines() if line]
+              matches = [item for item in messages if item.get("reason") == "compiler-artifact"
+                         and item.get("package_id") == package_id and item["target"]["kind"] == [kind]
+                         and item["target"]["name"] == target_name and item["profile"]["test"] is test
+                         and item.get("executable")]
+              assert len(matches) == 1
+              item = matches[0]
+              original_path = pathlib.Path(item["executable"])
+              assert original_path.is_absolute() and not original_path.is_symlink()
+              path = original_path.resolve(strict=True)
+              assert path.is_file() and not path.is_symlink()
+              digest = hashlib.sha256()
+              crc = 0
+              with path.open("rb") as file:
+                  while chunk := file.read(65536):
+                      digest.update(chunk)
+                      crc = zlib.crc32(chunk, crc)
+              return {"path":str(path), "sha256":digest.hexdigest(), "crc32":f"{crc:08x}",
+                      "package_id":package_id, "target_kind":item["target"]["kind"],
+                      "profile_test":test, "features":item["features"]}
+
+          store = artifact(["cargo", "test", "-p", "locron-store", "--lib", "--no-run", "--locked", "--message-format=json"],
+                           package("locron-store"), "lib", "locron_store", True)
+          controller = None
+          if os.name == "nt":
+              controller = artifact(["cargo", "build", "-p", "locron", "--example", "dashboard_pr144_wake_fixture", "--locked", "--message-format=json"],
+                                    package("locron"), "example", "dashboard_pr144_wake_fixture", False)
+          checkout = command(["git", "rev-parse", "HEAD"]).strip()
+          assert len(checkout) == 40
+          parent = pathlib.Path(tempfile.mkdtemp(prefix="locron-pr144-build-", dir=os.environ["RUNNER_TEMP"]))
+          if os.name != "nt":
+              parent.chmod(0o700)
+          facts = {"schema":"locron.pr144-build/v1", "checkout":checkout,
+                   "run":os.environ["GITHUB_RUN_ID"], "attempt":os.environ["GITHUB_RUN_ATTEMPT"],
+                   "job":os.environ["GITHUB_JOB"], "compiler":compiler, "host":host, "target":target,
+                   "store":store, "controller":controller}
+          encoded = (json.dumps(facts, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+          assert len(encoded) <= 16384
+          facts_path = parent / "build-facts.json"
+          with facts_path.open("xb") as file:
+              file.write(encoded)
+          # Rust creates the fresh evidence directory privately. Full SQL/captures are elsewhere.
+          evidence = parent / "redacted-evidence"
+          assert not evidence.exists()
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"LOCRON_PR144_BUILD_FACTS={facts_path}\n")
+              env.write(f"LOCRON_PR144_EVIDENCE_DIR={evidence}\n")
+          print("PR144 exact compiler artifacts pinned; native target=" + target)
+          PY
       - name: Run full native workspace tests
         run: cargo test --workspace --all-targets --locked
+      - name: Upload redacted PR144 row completion evidence
+        if: ${{ always() && steps.pr144_helpers.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr144-exploratory-${{ matrix.platform }}-rust-${{ matrix.rust }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ env.LOCRON_PR144_EVIDENCE_DIR }}/*.json
 
   windows-full-clippy:
     name: Windows exploratory Clippy / ${{ matrix.platform }} / Rust 1.98.0
@@ -354,7 +525,92 @@ jobs:
           uname -a
           rustc -vV
           test "$(rustup which rustc)" = "$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)"
+      - name: Build pinned PR144 fixture artifacts and record provenance
+        id: pr144_helpers
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, sys, tempfile, zlib
+
+          def command(args):
+              result = subprocess.run(args, check=False, text=True, encoding="utf-8", capture_output=True)
+              if result.returncode:
+                  sys.stderr.write(result.stderr)
+                  raise SystemExit(result.returncode)
+              return result.stdout
+
+          compiler = command(["rustc", "-vV"])
+          hosts = [line[6:] for line in compiler.splitlines() if line.startswith("host: ")]
+          assert len(hosts) == 1
+          host = hosts[0]
+          target = os.environ.get("CARGO_BUILD_TARGET") or host
+          assert target == host
+          metadata = json.loads(command(["cargo", "metadata", "--locked", "--no-deps", "--format-version=1"]))
+
+          def package(name):
+              matches = [item["id"] for item in metadata["packages"] if item["name"] == name]
+              assert len(matches) == 1
+              return matches[0]
+
+          def artifact(args, package_id, kind, target_name, test):
+              messages = [json.loads(line) for line in command(args).splitlines() if line]
+              matches = [item for item in messages if item.get("reason") == "compiler-artifact"
+                         and item.get("package_id") == package_id and item["target"]["kind"] == [kind]
+                         and item["target"]["name"] == target_name and item["profile"]["test"] is test
+                         and item.get("executable")]
+              assert len(matches) == 1
+              item = matches[0]
+              original_path = pathlib.Path(item["executable"])
+              assert original_path.is_absolute() and not original_path.is_symlink()
+              path = original_path.resolve(strict=True)
+              assert path.is_file() and not path.is_symlink()
+              digest = hashlib.sha256()
+              crc = 0
+              with path.open("rb") as file:
+                  while chunk := file.read(65536):
+                      digest.update(chunk)
+                      crc = zlib.crc32(chunk, crc)
+              return {"path":str(path), "sha256":digest.hexdigest(), "crc32":f"{crc:08x}",
+                      "package_id":package_id, "target_kind":item["target"]["kind"],
+                      "profile_test":test, "features":item["features"]}
+
+          store = artifact(["cargo", "test", "-p", "locron-store", "--lib", "--no-run", "--locked", "--message-format=json"],
+                           package("locron-store"), "lib", "locron_store", True)
+          controller = None
+          if os.name == "nt":
+              controller = artifact(["cargo", "build", "-p", "locron", "--example", "dashboard_pr144_wake_fixture", "--locked", "--message-format=json"],
+                                    package("locron"), "example", "dashboard_pr144_wake_fixture", False)
+          checkout = command(["git", "rev-parse", "HEAD"]).strip()
+          assert len(checkout) == 40
+          parent = pathlib.Path(tempfile.mkdtemp(prefix="locron-pr144-build-", dir=os.environ["RUNNER_TEMP"]))
+          if os.name != "nt":
+              parent.chmod(0o700)
+          facts = {"schema":"locron.pr144-build/v1", "checkout":checkout,
+                   "run":os.environ["GITHUB_RUN_ID"], "attempt":os.environ["GITHUB_RUN_ATTEMPT"],
+                   "job":os.environ["GITHUB_JOB"], "compiler":compiler, "host":host, "target":target,
+                   "store":store, "controller":controller}
+          encoded = (json.dumps(facts, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+          assert len(encoded) <= 16384
+          facts_path = parent / "build-facts.json"
+          with facts_path.open("xb") as file:
+              file.write(encoded)
+          # Rust creates the fresh evidence directory privately. Full SQL/captures are elsewhere.
+          evidence = parent / "redacted-evidence"
+          assert not evidence.exists()
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"LOCRON_PR144_BUILD_FACTS={facts_path}\n")
+              env.write(f"LOCRON_PR144_EVIDENCE_DIR={evidence}\n")
+          print("PR144 exact compiler artifacts pinned; native target=" + target)
+          PY
       - run: cargo test --workspace --all-targets
+      - name: Upload redacted PR144 row completion evidence
+        if: ${{ always() && steps.pr144_helpers.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr144-${{ matrix.runner.platform }}-rust-${{ matrix.rust }}
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ env.LOCRON_PR144_EVIDENCE_DIR }}/*.json
 
   lint:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}

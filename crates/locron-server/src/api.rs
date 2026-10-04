@@ -179,6 +179,9 @@ fn now_us() -> i64 {
 /// Best-effort wake hint to a running daemon; the command is already durable
 /// when the endpoint is unavailable, so failures preserve durable reconciliation.
 fn send_wake(paths: &StatePaths) {
+    #[cfg(test)]
+    let _ = dashboard_boolean_qualification::wake(&paths.root);
+    #[cfg(not(test))]
     let _ = locron_core::notification::send_wake(&paths.root);
 }
 
@@ -248,6 +251,8 @@ where
 {
     let paths = state.paths.clone();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _completion = dashboard_boolean_qualification::worker(&paths.root);
         let store = Store::open(paths, env!("CARGO_PKG_VERSION"), now_us())?;
         f(&store)
     })
@@ -272,6 +277,8 @@ where
 {
     let paths = state.paths.clone();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _completion = dashboard_boolean_qualification::worker(&paths.root);
         let store = if paths.database.is_file() {
             Some(Store::open_read_only(&paths.database)?)
         } else {
@@ -1998,3 +2005,6 @@ fn environment_warnings(environment: &locron_core::target::Environment) -> Vec<S
     }
     Vec::new()
 }
+
+#[cfg(test)]
+mod dashboard_boolean_qualification;
