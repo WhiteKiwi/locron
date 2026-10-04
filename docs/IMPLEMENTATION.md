@@ -5259,3 +5259,8 @@ only the existing Unix state_discovery test module: isolated child env, independ
 byte-preserving expected paths, dry-run no-state before actual live DB placement,
 Linux matrix and real macOS/override policies. No global env/dependency/workflow
 change; actual new head Linux/macOS and unchanged Windows required gates qualify.
+
+
+## PR153 measured macOS/lint amendment before separate Source (2026-10-04)
+
+Follow planning/XDG_MACOS_RAW_STATE_REFUSAL_2026-10-04.md after exact Issue152 readback and final committed Root review. Only new cli.rs state_discovery additions adapt: one private platform helper at three raw-byte call sites, genuine macOS JSON refusal and valid owned-parent empty enumeration; Linux retains successful original helper/DB placement. Fix only the measured new assertion message while preserving its predicate. Preserve original tests, whole paths.rs6a26, all other production/Windows/dependency/workflow Source. Full inverses and permitted static checks precede fresh actual Linux/macOS/native Windows/strict required CI; unchanged filtered standalone workflows are honestly NOT RUN with exact qualified-main dependency binding.
