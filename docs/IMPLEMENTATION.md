@@ -5339,3 +5339,8 @@ Before Source integration, select a normal merge of remote b131 into local062aa2
 ## Lifecycle observer lint follow-up before separate Source (2026-10-04)
 
 Frozen SPEC. After normal reviewed integration78af945, lease only the single parse match in LifecycleProgress::read_heartbeat, as documented in WINDOWS_LIFECYCLE_PROGRESS_OBSERVATIONS_2026-10-04.md. Use if let Ok(value) ... else with identical branch bodies, one parse call and unchanged observer/formatter/assertions/16 selectors/clocks. Root Docs and Issue31 readback precede the separate one-file developer; full inverse/all other mode-blobs and formatting/actionlint/locked metadata precede parent review and ordinary changed-head publication. All original native/lifecycle and required Windows lint gates remain required; no allowance, filter, clock change, owner-PC native execution or earlier-run cause is selected.
+
+
+### PR136 continuation: owned bounded CLI output capture
+
+The Windows acceptance helper retains each actual Child and a finite fresh private capture/guard, polls actual exit under the unchanged effective clock, then reads the same actual file identity through an independent no-follow reader with64KiB+1 cap. It preserves complete bounded stdout/status; no pipe EOF wait or shared-cursor seek. A separate additive hosted gate proves real held-writer/producer/collision/cap/live-refusal/kill-reap cleanup under its own bounded controls. Parent plans/reviews/publishes; a separate developer leases only the helper and additive CI step after exact Issue31 readback. Preserve73d3 source, original six cases/deadlines, unknown failed-head causes and wider open acceptance.
