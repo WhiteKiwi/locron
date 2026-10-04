@@ -5438,3 +5438,8 @@ Use typed all-field Cookie scanning with strict Authorization first, scoped prot
 ## Dashboard145 sentinel same-identity handoff (2026-10-05)
 
 The dependent private fixture correction follows planning/DASHBOARD_COOKIE_SENTINEL_HANDOFF_2026-10-05.md. Preserve the actual owned root/parent guard, sync the genuine created sentinel, capture its complete writer identity, release the writer before the incompatible Windows stable-reader open, and retain the exact-ID-equal read-only no-follow leaf. Independent later checks and cleanup retain all existing identity/digest/ownership/cap/clock refusal rules. This clarifies the four-path fixture implementation while leaving the complete original204 selection and actual once-generated dist bytes unchanged. Exact Issue162 readback and full final Root plan reread precede separate development; Source compatibility remains distinct from hosted native acceptance.
+
+
+## Independent Unix sentinel readers (2026-10-05)
+
+Follow DASHBOARD_COOKIE_UNIX_NOFOLLOW_2026-10-05.md after exact Issue162 GET/body equality and Root whole final17/40/13 plan reread. Separate developer corrects only private qualification.rs Unix independent opens with existing Core open_read_no_follow, retains real guards/full identity/digest and nonrecursive cleanup, and returns a clean one-file Source commit with full0c inverse/all324 other protected entries. Root independently reviews original9dd conservation/generated receipts and publishes in order. No repeated generation or local compiler/runtime; all actual190/99 and17/Guardian/paired Verify gates remain required.
