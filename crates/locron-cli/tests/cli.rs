@@ -247,7 +247,7 @@ mod state_discovery {
     }
 
     fn assert_no_state(root: &Path) {
-        assert!(!root.exists(), "unexpected state root: {root:?}");
+        assert!(!root.exists(), "unexpected state root");
         for file in ["state.db", "state.db-wal", "state.db-shm"] {
             assert!(!root.join(file).exists(), "unexpected state file: {file}");
         }
@@ -283,6 +283,104 @@ mod state_discovery {
             if candidate != expected {
                 assert_no_state(candidate);
             }
+        }
+    }
+
+    fn assert_non_utf8_discovery_contract(
+        command: impl FnMut() -> Command,
+        working: &Path,
+        expected: &Path,
+        candidates: &[PathBuf],
+    ) {
+        #[cfg(not(target_os = "macos"))]
+        assert_dry_run_then_config(command, working, expected, candidates);
+
+        #[cfg(target_os = "macos")]
+        {
+            use std::path::Component;
+
+            let mut command = command;
+            assert!(working.is_absolute(), "fixture parent must be absolute");
+            assert!(
+                expected.is_absolute(),
+                "fixture state path must be absolute"
+            );
+            assert!(
+                expected.to_str().is_none(),
+                "fixture must retain raw path bytes"
+            );
+            for root in std::iter::once(expected).chain(candidates.iter().map(PathBuf::as_path)) {
+                let Ok(relative) = root.strip_prefix(working) else {
+                    panic!("fixture state path must remain inside its owned parent");
+                };
+                assert!(
+                    !relative.as_os_str().is_empty()
+                        && relative
+                            .components()
+                            .all(|component| matches!(component, Component::Normal(_))),
+                    "fixture state path must be a descendant without escape"
+                );
+            }
+            let assert_empty_parent = || {
+                let Ok(mut entries) = std::fs::read_dir(working) else {
+                    panic!("fixture parent enumeration failed");
+                };
+                assert!(
+                    entries.next().is_none(),
+                    "fixture parent contains an entry or cannot be enumerated"
+                );
+            };
+            assert_empty_parent();
+            let Ok(preview) = command().args(["prune", "--dry-run"]).output() else {
+                panic!("fixture preview invocation failed");
+            };
+            assert!(preview.status.success(), "unexpected state preview status");
+            assert!(
+                preview.stdout.as_slice() == b"dry run: would prune 0 runs, 0 outputs (0 bytes)\n",
+                "unexpected state preview output"
+            );
+            assert_no_state(expected);
+            for candidate in candidates {
+                assert_no_state(candidate);
+            }
+            assert_empty_parent();
+
+            let Ok(live) = command()
+                .args(["--json", "config", "get", "global_concurrency"])
+                .output()
+            else {
+                panic!("fixture native config invocation failed");
+            };
+            assert!(
+                live.status.code() == Some(5),
+                "unexpected native state refusal status"
+            );
+            assert!(
+                live.stderr.is_empty(),
+                "unexpected native state refusal stderr"
+            );
+            assert!(
+                live.stdout.len() <= 1024,
+                "native state refusal exceeded its output bound"
+            );
+            let Ok(error) = serde_json::from_slice::<serde_json::Value>(&live.stdout) else {
+                panic!("native state refusal was not JSON");
+            };
+            assert!(
+                error
+                    == serde_json::json!({
+                        "schema": "locron.cli/v1",
+                        "ok": false,
+                        "command": "config",
+                        "error": {
+                            "code": "state_error",
+                            "message": "Illegal byte sequence (os error 92)"
+                        },
+                        "warnings": []
+                    }),
+                "unexpected native state refusal envelope"
+            );
+            assert_empty_parent();
         }
     }
 
@@ -448,7 +546,7 @@ mod state_discovery {
         let environment_root = working
             .path()
             .join(non_utf8_component("environment state 한글 "));
-        assert_dry_run_then_config(
+        assert_non_utf8_discovery_contract(
             || {
                 let mut command = without_default();
                 command
@@ -473,7 +571,7 @@ mod state_discovery {
         let unselected = working
             .path()
             .join(non_utf8_component("unselected CLI state 한글 "));
-        assert_dry_run_then_config(
+        assert_non_utf8_discovery_contract(
             || {
                 let mut command = without_default();
                 command
@@ -524,7 +622,7 @@ mod state_discovery {
         let working = tempfile::tempdir().unwrap();
         let home = working.path().join(non_utf8_component("HOME state 한글 "));
         let xdg = working.path().join("XDG state 한글");
-        assert_dry_run_then_config(
+        assert_non_utf8_discovery_contract(
             || {
                 let mut command = without_default();
                 command
