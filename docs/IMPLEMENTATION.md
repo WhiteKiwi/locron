@@ -5222,3 +5222,7 @@ Follow docs/planning/DASHBOARD_TOKEN_SERIALIZATION.md's reviewed handoff. Window
 ## PR141 scratch-name predicate handoff (2026-10-04)
 
 Retain the reviewed Windows closed candidate publication and cross-process controls. Before fresh hosted qualification, a separate developer changes only the new scratch inventory suffix to exact rsplit_once last-dot/tmp semantics after Issue162 exact readback. Parent reviews the full inverse and current-main integration; production clocks, original tests, finite controls and warnings-denied CI stay selected. Detailed three-step Verify remains in planning/DASHBOARD_TOKEN_SERIALIZATION.md.
+
+## PR141 reviewed Source to current-main publication (2026-10-04)
+
+Follow the three-step exactc4/current-common464 publication appendix in planning/DASHBOARD_TOKEN_SERIALIZATION.md. Root conserves every reviewed Source blob during normal repository merge, preserves both Docs histories, performs fresh remote ancestry readback and normal FF, then qualifies actual13 drivers/original tests/strict hosted gates and paired provenance before merge. Source adaptation, clock/security relaxation and live token/service effects remain outside this publication choice.
