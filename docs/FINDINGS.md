@@ -5405,3 +5405,7 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+## Dashboard145 strict cookie/recovery research and selection (2026-10-05)
+
+The complete original198 control research distinguishes missing cookies from malformed and duplicate/unreadable states, actual body polls from delivery, real issuer headers from DOM storage, and plaintext Axum rejections from API envelopes. Original public GET admitted malformed cookies as unauthenticated; preserving that load boundary adds six real entry/script controls without dropping any original key. Selected204=190 backend+14 client controls remain UNMEASURED. Source/CI evidence, primary request/asset code and pin reads establish the narrow recovery route and the need to generate the actually shipped RustEmbed dist. See planning/DASHBOARD_COOKIE_RECOVERY_2026-10-05.md and its complete original/public ledgers. Historical CI37178548023/1 failures remain evidence, not a claim about the future composed candidate.

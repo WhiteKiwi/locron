@@ -5214,3 +5214,7 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+## Dashboard145 selected production and qualification (2026-10-05)
+
+Use typed all-field Cookie scanning with strict Authorization first, scoped protected-session refusal, preserved public entry, narrow session-status401 and exact POST/unique-readable-malformed/no-echo recovery. Delegate actual body/issuer/API paths and limit the client echo omission to exact POST session. planning/DASHBOARD_COOKIE_RECOVERY_2026-10-05.md freezes the four Source paths, actual generated dist lease, all204 fixed controls, ownership/caps/clocks and four concrete Verify steps. A separate developer may generate the pinned bundle once with frozen ignored-scripts installation/build, while runtime/DOM/native/Rust qualification stays hosted. Preserve the full reviewed142 appendix/generic production contracts and all old assertions; Root independently reviews Source/dist and actual latest-base17/Guardian/paired/tree evidence before ordered merge.

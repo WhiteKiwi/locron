@@ -656,3 +656,7 @@ backend facts retain their boolean values and existing shapes; true permission
 and I/O failures still refuse. Diagnostic observation does not enable services,
 create an access token or dispatch installation/update. This qualifies a limited
 diagnostic behavior and does not advertise completed Windows support.
+
+## Dashboard cookie recovery correction (2026-10-05)
+
+Ambiguous or malformed session cookies refuse protected API access and token paste while the public entry page and viewer bundle remain loadable. A valid session with an unusable CSRF cookie receives the existing generic authentication refusal from session status so the dashboard can show its token entry flow. Re-pasting the exact token may recover only a unique readable malformed CSRF cookie when no CSRF echo is supplied; duplicate or unreadable cookies and supplied bad echoes still refuse before body access. Token validation precedes new cookies, and normal bearer, form, header and safe public flows retain their contracts.
