@@ -3,8 +3,6 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-#[cfg(unix)]
-use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -160,7 +158,7 @@ fn path_leaf_identity(path: &Path) -> io::Result<Identity> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        let reader = File::open(path)?;
+        let reader = locron_core::filesystem::open_read_no_follow(path)?;
         let metadata = reader.metadata()?;
         let identity = Identity {
             device: metadata.dev(),
@@ -299,7 +297,7 @@ impl OwnedRoot {
         #[cfg(windows)]
         let mut reader = locron_core::filesystem::open_private_read_stable(&path)?;
         #[cfg(unix)]
-        let mut reader = File::open(&path)?;
+        let mut reader = locron_core::filesystem::open_read_no_follow(&path)?;
         #[cfg(windows)]
         if leaf_identity(&reader)? != self.leaf_id {
             return Err(io::Error::other("PR145 path sentinel identity changed"));
@@ -320,7 +318,7 @@ impl OwnedRoot {
         #[cfg(windows)]
         (&mut *reader).take(4097).read_to_end(&mut bytes)?;
         #[cfg(unix)]
-        (&mut reader).take(4097).read_to_end(&mut bytes)?;
+        (&mut *reader).take(4097).read_to_end(&mut bytes)?;
         if bytes.len() > 4096 || Sha256::digest(&bytes) != Sha256::digest(SENTINEL) {
             return Err(io::Error::other("PR145 owned sentinel digest changed"));
         }
