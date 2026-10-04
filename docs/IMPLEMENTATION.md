@@ -5215,6 +5215,15 @@ separate development, whole-workflow inverse and parent review, then fresh ordin
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
 
+## PR139 shared production controls before separate Source (2026-10-04)
+
+Frozen SPEC and the existing dashboard completion contract remain unchanged. Select the exact appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md after Root review of the47-file design. Only crates/locron-server/src/lib.rs may change. Public bind delegates its existing parsing/loopback/range/fallback implementation through a private generic SocketAddr binder; public serve_until retains token/router/real Axum tasks and calls a private owning supervisor containing the same original select/broadcast/10s-drain/abort-all/full-join body. The existing Windows dashboard_ctrl_c stays byte-exact. No public hook, boxed callback/dependency/new duration/test-util/Store/CLI/policy/workflow change.
+
+Add11 meaningfully controlled tests in that same private lib module: three bind cases and eight supervisor cases. Real per-case task/channel/Drop ownership and original shutdown receiver path verify notification, held-survivor non-completion, all joins, first-error retention and unchanged TimedOut precedence; one real10s expiry stays under a13s fixture guard. Preserve all31 old native cases, actual fixed owned-port conflict, active SSE/stalled contracts. Root Docs/Issue30 Verify/final review precede a separate one-file Source lease; full extraction inverses/all other modes-blobs/rules/static checks precede changed-head ordinary hosted x64 stable/ARM stable/x64 Rust1.94 and Windows warnings-denied lint. Planned42 native Server cases is inventory only until all11 named new cases actually pass without new skip/ignore. Broader detached/started-Store/account/install/release acceptance remains open.
+## PR139 elapsed-payload lint repair before separate Source (2026-10-04)
+
+The existing frozen SPEC is unchanged. Follow the measured-failure appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md. Select only the new test helper's outer timeout match in crates/locron-server/src/lib.rs: change the Err(_) panic arm to Err(error) and include : {error} after the original panic text. Preserve the actual abort/reap/Drop ordering before this arm and every other Source byte apart from rustfmt of this arm. Root Docs/Issue30/final plan review precede a separate developer lease; Root then reviews the full one-arm inverse and all other mode/blob conservation before one ordinary changed-head push. Fresh native and all warnings-denied lint outcomes are required before merge; the previous failed head remains failed.
+
 
 ## PR140 guarded output recovery verification before separate Source (2026-10-04)
 
