@@ -5663,3 +5663,7 @@ Both original cc0aaa and reviewed incoming b1d843 actually use GET and !uri.path
 ## Dashboard145 pinned generation environment before Source (2026-10-05)
 
 The developer observed default Node26.7.0 and pnpm10.34.6 without installing/building. The existing mise Node24.21.0 binary is present and Root directly read its exact version. Select that existing bin directory only in the copied child-command environment for the one isolated frozen install/build and verify both exact pins there. No global PATH/config/shim/tool installation/upgrade is selected. No generation, Source or runtime proof is claimed by these version reads.
+
+## Dashboard145 sentinel handle compatibility before dependent Source (2026-10-05)
+
+Preserved Core create_private_new returns a read/write GuardedFile; Windows open_private_read_stable uses FILE_SHARE_READ. The draft fixture cannot retain that writer while opening a stable reader. The actual API contract selects a same-full-ID handoff after initial sync: capture writer identity, release writer, reopen the known no-follow existing leaf read-only, compare its complete identity and retain that guard. This is Source-backed static compatibility, not a native result. No Core, 204-row ledger, old assertion, generation or deadline changes are selected; the full supplement is planning/DASHBOARD_COOKIE_SENTINEL_HANDOFF_2026-10-05.md.
