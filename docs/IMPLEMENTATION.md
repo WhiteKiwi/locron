@@ -5264,3 +5264,11 @@ Paired-writer37198110854 executes portable42/42 but both native rows48/49: A03 c
 ## PR166 reviewed qualification and exact main138 integration
 
 The [completed integration plan](planning/WINGET_OUTPUT_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
+
+## Before-integration Root selection, 2026-10-04 (pr138)
+
+The complete ordered plan is [RELEASE_PUBLICATION_MAIN140_2026-10-04.md](planning/RELEASE_PUBLICATION_MAIN140_2026-10-04.md). SPEC stays frozen. Exact incoming mainc4/treef90 replaces the previous main814/prospective140 selection only within this plan. Parent Root handles Docs/Issues/final review/publication; separate development handles Git integration of already reviewed whole Source blobs.
+
+Retain all five exact PR138 snapshot paths and import reviewed main139/140 without Source adaptation; shared Docs are common15820 + complete incomingc4 suffix + complete new Root suffix.
+
+Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.

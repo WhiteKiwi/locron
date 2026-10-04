@@ -5461,3 +5461,9 @@ Paired-writer37198110854 executes portable42/42 but both native rows48/49: A03 c
 ## PR166 reviewed qualification and exact main138 integration
 
 The [completed integration plan](planning/WINGET_OUTPUT_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
+
+## Root reviewed current-main integration research, 2026-10-04 (pr138)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+PR138 and merged main have disjoint Source changes; the original unmodified forecast is 306 paths/tree6564ad98a2053813eb00adfb8f93626e9d860765. Root Docs adds protected suffixes and one plan. Old1c45 x64 lifecycle294/877 failures remain measured failures with causes unobserved.
