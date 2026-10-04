@@ -485,3 +485,52 @@ success decision. No diagnostic can reopen admission or qualify late output.
    Later/unknown failure stays FAIL; diagnostic observation contributes ZERO
    native acceptance. All original credential/token/Job/account/guard/EOF Verify
    remains required and issues stay open. A measured cause needs Docs before fix.
+
+## 2026-10-04: managed kind extension selected after Source81aa failure
+
+Root reviewed completed run37170247896 metadata/raw bytes/Source and both separate
+research reports, verifying48 qualification and33 causal-research artifacts. Prior
+e4e/28449/81aa failures remain retained. First last-intent foreign_mutation_check is
+not an exact fault location and no security predicate correction is established.
+
+Select ONLY invalid_cast, overflow and parent_error_record managed observations.
+Exactly one existing Source file is leased: scripts/test-windows-user-prerequisite.ps1.
+Both classifier copies gain safe -is tests for InvalidCastException/OverflowException
+to the existing specific slot and Management.Automation.ParentContainsErrorRecordException
+to the wrapper slot. Existing clauses stay ordered, max5 nodes/InnerException walk,
+specific-over-wrapper precedence and unknown fallback remain. Renderer gains these
+three closed literals only. No new ErrorRecord/Message/HResult/Data/stack/type/reflection
+read, stream/resource/driver work, native query or synthetic classification fixture.
+These types are not measured in81aa. A parent wrapper may lack an inner exception;
+its fixed label never authorizes reconstruction, alternative exception traversal,
+private error output or a cause claim. No per-operand nesting/rewrite is selected.
+
+Root independently calculates14 unique kind labels with maximum19 ASCII bytes.
+Three unchanged substage fields still have max27; existing line413 grows by4 bytes
+to417 including CRLF because kind and evidence_kind share that taxonomy. Fallback254
+and if-line-length510/whole512 remain unchanged. Scalar first/secondary snapshots
+are unchanged and are not an atomic causal transaction. No native acceptance is added.
+
+1. **Verify:** Root reads full reports/primary SDK declarations and hashes48+33
+   artifacts, commits only FINDINGS/IMPLEMENTATION/this plan, records exact Issue27/29
+   Verify through CLI, and reviews the completed plan before separate Source handoff.
+   Frozen SPEC and all Source/CI/example bytes remain exact during this Docs step.
+2. **Verify:** developer changes only the leased script. Removing six additive
+   managed clauses and three renderer literals restores the complete81aa script.
+   All297 other tracked blob/mode pairs, predicates/evaluation/order/categories/
+   throws,88 Native-Call/40 Check-Deadline/23 guard_setup throws/one stderr writer,
+  24 substage labels and the original owners/deadlines/receipts remain exact.
+3. **Verify:** Root reviews entire Source/context/OCR rule scope, both identical
+   classifiers' closed fixed strings/5-node priority and max417/fallback254 bounds.
+   No private data or unfinished-owner access, suppression, fallback/repair/staging,
+   policy bypass, extra retry/probe/clock/fixture or changed success decision occurs.
+4. **Verify:** exact reviewed clean head is pushed only to the manual prerequisite
+   branch and dispatched once on disposable x64/ARM. Verify completed head/event/
+   branch/attempt/steps/raw hashes/fixed diagnostics/artifacts. Newly observed buckets
+   are class observations only; unknown stays FAIL. Real counts2/2/2, all13 flags,
+   tokens/Job/EOF/cleanup and original evidence gates are required for actual PASS.
+
+No owner-PC native/PowerShell parser/AST/reflection/account/ACL/policy effect is
+authorized here. The temporary manual CI stays out of main and PRs. Wide Issues27/29
+stay open until full acceptance; any later causal fix requires another reviewed
+Docs-first decision. Root handles publication after separate Source lease return.

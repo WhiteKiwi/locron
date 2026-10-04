@@ -5311,3 +5311,23 @@ Every other tracked blob/mode/graph/manual workflow and original native operatio
 guard/account/frame/evidence schema remains exact. Root Docs/Issue readback and
 plan review precede separate Source; full one-file/inverse review precedes one
 changed-head hosted run. Actual unknown counts/cleanup and wide issues stay open.
+
+### 2026-10-04: selected managed-kind observation, before Source
+
+Frozen SPEC and native prerequisite behavior remain unchanged. After completed
+Source81aa/run37170247896 review, extend only the fixed kind taxonomy in the existing
+script: invalid_cast via InvalidCastException, overflow via OverflowException,
+parent_error_record via Management.Automation.ParentContainsErrorRecordException.
+Both existing classifier copies use the same three safe managed -is tests. The first
+two write the existing specific slot; the last writes the existing wrapper slot.
+Preserve old clause order, deepest-specific-over-wrapper selection, maximum5 nodes,
+existing InnerException links and unknown fallback. No ErrorRecord, raw message/code,
+stack/type name, reflection, resources/streams or native operation is added.
+The renderer adds exactly those three closed literals.14 kinds have max19 ASCII bytes;
+full line bound is417 including CRLF, fixed fallback254, unchanged512 policy.24 substage
+labels/snapshots, every original predicate/evaluation/throw,88 Native-Call and40
+Check-Deadline occurrences, owner retention, categories, counts/flags/credential/Job/
+EOF/cleanup criteria and workflow/example remain exact. One leased Source path only.
+Verify and separate handoff are specified in the prerequisite planning document and
+Issues27/29 before implementation. A changed-head hosted run observes class buckets
+only; actual prerequisite PASS still requires the complete original receipt and gates.

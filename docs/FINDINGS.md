@@ -5507,3 +5507,27 @@ Pre-Source text audit corrects the research's maximum label from26 to27 bytes
 47 field-key/separator bytes +3*27. Fixed fallback254, original512 bound unchanged.
 Separate audit result980975affd100ddeb23aee7704fbe11013713ff6d58119f570b29ce08b581120;
 Root independently checks the same24 labels/arithmetic before any Source write.
+
+### 2026-10-04: fixed managed failure-kind observation after run37170247896
+
+The exact Source81aa manual run37170247896 completed failure on x64/ARM: normal
+Rust1.94 examples passed, real credential/tree and uploads failed, final artifacts0.
+Both first snapshots retained stock_utility_open / foreign_mutation_check / unknown.
+The taken foreign_mutation label was absent. That last intent can survive a false
+short-circuit condition through enumeration or the original final deadline check;
+no predicate defect, exact object/ACE/SID, exception or causal repair is established.
+The x64 owner_untrusted/runtime snapshot is separate evidence-publication refusal.
+
+Separate read-only reports c25eb4969b5347c5cc775124f0105446a8d00406aeb66c6650d2a3382dc3f5ac
+and91858b19e89fb142cc144fe2054f740970ba02e42e2388e713bbadc020766dbd
+and their48/33 artifacts were independently reviewed and hash verified by Root.
+Microsoft's [PSInvalidCastException API](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.psinvalidcastexception?view=powershellsdk-7.4.0)
+includes the5.1 reference and derives InvalidCastException, which the current set misses.
+[OverflowException](https://learn.microsoft.com/en-us/dotnet/api/system.overflowexception?view=netframework-4.8.1)
+derives ArithmeticException and is also outside that set.
+[ParentContainsErrorRecordException](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.parentcontainserrorrecordexception?view=powershellsdk-7.4.0)
+derives SystemException; its Exception constructor does not retain InnerException.
+These establish an observation blind spot, not the actual hosted exception types.
+Select only three closed managed kind observations, with no private ErrorRecord read,
+predicate/ACL/trust/path/category/operation/owner/clock change. Per-operand restructuring
+and all guessed repairs remain unselected; no new native acceptance follows.
