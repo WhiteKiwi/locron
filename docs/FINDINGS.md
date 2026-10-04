@@ -5413,3 +5413,7 @@ The complete original198 control research distinguishes missing cookies from mal
 ## Dashboard145 public predicate clarification before Source (2026-10-05)
 
 Both original cc0aaa and reviewed incoming b1d843 actually use GET and !uri.path().starts_with("/api/") for public entry. The initial selection's “outside /api/v1/” wording was incorrect. Preserve that whole existing /api/ predicate and reuse it solely to allow bad-session public loading; /api/other and /api/v2 remain protected. This corrects Docs before integration or Source; all original198 and newPUBLIC6 wires/keys remain unchanged.
+
+## Dashboard145 pinned generation environment before Source (2026-10-05)
+
+The developer observed default Node26.7.0 and pnpm10.34.6 without installing/building. The existing mise Node24.21.0 binary is present and Root directly read its exact version. Select that existing bin directory only in the copied child-command environment for the one isolated frozen install/build and verify both exact pins there. No global PATH/config/shim/tool installation/upgrade is selected. No generation, Source or runtime proof is claimed by these version reads.
