@@ -5298,23 +5298,6 @@ Root reviews full Source inverse, all16 selectors and actual evaluation/call sit
 ## Stock Clippy syntax conservation (2026-10-04)
 
 Keep frozen SPEC and all production behavior. Follow WINDOWS_STOCK_CLIPPY_SYNTAX_2026-10-04.md: separate developer first integrates exact reviewed main814e689bb0717aba183dbd084e6151ba11ac4e99 with native3f5 and this Docs parent, preserving the independently selected inherited Source and literal Docs appendices. Then only loader_crash.rs receives the constant-chunk loop plus borrowed slice binding and the one-call collision let-else. Keep the original partial-tail acceptance, error order, constants, actual children/readers/guard/publication/mutation controls, command sizes, clocks and success/failure predicates; add no warning allowance, test/filter/dependency/clock/retry change. Root reviews the complete inverse/full tree and publishes ordinary changed-head hosted CI. Fresh Windows lint/MSRV and existing stock proofs must pass; native readiness/withheld failures stay failures until separately researched and selected, and broad Issue31 remains open.
-## PR140 finite output controls before separate development (2026-10-04)
-
-Frozen SPEC is unchanged. Follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. First compose reviewed oldPR140 and main137 through a recorded main merge; only renderer main() can be reconciled, exactly old140 pre-main plus merged137 suffix. A separate developer then adds scripts/test-winget-output.py and additive windows-paired-manifest workflow controls. Other inherited main137 paths remain exact; no renderer/writer redesign, dependency, package/catalog/installer/updater/native Locron effect is selected.
-
-Use real file streams/IDs and one-shot stdlib boundary injections with actual underlying close, fixed small Unicode/LF documents, per-case ownership and explicit controlled second calls. Native Windows rows require actual platform/Python/runner architecture and nonzero file identities with no skip; register read-only attribute restoration before mutation and verify the exact test-owned file before changing it. The original Ubuntu workflow commands/timeout/permission/concurrency and all old tests stay exact; independent5-minute Windows x64/ARM rows run14 methods/38 controls and old entrypoint8. Outer job timeout does not preempt a synchronous native file call. Root Docs/Issues/final review precede Source; whole Source/inherited union/reverse workflow/rules checks precede one reviewed-head automatic CI publication. Public release/WinGet/clean-account requirements stay open.
-
-
-## WinGet output controls: reviewed Source then main139 (2026-10-04)
-
-Sourceaf824 was Root-reviewed, not executed. Its direct real-stream writer tests
-and10/32 portable,14/38 native selections remain exact. Follow the appended
-WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md Git-only integration plan: exact
-reviewed814, common15820, full incoming/own mode/blob union and both literal Docs
-suffixes. No writer/test/workflow adaptation or newer main. Root Docs and CLI
-Issues32/35/final review precede separate integration, Root Source review and
-fresh Windows/Ubuntu CI. Clean-account/public-byte/real WinGet acceptance stays
-open, signing37 deferred and initial release unsigned.
 
 ## PR139 shared production controls before separate Source (2026-10-04)
 
@@ -5358,9 +5341,66 @@ Before Source integration, select a normal merge of remote b131 into local062aa2
 Frozen SPEC. After normal reviewed integration78af945, lease only the single parse match in LifecycleProgress::read_heartbeat, as documented in WINDOWS_LIFECYCLE_PROGRESS_OBSERVATIONS_2026-10-04.md. Use if let Ok(value) ... else with identical branch bodies, one parse call and unchanged observer/formatter/assertions/16 selectors/clocks. Root Docs and Issue31 readback precede the separate one-file developer; full inverse/all other mode-blobs and formatting/actionlint/locked metadata precede parent review and ordinary changed-head publication. All original native/lifecycle and required Windows lint gates remain required; no allowance, filter, clock change, owner-PC native execution or earlier-run cause is selected.
 
 
+## Windows test-private readiness selection after b131 (2026-10-04)
+
+Follow docs/planning/WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md on exactb131.
+Three Source selections: test-private staged publisher+genuine seventh control+
+separate notice failure snapshot; one additive original-matrix CI command; and
+one lifecycle parse syntax site. Preserve original controller non-NotFound error
+refusal, six commands/owners/3s-30s-200ms-5ms clocks, complete main139/stock and
+all other mode/blob paths. Root recomputed notice bound654 including separator.
+No new transport/dependency/native binding/production or timing waiver. Root
+Docs/Issue31/final review precede the separate development lease, then immutable
+Source review and genuinely changed-head hosted verification. Failed gates stay
+held; wide installer/account/logon/reboot/public release acceptance is pending.
+
+## Before-integration Root selection, 2026-10-04 (native73)
+
+The complete ordered plan is [WINDOWS_NATIVE_CONCURRENT_INTEGRATION_2026-10-04.md](planning/WINDOWS_NATIVE_CONCURRENT_INTEGRATION_2026-10-04.md). SPEC stays frozen. Exact incoming mainc4/treef90 replaces the previous main814/prospective140 selection only within this plan. Parent Root handles Docs/Issues/final review/publication; separate development handles Git integration of already reviewed whole Source blobs.
+
+First normally merge exact73 while retaining whole89 helper/workflow and identical1160589 lifecycle, with all five common+incoming+own Root Docs unions. Then normally merge exactc4; retain complete first-merge Docs and append only the exact new140 common-document suffix once, without duplicating139. Incoming cleanup-enabled/per-mode collision and queued-result2048 choices are historical and superseded by disabledDrop/seventh-control/fixed-only654 selections.
+
+Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
+
+## PR140 finite output controls before separate development (2026-10-04)
+
+Frozen SPEC is unchanged. Follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. First compose reviewed oldPR140 and main137 through a recorded main merge; only renderer main() can be reconciled, exactly old140 pre-main plus merged137 suffix. A separate developer then adds scripts/test-winget-output.py and additive windows-paired-manifest workflow controls. Other inherited main137 paths remain exact; no renderer/writer redesign, dependency, package/catalog/installer/updater/native Locron effect is selected.
+
+Use real file streams/IDs and one-shot stdlib boundary injections with actual underlying close, fixed small Unicode/LF documents, per-case ownership and explicit controlled second calls. Native Windows rows require actual platform/Python/runner architecture and nonzero file identities with no skip; register read-only attribute restoration before mutation and verify the exact test-owned file before changing it. The original Ubuntu workflow commands/timeout/permission/concurrency and all old tests stay exact; independent5-minute Windows x64/ARM rows run14 methods/38 controls and old entrypoint8. Outer job timeout does not preempt a synchronous native file call. Root Docs/Issues/final review precede Source; whole Source/inherited union/reverse workflow/rules checks precede one reviewed-head automatic CI publication. Public release/WinGet/clean-account requirements stay open.
+
+
+## WinGet output controls: reviewed Source then main139 (2026-10-04)
+
+Sourceaf824 was Root-reviewed, not executed. Its direct real-stream writer tests
+and10/32 portable,14/38 native selections remain exact. Follow the appended
+WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md Git-only integration plan: exact
+reviewed814, common15820, full incoming/own mode/blob union and both literal Docs
+suffixes. No writer/test/workflow adaptation or newer main. Root Docs and CLI
+Issues32/35/final review precede separate integration, Root Source review and
+fresh Windows/Ubuntu CI. Clean-account/public-byte/real WinGet acceptance stays
+open, signing37 deferred and initial release unsigned.
+
+
 ### PR136 continuation: owned bounded CLI output capture
 
 The Windows acceptance helper retains each actual Child and a finite fresh private capture/guard, polls actual exit under the unchanged effective clock, then reads the same actual file identity through an independent no-follow reader with64KiB+1 cap. It preserves complete bounded stdout/status; no pipe EOF wait or shared-cursor seek. A separate additive hosted gate proves real held-writer/producer/collision/cap/live-refusal/kill-reap cleanup under its own bounded controls. Parent plans/reviews/publishes; a separate developer leases only the helper and additive CI step after exact Issue31 readback. Preserve73d3 source, original six cases/deadlines, unknown failed-head causes and wider open acceptance.
+
+
+### Root capture plus genuine publication integration before Source (2026-10-04)
+
+Follow planning/WINDOWS_NATIVE_CAPTURE_PUBLICATION_2026-10-04.md: preserve
+reviewed222 private publication and fixed notice, add only734 owned-output
+capture and its genuine independent gate, and integrate exact actual main9de596f8
+without adapting its release/dashboard/WinGet Source. Fresh all-three-row
+24-selector outcomes and all required gates must qualify the resulting head.
+
+## Before-integration Root selection, 2026-10-04 (pr138)
+
+The complete ordered plan is [RELEASE_PUBLICATION_MAIN140_2026-10-04.md](planning/RELEASE_PUBLICATION_MAIN140_2026-10-04.md). SPEC stays frozen. Exact incoming mainc4/treef90 replaces the previous main814/prospective140 selection only within this plan. Parent Root handles Docs/Issues/final review/publication; separate development handles Git integration of already reviewed whole Source blobs.
+
+Retain all five exact PR138 snapshot paths and import reviewed main139/140 without Source adaptation; shared Docs are common15820 + complete incomingc4 suffix + complete new Root suffix.
+
+Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
 
 ## PR136 current-call scalar observation handoff (2026-10-04)
 

@@ -5508,22 +5508,6 @@ The closed8-field suffix uses fixed enums and Option<i32> scalar projections onl
 Completed Windows run37184851251/attempt1 preserves two warnings-denied Rust1.98 test diagnostics at loader_crash.rs375 chunks_exact_to_as_chunks and1015 manual_let_else; they are independent of the negative-peer Native/Setup/ReadyOpen/raw32 and unobserved withheld-entry cause. Root independently qualified190 artifacts/92 immutable Source snapshots and the first-work/cleanup boundary (proof6a237eede588d185a2faac9e524ae9192395bada670b4b38fc88d60cdb6cbf27). The separate read-only9-file recommendation c8f9bc8400e5c4f4a2bf1ea748ad232fa6e4c4fbaf996e22405d499f31399013 and pinned official Rust1.94 core sources establish safe as_chunks stability1.88 and array as_slice stability1.57. Borrowing each complete21-byte array as a slice preserves the old validation body/count/independent tail/error order without requiring full divisibility. Let-else evaluates the same collision create once, moves the same expected error and diverges on unexpected success; it does not promise identical temporary destruction instructions. No compiler/native test was run in this research.
 
 PR139 is now merged as main814e689bb0717aba183dbd084e6151ba11ac4e99, whole tree4b1ecc975f766807f4baafc4ae90e3c41d6b9c0b exactly reviewed16e. Fresh139 native42/lifecycle16/HTTP21 and all four Windows Clippy commands passed; Root127/63 proof9ed1e5e2a0a403844c0814c402e9321a7d567a3290a022e2924d63454a513518 and one-shot merge journalf97b10ed95dc576f5f2025d1fb5a7b21cf007e10498f829a0c31f4f2d9a3dc59. Import that exact reviewed main union separately before the selected one-file syntax change; conserve the native/stock/lifecycle changes and both branches' planning history. The merge is not a causal fix for PR136 failures.
-## PR140 output recovery Verify research before Source (2026-10-04)
-
-Root reviewed the separate69-artifact research against25 immutable app Git blobs/modes, four full trees and the complete composed renderer. Current main15820 is entire-tree equal to reviewed merged137. Preserve old140 pre-main bytes and main137 main() suffix exactly; combined55f41774c7e70d7da17bdf9f47059e2effc4c0881182ede3b7c9802548bb3269. PR140 lacks the concrete required recovery/native controls, but this read-only research demonstrates no production writer defect. Earlier paired/entrypoint/snapshot successes do not qualify these paths.
-
-Select ten portable methods/32 controls through actual fd-backed operations plus four hosted-Windows methods/six controls for real exclusive collision, ordinary-file/directory identity replacement, actual read-only deletion denial and close/namespace reuse. Distinguish each deterministic injected generation/write/flush/close error from the genuine OS observations. Retain original error identity/notes, unknown objects and unrelated subtrees; no hostile-race/atomic visibility/durability guarantee. Python/Windows primary contracts support these selected oracles but actual results remain pending. Root research proof1f360be93ecce1d60129f952bc8d21440f5630896546472a2c49c1e5974c739a.
-
-
-## Root review of WinGet output Source and exact main139 integration (2026-10-04)
-
-Root full review af824 verifies128 artifacts/complete union/299 protected Source
-pairs and actual741-line control semantics; no blocking Source finding. Planned
-portable10/32 and Windows14/38 remain unexecuted. Select only reviewed main814
-Git integration, preserving full new tests/workflow/renderer55f4 and incoming
-Server exactly. The appended WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md plan
-requires literal Docs-suffix union, before-Source Issues32/35, Root final reread
-and separate developer before changed-head hosted qualification/publication.
 
 ## PR139 listener-policy and shutdown controls before Source (2026-10-04)
 
@@ -5579,9 +5563,65 @@ Remote b131edc1ad420532c69b91c854ddb8ceb187b767 contains a Docs-before-Source bo
 Remote b131 completed ordinary37189751211 with4 failed executed jobs: Windows strict lint and all three foundations. The raw lint111399286359 identifies only the new observer parse match at windows_lifecycle.rs547, Clippy single_match_else; later GUI lint is skipped. Root reviewed its complete suggested if-let/else rewrite against the selected observer's unchanged one-read/one-parse and Numeric/ParseError Option contract. Stock syntax lint passed. Separately, actual native observations include repeated ready-open raw32, History expiries, daemon exit5, withheld Disconnected and ARM target/debug/locron.exe removal access5; these are preserved without attributing an unmeasured cause. The integration78af945 keeps all native controls/clocks intact and does not claim to repair those additional failures.
 
 
+## Root-reviewed private peer publication research (2026-10-04)
+
+Issue31: Root independently verified readiness43/13 Git snapshots and retained
+prior192 files, plus lifecycle syntax19/raw42100. Actual raw32 holder/path/native
+instruction and withheld Disconnected cause remain unobserved. Fixed FullControl
+DELETE/share3 vs consumer share3 is a primary-Source/API inference, not observed
+runtime cause. Select private created stage -> leaf-close -> one disabled-cleanup
+tempfile3.27 no-clobber move under retained parents, with a new genuine standalone
+control, independent failure-only notice snapshot and captured lifecycle if-let.
+Root proof hashes are recorded in WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md;
+the complete selected plan precedes Source and adds no product scope. Parent-
+observed final-Empty/held-exit lane remains unselected/unqualified. No source/API
+or native qualification was produced by this research.
+
+## Root reviewed current-main integration research, 2026-10-04 (native73)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+Incoming73 preserves the outer private root guard and has bounded1502/844-byte notices within its2048 plan. Its TempPath cleanup and queued-result/elapsed observer differ from Root-reviewed89. Select exact89 Source, preserve both historical Docs and import only exact merged main140; no73 native qualification or old failure cause is inferred.
+
+## PR140 output recovery Verify research before Source (2026-10-04)
+
+Root reviewed the separate69-artifact research against25 immutable app Git blobs/modes, four full trees and the complete composed renderer. Current main15820 is entire-tree equal to reviewed merged137. Preserve old140 pre-main bytes and main137 main() suffix exactly; combined55f41774c7e70d7da17bdf9f47059e2effc4c0881182ede3b7c9802548bb3269. PR140 lacks the concrete required recovery/native controls, but this read-only research demonstrates no production writer defect. Earlier paired/entrypoint/snapshot successes do not qualify these paths.
+
+Select ten portable methods/32 controls through actual fd-backed operations plus four hosted-Windows methods/six controls for real exclusive collision, ordinary-file/directory identity replacement, actual read-only deletion denial and close/namespace reuse. Distinguish each deterministic injected generation/write/flush/close error from the genuine OS observations. Retain original error identity/notes, unknown objects and unrelated subtrees; no hostile-race/atomic visibility/durability guarantee. Python/Windows primary contracts support these selected oracles but actual results remain pending. Root research proof1f360be93ecce1d60129f952bc8d21440f5630896546472a2c49c1e5974c739a.
+
+
+## Root review of WinGet output Source and exact main139 integration (2026-10-04)
+
+Root full review af824 verifies128 artifacts/complete union/299 protected Source
+pairs and actual741-line control semantics; no blocking Source finding. Planned
+portable10/32 and Windows14/38 remain unexecuted. Select only reviewed main814
+Git integration, preserving full new tests/workflow/renderer55f4 and incoming
+Server exactly. The appended WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md plan
+requires literal Docs-suffix union, before-Source Issues32/35, Root final reread
+and separate developer before changed-head hosted qualification/publication.
+
+
 ### PR136 failed73d3 and owned stdout capture selection
 
 Fresh37191426679 confirms16/17 ordinary executed jobs, four strict Windows lint commands and17/18 original native CLI cases passed; ARM cancellation Expired/History and later GUI remove/raw5 remain failures with unknown actual call/holders. Parent re-read Owner::output: its unbounded pipe read precedes actual Child.wait. Select guarded fresh regular captures, actual child polling and full64KiB+1 bounded collection under original clocks, plus independent actual producer/held-write/collision/cap/live-negative cleanup controls. This corrects a source-backed helper boundary without claiming the measured ARM cause. Exact failure observation: Issue31#5978690173. Before-Source selection is in WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md; all production/other Source and progress semantics stay exact73d3.
+
+
+### Root actual734 capture and publication composition research (2026-10-04)
+
+Separate research and Root independent proofs dd28aa1a/138f0dd4 identify the
+disjoint capture delta, preserved private publisher/fixed-only notice, exact
+three capture-only Docs suffixes and actual ARM Expired/History failure. Actual
+run37196440237 has20PASS/1FAIL; pre/post cancellation and daemon/cleanup cause
+remain unknown. The new exact main9de596f8 retains reviewed138 tree51c7643.
+Selected before-Source composition and four Verify steps are in
+planning/WINDOWS_NATIVE_CAPTURE_PUBLICATION_2026-10-04.md. No owner-PC native
+execution or causal production repair is selected.
+
+## Root reviewed current-main integration research, 2026-10-04 (pr138)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+PR138 and merged main have disjoint Source changes; the original unmodified forecast is 306 paths/tree6564ad98a2053813eb00adfb8f93626e9d860765. Root Docs adds protected suffixes and one plan. Old1c45 x64 lifecycle294/877 failures remain measured failures with causes unobserved.
 
 ## PR136 completed capture qualification and ARM History observation gap (2026-10-04)
 

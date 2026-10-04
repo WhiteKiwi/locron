@@ -660,6 +660,19 @@ and fixed notice/queued-state words; require a conservative2048 ASCII-byte bound
 The parent reviewed local helper commit062aa2 and remote b131: the remote leaves the original native helper, CLI cases, lifecycle observer, stock PowerShell and CI unchanged, but already includes the reviewed main814e689 and a borrowed-slice stock syntax correction. Integrate that remote ancestry normally, preserve the local helper byte-for-byte, and use the remote loader_crash.rs byte-for-byte as specified in the stock plan. Preserve all Docs appendices. This integration does not explain either original native failure. Full locked metadata now succeeds after downloading missing locked packages; this is dependency resolution, not compilation or native qualification.
 
 
+## Selected successor plan at b131 (2026-10-04)
+
+The original six selectors and fixed control/refusal/cleanup protocol remain
+unchanged. docs/planning/WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md explicitly
+selects a test-private completed-stage/no-clobber publisher, one genuine seventh
+independent control command, separate existing-scalar notice failure rendering,
+and one unrelated lifecycle lint syntax site. Its303-path base already contains
+main139 and stock Clippy fixes. This successor preserves all measured failures
+and unobserved causes; research is not native proof. The earlier parent-observed
+live Empty/held-exit lane stays unselected/unqualified. Root records Issue31 and
+rereads the plan before handing any Source to the separate developer.
+
+
 ## Owned CLI output capture after failed73d3 qualification
 
 Refs #29/#31; SPEC and product behavior are frozen. Fresh ordinary37191426679 on73d3a0c7e2418ad57c9eed113a66f950b009749e completed16 SUCCESS/1 FAILURE/2 exploratory SKIP. All four Windows lint commands and17/18 original native CLI cases passed. ARM cancellation returned Expired/History at8467361us, intentHistoryCliRead, lastProgressOpenNotFound2 and earlierHistoryCliWait0. First work/current producer exit/internal read/EOF holder remain unobserved. Later ARM GUI removal of locron.exe failedraw5 with unknown holder. Preserve exact observation5978690173 and its raw hashes; no instruction-level causal explanation is claimed.

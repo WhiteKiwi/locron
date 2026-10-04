@@ -9,9 +9,12 @@ import re
 import subprocess
 import urllib.request
 
+from release_snapshot import snapshot
+
 REPO = "WhiteKiwi/locron"
 WINDOWS_FIRST_RELEASE = (0, 10, 0)
 INSTALLER_FIRST_RELEASE = (0, 3, 0)
+MAX_CHECKSUM_BYTES = 128 * 1024
 
 
 def version(tag):
@@ -46,7 +49,11 @@ def expected_installers(tag, installer, windows_installer, windows_uninstaller):
 
 
 def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def checksums(text, historical=False):
@@ -73,17 +80,29 @@ def validate_inputs(tag, directory, installer, with_checksums=True,
     installers = expected_installers(tag, installer, windows_installer, windows_uninstaller)
     if not all(path.is_file() and not path.is_symlink() for path in installers.values()):
         raise ValueError("missing or unsafe installer")
+    sums, checksum_bytes = None, None
+    if with_checksums:
+        with (directory / "SHA256SUMS.txt").open("rb") as stream:
+            checksum_bytes = stream.read(MAX_CHECKSUM_BYTES + 1)
+        if len(checksum_bytes) > MAX_CHECKSUM_BYTES:
+            raise ValueError("release checksum document exceeds its byte limit")
+        sums = checksums(checksum_bytes.decode("utf-8"))
+        if set(sums) != names:
+            raise ValueError("checksum inventory differs from final publication bytes")
+    hashes = {}
     if includes_windows(tag):
         from windows_release import inspect_archive
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
-            # Publication runs on Ubuntu: native version/ABI probes already ran in
-            # each Windows build leg, while final bytes are re-inspected statically.
-            inspect_archive(directory / f"locron-{tag}-{target}.zip", tag, target, paired=True)
-    hashes = {name: sha(directory / name) for name in names}
+            # Hash the same bounded snapshot that is inspected, never a later path read.
+            name = f"locron-{tag}-{target}.zip"
+            facts = inspect_archive(directory / name, tag, target, paired=True,
+                                    expected_sha256=None if sums is None else sums[name])
+            hashes[name] = facts["archive_sha256"]
+    hashes.update((name, sha(directory / name)) for name in names if name not in hashes)
     if with_checksums:
-        if checksums((directory / "SHA256SUMS.txt").read_text()) != hashes:
+        if sums != hashes:
             raise ValueError("checksums differ from final publication bytes")
-        hashes["SHA256SUMS.txt"] = sha(directory / "SHA256SUMS.txt")
+        hashes["SHA256SUMS.txt"] = hashlib.sha256(checksum_bytes).hexdigest()
     hashes.update((name, sha(path)) for name, path in installers.items())
     return hashes
 
@@ -104,6 +123,27 @@ def verify_existing(release, hashes):
 
 def publish(tag, directory, installer, notes, windows_installer=Path("install.ps1"),
             windows_uninstaller=Path("uninstall.ps1")):
+    # Reserve exact names before copying. Later input changes cannot reach gh,
+    # which receives only validated task-owned snapshot paths.
+    names = expected_assets(tag) | {"SHA256SUMS.txt"}
+    if {path.name for path in directory.iterdir()} != names:
+        raise ValueError("release inventory differs from the exact version/platform inventory")
+    sources = {f"artifacts/{name}": directory / name for name in sorted(names)}
+    sources.update((f"installers/{name}", path) for name, path in expected_installers(
+        tag, installer, windows_installer, windows_uninstaller).items())
+    # An already published immutable release still permits a no-op without notes.
+    if notes.exists() or notes.is_symlink():
+        sources["notes.md"] = notes
+    limits = {"artifacts/SHA256SUMS.txt": MAX_CHECKSUM_BYTES}
+    if includes_windows(tag):
+        from windows_release import MAX_ARCHIVE_BYTES
+        limits.update((name, MAX_ARCHIVE_BYTES) for name in sources if name.endswith(".zip"))
+    with snapshot(sources, limits) as staged:
+        _publish_snapshot(tag, staged / "artifacts", staged / "installers/install.sh", staged / "notes.md",
+                          staged / "installers/install.ps1", staged / "installers/uninstall.ps1")
+
+
+def _publish_snapshot(tag, directory, installer, notes, windows_installer, windows_uninstaller):
     hashes = validate_inputs(tag, directory, installer, windows_installer=windows_installer,
                             windows_uninstaller=windows_uninstaller)
     result = subprocess.run(["gh", "api", f"repos/{REPO}/releases/tags/{tag}"], capture_output=True, text=True, check=False)
