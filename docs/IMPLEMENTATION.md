@@ -5215,6 +5215,153 @@ separate development, whole-workflow inverse and parent review, then fresh ordin
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
 
+### Native CLI wake/cancel and independent exact gate before Source (2026-10-04)
+
+Continue the existing two platform-incompatible CLI fixtures on reviewed main4644588.
+Frozen product behavior remains actual prompt admission and confirmed cancellation.
+Select exactly three Source paths per planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md:
+two test-only files and one additive existing foundation workflow step. The
+private owner retains actual daemon/state/guard/client/query authority and original
+5s/8s caller clocks; same-connected native server PID+strict ACK witnesses wake,
+actual running+two native-target counter frames witnesses cancellation admission.
+No readiness is inferred from paths, passive status or serialized identity.
+
+Keep actual native wrappers safe, metadata-only duplication/no limbo, one cold
+entry200ms, target30s/1201frames/64KiB read and production5s grace. Late/unknown
+owners remain retained and refuse; exact owned cleanup precedes private teardown.
+Use six individually frozen --exact selectors after runtime/doctor and before
+service units under the existing status condition; auxiliary role returns count
+zero acceptance. Four ordered Verify criteria cover ownership negatives, real
+protocol/progress, whole-file/workflow conservation and all three changed-head
+native rows plus original required/paired evidence. Root reviews full Docs/Issue
+Verify before separate Source, then all Source and publication evidence. Old
+wake/cancel/supervisor/WAL/full lint/later-binary failures remain; no clock increase,
+retry/reset/whole-suite serialization, owner-PC effect or broader support claim.
+
+### Untrusted negative native peer construction before Source (2026-10-04)
+
+The wake/cancel continuation's three-path/six-selector lease selects safe public
+Tokio Byte duplex first-instance/remote-refusal default-descriptor server only
+for native negative helper children. It is untrusted test input, not filesystem-
+inherited pipe privacy or production readiness. Real connected actual-child PID
+and strict refusal/cleanup checks remain required; genuine daemon positive uses
+the existing secured listener. No widestring/dependency/unsafe/API/clock change.
+Apply the amended planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md four Verify
+steps only after Issue31 exact readback and Root plan review; no Source existed
+before this detail. Retain actual child/client/runtime/root through confirmed
+original-budget cleanup or quarantine, never default-Drop closure success.
+
+### Refine Windows test admission and active driver clock before Source
+
+Replace actual-Owner transfer ABI in planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md
+with no-argument private wake/cancel entries, one empty admitted worker and one
+fixed resource-free case command. Partial owner and unchanged real state/daemon
+setup live only on that worker; new tighter outer30s bounds setup, original literal
+post-spawn5s/8s min still bounds all positive assertions and owned cleanup.
+Retain once-published200ms deadline plus on-time completion seal from immutable
+origin, independently polled in bounded driver slices without reopening/join.
+Negative cleanup observation stays on original30s with admission closed and same
+actual owner. Explicit empty/partial/channel/panic/late/unknown cleanup lanes
+preserve resources; no native ownership reaches admission closure/error/result.
+Apply the amended four Verify steps/three Source paths/six real selectors after
+Root exact Issue31 readback and plan review. Preserve Unix/state factory/production/
+deps/workflow existing commands and bounds. No hard admission/preemption claim,
+renewal/retry/reset/skip, owner-PC effect or unqualified support/lint acceptance.
+
+## Native Windows failure follow-up selected before separate Source (2026-10-04)
+
+Keep frozen SPEC and existing required checks. In planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md select only .github/workflows/ci.yml and the existing test-private windows_cli_control.rs: split the six existing commands into six independently admitted steps, same !cancelled/native_core-success condition and immediate exit propagation. Keep every selector and failed job. Observe current fixed intent and actual returned IO/status/first-work/ready metadata through checked self-contained scalar words; no real resource or error object reaches admission/driver/channels. All clocks, original operation order, cleanup precedence, actual Child/peer/ACK/run assertions and literal Unix bodies remain. A successful zero-byte ready read joins only the original NotFound continuation; exactbyte1 alone ends setup, other bytes/errors stay failure. No new marker mutation, IO, clock, sleep site or cancel readiness probe. Real controlled empty-window qualification remains pending a later explicit mechanism; current missing controls are not counted as PASS.
+
+In planning/WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md select only loader_crash.rs and loader_crash_host.ps1. Normal real Rust/PowerShell heartbeats CreateNew once and append21-byte zero-padded sequence/LF records under original30s/25ms; capped2048records/43008bytes with43009read sentinel. Retain the actual ready read File shareREAD|WRITE/noDELETE separately from failure-only observations and seek/read that exact handle under original45s until final settlement, then explicitly release before other controls/TempDir cleanup. Validate every complete sequence and exact unfinished next prefix, compare newly read count+tail_len, never use saved counts for missing/bad input. Native partial-tail/collision/rename/delete/refusal-and-same-operation-after-release controls use actual retained producers and streams within existing helper routes and one original remaining budget. Preserve every old snapshot/publication/observer/tree/pipe/guard gate and21existing helper modes, with no dependency/unsafe/production/workflow change. Three static cached normal/snapshot/append programs preserve whole old SnapshotProof bytes; require full LF/CRLF root+nestedchild commands below32767UTF16 with>=1024 new-program margin before hosted execution.
+
+Root records both plans/Verify in Issue31 and reviews again before two separate disjoint Source leases. CLI development stays in its current PR136 checkout; Core development receives an isolated checkout at the same reviewed Docs head. Root reviews each full patch/protected inventory and integrates only complete returned commits, then publishes one combined changed head for ordinary hosted x64/ARM/MSRV. All original failures and unobserved cleanup remain until the new exact-head required gates genuinely pass; wide Issue31 and Windows11/account/reboot/full-lint/release acceptance remain open.
+
+## Actual bounded managed append-refusal facts before Source (2026-10-04)
+
+Frozen SPEC remains unchanged. Amend the fixture-only stock heartbeat plan before a separate two-file Source handoff at reviewed8110. Keep four fixed slots in original call order: producer_live rename/delete, writer_dead_readers_held rename/delete. Each begins unknown; after its existing Left gate, a pure dispatch-intent flag admits observation only of that existing catch. Preserve booleans, File calls, all gates/order/throws/owners/release continuations. At most5 existing managed nodes retain closed category io/access/other and their own complete signed Int32 HResult, explicit ended/null or fifth-node-truncated flag. No OS decoding, value/type refusal allowlist, message/type-name/path/PID/reflection/query/extra native operation or new error precedence is selected.
+
+Primitive ASCII records join the existing single ToJson -Compress/default-depth result as exactly four strings; Rust requires bounded canonical grammar/i32 values and rejects missing/unknown/malformed facts without converting them to success. Collector failure returns unknown and never replaces original work error; later work failure still aborts without a fabricated final observation receipt. This is independent of actual same-candidate refusal/release,41-byte stream, kill/reap, retained readers, original root/Job/pipe/observer/guard proofs. Only new identifiers/indentation may compact to keep all actual complete root/child LF/CRLF commands below32,767 with at least1,024 margin, old SnapshotProof bytes and commands exact.
+
+Root Docs/Issue31/final plan review precede a separate loader_crash.rs/loader_crash_host.ps1 Source lease. Root then reviews complete two-file diff/inverse/296 other mode/blob pairs, primitive records, Source command models and unchanged21 modes/selectors/deps/workflow/45/30/3s/25/5/200ms. Combined ordinary hosted x64/ARM/MSRV must genuinely observe all four records and every old/new ownership assertion at the same reviewed revision before merge. Static models are zero native acceptance; Issue31 remains open until full Verify succeeds.
+
+## 2026-10-04: Observe existing lifecycle progress results after current-base failures
+
+Implement the [selected lifecycle progress plan](planning/WINDOWS_LIFECYCLE_PROGRESS_OBSERVATIONS_2026-10-04.md) only after Issue31 exact readback and final Root plan review, in a separate developer session. Product SPEC is frozen; no service/publisher/production contract changes. Bind the one-file lease to the integrated clean Docs head based ond894a243619c93dacfdd34e9c7ec5ab068c588be and preserve all other integrated mode/blobs, including nativeb664/stock15ca/main15820.
+
+Keep Fixture::heartbeat and its unrelated callers exact. The private continuation-only wrapper executes the same single read_to_string and, only on success, one u64 parse; it returns the original Option for the original baseline/max and advancement predicates. Descendant retains exactly one is_file followed lazily by read, parse and>0. Every iteration resets last/relation/marker evaluation slots; first-I/O projection persists across continuation baseline→advance. Pass actual stop_role ExitStatus from both existing SSE/idle callers without status queries; label it dashboard only. Observers hold enums/scalars, never error objects/resources after existing handling boundaries.
+
+Append fixed suffix only after each of three original deadline assertions fails, retaining original message prefix/condition and original3s shared baseline+advance deadline,30s descendant deadline,20ms sleeps. No early hard_stop, extra emitter, read/capture/Store/native/Child::try_wait, argv/environment/Stdio/publisher/ownership/Drop/dependency/workflow changes, retry/serialization/cache prewarm/clock reset or lint suppression. Existing synchronous reads and Drop kill/wait are not claimed hard preemptible.
+
+Root reviews full Source inverse, all16 selectors and actual evaluation/call sites, then publishes one changed head for ordinary original x64MSRV/x64stable/ARM lifecycle and downstream gates. Preserve actual failures and unknowns; a later green run proves its original assertions, not an explanation for1c45. Static formatting/metadata/domain models are not native compilation or behavior acceptance.
+
+
+## Stock Clippy syntax conservation (2026-10-04)
+
+Keep frozen SPEC and all production behavior. Follow WINDOWS_STOCK_CLIPPY_SYNTAX_2026-10-04.md: separate developer first integrates exact reviewed main814e689bb0717aba183dbd084e6151ba11ac4e99 with native3f5 and this Docs parent, preserving the independently selected inherited Source and literal Docs appendices. Then only loader_crash.rs receives the constant-chunk loop plus borrowed slice binding and the one-call collision let-else. Keep the original partial-tail acceptance, error order, constants, actual children/readers/guard/publication/mutation controls, command sizes, clocks and success/failure predicates; add no warning allowance, test/filter/dependency/clock/retry change. Root reviews the complete inverse/full tree and publishes ordinary changed-head hosted CI. Fresh Windows lint/MSRV and existing stock proofs must pass; native readiness/withheld failures stay failures until separately researched and selected, and broad Issue31 remains open.
+
+## PR139 shared production controls before separate Source (2026-10-04)
+
+Frozen SPEC and the existing dashboard completion contract remain unchanged. Select the exact appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md after Root review of the47-file design. Only crates/locron-server/src/lib.rs may change. Public bind delegates its existing parsing/loopback/range/fallback implementation through a private generic SocketAddr binder; public serve_until retains token/router/real Axum tasks and calls a private owning supervisor containing the same original select/broadcast/10s-drain/abort-all/full-join body. The existing Windows dashboard_ctrl_c stays byte-exact. No public hook, boxed callback/dependency/new duration/test-util/Store/CLI/policy/workflow change.
+
+Add11 meaningfully controlled tests in that same private lib module: three bind cases and eight supervisor cases. Real per-case task/channel/Drop ownership and original shutdown receiver path verify notification, held-survivor non-completion, all joins, first-error retention and unchanged TimedOut precedence; one real10s expiry stays under a13s fixture guard. Preserve all31 old native cases, actual fixed owned-port conflict, active SSE/stalled contracts. Root Docs/Issue30 Verify/final review precede a separate one-file Source lease; full extraction inverses/all other modes-blobs/rules/static checks precede changed-head ordinary hosted x64 stable/ARM stable/x64 Rust1.94 and Windows warnings-denied lint. Planned42 native Server cases is inventory only until all11 named new cases actually pass without new skip/ignore. Broader detached/started-Store/account/install/release acceptance remains open.
+## PR139 elapsed-payload lint repair before separate Source (2026-10-04)
+
+The existing frozen SPEC is unchanged. Follow the measured-failure appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md. Select only the new test helper's outer timeout match in crates/locron-server/src/lib.rs: change the Err(_) panic arm to Err(error) and include : {error} after the original panic text. Preserve the actual abort/reap/Drop ordering before this arm and every other Source byte apart from rustfmt of this arm. Root Docs/Issue30/final plan review precede a separate developer lease; Root then reviews the full one-arm inverse and all other mode/blob conservation before one ordinary changed-head push. Fresh native and all warnings-denied lint outcomes are required before merge; the previous failed head remains failed.
+
+## PR136 review follow-up before separate Source (2026-10-04)
+
+Freeze product SPEC and integrate reviewed main814e689 without Source edits.
+The native CLI and stock plans select a two-file lease at clean2e6c0cd:
+windows_cli_control.rs privately stages/flushes/closes one owned marker before
+single no-clobber publication, adds actual absence/completion/collision controls
+inside existing actual peer children, and adds fixed existing metadata only on
+withheld notice failure. loader_crash.rs changes only complete-chunk iteration
+and collision let-else syntax for required strict lint. All other Source remains
+exact, including cli.rs, lifecycle, workflow, PowerShell and all original owners,
+read errors, clocks, selectors, old/new stock proofs and complete commands.
+
+Four concrete Verify steps in the native plan require Docs/Issue31 readback
+before separate development, whole two-file inverse/protected inventory,
+complete Root Source/rules/static review and fresh exact-head ordinary native/
+lint/paired qualification. Actual ReadyOpen raw32 is preserved as evidence;
+the identified incompatible-sharing Source window does not prove which internal
+call produced the old result. Withheld Disconnected stays unobserved until
+already available metadata establishes more. Failure diagnostics never add
+native I/O, delay, mutable authority or late success. No unchanged rerun,
+deadline relaxation, ignored test/lint, owner-PC native effect or public release.
+
+
+## PR136 concurrent ancestry integration (2026-10-04)
+
+Before Source integration, select a normal merge of remote b131 into local062aa2 plus this Docs parent. Conserve both append-only planning histories. Resolve the stock syntax overlap to the exact complete remote loader_crash.rs blob; conserve the complete local ready helper and all other Source/workflow/lockfile mode/blobs. The developer owns integration, reports full-tree conservation and formatting/metadata checks, and does not publish. Parent rechecks current remote ancestry and publishes one fast-forward head, then requires fresh ordinary CI, native six-case and lifecycle evidence plus exact paired artifacts before merge. Issue31 remains open for wider unresolved acceptance.
+
+
+## Lifecycle observer lint follow-up before separate Source (2026-10-04)
+
+Frozen SPEC. After normal reviewed integration78af945, lease only the single parse match in LifecycleProgress::read_heartbeat, as documented in WINDOWS_LIFECYCLE_PROGRESS_OBSERVATIONS_2026-10-04.md. Use if let Ok(value) ... else with identical branch bodies, one parse call and unchanged observer/formatter/assertions/16 selectors/clocks. Root Docs and Issue31 readback precede the separate one-file developer; full inverse/all other mode-blobs and formatting/actionlint/locked metadata precede parent review and ordinary changed-head publication. All original native/lifecycle and required Windows lint gates remain required; no allowance, filter, clock change, owner-PC native execution or earlier-run cause is selected.
+
+
+## Windows test-private readiness selection after b131 (2026-10-04)
+
+Follow docs/planning/WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md on exactb131.
+Three Source selections: test-private staged publisher+genuine seventh control+
+separate notice failure snapshot; one additive original-matrix CI command; and
+one lifecycle parse syntax site. Preserve original controller non-NotFound error
+refusal, six commands/owners/3s-30s-200ms-5ms clocks, complete main139/stock and
+all other mode/blob paths. Root recomputed notice bound654 including separator.
+No new transport/dependency/native binding/production or timing waiver. Root
+Docs/Issue31/final review precede the separate development lease, then immutable
+Source review and genuinely changed-head hosted verification. Failed gates stay
+held; wide installer/account/logon/reboot/public release acceptance is pending.
+
+## Before-integration Root selection, 2026-10-04 (native73)
+
+The complete ordered plan is [WINDOWS_NATIVE_CONCURRENT_INTEGRATION_2026-10-04.md](planning/WINDOWS_NATIVE_CONCURRENT_INTEGRATION_2026-10-04.md). SPEC stays frozen. Exact incoming mainc4/treef90 replaces the previous main814/prospective140 selection only within this plan. Parent Root handles Docs/Issues/final review/publication; separate development handles Git integration of already reviewed whole Source blobs.
+
+First normally merge exact73 while retaining whole89 helper/workflow and identical1160589 lifecycle, with all five common+incoming+own Root Docs unions. Then normally merge exactc4; retain complete first-merge Docs and append only the exact new140 common-document suffix once, without duplicating139. Incoming cleanup-enabled/per-mode collision and queued-result2048 choices are historical and superseded by disabledDrop/seventh-control/fixed-only654 selections.
+
+Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
+
 ## PR140 finite output controls before separate development (2026-10-04)
 
 Frozen SPEC is unchanged. Follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. First compose reviewed oldPR140 and main137 through a recorded main merge; only renderer main() can be reconciled, exactly old140 pre-main plus merged137 suffix. A separate developer then adds scripts/test-winget-output.py and additive windows-paired-manifest workflow controls. Other inherited main137 paths remain exact; no renderer/writer redesign, dependency, package/catalog/installer/updater/native Locron effect is selected.
@@ -5233,15 +5380,36 @@ Issues32/35/final review precede separate integration, Root Source review and
 fresh Windows/Ubuntu CI. Clean-account/public-byte/real WinGet acceptance stays
 open, signing37 deferred and initial release unsigned.
 
-## PR139 shared production controls before separate Source (2026-10-04)
 
-Frozen SPEC and the existing dashboard completion contract remain unchanged. Select the exact appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md after Root review of the47-file design. Only crates/locron-server/src/lib.rs may change. Public bind delegates its existing parsing/loopback/range/fallback implementation through a private generic SocketAddr binder; public serve_until retains token/router/real Axum tasks and calls a private owning supervisor containing the same original select/broadcast/10s-drain/abort-all/full-join body. The existing Windows dashboard_ctrl_c stays byte-exact. No public hook, boxed callback/dependency/new duration/test-util/Store/CLI/policy/workflow change.
+### PR136 continuation: owned bounded CLI output capture
 
-Add11 meaningfully controlled tests in that same private lib module: three bind cases and eight supervisor cases. Real per-case task/channel/Drop ownership and original shutdown receiver path verify notification, held-survivor non-completion, all joins, first-error retention and unchanged TimedOut precedence; one real10s expiry stays under a13s fixture guard. Preserve all31 old native cases, actual fixed owned-port conflict, active SSE/stalled contracts. Root Docs/Issue30 Verify/final review precede a separate one-file Source lease; full extraction inverses/all other modes-blobs/rules/static checks precede changed-head ordinary hosted x64 stable/ARM stable/x64 Rust1.94 and Windows warnings-denied lint. Planned42 native Server cases is inventory only until all11 named new cases actually pass without new skip/ignore. Broader detached/started-Store/account/install/release acceptance remains open.
-## PR139 elapsed-payload lint repair before separate Source (2026-10-04)
+The Windows acceptance helper retains each actual Child and a finite fresh private capture/guard, polls actual exit under the unchanged effective clock, then reads the same actual file identity through an independent no-follow reader with64KiB+1 cap. It preserves complete bounded stdout/status; no pipe EOF wait or shared-cursor seek. A separate additive hosted gate proves real held-writer/producer/collision/cap/live-refusal/kill-reap cleanup under its own bounded controls. Parent plans/reviews/publishes; a separate developer leases only the helper and additive CI step after exact Issue31 readback. Preserve73d3 source, original six cases/deadlines, unknown failed-head causes and wider open acceptance.
 
-The existing frozen SPEC is unchanged. Follow the measured-failure appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md. Select only the new test helper's outer timeout match in crates/locron-server/src/lib.rs: change the Err(_) panic arm to Err(error) and include : {error} after the original panic text. Preserve the actual abort/reap/Drop ordering before this arm and every other Source byte apart from rustfmt of this arm. Root Docs/Issue30/final plan review precede a separate developer lease; Root then reviews the full one-arm inverse and all other mode/blob conservation before one ordinary changed-head push. Fresh native and all warnings-denied lint outcomes are required before merge; the previous failed head remains failed.
 
+### Root capture plus genuine publication integration before Source (2026-10-04)
+
+Follow planning/WINDOWS_NATIVE_CAPTURE_PUBLICATION_2026-10-04.md: preserve
+reviewed222 private publication and fixed notice, add only734 owned-output
+capture and its genuine independent gate, and integrate exact actual main9de596f8
+without adapting its release/dashboard/WinGet Source. Fresh all-three-row
+24-selector outcomes and all required gates must qualify the resulting head.
+
+## Before-integration Root selection, 2026-10-04 (pr138)
+
+The complete ordered plan is [RELEASE_PUBLICATION_MAIN140_2026-10-04.md](planning/RELEASE_PUBLICATION_MAIN140_2026-10-04.md). SPEC stays frozen. Exact incoming mainc4/treef90 replaces the previous main814/prospective140 selection only within this plan. Parent Root handles Docs/Issues/final review/publication; separate development handles Git integration of already reviewed whole Source blobs.
+
+Retain all five exact PR138 snapshot paths and import reviewed main139/140 without Source adaptation; shared Docs are common15820 + complete incomingc4 suffix + complete new Root suffix.
+
+Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
+
+## PR136 current-call scalar observation handoff (2026-10-04)
+
+A separate developer leases only the private Windows CLI control helper after Issue31 exact GET and parent complete selected-plan reread. Ten fixed atomic words distinguish actual CLI attempts/returns, native calls, current wait/read, successful History wall time and last strict progress result; zero/overflow/invalid are diagnostics only. Reuse existing three actual capture controls for reset/retention/association assertions. Conserve original six controls, clocks, ownership, legacy formatter, Source calls and workflow exactly; renderer/caller CRLF bound is2048bytes. All actual native/type/lint gates and paired provenance remain fresh changed-head requirements. Four concrete Verify steps and full boundaries remain in the selected planning appendix.
+
+
+## Current PR136 observer and concurrent publication integration
+
+Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
 
 ## PR140 guarded output recovery verification before separate Source (2026-10-04)
 
@@ -5265,13 +5433,6 @@ Paired-writer37198110854 executes portable42/42 but both native rows48/49: A03 c
 
 The [completed integration plan](planning/WINGET_OUTPUT_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
 
-## Before-integration Root selection, 2026-10-04 (pr138)
-
-The complete ordered plan is [RELEASE_PUBLICATION_MAIN140_2026-10-04.md](planning/RELEASE_PUBLICATION_MAIN140_2026-10-04.md). SPEC stays frozen. Exact incoming mainc4/treef90 replaces the previous main814/prospective140 selection only within this plan. Parent Root handles Docs/Issues/final review/publication; separate development handles Git integration of already reviewed whole Source blobs.
-
-Retain all five exact PR138 snapshot paths and import reviewed main139/140 without Source adaptation; shared Docs are common15820 + complete incomingc4 suffix + complete new Root suffix.
-
-Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
 
 ## PR166 separate Git integration with reviewed main136
 
