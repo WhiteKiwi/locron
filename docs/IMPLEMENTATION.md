@@ -5272,3 +5272,7 @@ The complete ordered plan is [RELEASE_PUBLICATION_MAIN140_2026-10-04.md](plannin
 Retain all five exact PR138 snapshot paths and import reviewed main139/140 without Source adaptation; shared Docs are common15820 + complete incomingc4 suffix + complete new Root suffix.
 
 Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
+
+## PR166 separate Git integration with reviewed main136
+
+SPEC remains frozen. [The complete five-step plan](planning/WINGET_OUTPUT_MAIN136_2026-10-04.md) selects exact normal Source union and whole incoming Docs plus all ordered byte-exact own insertion blocks; whole own/incoming inverses are required. Root exact Issue35 GET/final reread precede separate development; full original gates and actual functional/paired provenance qualify the combined head.
