@@ -544,15 +544,12 @@ impl LifecycleProgress {
                 return None;
             }
         };
-        match value.parse::<u64>() {
-            Ok(value) => {
-                self.last = HeartbeatRead::Numeric;
-                Some(value)
-            }
-            Err(_) => {
-                self.last = HeartbeatRead::ParseError;
-                None
-            }
+        if let Ok(value) = value.parse::<u64>() {
+            self.last = HeartbeatRead::Numeric;
+            Some(value)
+        } else {
+            self.last = HeartbeatRead::ParseError;
+            None
         }
     }
 }
