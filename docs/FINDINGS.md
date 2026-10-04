@@ -5406,6 +5406,42 @@ foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
 
+## PR140 output recovery Verify research before Source (2026-10-04)
+
+Root reviewed the separate69-artifact research against25 immutable app Git blobs/modes, four full trees and the complete composed renderer. Current main15820 is entire-tree equal to reviewed merged137. Preserve old140 pre-main bytes and main137 main() suffix exactly; combined55f41774c7e70d7da17bdf9f47059e2effc4c0881182ede3b7c9802548bb3269. PR140 lacks the concrete required recovery/native controls, but this read-only research demonstrates no production writer defect. Earlier paired/entrypoint/snapshot successes do not qualify these paths.
+
+Select ten portable methods/32 controls through actual fd-backed operations plus four hosted-Windows methods/six controls for real exclusive collision, ordinary-file/directory identity replacement, actual read-only deletion denial and close/namespace reuse. Distinguish each deterministic injected generation/write/flush/close error from the genuine OS observations. Retain original error identity/notes, unknown objects and unrelated subtrees; no hostile-race/atomic visibility/durability guarantee. Python/Windows primary contracts support these selected oracles but actual results remain pending. Root research proof1f360be93ecce1d60129f952bc8d21440f5630896546472a2c49c1e5974c739a.
+
+
+## Root review of WinGet output Source and exact main139 integration (2026-10-04)
+
+Root full review af824 verifies128 artifacts/complete union/299 protected Source
+pairs and actual741-line control semantics; no blocking Source finding. Planned
+portable10/32 and Windows14/38 remain unexecuted. Select only reviewed main814
+Git integration, preserving full new tests/workflow/renderer55f4 and incoming
+Server exactly. The appended WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md plan
+requires literal Docs-suffix union, before-Source Issues32/35, Root final reread
+and separate developer before changed-head hosted qualification/publication.
+
+## PR139 listener-policy and shutdown controls before Source (2026-10-04)
+
+Root fully reviewed PR139 c847dec1cf924ed06fdcab29f6f0ec93ba69e96c and its existing ordinary hosted run37176501497: native Server31 and existing active-SSE/stalled tests passed on x64 stable, ARM stable and x64 Rust1.94. These existing cases do not execute the selected whole-list socket-count refusal, upper-port saturation, failed/clean/panicked-listener/signal-error broadcast and full-survivor drain/error-precedence/timeout controls. Root keeps that Verify gap open before merge; no observed failure cause or new native success is claimed.
+
+The separate read-only47-artifact design (manifest7c5cdac6d8ddfdb66bbb7ed8a207a89c4832fbe10d802ec224c8065a2a39ccae; Root proof460ddb9ab362c5ae1eac65e3a63459c09d4637bee7a435ae9d6c34abf1a45a26) is fully reviewed and independently verified against15 app Git snapshots and5 exact Tokio1.53.1 primary files from Cargo.lock. Tokio join_next is cancel-safe within select; abort_all does not remove/complete owned tasks and requires subsequent join_next until empty. timeout polls the inner future before the delay and cannot preempt non-yielding/blocking work. Workspace does not enable test-util. These Source contracts justify shared private seams and the real existing10s timer; they do not prove actual task/OS failure behavior.
+
+Select one Source file and two private seams: exact production bind/preflight/policy with a SocketAddr-to-TcpListener future boundary, and the original select/broadcast/drain implementation with original JoinSet/watch/composition-stop/signal-result futures. Callback-count0 proves refusal before native socket admission; explicit55 high-port requests plus10 final0 across65526..65535 prove non-wrapping exhaustion through production policy without assuming real fixed ports free. Separate actual native bind calls establish IPv4/IPv6 and native high-port prefixes; simulated AddrInUse is not actual occupancy. Real JoinSet tasks/controlled failure/real panic/watch survivors/Drop+join receipts prove loop behavior. Private injected signal error is post-adapter control, not genuine Windows Ctrl-C registration failure. Windows dashboard_ctrl_c mapping, old31 native test bodies, all clocks/callers/public APIs/deps/workflow remain exact. Detached Axum connections and begun blocking Store workers remain separate unqualified Issue30 scope.
+## PR139 measured warnings-denied failure before repair (2026-10-04)
+
+Ordinary changed-head run37183332242, exact PR head4852c51ae38cf28568db34d861e7b22e85b339df/attempt1, completed FAILURE. Saved completed job metadata shows three Windows foundation jobs SUCCESS, while Windows/Linux/macOS lint jobs fail. The first Windows and Linux raw lint logs both identify exactly one new locron-server lib-test error at lib.rs881: the fixture's Err(_) panic arm triggers match_wild_err_arm under -D warnings. MacOS's specific diagnostic and the new42-case native evidence remain under separate read-only qualification; their content is not inferred from these two logs. The real result does not waive any required lint or native gate.
+
+The helper already aborts/reaps its owned controller and observes captured yielding-task Drop receipts before handling the timeout result. Select only binding the returned Elapsed value and including its Display in the existing failure panic after that cleanup. This uses an already-returned error and adds no call, query, retry, clock, task or owner. Existing13s fixture/10s supervisor guards, eleven control oracles and production behavior remain unchanged. No allow attribute or warning suppression is selected.
+
+## Root reviewed current-main integration research, 2026-10-04 (pr138)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+PR138 and merged main have disjoint Source changes; the original unmodified forecast is 306 paths/tree6564ad98a2053813eb00adfb8f93626e9d860765. Root Docs adds protected suffixes and one plan. Old1c45 x64 lifecycle294/877 failures remain measured failures with causes unobserved.
+
 
 ### Root isolated XDG/HOME discovery research (2026-10-04)
 
