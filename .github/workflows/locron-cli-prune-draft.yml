@@ -1,0 +1,164 @@
+name: Apply pinned CLI prune Draft
+'on':
+  push:
+    branches: [fix/cli-prune-projected-selection]
+    paths: [.github/workflows/locron-cli-prune-draft.yml]
+permissions: {}
+jobs:
+  publish-pinned-source:
+    if: github.repository == 'WhiteKiwi/locron' && github.ref == 'refs/heads/fix/cli-prune-projected-selection'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Apply exact source patch and remove this temporary workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64
+          import difflib
+          import hashlib
+          import json
+          import os
+          import subprocess
+
+          REPO = "WhiteKiwi/locron"
+          BRANCH = "fix/cli-prune-projected-selection"
+          PATH = "crates/locron-cli/src/main.rs"
+          WORKFLOW = ".github/workflows/locron-cli-prune-draft.yml"
+          EXPECTED = "4e975d509029c94f277cd43a3adcf1d38308acfa"
+
+          def api(method, endpoint, payload=None):
+              command = ["gh", "api", "--method", method, endpoint]
+              if payload is not None:
+                  command.extend(["--input", "-"])
+              result = subprocess.run(command, input=None if payload is None else json.dumps(payload),
+                                      text=True, capture_output=True, check=True, timeout=45)
+              return json.loads(result.stdout)
+
+          def blob_sha(data):
+              return hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
+
+          assert os.environ["GITHUB_REPOSITORY"] == REPO
+          assert os.environ["GITHUB_REF"] == "refs/heads/" + BRANCH
+          head = os.environ["GITHUB_SHA"]
+          prefix = f"repos/{REPO}"
+          ref = f"{prefix}/git/refs/heads/{BRANCH}"
+          assert api("GET", ref)["object"]["sha"] == head, "branch changed before source read"
+          commit = api("GET", f"{prefix}/git/commits/{head}")
+          tree = api("GET", f"{prefix}/git/trees/{commit['tree']['sha']}?recursive=1")
+          assert not tree.get("truncated"), "incomplete base tree"
+          entries = {item["path"]: item for item in tree["tree"] if item["type"] != "tree"}
+          assert entries[PATH]["mode"] == "100644" and entries[PATH]["sha"] == EXPECTED
+          assert entries[WORKFLOW]["mode"] == "100644"
+          source = api("GET", f"{prefix}/git/blobs/{EXPECTED}")
+          assert source["encoding"] == "base64"
+          raw = base64.b64decode(source["content"])
+          assert blob_sha(raw) == EXPECTED
+          text = raw.decode("utf-8")
+          start = "fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {\n"
+          end = "\nasync fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {\n"
+          assert text.count(start) == 1 and text.count(end) == 1
+          before, tail = text.split(start)
+          body, after = tail.split(end)
+          patches = [
+              (
+                  "    let mut retained = store.retained_output_bytes()?;\n"
+                  "    let age_cutoff = now_us().saturating_sub(30_i64 * 24 * 60 * 60 * 1_000_000);\n"
+                  "    let candidates = store\n"
+                  "        .output_retention_candidates(100)?\n"
+                  "        .into_iter()\n"
+                  "        .filter(|candidate| {\n"
+                  "            candidate.finalized_at_us < age_cutoff || retained > settings.output_limit_bytes\n"
+                  "        })\n"
+                  "        .collect::<Vec<_>>();\n",
+                  "    let mut projected = store.retained_output_bytes()?;\n"
+                  "    if projected < 0 || settings.output_limit_bytes < 0 {\n"
+                  "        return Err(StoreError::Conflict(\n"
+                  "            \"output byte accounting must be non-negative\".into(),\n"
+                  "        )\n"
+                  "        .into());\n"
+                  "    }\n"
+                  "    let age_cutoff = now_us().saturating_sub(30_i64 * 24 * 60 * 60 * 1_000_000);\n"
+                  "    let mut candidates = Vec::new();\n"
+                  "    let mut bytes = 0_i64;\n"
+                  "    for candidate in store.output_retention_candidates(100)? {\n"
+                  "        if candidate.physical_bytes < 0 {\n"
+                  "            return Err(StoreError::Conflict(\n"
+                  "                \"output artifact byte count must be non-negative\".into(),\n"
+                  "            )\n"
+                  "            .into());\n"
+                  "        }\n"
+                  "        if candidate.finalized_at_us >= age_cutoff\n"
+                  "            && projected <= settings.output_limit_bytes\n"
+                  "        {\n"
+                  "            continue;\n"
+                  "        }\n"
+                  "        bytes = bytes.checked_add(candidate.physical_bytes).ok_or_else(|| {\n"
+                  "            StoreError::Conflict(\"selected output byte count exceeds supported range\".into())\n"
+                  "        })?;\n"
+                  "        projected = projected.saturating_sub(candidate.physical_bytes).max(0);\n"
+                  "        candidates.push(candidate);\n"
+                  "    }\n",
+              ),
+              (
+                  "            store.finish_output_prune(candidate, now_us())?;\n"
+                  "            retained = retained.saturating_sub(candidate.physical_bytes);\n",
+                  "            store.finish_output_prune(candidate, now_us())?;\n",
+              ),
+              (
+                  "    let bytes: i64 = candidates\n"
+                  "        .iter()\n"
+                  "        .map(|candidate| candidate.physical_bytes)\n"
+                  "        .sum();\n"
+                  "    if format == Format::Human {\n",
+                  "    if format == Format::Human {\n",
+              ),
+          ]
+          original_body = body
+          for old, new in patches:
+              assert body.count(old) == 1, "unexpected CLI source anchor"
+              body = body.replace(old, new, 1)
+          updated = (before + start + body + end + after).encode("utf-8")
+          assert updated != raw
+          assert updated[:len(before.encode())] == raw[:len(before.encode())]
+          assert updated.endswith((end + after).encode())
+          assert body.count("store.mark_output_prune_pending(candidate, now_us())?;") == 1
+          assert body.count("store.finish_output_prune(candidate, now_us())?;") == 1
+          assert (before + start + original_body + end + after).encode() == raw
+          restored_body = body
+          for old, new in reversed(patches):
+              assert restored_body.count(new) == 1, "ambiguous inverse source anchor"
+              restored_body = restored_body.replace(new, old, 1)
+          assert (before + start + restored_body + end + after).encode() == raw
+          print("".join(difflib.unified_diff(text.splitlines(True), updated.decode().splitlines(True),
+                                             fromfile=PATH, tofile=PATH)))
+          blob = api("POST", f"{prefix}/git/blobs", {"content": updated.decode(), "encoding": "utf-8"})
+          assert blob["sha"] == blob_sha(updated)
+          new_tree = api("POST", f"{prefix}/git/trees", {
+              "base_tree": commit["tree"]["sha"],
+              "tree": [
+                  {"path": PATH, "mode": "100644", "type": "blob", "sha": blob["sha"]},
+                  {"path": WORKFLOW, "mode": "100644", "type": "blob", "sha": None},
+              ],
+          })
+          readback = api("GET", f"{prefix}/git/trees/{new_tree['sha']}?recursive=1")
+          assert not readback.get("truncated")
+          new_entries = {item["path"]: item for item in readback["tree"] if item["type"] != "tree"}
+          assert WORKFLOW not in new_entries
+          assert set(new_entries) == set(entries) - {WORKFLOW}
+          for path, entry in new_entries.items():
+              if path == PATH:
+                  assert entry["sha"] == blob["sha"] and entry["mode"] == "100644"
+              else:
+                  assert (entry["sha"], entry["mode"]) == (entries[path]["sha"], entries[path]["mode"])
+          assert api("GET", ref)["object"]["sha"] == head, "branch changed before publication"
+          result = api("POST", f"{prefix}/git/commits", {
+              "message": "fix: bound explicit CLI pruning by projected retained bytes",
+              "tree": new_tree["sha"], "parents": [head],
+          })
+          api("PATCH", ref, {"sha": result["sha"], "force": False})
+          print(json.dumps({"commit": result["sha"], "source_blob": blob["sha"],
+                            "temporary_workflow_removed": True, "rust_tests_executed": False}))
