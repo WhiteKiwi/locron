@@ -558,3 +558,32 @@ Keep SYSTEM/Administrators/TrustedInstaller trust, decimal1343029590 mask, direc
 2. **Full conservation.** Developer changes the one script; Root reviews staged and unstaged Source. Verify: remove only seven intent assignments/comments/literals and restore the original compound block to reproduce the full7ccd script SHA2555c553fa3869afa95efff177368d87f2111b94d247085e825742f27c4a5af1. All297 other tracked blob/mode pairs equal the reviewed Docs head. Exact four expressions, once-only order/laziness, original rejection and final deadline call are preserved. Keep88 Native-Call,40 Check-Deadline,23 guard_setup throws and ONE stderr writer; abstract16 truth/evaluation prefixes match without executing PowerShell.
 3. **Complete diagnostic/owner review.** Root reviews all changed Source and the existing renderer/catch/owner context. Verify:31 unique closed substages, maximum27 ASCII bytes;14 kinds/max19; full417 including CRLF and fallback254 under unchanged512/510 guard. Only original three scalar slots and one failure writer are used; no private resource/exception/object facts or unfinished owner access. Any first/evidence/late/unknown failure stays FAIL.
 4. **Meaningful changed-head native run.** Root pushes the reviewed exact head and dispatches once on the dedicated manual branch. Verify: completed x64 and ARM64 stock PowerShell5.1 steps/normal Rust1.94 builds, exact head/event/attempt, raw log and artifact hashes, observed richer failure OR full authentic original receipts. Missing receipts/uploads remain failure. Actual2/2/2 account counts,13 flags,token/Job/root-exit-live-descendant negative/final authoritative emptyJob/EOF/account and guard cleanup are still required. Static/model/build work supplies zero such acceptance. Issues27/29 stay open until their complete Verify succeeds; no main/PR import or release implication.
+
+## Selected next phase: explicit Int64 inherit-flags representation after Source47b (2026-10-04)
+
+Root reviewed completed run37175203153 and the separate narrow representation research, verifying60+38 artifacts and actual raw fields. Both first failures are stock_utility_open / foreign_inherit_check / invalid_cast. Normal Rust1.94 builds pass; credential/tree/upload fail, artifacts0. x64's subsequent owner_untrusted/runtime is distinct. Neither marker nor InvalidCastException bucket proves an exact instruction, enum binder, actual value, exception depth or successful descriptor policy. Preserve all historical failures and wide Issues27/29 acceptance gaps. Frozen SPEC/product scope is unchanged.
+
+### Exact Source selection
+
+After Docs/Issues/final Root review, a separate developer may change only scripts/test-windows-user-prerequisite.ps1 line497. Replace exactly:
+
+```text
+($ace.AceFlags -band [Security.AccessControl.AceFlags]::InheritOnly) -eq 0
+```
+
+with exactly:
+
+```text
+([long]$ace.AceFlags -band [long][Security.AccessControl.AceFlags]::InheritOnly) -eq 0
+```
+
+Only the two six-byte cast tokens are new. Original left property is evaluated once, then the original static operand, at the same lazy position after AccessAllowed and before the unchanged SID/mask conditions. Framework's declared byte0..255/constant8 widen losslessly to Int64; f AND8 remains0 or8 with the original compare0. This chooses integer representation deliberately, not proven causality or a successful PowerShell fixture. No float/string/truncation/platform-width integer, extra getter/method/reflection/native/error-record read, synthetic ACE, prewarm, policy repair or acceptance fallback.
+
+Keep all B7 intents, classifiers, current/first/evidence scalars and snapshots, SYSTEM/Administrators/TrustedInstaller trust, owner/null-DACL/CommonAce/callback/qualifier checks, mask1343029590 and directory exclusion6, lazy SID/mask checks, all-true foreign_mutation/guard_setup, foreach order and single final deadline exact. Keep Native-Call pre/postchecks, original180/30/15/45/30/100ms clocks, accounts/frame/EOF/Job/guard/evidence/unknown retention and failure exits. Cast/getter failures propagate through the original classifier and never grant acceptance. All297 other tracked blobs/modes, workflow, Rust example, SPEC and existing success schema stay exact.
+
+### Concrete Verify in required order
+
+1. **Docs and Issues before Source. Verify:** Root full report/primary excerpt review and60+38 hashes, actual completed head/manual event/attempt/2 raw frames/artifact0, immutable4 Source snapshots; exact3 Docs commit with frozen Source/SPEC, CLI Issues27/29 readback and final Root plan review precede separate Source handoff. No owner-PC parser/native test.
+2. **Representation conservation. Verify:** developer changes exactly the one line/two tokens; removing only them reproduces all74210 original bytes SHA256 d4a29fc7bdf701050748018e5b5069f7b973e46c21674e7992ab8d5508aa992d. Candidate74222bytes SHA256 c3094aef54b982e474f0c287bafd0537b305ec1c56cd6aed8412c9160e82b5c2. Every other297 mode/blob equals the reviewed Docs head. Both staged and unstaged changes reviewed before scoped commit; original getter count/order, policy and clocks remain exact. Algebraic byte-domain reasoning is static only.
+3. **Root Source and bound review. Verify:** complete changed function plus original catch/renderer/owner context and deterministic OCR rules, exact full inverse,88 Native-Call/40 Check-Deadline/23 guard_setup throws/ONE stderr writer; unchanged31/max27 substages and14/max19 kinds,417full/254fallbackCRLF under512/510. First and secondary observations stay separate, no resource/private/exception output or unfinished owner access. Any late/unknown/cast failure stays FAIL.
+4. **One changed-head native qualification. Verify:** Root publishes exact reviewed clean head only to dedicated manual prerequisite branch and dispatches once on disposable x64+ARM. Unchanged actual stock PowerShell5.1 command and Rust1.94 source/build gates, original phase clocks, completed run/event/attempt/raw hashes/artifact inventory. Progress to another marker is not security PASS: actual2/2/2 accounts, token/groups, genuine public OwnedChild, root-exit-live-descendant negative, final authoritative emptyJob,13 guard flags, EOF/exit/guard/account cleanup and authentic uploaded receipt must all succeed independently. Missing/no receipt remains unqualified failure; preserve47b/7ccd. No main/PR import, rerun, retry, clock extension, clean standard-user Win11 or release implication. Later material cause requires another Docs-first decision.
