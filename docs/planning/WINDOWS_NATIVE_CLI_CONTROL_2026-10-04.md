@@ -653,3 +653,8 @@ and fixed notice/queued-state words; require a conservative2048 ASCII-byte bound
    unmeasured withheld/lifecycle/native/full-lint cause. Missing, late, unknown,
    skipped or failed proof stays failure. No owner-PC native execution or wider
    Windows11/account/reboot/public release acceptance follows.
+
+
+### Concurrent stock-only publication reconciliation
+
+The parent reviewed local helper commit062aa2 and remote b131: the remote leaves the original native helper, CLI cases, lifecycle observer, stock PowerShell and CI unchanged, but already includes the reviewed main814e689 and a borrowed-slice stock syntax correction. Integrate that remote ancestry normally, preserve the local helper byte-for-byte, and use the remote loader_crash.rs byte-for-byte as specified in the stock plan. Preserve all Docs appendices. This integration does not explain either original native failure. Full locked metadata now succeeds after downloading missing locked packages; this is dependency resolution, not compilation or native qualification.

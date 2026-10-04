@@ -5324,3 +5324,8 @@ call produced the old result. Withheld Disconnected stays unobserved until
 already available metadata establishes more. Failure diagnostics never add
 native I/O, delay, mutable authority or late success. No unchanged rerun,
 deadline relaxation, ignored test/lint, owner-PC native effect or public release.
+
+
+## PR136 concurrent ancestry integration (2026-10-04)
+
+Before Source integration, select a normal merge of remote b131 into local062aa2 plus this Docs parent. Conserve both append-only planning histories. Resolve the stock syntax overlap to the exact complete remote loader_crash.rs blob; conserve the complete local ready helper and all other Source/workflow/lockfile mode/blobs. The developer owns integration, reports full-tree conservation and formatting/metadata checks, and does not publish. Parent rechecks current remote ancestry and publishes one fast-forward head, then requires fresh ordinary CI, native six-case and lifecycle evidence plus exact paired artifacts before merge. Issue31 remains open for wider unresolved acceptance.

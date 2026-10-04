@@ -332,3 +332,10 @@ Fresh actual strict Windows lint and all original native assertions are required
 at the combined head. Earlier concrete managed HResult values remain unobserved
 in outer stdout even when inner strict four-record validation passed; do not
 invent those values or forward logs through a new unplanned Source path.
+
+
+### Reconcile the concurrently published stock syntax fix before Source integration
+
+Remote PR136 now points to b131edc1ad420532c69b91c854ddb8ceb187b767, descended from the original 3f5 through the separately documented stock syntax selection and exact reviewed main814e689. The parent fully reviewed its 73-line WINDOWS_STOCK_CLIPPY_SYNTAX_2026-10-04.md and the complete two-site Source diff. Its as_chunks loop borrows each array with record.as_slice(), preserving the old slice loop body literally. This achieves the same MSRV-safe lint correction as the local copied-array binding selected in a4127d5, without copying the record. Select the already published borrowed-slice Source exactly; the local copied-array selection remains historical and is superseded for integration. The collision let-else is identical.
+
+Verify before publication: merge b131 normally into the reviewed local 062aa2a8c088b0ab480394219feca26b8c1f26cc plus this Docs parent; preserve both complete Docs histories and exact main814e689. The resulting loader_crash.rs must equal the complete remote b131 blob, the ready helper must equal local 062aa2, and every other Source/workflow/lockfile mode/blob must remain exact. Run Rust1.94/1.98 formatting, actionlint and locked metadata, inspect staged/unstaged changes, and review the complete merge tree. No force push, warning allowance, selector/deadline change or owner-PC native execution is selected. Fresh hosted Windows compilation and all original assertions remain required.

@@ -5544,3 +5544,8 @@ syntax corrections preserve the stock parser and collision assertion. See the
 amended native and stock plans; Source waits for Issue31 exact readback and
 the separate developer lease. No old missing visible-empty control or concrete
 managed HResult is fabricated as current acceptance.
+
+
+## Concurrent PR136 stock syntax publication (2026-10-04)
+
+Remote b131edc1ad420532c69b91c854ddb8ceb187b767 contains a Docs-before-Source borrowed-slice as_chunks correction and the same main814e689 union. Its complete stock diff is two syntax sites, with no native helper/lifecycle/PowerShell/CI change from3f5. Both syntax choices are safe Rust1.94 operations; retain the independently published borrowed-slice blob to avoid replacing reviewed work. Local062aa2 supplies the separately selected closed-candidate readiness publication and failure-only unobserved outcome diagnostic. Complete locked metadata succeeds with354 packages/nodes after locked dependency downloads and no lockfile change; actual Windows compilation and native acceptance are still pending.
