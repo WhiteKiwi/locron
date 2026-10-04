@@ -5259,3 +5259,8 @@ PR 140 is already merged. Follow the publication appendix in planning/WINGET_OUT
 ### PR166 measured A03 Windows path representation (2026-10-04)
 
 Paired-writer37198110854 executes portable42/42 but both native rows48/49: A03 compares actual extended-namespace readlink text with a drive-path target. Select only that method: retain actual pre-call readlink and compare exact post-call text, plus real samefile(target) assertions before/after the writer. Preserve no-follow link ID, target bytes/tree, all zero-operation/parent/checked-cleanup assertions and fixed42/49 keys. Root Docs/Issue35 readback precede separate Source; fresh changed-head native/portable/ordinary evidence stays required. Pythonprimary readlink/samefile contracts are linked in the plan.
+
+
+## PR166 exact mainf90 integration before separate development (2026-10-05)
+
+Follow planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md under Issue35. Preserve complete b5f three Source blobs; normal-merge only exact f90 with original histories, whole incoming Source and literal selected Docs components. Commit this full four-step Verify plan, get exact Issue GET and Root final whole committed-plan reread before separate developer. Root reviews clean316-path handback and ordinary-publishes existing PR166; fresh actual42 portable/49 per-native key receipts, architecture facts and all required ordinary gates precede merge. Static inverses/API success/old-base CI do not qualify current-main. Broader unsigned public bytes, real schema/WinGet/catalog/clean-account lifecycle remain OPEN.

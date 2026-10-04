@@ -5456,3 +5456,8 @@ PR 140 merged as c4ef8b9 with reviewed 4a tree. The separate developer's2d6a1c4d
 ### PR166 measured A03 Windows path representation (2026-10-04)
 
 Paired-writer37198110854 executes portable42/42 but both native rows48/49: A03 compares actual extended-namespace readlink text with a drive-path target. Select only that method: retain actual pre-call readlink and compare exact post-call text, plus real samefile(target) assertions before/after the writer. Preserve no-follow link ID, target bytes/tree, all zero-operation/parent/checked-cleanup assertions and fixed42/49 keys. Root Docs/Issue35 readback precede separate Source; fresh changed-head native/portable/ordinary evidence stays required. Pythonprimary readlink/samefile contracts are linked in the plan.
+
+
+## PR166 exact mainf90 composition before Source (2026-10-05)
+
+Separate frozen130-artifact research and Root proof f82efca7788bd061732259e0c513986626776a8095cde5e12d1914f3ec01a21a independently check all919 original canonical blobs and three trees. Whole b5f renderer/test/paired-workflow have no bilateral incoming Source edit; only FINDINGS/IMPLEMENTATION require full canonical f90 plus complete own b5f-beyond-c4 suffix. Root selects Git-only normal integration and new actual current-base qualification in planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md. Old-base b5f raw logs and actual a840b2e tree are separate historical evidence, never mainf90 acceptance. No new writer/test/behavior or owner-PC execution is selected.

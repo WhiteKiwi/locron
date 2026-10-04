@@ -146,3 +146,8 @@ the complete execution context.
 | [locron/windows-2026-10-02/35](https://github.com/WhiteKiwi/locron/issues/35) | [item 260622009](https://github.com/users/WhiteKiwi/projects/4?pane=issue&itemId=260622009) | [#35](https://github.com/WhiteKiwi/locron/issues/35) | In Progress |
 | [locron/windows-2026-10-02/36](https://github.com/WhiteKiwi/locron/issues/36) | [item 260622031](https://github.com/users/WhiteKiwi/projects/4?pane=issue&itemId=260622031) | [#36](https://github.com/WhiteKiwi/locron/issues/36) | Todo |
 | [pnpm integration (PR38)](https://github.com/WhiteKiwi/locron/pull/38) | [item 260689470](https://github.com/users/WhiteKiwi/projects/4?pane=issue&itemId=260689470) | [#114](https://github.com/WhiteKiwi/locron/issues/114) | Done |
+
+
+### PR166 current-main output-recovery continuation (2026-10-05)
+
+Issue35 owns the exact b5f/f90 Git-only integration and current-head Verify in planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md. Preserve old Source and actual evidence separately, record exact plan GET and final reread before the separate developer, and keep native/public-release/installed-channel acceptance open. Signing37 remains deferred; Project-only historical instructions stay superseded.
