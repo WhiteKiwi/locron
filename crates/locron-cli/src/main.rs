@@ -3550,7 +3550,7 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
                 "job_id":job.id,
                 "job_name":job.name,
                 "requested_executable":requested,
-                "effective_path":process.env.get("PATH"),
+                "effective_path":environment_value(&process.env, "PATH"),
                 "resolved_executable":process.executable,
                 "status":"resolved"
             })),
