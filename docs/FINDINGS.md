@@ -5405,3 +5405,9 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+## Root reviewed current-main integration research, 2026-10-04 (pr138)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+PR138 and merged main have disjoint Source changes; the original unmodified forecast is 306 paths/tree6564ad98a2053813eb00adfb8f93626e9d860765. Root Docs adds protected suffixes and one plan. Old1c45 x64 lifecycle294/877 failures remain measured failures with causes unobserved.
