@@ -5405,3 +5405,15 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+
+### Root isolated XDG/HOME discovery research (2026-10-04)
+
+Separate104-artifact Source research and Root proof15d9ba7a establish that
+head6a26 selects nonempty Linux XDG before HOME fallback, while the complete
+macOS/Windows branches, override policies and old tests remain exact. Existing
+three CLI discovery cases do not qualify the HOME/XDG matrix or invalid-byte
+path selection. Actual ServiceContext still has separate HOME requirements.
+Select only genuine child-command discovery regressions and exact actual main9de
+in planning/XDG_STATE_WITHOUT_HOME.md before separate development; no old CI
+metadata is new acceptance.

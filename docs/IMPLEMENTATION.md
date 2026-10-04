@@ -5214,3 +5214,13 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+
+### Root XDG child-command regression continuation before Source (2026-10-04)
+
+Follow planning/XDG_STATE_WITHOUT_HOME.md after exact Issue152 readback and final
+Root review. Integrate actual main9de and preserve paths.rs6a26 exactly. Adapt
+only the existing Unix state_discovery test module: isolated child env, independent
+byte-preserving expected paths, dry-run no-state before actual live DB placement,
+Linux matrix and real macOS/override policies. No global env/dependency/workflow
+change; actual new head Linux/macOS and unchanged Windows required gates qualify.
