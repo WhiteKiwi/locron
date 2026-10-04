@@ -109,7 +109,7 @@ fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
                 assert!(metadata.is_file());
                 out.insert(
                     path.strip_prefix(root).unwrap().to_owned(),
-                    std::fs::read(path).unwrap(),
+                    std::fs::read(&path).unwrap(),
                 );
             }
         }
