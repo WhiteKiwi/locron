@@ -13,8 +13,15 @@ use std::io::{self, ErrorKind, Read, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use locron_core::filesystem::{DirectoryGuard, GuardedFile, open_private_or_create};
+#[cfg(not(windows))]
+use locron_core::filesystem::open_private_or_create;
+use locron_core::filesystem::{DirectoryGuard, GuardedFile};
 use locron_store::StatePaths;
+
+#[cfg(test)]
+mod qualification;
+#[cfg(test)]
+mod test_support;
 
 /// The fixed token file name under the state directory.
 pub const TOKEN_FILE_NAME: &str = "dashboard.token";
@@ -54,6 +61,8 @@ pub fn random_hex_32() -> String {
 /// First-use detection and creation share the same cross-process token lock.
 pub fn ensure(paths: &StatePaths) -> io::Result<String> {
     let _lock = lock_token(paths, true)?;
+    #[cfg(test)]
+    test_support::observe(&paths.root, test_support::Event::TokenIo);
     let path = token_path(paths);
     let read = || -> io::Result<String> {
         let mut file =
@@ -86,6 +95,8 @@ pub fn ensure(paths: &StatePaths) -> io::Result<String> {
             }
         }
         Err(error) if error.kind() == ErrorKind::NotFound => {
+            #[cfg(test)]
+            test_support::observe(&paths.root, test_support::Event::Decision);
             let token = random_hex_32();
             write_atomic_0600(&path, &token)?;
             Ok(token)
@@ -97,6 +108,8 @@ pub fn ensure(paths: &StatePaths) -> io::Result<String> {
 /// Replaces the stored token with a fresh random one (`enable --reset` semantics).
 pub fn regenerate(paths: &StatePaths) -> io::Result<String> {
     let _lock = lock_token(paths, true)?;
+    #[cfg(test)]
+    test_support::observe(&paths.root, test_support::Event::TokenIo);
     let token = random_hex_32();
     write_atomic_0600(&token_path(paths), &token)?;
     Ok(token)
@@ -112,6 +125,8 @@ pub fn remove(paths: &StatePaths) -> io::Result<()> {
         Ok(_) => {}
     }
     let _lock = lock_token(paths, false)?;
+    #[cfg(test)]
+    test_support::observe(&paths.root, test_support::Event::TokenIo);
     match locron_core::filesystem::remove_private_file(&token_path(paths)) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
@@ -123,31 +138,180 @@ pub fn remove(paths: &StatePaths) -> io::Result<()> {
 /// Only lock contention retries; synchronous filesystem calls themselves are not cancellable.
 fn lock_token(paths: &StatePaths, create_root: bool) -> io::Result<GuardedFile> {
     let deadline = Instant::now() + TOKEN_LOCK_TIMEOUT;
+    #[cfg(test)]
+    test_support::begin(&paths.root, deadline);
     let root = if create_root {
         DirectoryGuard::private(&paths.root)?
     } else {
         DirectoryGuard::existing_private(&paths.root)?
     };
+    #[cfg(not(windows))]
     let file = open_private_or_create(&root.normalized_path().join(TOKEN_LOCK_FILE_NAME))?;
+    #[cfg(windows)]
+    let file = open_windows_lock(&root, deadline)?;
     loop {
         if Instant::now() >= deadline {
             return Err(token_lock_timeout());
         }
-        match file.try_lock() {
+        #[cfg(not(test))]
+        let acquired = file.try_lock();
+        #[cfg(test)]
+        let acquired = test_support::try_lock(&paths.root, &file, deadline);
+        match acquired {
             Ok(()) => {
                 if Instant::now() >= deadline {
                     return Err(token_lock_timeout());
                 }
                 // No duplicate handle escapes. Dropping this file releases the lock.
+                #[cfg(test)]
+                test_support::observe(&paths.root, test_support::Event::Acquired);
                 return Ok(file);
             }
             Err(fs::TryLockError::WouldBlock) => {
+                #[cfg(test)]
+                test_support::observe(&paths.root, test_support::Event::Busy);
                 let remaining = deadline.saturating_duration_since(Instant::now());
+                #[cfg(test)]
+                test_support::observe(&paths.root, test_support::Event::Sleep);
                 std::thread::sleep(remaining.min(Duration::from_millis(10)));
             }
             Err(fs::TryLockError::Error(error)) => return Err(error),
         }
     }
+}
+
+#[cfg(windows)]
+fn lock_remaining(deadline: Instant) -> io::Result<()> {
+    if Instant::now() >= deadline {
+        Err(token_lock_timeout())
+    } else {
+        Ok(())
+    }
+}
+
+// These two owners make the constructor/closed-unpublished boundary explicit.
+// Neither an unsuccessful create nor an unknown native result authorizes adoption.
+#[cfg(windows)]
+struct CreatedOpenLock {
+    file: GuardedFile,
+    path: PathBuf,
+}
+
+#[cfg(windows)]
+struct ClosedUnpublishedLock(tempfile::TempPath);
+
+#[cfg(windows)]
+impl CreatedOpenLock {
+    fn close(self) -> io::Result<ClosedUnpublishedLock> {
+        drop(self.file);
+        let mut path = tempfile::TempPath::try_from_path(self.path)?;
+        path.disable_cleanup(true);
+        Ok(ClosedUnpublishedLock(path))
+    }
+}
+
+#[cfg(windows)]
+fn open_windows_lock(root: &DirectoryGuard, deadline: Instant) -> io::Result<GuardedFile> {
+    let root_path = root.normalized_path();
+    let final_path = root_path.join(TOKEN_LOCK_FILE_NAME);
+    lock_remaining(deadline)?;
+    match locron_core::filesystem::open_private(
+        &final_path,
+        fs::OpenOptions::new().read(true).write(true),
+    ) {
+        Ok(file) => {
+            lock_remaining(deadline)?;
+            return Ok(file);
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    lock_remaining(deadline)?;
+    let candidate_id = uuid::Uuid::now_v7();
+    #[cfg(test)]
+    let candidate_id = test_support::candidate_id(root_path).unwrap_or(candidate_id);
+    let candidate_path = root_path.join(format!("{TOKEN_LOCK_FILE_NAME}.{candidate_id}.pending"));
+    #[cfg(not(test))]
+    let file = locron_core::filesystem::create_private_new(&candidate_path)?;
+    #[cfg(test)]
+    let file = test_support::create_candidate(root_path, &candidate_path, deadline)?;
+    let created = CreatedOpenLock {
+        file,
+        path: candidate_path.clone(),
+    };
+    #[cfg(test)]
+    test_support::observe(root_path, test_support::Event::CreatedOpen);
+    // Close the owned leaf even if the synchronous constructor returned late.
+    let ClosedUnpublishedLock(candidate) = created.close()?;
+    #[cfg(test)]
+    test_support::observe(root_path, test_support::Event::ClosedUnpublished);
+    if let Err(error) = lock_remaining(deadline) {
+        #[cfg(test)]
+        test_support::observe(root_path, test_support::Event::Expired);
+        return Err(error);
+    }
+    #[cfg(test)]
+    test_support::before_publish(root_path, deadline);
+    if let Err(error) = lock_remaining(deadline) {
+        #[cfg(test)]
+        test_support::observe(root_path, test_support::Event::Expired);
+        return Err(error);
+    }
+    #[cfg(not(test))]
+    let published = candidate.persist_noclobber(&final_path);
+    #[cfg(test)]
+    let published = test_support::publish(root_path, candidate, &final_path, deadline);
+    match published {
+        Ok(()) => {
+            // PublishedFinal is permanent, including a late successful native return.
+            #[cfg(test)]
+            test_support::observe(root_path, test_support::Event::PublishedFinal);
+            lock_remaining(deadline)?;
+        }
+        Err(mut refusal) => {
+            let same_candidate = refusal.path.as_os_str() == candidate_path.as_os_str();
+            assert!(
+                same_candidate,
+                "lock publication changed the owned candidate"
+            );
+            refusal.path.disable_cleanup(true);
+            let collision = refusal.error.kind() == ErrorKind::AlreadyExists;
+            #[cfg(test)]
+            test_support::observe(
+                root_path,
+                if collision {
+                    test_support::Event::Collision
+                } else {
+                    test_support::Event::PublishFailed
+                },
+            );
+            // Expiry forbids initiating fresh native disposal. Disabled Drop preserves it.
+            if Instant::now() >= deadline {
+                return if collision {
+                    Err(token_lock_timeout())
+                } else {
+                    Err(refusal.error)
+                };
+            }
+            #[cfg(not(test))]
+            let cleaned = locron_core::filesystem::remove_private_file(&candidate_path);
+            #[cfg(test)]
+            let cleaned = test_support::candidate_cleanup(root_path, &candidate_path, deadline);
+            let timely = lock_remaining(deadline);
+            if !collision {
+                return Err(refusal.error);
+            }
+            cleaned?;
+            timely?;
+        }
+    }
+    lock_remaining(deadline)?;
+    let file = locron_core::filesystem::open_private(
+        &final_path,
+        fs::OpenOptions::new().read(true).write(true),
+    )?;
+    lock_remaining(deadline)?;
+    Ok(file)
 }
 
 fn token_lock_timeout() -> io::Error {
@@ -164,26 +328,46 @@ fn valid_token(token: &str) -> bool {
 fn write_atomic_0600(path: &std::path::Path, contents: &str) -> io::Result<()> {
     let root = path.parent().expect("token path always has a parent");
     let _guard = locron_core::filesystem::DirectoryGuard::private(root)?;
+    let suffix = random_hex_32();
+    #[cfg(test)]
+    let suffix = test_support::scratch_suffix(root).unwrap_or(suffix);
     let temporary = root.join(format!(
         "{}.{}.tmp",
         path.file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("token"),
-        random_hex_32()
+        suffix
     ));
     // A failed exclusive create does not authorize removing an existing file.
     let mut file = locron_core::filesystem::create_private_new(&temporary)?;
+    #[cfg(test)]
+    test_support::observe(root, test_support::Event::ScratchCreated);
+    #[cfg(not(test))]
     let written = file
         .write_all(contents.as_bytes())
         .and_then(|()| file.sync_all());
+    #[cfg(test)]
+    let written = test_support::write_sync(root, &mut file, contents.as_bytes());
     // Release the file before cleanup/rename, including on Windows.
     drop(file);
+    #[cfg(test)]
+    test_support::observe(root, test_support::Event::LeafClosed);
     if let Err(error) = written {
+        #[cfg(not(test))]
         let _ = locron_core::filesystem::remove_private_file(&temporary);
+        #[cfg(test)]
+        let _ = test_support::scratch_cleanup(root, &temporary);
         return Err(error);
     }
-    if let Err(error) = locron_core::filesystem::rename_private(&temporary, path) {
+    #[cfg(not(test))]
+    let renamed = locron_core::filesystem::rename_private(&temporary, path);
+    #[cfg(test)]
+    let renamed = test_support::rename(root, &temporary, path);
+    if let Err(error) = renamed {
+        #[cfg(not(test))]
         let _ = locron_core::filesystem::remove_private_file(&temporary);
+        #[cfg(test)]
+        let _ = test_support::scratch_cleanup(root, &temporary);
         return Err(error);
     }
     Ok(())
