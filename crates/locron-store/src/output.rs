@@ -242,8 +242,8 @@ impl RepairFile for File {
 pub fn repair_partial(path: &Path) -> io::Result<OutputRepair> {
     let file =
         locron_core::filesystem::open_private(path, OpenOptions::new().read(true).write(true))?;
-    let (mut file, _guard) = file.into_parts();
-    repair_opened(&mut file)
+    let mut owner = file.into_parts();
+    repair_opened(&mut owner.0)
 }
 
 fn repair_opened(file: &mut impl RepairFile) -> io::Result<OutputRepair> {
