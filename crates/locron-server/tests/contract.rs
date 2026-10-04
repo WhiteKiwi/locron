@@ -3051,11 +3051,22 @@ mod dry_run_http_qualification {
             }
         }
         for (label, suffix, preview) in query_flags() {
+            let reference = format!("run-{label}");
+            let (status, _) = server
+                .post(
+                    "/api/v1/jobs",
+                    Some(create_body(
+                        &reference,
+                        &definition("/bin/echo", true, false, false),
+                    )),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "run fixture {label}");
             let before = durable_snapshot(&server.paths);
             let count = before.records["history"].as_array().expect("history").len();
             let (status, body) = server
                 .post(
-                    &query_path("/api/v1/jobs/original/run", "dry-run", suffix),
+                    &query_path(&format!("/api/v1/jobs/{reference}/run"), "dry-run", suffix),
                     None,
                 )
                 .await;
