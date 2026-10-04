@@ -146,3 +146,7 @@ the complete execution context.
 | [locron/windows-2026-10-02/35](https://github.com/WhiteKiwi/locron/issues/35) | [item 260622009](https://github.com/users/WhiteKiwi/projects/4?pane=issue&itemId=260622009) | [#35](https://github.com/WhiteKiwi/locron/issues/35) | In Progress |
 | [locron/windows-2026-10-02/36](https://github.com/WhiteKiwi/locron/issues/36) | [item 260622031](https://github.com/users/WhiteKiwi/projects/4?pane=issue&itemId=260622031) | [#36](https://github.com/WhiteKiwi/locron/issues/36) | Todo |
 | [pnpm integration (PR38)](https://github.com/WhiteKiwi/locron/pull/38) | [item 260689470](https://github.com/users/WhiteKiwi/projects/4?pane=issue&itemId=260689470) | [#114](https://github.com/WhiteKiwi/locron/issues/114) | Done |
+
+## PR136 reviewed observation continuation (2026-10-04)
+
+Issue31 remains open:7343/run37196440237 has one actual ARM History expiry and unknown cleanup completion. The helper-only current-call observation continuation is documented before Source; it does not close Windows native acceptance or change the original clocks/oracles. planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md carries the four-step Verify handoff and immutable raw/proposal hashes.

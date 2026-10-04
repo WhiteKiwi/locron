@@ -678,3 +678,147 @@ Add one independently selected hosted acceptance test windows_cli_control::nativ
 2. Confined ownership implementation. Verify: only helper and one additive CI command change; whole-file inverse/protected modes restore73d3, actual fresh guarded captures/identity/counter/original Child anchors, no shared seek/pipe EOF and64KiB+1 refusal are reviewed. Every original selector/assertion/clock and production/dependency byte stays exact.
 3. Finite native controls and static review. Verify: original six independent commands remain exact; new acceptance/auxiliary selectors execute the same capture helper and actual producers/held writer/collision/live timeout/cap/kill-reap/cleanup, zero fake status/skip. Rust1.94/1.98 formatting, locked offline metadata, actionlint and diff pass. Local static checks count zero native qualification; no owner-PC fixture/compiler/native execution.
 4. Exact changed-head qualification. Verify: normal fast-forward push only after fresh remote-head review; all three original native rows pass each original six cases plus additive capture gate, core/service/GUI/lifecycle/downstream and Windows lint; all required ordinary jobs/Guardian/current-main paired ZIP provenance pass. Failed/missing/late/skipped cases remain failure, no unchanged rerun. Record actual fresh causes/unknowns before merge; Issues29/31 and wider account/install/reboot/public acceptance stay open.
+
+## Selected current-call observation handoff (2026-10-04)
+
+Original7343/run37196440237/attempt1 is completed: ordinary executed16 PASS/1 ARM failure; original controls17/18 and capture controls3/3 (nine actual capture markers) pass. ARM first-work is actual Expired/History and cleanup completion is unobserved. Issue31 comment5979427889 retains the measured result. The frozen product/native acceptance scope is unchanged. Parent selects the following immutable139-line research proposal, SHA25699200a284f02fd986724264541d1e3d3fca6c1fccdef3c3fcbc861ff435acb1b, for a separate helper-only developer. The four Docs-first steps below own this next Source choice; speculative producer/performance changes remain unselected.
+
+# PR136 ARM cancellation: read-only handback and finite observation proposal
+
+ARM 실패 원인은 아직 확정할 수 없다. 이번에는 **test-private helper의 scalar 관측만** 선택한다. 원래 동작을 수정하지 않고 current CLI attempt, 실제 native return, 마지막 성공 History/progress를 분리해 다음 changed-head CI에서 원인을 측정한다. 이 문서는 구현이 아니다.
+
+## 고정 근거와 실제 결과
+
+- Candidate `7343fe8417b44d89fc22efde7b6853fe7cfda001`, tree `844cdfd4a6c24bc2e8bf00cd01a224095bb4b270`; current-main `c4ef8b9` 통합 후의 Source다.
+- Helper `crates/locron-cli/tests/support/windows_cli_control.rs`: 2,999 lines, SHA256 `9fdc37e0efdce67c66928631197d247a4d2c0dca5253b9909905fc7034c40f25`.
+- Fresh ordinary [run37196440237/attempt1](https://github.com/WhiteKiwi/locron/actions/runs/37196440237): completed/failure, 16 SUCCESS / 1 ARM foundation FAILURE / 2 exploratory SKIP. 원래 six는 17/18 PASS, capture gate는 3/3 PASS다. Capture의 실제 세 subcase marker는 세 native rows에서 9/9 존재한다. 이 counts는 Root가 저장한 `../pr136-7343-completed-case-matrix.json`의 실제 raw lines와 이번 ARM raw를 연결했다. 다른 두 row raw 전체를 이 연구자가 새로 다운로드하지는 않았다.
+- ARM job111419207891 raw는 completed 후 성공 다운로드 한 번, 158,973 bytes / 1,674 lines / SHA256 `6db69fd85ef1eca428b201744bb6eaec8b4b7b598ca58de3fe2991bd20a37b84`. 첫 CLI 시도는 terminal-escape 출력 보호로 exit1/빈 stdout이었다. `--allow-escape-sequences` 재호출만 실제 raw를 반환했다. `raw-log-receipt.json`은 CLI read attempts2 / successful raw downloads1을 구분한다. CI rerun은 없었다.
+- Job metadata의 compile 및 capture PASS는 기존 candidate Source의 실제 type/runtime 근거다. 이 미구현 proposal의 type/runtime 근거가 아니다. Paired coherence metadata SUCCESS도 ZIP 내부 provenance 확인과 별개다. ARM lifecycle/downstream/artifact steps는 SKIP이며 qualification이 아니다.
+
+ARM raw1118–1126의 관측은 다음과 같다.
+
+```text
+code=Expired phase=Cleanup flags=1 frame_bytes=0 elapsed_us=8471067
+intent=CleanupKill last_io=unobserved daemon_status=unobserved peer_status=unobserved
+cli_status={op=HistoryCliWait,role=ControlCli,code=0}
+first_work={op=WorkOutcome,role=NoChild,code=Expired,phase=History}
+ready=unobserved stdout_bytes=unobserved cli_live_seen=true
+```
+
+`first_work`는 worker가 실제 work Expired/History를 먼저 반환했음을 뜻한다. `phase=Cleanup`과 `CleanupKill`은 그 뒤의 scalar snapshot/intent다. Kill 반환, daemon exit, REAPED 또는 CLEANED는 관측되지 않았다. `flags=1`은 GUARD만 있다. Legacy status/error slots는 독립적인 누적 반환 사실이다. `HistoryCliWait/code0`은 현재 History CLI의 exit일 수도 있고 이전 호출의 exit일 수도 있다. 현재 호출의 stdout read count는 기록되지 않았으며, 현재 capture에서 실제 try_wait(None)은 최소 한 번 관측됐다. Raw32, 불완전17-byte tail, target constructor 반환, cancel 전후 구간 및 현재 CLI 내부 정체 원인은 이 로그에 없다.
+
+이전73d3/run37191426679의 Expired/History8467361us, 마지막 ProgressOpen/NotFound/raw2, 후속 GUI removeEXE/raw5는 별도 역사다. Issue31 comment5978690173 및 `../pr136-73d3-arm-failures.json`의 hashes를 보존한다. Capture selection은 planning fc68c7cbd0f2c4281cf68cf20fbb16fb89f262c3 / Issue31 comment5978764862에서 먼저 선택됐다. 새 capture gate의 ARM raw1290–1295는 actual held-writer/version/collision, actual read_count65537/explicit oversized refusal, actual live None/1s refusal/kill-reap-cleanup의 PASS다. 이 사실이 ARM cancellation 원인 해결을 증명하지 않는다.
+
+## Source 호출과 시계
+
+| 경계 | Exact candidate 위치와 의미 |
+| --- | --- |
+| 원래 callers | cli.rs1133–1188 wake, 1191–1264 cancel. Windows는 실제 helper 결과의 succeeded assertion을 유지한다. Unix literal bodies는 그대로다. |
+| 입장과 원래 anchor | helper1967–2059, spawn_child1049–1097. T0/outer30s는 resource-free admission 전에 태어난다. 실제 daemon.spawn 반환 Instant를 Child anchor 뒤에 원래5s/8s deadline에 사용한다. Setup에 소비한 T0 elapsed를 post-spawn 경과로 바꾸지 않는다. |
+| 각 CLI | helper1193–1435: 새 private CreateNew capture → actual clone/Stdio → actual Child anchor → try_wait under original clock → actual Some 후 independent guarded reader/full FileIdentity equality → at most65537 actual bytes. Capture512 ceiling, collision refusal 및 원래 actual status/full output oracle을 유지한다. |
+| 실제 History | helper1437–1455: daemon 실제 liveness → actual CLI `--json history` → full actual JSON parse → same run_id 선택 → actual state. 반복마다 새 CLI와 Store::open이 있다. |
+| cancel 전후 | helper2096–2176. Same Running run+두 strict counters 뒤 cancel CLI, 같은 run Cancelled 뒤 stable progress+daemonlive가 필요하다. 두 History loops 모두25ms continuation이다. |
+| progress reader | helper2178–2220. Actual NotFound만 empty-vector input이다. 다른 open/read error, >64KiB, 불완전17-byte tail, 잘못된 hex/newline, 역행 counter는 원래 Progress refusal이다. |
+| 실제 producer | helper2534–2575. Production Engine이 current integration executable의 native_cancel_target을 실제 소유/실행한다. Existing-private guard와 final-path create_private_new writer,25ms/30s/1201-frame ceiling을 유지한다. Helper가 직접 이 target의 Child status를 소유하지 않는다. |
+| durable cancellation | main.rs1086–1123 → Store::cancel_with_acknowledgement store.rs1861–1957의 immediate transaction → daemon.rs262–280의200ms 확인 → Windows runner/windows.rs154–200의 원래 cancellation/5s grace/owned Job kill+confirmation → main.rs4363–4425의 durable completion. CLI cancel exit0과 actual Cancelled History는 서로 다른 경계다. |
+| 생산자와 Running의 차이 | daemon.rs231–262는 mark_running 뒤 runner를 시작한다. runner.rs223–235는 OutputWriter::create 뒤 Windows runner/OwnedChild spawn으로 간다. Running History만으로 target 진입/constructor 반환/두 counter를 추론할 수 없다. |
+| teardown | helper1648–1833. 실제 retained daemon/peer/active CLI Child만 kill/wait하고, 원래 outer30s 안의 reaping 뒤에 guards/captures/state를 해제한다. Unknown은 quarantine다. Driver는 unfinished owner를 join/drop하지 않는다. |
+
+Native helper/Core filesystem calls는 동기식이다. Source의 pre/post check와 bounded driver refusal은 OS call 선점을 뜻하지 않는다. 실제 timestamps도 호출 경계의 관측이며 그 사이 CPU/OS/Store/producer 내부 원인을 측정하지 않는다. Capture, startup, repeated History 및 production grace는 비동기 실행과 일부 겹친다. Source만으로 이 비용들을 단순 합산해 ARM 예산 초과 원인으로 확정하지 않는다.
+
+Core cost 경로는 filesystem.rs149–173/706–707/842 → windows.rs589–677 → filesystem_worker.rs29/303–355/483–528/604–672다. CLI마다 process-local SID/dispatcher cache가 새로 시작될 수 있다. History는 main.rs1125–1165/1247–1249 → store.rs1013–1056/1739–1766 → paths.rs83–96의 실제 state/SQLite 준비를 수행한다. 어느 호출이 실제로 얼마나 소비했는지는 현재 raw에 없다.
+
+Progress의 final-name publication에는 별도 Source race 가능성이 있다. filesystem_worker.ps1:46은 FullControl(DELETE 포함)/shareRW로 final을 생성하고47에서 닫는다. filesystem.rs568–596의 no-follow reader는 shareRW/noDELETE다. 이 양립하지 않는 열린 handle 조합은 Windows sharing refusal 경로다. [CreateFileW sharing 계약](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew), [FileSystemRights 정의](https://learn.microsoft.com/en-us/dotnet/api/system.security.accesscontrol.filesystemrights?view=netframework-4.8.1)가 이를 뒷받침한다. Returned Rust RW writer는 다른 구간이다. `write_all`과 kill은 application record transaction을 보장하지 않으므로 strict-tail 경계도 유지한다. [Rust Write 계약](https://doc.rust-lang.org/std/io/trait.Write.html#method.write_all)에 따른 Source inference이며, 이번 ARM에서 두 경로가 실제 실패했음은 관측하지 못했다. 이 selection에는 producer/publication/parser 변경, raw32 retry, prefix-only 성공을 넣지 않는다.
+
+## 선택할 Source lease와 불변식
+
+Source는 **crates/locron-cli/tests/support/windows_cli_control.rs 한 파일만**이다. CI, cli.rs, private_state, Core/Store/Engine, stock Rust/PowerShell, Cargo/lock/API, frozen SPEC 및 다른 Source는 그대로다. 기존 capture acceptance/auxiliary selectors 및 actual 세 subcases를 재사용한다. 추가 selector/native gate/CLI 호출/fixture file/IPC/query/status call은 없다.
+
+Work Code, admission, original flags, first-work, phase/seal/clock/cleanup precedence는 관측 코드로 바꾸지 않는다. 관측 overflow, invalid domain, missing association 및 inconsistent snapshots는 diagnostic의 overflow/invalid/unobserved만 만든다. 이를 Result<_,Code>로 반환하거나 `Control::refuse/encode/check/publish_*`를 호출해서는 안 된다. 모든 기존 pre/post gates는 원래 위치에 남는다. Original wake5s/cancel8s/probe200ms/target30s/outer30s,1ms/5ms polling,25ms target/History pause,production5s grace,1201frames/64KiB/512 captures 및 six assertions는 그대로다.
+
+Legacy ObservationSnapshot, 그 formatter와 누적 intent/io/status/work/ready slots를 그대로 둔다. 새로운 fixed Snapshot은 CaseResult의 suffix에만 넣는다. Metadata는 fixed enums/numeric/booleans이며 실제 resource를 포함하지 않는다. PID/path/SID/runUUID/token/raw JSON/error text/argv/environment/progress record content를 추가하지 않는다.
+
+## Unique actual attempt와 scoped observations
+
+Capture filename count를 epoch로 사용하지 않는다. Worker-private checked CLI attempt counter를 독립적으로 둔다. `captured_output`에 실제 진입할 때마다1..513의 고유 epoch를 배정한다. 513은 기존512 capture의 다음 refusal attempt도 보이게 한다. 원래 entry gate, CreateNew collision 또는 spawn 전 error로 child가 없어도 새 attempt다. Unexpected514 이후에는 diagnostics만 overflow가 되며 원래 helper가 원래 Code를 반환한다. 파일 이름/counter/ownership은 관측 epoch와 연결하지 않는다.
+
+작은 outer wrapper에서 metadata begin을 수행하고 **원래 captured_output body 전체**를 실행한 다음, 실제 Result를 그대로 저장·반환한다. 이 wrapper는 Code를 번역하지 않는다. 원래 early-return도 actual wrapper-return Code/epoch를 기록한다. Scope 안의 실제 native step entry/return에만 serial을 배정한다. Existing check 뒤/기존 call 또는 call closure 직전에 entry를 기록하고, 실제 반환 및 원래 resource anchor 직후/원래 post-check 전에 return을 기록한다. Child/GuardedFile/reader의 기존 Owner-field anchor보다 먼저 새로운 fallible 작업을 넣지 않는다. File clone의 기존 worker-local 소유권도 이동/변경하지 않는다. 관측은 무할당·infallible scalar 작업이다. 이 step 경계는 기존 Rust API/closure의 경계이며 OS syscall 진입을 증명하지 않는다. 기존 argument/guard lookup이 실패했으면 actual wrapper Err이지 kernel operation 실패로 꾸며서는 안 된다.
+
+새 attempt begin은 current wait/native-entry/native-return/wrapper-return/capture-read slots만0으로 초기화한다. Epoch가 포함된 current-call word를 Release로 마지막에 게시한다. Driver는 Acquire fixed snapshot만 읽으며 spin/retry/wait해서 coherence를 만들어내지 않는다. 중간 reset snapshot이라도 각 word 자체의 epoch/step이 남으므로 오래된 word를 새 호출의 반환으로 해석하지 않는다.
+
+실제 try_wait Result는 None/Some/Err를 구별한다. Some만 실제 ExitStatus.code()의 optional signed i32를 가진다. Some(codeNone)과 None은 다르다. None/Err에는 code를 만들지 않는다. 실제 positive/negative i32 bit pattern을 보존한다. [Rust Child::try_wait](https://doc.rust-lang.org/std/process/struct.Child.html#method.try_wait)의 실제 반환만 사용하고 추가 wait/query는 없다.
+
+Capture bytes는 실제 collect_capture read가 반환한 뒤 저장된 누적 bytes.len만 기록한다. Epoch+actual step serial이 있는 별도 word를 쓰고, 그 Source read에서 실제 공개된 count와만 연관시킨다. Existing `stdout_bytes` prefix는 그대로 독립 legacy snapshot이다. Collision의 수동 preserved-file reader, 버전 제어의 외부 identity checks 및 cleanup은 current CLI native/wait/read/wrapper slots를 덮어쓰지 않는다. Scope를 wrapper actual return 직후 닫는다. Cleanup의 기존 legacy observations 및 모든 actual cleanup assertions는 그대로 실행한다.
+
+## History/progress의 last-completed 의미
+
+Worker-private History serial은 실제 `history()` entry마다 독립적으로 증가한다. 현재 History가 아직 captured_output에 진입하지 못하면 CLI attempt는 미관측이다. 이전 epoch를 새 History에 붙이지 않는다. Source prelude의 고정 History context에는 serial/stage/실제 entry Instant만 있고 resource가 없다. 실제 captured_output에 진입하면 해당 History serial이 그 고유 CLI epoch와 연결된다. History liveness 실패나 parser 실패에서 이전 completed word를 새 결과로 바꾸지 않는다.
+
+`current_cli`는 가장 최근 실제 captured_output attempt의 record다. 다음 History가 prelude에서 거부되어 captured_output에 진입하지 못하면 이전 record를 유지하고 그 새 History의 CLI epoch는 관측되지 않은 것으로 해석한다. Prelude를 새 CLI spawn으로 기록하지 않는다. Worker-private pending History context의 새 serial을 이전 completed/current CLI word에 끼워 넣지 않는다.
+
+`last_history`는 **실제 full CLI JSON을 parse하고 same run_id의 state를 선택한 실제 Ok 결과**에서만 한 atomic word로 게시한다. 이 word에는 History serial/CLI epoch/BeforeCancel 또는 AfterCancel stage/closed actual state/returned time이 함께 있다. Unknown string은 fixed Other이며 원래 caller의 refusal은 그대로다. 다음 CLI/History begin에서 이 word를 지우지 않는다. `last_history.epoch/history != current_cli.epoch/history`이면 이전 completed 사실로 명시한다. 이를 current run-state나 현재 실행 중인 CLI의 반환으로 쓰지 않는다.
+
+`history_cost`는 실제 완료된 History 함수의 entry→actual successful return Duration을 worker에서 측정한 last_us와 sum_us, 해당 History serial을 한 word에 담는다. 각 Duration.as_micros의 실제 정수 합이며 실패/진행 중 History는 포함하지 않는다. CPU 비용이 아니라 실제 wall time이다. State word와 cost word는 독립이며 같은 History serial일 때만 같은 완료 호출로 연결한다. 합/시간 overflow는 diagnostic만 overflow다. 완료되지 않은 현재 output의 entry/wrapper-return timestamps와도 구별한다.
+
+`last_progress`는 actual reader/parser 반환 사실을 한 word에 담는다. 실제 NotFound는 class Missing/count=unobserved다. 성공한 완전 strict parse만 class Valid/count0..3855다. Complete zero와 Missing은 다르다. Malformed/IO/Expired outcome은 class Refused/Expired/count=unobserved로 기록하되 원래 Code/branch/gate를 그대로 반환한다. Reader가 현재 반환하지 않으면 이전 completed word를 남긴다. Reader context의 마지막 CLI epoch/History serial/stage/time도 word에 포함해 새 History/CLI와 차이가 명시되게 한다. 이 epoch는 target producer의 identity/진입/exit가 아니다. Stable progress와 durable Cancelled의 원래 oracle을 대체하지 않는다.
+
+Stage는 fixed0 Other,1 WakeHistory,2 BeforeCancel,3 CancelCommand,4 AfterCancel,5 StoppedProgress다. 원래 control.phase와 별개인 관측 context다. Entry stage만으로 CLI spawn/request commit/cancellation success를 주장하지 않는다. 기존 실제 output/state/counter assertions가 그 사실을 확인한다.
+
+HistoryState는 fixed1 Queued,2 Running,3 Cancelled,4 Succeeded,5 Other다. ProgressClass는1 Missing,2 Valid,3 Refused,4 Expired다. NativeBoundary는0 Entered,1 ReturnedOk,2 ReturnedErr,3 WaitNone,4 WaitSome이다. CurrentWait는1 None,2 Some,3 Err다. 나머지 값은 invalid이며 word0만 unobserved다. Existing Code0..14/Phase0..14/Operation1..61/ChildRole0..3을 보존한다.
+
+## 유한 storage와 clock domains
+
+최대 ten new AtomicU64 words의 payload80bytes, controlled capture proof용 AtomicU8 payload1byte와 worker-private 작은 checked counters/Instant context다. Rust struct padding/sizeof를 주장하지 않는다. Proof bits는 원래 flags와 별개다. Dynamic logs/maps, resources, new threads/timers, global serialization 및 observer cleanup 권한은 없다.
+
+| Word | 하나의 checked word에 담을 값 |
+| --- | --- |
+| current_cli | epoch10,history10,phase4,stage3,entered_us25,valid63. Epoch1..513. History prelude만으로 이 word를 게시하지 않는다. |
+| native_enter/native_return | elapsed_ms15,epoch10,step18,operation6,phase4,role3,boundary/result3,valid63; 나머지 reserved0. 같은 epoch+step만 같은 actual native call이다. |
+| current_wait | signed-code32+present1,epoch10,step18,None/Some/Err2,valid63. None/Err의 code bits는0; Some(codeNone)도 구분한다. |
+| wrapper_return | actual output-helper Code4,epoch10,history10,phase4,stage3,returned_us25,valid63. Actual Result만 게시한다. |
+| capture_read | actual cumulative count17,epoch10,step18,valid63. Bounded0..65537; reader 반환 전/미실행은 word0이다. |
+| last_history | actual closed-state3,epoch10,history10,stage3,returned_us25,valid63. Same-run actual successful selection만 게시한다. |
+| history_cost | last_duration_us25,sum_completed_us25,history10,valid63. Scalar association만 한다. |
+| last_progress | count12,history10,epoch10,returned_us25,stage3,class3,valid63. Missing/refused/expired는 count0 encoded/count=unobserved 표시다. |
+| daemon_spawn | 실제 기존 spawn-return Instant의 T0 offset_us+1;0 unobserved. Child를 원래 slot에 anchor한 뒤 기록한다. 원래 deadline 계산은 기존 반환 Instant 그대로다. |
+
+모든 timestamp offset은 기존 Control.entered의 real Instant T0가 origin이다. history_cost의 Duration은 위의 실제 함수 entry→return 경과다. µs는0..30,000,000, ms는 실제 Duration.as_millis의0..30,000이다. µs25/ms15는 관측 정밀도이고 deadline을 반올림/변환하지 않는다. 기존 top-level elapsed_us/u128도 그대로다. Late/unrepresentable duration은 fixed overflow이며30s로 clamp하지 않는다. Diagnostic 시간 변환에 `Control::encode`를 재사용하지 않는다. 원래 case-expiry는 outer와 min될 수 있으므로 거기서8s를 빼 actual spawn time을 꾸며내지 않는다.
+
+Step serial은 각 actual CLI attempt의 실제 scoped operation마다1..262143이다. Reset은 새 고유 epoch와 함께만 일어난다. Fixed-byte read의 positive count는 실제 bytes를 증가시키므로 capture당 최대65537 positive read returns와 EOF/오류 한 번이고, bounded5ms polling도 기존 horizon을 따른다. 어떤 예상 밖 overflow도 original work Code/admission을 바꾸지 않는다. Epoch, History, step, domain/reserved bits, signed conversion 및 time sentinel 모두 checked다. Zero/unobserved, valid empty/None, invalid, overflow를 구별하고 magic sentinel이 정상 word와 겹치지 않음을 증명한다.
+
+각 record는 self-contained다. 서로 다른 atomic words의 snapshot은 여전히 같은 instruction 시점이 아니다. Epoch+step이 같으면 기록된 동일 call의 두 실제 경계로 연결할 수 있지만, latest entered와 다른 last returned만으로 현재 OS call 정체/producer status를 단정하지 않는다. 새로운 words는 ownership/peer trust/EOF/cleanup/admission authority가 아니다.
+
+## 기존 세 actual capture controls의 추가 검증
+
+새 native selector/I/O/call을 넣지 않는다. 기존 full actual producer/status/bytes/collision/held writer/oversize/live/reap/cleanup assertions는 하나도 제거하지 않는다. Version의 기존 두 실제 invocation과 collision/no-child invocation 사이에서만 fixed metadata-only begin checkpoint를 허용한다. 이 checkpoint는 resource나 IO callback을 받지 않고 기존 controlled case에만 붙는다. Original six에는 observer assertion이나 추가 gate를 붙이지 않는다.
+
+새 관측 assertions는 **capture contract의 driver에서** completed scalar records/proof bits를 검사한다. Worker checkpoint는 true/false fixed evidence bits만 저장하고 Result/Code/admission을 바꾸지 않는다. Version에서 먼저 끝난 epoch1/epoch2와 begin-reset의 facts는 실제 기존 output 결과와 새 scalar snapshot을 연결해 fixed bits에 보존한다. Version proof bits1 first-complete,2 second-begin-reset,4 second-complete,8 collision-no-child,16 retained-through-original-control-IO의 mask31을 쓰며 허용되지 않은 bits는 invalid다. Oversized/Live의 post-cleanup 현재 words는 driver가 직접 검사한다. Proof bits는 CaseResult의 scalar field에만 넣고 formatter에는 추가하지 않는다. 이 evidence collector는 새로운 actual operation이나 원래 work Code의 성공/실패를 만드는 oracle가 아니다. 새 gate assertion 실패는 observation qualification의 test failure로 보고 원래 work Code와 구분한다.
+
+1. **Version/held writer/collision:** 첫 actual exit0/full exact version bytes 뒤 epoch1의 Some(actual code0), actual captured count, same-epoch actual native return 및 actual wrapper Success를 검사한다. 두 번째 실제 invocation begin checkpoint에서 epoch2이고 current wait/read/wrapper/native-return이 unobserved임을 검사한다. 첫 legacy actual exit0을 두 번째 producer의 exit로 쓰지 않는다. 두 번째 실제 exit/full bytes 뒤 epoch2/Some0/Success를 검사한다. 기존 third collision attempt는 독립 epoch3, actual StdoutCreate Err/actual wrapper CaptureCollision이며 new current wait/read는 unobserved, 실제 active_cli 없음이다. 뒤의 원래 preserved-byte reader와 cleanup이 epoch3 records를 바꾸지 않음을 검사한다. 원래 collision actual bytes1/held writer/fresh identity/cleanup assertions를 그대로 유지한다.
+2. **Oversized:** 원래 actual auxiliary exit0 및 actual count65537/explicit CaptureOversized/checked cleanup을 모두 유지한다. New current wait는 이 actual attempt의 Some0, capture-read는 같은 epoch의 실제65537, wrapper-return은 같은 epoch의 CaptureOversized다. Cleanup 뒤에도 이 마지막 actual work facts가 보존돼야 한다. Generic Err 또는 manufactured count/status는 통과시키지 않는다.
+3. **Live:** 원래 actual Child try_wait(None), spawn-return+1s refusal, no output read, same exact kill/reap/CLEANED/outer30s를 모두 유지한다. New wait는 해당 epoch의 actual None이고 code=none다. Capture-read는 unobserved, actual wrapper-return은 Expired다. Cleanup의 actual wait/kill status는 legacy에 남아 기존 oracle을 만족하되 new work wait None을 Some으로 덮어쓰지 않는다. First-work/flags/child ownership/clock 역시 원래 그대로다.
+
+Pure finite domain/bit/sentinel/formatter 검증은 actual native proof로 세지 않는다. 임의 literal words의 independent expected masks로0/valid None/Some(codeNone)/signed min/max/collision/no-child/time0/time boundary/time overflow/epoch513 and overflow514/history serial mismatch/step overflow/reserved bits를 검토한다. Decoder 자체의 결과를 다시 oracle로 쓰거나 synthetic History state를 actual CLI/producer evidence라고 부르지 않는다. 기존 three capture controls는 CLI epoch mechanics를 검증한다. 실제 completed History/progress의 새 관측 및 ARM 내부 원인 판별은 original actual cases의 fresh changed-head execution에 남는다.
+
+## Renderer와 Source inverse
+
+Legacy CaseResult prefix와 ObservationSnapshot formatter는 그대로다. Suffix에서 새 enums는 closed numeric IDs를 쓰고 기존 Source의 OP_NAMES/Phase/ChildRole/Code와 위 stage/state/class 표를 Docs에 연결한다. Whole-record zero/invalid/overflow는 고정 단어다. No arbitrary string/Debug input/error text를 렌더링하지 않는다.
+
+`candidate-renderer-bound.json`은 **미구현 candidate text의 static 산술**이다. Legacy snapshot449, legacy CaseResult618, 새 suffix666, 전체 CaseResult1284, cancellation assertion CRLF1338, withheld queued-result assertion CRLF1963 bytes다. Native time-field `overflow`8자를 포함하고 기존 u128 최대39자리/signed i32 최소11자리도 포함한다. Limit2048까지85bytes가 남는다. Legacy ObservationSnapshot을 확장하면 이 계산은 무효다. Developer/Root가 실제 Rust formatter의 모든 emitted variants 및 whole original assertion contexts로 다시 증명해야 한다. 이것은 runtime/type test PASS가 아니다.
+
+원래 captured_output/history/read_progress bodies는 observation wrapper/lines를 제거하는 inverse로 원문과 정확히 복구한다. All existing calls/check/order/paths/counters/Result priorities/allocations/actual owner anchor positions를 비교한다. Original CaseResult legacy prefix, flags/first-work/publish/seals, lifetime cleanup와 all six/capture assertions를 보존한다. Whole helper는 Root가 다시 읽고, 다른 모든 tracked mode/blob 및 CI/cli.rs/Unix/producer/reader/production/Cargo가 exact protected인지 inventory로 확인한다. 무관한 Source 변경이나 동작 fix는 금지다.
+
+## Docs-first four-step handoff
+
+1. **Root Docs/Issue31 selection. Verify:** failed head/raw/hash/counts/unknowns와 이 observation-only 범위를 planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md, FINDINGS.md, IMPLEMENTATION.md, ISSUES.md에 append한다. Frozen SPEC/old histories/capture selection/current-main ancestry를 보존한다. Exact Issue31 GET readback과 Root의 최종 complete plan reread 뒤 separate developer에게 helper 한 파일만 lease한다. 이 연구자는 Docs/Issue/Source/refs/memory를 쓰지 않는다.
+2. **Helper-only developer. Verify:** 독립 attempt ID, scoped actual entry/return/wait/read/wrapper, actual completed History/progress와 clock domains, reset/retention/no-cleanup-overwrite 및 observational-only overflow를 구현한다. Existing full Source inverse와 every other mode/blob proof, original literal clocks/six assertions/capture three actual assertions/ownership 조건을 보존한다. Native/owner-PC 실행과 compiler는 아직 하지 않는다.
+3. **Root full Source/static review. Verify:** complete helper/diff/inverse/finite domain/actual-emitted line<=2048CRLF를 읽고 Rust1.94/1.98fmt, locked offline metadata, diff를 확인한다. Workflow byte-identical이므로 new actionlint path는 없다. Compiler/type/strict Clippy 및 native acceptance는 hosted gates에서 판단한다. Static models/metadata를 native 결과로 세지 않는다.
+4. **Fresh changed-head ordinary qualification. Verify:** 새 reviewed commit/tree에서 original six+existing capture gate를 x64stable/ARMstable/x64Rust1.94로 모두 실행한다. Epoch/control 추가 assertions와 original oracle이 모두 실제 통과해야 한다. Required lint/core/service/GUI/lifecycle/downstream/paired provenance도 따로 확인한다. ARM이 다시 실패하면 새 coherent returned observations가 보여주는 최소 actual cause만 Docs-first로 다음 선택한다. Unchanged-head rerun, timeout 증가, retry-all/raw32 retry, global serialization, skip/fake-time, producer publication/parser/production 변경을 이 lease에 넣지 않는다. Failed/missing/late/unknown proof는 여전히 FAILURE다.
+
+## Read coverage와 제한
+
+이 연구자는 immutable helper2,999/2,999 lines와 current planning680/680 lines를 실제 읽었다. Original two CLI caller bodies와 Unix clocks/cleanup1133–1264, CI native block108–150, Core filesystem1–310/550–735 및706–731/813–846, worker.ps1 전체66lines, 위 production call-map의 정확한 범위를 읽었다. Runner/windows production prefix1–293 및 windows_child production1–263, daemon205–311, Store1731–1817/1844–1980/1010–1108, CLI main의 위 명시된 범위, filesystem_worker1–228/300–423/453–548/590–680, paths50–130 및 windows589–695를 검토했다. 나머지 copied files의 전체가 다 reviewed라고 주장하지 않는다. Full copies와 hashes는 source-inventory.json/production-snapshot-inventory.json에 보존했다.
+
+Old failed73d3 receipt, Issue31 exact comments5978690173/5978764862, complete prior output research와 new current case matrix를 읽었다. Initial Issue31의 큰 body는 일부 검색만 했으며 full-body coverage로 세지 않는다. ObsDog no-observe query로 current PR136 capture/peer-race 두 exact blocks를 read-only로 읽었고 no memory writes다. 새 actual raw/REST 상태가 memory의 in_progress보다 최신이다.
+
+이번 작업에서 Source/Docs/refs/fetch/push/CI dispatch/Issue/memory/compiler/native fixture/PowerShell/installed service 실행은 없었다. Private immutable Source copies, read-only REST/raw receipts, call-map 및 이 proposal/static arithmetic만 작성했다. Runtime 원인을 측정한 뒤 필요한 최소 behavior slice는 아직 선택하지 않았다.
