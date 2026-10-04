@@ -5405,3 +5405,7 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+## PR 142 generic refusal review and missing admission qualification (2026-10-04)
+
+Head507777cedd5bd02b162d9b347c2770cdf4585bc0 removes URI interpolation from authentication errors. Both contract.rs token_refusal expectations still contain /api/v1/jobs; ordinary run 37177628448 fails those assertions on eight platform jobs, while existing Server library tests and the other contract cases pass. Preserve the generic response and update those two expectations. Source review also confirms that single_header distinguishes actual absence, multiple fields and undecodable bytes, loopback_port refuses unsupported suffixes and malformed decimal ports, and unsafe Origin requires the actual bound port. Existing tests do not establish the adversarial matrix. Add actual-router admission/body-poll and real HTTP canary controls in PR 142 under Issue 162; PR 145 retains the separate cookie/CSRF slice. The selected tests use synthetic tokens and private ephemeral fixtures only; no installed dashboard credentials or live service are involved.

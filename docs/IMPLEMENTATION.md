@@ -5214,3 +5214,7 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+## PR 142 reviewed security-admission test handoff (2026-10-04)
+
+Follow docs/planning/DASHBOARD_STRICT_SECURITY_HEADERS.md's review handoff before Source: keep the complete production middleware/router/handlers and dependencies unchanged, correct only two stale URI-bearing contract messages, and add the finite actual-router Host 36/Origin 96/authentication-public17 rows plus three real HTTP canary cases. An actual one-item streamed JSON body proves that refusal precedes paste-handler consumption; exact envelope/no-referrer/no-Set-Cookie and canary absence accompany each refusal. Issue 162 owns Verify and Issue 163 routes the work to existing PR 142; PR 145 owns CSRF/cookie qualification. The separate development sub-session implements Source after the exact issue-comment readback. Parent reviews whole blobs/inverses and publishes only after fresh current-head hosted regression, lint, native Windows and paired provenance; the owner's installed Locron/service is outside this test-only scope.
