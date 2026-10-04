@@ -5296,3 +5296,18 @@ principal/public evidence policy and success/refusal condition exact. Root Docs
 review and exact Issues27/29 Verify readback precede separate Source development;
 Root full one-file/inverse review precedes one changed-head hosted dispatch.
 Diagnostic evidence counts zero acceptance and cannot authorize a behavior fix.
+
+### Refine native prerequisite substage observation before Source (2026-10-04)
+
+Continue isolated manual28449fd qualification after two builds succeed and both
+actual owners fail in Utility Open-FixedFile before import, then evidence writing
+refuses independently. Apply only the three Verify steps/24 fixed labels in
+planning/WINDOWS_TWO_USER_PREREQUISITE_2026-10-04.md. The existing script may
+publish inert current/first/evidence substage snapshots and validate them in the
+same <=512-byte refusal line. Fixed predicate-entry/taken-rejection labels keep
+all existing security decisions/evaluation counts/order unchanged. No underlying
+cause, trust/path repair, fallback, clock or acceptance change is selected.
+Every other tracked blob/mode/graph/manual workflow and original native operation,
+guard/account/frame/evidence schema remains exact. Root Docs/Issue readback and
+plan review precede separate Source; full one-file/inverse review precedes one
+changed-head hosted run. Actual unknown counts/cleanup and wide issues stay open.

@@ -410,3 +410,78 @@ No diagnostic helper can reopen admission or turn a late failure into success.
    artifacts. A diagnostic failure remains FAIL with cleanup unconfirmed and
    Issues27/29 open; only all original token/Job/account/guard/EOF criteria can
    qualify. Any newly measured cause needs another Docs-first plan before repair.
+
+### Fixed substage observation after actual stock opening refusal (2026-10-04)
+
+Actual changed Source28449fd/run37167319135 passes both Rust1.94 normal builds,
+but real verification fails on x64/ARM with first checkpoint stock_utility_open,
+kind unknown, then separate evidence_publish/refused (x64 kind runtime, ARM
+unknown). Raw logs and Root receipt are pinned in FINDINGS and Issues27/29.
+Open-FixedFile's exact lower operation is unobserved; this is not a measured
+path/ACL/module/token cause or permission to repair it. Original counts/token/
+Job/13guard/EOF/cleanup remain unqualified, never inferred0/PASS.
+
+Keep frozen SPEC and every original prerequisite/previous diagnostic contract.
+Select only scripts/test-windows-user-prerequisite.ps1 observation refinement.
+All other297 tracked blobs/modes, example/graph/manual workflow, fixed Utility
+path/trust/descriptor/categories/classifiers/guards/evidence schema/limits and
+180/30/15/45/30/100ms clocks remain exact. No added native call, reflection,
+stream inspection, policy change, fallback, ACL/staging repair, replay/retry,
+current-SID authority or local owner-PC native/PS/parser/AST/effect.
+
+Only three new fixed scalars: substage, failure_substage, evidence_substage.
+Current substage is dispatch intent before an existing operation/predicate,
+not completion, object identity or authority. Freeze failure_substage beside
+existing first-failure fields BEFORE evidence admission. Freeze evidence_substage
+only in the existing secondary catch; it cannot overwrite first failure. Keep
+defaults entry/unknown/unknown, synchronized scalar snapshots not an atomic
+cross-field transaction. Driver reads these fixed strings only, never resources.
+
+Closed set: entry, path_validation, attributes, directory_security,
+security_owner, security_sddl, security_raw_acl, security_rules, owner_check,
+owner_untrusted, acl_presence_check, null_acl, ace_shape_check, ace_shape,
+foreign_mutation_check, foreign_mutation, file_open, file_security,
+evidence_serialize, evidence_parent, evidence_directory_create,
+evidence_directory_security, evidence_identity_write, evidence_receipt_write.
+Unknown/missing values render unknown. Repeated ancestor/leaf operations use
+the same labels; no path/component/index/SID/principal/ACL/native error appears.
+
+Add inert assignment markers immediately before existing Local-Path validation,
+File.GetAttributes, DirectoryInfo.GetAccessControl, ObjectSecurity.GetOwner,
+SDDL retrieval/RawSecurityDescriptor construction, ACE validation, FileStream
+Open/Read/ShareRead and retained stream GetAccessControl. Evidence serialization,
+checkout bootstrap, existing directory creation/readback and the two existing
+exclusive CreateNew writer calls get the corresponding fixed intent labels.
+Lower shared helpers may replace the current label with their actual lower
+operation; this cannot alter first-failure/evidence snapshots or admission.
+
+For the FOUR existing Check-FixedSecurity predicates, assign owner_check,
+acl_presence_check, ace_shape_check or foreign_mutation_check before evaluation;
+only inside its already-taken rejection body assign owner_untrusted, null_acl,
+ace_shape or foreign_mutation immediately before the unchanged throw. Preserve
+every predicate, evaluation count/order and throw category. A fault during a
+predicate and its explicit policy refusal stay distinguishable without exposing
+raw facts or adding a native query. These labels do not authorize a trust change.
+
+Append individually validated substage/failure_substage/evidence_substage to
+the existing ONE ASCII refusal line. Longest fixed label26 bytes, conservative
+complete-line maximum413 including CRLF; retain the <=512-byte limit and fixed
+constant fallback. Preserve every original driver branch/condition/exit1 and
+success decision. No diagnostic can reopen admission or qualify late output.
+
+1. Implement fixed substage assignments/snapshots only. Verify: full-script inverse
+   restores28449fd exactly; native calls, security predicates/throws, existing
+   first/evidence fields, accounts/guards/operation order/clocks stay exact and
+   all other297 modes/blobs match. Separate developer implements after Root
+   plan and exact Issues27/29 Verify readback; Root never implements Source.
+2. Review bounded renderer and whole patch. Verify: all three fields use only
+   the24 closed labels or unknown, every path stays <=512 ASCII bytes including
+   CRLF, first failure survives secondary publication failure; no private value,
+   native call, unfinished EndInvoke/Stop/Dispose/join or stream access. Root
+   full Source/context/inverse review plus static diff/rules precedes publication.
+3. Qualify ONE changed-head hosted run. Verify: both actual Rust1.94 normal builds
+   still pass, then actual fixed substage refusal or complete original genuine
+   receipt is observed on both rows. Preserve28449fd failed raw logs/artifact0.
+   Later/unknown failure stays FAIL; diagnostic observation contributes ZERO
+   native acceptance. All original credential/token/Job/account/guard/EOF Verify
+   remains required and issues stay open. A measured cause needs Docs before fix.

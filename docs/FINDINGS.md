@@ -5479,3 +5479,25 @@ unobserved, never zero/PASS. No behavior fix or strict-principal fallback follow
 Select only fixed operation-intent checkpoint, branch and allowlisted exception
 kind, preserving unknown retention and original clocks. EndInvoke must not be
 called on unfinished work. [Microsoft EndInvoke contract](https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.powershell.endinvoke?view=powershellsdk-7.4.0).
+
+### Actual stock Utility opening refusal and fixed substage research (2026-10-04)
+
+Manual37167319135 at28449fdf8571bf92bbdf86798f64b2f974313aca passes both native
+Rust1.94 normal builds; both real verification and missing-evidence uploads fail,
+artifact0. First checkpoint stock_utility_open precedes Utility Import-Module;
+latest evidence_publish/refused is independent, not the first cause. x64 rawSHA
+49e73ef6462c46f21941508290b23ffd74595adfa6486e1f21bc851456315d5a;
+ARM030d8e54764db77bc0ee32e72920308be75972c5e64e5e176eeedfd8879aae28.
+Root independently confirms metadata/raw hashes/actual steps/226-byte lines/five
+Source blobs in receiptdf8698920834ebd798be7b9e7966f14815a6e2b1e28fdda8e7b9a609ed6debdc.
+Separate read-only report2ee87969d5c55087348306cdad15db1fd5ba016151fb5aa25635a90d533a9a0f,
+unapplied candidateebae49d030451fada6e3c51e360ca7bb7d08a88faed0d9785317776e1c42127a,
+receiptf71d2c7d29340557d4793b3ade45db3dda2a20ea0f19edafbe855e2162d726bc;
+Root verifies every42 retained artifact hashes. PS446 Open-FixedFile performs
+path validation, Bootstrap-Chain433 ancestor attributes/directory ACL, leaf
+attributes/FileStream/open/read ACL and Check-FixedSecurity413 owner/SDDL/ACE
+validation. PS780 evidence independently bootstraps checkout and existing-public
+directory/CreateNew files. None of the exact lower results/cause/counts/13guard/
+tokens/Job/EOF/cleanup is observed. SDK read/share semantics do not identify this
+instance's cause. Select only fixed operation/predicate/taken-refusal labels and
+first/evidence substage snapshots; conservative413-byte whole line, no repair.
