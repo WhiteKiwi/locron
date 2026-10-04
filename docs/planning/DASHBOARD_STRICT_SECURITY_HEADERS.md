@@ -1,0 +1,18 @@
+# Strict dashboard security header admission
+
+Refs #30 (loopback/authentication behavior). Base main `46445881e320f440c02d94d7e9e5838033933fea`.
+This corrects malformed-input handling under the frozen dashboard security contract; normal supported clients, routes, public bundle access, cookie authentication and CSRF behavior remain unchanged.
+
+## Source-established gaps
+
+The existing Host helper accepts a bracketed IPv6 prefix without validating the suffix. The Origin helper discards path suffixes, and a present header that fails to_str is treated as if no Origin were supplied. Host/Origin/Authorization read only the first field value. A malformed Authorization can fall back to a valid cookie because failed decoding and absence share the same branch. Finally, the unauthorized response interpolates the entire request URI, including query values that can contain a mistakenly supplied token. These are source-level observations, not a claim of a real attack or browser exploit.
+
+## Approach and Verify handoff
+
+1. Require a single valid ASCII Host and parse only this service's supported authority spellings: case-insensitive localhost, exact 127.0.0.1, or bracketed ::1, optionally followed by a decimal u16 port. Reject credentials, extra brackets, suffixes, paths, query/fragment data, malformed ports and duplicate values. Preserve the existing Host policy that any syntactically valid port is accepted; Origin separately checks the bound port. **Verify:** existing valid forms remain accepted, malformed bracket suffixes and mixed/duplicate values fail before routing, and IPv6 with omitted port has effective HTTP port 80.
+2. For existing unsafe methods, distinguish absent Origin from malformed/repeated Origin. Accept only one exact http:// loopback authority with the matching effective port, never a path or list. Keep genuine absence allowed and preserve current safe-method behavior. Authorization also requires one decodable field when present; invalid or duplicated credentials refuse rather than falling back to cookies. **Verify:** non-ASCII/repeated Origin and Authorization, malformed authorities, wrong ports, null, lists, userinfo and URL suffixes refuse; supported origins, absent Origin and valid cookie/bearer paths remain functional.
+3. Return generic Host/Origin/authentication refusal messages without reflecting input values or the request URI. Preserve status/code/envelope and Referrer-Policy. **Verify:** query/path/header canaries never appear in these security error bodies, including a token mistakenly placed in a query, and existing authentication/CSRF cases still pass.
+
+Primary references reviewed before source: RFC 6454 sections 6.2/7.1/7.3 define serialized-origin as scheme/host/optional port and prohibit repeated Origin fields (https://www.rfc-editor.org/rfc/rfc6454.html). RFC 9110 section 5.2 defines duplicate field handling; section 7.2 defines Host authority (https://www.rfc-editor.org/rfc/rfc9110.html). This service intentionally refuses multi-origin lists instead of trying to select one trusted value. No broad URL normalization/parser dependency is needed for three fixed local host spellings.
+
+Implementation is an independent Draft touching middleware only; #139's binding/listener changes and #141's token-file lifecycle are separate. Add the adversarial route tests and run server library/contract tests, format/Clippy and native Windows dashboard gates before merge. The current container has no Rust toolchain and no independent development/review sub-session, so compilation, full regression and independent review remain explicit handoff requirements. No live requests, installed service, token, release, merge or issue closure.
