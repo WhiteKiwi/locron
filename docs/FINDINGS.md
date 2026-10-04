@@ -5586,3 +5586,8 @@ Fresh37191426679 confirms16/17 ordinary executed jobs, four strict Windows lint 
 ## PR136 completed capture qualification and ARM History observation gap (2026-10-04)
 
 Current7343/run37196440237 completed16 ordinary PASS/1 ARM failure. Actual original controls17/18 and existing capture controls3/3 (all9 producer/ownership markers) pass. The remaining actual ARM first-work is Expired/History; CleanupKill intent is not returned kill/reap evidence. Cumulative legacy HistoryCliWait/code0 is not reliably the current CLI result. Source-only producer sharing/tail and startup/capture cost possibilities remain unmeasured. Select only scalar current-call epochs, real entry/return/wait and last completed same-run History/progress records per planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md. No clock/oracle/admission/production change is selected.
+
+
+## Current PR136 observer and concurrent publication integration
+
+Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.

@@ -5365,3 +5365,8 @@ The Windows acceptance helper retains each actual Child and a finite fresh priva
 ## PR136 current-call scalar observation handoff (2026-10-04)
 
 A separate developer leases only the private Windows CLI control helper after Issue31 exact GET and parent complete selected-plan reread. Ten fixed atomic words distinguish actual CLI attempts/returns, native calls, current wait/read, successful History wall time and last strict progress result; zero/overflow/invalid are diagnostics only. Reuse existing three actual capture controls for reset/retention/association assertions. Conserve original six controls, clocks, ownership, legacy formatter, Source calls and workflow exactly; renderer/caller CRLF bound is2048bytes. All actual native/type/lint gates and paired provenance remain fresh changed-head requirements. Four concrete Verify steps and full boundaries remain in the selected planning appendix.
+
+
+## Current PR136 observer and concurrent publication integration
+
+Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.

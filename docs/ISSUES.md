@@ -150,3 +150,8 @@ the complete execution context.
 ## PR136 reviewed observation continuation (2026-10-04)
 
 Issue31 remains open:7343/run37196440237 has one actual ARM History expiry and unknown cleanup completion. The helper-only current-call observation continuation is documented before Source; it does not close Windows native acceptance or change the original clocks/oracles. planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md carries the four-step Verify handoff and immutable raw/proposal hashes.
+
+
+## Current PR136 observer and concurrent publication integration
+
+Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
