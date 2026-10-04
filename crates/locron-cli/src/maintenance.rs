@@ -1117,4 +1117,464 @@ mod tests {
             assert_eq!(fs::read(broad_leaf).unwrap(), b"keep broad leaf");
         }
     }
+
+    mod output_repair_qualification {
+        use std::io::Read as _;
+        use std::time::Instant;
+
+        use super::*;
+
+        const SEED: [u8; 39] = [
+            0x4c, 0x4f, 0x43, 0x52, 0x4f, 0x4e, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00,
+            0x00, 0xcc, 0x96, 0x40, 0x6d, 0x62, 0x61, 0x73, 0x65, 0x00, 0xff,
+        ];
+        const KEYS: [&str; 6] = [
+            "C-LIVE-STARTING",
+            "C-LIVE-RUNNING",
+            "C-TERMINAL",
+            "C-STALE-STARTING",
+            "C-STALE-RUNNING",
+            "C-REFUSAL",
+        ];
+
+        #[derive(Clone, Copy)]
+        struct Horizon(Instant);
+
+        impl Horizon {
+            fn new() -> Self {
+                Self(Instant::now() + Duration::from_secs(30))
+            }
+
+            fn check(self, key: &str, phase: &str) {
+                assert!(
+                    Instant::now() < self.0,
+                    "output-qualification key={key} phase={phase} deadline"
+                );
+            }
+
+            fn require(self, key: &str, phase: &str, condition: bool) {
+                self.check(key, phase);
+                assert!(condition, "output-qualification key={key} phase={phase}");
+            }
+
+            fn result<T, E>(
+                self,
+                key: &str,
+                phase: &str,
+                operation: impl FnOnce() -> std::result::Result<T, E>,
+            ) -> std::result::Result<T, E> {
+                self.check(key, phase);
+                let result = operation();
+                self.check(key, phase);
+                result
+            }
+
+            fn need<T, E>(
+                self,
+                key: &str,
+                phase: &str,
+                operation: impl FnOnce() -> std::result::Result<T, E>,
+            ) -> T {
+                self.result(key, phase, operation).unwrap_or_else(|_| {
+                    panic!("output-qualification key={key} phase={phase} refused")
+                })
+            }
+        }
+
+        fn exact_bytes(h: Horizon, key: &str, path: &Path, expected: &[u8]) {
+            h.require(key, "oracle-cap", expected.len() <= 64);
+            let mut file = h.need(key, "oracle-open", || {
+                locron_core::filesystem::open_private(path, fs::OpenOptions::new().read(true))
+            });
+            let mut bytes = Vec::new();
+            h.need(key, "oracle-read", || {
+                (&mut *file).take(65).read_to_end(&mut bytes)
+            });
+            h.require(key, "oracle-bytes", bytes == expected);
+            drop(file);
+            h.check(key, "oracle-released");
+        }
+
+        fn absent(h: Horizon, key: &str, path: &Path) {
+            let result = h.result(key, "absent-oracle", || fs::symlink_metadata(path));
+            let Err(error) = result else {
+                panic!("output-qualification key={key} phase=unexpected-object");
+            };
+            h.require(
+                key,
+                "actual-notfound",
+                error.kind() == std::io::ErrorKind::NotFound,
+            );
+        }
+
+        #[derive(Clone, Eq, PartialEq)]
+        struct OutputFacts {
+            state: String,
+            retained_payload_bytes: i64,
+            physical_bytes: i64,
+            discarded_bytes: i64,
+            truncated: bool,
+            truncated_at_us: Option<i64>,
+            finalized_at_us: Option<i64>,
+            prune_started_at_us: Option<i64>,
+            pruned_at_us: Option<i64>,
+        }
+
+        struct AttemptFacts {
+            state: String,
+            error: Option<String>,
+            output: Option<OutputFacts>,
+            durable: serde_json::Value,
+        }
+
+        fn records(
+            h: Horizon,
+            key: &str,
+            store: &Store,
+            run_id: &str,
+        ) -> (locron_store::RunRecord, AttemptFacts) {
+            let run = h.need(key, "read-run", || store.run(run_id));
+            let mut attempts = h.need(key, "read-attempts", || store.attempts_for_run(run_id));
+            h.require(
+                key,
+                "one-actual-attempt",
+                attempts.len() == 1 && attempts[0].attempt_number == 1,
+            );
+            // The Store's returned attempt type is usable by inference, but is not re-exported.
+            let mut attempt = attempts.remove(0);
+            let output = attempt.output.take().map(|output| OutputFacts {
+                state: output.state,
+                retained_payload_bytes: output.retained_payload_bytes,
+                physical_bytes: output.physical_bytes,
+                discarded_bytes: output.discarded_bytes,
+                truncated: output.truncated,
+                truncated_at_us: output.truncated_at_us,
+                finalized_at_us: output.finalized_at_us,
+                prune_started_at_us: output.prune_started_at_us,
+                pruned_at_us: output.pruned_at_us,
+            });
+            let state = attempt.state.clone();
+            let error = attempt.error.clone();
+            let durable = h.need(key, "saved-attempt-facts", || {
+                serde_json::to_value(&attempt)
+            });
+            (
+                run,
+                AttemptFacts {
+                    state,
+                    error,
+                    output,
+                    durable,
+                },
+            )
+        }
+
+        fn durable_facts(
+            h: Horizon,
+            key: &str,
+            run: &locron_store::RunRecord,
+            attempt: &AttemptFacts,
+        ) -> serde_json::Value {
+            // Output is checked separately because only its finalization facts may change.
+            h.need(key, "saved-durable-facts", || {
+                serde_json::to_value((run, &attempt.durable))
+            })
+        }
+
+        fn row(h: Horizon, key: &str) {
+            h.check(key, "row-start");
+            let temporary = h.need(key, "temporary", tempfile::tempdir);
+            let paths = StatePaths::new(temporary.path().join("private"));
+            let store = h.need(key, "store-open", || Store::open(paths.clone(), "test", 1));
+            let job_id = uuid::Uuid::from_u128(1).to_string();
+            let run_id = uuid::Uuid::from_u128(3).to_string();
+            let first_lifetime = uuid::Uuid::from_u128(2).to_string();
+            h.need(key, "create-job", || {
+                store.create_job(&CreateJob {
+                    id: job_id,
+                    name: "repair qualification".into(),
+                    description: None,
+                    tags_json: "[]".into(),
+                    enabled: true,
+                    definition_json: "{}".into(),
+                    now_us: 1,
+                    cursor_us: 1,
+                })
+            });
+            h.need(key, "enqueue", || {
+                store.enqueue_manual("repair qualification", &run_id, 2)
+            });
+            h.need(key, "first-lifetime", || {
+                store.begin_lifetime(&first_lifetime, 3, "test")
+            });
+            let admission = h.need(key, "first-admission", || {
+                store.admit(&first_lifetime, 3, 1)
+            });
+            h.require(
+                key,
+                "one-admission",
+                admission.attempts.len() == 1 && admission.attempts[0].run_id == run_id,
+            );
+
+            let partial = h.need(key, "partial-path", || paths.partial_output(&run_id, 1));
+            let final_path = h.need(key, "final-path", || paths.final_output(&run_id, 1));
+            let mut expected = SEED.to_vec();
+            expected.extend_from_slice(&[1, 1, 0]);
+            if key != "C-LIVE-STARTING" {
+                if key == "C-REFUSAL" {
+                    expected = b"LOCRON\0\x02".to_vec();
+                    let mut writer = h.need(key, "create-bad-magic", || {
+                        locron_core::filesystem::create_private_new(&partial)
+                    });
+                    h.need(key, "bad-magic-write", || writer.write_all(&expected));
+                    h.need(key, "bad-magic-sync", || writer.sync_all());
+                    drop(writer);
+                } else {
+                    let mut writer = h.need(key, "frame-create", || FrameWriter::create(&partial));
+                    h.need(key, "frame-write", || {
+                        writer.write(FrameChannel::Stdout, 1, &[0x62, 0x61, 0x73, 0x65, 0, 0xff])
+                    });
+                    let physical = h.need(key, "frame-sync", || writer.sync());
+                    h.require(key, "seed-length", physical == 39);
+                    drop(writer);
+                    h.check(key, "writer-released");
+                    let mut tail = h.need(key, "tail-open", || {
+                        locron_core::filesystem::open_private(
+                            &partial,
+                            fs::OpenOptions::new().append(true),
+                        )
+                    });
+                    h.need(key, "tail-write", || tail.write_all(&[1, 1, 0]));
+                    h.need(key, "tail-sync", || tail.sync_all());
+                    drop(tail);
+                }
+                h.check(key, "all-writers-released");
+                exact_bytes(h, key, &partial, &expected);
+            } else {
+                absent(h, key, &partial);
+            }
+
+            if matches!(
+                key,
+                "C-LIVE-RUNNING" | "C-STALE-RUNNING" | "C-TERMINAL" | "C-REFUSAL"
+            ) {
+                let decision = h.need(key, "mark-running", || {
+                    store.mark_attempt_running(&run_id, 1, 4)
+                });
+                h.require(key, "actual-ready", decision == StartDecision::Ready);
+            }
+            if matches!(key, "C-TERMINAL" | "C-REFUSAL") {
+                h.need(key, "terminal-completion", || {
+                    store.complete_attempt(&AttemptCompletion {
+                        run_id: run_id.clone(),
+                        attempt_number: 1,
+                        now_us: 5,
+                        duration_us: 1,
+                        state: "succeeded".into(),
+                        exit_code: Some(0),
+                        http_status: None,
+                        http_content_type: None,
+                        reason: "test".into(),
+                        retry: None,
+                    })
+                });
+            }
+            let lifetime = if matches!(key, "C-STALE-STARTING" | "C-STALE-RUNNING") {
+                let second_lifetime = uuid::Uuid::from_u128(21).to_string();
+                let recovered = h.need(key, "actual-restart", || {
+                    store.begin_lifetime(&second_lifetime, 9, "test")
+                });
+                h.require(key, "one-stale-attempt", recovered == 1);
+                second_lifetime
+            } else {
+                first_lifetime
+            };
+            let (before_run, before_attempt) = records(h, key, &store, &run_id);
+            let state = match key {
+                "C-LIVE-STARTING" => "starting",
+                "C-LIVE-RUNNING" => "running",
+                "C-STALE-STARTING" | "C-STALE-RUNNING" => "interrupted_unknown",
+                _ => "succeeded",
+            };
+            h.require(
+                key,
+                "actual-durable-state",
+                before_run.state == state && before_attempt.state == state,
+            );
+            if matches!(key, "C-STALE-STARTING" | "C-STALE-RUNNING") {
+                h.require(
+                    key,
+                    "unknown-classification",
+                    before_run.reason.as_deref()
+                        == Some("scheduler lifetime ended without a durable result")
+                        && before_attempt.error.as_deref()
+                            == Some("scheduler lifetime ended without a durable result"),
+                );
+            }
+            let before_facts = durable_facts(h, key, &before_run, &before_attempt);
+            let before_output = before_attempt.output.clone();
+            let selected = h.need(key, "actual-sql-candidates", || {
+                store.referenced_partial_artifacts(2, &lifetime)
+            });
+            let live = matches!(key, "C-LIVE-STARTING" | "C-LIVE-RUNNING");
+            h.require(
+                key,
+                "sql-eligibility",
+                if live {
+                    selected.is_empty()
+                } else {
+                    selected.len() == 1
+                        && selected[0].run_id == run_id
+                        && selected[0].attempt_number == 1
+                        && matches!(selected[0].state.as_str(), "pending" | "active")
+                },
+            );
+
+            let result = h.result(key, "actual-maintenance", || {
+                maintain(&store, &paths, &lifetime, 10)
+            });
+            let refused = key == "C-REFUSAL";
+            if refused {
+                h.require(key, "maintenance-refused", result.is_err());
+            } else {
+                let report = result.unwrap_or_else(|_| {
+                    panic!("output-qualification key={key} phase=maintenance-refused")
+                });
+                let wanted = if live {
+                    MaintenanceReport::default()
+                } else {
+                    MaintenanceReport {
+                        actions: 1,
+                        outputs_recovered: 1,
+                        ..MaintenanceReport::default()
+                    }
+                };
+                h.require(key, "maintenance-counts", report == wanted);
+            }
+            let (after_run, after_attempt) = records(h, key, &store, &run_id);
+            h.require(
+                key,
+                "durable-facts-conserved",
+                durable_facts(h, key, &after_run, &after_attempt) == before_facts,
+            );
+            if live || refused {
+                h.require(
+                    key,
+                    "artifact-unmodified",
+                    before_output == after_attempt.output,
+                );
+                h.require(
+                    key,
+                    "partial-reference-retained",
+                    h.need(key, "artifact-reference", || {
+                        store.output_artifact_references(&run_id, &format!("{run_id}/1.partial"))
+                    }),
+                );
+                h.require(
+                    key,
+                    "no-finalized-success",
+                    h.need(key, "finalized-artifacts", || {
+                        store.output_retention_candidates(2)
+                    })
+                    .is_empty(),
+                );
+                absent(h, key, &final_path);
+                if key == "C-LIVE-STARTING" {
+                    absent(h, key, &partial);
+                } else {
+                    exact_bytes(h, key, &partial, &expected);
+                }
+            } else {
+                let Some(output) = &after_attempt.output else {
+                    panic!("output-qualification key={key} phase=missing-output-row");
+                };
+                h.require(
+                    key,
+                    "exact-finalized-facts",
+                    output.state == "finalized"
+                        && output.retained_payload_bytes == 6
+                        && output.physical_bytes == 39
+                        && output.discarded_bytes == 0
+                        && !output.truncated
+                        && output.truncated_at_us.is_none()
+                        && output.prune_started_at_us.is_none()
+                        && output.pruned_at_us.is_none()
+                        && output.finalized_at_us == Some(10),
+                );
+                h.require(
+                    key,
+                    "finalized-sql-count",
+                    h.need(key, "retained-physical", || store.retained_output_bytes()) == 39
+                        && h.need(key, "retained-payload", || {
+                            store.retained_run_output_bytes(&run_id)
+                        }) == 6,
+                );
+                h.require(
+                    key,
+                    "no-recovery-candidates",
+                    h.need(key, "post-sql-candidates", || {
+                        store.referenced_partial_artifacts(2, &lifetime)
+                    })
+                    .is_empty(),
+                );
+                absent(h, key, &partial);
+                exact_bytes(h, key, &final_path, &SEED);
+                let mut reader = h.need(key, "public-reader", || FrameReader::open(&final_path));
+                let frame = h.need(key, "public-frame", || reader.next_frame());
+                h.require(
+                    key,
+                    "exact-public-frame",
+                    frame.is_some_and(|frame| {
+                        frame.channel == FrameChannel::Stdout
+                            && frame.sequence == 0
+                            && frame.elapsed_us == 1
+                            && frame.payload == [0x62, 0x61, 0x73, 0x65, 0, 0xff]
+                    }),
+                );
+                h.require(
+                    key,
+                    "public-end",
+                    h.need(key, "public-end", || reader.next_frame()).is_none(),
+                );
+                drop(reader);
+                h.check(key, "public-reader-released");
+            }
+            if matches!(key, "C-STALE-STARTING" | "C-STALE-RUNNING") {
+                h.require(
+                    key,
+                    "no-retry-due",
+                    h.need(key, "pending-eligibility", || {
+                        store.earliest_pending_eligible_at_us()
+                    })
+                    .is_none(),
+                );
+                let next = h.need(key, "actual-no-retry-admission", || {
+                    store.admit(&lifetime, 11, 1)
+                });
+                h.require(key, "no-retry-admitted", next.attempts.is_empty());
+                let (run, attempt) = records(h, key, &store, &run_id);
+                h.require(
+                    key,
+                    "no-new-outcome",
+                    durable_facts(h, key, &run, &attempt) == before_facts,
+                );
+            }
+            drop(store);
+            h.check(key, "store-released");
+            h.need(key, "explicit-cleanup", || temporary.close());
+        }
+
+        #[test]
+        fn caller_contracts() {
+            let h = Horizon::new();
+            let mut completed = BTreeSet::new();
+            for key in KEYS {
+                row(h, key);
+                h.require(key, "unique-completion", completed.insert(key));
+                println!("output-qualification PASS {key}");
+            }
+            h.require("caller:group", "row-count", completed.len() == 6);
+        }
+    }
 }

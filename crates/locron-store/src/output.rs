@@ -143,14 +143,7 @@ impl FrameReader {
     /// Consumes the caller's admitted handle without reopening its pathname.
     fn from_guarded(file: locron_core::filesystem::GuardedFile) -> io::Result<Self> {
         let (mut file, guard) = file.into_parts();
-        let mut magic = [0; 8];
-        file.read_exact(&mut magic)?;
-        if &magic != MAGIC {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "bad output header",
-            ));
-        }
+        read_magic(&mut file)?;
         Ok(Self {
             file,
             _guard: guard,
@@ -164,76 +157,119 @@ impl FrameReader {
     }
 
     fn read_frame(&mut self) -> Result<Option<Frame>, FrameReadError> {
-        let mut header = [0; FRAME_HEADER_LEN];
-        match self.file.read_exact(&mut header) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-            Err(error) => return Err(error.into()),
-        }
-        let channel = match header[0] {
-            1 => FrameChannel::Stdout,
-            2 => FrameChannel::Stderr,
-            3 => FrameChannel::Body,
-            _ => return Err(FrameReadError::InvalidFrame("bad channel")),
-        };
-        // The slices below are compile-time constants of the exact array length,
-        // so the conversions cannot fail and the default is never used.
-        let sequence = u64::from_le_bytes(header[1..9].try_into().unwrap_or_default());
-        let elapsed_us = u64::from_le_bytes(header[9..17].try_into().unwrap_or_default());
-        let len = u32::from_le_bytes(header[17..21].try_into().unwrap_or_default()) as usize;
-        let expected = u32::from_le_bytes(header[21..25].try_into().unwrap_or_default());
-        if len > MAX_FRAME_PAYLOAD || sequence != self.next {
-            return Err(FrameReadError::InvalidFrame("invalid frame"));
-        }
-        let mut payload = vec![0; len];
-        self.file.read_exact(&mut payload)?;
-        let mut hasher = crc32fast::Hasher::new();
-        hasher.update(&header[..21]);
-        hasher.update(&payload);
-        if hasher.finalize() != expected {
-            return Err(FrameReadError::InvalidFrame("checksum mismatch"));
-        }
-        self.next += 1;
-        self.valid += FRAME_HEADER_LEN as u64 + len as u64;
-        Ok(Some(Frame {
-            channel,
-            sequence,
-            elapsed_us,
-            payload,
-        }))
+        read_frame(&mut self.file, &mut self.next, &mut self.valid)
+    }
+}
+
+fn read_magic(file: &mut impl Read) -> io::Result<()> {
+    let mut magic = [0; 8];
+    file.read_exact(&mut magic)?;
+    if &magic != MAGIC {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "bad output header",
+        ));
+    }
+    Ok(())
+}
+
+fn read_frame(
+    file: &mut impl Read,
+    next: &mut u64,
+    valid: &mut u64,
+) -> Result<Option<Frame>, FrameReadError> {
+    let mut header = [0; FRAME_HEADER_LEN];
+    match file.read_exact(&mut header) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) => return Err(error.into()),
+    }
+    let channel = match header[0] {
+        1 => FrameChannel::Stdout,
+        2 => FrameChannel::Stderr,
+        3 => FrameChannel::Body,
+        _ => return Err(FrameReadError::InvalidFrame("bad channel")),
+    };
+    // The slices below are compile-time constants of the exact array length,
+    // so the conversions cannot fail and the default is never used.
+    let sequence = u64::from_le_bytes(header[1..9].try_into().unwrap_or_default());
+    let elapsed_us = u64::from_le_bytes(header[9..17].try_into().unwrap_or_default());
+    let len = u32::from_le_bytes(header[17..21].try_into().unwrap_or_default()) as usize;
+    let expected = u32::from_le_bytes(header[21..25].try_into().unwrap_or_default());
+    if len > MAX_FRAME_PAYLOAD || sequence != *next {
+        return Err(FrameReadError::InvalidFrame("invalid frame"));
+    }
+    let mut payload = vec![0; len];
+    file.read_exact(&mut payload)?;
+    let mut hasher = crc32fast::Hasher::new();
+    hasher.update(&header[..21]);
+    hasher.update(&payload);
+    if hasher.finalize() != expected {
+        return Err(FrameReadError::InvalidFrame("checksum mismatch"));
+    }
+    *next += 1;
+    *valid += FRAME_HEADER_LEN as u64 + len as u64;
+    Ok(Some(Frame {
+        channel,
+        sequence,
+        elapsed_us,
+        payload,
+    }))
+}
+
+trait RepairFile: Read {
+    fn repair_len(&mut self) -> io::Result<u64>;
+    fn repair_set_len(&mut self, len: u64) -> io::Result<()>;
+    fn repair_sync(&mut self) -> io::Result<()>;
+}
+
+impl RepairFile for File {
+    fn repair_len(&mut self) -> io::Result<u64> {
+        Ok(self.metadata()?.len())
+    }
+
+    fn repair_set_len(&mut self, len: u64) -> io::Result<()> {
+        self.set_len(len)
+    }
+
+    fn repair_sync(&mut self) -> io::Result<()> {
+        self.sync_all()
     }
 }
 
 /// Truncates an inactive partial file to its last complete frame and reports the repair.
 /// The caller must exclude live attempts; observed size checks are not writer exclusion.
 pub fn repair_partial(path: &Path) -> io::Result<OutputRepair> {
-    let file = locron_core::filesystem::open_private(
-        path,
-        OpenOptions::new().read(true).write(true),
-    )?;
-    let original = file.metadata()?.len();
-    let mut reader = FrameReader::from_guarded(file)?;
+    let file =
+        locron_core::filesystem::open_private(path, OpenOptions::new().read(true).write(true))?;
+    let (mut file, _guard) = file.into_parts();
+    repair_opened(&mut file)
+}
+
+fn repair_opened(file: &mut impl RepairFile) -> io::Result<OutputRepair> {
+    let original = file.repair_len()?;
+    read_magic(file)?;
+    let mut next = 0;
+    let mut valid = 8;
     let mut repair = OutputRepair {
         physical_bytes: MAGIC.len() as u64,
         ..OutputRepair::default()
     };
     loop {
-        match reader.read_frame() {
+        match read_frame(file, &mut next, &mut valid) {
             Ok(Some(frame)) => {
                 repair.frames += 1;
                 repair.payload_bytes += frame.payload.len() as u64;
-                repair.physical_bytes = reader.valid;
+                repair.physical_bytes = valid;
             }
             Ok(None) | Err(FrameReadError::InvalidFrame(_)) => break,
-            Err(FrameReadError::Io(error))
-                if error.kind() == io::ErrorKind::UnexpectedEof =>
-            {
+            Err(FrameReadError::Io(error)) if error.kind() == io::ErrorKind::UnexpectedEof => {
                 break;
             }
             Err(FrameReadError::Io(error)) => return Err(error),
         }
     }
-    if repair.physical_bytes > original || reader.file.metadata()?.len() != original {
+    if repair.physical_bytes > original || file.repair_len()? != original {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "output file length changed during repair",
@@ -242,10 +278,13 @@ pub fn repair_partial(path: &Path) -> io::Result<OutputRepair> {
     repair.tail_removed = original - repair.physical_bytes;
     // Scan and truncation use the same object, even if its pathname was replaced.
     // Keep the file and its directory guards alive through the final sync.
-    reader.file.set_len(repair.physical_bytes)?;
-    reader.file.sync_all()?;
+    file.repair_set_len(repair.physical_bytes)?;
+    file.repair_sync()?;
     Ok(repair)
 }
+
+#[cfg(test)]
+mod qualification;
 
 #[cfg(test)]
 mod tests {
