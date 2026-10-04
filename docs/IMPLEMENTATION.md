@@ -5258,3 +5258,7 @@ Follow planning/OUTPUT_REPAIR_QUALIFICATION.md in Store-then-Engine slices, with
 ## PR147 reviewed owner Drop-order conservation
 
 Root found the shared repair wrapper destructures File and DirectoryGuard into reverse-dropped local bindings. Keep the exact returned pair as one tuple owner and borrow field0 so File still drops before its parent guards. The completed appendix in planning/OUTPUT_REPAIR_QUALIFICATION.md confines the separate two-statement correction; all functional controls, clocks, API and native claims remain unchanged.
+
+## PR147 separate Git integration with reviewed main136
+
+SPEC remains frozen. [The complete five-step plan](planning/OUTPUT_REPAIR_MAIN136_2026-10-04.md) selects exact normal Source union and whole incoming Docs plus all ordered byte-exact own insertion blocks; whole own/incoming inverses are required. Root exact Issue146 GET/final reread precede separate development; full original gates and actual functional/paired provenance qualify the combined head.
