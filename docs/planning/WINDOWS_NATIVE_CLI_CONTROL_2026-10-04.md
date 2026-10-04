@@ -154,3 +154,42 @@ token, raw error/argv/environment or private frame in public receipts.
 Research reports/candidate ABI are hash-pinned in FINDINGS. Root reviewed them
 and the scope exception for the third CI Source path before Issue readback and
 separate development. No owner-PC native fixture or policy effect is authorized.
+
+### Selected negative-only native peer construction before Source
+
+Separate checksum-qualified Tokio1.53.1/Mio1.2.2 research resolves the developer's
+safe listener construction without a direct widestring edge. The three-path
+Source boundary, six real selectors, actual Child/PID query, frame/clock/cleanup
+and whole Unix/production/workflow conservation remain exact.
+
+Only native_wake_peer_target's deliberately untrusted helper endpoint uses safe
+Tokio ServerOptions::new().pipe_mode(PipeMode::Byte).first_pipe_instance(true)
+.reject_remote_clients(true).create(endpoint), within its I/O-enabled retained
+runtime. Existing defaults are duplex; safe create passes NULL security attrs.
+No raw/unsafe constructor, custom SDDL, new dependency or production listener
+change. The filesystem root guard does NOT make this global pipe owner-private.
+Default DACL is untrusted adversarial test input: never daemon/security readiness,
+two-user/remote authorization or endpoint-name authority. first-instance refusal
+is collision protection, not trusted ownership or a timing assumption.
+
+All helper contexts derive expected PID only from an actual retained Child.
+Foreign-peer case compares the real connected server PID to the distinct actual
+expected child and refuses before frame. Malformed/idle and controlled-return
+cases may query their real selected child to exercise transport refusal; no
+helper ACK/default DACL can mint production readiness. Only the original owned
+daemon wake case uses the production secured listener and qualifies the positive
+same-daemon/ACK/manual succeeded contract. No fixture-created pipe replaces that
+listener, and no serialized PID is witness.
+
+Tokio connect cancellation safety and Mio Drop/CancelIoEx are not synchronous
+native closure proof. Pending writes may remain. Keep actual child, client/server,
+lease/root and runtime in the existing finite owner until original-budget cleanup
+confirmation; otherwise quarantine/refuse. No default-Drop success, blocking
+unfinished join, reconnect/replay, new clock, quiet-period or global serialization.
+
+Apply the existing four Verify steps to this detail: frozen crate/archive graph
+and all production security remain exact; actually connect the foreign native
+child and refuse its actual mismatched PID before frame; malformed/idle/controlled
+return selectors retain exact admission/deadline/cleanup facts; the genuine
+secured daemon positive executes; all six real selectors pass in three native
+rows after Root full Source/inverse review. No unselected child-role acceptance.

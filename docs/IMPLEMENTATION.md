@@ -5237,3 +5237,16 @@ native rows plus original required/paired evidence. Root reviews full Docs/Issue
 Verify before separate Source, then all Source and publication evidence. Old
 wake/cancel/supervisor/WAL/full lint/later-binary failures remain; no clock increase,
 retry/reset/whole-suite serialization, owner-PC effect or broader support claim.
+
+### Untrusted negative native peer construction before Source (2026-10-04)
+
+The wake/cancel continuation's three-path/six-selector lease selects safe public
+Tokio Byte duplex first-instance/remote-refusal default-descriptor server only
+for native negative helper children. It is untrusted test input, not filesystem-
+inherited pipe privacy or production readiness. Real connected actual-child PID
+and strict refusal/cleanup checks remain required; genuine daemon positive uses
+the existing secured listener. No widestring/dependency/unsafe/API/clock change.
+Apply the amended planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md four Verify
+steps only after Issue31 exact readback and Root plan review; no Source existed
+before this detail. Retain actual child/client/runtime/root through confirmed
+original-budget cleanup or quarantine, never default-Drop closure success.

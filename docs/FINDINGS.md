@@ -5437,3 +5437,21 @@ bbe7bd2683e09dd085576f04adbfef3c69792b69f1855513c1e379cd24a38467 also preserves
 the old41 lint sequence. planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md freezes
 six actual selectors, auxiliary zero-acceptance roles, original clocks/finite
 owners and strict progress/protocol before Issue31 Verify. No owner-PC effects.
+
+### Native negative wake peer default descriptor boundary (2026-10-04)
+
+At merged main46445881, independent research verifies locked Tokio1.53.1 safe
+Byte/duplex/first-instance/remote-refusal create with NULL security attrs; no
+direct widestring edge or unsafe application API is needed. The default pipe
+DACL is intentionally untrusted and gains no privacy from an existing-private
+filesystem root. Actual same-connection PID mismatch decides the foreign-peer
+refusal; only the secured production daemon supplies positive wake readiness.
+Mio1.2.2 Drop requests connect/read cancellation and permits writes to complete;
+neither future cancellation nor Drop proves synchronous closure. Existing finite
+actual Child/client/runtime/guard ownership and cleanup/quarantine stay required.
+Root reviewed every addendum/source-pin byte hash. Addendum SHA256
+ca5284748b851bac8c1de1dbacd06e10e67401020a6abd6d8d180d9fc4a9b307;
+receipt eccaf14167d6c3a620e84d5cca83269f9f7e56f454d3b916880700bf6fb73ad2.
+[Tokio pinned source](https://docs.rs/crate/tokio/1.53.1/source/src/net/windows/named_pipe.rs),
+[Microsoft pipe security](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
+[CancelIoEx completion contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex).
