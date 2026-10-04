@@ -7,7 +7,7 @@ use locron_core::filesystem::DirectoryGuard;
 use locron_store::{AttemptCompletion, RetryPlan, StatePaths, Store};
 use serde_json::{Value, json};
 
-use super::{McpClient, add_job_arguments, tool_json};
+use super::{McpClient, add_job_arguments};
 
 const RUN: &str = "00000000-0000-7000-8000-000000000001";
 const LIFETIME: &str = "00000000-0000-7000-8000-000000000002";
@@ -127,7 +127,12 @@ fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 
 fn data(response: &Value) -> Value {
     assert!(response.get("error").is_none(), "{response}");
-    let decoded = tool_json(response);
+    assert_ne!(response["result"]["isError"], true, "{response}");
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("missing tool text: {response}"));
+    let decoded: Value = serde_json::from_str(text)
+        .unwrap_or_else(|error| panic!("invalid tool JSON: {error}; response={response}"));
     assert!(decoded.is_object(), "unexpected tool object: {response}");
     decoded
 }
@@ -191,7 +196,9 @@ fn compare_case(state: &str, requested: bool, acknowledge: bool) {
     let actual = Store::open_read_only(&live.paths.database)
         .unwrap()
         .run(RUN)
-        .unwrap_or_else(|error| panic!("live row: {state}/{requested}/{acknowledge}: {error}; response={executed}"));
+        .unwrap_or_else(|error| {
+            panic!("live row: {state}/{requested}/{acknowledge}: {error}; response={executed}")
+        });
     assert_eq!(observed["resulting_state"], actual.state);
 }
 
