@@ -5455,3 +5455,23 @@ receipt eccaf14167d6c3a620e84d5cca83269f9f7e56f454d3b916880700bf6fb73ad2.
 [Tokio pinned source](https://docs.rs/crate/tokio/1.53.1/source/src/net/windows/named_pipe.rs),
 [Microsoft pipe security](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
 [CancelIoEx completion contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex).
+
+### Native test owner admission and probe-clock research (2026-10-04)
+
+Separate research5db5c2a freezes three allowed uncommitted WIP paths. Report
+902c57b46d0e29aa059cf1ab21a9b0962fdd4aa667a226d63835c240f18ee92a,
+proposal8fefb54feeaa6397fd560540a9a53797b01d0c75f1cd7f4e2a5739f59613e422,
+receiptd903d84107ec91f1725cd85b1d903e556ee6f43f3bdb63c5bdc00d626adba4bd;
+Root verifies all34 artifacts and reads complete report/ABI/Source call map.
+Rust1.94 Windows thread creation drops initializer on failed CreateThread;
+SendError/TrySendError returns payload, so actual Owner handoff can run blocking
+Drop on driver. WIP Driver case-only wait misses blocked query's entry200ms.
+Select resource-free one-command admission before fixture resources, same-worker
+partial Owner/setup/actual daemon; new tighter30s setup horizon + original literal
+post-spawn5s/8s minimum. Retain probe deadline and on-time completion seal from
+immutable origin; independently bounded result polling, no blind slot clear or
+late reopening. Safe API cannot establish hard admission/preemption/abort cleanup.
+No native test/compiler/parser/mutation occurred; Source remained stopped. Actual
+six-selector changed-head native acceptance still required. Tagged primary std
+thread/channel source and SDK facts are retained in the hash-qualified report;
+no closure/channel metadata is substituted for actual child/guard/peer/cleanup.

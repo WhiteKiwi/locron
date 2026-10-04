@@ -5250,3 +5250,20 @@ Apply the amended planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md four Verify
 steps only after Issue31 exact readback and Root plan review; no Source existed
 before this detail. Retain actual child/client/runtime/root through confirmed
 original-budget cleanup or quarantine, never default-Drop closure success.
+
+### Refine Windows test admission and active driver clock before Source
+
+Replace actual-Owner transfer ABI in planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md
+with no-argument private wake/cancel entries, one empty admitted worker and one
+fixed resource-free case command. Partial owner and unchanged real state/daemon
+setup live only on that worker; new tighter outer30s bounds setup, original literal
+post-spawn5s/8s min still bounds all positive assertions and owned cleanup.
+Retain once-published200ms deadline plus on-time completion seal from immutable
+origin, independently polled in bounded driver slices without reopening/join.
+Negative cleanup observation stays on original30s with admission closed and same
+actual owner. Explicit empty/partial/channel/panic/late/unknown cleanup lanes
+preserve resources; no native ownership reaches admission closure/error/result.
+Apply the amended four Verify steps/three Source paths/six real selectors after
+Root exact Issue31 readback and plan review. Preserve Unix/state factory/production/
+deps/workflow existing commands and bounds. No hard admission/preemption claim,
+renewal/retry/reset/skip, owner-PC effect or unqualified support/lint acceptance.
