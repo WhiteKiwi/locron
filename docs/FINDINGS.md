@@ -5469,3 +5469,7 @@ PR #138 was merged externally as main commit 9de596f8ffe48e8036f775ad1fddbea9302
 ## PR141 actual failed-head review and terminal peer gap (2026-10-04)
 
 Exact4fa ordinary37204722580/1 is completed11SUCCESS/6FAIL/2optionalSKIP. Linux Clippy observes unchecked_time_subtraction and needless_pass_by_value in test_support; Windows non-test token Clippy observes two question_mark arms. All three Windows token suites first fail with ConnectionReset/raw10054 in atomic_failures, then twelve driver-mutex poison failures; each43PASS/13FAIL, old3PASS. Source confirms a read after fully validated Done and later polls of completed peers, but actual reset phase, first child exit/capture/subcase and native cause remain UNKNOWN. Separate x64 supervisor1687 native-boundary failure remains unqualified; ARM/MSRV same64 service cases PASS. Preserve the full actual/unknown distinction and select only the three-path terminal/lint repair with actual C1/C2/C3 read-retention assertions in planning/DASHBOARD_TOKEN_TERMINAL_2026-10-04.md.
+
+## PR141 terminal Source review and qualified-main136 integration
+
+Root reviewed complete704709e terminal patch/contexts and independent whole3 inverses/309protected entries; lint/terminal/C1-C3 scope is preserved, runtime acceptance pending. Historical4fa RST phase/child/capture/native cause and separate x64 supervisor cause remain UNKNOWN. Follow planning/DASHBOARD_TOKEN_MAIN136_2026-10-04.md for exact reviewed main136 integration before fresh original gates.
