@@ -681,7 +681,19 @@ fn sharing(frame: &Frame) {
     assert!(!frame.ok, "actual held handle did not refuse");
     assert!(
         matches!(frame.raw, Some(32 | 33)),
-        "expected actual native sharing refusal"
+        "expected actual native sharing refusal: kind={} raw={:?} elapsed_ms={} renames={} cleanup={}",
+        if !frame.kind.is_empty()
+            && frame.kind.len() <= 32
+            && frame.kind.bytes().all(|byte| byte.is_ascii_alphabetic())
+        {
+            frame.kind.as_str()
+        } else {
+            "unobserved"
+        },
+        frame.raw,
+        frame.elapsed_ms,
+        frame.stats.renames,
+        frame.stats.cleanup
     );
 }
 
