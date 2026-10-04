@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::fs;
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -704,6 +704,14 @@ struct Channel {
     next_sequence: u32,
     read_calls: Option<u64>,
 }
+
+#[derive(Clone, Copy)]
+struct ReadSnapshot {
+    next_sequence: u32,
+    partial_bytes: usize,
+    read_calls: Option<u64>,
+}
+
 impl Channel {
     fn new(stream: TcpStream) -> Self {
         stream
@@ -717,7 +725,7 @@ impl Channel {
         }
     }
 
-    fn poll(&mut self, deadline: Instant) -> Option<Frame> {
+    fn poll(&mut self, deadline: Instant) -> io::Result<Option<Frame>> {
         loop {
             remaining(deadline).expect("fixture absolute read clock");
             if let Some(end) = self.bytes.iter().position(|byte| *byte == b'\n') {
@@ -733,25 +741,29 @@ impl Channel {
                     frame.sequence <= EVENT_LIMIT,
                     "fixture event count exceeds bound"
                 );
-                return Some(frame);
+                return Ok(Some(frame));
             }
             let mut byte = [0];
             // Overflow leaves observation unknown without changing protocol or work.
             self.read_calls = self.read_calls.and_then(|calls| calls.checked_add(1));
             match self.stream.read(&mut byte) {
-                Ok(0) => return None,
+                Ok(0) => return Ok(None),
                 Ok(_) => self.bytes.push(byte[0]),
-                Err(error) if error.kind() == ErrorKind::WouldBlock => return None,
-                Err(error) => panic!(
-                    "fixture control read failed: kind={:?} raw={:?}",
-                    error.kind(),
-                    error.raw_os_error()
-                ),
+                Err(error) if error.kind() == ErrorKind::WouldBlock => return Ok(None),
+                Err(error) => return Err(error),
             }
             assert!(
                 self.bytes.len() <= FRAME_LIMIT,
                 "fixture frame exceeds bound"
             );
+        }
+    }
+
+    fn read_snapshot(&self) -> ReadSnapshot {
+        ReadSnapshot {
+            next_sequence: self.next_sequence,
+            partial_bytes: self.bytes.len(),
+            read_calls: self.read_calls,
         }
     }
 
@@ -792,6 +804,85 @@ struct Owned {
     frames: Vec<Frame>,
     status: Option<ExitStatus>,
     peer: Peer,
+    operation: Operation,
+    fault: Option<Fault>,
+    cleanup_fault: bool,
+    delay: Delay,
+}
+
+fn panic_locations(text: &str) -> Option<String> {
+    let mut locations = Vec::new();
+    for line in text.lines() {
+        let Some((_, location)) = line.split_once("panicked at ") else {
+            continue;
+        };
+        let location = location.replace('\\', "/");
+        let location = location.strip_prefix("crates/locron-server/src/")?;
+        let (module, numbers) = location.split_once(':')?;
+        let module = match module {
+            "token.rs" => "token.rs",
+            "token/test_support.rs" => "token/test_support.rs",
+            "token/qualification.rs" => "token/qualification.rs",
+            _ => return None,
+        };
+        let mut numbers = numbers.split(':');
+        let line = numbers.next()?;
+        let column = numbers.next()?;
+        if numbers.next()? != "" || numbers.next().is_some() {
+            return None;
+        }
+        let positive = |value: &str| {
+            (!value.is_empty()
+                && value.len() <= 10
+                && value.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| value.parse::<u32>().ok())
+            .flatten()
+            .filter(|value| *value != 0)
+        };
+        locations.push(format!(
+            "{module}:{}:{}",
+            positive(line)?,
+            positive(column)?
+        ));
+        if locations.len() > 2 {
+            return None;
+        }
+    }
+    if locations.is_empty() {
+        None
+    } else {
+        Some(locations.join(","))
+    }
+}
+
+fn capture_observation(capture: &NamedTempFile, deadline: Instant) -> Option<String> {
+    remaining(deadline).ok()?;
+    let reader = capture.as_file().try_clone();
+    remaining(deadline).ok()?;
+    let mut reader = reader.ok()?;
+    remaining(deadline).ok()?;
+    let position = reader.seek(SeekFrom::Start(0));
+    remaining(deadline).ok()?;
+    if position.ok()? != 0 {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    remaining(deadline).ok()?;
+    let read = reader.take(CAPTURE_LIMIT + 1).read_to_end(&mut bytes);
+    remaining(deadline).ok()?;
+    read.ok()?;
+    if bytes.len() as u64 > CAPTURE_LIMIT {
+        return None;
+    }
+    let text = std::str::from_utf8(&bytes).ok()?;
+    let locations = panic_locations(text).unwrap_or_else(|| "unobserved".to_owned());
+    let observation = format!(
+        "length={} sha256={} locations={locations}",
+        bytes.len(),
+        digest(&bytes)
+    );
+    remaining(deadline).ok()?;
+    Some(observation)
 }
 
 pub(super) struct Harness {
@@ -883,8 +974,141 @@ impl Harness {
             frames: Vec::new(),
             status: None,
             peer: Peer::Active,
+            operation: config.operation,
+            fault: config.fault,
+            cleanup_fault: config.cleanup_fault,
+            delay: config.delay,
         });
         self.children.len() - 1
+    }
+
+    fn read_failure(
+        &mut self,
+        owner_index: Option<usize>,
+        snapshot: ReadSnapshot,
+        deadline: Instant,
+        error: &io::Error,
+    ) -> ! {
+        let primary = format!(
+            "fixture control read failed: kind={:?} raw={:?}",
+            error.kind(),
+            error.raw_os_error()
+        );
+        if self.children.len() > 5 {
+            panic!("{primary}; diagnostic=unobserved:owner-bound");
+        }
+        let role = if owner_index.is_some() {
+            "child"
+        } else {
+            "pending-unassigned"
+        };
+        let contexts: Vec<_> = self
+            .children
+            .iter()
+            .enumerate()
+            .map(|(index, owner)| {
+                let peer = match owner.peer {
+                    Peer::Active => "Active",
+                    Peer::Done { .. } => "Done",
+                    Peer::Stopped { .. } => "Stopped",
+                };
+                let last = owner.frames.last().map_or_else(
+                    || "unobserved".to_owned(),
+                    |frame| {
+                        format!(
+                            "{:?}/sequence={}/pid={}",
+                            frame.event, frame.sequence, frame.pid
+                        )
+                    },
+                );
+                format!(
+                    "owner={index} pid={} peer={peer} last={last} operation={:?} fault={:?} cleanup_fault={} delay={:?}",
+                    owner.child.id(), owner.operation, owner.fault, owner.cleanup_fault, owner.delay
+                )
+            })
+            .collect();
+        let mut observations = vec![None; self.children.len()];
+        let mut waiting: Vec<_> = self
+            .children
+            .iter()
+            .map(|owner| !matches!(owner.peer, Peer::Stopped { .. }))
+            .collect();
+        // Only actual pre-kill TryWait, using the failed poll's unchanged absolute clock.
+        loop {
+            for (index, owner) in self.children.iter_mut().enumerate() {
+                if !waiting[index] {
+                    continue;
+                }
+                if remaining(deadline).is_err() {
+                    break;
+                }
+                let status = owner.child.try_wait();
+                let in_time = remaining(deadline).is_ok();
+                match status {
+                    Ok(Some(status)) => {
+                        // Even a late actual reap belongs to cleanup, never to the diagnostic.
+                        owner.status = Some(status);
+                        waiting[index] = false;
+                        if in_time {
+                            let stdout = capture_observation(&owner.stdout, deadline)
+                                .unwrap_or_else(|| "unobserved".to_owned());
+                            let stderr = capture_observation(&owner.stderr, deadline)
+                                .unwrap_or_else(|| "unobserved".to_owned());
+                            observations[index] = Some(format!(
+                                "prekill=exit success={} code={:?} stdout=[{stdout}] stderr=[{stderr}]",
+                                status.success(),
+                                status.code()
+                            ));
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(observation_error) => {
+                        waiting[index] = false;
+                        if in_time {
+                            observations[index] = Some(format!(
+                                "prekill=unobserved wait-kind={:?} wait-raw={:?} stdout=unobserved stderr=unobserved",
+                                observation_error.kind(),
+                                observation_error.raw_os_error()
+                            ));
+                        }
+                    }
+                }
+                if !in_time {
+                    break;
+                }
+            }
+            if waiting.iter().all(|waiting| !waiting) {
+                break;
+            }
+            let Ok(left) = remaining(deadline) else {
+                break;
+            };
+            std::thread::sleep(left.min(Duration::from_millis(1)));
+        }
+        let owners: Vec<_> = contexts
+            .into_iter()
+            .zip(observations)
+            .map(|(context, observation)| {
+                format!(
+                    "[{context} {}]",
+                    observation.unwrap_or_else(|| {
+                        "prekill=unobserved stdout=unobserved stderr=unobserved".to_owned()
+                    })
+                )
+            })
+            .collect();
+        let report = format!(
+            "{primary}; role={role} assigned={owner_index:?} next_sequence={} partial_bytes={} read_calls={:?}; {}",
+            snapshot.next_sequence,
+            snapshot.partial_bytes,
+            snapshot.read_calls,
+            owners.join("; ")
+        );
+        // Reject the entire report, rather than truncate evidence or replace the primary error.
+        if report.is_ascii() && report.len() <= 4096 {
+            panic!("{report}");
+        }
+        panic!("{primary}; diagnostic=unobserved:report-bound");
     }
 
     fn poll(&mut self) {
@@ -920,7 +1144,14 @@ impl Harness {
         }
         let mut index = 0;
         while index < self.pending.len() {
-            if let Some(frame) = self.pending[index].poll(deadline) {
+            let frame = match self.pending[index].poll(deadline) {
+                Ok(frame) => frame,
+                Err(error) => {
+                    let snapshot = self.pending[index].read_snapshot();
+                    self.read_failure(None, snapshot, deadline, &error);
+                }
+            };
+            if let Some(frame) = frame {
                 let owner = self
                     .children
                     .iter_mut()
@@ -957,12 +1188,21 @@ impl Harness {
                 index += 1;
             }
         }
-        for owner in &mut self.children {
+        let mut failed = None;
+        for (owner_index, owner) in self.children.iter_mut().enumerate() {
             if !matches!(owner.peer, Peer::Active) {
                 continue;
             }
             if let Some(channel) = &mut owner.channel {
-                while let Some(frame) = channel.poll(deadline) {
+                loop {
+                    let frame = match channel.poll(deadline) {
+                        Ok(Some(frame)) => frame,
+                        Ok(None) => break,
+                        Err(error) => {
+                            failed = Some((owner_index, channel.read_snapshot(), error));
+                            break;
+                        }
+                    };
                     assert_eq!(
                         frame.pid,
                         owner.child.id(),
@@ -990,6 +1230,12 @@ impl Harness {
                     }
                 }
             }
+            if failed.is_some() {
+                break;
+            }
+        }
+        if let Some((owner_index, snapshot, error)) = failed {
+            self.read_failure(Some(owner_index), snapshot, deadline, &error);
         }
     }
 
