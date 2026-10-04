@@ -811,13 +811,16 @@ class PortableRecovery(RecoveryAssertions, unittest.TestCase):
                 target = owner.mkdir(owner.root / "owned symlink target")
                 owner.seed(target / "marker", FOREIGN)
                 owner.symlink(owner.output, target)
+                original_readlink = owner.output.readlink()
+                self.assertTrue(owner.output.samefile(target))
                 original = owner.capture(owner.output)
                 before = self.snapshot(owner, target)
                 with owner.intercept():
                     with self.assertRaises(FileExistsError):
                         winget._write_documents(owner.output, dict(DOCUMENTS))
                 self.assertEqual(owner.capture(owner.output), original)
-                self.assertEqual(owner.output.readlink(), target)
+                self.assertEqual(owner.output.readlink(), original_readlink)
+                self.assertTrue(owner.output.samefile(target))
                 self.assertEqual(self.snapshot(owner, target), before)
                 self.assertEqual(owner.operations["open"], 0)
                 self.assertEqual(owner.operations["unlink"], 0)
