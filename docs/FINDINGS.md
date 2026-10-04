@@ -5406,13 +5406,183 @@ foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
 
-## PR 142 generic refusal review and missing admission qualification (2026-10-04)
+### Native CLI wake/cancel fixture continuation before Source (2026-10-04)
 
-Head507777cedd5bd02b162d9b347c2770cdf4585bc0 removes URI interpolation from authentication errors. Both contract.rs token_refusal expectations still contain /api/v1/jobs; ordinary run 37177628448 fails those assertions on eight platform jobs, while existing Server library tests and the other contract cases pass. Preserve the generic response and update those two expectations. Source review also confirms that single_header distinguishes actual absence, multiple fields and undecodable bytes, loopback_port refuses unsupported suffixes and malformed decimal ports, and unsafe Origin requires the actual bound port. Existing tests do not establish the adversarial matrix. Add actual-router admission/body-poll and real HTTP canary controls in PR 142 under Issue 162; PR 145 retains the separate cookie/CSRF slice. The selected tests use synthetic tokens and private ephemeral fixtures only; no installed dashboard credentials or live service are involved.
+Separate research pins e6eb887 and proves both old selector bodies unchanged
+through current main4644588/PR13502f. Source waits for Unix wake.sock on Windows,
+although Engine binds a named pipe. Old495f ARM/MSRV reaches wake.exists1124 and
+the final cancel assertion1214; cc37162098246 ARM/MSRV reaches301 unitPASS and
+CLI73/75 with wake1142/cancel1232 failures. Actual terminal reason/phase timing is
+unprinted; the platform mismatch does not establish a production failure cause.
+Wake reuses one5s clock; cancel one8s, production grace5s, Unix sleep30 remain.
 
-### PR142 reviewed admission Source/current-main handoff (2026-10-04)
+Checksum-qualified Tokio1.53.1/interprocess2.4.4 Source confirms the safe native
+same-connected-handle metadata composition: NamedPipeClient.AsHandle clone,
+sync byte PipeStream conversion, is_client/server_process_id, every-result
+evade_limbo; frame/ACK remain on the original Tokio stream. All14 primary members
+match locked crate archives; existing Windows CLI dev graph needs no change.
+Research report SHA2563f476ec623d6f26748c272e34d46b5381d242dbf19ac8798c1575ade549c7eee,
+candidate ABI c4131680961256c934504ee03d778ee46167f84007a6ec45e1118cc8d159fd26,
+receipt934f7a27e0124a099657da180e49c234818eb84f38361b2b72f7054e083ac231.
+Native API metadata success still requires real positive/foreign-peer execution.
 
-Source4d229e61 preserves the full production middleware prefix and original contract except the two selected generic messages; parent-reviewed tests statically inventory152 rows. Format/locked metadata/diff pass; all new runtime/type/Clippy/native qualification remains pending. A normal current-main c4ef8b90 integration must preserve both Docs histories and the reviewed Source union, followed by fresh candidate/current-base CI and paired provenance. Refs #162; #163.
+Additional read-only CI research selects one additive exact acceptance step,
+explicitly adding ci.yml as a third Source path before separate development.
+The same !cancelled/native_core-success expression includes a status function,
+so prior failure stays failed without imposing a hidden success-only precondition.
+[GitHub status-check semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)
+support independent qualification before the known later service-unit preemption;
+this does not diagnose or repair that supervisor failure. Research receipt
+bbe7bd2683e09dd085576f04adbfef3c69792b69f1855513c1e379cd24a38467 also preserves
+the old41 lint sequence. planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md freezes
+six actual selectors, auxiliary zero-acceptance roles, original clocks/finite
+owners and strict progress/protocol before Issue31 Verify. No owner-PC effects.
+
+### Native negative wake peer default descriptor boundary (2026-10-04)
+
+At merged main46445881, independent research verifies locked Tokio1.53.1 safe
+Byte/duplex/first-instance/remote-refusal create with NULL security attrs; no
+direct widestring edge or unsafe application API is needed. The default pipe
+DACL is intentionally untrusted and gains no privacy from an existing-private
+filesystem root. Actual same-connection PID mismatch decides the foreign-peer
+refusal; only the secured production daemon supplies positive wake readiness.
+Mio1.2.2 Drop requests connect/read cancellation and permits writes to complete;
+neither future cancellation nor Drop proves synchronous closure. Existing finite
+actual Child/client/runtime/guard ownership and cleanup/quarantine stay required.
+Root reviewed every addendum/source-pin byte hash. Addendum SHA256
+ca5284748b851bac8c1de1dbacd06e10e67401020a6abd6d8d180d9fc4a9b307;
+receipt eccaf14167d6c3a620e84d5cca83269f9f7e56f454d3b916880700bf6fb73ad2.
+[Tokio pinned source](https://docs.rs/crate/tokio/1.53.1/source/src/net/windows/named_pipe.rs),
+[Microsoft pipe security](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
+[CancelIoEx completion contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex).
+
+### Native test owner admission and probe-clock research (2026-10-04)
+
+Separate research5db5c2a freezes three allowed uncommitted WIP paths. Report
+902c57b46d0e29aa059cf1ab21a9b0962fdd4aa667a226d63835c240f18ee92a,
+proposal8fefb54feeaa6397fd560540a9a53797b01d0c75f1cd7f4e2a5739f59613e422,
+receiptd903d84107ec91f1725cd85b1d903e556ee6f43f3bdb63c5bdc00d626adba4bd;
+Root verifies all34 artifacts and reads complete report/ABI/Source call map.
+Rust1.94 Windows thread creation drops initializer on failed CreateThread;
+SendError/TrySendError returns payload, so actual Owner handoff can run blocking
+Drop on driver. WIP Driver case-only wait misses blocked query's entry200ms.
+Select resource-free one-command admission before fixture resources, same-worker
+partial Owner/setup/actual daemon; new tighter30s setup horizon + original literal
+post-spawn5s/8s minimum. Retain probe deadline and on-time completion seal from
+immutable origin; independently bounded result polling, no blind slot clear or
+late reopening. Safe API cannot establish hard admission/preemption/abort cleanup.
+No native test/compiler/parser/mutation occurred; Source remained stopped. Actual
+six-selector changed-head native acceptance still required. Tagged primary std
+thread/channel source and SDK facts are retained in the hash-qualified report;
+no closure/channel metadata is substituted for actual child/guard/peer/cleanup.
+
+## Native Windows changed-head failures and selected fixture follow-up (2026-10-04)
+
+Completed ordinary run37172647017 on Source3a6efccb is FAILURE:17 executed jobs14PASS/3Windows foundationFAIL, six selected cases by three rows8 executed=5PASS/3FAIL with10notrun. Actual wake passes all3; x64 cancel reports ChildExited/Run/flags97, ARM cancel Expired/Cleanup/flags1, MSRV malformed Native/Setup/flags97. The preceding libraries/doctor/service/GUI and two exact-tree paired packages passed, but later lifecycle/MCP/HTTP/uploads are skipped at this head. Root independently verifies61 qualification artifacts/raw logs/paired structure and merge tree, proof35c26bd4a624e065bd4a4d7c88dc5aa97bd51544cbd81b75039d61b5663d242f; Issue31comment5976163511 records the exact outcome.
+
+Separate causal research b48716c3f387136563e8f28a316cb365c354e14277978f0e69169ef9f3f082b9/22files and stock research418f786da4ce280f7dd482f39155a149c8f04b5b21faf17931deb821fd66a922/32files are independently verified (Root5b94e3ff4b44bc37831ba1114d3755f7235df57d982fb0c71430fda07c1671ef). Under exact Source, x64 daemon exits after successful submit before first history liveness; actual status/cause is unobserved. ARM expiry snapshots unfinished cleanup, not the pre-cleanup work failure. MSRV malformed fails before the ACK; CreateNew exposes a zero-byte peer-ready path before its later write, but actual empty/error/status is unobserved. Root selects six independent exact-selector CI steps, fixed records from already returned operations and successful-empty Unpublished continuation only under the original loop/clock. The fixed design086fee7791249aa00e6034f4def2e79c967e458dbaadabedcbb2285daeacaef5 plus4files gives52operations/zero, six self-contained u64 records plusone u8intent and579CRLF-byte output. No stderr/text/private identity or extra native/error query is selected; no cancel readiness probe.
+
+The separate MSRV stock parent proof confirms parent reap/three-associated exits/observer-held stock refusal but generic-heartbeat NotFound prevents later observer/guard/pipe cleanup. The no-backup ReplaceFile [documented1176](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew) can remove the old pathname; it is an API-grounded unsupported surviving-name assumption, not measured1176 or an inside-call kill. Root selects appendix11e985ed6401722a5c6d1d7e6b29dec4c5920cd555c08d96c42f83fc0d8c2c00/5files: one CreateNew retained appender per real producer, strict bounded21-byte records, actual same retained no-delete reader for every sample, current count+tail stability, and both real partial-append hard-stop controls. Original65-byte snapshot controls/observer/owned Core factory and all original lifetimes remain exact. New normal/append command programs must fit the full Windows limit before dispatch; no fit/native qualification is inferred now.
+
+## Missing actual PowerShell append-refusal observations at Source8110 (2026-10-04)
+
+Root reviewed both complete Source8110 fixture deltas, all120 Source artifacts and the whole-file inverse, old SnapshotProof and10 complete command models (Root review5af4519f). The newly selected Rust refusal controls save actual ErrorKind/raw values, but both PowerShell Refuse invocations catch rename/delete only into booleans. No retained alternative receipt saves their actual exception data. This is a selected Verify gap;8110 is unqualified and is not yet published or merged. All genuine41-byte appender/lifetime/held-reader/release proof obligations remain distinct from observations.
+
+The separate26-file refusal research is fully reviewed and independently hashed (manifest98da55bff267087fd5b9ada5c0614a51cb1a7fcdfb0e7fe4ad5b7c178de48cba; reportcb0c76c8740e7a5a96d4d14027963732654f6a655917c15baa5c31b8a52e555b; Root static proofb1d9977de714de2255c20e5d7fa6534d536d79acf7fa67eb2036abdbb8a34d99). [Framework Exception.HResult](https://learn.microsoft.com/en-us/dotnet/api/system.exception.hresult?view=netframework-4.8.1) provides a whole signed Int32 status, not an OS errno; [InnerException](https://learn.microsoft.com/en-us/dotnet/api/system.exception.innerexception?view=netframework-4.8.1) supplies the existing reference/null. [PowerShell5.1 catch guidance](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_try_catch_finally?view=powershell-5.1) establishes the caught ErrorRecord's Exception boundary; actual wrappers and values remain unmeasured. Closed managed io/access/other projections preserve actual categories without runtime type names. Low-word decoding, expected-value/type admission or synthetic exceptions would not satisfy this observation contract.
+
+An unapplied complete specimen independently models four fixed primitive string slots with at most5 existing nodes each; record95 ASCII/array393/extra root field405 bytes. Source-only identifier/indentation compaction confined to new Append/common code and its new Normal function references fits every full LF/CRLF root/child command below32,767 with at least1,024 margin; maximum31,224/margin1,543. Old SnapshotProof raw SHA2a7eb52bae39c85c4b3bb55c37352ed77f222d9329175ac9d67df68f22072ae9 and full29,352/29,816 commands remain exact. This demonstrates feasibility only, not implemented Source or PS/native acceptance. Preserve prior3a6 failure and all absent acceptance flags.
+
+## 2026-10-04: Observe existing lifecycle progress results after current-base failures
+
+Current PR138 head1c45ef10b32b26c70d7ccc8fcf0d47b4dc260dc3, ordinary CI37180022092/pull_request/attempt1 has two actual x64 lifecycle failures (each15PASS/1FAIL), while ARM16 and its downstream gates pass. MSRV1.94 fails the existing3s preserved-target advancement assertion after dashboard stop, ownership/state checks and a readable baseline. Stable1.99 fails descendant readiness within the original30s before hard_stop; forced crash/restart/recovery/no-retry are unreached in that row. Whole libtest durations are not per-phase measurements. Actual target/descendant status, captures and native cause are unprinted. No causal repair or timing relaxation follows.
+
+Read-only research119 artifacts and35 immutable Source records were independently verified; Root proof36d67e15576565b4dbe03694292a66e4e07783de2e228d280ba1e47a04eec960. The lifecycle file is52426bytes/SHA45db1848f326a7cf80ee656d36f6415c8d8ce93676581726c889d5c896c53165 at1c45 and integratedd894a243619c93dacfdd34e9c7ec5ab068c588be. b664's CLI helper and8110/15ca Core append observations do not cover these separate Rust lifecycle read/publish paths. Root reviewed and purely integrated those distinct Sources plus main15820; their native qualification remains pending.
+
+Select only a one-file failure-only observer of already-returned marker/read/parse/numeric facts and the already-returned dashboard ExitStatus. First returned I/O kind/raw code is immutable within the progress observation, not a first process error or causal classification. False is_file means only the returned boolean; unread/parse-unexecuted slots remain unobserved for that iteration. Numeric nongreater/zero and parse error remain distinct. No extra read/status/capture/Store/native call, diagnostic thread or resource owner is selected.
+
+The closed8-field suffix uses fixed enums and Option<i32> scalar projections only; conservative20736 combinations give226bytes includingCRLF, complete original message273. This is a static text bound, not native syntax/timing/cleanup evidence. See [selected before-Source plan](planning/WINDOWS_LIFECYCLE_PROGRESS_OBSERVATIONS_2026-10-04.md). Keep failed run1c45 authentic and all wide Issues open until their original Verify and required publication succeed.
+
+
+## Stock test Clippy syntax at exact3f5 (2026-10-04)
+
+Completed Windows run37184851251/attempt1 preserves two warnings-denied Rust1.98 test diagnostics at loader_crash.rs375 chunks_exact_to_as_chunks and1015 manual_let_else; they are independent of the negative-peer Native/Setup/ReadyOpen/raw32 and unobserved withheld-entry cause. Root independently qualified190 artifacts/92 immutable Source snapshots and the first-work/cleanup boundary (proof6a237eede588d185a2faac9e524ae9192395bada670b4b38fc88d60cdb6cbf27). The separate read-only9-file recommendation c8f9bc8400e5c4f4a2bf1ea748ad232fa6e4c4fbaf996e22405d499f31399013 and pinned official Rust1.94 core sources establish safe as_chunks stability1.88 and array as_slice stability1.57. Borrowing each complete21-byte array as a slice preserves the old validation body/count/independent tail/error order without requiring full divisibility. Let-else evaluates the same collision create once, moves the same expected error and diverges on unexpected success; it does not promise identical temporary destruction instructions. No compiler/native test was run in this research.
+
+PR139 is now merged as main814e689bb0717aba183dbd084e6151ba11ac4e99, whole tree4b1ecc975f766807f4baafc4ae90e3c41d6b9c0b exactly reviewed16e. Fresh139 native42/lifecycle16/HTTP21 and all four Windows Clippy commands passed; Root127/63 proof9ed1e5e2a0a403844c0814c402e9321a7d567a3290a022e2924d63454a513518 and one-shot merge journalf97b10ed95dc576f5f2025d1fb5a7b21cf007e10498f829a0c31f4f2d9a3dc59. Import that exact reviewed main union separately before the selected one-file syntax change; conserve the native/stock/lifecycle changes and both branches' planning history. The merge is not a causal fix for PR136 failures.
+
+## PR139 listener-policy and shutdown controls before Source (2026-10-04)
+
+Root fully reviewed PR139 c847dec1cf924ed06fdcab29f6f0ec93ba69e96c and its existing ordinary hosted run37176501497: native Server31 and existing active-SSE/stalled tests passed on x64 stable, ARM stable and x64 Rust1.94. These existing cases do not execute the selected whole-list socket-count refusal, upper-port saturation, failed/clean/panicked-listener/signal-error broadcast and full-survivor drain/error-precedence/timeout controls. Root keeps that Verify gap open before merge; no observed failure cause or new native success is claimed.
+
+The separate read-only47-artifact design (manifest7c5cdac6d8ddfdb66bbb7ed8a207a89c4832fbe10d802ec224c8065a2a39ccae; Root proof460ddb9ab362c5ae1eac65e3a63459c09d4637bee7a435ae9d6c34abf1a45a26) is fully reviewed and independently verified against15 app Git snapshots and5 exact Tokio1.53.1 primary files from Cargo.lock. Tokio join_next is cancel-safe within select; abort_all does not remove/complete owned tasks and requires subsequent join_next until empty. timeout polls the inner future before the delay and cannot preempt non-yielding/blocking work. Workspace does not enable test-util. These Source contracts justify shared private seams and the real existing10s timer; they do not prove actual task/OS failure behavior.
+
+Select one Source file and two private seams: exact production bind/preflight/policy with a SocketAddr-to-TcpListener future boundary, and the original select/broadcast/drain implementation with original JoinSet/watch/composition-stop/signal-result futures. Callback-count0 proves refusal before native socket admission; explicit55 high-port requests plus10 final0 across65526..65535 prove non-wrapping exhaustion through production policy without assuming real fixed ports free. Separate actual native bind calls establish IPv4/IPv6 and native high-port prefixes; simulated AddrInUse is not actual occupancy. Real JoinSet tasks/controlled failure/real panic/watch survivors/Drop+join receipts prove loop behavior. Private injected signal error is post-adapter control, not genuine Windows Ctrl-C registration failure. Windows dashboard_ctrl_c mapping, old31 native test bodies, all clocks/callers/public APIs/deps/workflow remain exact. Detached Axum connections and begun blocking Store workers remain separate unqualified Issue30 scope.
+## PR139 measured warnings-denied failure before repair (2026-10-04)
+
+Ordinary changed-head run37183332242, exact PR head4852c51ae38cf28568db34d861e7b22e85b339df/attempt1, completed FAILURE. Saved completed job metadata shows three Windows foundation jobs SUCCESS, while Windows/Linux/macOS lint jobs fail. The first Windows and Linux raw lint logs both identify exactly one new locron-server lib-test error at lib.rs881: the fixture's Err(_) panic arm triggers match_wild_err_arm under -D warnings. MacOS's specific diagnostic and the new42-case native evidence remain under separate read-only qualification; their content is not inferred from these two logs. The real result does not waive any required lint or native gate.
+
+The helper already aborts/reaps its owned controller and observes captured yielding-task Drop receipts before handling the timeout result. Select only binding the returned Elapsed value and including its Display in the existing failure panic after that cleanup. This uses an already-returned error and adds no call, query, retry, clock, task or owner. Existing13s fixture/10s supervisor guards, eleven control oracles and production behavior remain unchanged. No allow attribute or warning suppression is selected.
+
+## PR136 review: completed-marker sharing race and strict lint (2026-10-04)
+
+Root reviewed original3f5fb95 ordinary37184851251 raw native/lint logs:
+x64/ARM first-work Native/Setup with ReadyOpen Other/raw32 in four negative
+cases, x64 withheld Disconnected before its notice with no CaseResult, MSRV
+all six cases pass. Both stable rows stop before lifecycle/downstream admission;
+service64/GUI12 and the explicit stock diagnostic controls still execute.
+Required lint reports chunks_exact_to_as_chunks and manual_let_else in the
+new stock Rust helper; later CLI/GUI lint is skipped. None permits merging.
+
+Separate read-only review of the complete2324-line helper and callers finds
+final create_private_new exposes peer-ready during private ACL CreateNew.
+filesystem_worker.ps1 requests FullControl, including DELETE; no-follow
+inspection/open shares only READ|WRITE. [Microsoft CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+documents incompatible sharing and delete-access refusal. This proves a Source
+race path, not the exact internal instruction/holder of the observed ReadyOpen.
+The withheld underlying failure and old lifecycle/full/native unknowns remain.
+
+Locked tempfile3.27.0 already exists in CLI dev dependencies. Its absolute
+TempPath::try_from_path adds no CWD I/O; persist_noclobber retains the owned
+candidate on failure and invokes Windows MoveFileExW without overwrite/copy.
+Select closed private staging before final publication, actual staged-absence/
+complete-read/collision-preservation controls inside existing real peer children,
+and failure-only scalar snapshots for the existing withheld notice. Keep every
+reader refusal and original clock/selector/owner boundary. Two strict lint
+syntax corrections preserve the stock parser and collision assertion. See the
+amended native and stock plans; Source waits for Issue31 exact readback and
+the separate developer lease. No old missing visible-empty control or concrete
+managed HResult is fabricated as current acceptance.
+
+
+## Concurrent PR136 stock syntax publication (2026-10-04)
+
+Remote b131edc1ad420532c69b91c854ddb8ceb187b767 contains a Docs-before-Source borrowed-slice as_chunks correction and the same main814e689 union. Its complete stock diff is two syntax sites, with no native helper/lifecycle/PowerShell/CI change from3f5. Both syntax choices are safe Rust1.94 operations; retain the independently published borrowed-slice blob to avoid replacing reviewed work. Local062aa2 supplies the separately selected closed-candidate readiness publication and failure-only unobserved outcome diagnostic. Complete locked metadata succeeds with354 packages/nodes after locked dependency downloads and no lockfile change; actual Windows compilation and native acceptance are still pending.
+
+
+## Observed lifecycle strict lint after stock syntax correction (2026-10-04)
+
+Remote b131 completed ordinary37189751211 with4 failed executed jobs: Windows strict lint and all three foundations. The raw lint111399286359 identifies only the new observer parse match at windows_lifecycle.rs547, Clippy single_match_else; later GUI lint is skipped. Root reviewed its complete suggested if-let/else rewrite against the selected observer's unchanged one-read/one-parse and Numeric/ParseError Option contract. Stock syntax lint passed. Separately, actual native observations include repeated ready-open raw32, History expiries, daemon exit5, withheld Disconnected and ARM target/debug/locron.exe removal access5; these are preserved without attributing an unmeasured cause. The integration78af945 keeps all native controls/clocks intact and does not claim to repair those additional failures.
+
+
+## Root-reviewed private peer publication research (2026-10-04)
+
+Issue31: Root independently verified readiness43/13 Git snapshots and retained
+prior192 files, plus lifecycle syntax19/raw42100. Actual raw32 holder/path/native
+instruction and withheld Disconnected cause remain unobserved. Fixed FullControl
+DELETE/share3 vs consumer share3 is a primary-Source/API inference, not observed
+runtime cause. Select private created stage -> leaf-close -> one disabled-cleanup
+tempfile3.27 no-clobber move under retained parents, with a new genuine standalone
+control, independent failure-only notice snapshot and captured lifecycle if-let.
+Root proof hashes are recorded in WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md;
+the complete selected plan precedes Source and adds no product scope. Parent-
+observed final-Empty/held-exit lane remains unselected/unqualified. No source/API
+or native qualification was produced by this research.
+
+## Root reviewed current-main integration research, 2026-10-04 (native73)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+Incoming73 preserves the outer private root guard and has bounded1502/844-byte notices within its2048 plan. Its TempPath cleanup and queued-result/elapsed observer differ from Root-reviewed89. Select exact89 Source, preserve both historical Docs and import only exact merged main140; no73 native qualification or old failure cause is inferred.
+
 ## PR140 output recovery Verify research before Source (2026-10-04)
 
 Root reviewed the separate69-artifact research against25 immutable app Git blobs/modes, four full trees and the complete composed renderer. Current main15820 is entire-tree equal to reviewed merged137. Preserve old140 pre-main bytes and main137 main() suffix exactly; combined55f41774c7e70d7da17bdf9f47059e2effc4c0881182ede3b7c9802548bb3269. PR140 lacks the concrete required recovery/native controls, but this read-only research demonstrates no production writer defect. Earlier paired/entrypoint/snapshot successes do not qualify these paths.
@@ -5430,19 +5600,44 @@ Server exactly. The appended WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md plan
 requires literal Docs-suffix union, before-Source Issues32/35, Root final reread
 and separate developer before changed-head hosted qualification/publication.
 
-## PR139 listener-policy and shutdown controls before Source (2026-10-04)
 
-Root fully reviewed PR139 c847dec1cf924ed06fdcab29f6f0ec93ba69e96c and its existing ordinary hosted run37176501497: native Server31 and existing active-SSE/stalled tests passed on x64 stable, ARM stable and x64 Rust1.94. These existing cases do not execute the selected whole-list socket-count refusal, upper-port saturation, failed/clean/panicked-listener/signal-error broadcast and full-survivor drain/error-precedence/timeout controls. Root keeps that Verify gap open before merge; no observed failure cause or new native success is claimed.
+### PR136 failed73d3 and owned stdout capture selection
 
-The separate read-only47-artifact design (manifest7c5cdac6d8ddfdb66bbb7ed8a207a89c4832fbe10d802ec224c8065a2a39ccae; Root proof460ddb9ab362c5ae1eac65e3a63459c09d4637bee7a435ae9d6c34abf1a45a26) is fully reviewed and independently verified against15 app Git snapshots and5 exact Tokio1.53.1 primary files from Cargo.lock. Tokio join_next is cancel-safe within select; abort_all does not remove/complete owned tasks and requires subsequent join_next until empty. timeout polls the inner future before the delay and cannot preempt non-yielding/blocking work. Workspace does not enable test-util. These Source contracts justify shared private seams and the real existing10s timer; they do not prove actual task/OS failure behavior.
+Fresh37191426679 confirms16/17 ordinary executed jobs, four strict Windows lint commands and17/18 original native CLI cases passed; ARM cancellation Expired/History and later GUI remove/raw5 remain failures with unknown actual call/holders. Parent re-read Owner::output: its unbounded pipe read precedes actual Child.wait. Select guarded fresh regular captures, actual child polling and full64KiB+1 bounded collection under original clocks, plus independent actual producer/held-write/collision/cap/live-negative cleanup controls. This corrects a source-backed helper boundary without claiming the measured ARM cause. Exact failure observation: Issue31#5978690173. Before-Source selection is in WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md; all production/other Source and progress semantics stay exact73d3.
 
-Select one Source file and two private seams: exact production bind/preflight/policy with a SocketAddr-to-TcpListener future boundary, and the original select/broadcast/drain implementation with original JoinSet/watch/composition-stop/signal-result futures. Callback-count0 proves refusal before native socket admission; explicit55 high-port requests plus10 final0 across65526..65535 prove non-wrapping exhaustion through production policy without assuming real fixed ports free. Separate actual native bind calls establish IPv4/IPv6 and native high-port prefixes; simulated AddrInUse is not actual occupancy. Real JoinSet tasks/controlled failure/real panic/watch survivors/Drop+join receipts prove loop behavior. Private injected signal error is post-adapter control, not genuine Windows Ctrl-C registration failure. Windows dashboard_ctrl_c mapping, old31 native test bodies, all clocks/callers/public APIs/deps/workflow remain exact. Detached Axum connections and begun blocking Store workers remain separate unqualified Issue30 scope.
-## PR139 measured warnings-denied failure before repair (2026-10-04)
 
-Ordinary changed-head run37183332242, exact PR head4852c51ae38cf28568db34d861e7b22e85b339df/attempt1, completed FAILURE. Saved completed job metadata shows three Windows foundation jobs SUCCESS, while Windows/Linux/macOS lint jobs fail. The first Windows and Linux raw lint logs both identify exactly one new locron-server lib-test error at lib.rs881: the fixture's Err(_) panic arm triggers match_wild_err_arm under -D warnings. MacOS's specific diagnostic and the new42-case native evidence remain under separate read-only qualification; their content is not inferred from these two logs. The real result does not waive any required lint or native gate.
+### Root actual734 capture and publication composition research (2026-10-04)
 
-The helper already aborts/reaps its owned controller and observes captured yielding-task Drop receipts before handling the timeout result. Select only binding the returned Elapsed value and including its Display in the existing failure panic after that cleanup. This uses an already-returned error and adds no call, query, retry, clock, task or owner. Existing13s fixture/10s supervisor guards, eleven control oracles and production behavior remain unchanged. No allow attribute or warning suppression is selected.
+Separate research and Root independent proofs dd28aa1a/138f0dd4 identify the
+disjoint capture delta, preserved private publisher/fixed-only notice, exact
+three capture-only Docs suffixes and actual ARM Expired/History failure. Actual
+run37196440237 has20PASS/1FAIL; pre/post cancellation and daemon/cleanup cause
+remain unknown. The new exact main9de596f8 retains reviewed138 tree51c7643.
+Selected before-Source composition and four Verify steps are in
+planning/WINDOWS_NATIVE_CAPTURE_PUBLICATION_2026-10-04.md. No owner-PC native
+execution or causal production repair is selected.
 
+## Root reviewed current-main integration research, 2026-10-04 (pr138)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+PR138 and merged main have disjoint Source changes; the original unmodified forecast is 306 paths/tree6564ad98a2053813eb00adfb8f93626e9d860765. Root Docs adds protected suffixes and one plan. Old1c45 x64 lifecycle294/877 failures remain measured failures with causes unobserved.
+
+## PR136 completed capture qualification and ARM History observation gap (2026-10-04)
+
+Current7343/run37196440237 completed16 ordinary PASS/1 ARM failure. Actual original controls17/18 and existing capture controls3/3 (all9 producer/ownership markers) pass. The remaining actual ARM first-work is Expired/History; CleanupKill intent is not returned kill/reap evidence. Cumulative legacy HistoryCliWait/code0 is not reliably the current CLI result. Source-only producer sharing/tail and startup/capture cost possibilities remain unmeasured. Select only scalar current-call epochs, real entry/return/wait and last completed same-run History/progress records per planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md. No clock/oracle/admission/production change is selected.
+
+
+## Current PR136 observer and concurrent publication integration
+
+Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+## PR 142 generic refusal review and missing admission qualification (2026-10-04)
+
+Head507777cedd5bd02b162d9b347c2770cdf4585bc0 removes URI interpolation from authentication errors. Both contract.rs token_refusal expectations still contain /api/v1/jobs; ordinary run 37177628448 fails those assertions on eight platform jobs, while existing Server library tests and the other contract cases pass. Preserve the generic response and update those two expectations. Source review also confirms that single_header distinguishes actual absence, multiple fields and undecodable bytes, loopback_port refuses unsupported suffixes and malformed decimal ports, and unsafe Origin requires the actual bound port. Existing tests do not establish the adversarial matrix. Add actual-router admission/body-poll and real HTTP canary controls in PR 142 under Issue 162; PR 145 retains the separate cookie/CSRF slice. The selected tests use synthetic tokens and private ephemeral fixtures only; no installed dashboard credentials or live service are involved.
+
+### PR142 reviewed admission Source/current-main handoff (2026-10-04)
+
+Source4d229e61 preserves the full production middleware prefix and original contract except the two selected generic messages; parent-reviewed tests statically inventory152 rows. Format/locked metadata/diff pass; all new runtime/type/Clippy/native qualification remains pending. A normal current-main c4ef8b90 integration must preserve both Docs histories and the reviewed Source union, followed by fresh candidate/current-base CI and paired provenance. Refs #162; #163.
 ### PR142 measured embedded URL suffix lint (2026-10-04)
 
 Changed-head37198413636 has14 ordinary successes/three lint failures. Raw Windows/Linux lint identifies middleware831 ends_with(.js) case-sensitive-file-extension lint. Keep the exact lowercase embedded URL rule through rsplit_once plus exact suffix js; preserve all152 rows and other Source. No case relaxation/allow/gate waiver. Root Docs/Issue162 readback precede separate one-assertion Source repair and fresh changed-head qualification.
@@ -5452,11 +5647,6 @@ Changed-head37198413636 has14 ordinary successes/three lint failures. Raw Window
 
 The [completed integration plan](planning/DASHBOARD_HEADERS_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
 
-## Root reviewed current-main integration research, 2026-10-04 (pr138)
-
-Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
-
-PR138 and merged main have disjoint Source changes; the original unmodified forecast is 306 paths/tree6564ad98a2053813eb00adfb8f93626e9d860765. Root Docs adds protected suffixes and one plan. Old1c45 x64 lifecycle294/877 failures remain measured failures with causes unobserved.
 
 ## PR142 exact main136 integration selection
 
