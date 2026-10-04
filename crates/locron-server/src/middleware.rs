@@ -828,7 +828,12 @@ mod admission_tests {
             .collect::<Vec<_>>();
         assert_eq!(scripts.len(), 1, "exactly one external script reference");
         let script_path = scripts[0];
-        assert!(script_path.starts_with("/assets/") && script_path.ends_with(".js"));
+        assert!(
+            script_path.starts_with("/assets/")
+                && script_path
+                    .rsplit_once('.')
+                    .is_some_and(|(_, extension)| extension == "js")
+        );
         let script = crate::assets::Assets::get(script_path.trim_start_matches('/'))
             .expect("entry-referenced embedded script");
         assert!(!entry.data.is_empty() && !script.data.is_empty());
