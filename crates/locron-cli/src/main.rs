@@ -1,5 +1,6 @@
 //! `locron` command-line composition root.
 
+mod explicit_prune;
 mod maintenance;
 mod mcp;
 mod self_update;
@@ -3640,34 +3641,11 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         projected = projected.saturating_sub(candidate.physical_bytes).max(0);
         candidates.push(candidate);
     }
+    let planned_paths = explicit_prune::validated_paths(paths, &candidates)?;
     if !dry_run {
-        for candidate in &candidates {
-            #[cfg(windows)]
-            let path = {
-                let attempt = u16::try_from(candidate.attempt_number)?;
-                let path = paths.final_output(&candidate.run_id, attempt)?;
-                if candidate.relative_path != format!("{}/{attempt}.log", candidate.run_id) {
-                    return Err(anyhow!(
-                        "database output path is not the canonical final path"
-                    ));
-                }
-                path
-            };
+        for (candidate, path) in candidates.iter().zip(&planned_paths) {
             store.mark_output_prune_pending(candidate, now_us())?;
-            #[cfg(not(windows))]
-            let path = paths.outputs.join(&candidate.relative_path);
-            #[cfg(windows)]
-            locron_core::filesystem::remove_private_file(&path)?;
-            #[cfg(not(windows))]
-            match std::fs::symlink_metadata(&path) {
-                Ok(metadata) if metadata.file_type().is_symlink() => {
-                    return Err(anyhow!("refusing to prune symbolic-link output"));
-                }
-                Ok(metadata) if metadata.is_file() => std::fs::remove_file(&path)?,
-                Ok(_) => return Err(anyhow!("refusing to prune non-file output")),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
+            explicit_prune::remove_output(paths, path)?;
             store.finish_output_prune(candidate, now_us())?;
         }
     }
