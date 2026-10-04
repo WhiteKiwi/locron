@@ -734,7 +734,11 @@ impl Channel {
                 Ok(0) => return None,
                 Ok(_) => self.bytes.push(byte[0]),
                 Err(error) if error.kind() == ErrorKind::WouldBlock => return None,
-                Err(_) => panic!("fixture control read failed"),
+                Err(error) => panic!(
+                    "fixture control read failed: kind={:?} raw={:?}",
+                    error.kind(),
+                    error.raw_os_error()
+                ),
             }
             assert!(
                 self.bytes.len() <= FRAME_LIMIT,
@@ -877,7 +881,11 @@ impl Harness {
                     self.pending.push(Channel::new(stream));
                 }
                 Err(error) if error.kind() == ErrorKind::WouldBlock => break,
-                Err(_) => panic!("fixture accept failed"),
+                Err(error) => panic!(
+                    "fixture accept failed: kind={:?} raw={:?}",
+                    error.kind(),
+                    error.raw_os_error()
+                ),
             }
         }
         let mut index = 0;
@@ -1126,7 +1134,11 @@ impl Harness {
                     .map(|token| token.trim().as_bytes().to_vec())
             }
             Err(error) if error.kind() == ErrorKind::NotFound => None,
-            Err(_) => panic!("capture token oracle state unobserved"),
+            Err(error) => panic!(
+                "capture token oracle state unobserved: kind={:?} raw={:?}",
+                error.kind(),
+                error.raw_os_error()
+            ),
         };
         for owner in &self.children {
             // Deliberately killed owners have no Done; all normal owners must pass their entry.
