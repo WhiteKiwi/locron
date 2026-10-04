@@ -5436,6 +5436,12 @@ Ordinary changed-head run37183332242, exact PR head4852c51ae38cf28568db34d861e7b
 
 The helper already aborts/reaps its owned controller and observes captured yielding-task Drop receipts before handling the timeout result. Select only binding the returned Elapsed value and including its Display in the existing failure panic after that cleanup. This uses an already-returned error and adds no call, query, retry, clock, task or owner. Existing13s fixture/10s supervisor guards, eleven control oracles and production behavior remain unchanged. No allow attribute or warning suppression is selected.
 
+## Root reviewed current-main integration research, 2026-10-04 (pr138)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+PR138 and merged main have disjoint Source changes; the original unmodified forecast is 306 paths/tree6564ad98a2053813eb00adfb8f93626e9d860765. Root Docs adds protected suffixes and one plan. Old1c45 x64 lifecycle294/877 failures remain measured failures with causes unobserved.
+
 ## PR 141 Windows first-lock publication and qualification review (2026-10-04)
 
 At original head 1e0c19a82d9efd4f67135d32f16617b2e41adcae, token.rs opens the permanent lock with Core open_private_or_create. Core filesystem_worker.ps1:46–47 exposes CreateNew's final name while its FullControl/FileShare.ReadWrite constructor remains live; filesystem.rs:574–583's concurrent guarded open omits delete sharing. The access/share combination can produce raw32 before try_lock; occurrence and holder in actual PR 141 are unmeasured. Select Windows-only closed private candidate/no-clobber publication with exact deadline and ownership/error precedence, preserving Unix and the permanent final. Locked tempfile 3.27.0 archive/API checksum matches Cargo.lock and is already a Server dev edge; a target-Windows usage introduces no new package/version. Original sequential CI success does not qualify concurrency/failure/publication. docs/planning/DASHBOARD_TOKEN_SERIALIZATION.md defines 11 portable and 2 native drivers, real OS and injected-fault evidence separately, under Issue 162; main PR 139 and Issue 30 remain intact.
