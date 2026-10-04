@@ -5264,3 +5264,8 @@ change; actual new head Linux/macOS and unchanged Windows required gates qualify
 ## PR153 measured macOS/lint amendment before separate Source (2026-10-04)
 
 Follow planning/XDG_MACOS_RAW_STATE_REFUSAL_2026-10-04.md after exact Issue152 readback and final committed Root review. Only new cli.rs state_discovery additions adapt: one private platform helper at three raw-byte call sites, genuine macOS JSON refusal and valid owned-parent empty enumeration; Linux retains successful original helper/DB placement. Fix only the measured new assertion message while preserving its predicate. Preserve original tests, whole paths.rs6a26, all other production/Windows/dependency/workflow Source. Full inverses and permitted static checks precede fresh actual Linux/macOS/native Windows/strict required CI; unchanged filtered standalone workflows are honestly NOT RUN with exact qualified-main dependency binding.
+
+
+## PR153 exact-main Git-only handoff (2026-10-05)
+
+Follow the complete docs/planning/PR153_MAIN_F90_INTEGRATION_2026-10-05.md after exact owning Issue Verify readback and final committed Root reread. One ordinary merge of the selected Docs tip and exactf90 preserves whole incoming native Source/CI and reviewed own Source/plans. Full tree/Source/Doc inverses and permitted static checks precede ordinary publication and actual changed-head qualification; skipped/unreached/failed native or own tests cannot be counted as PASS. No Source adaptation, unrelated PR import, rerun or permission waiver is selected.

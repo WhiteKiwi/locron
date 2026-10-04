@@ -5458,3 +5458,8 @@ metadata is new acceptance.
 ## PR153 actual macOS raw-state refusal before further Source (2026-10-04)
 
 Actual CI37207052645 at1ba658 ran Linux10/10 on all three rows but macOS6/9 on both rows: three raw-byte live config calls returned exit5/EILSEQ92 after dry-run, then their success assertions failed. Post-refusal state checks were unexecuted. Unix lint separately rejects only a new Debug-path assertion message. Root327-artifact actual proof21b8e38e and separate105-artifact refinement proof96953e16 preserve the observed facts and unknown native primitive/filesystem. The original6a26 macOS semantics are unchanged but its refactored raw block differs from incoming main. Follow planning/XDG_MACOS_RAW_STATE_REFUSAL_2026-10-04.md; use actual JSON refusal and successful valid-parent empty enumeration, keeping Linux successful placement and whole production Source unchanged.
+
+
+## PR153 full incoming f90 compatibility before Git integration (2026-10-05)
+
+Separate read-only research and independent Root proof 05a6e83fc5554d0da7c349eb9db8ae4556fee4ba09093b88987d444d8b56798a select normal exactf90 integration with no Source adaptation. Preserve complete incoming FINDINGS/IMPLEMENTATION as authoritative prefixes and append only reviewed own/new components once; incoming native histories are not a guessed common9de suffix. Actual mainf90 native22PASS2FAIL remains failed, while the selected own HTTP/macOS Source has not gained new hosted acceptance. Full scope and every Verify are in docs/planning/PR153_MAIN_F90_INTEGRATION_2026-10-05.md.
