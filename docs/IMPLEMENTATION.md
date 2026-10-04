@@ -5214,3 +5214,8 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+
+## Engine output qualification on reviewed main (2026-10-05)
+
+Continue the frozen SPEC/STORAGE and original streaming-repair plan under Issue146. Follow the complete ENGINE_OUTPUT_QUALIFICATION_2026-10-05.md and byte-exact shared96-key JSON ledger: normally integrate reviewed main f90a9d5dc2e6bafbc163567b333c398777647402 before Source with whole document-component inverses, preserve GuardedFile ownership and the literal scanner, add the three private Engine seams/modules and an additive hosted CI receipt step only. The six steps include concrete Verify for fixed42/43 functional controls, three owned-child Linux memory rows with immutable180/30/5/3-second clocks and fixed16/96MiB thresholds, actual Cargo JSON artifact identity and bounded uncaptured key/metric evidence, full Source/inverse/protected-mode review, fresh strict hosted/native/paired gates and oldest-first publication. Exact Issue readback and whole final-plan reread precede the separate development lease. Compiler/runtime/native execution stays hosted, original commands/conditions/clocks/Cargo/source policies remain, and both output PR merges plus all Verify criteria are required before closing146.

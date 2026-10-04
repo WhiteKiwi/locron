@@ -5405,3 +5405,8 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+
+## Engine output qualification on reviewed main (2026-10-05)
+
+Refs #146 / PR148. Root reread the complete original411-line Engine module and separate read-only pre-development handoff. The unchanged96-key ledger selects Engine common41 plus Unix1/Windows2, yielding42/43 functional controls; the three Linux memory rows produce45Linux/42macOS/43Windows and Engine47 union. Earlier43/44 wording was a handoff count error, not a new case. The File-typed collector wrapper is necessary to retain GuardedFile deref coercion while the private generic collector shares the literal scanner. Default libtest success output is captured, so ordinary suite totals alone cannot establish fixed keys or real VmHWM numbers. The new committed ENGINE_OUTPUT_QUALIFICATION_2026-10-05.md selects an additive hosted CI receipt step and preserved native/Unix artifact outputs before Source; this supersedes the prep's no-CI lease only for that bounded addition. All new controls and memory metrics remain unmeasured, and separate Store success is not Engine acceptance.
