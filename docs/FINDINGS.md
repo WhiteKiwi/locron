@@ -5445,3 +5445,8 @@ The helper already aborts/reaps its owned controller and observes captured yield
 Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
 
 PR138 and merged main have disjoint Source changes; the original unmodified forecast is 306 paths/tree6564ad98a2053813eb00adfb8f93626e9d860765. Root Docs adds protected suffixes and one plan. Old1c45 x64 lifecycle294/877 failures remain measured failures with causes unobserved.
+
+
+## PR144 full incoming f90 compatibility before Git integration (2026-10-05)
+
+Separate read-only research and independent Root proof 4c13f900da8ca5702f6b143e0b15532b1831fd12a3a12caa0f715c2524ae72ae select normal exactf90 integration with no Source adaptation. Preserve complete incoming FINDINGS/IMPLEMENTATION as authoritative prefixes and append only reviewed own/new components once; incoming native histories are not a guessed common9de suffix. Actual mainf90 native22PASS2FAIL remains failed, while the selected own HTTP/macOS Source has not gained new hosted acceptance. Full scope and every Verify are in docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md.

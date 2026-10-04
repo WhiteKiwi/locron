@@ -5253,3 +5253,8 @@ The complete ordered plan is [RELEASE_PUBLICATION_MAIN140_2026-10-04.md](plannin
 Retain all five exact PR138 snapshot paths and import reviewed main139/140 without Source adaptation; shared Docs are common15820 + complete incomingc4 suffix + complete new Root suffix.
 
 Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
+
+
+## PR144 exact-main Git-only handoff (2026-10-05)
+
+Follow the complete docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md after exact owning Issue Verify readback and final committed Root reread. One ordinary merge of the selected Docs tip and exactf90 preserves whole incoming native Source/CI and reviewed own Source/plans. Full tree/Source/Doc inverses and permitted static checks precede ordinary publication and actual changed-head qualification; skipped/unreached/failed native or own tests cannot be counted as PASS. No Source adaptation, unrelated PR import, rerun or permission waiver is selected.
