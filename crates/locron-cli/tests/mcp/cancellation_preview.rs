@@ -7,7 +7,7 @@ use locron_core::filesystem::DirectoryGuard;
 use locron_store::{AttemptCompletion, RetryPlan, StatePaths, Store};
 use serde_json::{Value, json};
 
-use super::{McpClient, add_job_arguments};
+use super::{McpClient, add_job_arguments, tool_json};
 
 const RUN: &str = "00000000-0000-7000-8000-000000000001";
 const LIFETIME: &str = "00000000-0000-7000-8000-000000000002";
@@ -77,7 +77,13 @@ impl Fixture {
                 state
             }
         );
-        assert_eq!(store.cancellation_requested(RUN).unwrap(), requested);
+        // Cancelled completion itself records cancellation, even when the
+        // fixture did not issue an earlier starting/running request.
+        assert_eq!(
+            store.cancellation_requested(RUN).unwrap(),
+            requested || state == "cancelled",
+            "unexpected setup request state: {state}/{requested}"
+        );
         drop(store); // End the fixture writer before checking immutable preview bytes.
         Self {
             client,
@@ -121,8 +127,9 @@ fn files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 
 fn data(response: &Value) -> Value {
     assert!(response.get("error").is_none(), "{response}");
-    assert_ne!(response["result"]["isError"], true, "{response}");
-    serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    let decoded = tool_json(response);
+    assert!(decoded.is_object(), "unexpected tool object: {response}");
+    decoded
 }
 
 fn compare_case(state: &str, requested: bool, acknowledge: bool) {
@@ -166,19 +173,25 @@ fn compare_case(state: &str, requested: bool, acknowledge: bool) {
     };
     assert_eq!(observed["decision"], decision);
     if risk {
-        assert_eq!(executed["acknowledged_unconfirmed"], true);
-        assert!(executed.get("requested").is_none());
+        assert_eq!(
+            executed["acknowledged_unconfirmed"], true,
+            "live acknowledgement: {state}/{requested}/{acknowledge}: {executed}"
+        );
+        assert!(executed.get("requested").is_none(), "{executed}");
     } else {
-        assert_eq!(executed["requested"], true);
+        assert_eq!(
+            executed["requested"], true,
+            "live request: {state}/{requested}/{acknowledge}: {executed}"
+        );
         if before_execution {
-            assert_eq!(executed["cancelled"], true);
-            assert_eq!(executed["before_execution"], true);
+            assert_eq!(executed["cancelled"], true, "{executed}");
+            assert_eq!(executed["before_execution"], true, "{executed}");
         }
     }
     let actual = Store::open_read_only(&live.paths.database)
         .unwrap()
         .run(RUN)
-        .unwrap();
+        .unwrap_or_else(|error| panic!("live row: {state}/{requested}/{acknowledge}: {error}; response={executed}"));
     assert_eq!(observed["resulting_state"], actual.state);
 }
 
@@ -240,17 +253,21 @@ fn changed_state_after_preview_is_rechecked_by_the_live_transaction() {
             retry: None,
         })
         .unwrap();
+    assert_eq!(store.run(RUN).unwrap().state, "running");
     drop(store);
     let refused = fixture.call(false, false);
-    assert_eq!(refused["result"]["isError"], true);
+    assert_eq!(refused["result"]["isError"], true, "{refused}");
     assert!(
         refused["result"]["content"][0]["text"]
             .as_str()
             .unwrap()
-            .contains("--acknowledge-unconfirmed")
+            .contains("--acknowledge-unconfirmed"),
+        "{refused}"
     );
     let store = Store::open_read_only(&fixture.paths.database).unwrap();
-    let run = store.run(RUN).unwrap();
+    let run = store.run(RUN).unwrap_or_else(|error| {
+        panic!("quarantined row after refused cancellation: {error}; response={refused}")
+    });
     assert_eq!(run.state, "running");
     assert_eq!(run.reason.as_deref(), Some("termination_unconfirmed"));
 }
