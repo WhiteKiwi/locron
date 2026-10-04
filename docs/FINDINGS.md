@@ -5405,3 +5405,9 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+## PR140 output recovery Verify research before Source (2026-10-04)
+
+Root reviewed the separate69-artifact research against25 immutable app Git blobs/modes, four full trees and the complete composed renderer. Current main15820 is entire-tree equal to reviewed merged137. Preserve old140 pre-main bytes and main137 main() suffix exactly; combined55f41774c7e70d7da17bdf9f47059e2effc4c0881182ede3b7c9802548bb3269. PR140 lacks the concrete required recovery/native controls, but this read-only research demonstrates no production writer defect. Earlier paired/entrypoint/snapshot successes do not qualify these paths.
+
+Select ten portable methods/32 controls through actual fd-backed operations plus four hosted-Windows methods/six controls for real exclusive collision, ordinary-file/directory identity replacement, actual read-only deletion denial and close/namespace reuse. Distinguish each deterministic injected generation/write/flush/close error from the genuine OS observations. Retain original error identity/notes, unknown objects and unrelated subtrees; no hostile-race/atomic visibility/durability guarantee. Python/Windows primary contracts support these selected oracles but actual results remain pending. Root research proof1f360be93ecce1d60129f952bc8d21440f5630896546472a2c49c1e5974c739a.

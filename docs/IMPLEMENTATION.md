@@ -5214,3 +5214,9 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+## PR140 finite output controls before separate development (2026-10-04)
+
+Frozen SPEC is unchanged. Follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. First compose reviewed oldPR140 and main137 through a recorded main merge; only renderer main() can be reconciled, exactly old140 pre-main plus merged137 suffix. A separate developer then adds scripts/test-winget-output.py and additive windows-paired-manifest workflow controls. Other inherited main137 paths remain exact; no renderer/writer redesign, dependency, package/catalog/installer/updater/native Locron effect is selected.
+
+Use real file streams/IDs and one-shot stdlib boundary injections with actual underlying close, fixed small Unicode/LF documents, per-case ownership and explicit controlled second calls. Native Windows rows require actual platform/Python/runner architecture and nonzero file identities with no skip; register read-only attribute restoration before mutation and verify the exact test-owned file before changing it. The original Ubuntu workflow commands/timeout/permission/concurrency and all old tests stay exact; independent5-minute Windows x64/ARM rows run14 methods/38 controls and old entrypoint8. Outer job timeout does not preempt a synchronous native file call. Root Docs/Issues/final review precede Source; whole Source/inherited union/reverse workflow/rules checks precede one reviewed-head automatic CI publication. Public release/WinGet/clean-account requirements stay open.
