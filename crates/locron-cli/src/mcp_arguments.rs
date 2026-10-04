@@ -76,6 +76,17 @@ pub(super) fn validate(tool: &str, arguments: &Value) -> Result<()> {
     }
     for (name, rule) in properties {
         if let Some(value) = object.get(name) {
+            // Keep actionable range guidance without reflecting supplied data
+            // or duplicating the catalogue's accepted numeric bounds.
+            if rule["type"] == "integer"
+                && let (Some(minimum), Some(maximum)) =
+                    (rule["minimum"].as_u64(), rule["maximum"].as_u64())
+            {
+                ensure!(
+                    matches_shape(value, rule),
+                    "parameter {name} must be an integer from {minimum} through {maximum}"
+                );
+            }
             ensure!(
                 matches_shape(value, rule),
                 "parameter {name} must match its declared type and constraints"
