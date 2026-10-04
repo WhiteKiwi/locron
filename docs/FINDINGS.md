@@ -5582,3 +5582,20 @@ or native qualification was produced by this research.
 Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
 
 Incoming73 preserves the outer private root guard and has bounded1502/844-byte notices within its2048 plan. Its TempPath cleanup and queued-result/elapsed observer differ from Root-reviewed89. Select exact89 Source, preserve both historical Docs and import only exact merged main140; no73 native qualification or old failure cause is inferred.
+
+## PR140 output recovery Verify research before Source (2026-10-04)
+
+Root reviewed the separate69-artifact research against25 immutable app Git blobs/modes, four full trees and the complete composed renderer. Current main15820 is entire-tree equal to reviewed merged137. Preserve old140 pre-main bytes and main137 main() suffix exactly; combined55f41774c7e70d7da17bdf9f47059e2effc4c0881182ede3b7c9802548bb3269. PR140 lacks the concrete required recovery/native controls, but this read-only research demonstrates no production writer defect. Earlier paired/entrypoint/snapshot successes do not qualify these paths.
+
+Select ten portable methods/32 controls through actual fd-backed operations plus four hosted-Windows methods/six controls for real exclusive collision, ordinary-file/directory identity replacement, actual read-only deletion denial and close/namespace reuse. Distinguish each deterministic injected generation/write/flush/close error from the genuine OS observations. Retain original error identity/notes, unknown objects and unrelated subtrees; no hostile-race/atomic visibility/durability guarantee. Python/Windows primary contracts support these selected oracles but actual results remain pending. Root research proof1f360be93ecce1d60129f952bc8d21440f5630896546472a2c49c1e5974c739a.
+
+
+## Root review of WinGet output Source and exact main139 integration (2026-10-04)
+
+Root full review af824 verifies128 artifacts/complete union/299 protected Source
+pairs and actual741-line control semantics; no blocking Source finding. Planned
+portable10/32 and Windows14/38 remain unexecuted. Select only reviewed main814
+Git integration, preserving full new tests/workflow/renderer55f4 and incoming
+Server exactly. The appended WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md plan
+requires literal Docs-suffix union, before-Source Issues32/35, Root final reread
+and separate developer before changed-head hosted qualification/publication.
