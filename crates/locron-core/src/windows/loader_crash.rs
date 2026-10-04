@@ -372,7 +372,13 @@ fn parse_append(bytes: &[u8]) -> Result<AppendSample, &'static str> {
         return Err("oversized");
     }
     let count = bytes.len() / APPEND_RECORD_BYTES;
-    for (index, record) in bytes.chunks_exact(APPEND_RECORD_BYTES).enumerate() {
+    for (index, record) in bytes
+        .as_chunks::<APPEND_RECORD_BYTES>()
+        .0
+        .iter()
+        .enumerate()
+    {
+        let record = record.as_slice();
         if record[20] != b'\n' || !record[..20].iter().all(u8::is_ascii_digit) {
             return Err("malformed_record");
         }
@@ -1012,9 +1018,8 @@ fn append_file_proofs(directory: &Path, observations: &mut Observations) {
     let mut writer = HeartbeatAppender::create(&collision_path, observations.deadline).unwrap();
     writer.append(observations.deadline).unwrap();
     writer.write_next(20, observations.deadline).unwrap();
-    let collision = match HeartbeatAppender::create(&collision_path, observations.deadline) {
-        Ok(_) => panic!("append CreateNew adopted an existing file"),
-        Err(error) => error,
+    let Err(collision) = HeartbeatAppender::create(&collision_path, observations.deadline) else {
+        panic!("append CreateNew adopted an existing file");
     };
     assert_eq!(collision.kind(), io::ErrorKind::AlreadyExists);
     observations.check();
