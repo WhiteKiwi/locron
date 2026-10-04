@@ -1,0 +1,849 @@
+{
+  "status": "proposal_not_executed",
+  "unique_rows": 96,
+  "per_platform": {
+    "linux": {
+      "store": 41,
+      "engine": 42,
+      "caller": 6,
+      "engine-memory": 3,
+      "total": 92
+    },
+    "macos": {
+      "store": 41,
+      "engine": 42,
+      "caller": 6,
+      "engine-memory": 0,
+      "total": 89
+    },
+    "windows": {
+      "store": 42,
+      "engine": 43,
+      "caller": 6,
+      "engine-memory": 0,
+      "total": 91
+    }
+  },
+  "rows": [
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-SHORT-00",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "0 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-SHORT-01",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "1 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-SHORT-02",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "2 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-SHORT-03",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "3 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-SHORT-04",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "4 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-SHORT-05",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "5 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-SHORT-06",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "6 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-SHORT-07",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "7 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-MAGIC-BAD",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "8 bytes wrong magic/version",
+      "expected": "InvalidData; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:F-VALID-EMPTY",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "MAGIC only",
+      "expected": "frames0,payload0,physical8,tail0"
+    },
+    {
+      "module": "store",
+      "key": "store:F-VALID-BINARY",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "one stdout frame: 00 ff 0a",
+      "expected": "frames1,payload3,physical36,tail0; exact raw bytes"
+    },
+    {
+      "module": "store",
+      "key": "store:F-VALID-CHANNELS",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "three fixed stdout/stderr/body frames",
+      "expected": "all exact channels/order/sequence/elapsed/bytes/counters"
+    },
+    {
+      "module": "store",
+      "key": "store:F-VALID-ZERO",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "one hand-encoded zero-length valid CRC frame",
+      "expected": "frames1,payload0,physical33,tail0"
+    },
+    {
+      "module": "store",
+      "key": "store:F-VALID-MAX",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "one exactly 1048576-byte payload",
+      "expected": "frames1,payload1048576,physical1048609,tail0"
+    },
+    {
+      "module": "store",
+      "key": "store:F-VALID-MANY",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "17 fixed bounded mixed-channel frames",
+      "expected": "all17 exact tuples and counters"
+    },
+    {
+      "module": "store",
+      "key": "store:F-TAIL-HEADER-01",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then 1 header byte",
+      "expected": "repair seed; Store tail1; public reader EOF/prefix"
+    },
+    {
+      "module": "store",
+      "key": "store:F-TAIL-HEADER-24",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then 24 header bytes",
+      "expected": "repair seed; Store tail24; public reader EOF/prefix"
+    },
+    {
+      "module": "store",
+      "key": "store:F-TAIL-PAYLOAD-00",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then header declaring9 with zero payload bytes",
+      "expected": "repair seed; Store tail25/public UnexpectedEof; Engine public prefix"
+    },
+    {
+      "module": "store",
+      "key": "store:F-TAIL-PAYLOAD-08",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then header declaring9 with8 payload bytes",
+      "expected": "repair seed; Store tail33/public UnexpectedEof; Engine public prefix"
+    },
+    {
+      "module": "store",
+      "key": "store:F-CHANNEL-BAD",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then complete second header channel4",
+      "expected": "Engine InvalidData/unchanged; Store repair seed; both public InvalidData"
+    },
+    {
+      "module": "store",
+      "key": "store:F-CRC-BAD",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then complete second frame wrong CRC",
+      "expected": "repair seed; Engine public prefix; Store public checksum InvalidData"
+    },
+    {
+      "module": "store",
+      "key": "store:F-SEQUENCE-GAP",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed seq0 then complete valid CRC frame seq3",
+      "expected": "repair seed; Engine public prefix; Store public invalid frame"
+    },
+    {
+      "module": "store",
+      "key": "store:F-OVERSIZE-MAXPLUS",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then header length1048577 without payload",
+      "expected": "repair seed; no oversized allocation; Engine public prefix/Store InvalidData"
+    },
+    {
+      "module": "store",
+      "key": "store:F-OVERSIZE-U32MAX",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then header length4294967295 without payload",
+      "expected": "repair seed; no oversized allocation; Engine public prefix/Store InvalidData"
+    },
+    {
+      "module": "store",
+      "key": "store:I-HEADER-PERMISSION_DENIED",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame header after exact first valid frame",
+      "error": "PERMISSION_DENIED",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "store",
+      "key": "store:I-HEADER-OTHER",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame header after exact first valid frame",
+      "error": "OTHER",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "store",
+      "key": "store:I-HEADER-IO_INVALID_DATA",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame header after exact first valid frame",
+      "error": "IO_INVALID_DATA",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "store",
+      "key": "store:I-PAYLOAD-PERMISSION_DENIED",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame payload after exact first valid frame",
+      "error": "PERMISSION_DENIED",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "store",
+      "key": "store:I-PAYLOAD-OTHER",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame payload after exact first valid frame",
+      "error": "OTHER",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "store",
+      "key": "store:I-PAYLOAD-IO_INVALID_DATA",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame payload after exact first valid frame",
+      "error": "IO_INVALID_DATA",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "store",
+      "key": "store:I-MAGIC-OTHER",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "magic read",
+      "error": "Other",
+      "mutation": "set_len0/sync0; unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:I-METADATA-FIRST",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "first retained-file metadata",
+      "error": "PermissionDenied",
+      "mutation": "no scan/set_len0/sync0; unchanged",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "store",
+      "key": "store:I-METADATA-LAST",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "final retained-file metadata",
+      "error": "Other",
+      "mutation": "set_len0/sync0; unchanged",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "store",
+      "key": "store:I-SETLEN",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "only repair set_len",
+      "error": "PermissionDenied",
+      "mutation": "attempt1/success0/sync0; unchanged",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "store",
+      "key": "store:I-SYNC",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "sync after actual successful set_len",
+      "error": "Other",
+      "mutation": "set_len1/sync attempt1; exact prefix truncated, no rollback",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "store",
+      "key": "store:D-GROW-LAST",
+      "platform": "all",
+      "evidence": "proposed actual file mutation at deterministic boundary",
+      "action": "append one actual byte after scan before final metadata",
+      "expected": "size drift InvalidData; repair writes0; equals exact post-control snapshot"
+    },
+    {
+      "module": "store",
+      "key": "store:D-SHRINK-LAST",
+      "platform": "all",
+      "evidence": "proposed actual file mutation at deterministic boundary",
+      "action": "remove one actual tail byte after scan before final metadata",
+      "expected": "size drift InvalidData; repair writes0; equals exact post-control snapshot"
+    },
+    {
+      "module": "store",
+      "key": "store:D-PREFIX-BEYOND-FIRST",
+      "platform": "all",
+      "evidence": "proposed actual file mutation at deterministic boundary",
+      "action": "append valid frame after initial metadata before scan",
+      "expected": "size drift InvalidData; repair writes0; equals exact post-control snapshot"
+    },
+    {
+      "module": "store",
+      "key": "store:O-MISSING",
+      "platform": "all",
+      "evidence": "proposed actual filesystem refusal",
+      "action": "missing leaf under existing private root",
+      "expected": "NotFound",
+      "mutation": "no repair write; unrelated data unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:O-DIRECTORY",
+      "platform": "all",
+      "evidence": "proposed actual filesystem refusal",
+      "action": "directory instead of output leaf",
+      "expected": {
+        "unix": "IsADirectory, native EISDIR from existing read/write open",
+        "windows": "PermissionDenied/raw5 from native directory open without backup semantics; static expected disposition, qualification pending"
+      },
+      "mutation": "no repair write; unrelated data unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:U-REPLACE-PATH",
+      "platform": "unix",
+      "evidence": "proposed actual Unix rename/create while old handle retained",
+      "expected": "old inode repaired to seed; replacement exact bytes/dev+ino unchanged"
+    },
+    {
+      "module": "store",
+      "key": "store:W-RENAME-NODELETE",
+      "platform": "windows",
+      "evidence": "proposed actual std fs rename under noDelete guards",
+      "expected": "raw32/33 refusal; original identity/content preserved at refusal; repair valid prefix; drop exact guards then same source rename succeeds"
+    },
+    {
+      "module": "store",
+      "key": "store:W-OPEN-NOWRITE",
+      "platform": "windows",
+      "evidence": "proposed actual held read-only shareMode READ blocker",
+      "expected": "repair admission raw32/33 refusal, bytes unchanged; drop exact blocker then same public repair succeeds"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-SHORT-00",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "0 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-SHORT-01",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "1 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-SHORT-02",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "2 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-SHORT-03",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "3 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-SHORT-04",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "4 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-SHORT-05",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "5 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-SHORT-06",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "6 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-SHORT-07",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "7 bytes of MAGIC",
+      "expected": "UnexpectedEof; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-MAGIC-BAD",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "8 bytes wrong magic/version",
+      "expected": "InvalidData; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-VALID-EMPTY",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "MAGIC only",
+      "expected": "frames0,payload0,physical8,tail0"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-VALID-BINARY",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "one stdout frame: 00 ff 0a",
+      "expected": "frames1,payload3,physical36,tail0; exact raw bytes"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-VALID-CHANNELS",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "three fixed stdout/stderr/body frames",
+      "expected": "all exact channels/order/sequence/elapsed/bytes/counters"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-VALID-ZERO",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "one hand-encoded zero-length valid CRC frame",
+      "expected": "frames1,payload0,physical33,tail0"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-VALID-MAX",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "one exactly 1048576-byte payload",
+      "expected": "frames1,payload1048576,physical1048609,tail0"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-VALID-MANY",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "17 fixed bounded mixed-channel frames",
+      "expected": "all17 exact tuples and counters"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-TAIL-HEADER-01",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then 1 header byte",
+      "expected": "repair seed; Store tail1; public reader EOF/prefix"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-TAIL-HEADER-24",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then 24 header bytes",
+      "expected": "repair seed; Store tail24; public reader EOF/prefix"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-TAIL-PAYLOAD-00",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then header declaring9 with zero payload bytes",
+      "expected": "repair seed; Store tail25/public UnexpectedEof; Engine public prefix"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-TAIL-PAYLOAD-08",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then header declaring9 with8 payload bytes",
+      "expected": "repair seed; Store tail33/public UnexpectedEof; Engine public prefix"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-CHANNEL-BAD",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then complete second header channel4",
+      "expected": "Engine InvalidData/unchanged; Store repair seed; both public InvalidData"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-CRC-BAD",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then complete second frame wrong CRC",
+      "expected": "repair seed; Engine public prefix; Store public checksum InvalidData"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-SEQUENCE-GAP",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed seq0 then complete valid CRC frame seq3",
+      "expected": "repair seed; Engine public prefix; Store public invalid frame"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-OVERSIZE-MAXPLUS",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then header length1048577 without payload",
+      "expected": "repair seed; no oversized allocation; Engine public prefix/Store InvalidData"
+    },
+    {
+      "module": "engine",
+      "key": "engine:F-OVERSIZE-U32MAX",
+      "platform": "all",
+      "evidence": "proposed fixed real-file parser control",
+      "input": "seed then header length4294967295 without payload",
+      "expected": "repair seed; no oversized allocation; Engine public prefix/Store InvalidData"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-HEADER-PERMISSION_DENIED",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame header after exact first valid frame",
+      "error": "PERMISSION_DENIED",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-HEADER-OTHER",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame header after exact first valid frame",
+      "error": "OTHER",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-HEADER-IO_INVALID_DATA",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame header after exact first valid frame",
+      "error": "IO_INVALID_DATA",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-PAYLOAD-PERMISSION_DENIED",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame payload after exact first valid frame",
+      "error": "PERMISSION_DENIED",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-PAYLOAD-OTHER",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame payload after exact first valid frame",
+      "error": "OTHER",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-PAYLOAD-IO_INVALID_DATA",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "second frame payload after exact first valid frame",
+      "error": "IO_INVALID_DATA",
+      "mutation": "repair set_len0/sync0; original bytes unchanged",
+      "input": "seed physical39 then complete9-byte second frame: original73; error must preserve all73 bytes"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-MAGIC-OTHER",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "magic read",
+      "error": "Other",
+      "mutation": "set_len0/sync0; unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-METADATA-FIRST",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "first retained-file metadata",
+      "error": "PermissionDenied",
+      "mutation": "no scan/set_len0/sync0; unchanged",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-METADATA-LAST",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "final retained-file metadata",
+      "error": "Other",
+      "mutation": "set_len0/sync0; unchanged",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-SETLEN",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "only repair set_len",
+      "error": "PermissionDenied",
+      "mutation": "attempt1/success0/sync0; unchanged",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-SYNC",
+      "platform": "all",
+      "evidence": "proposed row-local I/O fault over real owned file",
+      "phase": "sync after actual successful set_len",
+      "error": "Other",
+      "mutation": "set_len1/sync attempt1; exact prefix truncated, no rollback",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "engine",
+      "key": "engine:I-SEEK",
+      "platform": "all",
+      "evidence": "proposed local seek fault over actual file",
+      "expected": "original Other error; seek attempt1,set_len0,sync0; unchanged",
+      "input": "fixed seed physical39 plus3-byte incomplete header tail, original42; eventual valid prefix39"
+    },
+    {
+      "module": "engine",
+      "key": "engine:D-GROW-LAST",
+      "platform": "all",
+      "evidence": "proposed actual file mutation at deterministic boundary",
+      "action": "append one actual byte after scan before final metadata",
+      "expected": "size drift InvalidData; repair writes0; equals exact post-control snapshot"
+    },
+    {
+      "module": "engine",
+      "key": "engine:D-SHRINK-LAST",
+      "platform": "all",
+      "evidence": "proposed actual file mutation at deterministic boundary",
+      "action": "remove one actual tail byte after scan before final metadata",
+      "expected": "size drift InvalidData; repair writes0; equals exact post-control snapshot"
+    },
+    {
+      "module": "engine",
+      "key": "engine:D-PREFIX-BEYOND-FIRST",
+      "platform": "all",
+      "evidence": "proposed actual file mutation at deterministic boundary",
+      "action": "append valid frame after initial metadata before scan",
+      "expected": "size drift InvalidData; repair writes0; equals exact post-control snapshot"
+    },
+    {
+      "module": "engine",
+      "key": "engine:O-MISSING",
+      "platform": "all",
+      "evidence": "proposed actual filesystem refusal",
+      "action": "missing leaf under existing private root",
+      "expected": "NotFound",
+      "mutation": "no repair write; unrelated data unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:O-DIRECTORY",
+      "platform": "all",
+      "evidence": "proposed actual filesystem refusal",
+      "action": "directory instead of output leaf",
+      "expected": {
+        "unix": "IsADirectory, native EISDIR from existing read/write open",
+        "windows": "PermissionDenied/raw5 from native directory open without backup semantics; static expected disposition, qualification pending"
+      },
+      "mutation": "no repair write; unrelated data unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:U-REPLACE-PATH",
+      "platform": "unix",
+      "evidence": "proposed actual Unix rename/create while old handle retained",
+      "expected": "old inode repaired to seed; replacement exact bytes/dev+ino unchanged"
+    },
+    {
+      "module": "engine",
+      "key": "engine:W-RENAME-NODELETE",
+      "platform": "windows",
+      "evidence": "proposed actual std fs rename under noDelete guards",
+      "expected": "raw32/33 refusal; original identity/content preserved at refusal; repair valid prefix; drop exact guards then same source rename succeeds"
+    },
+    {
+      "module": "engine",
+      "key": "engine:W-OPEN-NOWRITE",
+      "platform": "windows",
+      "evidence": "proposed actual held read-only shareMode READ blocker",
+      "expected": "repair admission raw32/33 refusal, bytes unchanged; drop exact blocker then same public repair succeeds"
+    },
+    {
+      "module": "caller",
+      "key": "C-LIVE-STARTING",
+      "platform": "all",
+      "evidence": "proposed real private Store/maintenance control",
+      "expected": "same live lifetime starting/missing partial: not selected, not missing"
+    },
+    {
+      "module": "caller",
+      "key": "C-LIVE-RUNNING",
+      "platform": "all",
+      "evidence": "proposed real private Store/maintenance control",
+      "expected": "same live lifetime running/existing corrupt tail: not selected, file unchanged"
+    },
+    {
+      "module": "caller",
+      "key": "C-TERMINAL",
+      "platform": "all",
+      "evidence": "proposed real private Store/maintenance control",
+      "expected": "same lifetime succeeded attempt: actual writer closed, exact repair/finalize, state/reason unchanged"
+    },
+    {
+      "module": "caller",
+      "key": "C-STALE-STARTING",
+      "platform": "all",
+      "evidence": "proposed real private Store/maintenance control",
+      "expected": "actual begin_lifetime old starting: interrupted_unknown/no retry unchanged by repair"
+    },
+    {
+      "module": "caller",
+      "key": "C-STALE-RUNNING",
+      "platform": "all",
+      "evidence": "proposed real private Store/maintenance control",
+      "expected": "actual begin_lifetime old running: interrupted_unknown/no retry unchanged by repair"
+    },
+    {
+      "module": "caller",
+      "key": "C-REFUSAL",
+      "platform": "all",
+      "evidence": "proposed real private Store/maintenance control",
+      "expected": "terminal bad magic: maintain Err, no rename/finalized/missing success; original bytes/artifact preserved"
+    },
+    {
+      "module": "engine-memory",
+      "key": "M-REPAIR-004",
+      "platform": "linux",
+      "evidence": "proposed actual process empirical RSS + exact public API results",
+      "mode": "repair",
+      "frames": 4,
+      "payload_per_frame": 1048576,
+      "payload_bytes": 4194304,
+      "valid_physical_bytes": 4194412,
+      "input_bytes": 4194415
+    },
+    {
+      "module": "engine-memory",
+      "key": "M-REPAIR-128",
+      "platform": "linux",
+      "evidence": "proposed actual process empirical RSS + exact public API results",
+      "mode": "repair",
+      "frames": 128,
+      "payload_per_frame": 1048576,
+      "payload_bytes": 134217728,
+      "valid_physical_bytes": 134220936,
+      "input_bytes": 134220939
+    },
+    {
+      "module": "engine-memory",
+      "key": "M-COLLECT-128",
+      "platform": "linux",
+      "evidence": "proposed actual process empirical RSS + exact public API results",
+      "mode": "collect",
+      "frames": 128,
+      "payload_per_frame": 1048576,
+      "payload_bytes": 134217728,
+      "valid_physical_bytes": 134220936,
+      "input_bytes": 134220939
+    }
+  ]
+}

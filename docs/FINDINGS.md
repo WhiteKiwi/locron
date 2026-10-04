@@ -5405,3 +5405,7 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+## Output repair qualification selected after full review (2026-10-04)
+
+Issue #146 continues the retained-file Store and streaming Engine corrections under the frozen SPEC/STORAGE contract. Complete original Source, callers and the 96-key proposal were read. The original CI establishes only existing test results: #147 has 14 passes/three formatting failures/two optional skips; #148 has 17 passes/two optional skips. Parser-versus-I/O, actual retained identity/drift, terminal/stale eligibility and Linux memory qualification remain unexecuted. See planning/OUTPUT_REPAIR_QUALIFICATION.md for the selected private shared-algorithm seam, exact row ledger and empirical RSS limits. Native sharing remains actual OS proof and post-truncation sync failure remains an error after mutation.
