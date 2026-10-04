@@ -5536,3 +5536,9 @@ Root proof hashes are recorded in WINDOWS_NATIVE_PEER_PUBLICATION_2026-10-04.md;
 the complete selected plan precedes Source and adds no product scope. Parent-
 observed final-Empty/held-exit lane remains unselected/unqualified. No source/API
 or native qualification was produced by this research.
+
+## Root reviewed current-main integration research, 2026-10-04 (native73)
+
+Separate 119-file native concurrency and 195-file snapshot integration research was independently checked against complete immutable Git trees, blobs and literal Docs components (Root proof db041b40d60e05b3b8b6e1df4397247dc456dac4be0eea942751d6b4ea5d0f5b). Actual PR140 merged main is c4ef8b90276a5119a46eeaac17c931abad4382ae with exact reviewed tree f90fbc9e7ae83b1221e003eb3fd43090e93cf3bd. Its fresh hosted qualification is complete; it is not qualification of either new integration.
+
+Incoming73 preserves the outer private root guard and has bounded1502/844-byte notices within its2048 plan. Its TempPath cleanup and queued-result/elapsed observer differ from Root-reviewed89. Select exact89 Source, preserve both historical Docs and import only exact merged main140; no73 native qualification or old failure cause is inferred.

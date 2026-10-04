@@ -5321,3 +5321,11 @@ No new transport/dependency/native binding/production or timing waiver. Root
 Docs/Issue31/final review precede the separate development lease, then immutable
 Source review and genuinely changed-head hosted verification. Failed gates stay
 held; wide installer/account/logon/reboot/public release acceptance is pending.
+
+## Before-integration Root selection, 2026-10-04 (native73)
+
+The complete ordered plan is [WINDOWS_NATIVE_CONCURRENT_INTEGRATION_2026-10-04.md](planning/WINDOWS_NATIVE_CONCURRENT_INTEGRATION_2026-10-04.md). SPEC stays frozen. Exact incoming mainc4/treef90 replaces the previous main814/prospective140 selection only within this plan. Parent Root handles Docs/Issues/final review/publication; separate development handles Git integration of already reviewed whole Source blobs.
+
+First normally merge exact73 while retaining whole89 helper/workflow and identical1160589 lifecycle, with all five common+incoming+own Root Docs unions. Then normally merge exactc4; retain complete first-merge Docs and append only the exact new140 common-document suffix once, without duplicating139. Incoming cleanup-enabled/per-mode collision and queued-result2048 choices are historical and superseded by disabledDrop/seventh-control/fixed-only654 selections.
+
+Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.

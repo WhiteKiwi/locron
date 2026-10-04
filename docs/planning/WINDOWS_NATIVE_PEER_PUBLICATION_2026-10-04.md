@@ -184,3 +184,7 @@ Local native/application/PowerShell/parser/reflection/compiler/linker/fixture/
 account/task/PATH/policy/reboot probes stay unexecuted. The Source lease has no
 API/Issue/memory/push/dispatch/rerun authority. Source adaptations needing a new
 clock/transport/field/production change require Root Docs before implementation.
+
+## Current concurrent/main integration selection, 2026-10-04
+
+The complete [current integration plan](WINDOWS_NATIVE_CONCURRENT_INTEGRATION_2026-10-04.md) now selects exact concurrent73 and actual merged mainc4, superseding only the earlier base/combination selection above. Reviewed89 helper/workflow and identical lifecycle1160589 remain the sole Source choice, including disabledDrop, independent seventh selector and fixed-only654 notice. Preserve all incoming historical plans literally; per-original-mode collision/cleanup-enabled and queued-result2048 alternatives are not simultaneous requirements. Two normal merges and exact Docs unions precede fresh hosted qualification; neither unknown73 nor older b131 evidence is promoted to a combined-head PASS.
