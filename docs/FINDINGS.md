@@ -5635,3 +5635,8 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Dashboard144 readonly qualification selection (2026-10-05)
 
 Source review and the separate 195-row research distinguish actual Axum422 JSON type refusal from API400 validation, readonly SQLite logical state from WAL/SHM coordination, and API wake attempts from delivered hints. Windows mixed-case previews need a fixed raw legacy seed before measurement because the production setter canonicalizes keys. New controls remain UNMEASURED. The whole selected ledger and independent inputs are in planning/DASHBOARD_BOOLEAN_QUALIFICATION_ROWS.md and DASHBOARD_BOOLEAN_FIXTURE_INPUTS.json; ownership/build/clocks are fixed in DASHBOARD_BOOLEAN_QUALIFICATION_2026-10-05.md. Original CI37178272278/1 passed17 jobs with2 optional skips and does not qualify these new controls.
+
+
+## Dashboard144 private stage retention review (2026-10-05)
+
+Independent review of unpublished5ec finds that discarded TempPath::keep failures can leave implicit stage deletion enabled in locked tempfile3.27.0. The pure cleanup flag must be disabled before the existing no-clobber publication. No actual deletion or native failure was observed. The three-helper scope, Source conservation and current published1f5 ancestry boundary are frozen in [the supplemental retention plan](planning/DASHBOARD_BOOLEAN_STAGE_RETENTION_2026-10-05.md).
