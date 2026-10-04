@@ -5411,3 +5411,14 @@ No application/test changes or unchanged full rerun are selected.
 Root reviewed the separate69-artifact research against25 immutable app Git blobs/modes, four full trees and the complete composed renderer. Current main15820 is entire-tree equal to reviewed merged137. Preserve old140 pre-main bytes and main137 main() suffix exactly; combined55f41774c7e70d7da17bdf9f47059e2effc4c0881182ede3b7c9802548bb3269. PR140 lacks the concrete required recovery/native controls, but this read-only research demonstrates no production writer defect. Earlier paired/entrypoint/snapshot successes do not qualify these paths.
 
 Select ten portable methods/32 controls through actual fd-backed operations plus four hosted-Windows methods/six controls for real exclusive collision, ordinary-file/directory identity replacement, actual read-only deletion denial and close/namespace reuse. Distinguish each deterministic injected generation/write/flush/close error from the genuine OS observations. Retain original error identity/notes, unknown objects and unrelated subtrees; no hostile-race/atomic visibility/durability guarantee. Python/Windows primary contracts support these selected oracles but actual results remain pending. Root research proof1f360be93ecce1d60129f952bc8d21440f5630896546472a2c49c1e5974c739a.
+
+
+## Root review of WinGet output Source and exact main139 integration (2026-10-04)
+
+Root full review af824 verifies128 artifacts/complete union/299 protected Source
+pairs and actual741-line control semantics; no blocking Source finding. Planned
+portable10/32 and Windows14/38 remain unexecuted. Select only reviewed main814
+Git integration, preserving full new tests/workflow/renderer55f4 and incoming
+Server exactly. The appended WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md plan
+requires literal Docs-suffix union, before-Source Issues32/35, Root final reread
+and separate developer before changed-head hosted qualification/publication.

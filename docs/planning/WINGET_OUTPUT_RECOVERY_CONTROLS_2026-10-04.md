@@ -197,3 +197,49 @@ publication decision, not implicitly established by this workflow candidate.
   hostile race, and these tests do not promise all-or-nothing visible output.
 
 The Source parent will be this Docs commit before main merge. Record the two-parent Git merge and exact selected inherited main137 path union separately from the three editable Source paths. Import inherited entrypoint/default files only byte-exact; preserve all original PR140 writer/planning bytes. A conflict requiring any other Source decision returns to Root before implementation. No local Python application imports/tests, fixtures, native compiler or Windows effects run; only static text/hash/Git/actionlint and bounded outside-domain checks. All actual tests execute through changed-head hosted CI.
+
+
+## Exact reviewed main139 integration after Source handback (2026-10-04)
+
+Root reviewed the complete Source handback af824dc3cf2121109fa0fe86026f6af7ce48ca50
+before selecting this Git-only integration. Root proof36c7545bc1959077da12bd522092b3ce44f95dbbf3f7ff6f2a49b0020cafd8b2
+independently verifies128 artifacts, complete300-path merge union,301-path Source
+tree,299 protected modes/blobs, full741-line tests/workflow/OCR rules and exact
+renderer55f41774c7e70d7da17bdf9f47059e2effc4c0881182ede3b7c9802548bb3269.
+10/32 portable and14/38 Windows are static inventory counts; nothing executed.
+
+This Docs commit is the next Source parent. The separate developer integrates
+only exact reviewed and now merged main139814e689bb0717aba183dbd084e6151ba11ac4e99
+whose whole tree4b1ecc975f766807f4baafc4ae90e3c41d6b9c0b equals reviewed16e6.
+The common main is15820ed96cc6da2bd8c37d42ec8788fd2180114b. No later main,
+PR136/138/155 or production adaptation is selected.
+
+1. **Preserve Docs histories. Verify:** both Git merge parents are recorded.
+   Resolve append-only FINDINGS/IMPLEMENTATION conflicts as exact common-base
+   bytes + complete own branch suffix + complete incoming branch suffix. No
+   original suffix is omitted, rewritten or deduplicated; SPEC remains exact.
+2. **Import the reviewed union only. Verify:** every incoming main139 mode/blob,
+   including complete Server lib and new listener elapsed plan, matches814.
+   Keep renderer55f4,741-line new output test, entire additive workflow and all
+   existing paired14/ZIP21/entrypoint8/distribution15 bytes exact fromaf824.
+   Account for inherited paths independently; no new editable Source or behavior.
+   An unexpected Source conflict returns to Root before any adaptation.
+3. **Review complete integration. Verify:** full staged/unstaged patch before a
+   typed integration commit; complete Git union/modes/blobs and literal Docs
+   suffix proof, renderer/test/workflow inverses and all Source hashes. Static
+   actionlint/diff/OCR are sufficient for unchanged Source; no local app/test/
+   native/compiler/PowerShell/account/task/PATH/policy/probe effect.
+4. **Qualify genuinely changed publication. Verify:** Root independently reviews
+   the clean handback and ordinarily FF-pushes PR140 once. New Ubuntu command
+   actually reports10 methods/32 completed controls; independent x64/ARM Windows
+   each14/38 with actual Python/process/host metadata and returned errno/winerror/
+   nonzero identities, followed by unchanged entrypoint8. Collect every actual
+   outcome and raw hash, no carryover/skip/rerun. All required CI stays required.
+5. **Keep wider acceptance open. Verify:** Root records Issues32/35 and considers
+   PR140 merge only after current required checks pass. Public final bytes,
+   unsigned UX/standard-user installation, real WinGet validate/catalog/provider/
+   install-upgrade-remove and lifecycle ownership remain their existing gates.
+
+Root owns this planning delta and publication; the separate lease is integration
+only. Existing new tests remain reviewed Source, with no import/test execution on
+the owner PC. Current unsigned decision/signing37 deferment are unchanged.
