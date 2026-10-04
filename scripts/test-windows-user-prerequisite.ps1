@@ -19,7 +19,12 @@ function Get-FixedFailureKind($exception) {
         if ($node -isnot [Exception]) {break}
         if ($node -is [UnauthorizedAccessException]) {$specific='unauthorized'}
         elseif ($node -is [Security.SecurityException]) {$specific='security'}
-        elseif ($node -is [IO.IOException]) {$specific='io'}
+        elseif ($node -is [IO.IOException]) {
+            if ($node -is [IO.FileNotFoundException]) {$specific='file_not_found'}
+            elseif ($node -is [IO.DirectoryNotFoundException]) {$specific='directory_not_found'}
+            elseif ($node -is [IO.PathTooLongException]) {$specific='path_too_long'}
+            else {$specific='io'}
+        }
         elseif ($node -is [ComponentModel.Win32Exception]) {$specific='win32'}
         elseif ($node -is [ArgumentException]) {$specific='argument'}
         elseif ($node -is [InvalidOperationException]) {$specific='invalid_operation'}
@@ -46,10 +51,10 @@ function Write-FixedRefusalDiagnostic($branch,$driverKind=$null) {
     $checkpoints=@('entry','metadata','stock_preflight','stock_utility_open','stock_utility_import','stock_accounts_open','stock_accounts_import','stock_exports','runner_identity','os_metadata','checkout_bootstrap','image_open','image_hash','anchor_bootstrap','guardian_start','guard_acquire_anchor','guard_create_job','account_a_create','account_b_create','guard_create_controls','image_copy','guard_hold_image','actor_start','actor_read','cleanup_accounts','cleanup_release_image','cleanup_remove_image','cleanup_remove_markers','cleanup_release_controls','cleanup_remove_controls','cleanup_release_job','cleanup_remove_job','cleanup_finish_guard','cleanup_guard_eof','cleanup_dispose','evidence_publish','confirmed')
     $branches=@('shared_unknown','phase_expired_pending','phase_expired_completed','endinvoke_exception','result_rejected','phase_expired_after_dispose','phase_expired_after_success_print')
     $categories=@('preflight','account','credential_start','token','protocol','containment','deadline','cleanup','guard_setup','native_owner_unknown')
-    $kinds=@('unauthorized','security','io','win32','argument','invalid_operation','timeout','method_invocation','runtime','pipeline','invalid_cast','overflow','parent_error_record','unknown')
+    $kinds=@('unauthorized','security','io','win32','argument','invalid_operation','timeout','method_invocation','runtime','pipeline','invalid_cast','overflow','parent_error_record','unknown','file_not_found','directory_not_found','path_too_long')
     $evidenceStates=@('not_attempted','attempting','written','refused')
     # BEGIN fixed-prerequisite-substage renderer_closed_set
-    $substages=@('entry','path_validation','attributes','directory_security','security_owner','security_sddl','security_raw_acl','security_rules','owner_check','owner_untrusted','acl_presence_check','null_acl','ace_shape_check','ace_shape','foreign_mutation_check','foreign_mutation','file_open','file_security','evidence_serialize','evidence_parent','evidence_directory_create','evidence_directory_security','evidence_identity_write','evidence_receipt_write','foreign_allow_check','foreign_inherit_check','foreign_sid_check','foreign_mask_check','foreign_loop_advance','foreign_deadline_check','foreign_check_complete')
+    $substages=@('entry','path_validation','attributes','directory_security','security_owner','security_sddl','security_raw_acl','security_rules','owner_check','owner_untrusted','acl_presence_check','null_acl','ace_shape_check','ace_shape','foreign_mutation_check','foreign_mutation','file_open','file_security','evidence_serialize','evidence_parent','evidence_directory_create','evidence_directory_security','evidence_identity_write','evidence_receipt_write','foreign_allow_check','foreign_inherit_check','foreign_sid_check','foreign_mask_check','foreign_loop_advance','foreign_deadline_check','foreign_check_complete','attributes_bootstrap','attributes_leaf_before','attributes_leaf_after')
     # END fixed-prerequisite-substage renderer_closed_set
     $checkpoint=Fixed-DiagnosticValue $shared['checkpoint'] $checkpoints
     $failureCheckpoint=Fixed-DiagnosticValue $shared['failure_checkpoint'] $checkpoints
@@ -98,7 +103,12 @@ $nativeOwner = {
             if ($node -isnot [Exception]) {break}
             if ($node -is [UnauthorizedAccessException]) {$specific='unauthorized'}
             elseif ($node -is [Security.SecurityException]) {$specific='security'}
-            elseif ($node -is [IO.IOException]) {$specific='io'}
+            elseif ($node -is [IO.IOException]) {
+                if ($node -is [IO.FileNotFoundException]) {$specific='file_not_found'}
+                elseif ($node -is [IO.DirectoryNotFoundException]) {$specific='directory_not_found'}
+                elseif ($node -is [IO.PathTooLongException]) {$specific='path_too_long'}
+                else {$specific='io'}
+            }
             elseif ($node -is [ComponentModel.Win32Exception]) {$specific='win32'}
             elseif ($node -is [ArgumentException]) {$specific='argument'}
             elseif ($node -is [InvalidOperationException]) {$specific='invalid_operation'}
@@ -413,9 +423,9 @@ $nativeOwner = {
         return $full
     }
 
-    function Check-Attributes([string]$path,[bool]$directory) {
+    function Check-Attributes([string]$path,[bool]$directory,[string]$site='attributes') {
         # BEGIN fixed-prerequisite-substage attributes
-        $shared['substage']='attributes'
+        $shared['substage']=$site
         # END fixed-prerequisite-substage attributes
         $attributes=Native-Call {[IO.File]::GetAttributes($path)}
         if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
@@ -530,7 +540,7 @@ $nativeOwner = {
         $parts=@($path.Substring(3).Split([char]92))
         for ($index=-1;$index -lt $parts.Count;$index++) {
             if ($index -ge 0) {$current=[IO.Path]::Combine($current,$parts[$index])}
-            Check-Attributes $current $true
+            Check-Attributes $current $true 'attributes_bootstrap'
             # BEGIN fixed-prerequisite-substage directory_security
             $shared['substage']='directory_security'
             # END fixed-prerequisite-substage directory_security
@@ -543,13 +553,13 @@ $nativeOwner = {
     function Open-FixedFile([string]$path) {
         $null=Local-Path $path
         Bootstrap-Chain ([IO.Path]::GetDirectoryName($path))
-        Check-Attributes $path $false
+        Check-Attributes $path $false 'attributes_leaf_before'
         # BEGIN fixed-prerequisite-substage file_open
         $shared['substage']='file_open'
         # END fixed-prerequisite-substage file_open
         $stream=Native-Call {[IO.FileStream]::new($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
         $shared['resources'].Add($stream)
-        Check-Attributes $path $false
+        Check-Attributes $path $false 'attributes_leaf_after'
         # BEGIN fixed-prerequisite-substage file_security
         $shared['substage']='file_security'
         # END fixed-prerequisite-substage file_security
