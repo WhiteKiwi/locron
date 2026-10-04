@@ -78,7 +78,7 @@ Signing is a separate future milestone and must not be described as authenticati
 
 - **`MAJOR` (x.0.0)**: Incompatible API or CLI breaking changes, breaking durable storage migrations that cannot be auto-migrated, or breaking wire/protocol changes.
 - **`MINOR` (0.y.0 / x.y.0)**: Backward-compatible new features, commands, configuration options, or additive schema migrations. During pre-1.0 (`0.y.z`), breaking changes bump `MINOR`.
-- **`PATCH` (0.y.z)**: Backward-compatible bug fixes, performance improvements, internal refactoring, or documentation updates.
+- **`PATCH` (0.y.z / x.y.z)**: Backward-compatible bug fixes, performance improvements, internal refactoring, or documentation updates.
 
 ### Workspace Lockstep Versioning
 All workspace packages (`locron-core`, `locron-store`, `locron-engine`, `locron-server`, `locron`)
@@ -87,8 +87,7 @@ internal dependency requirements must change with it. Independent versioning is 
 
 ### Git Tag Convention
 - Release tags MUST follow the exact format `v{MAJOR}.{MINOR}.{PATCH}` (e.g. `v0.1.0`).
-- Pre-release tags are **not** currently supported by the stable release tooling; the accepted tag
-  grammar remains exact `vMAJOR.MINOR.PATCH`.
+- Pre-release tags MUST use the exact format `v{MAJOR}.{MINOR}.{PATCH}-{alpha|beta|rc}.{N}` (e.g. `v0.1.0-rc.1`).
 - Release tags are **immutable**. Once pushed and published, a tag must never be deleted, moved, or overwritten.
 
 ---
