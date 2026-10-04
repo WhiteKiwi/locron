@@ -1,0 +1,151 @@
+name: Prepare active-run observation Draft
+'on':
+  push:
+    branches: [fix/active-run-observation]
+    paths: [.github/workflows/locron-active-observation-draft.yml]
+permissions: {}
+jobs:
+  prepare-source:
+    if: github.repository == 'WhiteKiwi/locron' && github.ref == 'refs/heads/fix/active-run-observation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Prepare exact candidate without changing branch references
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64
+          import difflib
+          import hashlib
+          import json
+          import os
+          import subprocess
+
+          REPO = 'WhiteKiwi/locron'
+          BRANCH = 'fix/active-run-observation'
+          WORKFLOW = '.github/workflows/locron-active-observation-draft.yml'
+          STORE = 'crates/locron-store/src/store.rs'
+          CLI = 'crates/locron-cli/src/main.rs'
+          MCP = 'crates/locron-cli/src/mcp.rs'
+          API = 'crates/locron-server/src/api.rs'
+          EXPECTED = {
+              STORE: 'e13f2a235434627ec958f32de73d0256cd7ae8dd',
+              CLI: '4e975d509029c94f277cd43a3adcf1d38308acfa',
+              MCP: 'd012a4e9778cb378219ec4974d0ef3f6f0848b1f',
+              API: '3c96ff786be7389aedd6b5130a742d3c23249d19',
+          }
+
+          def count_block(reference, variable='run', indent=8):
+              lines = [
+                  'let active = store',
+                  f'    .history(Some({reference}), 100)?',
+                  '    .into_iter()',
+                  f'    .filter(|{variable}| {{',
+                  '        matches!(',
+                  f'            {variable}.state.as_str(),',
+                  '            "queued" | "starting" | "running" | "retry_wait"',
+                  '        )',
+                  '    })',
+                  '    .count();',
+              ]
+              return ''.join(' ' * indent + line + '\n' for line in lines)
+
+          def sample_prefix(reference):
+              return count_block(reference).removesuffix('            .count();\n')
+
+          PATCHES = {
+              STORE: [
+                  ('use crate::{DaemonLock, LockMetadata, StatePaths};\n',
+                   'use crate::{DaemonLock, LockMetadata, StatePaths};\n\nmod activity;\n'),
+              ],
+              CLI: [
+                  (count_block('name'), '        let (active, _) = store.active_runs_for_job(&job.id, 0)?;\n'),
+                  ('    next_occurrence: Option<String>,\n    runs: Vec<RunRecord>,\n    daemon_running: bool,\n',
+                   '    next_occurrence: Option<String>,\n    active_run_count: usize,\n    runs: Vec<RunRecord>,\n    daemon_running: bool,\n'),
+                  ('    let runs = store.history(Some(&job.id), 1_000)?;\n',
+                   '    let (active_run_count, runs) = store.active_runs_for_job(&job.id, 100)?;\n'),
+                  ('        next_occurrence,\n        runs,\n        daemon_running: !daemon_lock_free(paths),\n',
+                   '        next_occurrence,\n        active_run_count,\n        runs,\n        daemon_running: !daemon_lock_free(paths),\n'),
+                  ('    let active_runs = facts\n        .runs\n        .iter()\n        .filter(|run| active_run_state(&run.state))\n        .count();\n',
+                   '    let active_runs = facts.active_run_count;\n'),
+              ],
+              MCP: [
+                  (count_block('&job_rec.name', variable='r'),
+                   '        let (active, _) = store.active_runs_for_job(&job_rec.id, 0)?;\n'),
+                  (sample_prefix('&job.name'),
+                   '        let active = store\n            .active_runs_for_job(&job.id, 100)?\n            .1\n            .into_iter()\n'),
+              ],
+              API: [
+                  (count_block('&reference', indent=12),
+                   '            let (active, _) = store.active_runs_for_job(&job.id, 0)?;\n'),
+                  (sample_prefix('&reference'),
+                   '        let active = store\n            .active_runs_for_job(&job.id, 100)?\n            .1\n            .into_iter()\n'),
+              ],
+          }
+
+          def api(method, endpoint, payload=None):
+              command = ['gh', 'api', '--method', method, endpoint]
+              if payload is not None:
+                  command.extend(['--input', '-'])
+              result = subprocess.run(command, input=None if payload is None else json.dumps(payload),
+                                      text=True, capture_output=True, timeout=45)
+              if result.returncode:
+                  raise RuntimeError(f'GitHub {method} {endpoint} failed: {result.stderr}')
+              return json.loads(result.stdout)
+
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+          assert os.environ['GITHUB_REPOSITORY'] == REPO
+          assert os.environ['GITHUB_REF'] == 'refs/heads/' + BRANCH
+          head = os.environ['GITHUB_SHA']
+          prefix = f'repos/{REPO}'
+          ref = f'{prefix}/git/refs/heads/{BRANCH}'
+          assert api('GET', ref)['object']['sha'] == head, 'branch changed before source read'
+          commit = api('GET', f'{prefix}/git/commits/{head}')
+          tree = api('GET', f"{prefix}/git/trees/{commit['tree']['sha']}?recursive=1")
+          assert not tree.get('truncated')
+          entries = {item['path']: item for item in tree['tree'] if item['type'] != 'tree'}
+          assert entries[WORKFLOW]['mode'] == '100644'
+          changes, blobs = [], {}
+          for path, patches in PATCHES.items():
+              assert (entries[path]['sha'], entries[path]['mode']) == (EXPECTED[path], '100644')
+              value = api('GET', f'{prefix}/git/blobs/{EXPECTED[path]}')
+              assert value['encoding'] == 'base64'
+              raw = base64.b64decode(value['content'])
+              assert blob_sha(raw) == EXPECTED[path]
+              source = raw.decode('utf-8')
+              updated = source
+              for old, new in patches:
+                  assert updated.count(old) == 1, f'{path}: ambiguous or missing source anchor {old!r}'
+                  updated = updated.replace(old, new, 1)
+              restored = updated
+              for old, new in reversed(patches):
+                  assert restored.count(new) == 1, f'{path}: ambiguous inverse anchor'
+                  restored = restored.replace(new, old, 1)
+              assert restored == source
+              print(''.join(difflib.unified_diff(source.splitlines(True), updated.splitlines(True),
+                                               fromfile=path, tofile=path)))
+              blob = api('POST', f'{prefix}/git/blobs', {'content': updated, 'encoding': 'utf-8'})
+              assert blob['sha'] == blob_sha(updated.encode())
+              blobs[path] = blob['sha']
+              changes.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
+          changes.append({'path': WORKFLOW, 'mode': '100644', 'type': 'blob', 'sha': None})
+          new_tree = api('POST', f'{prefix}/git/trees', {'base_tree': commit['tree']['sha'], 'tree': changes})
+          readback = api('GET', f"{prefix}/git/trees/{new_tree['sha']}?recursive=1")
+          assert not readback.get('truncated')
+          new_entries = {item['path']: item for item in readback['tree'] if item['type'] != 'tree'}
+          assert set(new_entries) == set(entries) - {WORKFLOW}
+          for path, item in new_entries.items():
+              assert (item['sha'], item['mode']) == (blobs.get(path, entries[path]['sha']), entries[path]['mode'])
+          assert api('GET', ref)['object']['sha'] == head, 'branch changed before candidate creation'
+          result = api('POST', f'{prefix}/git/commits', {
+              'message': 'fix: observe active runs independently of history caps',
+              'tree': new_tree['sha'], 'parents': [head],
+          })
+          print(json.dumps({'candidate_commit': result['sha'], 'source_blobs': blobs,
+                            'temporary_workflow_removed': True, 'branch_updated': False,
+                            'rust_tests_executed': False}))
