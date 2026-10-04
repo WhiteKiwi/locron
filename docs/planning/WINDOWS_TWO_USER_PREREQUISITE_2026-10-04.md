@@ -534,3 +534,27 @@ No owner-PC native/PowerShell parser/AST/reflection/account/ACL/policy effect is
 authorized here. The temporary manual CI stays out of main and PRs. Wide Issues27/29
 stay open until full acceptance; any later causal fix requires another reviewed
 Docs-first decision. Root handles publication after separate Source lease return.
+
+## Selected next phase: seven fixed operand/loop/return intents after Source7ccd (2026-10-04)
+
+The latest actual run37172821183 fails before any qualified account creation: both first invalid_cast at stock_utility_open/foreign_mutation_check; normal builds PASS, actual verification/uploads FAIL, artifact0. First and secondary failures, old81aa unknown and every historical acceptance gap remain. Root has reviewed read-only B7 report44849727 and64 artifacts; this section selects diagnostic-only B7, not a causal security repair. Frozen SPEC/product acceptance remains unchanged.
+
+### Exact Source lease and intent placement
+
+Only scripts/test-windows-user-prerequisite.ps1 may change after Docs/Issues/final Root review. Append exactly seven closed labels: foreign_allow_check, foreign_inherit_check, foreign_sid_check, foreign_mask_check, foreign_loop_advance, foreign_deadline_check, foreign_check_complete. Preserve every old literal. Keep foreign_mutation_check, then evaluate these four exact expressions once, lazily, in order, using nested conditions and the corresponding immediately preceding fixed intent:
+
+1. $ace.AceQualifier -eq [Security.AccessControl.AceQualifier]::AccessAllowed
+2. ($ace.AceFlags -band [Security.AccessControl.AceFlags]::InheritOnly) -eq 0
+3. $ace.SecurityIdentifier.Value -cnotin $trusted
+4. ([long]$ace.AccessMask -band $mask) -ne 0
+
+Only the deepest all-true branch retains the original foreign_mutation label then throw guard_setup. After an untaken rejection publish foreign_loop_advance before foreach advancement. Before the single existing final Check-Deadline publish foreign_deadline_check; only after it returns publish foreign_check_complete. No Bootstrap/Open-FixedFile change, new native/property/clock/I/O/error-record read, ACE/value/type/index/counter/path/SID output or acceptance authority is added.
+
+Keep SYSTEM/Administrators/TrustedInstaller trust, decimal1343029590 mask, directory exclusionbits6, all owner/null-DACL/ACE-shape rules, classifiers, first-versus-evidence snapshots, category/unknown/error/success flows, accounts/credential/frame/EOF/Job/guard/cleanup, setup30/controller180 and every original phase clock. No retry, warm-up, reset, current-SID fallback, cast/mask/operator repair, native staging/ACL/path/policy change or timer extension is selected. A label itself/dynamic expression is not claimed nonthrowing or preemptible. In particular, foreign_check_complete distinguishes a normal final-check return from subsequent caller continuation; it is not an instruction pointer or a new deadline proof.
+
+### Concrete Verify, in required order
+
+1. **Docs and Issues before Source.** Root reviews FINDINGS/IMPLEMENTATION/this plan, records exact Issues27/29 Verify readbacks and reviews the completed plan again. Verify: frozen SPEC and Source untouched at the Docs commit, exact3 Docs paths, all64 research artifacts and completed-run proof hashes verified, independent Source handoff follows these records.
+2. **Full conservation.** Developer changes the one script; Root reviews staged and unstaged Source. Verify: remove only seven intent assignments/comments/literals and restore the original compound block to reproduce the full7ccd script SHA2555c553fa3869afa95efff177368d87f2111b94d247085e825742f27c4a5af1. All297 other tracked blob/mode pairs equal the reviewed Docs head. Exact four expressions, once-only order/laziness, original rejection and final deadline call are preserved. Keep88 Native-Call,40 Check-Deadline,23 guard_setup throws and ONE stderr writer; abstract16 truth/evaluation prefixes match without executing PowerShell.
+3. **Complete diagnostic/owner review.** Root reviews all changed Source and the existing renderer/catch/owner context. Verify:31 unique closed substages, maximum27 ASCII bytes;14 kinds/max19; full417 including CRLF and fallback254 under unchanged512/510 guard. Only original three scalar slots and one failure writer are used; no private resource/exception/object facts or unfinished owner access. Any first/evidence/late/unknown failure stays FAIL.
+4. **Meaningful changed-head native run.** Root pushes the reviewed exact head and dispatches once on the dedicated manual branch. Verify: completed x64 and ARM64 stock PowerShell5.1 steps/normal Rust1.94 builds, exact head/event/attempt, raw log and artifact hashes, observed richer failure OR full authentic original receipts. Missing receipts/uploads remain failure. Actual2/2/2 account counts,13 flags,token/Job/root-exit-live-descendant negative/final authoritative emptyJob/EOF/account and guard cleanup are still required. Static/model/build work supplies zero such acceptance. Issues27/29 stay open until their complete Verify succeeds; no main/PR import or release implication.

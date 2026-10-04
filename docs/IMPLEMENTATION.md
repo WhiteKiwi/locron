@@ -5331,3 +5331,11 @@ EOF/cleanup criteria and workflow/example remain exact. One leased Source path o
 Verify and separate handoff are specified in the prerequisite planning document and
 Issues27/29 before implementation. A changed-head hosted run observes class buckets
 only; actual prerequisite PASS still requires the complete original receipt and gates.
+
+## Windows prerequisite B7 observation decision (2026-10-04)
+
+Root selects finite intent observation after the two actual invalid_cast failures, before a separate Source handoff. Rewrite only the existing four-term foreign-mutation conditional as four nested identical conditions. Set foreign_allow_check, foreign_inherit_check, foreign_sid_check and foreign_mask_check immediately before the corresponding condition is actually evaluated. Keep the original foreign_mutation_check entry and the deepest original foreign_mutation/guard_setup rejection. This preserves once-only left-to-right short-circuit evaluation and all security semantics.
+
+For an untaken rejection, set foreign_loop_advance before the original implicit foreach advance. Set foreign_deadline_check immediately before the ONE original final Check-Deadline, then foreign_check_complete only after that call returns normally. The completion intent prevents attributing subsequent caller continuation to an unfinished final deadline check. Bootstrap/Open-FixedFile, all property reads, trust/mask/casts/throws, operation ordering and native-owner clocks remain exact. Add only these seven literals to the existing renderer set; keep three current/first/evidence slots, snapshot timing, classifiers/categories/unknown fallback and one validated ASCII failure writer.
+
+Full-file inverse restores the exact7ccd script; every other297 tracked blob/mode pair matches the reviewed Docs handoff. Root reviews the complete changed Source and the417/fallback254 bound. Abstract16 Boolean/evaluated-prefix equivalence supports the structural conservation only; it is not PowerShell binder or permission execution. No owner-PC parser/AST/reflection/native or synthetic exception work is selected. Then publish one changed-head manual hosted x64/ARM run, keeping the dedicated diagnostic workflow outside main/PR. Any observed failure remains failure; authentic original receipts and all acceptance criteria remain required.
