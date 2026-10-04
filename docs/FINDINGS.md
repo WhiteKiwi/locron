@@ -5445,3 +5445,19 @@ human_doctor_prints_one_level_line_per_check, human_forms_leave_the_json_envelop
 and wake_socket_makes_new_manual_run_promptly_visible_to_daemon. Later binaries are
 not reached; both full Clippy rows retain41 errors. The failed required lifecycle
 qualification remains separate and must pass at newly reviewed Source before merge.
+
+### Actual native prerequisite name-resolution failure before Source (2026-10-04)
+
+Manual run37163445014 at a89d1b29499c347454ebac8130d2b703c3a5f380 fails both
+normal Rust1.94 builds: E0405 at windows_user_prerequisite.rs1080 names Read;
+line22 imports Read as _, which supplies method resolution but no named binding.
+Readonly separate research preserves full raw x64 log SHA256
+d29aff9e144f3f462ca93434a8fca7e0e3f7039748ca1432bc0ac5ee4523fca4 and ARM log
+b282f313789a6deb0d23ca0dc875e23936904c9b58c9d254984dc559cf3f5346.
+Both exact Source/compiler preflights pass, build exits101, actual credential/tree
+steps are skipped, evidence upload refuses missing files and artifact_count=0.
+Tokens, accounts, guard ACKs and cleanup facts are unobserved. Root missed the
+named binding in static review. Select only Read as _ -> Read before separate
+Source; keep Seek as _. This is the emitted error, not proof of future type success.
+[Rust Reference underscore imports](https://doc.rust-lang.org/reference/items/use-declarations.html#underscore-imports)
+distinguishes an anonymous trait import from its usable name.

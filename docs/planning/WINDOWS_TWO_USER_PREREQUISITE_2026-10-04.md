@@ -299,3 +299,27 @@ isolated branch still has the reviewed manual-only ci.yml and must never create
 a PR or replace main CI. Both actual native rows, normal-example type checking,
 strict fixed-principal bootstrap and all original four Verify criteria remain
 pending; no bootstrap fallback, owner-PC effect or changed deadline is selected.
+
+### Named Read trait binding before changed-Source qualification (2026-10-04)
+
+Actual normal-example builds at a89d1b2/run37163445014 fail on both Rust1.94
+native rows with E0405 at example1080: guard_frame names impl Read, while the
+grouped import only brings Read as _ into method resolution. No actual actor,
+guard, account or cleanup acceptance was reached; the verification steps were
+skipped and artifacts are absent. Root's initial static review missed this
+binding. The separate readonly report preserves both full logs and the unapplied
+candidate. This evidence does not prove that no later type error can exist.
+
+1. Bind the existing trait name. Verify: separate development changes only the
+   grouped std::io import Read as _ to Read; keep Seek as _, the impl Read bound,
+   every operation, protocol, ownership/clock and guard unchanged. No wrapper,
+   dependency, workflow, diagnostic allowance or fixture fallback is selected.
+2. Conserve and review. Verify: reversing that single import token restores the
+   entire example; every other tracked blob/mode stays exact to the Docs parent.
+   Rust1.94 formatting/diff and Root full one-file review pass. Preserve the failed
+   run and issue evidence before Source; no local native build/host effect retry.
+3. Qualify changed Source. Verify: both explicit normal examples actually build,
+   then all original four ordered native credential/token/Job/EOF/account/guard
+   criteria execute successfully on x64 and ARM. Any later compile, strict
+   bootstrap, logon or unknown-owner failure remains a failure needing review.
+   Keep missing-evidence upload refusal and the original clocks. Issues stay open.

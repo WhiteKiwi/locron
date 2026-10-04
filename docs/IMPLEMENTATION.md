@@ -5267,3 +5267,16 @@ assertions/selectors/clocks, production/dependency/workflow blobs and frozen SPE
 Separate development starts only after Issue30 exact Verify readback and parent plan
 review. No retry, guard release, prewarm, warning allowance or success weakening is
 authorized. Fresh exact-head ordinary native CI is required before PR134 merge.
+
+### Prerequisite named trait binding before changed Source (2026-10-04)
+
+Continue the isolated normal-example qualification after actual a89/run37163445014
+x64/ARM E0405. Only windows_user_prerequisite.rs may change: import existing std::io
+Read by name instead of as _, preserving its strict impl Read bound and all actual
+native operations/owners/protocol/clocks. Apply the three Verify steps in
+planning/WINDOWS_TWO_USER_PREREQUISITE_2026-10-04.md only after exact Issues27/29
+readback and Root plan review, through separate development. Whole-file inverse,
+other blob/mode conservation and Root review precede one changed-head hosted run.
+The old failed builds/absent artifacts remain; static results count no actual
+identity/cleanup acceptance. Later type or strict bootstrap failures require new
+review before dependent Source, with no owner-PC native retry or fallback.
