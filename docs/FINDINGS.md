@@ -5451,3 +5451,11 @@ Root full review of9534372 and exact suffix b8acdfe conserves allfive selected S
 ## PR141 returned-error lint prediction (2026-10-04)
 
 Three new support Err(_) panic arms match the previously observed PR139 warnings-denied lint. Select only binding the existing io::Error and printing kind()/raw_os_error() after each fixed message, preserving privacy and all operation/clock/ownership behavior. This is Source prediction, not runtime failure; see the three-step Verify in planning/DASHBOARD_TOKEN_SERIALIZATION.md.
+
+## Token qualification publication after release snapshot merge (2026-10-04)
+
+PR #138 was merged externally as main commit 9de596f8ffe48e8036f775ad1fddbea9302915a1. Its tree matches reviewed head 886e24a and ordinary synthetic commit 97b8d03. The 17 ordinary gates, Guardian, 16 snapshot tests and paired x64/ARM package provenance passed. Integrating these reviewed sources changes no token behavior. PR #141 Source commit 654d5a4 retains the full 9534372 implementation, b8acdfe suffix edit and exactly three scalar-only returned-error arms. Root read the full Source and independently proved each later inverse. New token runtime qualification remains unmeasured.
+
+1. Integrate exact main commit 9de596f by a normal Git merge. **Verify:** incoming Source, CI and Cargo plus all five selected token Source paths retain their reviewed modes and blobs. Reject any Source conflict or adaptation. Preserve both complete planning histories after the common prefix; only shared planning documents may be reconciled.
+2. Publish by normal fast-forward to the unchanged original PR #141 remote head 1e0c19a. **Verify:** fresh REST head and main binding match; the original remote is an ancestor; staged and unstaged scope is clean. The PR body states actual evidence and remaining qualification. No forced push or retry of an unchanged failed head.
+3. Qualify the published head against the current base before ordered merge. **Verify:** all 13 new Windows drivers, 11 portable drivers and the original three tests pass on their actual hosted platforms. Require x64/ARM/MSRV native tests, Unix tests, warnings-denied lint, all ordinary gates, Guardian and paired package provenance. Final synthetic, head and squash trees must agree. Keep broad native acceptance open; static receipts do not establish runtime results.

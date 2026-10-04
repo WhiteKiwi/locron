@@ -5257,3 +5257,11 @@ Follow the three-step exactc4/current-common464 publication appendix in planning
 ## PR141 scalar failure diagnostics before qualification (2026-10-04)
 
 A separate developer changes only three support panic arms after Issue162 exact readback. Fixed-prefix ErrorKind/optional-i32 metadata uses already-returned errors; no arbitrary error Display/Debug or new I/O is introduced. Parent inverses all three arms and conserves all other Source before normal FF and fresh actual hosted acceptance per planning/DASHBOARD_TOKEN_SERIALIZATION.md.
+
+## Token qualification publication after release snapshot merge (2026-10-04)
+
+PR #138 was merged externally as main commit 9de596f8ffe48e8036f775ad1fddbea9302915a1. Its tree matches reviewed head 886e24a and ordinary synthetic commit 97b8d03. The 17 ordinary gates, Guardian, 16 snapshot tests and paired x64/ARM package provenance passed. Integrating these reviewed sources changes no token behavior. PR #141 Source commit 654d5a4 retains the full 9534372 implementation, b8acdfe suffix edit and exactly three scalar-only returned-error arms. Root read the full Source and independently proved each later inverse. New token runtime qualification remains unmeasured.
+
+1. Integrate exact main commit 9de596f by a normal Git merge. **Verify:** incoming Source, CI and Cargo plus all five selected token Source paths retain their reviewed modes and blobs. Reject any Source conflict or adaptation. Preserve both complete planning histories after the common prefix; only shared planning documents may be reconciled.
+2. Publish by normal fast-forward to the unchanged original PR #141 remote head 1e0c19a. **Verify:** fresh REST head and main binding match; the original remote is an ancestor; staged and unstaged scope is clean. The PR body states actual evidence and remaining qualification. No forced push or retry of an unchanged failed head.
+3. Qualify the published head against the current base before ordered merge. **Verify:** all 13 new Windows drivers, 11 portable drivers and the original three tests pass on their actual hosted platforms. Require x64/ARM/MSRV native tests, Unix tests, warnings-denied lint, all ordinary gates, Guardian and paired package provenance. Final synthetic, head and squash trees must agree. Keep broad native acceptance open; static receipts do not establish runtime results.
