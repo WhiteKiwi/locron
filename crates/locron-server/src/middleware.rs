@@ -15,7 +15,7 @@
 
 use axum::extract::{Request, State};
 use axum::http::header::{self, HeaderMap, HeaderName};
-use axum::http::{Method, StatusCode, Uri};
+use axum::http::{Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 
@@ -42,29 +42,40 @@ pub enum AuthKind {
     Session,
 }
 
-/// Hosts accepted by the allowlist; the hostname is compared case-insensitively with the port
-/// ignored and IPv6 in canonical bracket form.
-const ALLOWED_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
-
-/// Extracts the hostname from a Host header value (`localhost:10824`, `[::1]:10824`, bare).
-fn hostname_from_host_header(host: &str) -> &str {
-    if let Some(rest) = host.strip_prefix('[') {
-        return rest.split_once(']').map_or(rest, |(inner, _)| inner);
+/// Distinguishes a genuinely absent field from invalid or ambiguous supplied values.
+fn single_header(headers: &HeaderMap, name: HeaderName) -> Result<Option<&str>, ()> {
+    let all = headers.get_all(name);
+    let mut values = all.iter();
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(());
     }
-    match host.rsplit_once(':') {
-        Some((hostname, port))
-            if !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()) =>
-        {
-            hostname
-        }
-        _ => host,
-    }
+    value.to_str().map(Some).map_err(|_| ())
 }
 
-fn hostname_is_allowed(hostname: &str) -> bool {
-    ALLOWED_HOSTS
-        .iter()
-        .any(|allowed| hostname.eq_ignore_ascii_case(allowed))
+/// Parses only the supported loopback authorities, returning the effective HTTP port.
+/// No URL normalization, ignored suffixes, userinfo, path, query or fragment is accepted.
+fn loopback_port(authority: &str) -> Option<u16> {
+    let suffix = if let Some(suffix) = authority.strip_prefix("[::1]") {
+        suffix
+    } else {
+        let end = authority.find(':').unwrap_or(authority.len());
+        let hostname = &authority[..end];
+        if !hostname.eq_ignore_ascii_case("localhost") && hostname != "127.0.0.1" {
+            return None;
+        }
+        &authority[end..]
+    };
+    if suffix.is_empty() {
+        return Some(80);
+    }
+    let port = suffix.strip_prefix(':')?;
+    if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    port.parse().ok()
 }
 
 /// Parses a named cookie value from a Cookie header; values are plain hex, no escaping involved.
@@ -92,70 +103,50 @@ pub(crate) fn constant_time_eq(left: &str, right: &str) -> bool {
     diff == 0
 }
 
-/// Host allowlist: the hostname must be a loopback name; anything else is refused before routing,
-/// which defeats DNS-rebinding attacks.
+/// Host allowlist: require one well-formed supported loopback authority before routing.
+/// Host ports remain ignored for compatibility; the Origin check enforces the bound port.
 pub async fn host(State(state): State<AppState>, request: Request, next: Next) -> Response {
-    let Some(host) = request
-        .headers()
-        .get(header::HOST)
-        .and_then(|value| value.to_str().ok())
-    else {
-        return envelope::error(
-            StatusCode::FORBIDDEN,
-            "refused",
-            "request has no Host header",
-        );
-    };
-    if !hostname_is_allowed(hostname_from_host_header(host)) {
-        return envelope::error(
-            StatusCode::FORBIDDEN,
-            "refused",
-            format!("Host {host} is not a loopback name of this server"),
-        );
+    match single_header(request.headers(), header::HOST) {
+        Ok(Some(value)) if loopback_port(value).is_some() => {}
+        _ => {
+            return envelope::error(
+                StatusCode::FORBIDDEN,
+                "refused",
+                "request requires one valid loopback Host header",
+            );
+        }
     }
     let _ = state;
     next.run(request).await
 }
 
-/// Origin check on unsafe methods: a present Origin must be the loopback server origin (http,
-/// allowlisted hostname, bound port). An absent Origin is allowed (same-origin navigations, curl,
-/// EventSource).
+/// Origin check on unsafe methods: a present Origin must be one complete loopback server
+/// origin (http, allowlisted hostname, bound port). A genuinely absent Origin remains allowed.
 pub async fn origin(State(state): State<AppState>, request: Request, next: Next) -> Response {
     if matches!(
         request.method(),
         &Method::POST | &Method::PUT | &Method::PATCH | &Method::DELETE
-    ) && let Some(value) = request
-        .headers()
-        .get(header::ORIGIN)
-        .and_then(|origin| origin.to_str().ok())
-        && !origin_matches(&state, value)
-    {
-        return envelope::error(
-            StatusCode::FORBIDDEN,
-            "refused",
-            format!("Origin {value} is not the server's loopback origin"),
-        );
+    ) {
+        match single_header(request.headers(), header::ORIGIN) {
+            Ok(None) => {}
+            Ok(Some(value)) if origin_matches(&state, value) => {}
+            _ => {
+                return envelope::error(
+                    StatusCode::FORBIDDEN,
+                    "refused",
+                    "Origin must be one valid origin of this loopback server",
+                );
+            }
+        }
     }
     next.run(request).await
 }
 
 fn origin_matches(state: &AppState, origin: &str) -> bool {
-    let Some(rest) = origin.strip_prefix("http://") else {
-        return false;
-    };
-    let host_port = rest
-        .split_once('/')
-        .map_or(rest, |(host_port, _)| host_port);
-    let hostname = hostname_from_host_header(host_port);
-    if !hostname_is_allowed(hostname) {
-        return false;
-    }
-    match host_port.rsplit_once(':') {
-        Some((_, port)) => port
-            .parse::<u16>()
-            .is_ok_and(|parsed| parsed == state.bound_port),
-        None => state.bound_port == 80,
-    }
+    origin
+        .strip_prefix("http://")
+        .and_then(loopback_port)
+        .is_some_and(|port| port == state.bound_port)
 }
 
 /// Token authentication: `Authorization: token <t>` or the session cookie, with GETs outside
@@ -165,12 +156,8 @@ fn origin_matches(state: &AppState, origin: &str) -> bool {
 /// data; every `/api/v1` route is token-gated.
 pub async fn authenticate(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let (mut parts, body) = request.into_parts();
-    let auth = match parts
-        .headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-    {
-        Some(bearer) => {
+    let auth = match single_header(&parts.headers, header::AUTHORIZATION) {
+        Ok(Some(bearer)) => {
             if let Some(token) = bearer
                 .strip_prefix("token ")
                 .or_else(|| bearer.strip_prefix("Token "))
@@ -178,31 +165,34 @@ pub async fn authenticate(State(state): State<AppState>, request: Request, next:
                 if constant_time_eq(token, &state.token) {
                     AuthKind::Bearer
                 } else {
-                    return unauthorized(&parts.uri);
+                    return unauthorized();
                 }
             } else {
-                return unauthorized(&parts.uri);
+                return unauthorized();
             }
         }
-        None => match cookie_value(&parts.headers, SESSION_COOKIE) {
+        Ok(None) => match cookie_value(&parts.headers, SESSION_COOKIE) {
             Some(cookie) if constant_time_eq(&cookie, &state.token) => AuthKind::Session,
             _ => AuthKind::Unauthenticated,
         },
+        Err(()) => return unauthorized(),
     };
     let entry_request = parts.method == Method::GET && !parts.uri.path().starts_with("/api/");
     let paste_request = parts.method == Method::POST && parts.uri.path() == "/api/v1/session";
     if auth == AuthKind::Unauthenticated && !entry_request && !paste_request {
-        return unauthorized(&parts.uri);
+        return unauthorized();
     }
     parts.extensions.insert(auth);
     next.run(Request::from_parts(parts, body)).await
 }
 
-fn unauthorized(uri: &Uri) -> Response {
+fn unauthorized() -> Response {
+    // A mistakenly supplied query token (or secret in a path/header) must not be
+    // reflected into the error envelope. Input values are not needed for this diagnosis.
     envelope::error(
         StatusCode::UNAUTHORIZED,
         "unauthenticated",
-        format!("a valid access token or session cookie is required for {uri}"),
+        "a valid access token or session cookie is required",
     )
 }
 
