@@ -11,6 +11,8 @@ on:
       - 'scripts/release-assets.py'
       - 'scripts/render-winget-manifest.py'
       - 'scripts/test-winget-paired.py'
+      - 'scripts/test-winget-entrypoint.py'
+      - 'scripts/test-winget-output.py'
   push:
     branches: [main]
     paths:
@@ -22,6 +24,8 @@ on:
       - 'scripts/release-assets.py'
       - 'scripts/render-winget-manifest.py'
       - 'scripts/test-winget-paired.py'
+      - 'scripts/test-winget-entrypoint.py'
+      - 'scripts/test-winget-output.py'
 
 permissions:
   contents: read
@@ -40,3 +44,49 @@ jobs:
         run: python3 -B scripts/test-winget-paired.py
       - name: Test raw ZIP records and bounded complete member decoding
         run: python3 -B scripts/test-windows-zip-catalog.py
+      - name: Test the documented paired WinGet command entrypoint
+        run: python3 -B scripts/test-winget-entrypoint.py
+      - name: Test direct manifest output recovery controls
+        run: python3 -B scripts/test-winget-output.py
+
+  native-output-recovery:
+    name: Windows output recovery (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            arch: X64
+          - runner: windows-11-arm
+            arch: ARM64
+    env:
+      EXPECTED_RUNNER_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Verify the actual Windows host and Python prerequisite
+        shell: python {0}
+        run: |
+          import json
+          import os
+          import platform
+          import struct
+          import sys
+
+          expected = os.environ['EXPECTED_RUNNER_ARCH']
+          if os.name != 'nt' or sys.version_info < (3, 11):
+              raise SystemExit('Windows and Python 3.11 or later are required')
+          if expected not in ('X64', 'ARM64') or os.environ.get('RUNNER_ARCH') != expected:
+              raise SystemExit('The actual runner architecture differs from the selected row')
+          print(json.dumps({'os_name': os.name, 'runner_architecture': os.environ['RUNNER_ARCH'],
+                            'python_implementation': platform.python_implementation(),
+                            'python_version': platform.python_version(),
+                            'pointer_bits': struct.calcsize('P') * 8,
+                            'process_architecture': platform.machine()}, sort_keys=True))
+      - name: Test all output recovery and actual Windows filesystem controls
+        shell: cmd
+        run: python -B scripts/test-winget-output.py --native-windows
+      - name: Test the documented paired WinGet command entrypoint
+        shell: cmd
+        run: python -B scripts/test-winget-entrypoint.py
