@@ -1232,10 +1232,21 @@ fn dashboard_token(state_dir: Option<PathBuf>, format: Format) -> Result<(), Ser
     Ok(())
 }
 
-/// Dashboard exposure facts for `locron doctor`: token posture and whether a
-/// dashboard service is registered (never the token value).
-pub(crate) fn dashboard_doctor_facts(state_dir: Option<PathBuf>) -> Result<Value, ServiceError> {
-    let ctx = ServiceContext::new(state_dir, Target::Dashboard)?;
+/// Dashboard exposure facts for `locron doctor`, without the token value.
+/// Default Windows registration and listener facts remain explicitly unprobed.
+pub(crate) fn dashboard_doctor_facts(paths: &StatePaths) -> Result<Value, ServiceError> {
+    #[cfg(windows)]
+    if env::var_os("LOCRON_SERVICE_BACKEND").is_none() {
+        let token = token_facts(paths)?;
+        return Ok(json!({
+            "access_url": access_url(),
+            "token": token,
+            "registered": null,
+            "loaded": null,
+            "service_status": "unprobed",
+        }));
+    }
+    let ctx = ServiceContext::new(Some(paths.root.clone()), Target::Dashboard)?;
     let paths = dashboard_paths(&ctx)?;
     let token = token_facts(paths)?;
     let outcome = status(&ctx, select_port()?.as_ref())?;

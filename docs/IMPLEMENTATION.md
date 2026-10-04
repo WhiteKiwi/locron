@@ -5169,3 +5169,48 @@ assertions/selectors/clocks, production/dependency/workflow blobs and frozen SPE
 Separate development starts only after Issue30 exact Verify readback and parent plan
 review. No retry, guard release, prewarm, warning allowance or success weakening is
 authorized. Fresh exact-head ordinary native CI is required before PR134 merge.
+
+
+### Default Windows doctor continuation before Source (2026-10-04)
+
+Select planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md after the separate complete
+doctor/wake/consumer audit and actual495f phase correction. Root documents the
+default-only observable unknown facts in SPEC/CLI and exact Issues29/31 Verify
+before handing only service.rs/main.rs/tests/cli.rs to separate development.
+The facts helper uses caller StatePaths, existing token observation and fixed
+URL without default Windows UID/port/registration discovery. Unix/forced paths
+and real errors stay exact; coherent null+unprobed gets exactly two new human
+info lines beside the existing wake line. Preserve every old assertion/selector,
+Unix input, clock and ownership call; native stock-PATH default/token/resolution
+tests must execute. Four ordered Verify criteria require full Source review and
+fresh native/Unix/fake evidence. No wake API/dependency/lifecycle effects are
+authorized by this lease; remaining full lint/wake/cancellation/supervisor and
+desktop/two-user/release gates remain open, without an unchanged-source retry.
+
+
+### PR135 native doctor expectation correction before Source (2026-10-04)
+
+Continue the original default-doctor lease after8644efb full37160909694 x64
+301unitPASS then70PASS/5FAIL of75CLI integrations. Preserve the measured canonical
+Windows resolved path and genuine exit5/service_io token refusal. Select only
+independent canonical expected path and the complete existing ServiceError Display
+prefix in the two newly added native cases, per planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md.
+Keep requested argv/stock PATH equality, private token non-disclosure and original
+selectors/clocks. No production resolver/render/error/token/guard/dependency change
+is selected. Three ordered Verify steps precede separate Source; parent reviews
+exact inverse and fresh native/ordinary results. Unchanged WAL/disconnect/wake/cancel
+and fullClippy41 failures stay visible and broader acceptance remains open.
+
+
+### PR135 independent doctor CI gate before Source (2026-10-04)
+
+The changed-test full run37162098246 reached all six doctor cases on ARM but
+unchanged x64 supervisor expiry failed before CLI integration began. Add only an
+independent Windows foundation doctor gate per planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md,
+before the existing registered service step. Run four native default-doctor cases
+and both exact existing doctor cases on the current three-row compiler/architecture
+matrix, with immediate nonzero refusal. Existing gates, all application/test blobs,
+clocks and protections stay exact. Three Verify criteria require docs/Issues before
+separate development, whole-workflow inverse and parent review, then fresh ordinary
+native and paired-package evidence. Preserve prior full failures; do not repeat an
+unchanged exploratory command or infer an unknown supervisor/WAL cause.

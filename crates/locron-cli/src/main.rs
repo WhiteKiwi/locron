@@ -3565,7 +3565,7 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
         }
     }
     let checks = store.integrity_check()?;
-    let dashboard = service::dashboard_doctor_facts(Some(paths.root.clone()))?;
+    let dashboard = service::dashboard_doctor_facts(paths)?;
     let wake = locron_core::notification::wake_facts(&paths.root);
     if format == Format::Human {
         render_doctor_human(paths, &settings, &resolutions, &checks, &dashboard);
@@ -5566,8 +5566,8 @@ fn render_why_run(run: &Value, events: &[EventRecord]) -> Result<()> {
     Ok(())
 }
 
-/// Renders `doctor` human output: one line per check with an `ok`, `warn`, or
-/// `fail` level prefix carrying the check name and the fact or path verified.
+/// Renders `doctor` human output: one line per check with a level prefix.
+/// Known facts use `ok`, `warn`, or `fail`; unprobed Windows checks use `info`.
 fn render_doctor_human(
     paths: &StatePaths,
     settings: &SettingsRecord,
@@ -5609,18 +5609,27 @@ fn render_doctor_human(
             println!("fail process resolution: {job_name} ({error})");
         }
     }
-    if dashboard["registered"].as_bool() == Some(true) {
-        println!("ok   dashboard service: registered");
+    let unprobed = cfg!(windows)
+        && dashboard.get("registered") == Some(&Value::Null)
+        && dashboard.get("loaded") == Some(&Value::Null)
+        && dashboard["service_status"].as_str() == Some("unprobed");
+    if unprobed {
+        println!("info dashboard service: registration is unprobed");
+        println!("info dashboard listener: availability is unprobed");
     } else {
-        println!("warn dashboard service: not registered");
-    }
-    if dashboard["loaded"].as_bool() == Some(true) {
-        println!(
-            "ok   dashboard listener: {}",
-            dashboard["access_url"].as_str().unwrap_or("unknown")
-        );
-    } else {
-        println!("warn dashboard listener: not running");
+        if dashboard["registered"].as_bool() == Some(true) {
+            println!("ok   dashboard service: registered");
+        } else {
+            println!("warn dashboard service: not registered");
+        }
+        if dashboard["loaded"].as_bool() == Some(true) {
+            println!(
+                "ok   dashboard listener: {}",
+                dashboard["access_url"].as_str().unwrap_or("unknown")
+            );
+        } else {
+            println!("warn dashboard listener: not running");
+        }
     }
     let token_present = dashboard["token"]["present"].as_bool() == Some(true);
     let token_permissions = dashboard["token"]["permissions"]

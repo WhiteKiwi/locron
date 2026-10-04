@@ -5345,3 +5345,63 @@ human_doctor_prints_one_level_line_per_check, human_forms_leave_the_json_envelop
 and wake_socket_makes_new_manual_run_promptly_visible_to_daemon. Later binaries are
 not reached; both full Clippy rows retain41 errors. The failed required lifecycle
 qualification remains separate and must pass at newly reviewed Source before merge.
+
+
+### Default Windows doctor research and measured correction (2026-10-04)
+
+Separate committed-source report SHA25601d3ae05af66956e816cc3f21b53f386c7a7e14244427546c82210e647e9040b,
+candidatecf37e5ca1afb1e85c7c03ad33dc221896d7122c9d59aef4389feda8074b47318
+and receiptbb85cdc7b03ff7bd50b236483553d61e8f8f9153c1b454f120125049d9ce7259
+audit37 snapshots and all direct/typed clients. Doctor requires the service facts
+before rendering; that helper constructs Unix UID context before default Windows
+backend refusal. CLI main is the only caller; independent HTTP/MCP/browser DTOs
+do not consume these registered/loaded fields. Default-only null/unprobed is
+selected before Source, while Unix/fake boolean facts and actual token ACL errors
+remain exact. See planning/WINDOWS_DEFAULT_DOCTOR_2026-10-04.md.
+
+Actual495f full37157212227 ARM/MSRV67/4 reaches human_doctor2941 and human_forms
+3181 after successful add prerequisites. This corrects the report's rooted-path
+inference: the first doctor exit/error code is still unprinted; do not attribute
+these runs to add rejection, UID or unsupported backend. A genuine native target
+is still necessary for resolution acceptance. x64's separate300/1 supervisor
+unit failure preempts all CLI integration cases; lint repeats the old41 sites.
+Nothing qualifies actual wake, full suite, two-user privacy or release support.
+
+
+### PR135 native doctor assertion correction before Source (2026-10-04)
+
+Current main134-integrated8644efb full37160909694 x64 job111313961833
+executes301CLI units successfully, then75CLI integrations70pass/5fail,0ignored
+and filtered. Both existing doctor tests now pass. The new process-resolution
+case compares actual canonical \\?\D:... executable to the requested ordinary
+D:... path. Core execution's existing resolve_executable returns std::fs::canonicalize
+on Windows; the expected resolved path must be independently canonicalized too.
+Requested executable and stock PATH assertions remain exact and separate.
+
+The new invalid-token-leaf test reaches exit5/service_io, then rejects its own
+unwrapped message-prefix expectation. Existing ServiceError::Io Display uses
+"service management failed: {message}"; main renders that Display without stripping
+it. Its actual message text was not printed in the failed assertion. Preserve
+the genuine ACL/type refusal and select the complete fixed display prefix, with
+an explicit failed assertion message rather than catching or downgrading errors.
+The same row also preserves cancellation/wake failures and one unchanged
+disconnect test Store after-WAL finalize deadline overrun (5469705us under the
+original5s clock, configuration modewal/done/autocommit observed). Their causes
+and broader runtime qualification are not repaired by this expectation slice.
+
+
+### PR135 measured early full-suite failure and missing x64 doctor evidence
+
+Changed-test head cc07299206e5ee83106d95dbcd8af13214e86765 full37162098246
+x64stable job111317472009 stops at CLI unit300PASS1FAIL: unchanged
+service::windows_supervisor::tests::native_io_expiry_quarantines_activation_child_and_all_later_admission
+panics at windows_supervisor.rs1687 because the actual native I/O boundary was not
+entered. CLI integration is unexecuted; this is not doctor qualification or a
+proved cause. Raw log SHA25633038ff578152d6ca17011b2cb78b21244714c79021e435f43557c02dc19ac6b
+is retained. ARM job111317472061 reaches301unitPASS and75CLI73PASS2FAIL with
+all four new plus two existing doctor cases PASS; only wake/cancel fail there.
+Both full Clippy rows retain exactly the prior41 diagnostic message sequence.
+Select a strictly additive independent doctor gate in the ordinary Windows
+foundation matrix before the existing service command. This avoids an unrelated
+early failure hiding doctor evidence while retaining every existing refusal.
+No application/test changes or unchanged full rerun are selected.

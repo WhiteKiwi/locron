@@ -442,7 +442,17 @@ Human output renders the same facts as machine output in readable forms; machine
   (overlap policy)`, `would replace`, or `eligible subject to capacity`. The corresponding machine
   values remain stable lowercase snake-case codes.
 - `doctor` — one line per check: `ok   …`, `warn …`, or `fail …` carrying the check name and the
-  fact or path it verified.
+  fact or path it verified. Default Windows adds exactly `info local wake: named pipe (availability
+  is unprobed)`, `info dashboard service: registration is unprobed`, and `info dashboard listener:
+  availability is unprobed`. These express unknown availability, not success or a running service.
+  With no service-backend selector, its existing machine envelope retains actual checks and token
+  posture while `dashboard.registered` and `dashboard.loaded` are `null` and
+  `dashboard.service_status` is `"unprobed"`. The existing `wake` named-pipe availability is
+  unprobed and `wake_socket` is null. The access URL is configuration rather than a live-listener
+  proof. Unix and explicitly selected backend shapes/boolean facts retain their prior contract;
+  genuine token/state I/O and permission failures still refuse. The diagnostic facts do not create
+  a token, register/start a task or enable installation/update. Doctor retains its existing store
+  initialization and diagnostic lock behavior.
 - `config get` — `KEY=VALUE` per configured key, sensitive keys redacted as documented.
   `config set` / `config unset` — `KEY: <action>` lines per the documented environment forms.
 - `import` — `created N, updated N, unchanged N` plus per-job action lines; dry run states the
