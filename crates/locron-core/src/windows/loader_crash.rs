@@ -1188,6 +1188,75 @@ pub(super) fn rust_staged_publisher() {
     }
 }
 
+struct ManagedExceptionObservation {
+    kind: &'static str,
+    hresult: i32,
+}
+
+struct ManagedRefusalObservation {
+    truncated: bool,
+    nodes: Vec<ManagedExceptionObservation>,
+}
+
+fn managed_refusals(
+    result: &serde_json::Value,
+) -> Result<[ManagedRefusalObservation; 4], &'static str> {
+    let records = result
+        .get("refusals")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("missing managed refusal records")?;
+    if records.len() != 4 {
+        return Err("managed refusal record count");
+    }
+    let mut refusals = Vec::with_capacity(4);
+    for record in records {
+        let record = record.as_str().ok_or("managed refusal is not a string")?;
+        if !record.is_ascii() || record.len() > 95 {
+            return Err("managed refusal record bound");
+        }
+        let (truncated, nodes) = if let Some(nodes) = record.strip_prefix('=') {
+            (false, nodes)
+        } else if let Some(nodes) = record.strip_prefix('~') {
+            (true, nodes)
+        } else {
+            return Err("managed refusal chain flag");
+        };
+        let mut observed = Vec::with_capacity(5);
+        for node in nodes.split(',') {
+            if observed.len() == 5 {
+                return Err("managed refusal node count");
+            }
+            let (kind, hresult) = node.split_once('=').ok_or("managed refusal node shape")?;
+            let kind = match kind {
+                "io" => "io",
+                "access" => "access",
+                "other" => "other",
+                _ => return Err("managed refusal category"),
+            };
+            let value = hresult
+                .parse::<i32>()
+                .map_err(|_| "managed refusal signed HResult")?;
+            if value.to_string() != hresult {
+                return Err("managed refusal noncanonical HResult");
+            }
+            observed.push(ManagedExceptionObservation {
+                kind,
+                hresult: value,
+            });
+        }
+        if truncated && observed.len() != 5 {
+            return Err("managed refusal truncated chain count");
+        }
+        refusals.push(ManagedRefusalObservation {
+            truncated,
+            nodes: observed,
+        });
+    }
+    refusals
+        .try_into()
+        .map_err(|_| "managed refusal record count")
+}
+
 pub(super) fn powershell_publication_proof() {
     let directory = directory();
     let deadline = probe_deadline();
@@ -1247,6 +1316,30 @@ pub(super) fn powershell_publication_proof() {
     assert_eq!(result["count"], 1);
     assert_eq!(result["tail_len"], 20);
     assert!(trace.has_stage("root-completed"));
+    let refusals = managed_refusals(&result).unwrap_or_else(|message| panic!("{message}"));
+    for ((phase, operation), refusal) in [
+        ("producer_live", "rename"),
+        ("producer_live", "delete"),
+        ("writer_dead_readers_held", "rename"),
+        ("writer_dead_readers_held", "delete"),
+    ]
+    .into_iter()
+    .zip(refusals)
+    {
+        let chain = if refusal.truncated {
+            "truncated"
+        } else {
+            "ended"
+        };
+        for (index, node) in refusal.nodes.iter().enumerate() {
+            println!(
+                "powershell-heartbeat-append-refusal phase={phase} operation={operation} node={} managed_kind={} hresult={} chain={chain}",
+                index + 1,
+                node.kind,
+                node.hresult
+            );
+        }
+    }
     println!(
         "powershell-heartbeat-append-proofs-confirmed root_pid={root} publisher_pid={publisher}"
     );
@@ -1399,11 +1492,7 @@ fn stock_crash_sources_fit_the_encoded_windows_command_line() {
             "$heartbeatSource = @'\n",
             "$publisherSource = $heartbeatSource + @'\n",
         ),
-        (
-            HostProgram::AppendProof,
-            "$beatSource = @'\n",
-            "$code = $beatSource + @'\n",
-        ),
+        (HostProgram::AppendProof, "$a3 = @'\n", "$a8 = $a3 + @'\n"),
     ] {
         let selected = select_host_source(&lf_host, program);
         let definitions = selected
