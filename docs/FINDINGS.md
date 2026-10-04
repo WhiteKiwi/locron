@@ -5667,3 +5667,8 @@ Root reviewed complete704709e terminal patch/contexts and independent whole3 inv
 ## Token141 actual reset observation selection (2026-10-05)
 
 Fresh621 CI37217720691/1 passed14 gates including all3lint and5Unix but failed all3Windows token libraries43PASS/13FAIL. First atomic-fault read reset10054 lacks actual owner/last-frame/pre-kill Child/capture/subcase/cause; ARM has one prior Write/cleanup_false completion only. The separate support-only plan DASHBOARD_TOKEN_READ_FAILURE_2026-10-05.md selects safe bounded actual pre-cleanup observation while preserving failure, all terminal/ownership/privacy checks and original clocks. Existing wake/cancel and historical4fa causes remain UNKNOWN; no production repair is inferred.
+
+
+## Measured token observer lint (2026-10-05)
+
+Fresh observer CI37222583220/1 exposes only measured private observer syntax in all three completed strict Rust1.98 lint jobs: comparison_to_empty at support831 and manual_assert at997/1108. Root read each actual raw diagnostic. Preserve the same safe location parse and all failure-observation operations while returning a report from a private builder to one unconditional fatal panic boundary. Current native/runtime results remain pending; no child/reset/capture cause or production repair is inferred.

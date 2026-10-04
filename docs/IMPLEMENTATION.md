@@ -5446,3 +5446,8 @@ SPEC remains frozen. Complete five-step Verify in [DASHBOARD_TOKEN_MAIN136_2026-
 ## Token141 support-only failure observation (2026-10-05)
 
 Under planning/DASHBOARD_TOKEN_READ_FAILURE_2026-10-05.md, return original read Err to validated Harness owner context and record only fixed phase/config/status facts. Actual pre-kill TryWait Some under the original deadline is required before retained-handle bounded capture length/hash/allowlisted numeric-location reading. Preserve original final failure, all success/terminal paths, finish/Drop and common cleanup3s. The three concrete Verify steps require Docs/Issue/fullfinalreview before separate Source, complete inverses/bounds/Rootreview, then fresh unchanged gates and observed evidence before any later repair.
+
+
+## Measured token observer lint (2026-10-05)
+
+Follow DASHBOARD_TOKEN_OBSERVER_LINT_2026-10-05.md under Issue162 before Source: exact Docs/Issue GET and full final-plan reread, separate support-only is_empty/report-builder/unconditional-panic implementation, whole parent inverse and literal original observation/context/guards/cleanup/clocks, all protected mode/blob entries and static grammar/fmt/diff receipts, then Root full review/normal publication/fresh strict hosted acceptance. Original kind/raw,4096ASCII and65536+1 caps and all old tests/gates remain unchanged.
