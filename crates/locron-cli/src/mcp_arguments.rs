@@ -16,26 +16,34 @@ fn matches_shape(value: &Value, rule: &Value) -> bool {
             "integer" => value.as_u64().is_some_and(|number| {
                 rule.get("minimum")
                     .is_none_or(|min| min.as_u64().is_some_and(|min| number >= min))
-                    && rule.get("maximum")
+                    && rule
+                        .get("maximum")
                         .is_none_or(|max| max.as_u64().is_some_and(|max| number <= max))
             }),
-            "array" if rule.get("items").and_then(|items| items.get("type"))
-                == Some(&Value::String("string".into())) =>
+            "array"
+                if rule.get("items").and_then(|items| items.get("type"))
+                    == Some(&Value::String("string".into())) =>
             {
-                value.as_array().is_some_and(|items| items.iter().all(Value::is_string))
+                value
+                    .as_array()
+                    .is_some_and(|items| items.iter().all(Value::is_string))
             }
             _ => false,
         },
         // Description null means absent on creation and explicit clearing on
         // update. No boolean, integer or array field treats null as omission.
-        Some(Value::Array(types)) if types == &vec![Value::from("string"), Value::from("null")] => {
+        Some(Value::Array(types))
+            if types.len() == 2 && types[0] == "string" && types[1] == "null" =>
+        {
             value.is_string() || value.is_null()
         }
         _ => false,
     };
     typed
         && rule.get("enum").is_none_or(|options| {
-            options.as_array().is_some_and(|options| options.contains(value))
+            options
+                .as_array()
+                .is_some_and(|options| options.contains(value))
         })
 }
 
@@ -60,7 +68,10 @@ pub(super) fn validate(tool: &str, arguments: &Value) -> Result<()> {
             let name = field
                 .as_str()
                 .ok_or_else(|| anyhow!("invalid declared field name"))?;
-            ensure!(object.contains_key(name), "missing required parameter: {name}");
+            ensure!(
+                object.contains_key(name),
+                "missing required parameter: {name}"
+            );
         }
     }
     for (name, rule) in properties {
@@ -92,14 +103,24 @@ mod tests {
 
     #[test]
     fn schema_admission_is_strict_and_does_not_reflect_supplied_values() {
-        for bad in [json!(null), json!("secret-canary"), json!(0), json!([]), json!({})] {
+        for bad in [
+            json!(null),
+            json!("secret-canary"),
+            json!(0),
+            json!([]),
+            json!({}),
+        ] {
             let error = validate("locron_run_job", &json!({"job":"test", "dry_run":bad}))
-                .unwrap_err().to_string();
+                .unwrap_err()
+                .to_string();
             assert!(error.contains("dry_run"));
             assert!(!error.contains("secret-canary"));
         }
-        for value in [json!({"job":"test"}), json!({"job":"test", "wait":false}),
-            json!({"job":"test", "wait":true, "dry_run":true, "extension":42})] {
+        for value in [
+            json!({"job":"test"}),
+            json!({"job":"test", "wait":false}),
+            json!({"job":"test", "wait":true, "dry_run":true, "extension":42}),
+        ] {
             validate("locron_run_job", &value).unwrap();
         }
         assert!(validate("locron_run_job", &json!({})).is_err());
@@ -109,20 +130,44 @@ mod tests {
     #[test]
     fn unknown_declared_shapes_and_mixed_string_arrays_refuse() {
         assert!(!matches_shape(&json!({}), &json!({"type":"object"})));
-        assert!(!matches_shape(&json!([1]), &json!({"type":"array","items":{"type":"integer"}})));
-        assert!(!matches_shape(&json!(["ok",1]), &json!({"type":"array","items":{"type":"string"}})));
-        assert!(matches_shape(&json!([]), &json!({"type":"array","items":{"type":"string"}})));
+        assert!(!matches_shape(
+            &json!([1]),
+            &json!({"type":"array","items":{"type":"integer"}})
+        ));
+        assert!(!matches_shape(
+            &json!(["ok", 1]),
+            &json!({"type":"array","items":{"type":"string"}})
+        ));
+        assert!(matches_shape(
+            &json!([]),
+            &json!({"type":"array","items":{"type":"string"}})
+        ));
         assert!(!matches_shape(&json!(1.0), &json!({"type":"integer"})));
     }
 
     #[test]
     fn deadline_uses_one_checked_clock_without_an_arbitrary_wait_cap() {
         let now = Instant::now();
-        assert_eq!(wait_deadline(&json!({}), now).unwrap().duration_since(now), Duration::from_secs(30));
+        assert_eq!(
+            wait_deadline(&json!({}), now).unwrap().duration_since(now),
+            Duration::from_secs(30)
+        );
         for seconds in [1, 86400] {
-            assert_eq!(wait_deadline(&json!({"timeout_seconds":seconds}), now).unwrap().duration_since(now), Duration::from_secs(seconds));
+            assert_eq!(
+                wait_deadline(&json!({"timeout_seconds":seconds}), now)
+                    .unwrap()
+                    .duration_since(now),
+                Duration::from_secs(seconds)
+            );
         }
-        for bad in [json!(0), json!(-1), json!(1.5), json!("30"), json!(null), json!(u64::MAX)] {
+        for bad in [
+            json!(0),
+            json!(-1),
+            json!(1.5),
+            json!("30"),
+            json!(null),
+            json!(u64::MAX),
+        ] {
             assert!(wait_deadline(&json!({"timeout_seconds":bad}), now).is_err());
         }
     }

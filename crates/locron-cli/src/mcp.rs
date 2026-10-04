@@ -22,6 +22,9 @@ use crate::{
     send_wake, terminal_run_state, validate_metadata,
 };
 
+#[path = "mcp_arguments.rs"]
+mod arguments;
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct JsonRpcRequest {
     pub jsonrpc: String,
@@ -291,7 +294,7 @@ fn handle_tools_list() -> Value {
                             "description": "Execution timeout in seconds."
                         },
                         "description": {
-                            "type": "string",
+                            "type": ["string", "null"],
                             "description": "Human-readable job description."
                         },
                         "tags": {
@@ -378,7 +381,7 @@ fn handle_tools_list() -> Value {
                             "description": "Execution timeout in seconds."
                         },
                         "description": {
-                            "type": "string",
+                            "type": ["string", "null"],
                             "description": "Job description."
                         },
                         "tags": {
@@ -912,6 +915,7 @@ fn parse_target(
 }
 
 fn tool_add_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_add_job", args)?;
     let name = args
         .get("name")
         .and_then(Value::as_str)
@@ -1048,6 +1052,7 @@ fn tool_add_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_update_job", args)?;
     let job_name_or_id = args
         .get("job")
         .and_then(Value::as_str)
@@ -1057,11 +1062,8 @@ fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
-    let store = if dry_run {
-        open_read_only(paths)?
-    } else {
-        open(paths)?
-    };
+    // Build and validate the complete edit without creating or migrating state.
+    let store = open_read_only(paths)?;
     let existing = store.job(job_name_or_id)?;
     let mut def: JobDefinition = serde_json::from_str(&existing.definition_json)?;
     let now = Timestamp::from_epoch_micros(now_us());
@@ -1191,7 +1193,7 @@ fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
         }));
     }
 
-    let updated = store.update_job(&UpdateJob {
+    let updated = open(paths)?.update_job(&UpdateJob {
         id: existing.id.clone(),
         expected_revision: existing.current_revision,
         name: new_name,
@@ -1212,6 +1214,7 @@ fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 fn tool_enable_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_enable_job", args)?;
     let job = args
         .get("job")
         .and_then(Value::as_str)
@@ -1240,6 +1243,7 @@ fn tool_enable_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 fn tool_disable_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_disable_job", args)?;
     let job = args
         .get("job")
         .and_then(Value::as_str)
@@ -1268,6 +1272,7 @@ fn tool_disable_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 fn tool_remove_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_remove_job", args)?;
     let job = args
         .get("job")
         .and_then(Value::as_str)
@@ -1291,15 +1296,13 @@ fn tool_remove_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 async fn tool_run_job(paths: &StatePaths, args: Value) -> Result<Value> {
+    arguments::validate("locron_run_job", &args)?;
     let job = args
         .get("job")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("missing required parameter: job"))?;
     let wait = args.get("wait").and_then(Value::as_bool).unwrap_or(false);
-    let timeout_seconds = args
-        .get("timeout_seconds")
-        .and_then(Value::as_u64)
-        .unwrap_or(30);
+    let deadline = arguments::wait_deadline(&args, Instant::now())?;
     let dry_run = args
         .get("dry_run")
         .and_then(Value::as_bool)
@@ -1345,7 +1348,6 @@ async fn tool_run_job(paths: &StatePaths, args: Value) -> Result<Value> {
     send_wake(paths);
 
     if wait {
-        let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
         let mut current_run = run;
         while Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1370,6 +1372,7 @@ async fn tool_run_job(paths: &StatePaths, args: Value) -> Result<Value> {
 }
 
 fn tool_cancel_run(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_cancel_run", args)?;
     let run_id = args
         .get("run_id")
         .and_then(Value::as_str)
