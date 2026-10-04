@@ -24,9 +24,12 @@ function Get-FixedFailureKind($exception) {
         elseif ($node -is [ArgumentException]) {$specific='argument'}
         elseif ($node -is [InvalidOperationException]) {$specific='invalid_operation'}
         elseif ($node -is [TimeoutException]) {$specific='timeout'}
+        elseif ($node -is [InvalidCastException]) {$specific='invalid_cast'}
+        elseif ($node -is [OverflowException]) {$specific='overflow'}
         elseif ($node -is [Management.Automation.PipelineStoppedException]) {$wrapper='pipeline'}
         elseif ($node -is [Management.Automation.MethodInvocationException]) {$wrapper='method_invocation'}
         elseif ($node -is [Management.Automation.RuntimeException]) {$wrapper='runtime'}
+        elseif ($node -is [Management.Automation.ParentContainsErrorRecordException]) {$wrapper='parent_error_record'}
         if ($index -eq 4) {break}
         $node=$node.InnerException
     }
@@ -43,7 +46,7 @@ function Write-FixedRefusalDiagnostic($branch,$driverKind=$null) {
     $checkpoints=@('entry','metadata','stock_preflight','stock_utility_open','stock_utility_import','stock_accounts_open','stock_accounts_import','stock_exports','runner_identity','os_metadata','checkout_bootstrap','image_open','image_hash','anchor_bootstrap','guardian_start','guard_acquire_anchor','guard_create_job','account_a_create','account_b_create','guard_create_controls','image_copy','guard_hold_image','actor_start','actor_read','cleanup_accounts','cleanup_release_image','cleanup_remove_image','cleanup_remove_markers','cleanup_release_controls','cleanup_remove_controls','cleanup_release_job','cleanup_remove_job','cleanup_finish_guard','cleanup_guard_eof','cleanup_dispose','evidence_publish','confirmed')
     $branches=@('shared_unknown','phase_expired_pending','phase_expired_completed','endinvoke_exception','result_rejected','phase_expired_after_dispose','phase_expired_after_success_print')
     $categories=@('preflight','account','credential_start','token','protocol','containment','deadline','cleanup','guard_setup','native_owner_unknown')
-    $kinds=@('unauthorized','security','io','win32','argument','invalid_operation','timeout','method_invocation','runtime','pipeline','unknown')
+    $kinds=@('unauthorized','security','io','win32','argument','invalid_operation','timeout','method_invocation','runtime','pipeline','invalid_cast','overflow','parent_error_record','unknown')
     $evidenceStates=@('not_attempted','attempting','written','refused')
     # BEGIN fixed-prerequisite-substage renderer_closed_set
     $substages=@('entry','path_validation','attributes','directory_security','security_owner','security_sddl','security_raw_acl','security_rules','owner_check','owner_untrusted','acl_presence_check','null_acl','ace_shape_check','ace_shape','foreign_mutation_check','foreign_mutation','file_open','file_security','evidence_serialize','evidence_parent','evidence_directory_create','evidence_directory_security','evidence_identity_write','evidence_receipt_write')
@@ -100,9 +103,12 @@ $nativeOwner = {
             elseif ($node -is [ArgumentException]) {$specific='argument'}
             elseif ($node -is [InvalidOperationException]) {$specific='invalid_operation'}
             elseif ($node -is [TimeoutException]) {$specific='timeout'}
+            elseif ($node -is [InvalidCastException]) {$specific='invalid_cast'}
+            elseif ($node -is [OverflowException]) {$specific='overflow'}
             elseif ($node -is [Management.Automation.PipelineStoppedException]) {$wrapper='pipeline'}
             elseif ($node -is [Management.Automation.MethodInvocationException]) {$wrapper='method_invocation'}
             elseif ($node -is [Management.Automation.RuntimeException]) {$wrapper='runtime'}
+            elseif ($node -is [Management.Automation.ParentContainsErrorRecordException]) {$wrapper='parent_error_record'}
             if ($index -eq 4) {break}
             $node=$node.InnerException
         }
