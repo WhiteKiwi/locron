@@ -5663,3 +5663,7 @@ Exact4fa ordinary37204722580/1 is completed11SUCCESS/6FAIL/2optionalSKIP. Linux 
 ## PR141 terminal Source review and qualified-main136 integration
 
 Root reviewed complete704709e terminal patch/contexts and independent whole3 inverses/309protected entries; lint/terminal/C1-C3 scope is preserved, runtime acceptance pending. Historical4fa RST phase/child/capture/native cause and separate x64 supervisor cause remain UNKNOWN. Follow planning/DASHBOARD_TOKEN_MAIN136_2026-10-04.md for exact reviewed main136 integration before fresh original gates.
+
+## Token141 actual reset observation selection (2026-10-05)
+
+Fresh621 CI37217720691/1 passed14 gates including all3lint and5Unix but failed all3Windows token libraries43PASS/13FAIL. First atomic-fault read reset10054 lacks actual owner/last-frame/pre-kill Child/capture/subcase/cause; ARM has one prior Write/cleanup_false completion only. The separate support-only plan DASHBOARD_TOKEN_READ_FAILURE_2026-10-05.md selects safe bounded actual pre-cleanup observation while preserving failure, all terminal/ownership/privacy checks and original clocks. Existing wake/cancel and historical4fa causes remain UNKNOWN; no production repair is inferred.

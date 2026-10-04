@@ -5442,3 +5442,7 @@ SPEC remains frozen. Follow the complete four-step Verify plan in [DASHBOARD_TOK
 ## PR141 separate terminal-candidate Git integration with main136
 
 SPEC remains frozen. Complete five-step Verify in [DASHBOARD_TOKEN_MAIN136_2026-10-04.md](planning/DASHBOARD_TOKEN_MAIN136_2026-10-04.md) selects only normal Source union, whole incoming Docs plus exact own insertions/two whole inverses, followed by original native/lint/ordinary/Guardian/fullpaired qualification. Root Issue162 exactGET/final reread precedes separate Git development; no Source hand adaptation or old failure-cause promotion.
+
+## Token141 support-only failure observation (2026-10-05)
+
+Under planning/DASHBOARD_TOKEN_READ_FAILURE_2026-10-05.md, return original read Err to validated Harness owner context and record only fixed phase/config/status facts. Actual pre-kill TryWait Some under the original deadline is required before retained-handle bounded capture length/hash/allowlisted numeric-location reading. Preserve original final failure, all success/terminal paths, finish/Drop and common cleanup3s. The three concrete Verify steps require Docs/Issue/fullfinalreview before separate Source, complete inverses/bounds/Rootreview, then fresh unchanged gates and observed evidence before any later repair.
