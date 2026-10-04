@@ -5514,3 +5514,33 @@ Read-only research119 artifacts and35 immutable Source records were independentl
 Select only a one-file failure-only observer of already-returned marker/read/parse/numeric facts and the already-returned dashboard ExitStatus. First returned I/O kind/raw code is immutable within the progress observation, not a first process error or causal classification. False is_file means only the returned boolean; unread/parse-unexecuted slots remain unobserved for that iteration. Numeric nongreater/zero and parse error remain distinct. No extra read/status/capture/Store/native call, diagnostic thread or resource owner is selected.
 
 The closed8-field suffix uses fixed enums and Option<i32> scalar projections only; conservative20736 combinations give226bytes includingCRLF, complete original message273. This is a static text bound, not native syntax/timing/cleanup evidence. See [selected before-Source plan](planning/WINDOWS_LIFECYCLE_PROGRESS_OBSERVATIONS_2026-10-04.md). Keep failed run1c45 authentic and all wide Issues open until their original Verify and required publication succeed.
+
+## PR136 review: completed-marker sharing race and strict lint (2026-10-04)
+
+Root reviewed original3f5fb95 ordinary37184851251 raw native/lint logs:
+x64/ARM first-work Native/Setup with ReadyOpen Other/raw32 in four negative
+cases, x64 withheld Disconnected before its notice with no CaseResult, MSRV
+all six cases pass. Both stable rows stop before lifecycle/downstream admission;
+service64/GUI12 and the explicit stock diagnostic controls still execute.
+Required lint reports chunks_exact_to_as_chunks and manual_let_else in the
+new stock Rust helper; later CLI/GUI lint is skipped. None permits merging.
+
+Separate read-only review of the complete2324-line helper and callers finds
+final create_private_new exposes peer-ready during private ACL CreateNew.
+filesystem_worker.ps1 requests FullControl, including DELETE; no-follow
+inspection/open shares only READ|WRITE. [Microsoft CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+documents incompatible sharing and delete-access refusal. This proves a Source
+race path, not the exact internal instruction/holder of the observed ReadyOpen.
+The withheld underlying failure and old lifecycle/full/native unknowns remain.
+
+Locked tempfile3.27.0 already exists in CLI dev dependencies. Its absolute
+TempPath::try_from_path adds no CWD I/O; persist_noclobber retains the owned
+candidate on failure and invokes Windows MoveFileExW without overwrite/copy.
+Select closed private staging before final publication, actual staged-absence/
+complete-read/collision-preservation controls inside existing real peer children,
+and failure-only scalar snapshots for the existing withheld notice. Keep every
+reader refusal and original clock/selector/owner boundary. Two strict lint
+syntax corrections preserve the stock parser and collision assertion. See the
+amended native and stock plans; Source waits for Issue31 exact readback and
+the separate developer lease. No old missing visible-empty control or concrete
+managed HResult is fabricated as current acceptance.

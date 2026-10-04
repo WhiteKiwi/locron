@@ -553,3 +553,98 @@ No handles enter records, admission closures, channels, errors or the driver.
 The held-empty/negative controls above specify necessary evidence, not Source
 mechanisms or authority to expand the currently selected six acceptance cases.
 This packet adds no local native execution and leaves Source clean.
+
+## Reviewed ready publication follow-up before Source (2026-10-04)
+
+Ordinary run37184851251 at3f5fb95e9d61477f4e5975f1165af63428411019 fails
+required x64stable/ARMstable foundation and Windows lint. Four negative cases
+return first_work Native/Setup with actual ReadyOpen raw32 and no successful
+ready read. x64 withheld instead reports Disconnected before its controlled
+query notice; its underlying work/result is unobserved. MSRV executes all six.
+A successful prior run or a neighboring error slot does not establish a cause.
+
+Separate Source research finds an actual publication race path: the private
+CreateNew worker exposes the final leaf while its FileStream requests FullControl
+(including DELETE). The unchanged no-follow reader shares READ|WRITE without
+DELETE, which is incompatible with that still-open handle. Microsoft CreateFileW
+documents this refusal. ReadyOpen also performs ancestry/inspection, so the old
+logs do not identify the precise internal call or holder. This is a Source defect
+and an API-grounded explanation, not an instruction-level causal measurement.
+
+Lease only crates/locron-cli/tests/support/windows_cli_control.rs for this
+continuation. The other leased Source file is the two syntax-only stock lint
+corrections recorded in WINDOWS_STOCK_CRASH_HEARTBEATS_2026-10-04.md. No workflow,
+cli.rs, lifecycle, production, dependency, selector or other Source change.
+
+For the actual negative peer child, replace final-path CreateNew/write with one
+owned fixed candidate in its retained existing-private root. Create it privately,
+anchor its ownership, write exactly byte1 and flush, close the writer, then invoke
+the existing locked tempfile3.27.0 TempPath::persist_noclobber once. Only an
+absolute owned candidate may enter TempPath::try_from_path, after its private
+CreateNew succeeds. Retain the parent guard through publication. Windows uses
+MoveFileExW without REPLACE_EXISTING/COPY fallback; no rename_private replacement,
+retry, second publication or adoption of a foreign candidate/final is permitted.
+Child pre/post checks use its unchanged original30s. Parent setup and driver
+retain their original horizon and gates. Late native completion refuses;
+cleanup stays with those same owners.
+
+Add actual controls inside the already selected peer child before exposing its
+real final marker. With the staged writer still held, the final no-follow open
+must return actual NotFound. After close and publication, that same final must
+read exactly1 through the original bounded two-byte reader. A separate owned
+pre-existing final and candidate must produce actual AlreadyExists and preserve
+the original final bytes when the same no-clobber helper attempts publication.
+All control resources stay in the actual child/root and under its original clock;
+no sleep window, simulated exception, fresh worker/channel/selector or timer.
+Only the later real peer/PID/strict protocol and timely cleanup qualify a case.
+
+Use fixed owned names peer-ready.pending, peer-ready-collision.pending and
+peer-ready-collision. The collision final is exact0, candidate exact1; check the
+returned candidate path with a named boolean, then both unchanged actual bytes
+through the bounded reader and the returned candidate's actual TempPath::close.
+Never print path comparison Debug. Run collision controls before publishing the
+real ready marker, so no control I/O enters the parent's probe200ms. These are
+test-owned private objects, without an arbitrary same-account adversary claim.
+
+This supersedes the final-CreateNew fixture mechanism. Preserve setup_peer's
+successful-empty Unpublished compatibility branch and every non-NotFound
+open/read refusal verbatim. The historical visible-empty control was never
+implemented and remains unqualified; it is not counted as proof of the new
+absent-before-completion publication contract.
+
+On failure of the existing withheld notice.recv_timeout only, preserve the
+returned RecvTimeoutError and append existing Control scalar/observation snapshots.
+A single nonblocking result.try_recv may expose an already queued CaseResult;
+Empty/Disconnected render completed result=unobserved. Do not wait, perform
+native/Child/Store/path I/O, reopen admission or translate missing data into
+success. ReleaseGate unwind and all original later assertions remain exact.
+Only fixed enum/numeric/bool formatting is allowed; no private path/PID/error
+message/frame. Each snapshot remains independent of neighboring events.
+The failure line combines at most two existing bounded CaseResult renderings
+and fixed notice/queued-state words; require a conservative2048 ASCII-byte bound.
+
+### Four concrete Verify steps
+
+1. Docs and Issue31 before Source. Verify: these decisions and observed failures,
+   frozen SPEC, complete protected inventory at integrated2e6c0cd, exact Issue31
+   four-step readback and final Root plan review precede separate development.
+2. Two-file implementation conservation. Verify: only this helper and the two
+   stock syntax edits; every other Docs-head blob/mode exact. Actual staged
+   NotFound -> closed complete1, same-helper AlreadyExists with original bytes,
+   single no-clobber publication/owned failure path, unchanged guarded reader and
+   all six selectors, Unix bodies,5s/8s/200ms/30s,1ms/5ms polling, grace5s,
+   admission/seals/first-work/cleanup precedence and all ownership obligations.
+   Withheld failure retains its actual error; queued-or-unobserved metadata adds
+   no native operation, delay or acceptance.
+3. Complete Root review and static checks. Verify: all original PR136 Source and
+   docs plus the complete new delta reviewed, fixed bounded diagnostics and
+   Rust1.94/1.98 formatting/actionlint/diff/locked graph pass. Existing complete
+   PowerShell programs/old snapshot geometry, strict append parser/tail and all
+   unleased Source stay byte-identical. Static controls count zero native proof.
+4. Fresh exact-head ordinary qualification. Verify: all three original native
+   rows execute each six exact one-match cases, actual controls and original
+   core/service/GUI/lifecycle/downstream assertions, Windows lint and all required
+   contexts; paired ZIP provenance/tree matches. Preserve37184851251 and every
+   unmeasured withheld/lifecycle/native/full-lint cause. Missing, late, unknown,
+   skipped or failed proof stays failure. No owner-PC native execution or wider
+   Windows11/account/reboot/public release acceptance follows.

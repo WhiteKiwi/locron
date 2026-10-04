@@ -302,3 +302,26 @@ Only new Append/common variable/function identifiers and indentation may compact
 2. **Whole Source/data conservation. Verify:** full reviewed staged/unstaged delta and reverse amendment to original8110 host/Rust blobs; every other296 tracked mode/blob against reviewed Docs head exact. Four finite real catch slots, max5 existing nodes, full signed HResult, no numeric semantic allowlist, default ToJson unchanged, first work precedence, original File/gate/order/owner/release controls,21 modes/all libtest selectors/observer/factory/permits/deps/workflow and45/30/3s/25/5/200ms preserved.
 3. **Root source/geometry review. Verify:** complete two-file Source and deterministic OCR rules, no skipped paths; unknown/malformed record fails, bounded scalar grammar95/393/405 independently checked. Actual Source's complete LF/CRLF root/child commands satisfy<32,767 and new>=1,024 margin; old SnapshotProof raw/full commands exact. Static calculation/formatter/diff/locked metadata supplies no native or PS syntax result. Failure requires a Docs-first adjustment, never skipping an assertion or widening a clock.
 4. **Combined changed-head native qualification. Verify:** Root integrates only fully reviewed Source into PR136, publishes changed head once for ordinary automatic CI on all original x64 stable/ARM stable/x64 Rust1.94 rows. Named actual four-slot records and every old/new appender/reader/kill/reap/same-candidate release/root/Job/pipe/observer/guard check must succeed at that exact revision; zero-case, missing/late/unknown remains failure. Retain six independent original native CLI case outcomes and remaining library/lifecycle/package/lint regressions distinctly; no retry, warmup, standard-user install/account/privacy or release claim follows. Issue31 stays open until full Verify/required merge succeeds.
+
+## Reviewed strict lint corrections before Source (2026-10-04)
+
+Required Windows lint at3f5fb95/run37184851251 reports exactly two new
+loader_crash.rs errors: chunks_exact_to_as_chunks at375 and manual_let_else
+at1015. Production Clippy/fmt passed; later selected CLI/GUI lint was skipped.
+These failures are not the old41 exploratory diagnostics or native proof.
+
+Lease only those two syntax sites in loader_crash.rs. Iterate the same complete
+21-byte records using as_chunks::<APPEND_RECORD_BYTES>().0.iter(), preserving
+the existing independently checked tail, ordering, count and overflow predicates.
+Express the actual CreateNew collision using let Err(collision)=... else with the
+identical panic and AlreadyExists assertion. No allow, changed expected value,
+extra call, clock, helper mode, parser, PowerShell source or proof weakening.
+
+The native-control follow-up in WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md owns the
+four ordered Verify steps and separate two-file handoff. Whole inverse must
+restore this Rust file exactly at2e6c0cd after these two syntax substitutions;
+every old/new snapshot/appender/control/reader/clock/geometry assertion remains.
+Fresh actual strict Windows lint and all original native assertions are required
+at the combined head. Earlier concrete managed HResult values remain unobserved
+in outer stdout even when inner strict four-record validation passed; do not
+invent those values or forward logs through a new unplanned Source path.

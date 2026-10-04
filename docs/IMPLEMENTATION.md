@@ -5302,3 +5302,25 @@ Keep Fixture::heartbeat and its unrelated callers exact. The private continuatio
 Append fixed suffix only after each of three original deadline assertions fails, retaining original message prefix/condition and original3s shared baseline+advance deadline,30s descendant deadline,20ms sleeps. No early hard_stop, extra emitter, read/capture/Store/native/Child::try_wait, argv/environment/Stdio/publisher/ownership/Drop/dependency/workflow changes, retry/serialization/cache prewarm/clock reset or lint suppression. Existing synchronous reads and Drop kill/wait are not claimed hard preemptible.
 
 Root reviews full Source inverse, all16 selectors and actual evaluation/call sites, then publishes one changed head for ordinary original x64MSRV/x64stable/ARM lifecycle and downstream gates. Preserve actual failures and unknowns; a later green run proves its original assertions, not an explanation for1c45. Static formatting/metadata/domain models are not native compilation or behavior acceptance.
+
+## PR136 review follow-up before separate Source (2026-10-04)
+
+Freeze product SPEC and integrate reviewed main814e689 without Source edits.
+The native CLI and stock plans select a two-file lease at clean2e6c0cd:
+windows_cli_control.rs privately stages/flushes/closes one owned marker before
+single no-clobber publication, adds actual absence/completion/collision controls
+inside existing actual peer children, and adds fixed existing metadata only on
+withheld notice failure. loader_crash.rs changes only complete-chunk iteration
+and collision let-else syntax for required strict lint. All other Source remains
+exact, including cli.rs, lifecycle, workflow, PowerShell and all original owners,
+read errors, clocks, selectors, old/new stock proofs and complete commands.
+
+Four concrete Verify steps in the native plan require Docs/Issue31 readback
+before separate development, whole two-file inverse/protected inventory,
+complete Root Source/rules/static review and fresh exact-head ordinary native/
+lint/paired qualification. Actual ReadyOpen raw32 is preserved as evidence;
+the identified incompatible-sharing Source window does not prove which internal
+call produced the old result. Withheld Disconnected stays unobserved until
+already available metadata establishes more. Failure diagnostics never add
+native I/O, delay, mutable authority or late success. No unchanged rerun,
+deadline relaxation, ignored test/lint, owner-PC native effect or public release.
