@@ -5411,3 +5411,8 @@ Follow planning/WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md after Issue31 ex
 ## Native stderr harness expectation amendment before dependent Source (2026-10-04)
 
 The complete amended WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md replaces only the new stderr companion empty-stdout expectation with genuine captured bounded libtest stdout; both actual stream attachments, normal-admission-only reads and existing live refusal remain selected. All other scoped Source/ownership/grammar/clocks/Verify stay intact. Root Docs/Issue/readback/final reread precede this dependent Source choice.
+
+
+## Current f90 daemon diagnostic selection before separate Source (2026-10-05)
+
+The complete WINDOWS_DAEMON_MAIN_F90_2026-10-05.md supersedes the older baseline/formatter/PR136-open and all-controls reap assumptions. Ordinary exactmainf90 integration must preserve its entire observer/formatter and incoming Docs before a separate two-file additive paired cancellation collector. Four genuine children require actual status and REAPED|CLEANED; second-leaf collision requires no child and CLEANED only. Same actual command/owner/clocks/normal-only post-reap reads, two bounded safe lines, complete closed grammar and all original/current controls remain required. Root full committed plan review and Issue31 exact Verify readback precede development; fresh hosted failures cannot be carried forward as success.

@@ -5632,3 +5632,8 @@ Actual6e98 CI37205423514 executed24 original parent selectors with23 pass/one x6
 ## Native stderr companion libtest stdout before dependent Source (2026-10-04)
 
 The genuine existing target runs under libtest --exact/--nocapture, whose own stdout prevents the planned stderr-only oversized case from having an empty actual counterpart. The selected plan now captures both real streams: stderr must reach the sentinel cap, stdout must be genuine complete bounded harness output; live streams are never read before exact root exit. No null/synthetic empty-file substitution is selected. Human/JSON retain exact empty opposite streams. Follow the complete amended WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md before dependent Source.
+
+
+## Actual merged PR136 main and paired diagnostic compatibility (2026-10-05)
+
+Actual mainf90 failed its native matrix22PASS2FAIL: x64 early cancellation daemon application5 remains unknown; ARM Wake eighth History expired and remains separate. The complete f90 observer is the only Source delta from6e98; 31 whole helper hunks invert exactly,309 common mode/blob entries and original clocks/owners/producer grammar remain exact. Root actual proof f5bca22d and76-artifact research proof f79d7a0f select entire incoming f90 Source/Docs plus retained own literal append components. Follow WINDOWS_DAEMON_MAIN_F90_2026-10-05.md for the paired cancellation-only diagnostic, actual harness streams and CLEANED-only/no-child collision exception. PR136 is merged; Issue31 remains open.
