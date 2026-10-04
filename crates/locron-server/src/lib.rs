@@ -94,6 +94,14 @@ pub struct BoundServer {
 /// be bound the server warns and continues on the other; if none can be bound the underlying
 /// error is returned.
 pub async fn bind(config: &Config) -> io::Result<BoundServer> {
+    bind_with_socket(config, TcpListener::bind::<SocketAddr>).await
+}
+
+async fn bind_with_socket<B, F>(config: &Config, mut socket_bind: B) -> io::Result<BoundServer>
+where
+    B: FnMut(SocketAddr) -> F,
+    F: std::future::Future<Output = io::Result<TcpListener>>,
+{
     let addresses = config
         .bind
         .iter()
@@ -118,7 +126,8 @@ pub async fn bind(config: &Config) -> io::Result<BoundServer> {
     let mut warnings = Vec::new();
     match config.port_policy {
         PortPolicy::Fixed => {
-            let (address, listeners) = bind_all(&addresses, preferred, &mut warnings).await?;
+            let (address, listeners) =
+                bind_all(&addresses, preferred, &mut warnings, &mut socket_bind).await?;
             Ok(BoundServer {
                 port: address.port(),
                 address,
@@ -131,7 +140,7 @@ pub async fn bind(config: &Config) -> io::Result<BoundServer> {
             // At the top of the u16 range, exhaust the remaining valid ports
             // before requesting an ephemeral port; never overflow or wrap.
             for port in preferred..=preferred.saturating_add(9) {
-                match bind_all(&addresses, port, &mut warnings).await {
+                match bind_all(&addresses, port, &mut warnings, &mut socket_bind).await {
                     Ok((address, listeners)) => {
                         return Ok(BoundServer {
                             port: address.port(),
@@ -143,7 +152,7 @@ pub async fn bind(config: &Config) -> io::Result<BoundServer> {
                     Err(error) => last_error = Some(error),
                 }
             }
-            let (address, listeners) = bind_all(&addresses, 0, &mut warnings)
+            let (address, listeners) = bind_all(&addresses, 0, &mut warnings, &mut socket_bind)
                 .await
                 .map_err(|error| last_error.unwrap_or(error))?;
             Ok(BoundServer {
@@ -156,11 +165,16 @@ pub async fn bind(config: &Config) -> io::Result<BoundServer> {
     }
 }
 
-async fn bind_all(
+async fn bind_all<B, F>(
     addresses: &[IpAddr],
     port: u16,
     warnings: &mut Vec<String>,
-) -> io::Result<(SocketAddr, Vec<TcpListener>)> {
+    socket_bind: &mut B,
+) -> io::Result<(SocketAddr, Vec<TcpListener>)>
+where
+    B: FnMut(SocketAddr) -> F,
+    F: std::future::Future<Output = io::Result<TcpListener>>,
+{
     let mut listeners = Vec::new();
     let mut failures = Vec::new();
     for address in addresses {
@@ -172,7 +186,7 @@ async fn bind_all(
         } else {
             port
         };
-        match TcpListener::bind(SocketAddr::new(*address, candidate_port)).await {
+        match socket_bind(SocketAddr::new(*address, candidate_port)).await {
             Ok(listener) => listeners.push(listener),
             Err(error) => failures.push((*address, candidate_port, error)),
         }
@@ -293,10 +307,23 @@ where
                 .await
         });
     }
+    supervise_listener_tasks(tasks, shutdown_tx, shutdown, dashboard_ctrl_c()).await
+}
+
+async fn supervise_listener_tasks<S, C>(
+    mut tasks: tokio::task::JoinSet<io::Result<()>>,
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
+    shutdown: S,
+    signal: C,
+) -> io::Result<()>
+where
+    S: std::future::Future<Output = ()> + Send,
+    C: std::future::Future<Output = io::Result<()>> + Send,
+{
     // A failed listener must wake the owner just like an explicit stop. Retain
     // the first error, but always notify and drain the remaining listeners.
     let mut failure = tokio::select! {
-        result = dashboard_ctrl_c() => result.err(),
+        result = signal => result.err(),
         () = shutdown => None,
         result = tasks.join_next() => Some(match result {
             Some(Ok(Err(error))) => error,
@@ -357,6 +384,600 @@ async fn dashboard_ctrl_c() -> io::Result<()> {
         return std::future::pending().await;
     }
     result
+}
+
+#[cfg(test)]
+mod listener_control_tests {
+    use super::{
+        Config, PortPolicy, bind, bind_with_socket, supervise_listener_tasks,
+        wait_for_server_shutdown,
+    };
+    use futures_util::FutureExt;
+    use std::io;
+    use std::net::{IpAddr, SocketAddr};
+    use std::panic::AssertUnwindSafe;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU8, Ordering};
+    use std::time::{Duration, Instant};
+    use tokio::net::TcpListener;
+    use tokio::sync::{Notify, oneshot, watch};
+    use tokio::task::JoinSet;
+
+    const UPPER_PORTS: &[(u16, &[u16])] = &[
+        (
+            65_526,
+            &[
+                65_526, 65_527, 65_528, 65_529, 65_530, 65_531, 65_532, 65_533, 65_534, 65_535,
+            ],
+        ),
+        (
+            65_527,
+            &[
+                65_527, 65_528, 65_529, 65_530, 65_531, 65_532, 65_533, 65_534, 65_535,
+            ],
+        ),
+        (
+            65_528,
+            &[
+                65_528, 65_529, 65_530, 65_531, 65_532, 65_533, 65_534, 65_535,
+            ],
+        ),
+        (
+            65_529,
+            &[65_529, 65_530, 65_531, 65_532, 65_533, 65_534, 65_535],
+        ),
+        (65_530, &[65_530, 65_531, 65_532, 65_533, 65_534, 65_535]),
+        (65_531, &[65_531, 65_532, 65_533, 65_534, 65_535]),
+        (65_532, &[65_532, 65_533, 65_534, 65_535]),
+        (65_533, &[65_533, 65_534, 65_535]),
+        (65_534, &[65_534, 65_535]),
+        (65_535, &[65_535]),
+    ];
+
+    fn config(addresses: &[&str], port: u16, port_policy: PortPolicy) -> Config {
+        Config {
+            bind: addresses
+                .iter()
+                .map(|address| (*address).to_owned())
+                .collect(),
+            port: Some(port),
+            port_policy,
+            ..Config::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn bind_refuses_non_loopback_and_mixed_before_socket_attempts() {
+        let invalid: &[&[&str]] = &[
+            &["192.0.2.1"],
+            &["2001:db8::1"],
+            &["0.0.0.0"],
+            &["::"],
+            &["127.0.0.1", "192.0.2.1"],
+            &["192.0.2.1", "127.0.0.1"],
+            &["::1", "2001:db8::1"],
+            &["2001:db8::1", "::1"],
+            &["127.0.0.1", "::1", "192.0.2.1"],
+            &["2001:db8::1", "::1", "127.0.0.1"],
+        ];
+        for addresses in invalid {
+            let configuration = config(addresses, 0, PortPolicy::Fixed);
+            let Err(error) = bind(&configuration).await else {
+                panic!("public bind accepted a non-loopback list");
+            };
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+            let mut attempts = 0;
+            let result = bind_with_socket(&configuration, |_address| {
+                attempts += 1;
+                std::future::ready(Err(io::Error::other("unexpected socket admission")))
+            })
+            .await;
+            let Err(error) = result else {
+                panic!("shared bind accepted a non-loopback list");
+            };
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+            assert_eq!(attempts, 0, "preflight must precede every socket attempt");
+        }
+    }
+
+    #[tokio::test]
+    async fn bind_ipv4_and_ipv6_report_actual_loopback_identity() {
+        for address in ["127.0.0.1", "::1"] {
+            let expected: IpAddr = address.parse().expect("fixed loopback fixture");
+            let bound = bind(&config(&[address], 0, PortPolicy::Fixed))
+                .await
+                .expect("native single-family loopback binding");
+            assert_eq!(bound.listeners.len(), 1);
+            let actual = bound.listeners[0]
+                .local_addr()
+                .expect("owned native listener");
+            assert_eq!(actual, bound.address);
+            assert_eq!(actual.ip(), expected);
+            assert_eq!(actual.port(), bound.port);
+            assert!(actual.port() > 0);
+            assert!(actual.ip().is_loopback());
+        }
+    }
+
+    #[tokio::test]
+    async fn foreground_upper_ports_never_wrap_and_exhaust_to_ephemeral() {
+        let mut nonzero_attempts = 0;
+        let mut ephemeral_attempts = 0;
+        for &(preferred, suffix) in UPPER_PORTS {
+            let configuration = config(&["127.0.0.1"], preferred, PortPolicy::Foreground);
+            let expected: Vec<u16> = suffix.iter().copied().chain(std::iter::once(0)).collect();
+            let mut attempts = Vec::new();
+            let bound = bind_with_socket(&configuration, |address: SocketAddr| {
+                attempts.push(address.port());
+                async move {
+                    if address.port() == 0 {
+                        TcpListener::bind(address).await
+                    } else {
+                        Err(io::Error::new(
+                            io::ErrorKind::AddrInUse,
+                            "controlled occupancy",
+                        ))
+                    }
+                }
+            })
+            .await
+            .expect("actual ephemeral listener after controlled exhaustion");
+            assert_eq!(attempts, expected);
+            nonzero_attempts += attempts.iter().filter(|port| **port != 0).count();
+            ephemeral_attempts += attempts.iter().filter(|port| **port == 0).count();
+            assert_eq!(bound.listeners.len(), 1);
+            assert_eq!(bound.listeners[0].local_addr().unwrap(), bound.address);
+            assert_eq!(bound.port, bound.address.port());
+            assert!(bound.port > 0);
+            drop(bound);
+
+            let mut native_attempts = Vec::new();
+            let bound = bind_with_socket(&configuration, |address: SocketAddr| {
+                native_attempts.push(address.port());
+                TcpListener::bind(address)
+            })
+            .await
+            .expect("native upper-range binding or final ephemeral fallback");
+            assert!(!native_attempts.is_empty());
+            if native_attempts.last() == Some(&0) {
+                assert_eq!(native_attempts, expected);
+            } else {
+                assert!(native_attempts.len() <= suffix.len());
+                assert_eq!(native_attempts, suffix[..native_attempts.len()]);
+                assert_eq!(native_attempts.last(), Some(&bound.port));
+            }
+            assert_eq!(bound.listeners.len(), 1);
+            assert_eq!(bound.listeners[0].local_addr().unwrap(), bound.address);
+            assert_eq!(bound.address.ip(), "127.0.0.1".parse::<IpAddr>().unwrap());
+            assert_eq!(bound.port, bound.address.port());
+            assert!(bound.port > 0);
+        }
+        assert_eq!(nonzero_attempts, 55);
+        assert_eq!(ephemeral_attempts, 10);
+    }
+
+    #[derive(Default)]
+    struct TaskReceipts {
+        dropped: AtomicU8,
+        returned: AtomicU8,
+        changed: Notify,
+    }
+
+    struct TaskDrop {
+        receipts: Arc<TaskReceipts>,
+        bit: u8,
+    }
+
+    impl Drop for TaskDrop {
+        fn drop(&mut self) {
+            self.receipts.dropped.fetch_or(self.bit, Ordering::SeqCst);
+            self.receipts.changed.notify_one();
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum OriginExit {
+        Io,
+        Clean,
+        Panic,
+    }
+
+    #[derive(Clone, Copy)]
+    enum SurvivorExit {
+        Healthy,
+        Error,
+        Pending,
+    }
+
+    #[derive(Clone, Copy)]
+    enum Trigger {
+        Origin,
+        SignalOk,
+        SignalError,
+        Cooperative,
+    }
+
+    struct Survivor {
+        ready: oneshot::Receiver<()>,
+        observed: oneshot::Receiver<bool>,
+        release: Option<oneshot::Sender<()>>,
+        returned: oneshot::Receiver<()>,
+    }
+
+    struct Origin {
+        ready: oneshot::Receiver<()>,
+        release: Option<oneshot::Sender<()>>,
+    }
+
+    struct Controls {
+        survivors: Vec<Survivor>,
+        origin: Option<Origin>,
+        stop: Option<oneshot::Sender<()>>,
+        signal: Option<oneshot::Sender<io::Result<()>>>,
+        trigger: Trigger,
+        pending: bool,
+    }
+
+    fn spawn_survivor(
+        tasks: &mut JoinSet<io::Result<()>>,
+        receiver: watch::Receiver<bool>,
+        receipts: Arc<TaskReceipts>,
+        bit: u8,
+        exit: SurvivorExit,
+    ) -> Survivor {
+        let (ready_tx, ready) = oneshot::channel();
+        let (observed_tx, observed) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let (returned_tx, returned) = oneshot::channel();
+        // Capture the guard before spawning, so abort before first poll still
+        // leaves a real per-case release receipt.
+        let drop_guard = TaskDrop { receipts, bit };
+        tasks.spawn(async move {
+            let guard = drop_guard;
+            assert!(
+                !*receiver.borrow(),
+                "survivor must be ready before shutdown"
+            );
+            ready_tx.send(()).expect("survivor readiness receiver");
+            let observation = receiver.clone();
+            wait_for_server_shutdown(Some(receiver)).await;
+            observed_tx
+                .send(*observation.borrow())
+                .expect("shutdown observer");
+            let result = match exit {
+                SurvivorExit::Pending => std::future::pending::<io::Result<()>>().await,
+                SurvivorExit::Healthy | SurvivorExit::Error => {
+                    release_rx.await.expect("owned survivor release");
+                    if matches!(exit, SurvivorExit::Error) {
+                        Err(io::Error::new(
+                            io::ErrorKind::ConnectionAborted,
+                            "later listener failure",
+                        ))
+                    } else {
+                        Ok(())
+                    }
+                }
+            };
+            guard.receipts.returned.fetch_or(bit, Ordering::SeqCst);
+            returned_tx.send(()).expect("survivor returned receiver");
+            result
+        });
+        Survivor {
+            ready,
+            observed,
+            release: Some(release_tx),
+            returned,
+        }
+    }
+
+    fn spawn_origin(
+        tasks: &mut JoinSet<io::Result<()>>,
+        receiver: watch::Receiver<bool>,
+        receipts: Arc<TaskReceipts>,
+        exit: OriginExit,
+    ) -> Origin {
+        let (ready_tx, ready) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let drop_guard = TaskDrop {
+            receipts,
+            bit: 0b100,
+        };
+        tasks.spawn(async move {
+            let guard = drop_guard;
+            assert!(!*receiver.borrow(), "origin must be ready before shutdown");
+            ready_tx.send(()).expect("origin readiness receiver");
+            release_rx.await.expect("controlled origin release");
+            guard
+                .receipts
+                .returned
+                .fetch_or(guard.bit, Ordering::SeqCst);
+            match exit {
+                OriginExit::Io => Err(io::Error::new(
+                    io::ErrorKind::ConnectionReset,
+                    "origin listener failure",
+                )),
+                OriginExit::Clean => Ok(()),
+                OriginExit::Panic => panic!("listener control origin panic"),
+            }
+        });
+        Origin {
+            ready,
+            release: Some(release_tx),
+        }
+    }
+
+    async fn exercise_controls(
+        controls: &mut Controls,
+        result_rx: &mut oneshot::Receiver<io::Result<()>>,
+    ) -> (io::Result<()>, Duration) {
+        for survivor in &mut controls.survivors {
+            (&mut survivor.ready)
+                .await
+                .expect("actual survivor readiness");
+        }
+        if let Some(origin) = &mut controls.origin {
+            (&mut origin.ready).await.expect("actual origin readiness");
+        }
+        let started = Instant::now();
+        match controls.trigger {
+            Trigger::Origin => controls
+                .origin
+                .as_mut()
+                .expect("owned origin")
+                .release
+                .take()
+                .expect("origin released once")
+                .send(())
+                .expect("origin remains live"),
+            Trigger::SignalOk => controls
+                .signal
+                .take()
+                .expect("signal returned once")
+                .send(Ok(()))
+                .expect("controlled signal remains live"),
+            Trigger::SignalError => controls
+                .signal
+                .take()
+                .expect("signal returned once")
+                .send(Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "origin signal failure",
+                )))
+                .expect("controlled signal remains live"),
+            Trigger::Cooperative => controls
+                .stop
+                .take()
+                .expect("composition stop once")
+                .send(())
+                .expect("controlled composition remains live"),
+        }
+        for survivor in &mut controls.survivors {
+            assert!(
+                (&mut survivor.observed)
+                    .await
+                    .expect("actual shutdown notification")
+            );
+        }
+        assert!(
+            matches!(
+                result_rx.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ),
+            "controller returned while both survivors remained held"
+        );
+        if !controls.pending {
+            for (index, survivor) in controls.survivors.iter_mut().enumerate() {
+                survivor
+                    .release
+                    .take()
+                    .expect("survivor released once")
+                    .send(())
+                    .expect("actual survivor remains held");
+                (&mut survivor.returned)
+                    .await
+                    .expect("actual survivor return boundary");
+                if index == 0 {
+                    assert!(
+                        matches!(
+                            result_rx.try_recv(),
+                            Err(oneshot::error::TryRecvError::Empty)
+                        ),
+                        "controller returned before the healthy survivor was released"
+                    );
+                }
+            }
+        }
+        let result = result_rx.await.expect("owned controller result");
+        (result, started.elapsed())
+    }
+
+    async fn wait_for_drops(receipts: &TaskReceipts, expected: u8) {
+        while receipts.dropped.load(Ordering::SeqCst) != expected {
+            receipts.changed.notified().await;
+        }
+    }
+
+    async fn listener_case(
+        origin_exit: Option<OriginExit>,
+        trigger: Trigger,
+        later_failure: bool,
+        pending: bool,
+    ) -> (io::Result<()>, Duration) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(13);
+        let receipts = Arc::new(TaskReceipts::default());
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let mut tasks = JoinSet::new();
+        let survivor_exits = if pending {
+            [SurvivorExit::Pending, SurvivorExit::Pending]
+        } else if later_failure {
+            [SurvivorExit::Error, SurvivorExit::Healthy]
+        } else {
+            [SurvivorExit::Healthy, SurvivorExit::Healthy]
+        };
+        let survivors = survivor_exits
+            .into_iter()
+            .enumerate()
+            .map(|(index, exit)| {
+                spawn_survivor(
+                    &mut tasks,
+                    shutdown_rx.clone(),
+                    Arc::clone(&receipts),
+                    1 << index,
+                    exit,
+                )
+            })
+            .collect();
+        let origin = origin_exit
+            .map(|exit| spawn_origin(&mut tasks, shutdown_rx, Arc::clone(&receipts), exit));
+        let expected_drops = if origin_exit.is_some() { 0b111 } else { 0b011 };
+        let expected_returns = if pending { 0b100 } else { expected_drops };
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let (signal_tx, signal_rx) = oneshot::channel();
+        let (result_tx, mut result_rx) = oneshot::channel();
+        let mut controllers = JoinSet::new();
+        controllers.spawn(async move {
+            let result = supervise_listener_tasks(
+                tasks,
+                shutdown_tx,
+                async { stop_rx.await.expect("controlled composition future") },
+                async { signal_rx.await.expect("controlled signal future") },
+            )
+            .await;
+            let _ = result_tx.send(result);
+        });
+        let mut controls = Controls {
+            survivors,
+            origin,
+            stop: Some(stop_tx),
+            signal: Some(signal_tx),
+            trigger,
+            pending,
+        };
+        // Keep the owning controller set outside the assertion future. A failed
+        // oracle or outer guard cannot detach the controller during unwinding.
+        let checked = tokio::time::timeout_at(
+            deadline,
+            AssertUnwindSafe(exercise_controls(&mut controls, &mut result_rx)).catch_unwind(),
+        )
+        .await;
+        let interrupted = !matches!(&checked, Ok(Ok(_)));
+        if interrupted {
+            controllers.abort_all();
+        }
+        let mut joined = 0;
+        let mut join_failed = false;
+        while let Some(result) = controllers.join_next().await {
+            joined += 1;
+            join_failed |= result.is_err();
+        }
+        if interrupted {
+            // These captured tasks contain only yielding channel/watch/pending
+            // futures. Confirm their real Drop receipts after controller reap.
+            wait_for_drops(&receipts, expected_drops).await;
+        }
+        let value = match checked {
+            Ok(Ok(value)) => value,
+            Ok(Err(payload)) => std::panic::resume_unwind(payload),
+            Err(_) => panic!("owned listener control exceeded its thirteen-second fixture guard"),
+        };
+        assert_eq!(joined, 1, "reap the actual owned controller");
+        assert!(
+            !join_failed,
+            "owned controller must finish without panic or abort"
+        );
+        assert_eq!(receipts.dropped.load(Ordering::SeqCst), expected_drops);
+        assert_eq!(
+            receipts.returned.load(Ordering::SeqCst),
+            expected_returns,
+            "healthy held survivors must return naturally, not be aborted on an early error"
+        );
+        value
+    }
+
+    fn expect_error(result: io::Result<()>, kind: io::ErrorKind, message: &str) {
+        let error = result.expect_err("controlled failure must remain visible");
+        assert_eq!(error.kind(), kind);
+        assert_eq!(error.to_string(), message);
+    }
+
+    #[tokio::test]
+    async fn io_failure_broadcasts_and_joins_every_survivor() {
+        let (result, _) = listener_case(Some(OriginExit::Io), Trigger::Origin, true, false).await;
+        expect_error(
+            result,
+            io::ErrorKind::ConnectionReset,
+            "origin listener failure",
+        );
+    }
+
+    #[tokio::test]
+    async fn clean_listener_exit_broadcasts_and_joins_every_survivor() {
+        let (result, _) =
+            listener_case(Some(OriginExit::Clean), Trigger::Origin, true, false).await;
+        expect_error(
+            result,
+            io::ErrorKind::Other,
+            "dashboard listener exited before shutdown",
+        );
+    }
+
+    #[tokio::test]
+    async fn listener_panic_broadcasts_and_joins_every_survivor() {
+        let (result, _) =
+            listener_case(Some(OriginExit::Panic), Trigger::Origin, true, false).await;
+        let error = result.expect_err("actual listener panic must remain visible");
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        let message = error.to_string();
+        assert!(message.starts_with("dashboard listener task failed: "));
+        assert!(message.contains("listener control origin panic"));
+    }
+
+    #[tokio::test]
+    async fn signal_error_broadcasts_and_preserves_origin_while_draining() {
+        let (result, _) = listener_case(None, Trigger::SignalError, true, false).await;
+        expect_error(
+            result,
+            io::ErrorKind::PermissionDenied,
+            "origin signal failure",
+        );
+    }
+
+    #[tokio::test]
+    async fn cooperative_stop_retains_drain_error_and_joins_every_survivor() {
+        let (result, _) = listener_case(None, Trigger::Cooperative, true, false).await;
+        expect_error(
+            result,
+            io::ErrorKind::ConnectionAborted,
+            "later listener failure",
+        );
+    }
+
+    #[tokio::test]
+    async fn successful_signal_broadcasts_and_joins_every_survivor() {
+        let (result, _) = listener_case(None, Trigger::SignalOk, false, false).await;
+        result.expect("successful signal drains every healthy listener");
+    }
+
+    #[tokio::test]
+    async fn cooperative_stop_broadcasts_and_joins_every_survivor() {
+        let (result, _) = listener_case(None, Trigger::Cooperative, false, false).await;
+        result.expect("composition stop drains every healthy listener");
+    }
+
+    #[tokio::test]
+    async fn drain_timeout_aborts_and_joins_every_survivor_after_origin_error() {
+        let (result, elapsed) =
+            listener_case(Some(OriginExit::Io), Trigger::Origin, false, true).await;
+        assert!(
+            elapsed >= Duration::from_secs(10),
+            "exercise the real production drain timer"
+        );
+        expect_error(
+            result,
+            io::ErrorKind::TimedOut,
+            "dashboard connection drain exceeded its deadline",
+        );
+    }
 }
 
 #[cfg(test)]
