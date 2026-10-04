@@ -494,7 +494,7 @@ $nativeOwner = {
                 # BEGIN fixed-prerequisite-substage foreign_inherit_check
                 $shared['substage']='foreign_inherit_check'
                 # END fixed-prerequisite-substage foreign_inherit_check
-                if (($ace.AceFlags -band [Security.AccessControl.AceFlags]::InheritOnly) -eq 0) {
+                if (([long]$ace.AceFlags -band [long][Security.AccessControl.AceFlags]::InheritOnly) -eq 0) {
                     # BEGIN fixed-prerequisite-substage foreign_sid_check
                     $shared['substage']='foreign_sid_check'
                     # END fixed-prerequisite-substage foreign_sid_check
