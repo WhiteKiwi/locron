@@ -5402,6 +5402,15 @@ Retain all five exact PR138 snapshot paths and import reviewed main139/140 witho
 
 Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
 
+## PR136 current-call scalar observation handoff (2026-10-04)
+
+A separate developer leases only the private Windows CLI control helper after Issue31 exact GET and parent complete selected-plan reread. Ten fixed atomic words distinguish actual CLI attempts/returns, native calls, current wait/read, successful History wall time and last strict progress result; zero/overflow/invalid are diagnostics only. Reuse existing three actual capture controls for reset/retention/association assertions. Conserve original six controls, clocks, ownership, legacy formatter, Source calls and workflow exactly; renderer/caller CRLF bound is2048bytes. All actual native/type/lint gates and paired provenance remain fresh changed-head requirements. Four concrete Verify steps and full boundaries remain in the selected planning appendix.
+
+
+## Current PR136 observer and concurrent publication integration
+
+Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
 
 ## PR136 bounded daemon-output diagnostics before separate Source (2026-10-04)
 

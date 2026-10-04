@@ -681,6 +681,724 @@ async fn observed_io<T>(
     .await
 }
 
+// Test-private returned observations. These words never call a work/admission gate.
+const CALL_VALID: u64 = 1 << 63;
+const CALL_INVALID: u64 = 1;
+const CALL_OVERFLOW: u64 = 2;
+const CALL_TIME_US: u64 = 30_000_000;
+const DAEMON_INVALID: u64 = u64::MAX;
+const DAEMON_OVERFLOW: u64 = u64::MAX - 1;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum CallWordKind {
+    Cli,
+    NativeEnter,
+    NativeReturn,
+    Wait,
+    Wrapper,
+    Read,
+    History,
+    Cost,
+    Progress,
+    Daemon,
+}
+
+impl CallWordKind {
+    fn layout(self) -> &'static [(u8, u8)] {
+        match self {
+            Self::Cli => &[(0, 10), (10, 10), (20, 4), (24, 3), (27, 25)],
+            Self::NativeEnter | Self::NativeReturn => &[
+                (0, 15),
+                (15, 10),
+                (25, 18),
+                (43, 6),
+                (49, 4),
+                (53, 3),
+                (56, 3),
+            ],
+            Self::Wait => &[(0, 32), (32, 1), (33, 10), (43, 18), (61, 2)],
+            Self::Wrapper => &[(0, 4), (4, 10), (14, 10), (24, 4), (28, 3), (31, 25)],
+            Self::Read => &[(0, 17), (17, 10), (27, 18)],
+            Self::History => &[(0, 3), (3, 10), (13, 10), (23, 3), (26, 25)],
+            Self::Cost => &[(0, 25), (25, 25), (50, 10)],
+            Self::Progress => &[(0, 12), (12, 10), (22, 10), (32, 25), (57, 3), (60, 3)],
+            Self::Daemon => &[],
+        }
+    }
+
+    fn overflow(self, v: &[u64; 7]) -> bool {
+        match self {
+            Self::Cli => v[0] > 513 || v[1] > 1023 || v[4] > CALL_TIME_US,
+            Self::NativeEnter | Self::NativeReturn => v[0] > 30_000 || v[1] > 513 || v[2] > 262_143,
+            Self::Wait => v[2] > 513 || v[3] > 262_143,
+            Self::Wrapper => v[1] > 513 || v[2] > 1023 || v[5] > CALL_TIME_US,
+            Self::Read => v[0] > 65_537 || v[1] > 513 || v[2] > 262_143,
+            Self::History => v[1] > 513 || v[2] > 1023 || v[4] > CALL_TIME_US,
+            Self::Cost => v[0] > CALL_TIME_US || v[1] > CALL_TIME_US || v[2] > 1023,
+            Self::Progress => v[0] > 3855 || v[1] > 1023 || v[2] > 513 || v[3] > CALL_TIME_US,
+            Self::Daemon => v[0] > CALL_TIME_US,
+        }
+    }
+
+    fn valid(self, v: &[u64; 7]) -> bool {
+        if self.overflow(v) || v[self.layout().len()..].iter().any(|field| *field != 0) {
+            return false;
+        }
+        match self {
+            Self::Cli => (1..=513).contains(&v[0]) && v[2] <= 14 && v[3] <= 5,
+            Self::NativeEnter | Self::NativeReturn => {
+                (1..=513).contains(&v[1])
+                    && (1..=262_143).contains(&v[2])
+                    && (1..=61).contains(&v[3])
+                    && v[4] <= 14
+                    && v[5] <= 3
+                    && if self == Self::NativeEnter {
+                        v[6] == 0
+                    } else {
+                        (1..=4).contains(&v[6]) && (v[6] < 3 || matches!(v[3], 17..=20 | 59))
+                    }
+            }
+            Self::Wait => {
+                (1..=513).contains(&v[2])
+                    && (1..=262_143).contains(&v[3])
+                    && (1..=3).contains(&v[4])
+                    && v[1] <= 1
+                    && (v[1] != 0 || v[0] == 0)
+                    && (v[4] == 2 || (v[0] == 0 && v[1] == 0))
+            }
+            Self::Wrapper => v[0] <= 14 && (1..=513).contains(&v[1]) && v[3] <= 14 && v[4] <= 5,
+            Self::Read => (1..=513).contains(&v[1]) && (1..=262_143).contains(&v[2]),
+            Self::History => {
+                (1..=5).contains(&v[0])
+                    && (1..=513).contains(&v[1])
+                    && (1..=1023).contains(&v[2])
+                    && v[3] <= 5
+            }
+            Self::Cost => v[0] <= v[1] && (1..=1023).contains(&v[2]),
+            Self::Progress => v[4] <= 5 && (1..=4).contains(&v[5]) && (v[5] == 2 || v[0] == 0),
+            Self::Daemon => false,
+        }
+    }
+}
+
+fn call_word(kind: CallWordKind, fields: [u64; 7]) -> u64 {
+    if kind.overflow(&fields) {
+        return CALL_OVERFLOW;
+    }
+    if !kind.valid(&fields) {
+        return CALL_INVALID;
+    }
+    let mut word = CALL_VALID;
+    for (index, (shift, width)) in kind.layout().iter().copied().enumerate() {
+        if fields[index] >= 1_u64 << width {
+            return CALL_INVALID;
+        }
+        word |= fields[index] << shift;
+    }
+    word
+}
+
+fn call_fields(kind: CallWordKind, word: u64) -> Option<[u64; 7]> {
+    if word & CALL_VALID == 0 || kind == CallWordKind::Daemon {
+        return None;
+    }
+    let mut fields = [0; 7];
+    let mut allowed = CALL_VALID;
+    for (index, (shift, width)) in kind.layout().iter().copied().enumerate() {
+        let mask = (1_u64 << width) - 1;
+        allowed |= mask << shift;
+        fields[index] = (word >> shift) & mask;
+    }
+    (word & !allowed == 0 && kind.valid(&fields)).then_some(fields)
+}
+
+fn observed_micros(origin: Instant, returned: Instant) -> u64 {
+    returned
+        .checked_duration_since(origin)
+        .and_then(|duration| u64::try_from(duration.as_micros()).ok())
+        .unwrap_or(u64::MAX)
+}
+
+struct CallObservations {
+    current_cli: AtomicU64,
+    native_enter: AtomicU64,
+    native_return: AtomicU64,
+    current_wait: AtomicU64,
+    wrapper_return: AtomicU64,
+    capture_read: AtomicU64,
+    last_history: AtomicU64,
+    history_cost: AtomicU64,
+    last_progress: AtomicU64,
+    daemon_spawn: AtomicU64,
+    capture_proof: AtomicU8,
+}
+
+impl CallObservations {
+    fn new() -> Self {
+        Self {
+            current_cli: AtomicU64::new(0),
+            native_enter: AtomicU64::new(0),
+            native_return: AtomicU64::new(0),
+            current_wait: AtomicU64::new(0),
+            wrapper_return: AtomicU64::new(0),
+            capture_read: AtomicU64::new(0),
+            last_history: AtomicU64::new(0),
+            history_cost: AtomicU64::new(0),
+            last_progress: AtomicU64::new(0),
+            daemon_spawn: AtomicU64::new(0),
+            capture_proof: AtomicU8::new(0),
+        }
+    }
+
+    fn snapshot(&self) -> CallSnapshot {
+        CallSnapshot {
+            current_cli: self.current_cli.load(Ordering::Acquire),
+            native_enter: self.native_enter.load(Ordering::Acquire),
+            native_return: self.native_return.load(Ordering::Acquire),
+            current_wait: self.current_wait.load(Ordering::Acquire),
+            wrapper_return: self.wrapper_return.load(Ordering::Acquire),
+            capture_read: self.capture_read.load(Ordering::Acquire),
+            last_history: self.last_history.load(Ordering::Acquire),
+            history_cost: self.history_cost.load(Ordering::Acquire),
+            last_progress: self.last_progress.load(Ordering::Acquire),
+            daemon_spawn: self.daemon_spawn.load(Ordering::Acquire),
+        }
+    }
+
+    fn prove(&self, bit: u8, actual_fact: bool) {
+        if actual_fact {
+            self.capture_proof.fetch_or(bit, Ordering::Release);
+        }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct CallSnapshot {
+    current_cli: u64,
+    native_enter: u64,
+    native_return: u64,
+    current_wait: u64,
+    wrapper_return: u64,
+    capture_read: u64,
+    last_history: u64,
+    history_cost: u64,
+    last_progress: u64,
+    daemon_spawn: u64,
+}
+
+impl CallSnapshot {
+    fn output_returned(&self, epoch: u64, code: Code, bytes: u64) -> bool {
+        let current = call_fields(CallWordKind::Cli, self.current_cli);
+        let waited = call_fields(CallWordKind::Wait, self.current_wait);
+        let returned = call_fields(CallWordKind::Wrapper, self.wrapper_return);
+        let read = call_fields(CallWordKind::Read, self.capture_read);
+        let entered = call_fields(CallWordKind::NativeEnter, self.native_enter);
+        let native = call_fields(CallWordKind::NativeReturn, self.native_return);
+        matches!((current, waited, returned, read, entered, native),
+            (Some(c), Some(w), Some(r), Some(b), Some(e), Some(n))
+                if c[0] == epoch && c[1] == 0 && c[2] == 14
+                    && w[2] == epoch && w[4] == 2 && w[1] == 1 && w[0] == 0
+                    && r[1] == epoch && r[2] == 0 && r[0] == u64::from(code.slot())
+                    && b[1] == epoch && b[0] == bytes
+                    && e[1] == epoch && n[1] == epoch && e[2] == n[2]
+                    && b[2] == n[2] && n[3] == 58 && n[6] == 1)
+    }
+
+    fn collision_returned(&self) -> bool {
+        let current = call_fields(CallWordKind::Cli, self.current_cli);
+        let returned = call_fields(CallWordKind::Wrapper, self.wrapper_return);
+        let entered = call_fields(CallWordKind::NativeEnter, self.native_enter);
+        let native = call_fields(CallWordKind::NativeReturn, self.native_return);
+        self.current_wait == 0
+            && self.capture_read == 0
+            && matches!((current, returned, entered, native),
+                (Some(c), Some(r), Some(e), Some(n))
+                    if c[0] == 3 && c[1] == 0 && c[2] == 14
+                        && r[1] == 3 && r[0] == 14 && r[2] == 0
+                        && e[1] == 3 && n[1] == 3 && e[2] == 1 && n[2] == 1
+                        && e[3] == 53 && n[3] == 53 && n[6] == 2)
+    }
+
+    fn live_returned(&self) -> bool {
+        let current = call_fields(CallWordKind::Cli, self.current_cli);
+        let waited = call_fields(CallWordKind::Wait, self.current_wait);
+        let returned = call_fields(CallWordKind::Wrapper, self.wrapper_return);
+        let entered = call_fields(CallWordKind::NativeEnter, self.native_enter);
+        let native = call_fields(CallWordKind::NativeReturn, self.native_return);
+        self.capture_read == 0
+            && matches!((current, waited, returned, entered, native),
+                (Some(c), Some(w), Some(r), Some(e), Some(n))
+                    if c[0] == 1 && c[1] == 0 && c[2] == 14
+                        && w[2] == 1 && w[4] == 1 && w[1] == 0 && w[0] == 0
+                        && r[1] == 1 && r[0] == 1 && r[2] == 0
+                        && e[1] == 1 && n[1] == 1 && e[2] == n[2] && w[3] == n[2]
+                        && n[3] == 59 && n[6] == 3)
+    }
+
+    fn relation(&self, kind: CallWordKind, word: u64) -> &'static str {
+        let Some(current) = call_fields(CallWordKind::Cli, self.current_cli) else {
+            return "unobserved";
+        };
+        let Some(record) = call_fields(kind, word) else {
+            return "unobserved";
+        };
+        let (epoch, history) = match kind {
+            CallWordKind::History => (record[1], record[2]),
+            CallWordKind::Progress => (record[2], record[1]),
+            _ => return "invalid",
+        };
+        if epoch == 0 {
+            "unobserved"
+        } else if epoch < current[0] {
+            "older"
+        } else if epoch == current[0] && history == current[1] {
+            "same"
+        } else {
+            // Fixed snapshot loads do not retry to manufacture cross-word coherence.
+            "mixed"
+        }
+    }
+}
+
+struct CallWordDisplay {
+    kind: CallWordKind,
+    word: u64,
+}
+
+impl fmt::Display for CallWordDisplay {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.word == 0 {
+            return f.write_str("unobserved");
+        }
+        if self.kind == CallWordKind::Daemon {
+            return match self.word {
+                DAEMON_OVERFLOW => f.write_str("overflow"),
+                1..=30_000_001 => write!(f, "{}", self.word - 1),
+                _ => f.write_str("invalid"),
+            };
+        }
+        if self.word == CALL_OVERFLOW {
+            return f.write_str("overflow");
+        }
+        let Some(v) = call_fields(self.kind, self.word) else {
+            return f.write_str("invalid");
+        };
+        match self.kind {
+            CallWordKind::Cli => write!(
+                f,
+                "{{ep={},h={},p={},s={},t_us={}}}",
+                v[0], v[1], v[2], v[3], v[4]
+            ),
+            CallWordKind::NativeEnter | CallWordKind::NativeReturn => write!(
+                f,
+                "{{ep={},n={},op={},p={},role={},r={},t_ms={}}}",
+                v[1], v[2], v[3], v[4], v[5], v[6], v[0]
+            ),
+            CallWordKind::Wait => {
+                write!(f, "{{ep={},n={},r={},code=", v[2], v[3], v[4])?;
+                if v[1] == 0 {
+                    f.write_str("none")?;
+                } else {
+                    let Some(code) = u32::try_from(v[0]).ok() else {
+                        return f.write_str("invalid}");
+                    };
+                    write!(f, "{}", i32::from_ne_bytes(code.to_ne_bytes()))?;
+                }
+                f.write_str("}")
+            }
+            CallWordKind::Wrapper => write!(
+                f,
+                "{{ep={},h={},c={},p={},s={},t_us={}}}",
+                v[1], v[2], v[0], v[3], v[4], v[5]
+            ),
+            CallWordKind::Read => write!(f, "{{ep={},n={},count={}}}", v[1], v[2], v[0]),
+            CallWordKind::History => write!(
+                f,
+                "{{ep={},h={},state={},s={},t_us={}}}",
+                v[1], v[2], v[0], v[3], v[4]
+            ),
+            CallWordKind::Cost => write!(f, "{{h={},last_us={},sum_us={}}}", v[2], v[0], v[1]),
+            CallWordKind::Progress => {
+                write!(
+                    f,
+                    "{{ep={},h={},s={},class={},count=",
+                    v[2], v[1], v[4], v[5]
+                )?;
+                if v[5] == 2 {
+                    write!(f, "{}", v[0])?;
+                } else {
+                    f.write_str("unobserved")?;
+                }
+                write!(f, ",t_us={}}}", v[3])
+            }
+            CallWordKind::Daemon => f.write_str("invalid"),
+        }
+    }
+}
+
+impl fmt::Display for CallSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (name, kind, word) in [
+            ("cli", CallWordKind::Cli, self.current_cli),
+            ("wait", CallWordKind::Wait, self.current_wait),
+            ("native_enter", CallWordKind::NativeEnter, self.native_enter),
+            (
+                "native_return",
+                CallWordKind::NativeReturn,
+                self.native_return,
+            ),
+            ("wrapper_return", CallWordKind::Wrapper, self.wrapper_return),
+            ("last_history", CallWordKind::History, self.last_history),
+            ("history_cost", CallWordKind::Cost, self.history_cost),
+            ("last_progress", CallWordKind::Progress, self.last_progress),
+            ("daemon_spawn_us", CallWordKind::Daemon, self.daemon_spawn),
+            ("capture_read", CallWordKind::Read, self.capture_read),
+        ] {
+            write!(f, " {name}={}", CallWordDisplay { kind, word })?;
+        }
+        write!(
+            f,
+            " history_rel={} progress_rel={}",
+            self.relation(CallWordKind::History, self.last_history),
+            self.relation(CallWordKind::Progress, self.last_progress)
+        )
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PendingHistory {
+    serial: u16,
+    epoch: u16,
+    stage: u8,
+    entered: Instant,
+}
+
+// Worker-local cells hold only finite counters and actual Instant context.
+struct CallContext {
+    attempts: std::cell::Cell<u16>,
+    epoch: std::cell::Cell<u16>,
+    history: std::cell::Cell<u16>,
+    history_serial: std::cell::Cell<u16>,
+    history_sum: std::cell::Cell<Option<u128>>,
+    pending: std::cell::Cell<Option<PendingHistory>>,
+    step: std::cell::Cell<u32>,
+    phase: std::cell::Cell<u8>,
+    stage: std::cell::Cell<u8>,
+    active: std::cell::Cell<bool>,
+    version_control: std::cell::Cell<bool>,
+}
+
+impl CallContext {
+    fn new() -> Self {
+        Self {
+            attempts: std::cell::Cell::new(0),
+            epoch: std::cell::Cell::new(0),
+            history: std::cell::Cell::new(0),
+            history_serial: std::cell::Cell::new(0),
+            history_sum: std::cell::Cell::new(Some(0)),
+            pending: std::cell::Cell::new(None),
+            step: std::cell::Cell::new(0),
+            phase: std::cell::Cell::new(0),
+            stage: std::cell::Cell::new(0),
+            active: std::cell::Cell::new(false),
+            version_control: std::cell::Cell::new(false),
+        }
+    }
+
+    fn begin(&self, control: &Control, phase: Phase) {
+        let entered = Instant::now();
+        let epoch = self
+            .attempts
+            .get()
+            .checked_add(1)
+            .filter(|n| *n <= 513)
+            .unwrap_or(514);
+        self.attempts.set(epoch);
+        self.epoch.set(epoch);
+        self.history
+            .set(self.pending.get().map_or(0, |history| history.serial));
+        if let Some(mut history) = self.pending.get() {
+            history.epoch = epoch;
+            self.pending.set(Some(history));
+        }
+        self.phase.set(phase as u8);
+        self.step.set(0);
+        self.active.set(true);
+        let slots = &control.calls;
+        slots.current_wait.store(0, Ordering::Release);
+        slots.native_enter.store(0, Ordering::Release);
+        slots.native_return.store(0, Ordering::Release);
+        slots.wrapper_return.store(0, Ordering::Release);
+        slots.capture_read.store(0, Ordering::Release);
+        slots.current_cli.store(
+            call_word(
+                CallWordKind::Cli,
+                [
+                    u64::from(epoch),
+                    u64::from(self.history.get()),
+                    u64::from(phase as u8),
+                    u64::from(self.stage.get()),
+                    observed_micros(control.entered, entered),
+                    0,
+                    0,
+                ],
+            ),
+            Ordering::Release,
+        );
+        if self.version_control.get() && epoch == 2 {
+            let snapshot = slots.snapshot();
+            slots.prove(
+                2,
+                call_fields(CallWordKind::Cli, snapshot.current_cli)
+                    .is_some_and(|c| c[0] == 2 && c[1] == 0)
+                    && snapshot.current_wait == 0
+                    && snapshot.native_enter == 0
+                    && snapshot.native_return == 0
+                    && snapshot.wrapper_return == 0
+                    && snapshot.capture_read == 0,
+            );
+        }
+    }
+
+    fn returned<T>(&self, control: &Control, result: &Result<T, Code>) {
+        let returned = Instant::now();
+        let code = result.as_ref().err().copied().unwrap_or(Code::Success);
+        control.calls.wrapper_return.store(
+            call_word(
+                CallWordKind::Wrapper,
+                [
+                    u64::from(code.slot()),
+                    u64::from(self.epoch.get()),
+                    u64::from(self.history.get()),
+                    u64::from(control.phase.load(Ordering::Acquire)),
+                    u64::from(self.stage.get()),
+                    observed_micros(control.entered, returned),
+                    0,
+                ],
+            ),
+            Ordering::Release,
+        );
+        self.active.set(false);
+    }
+
+    fn enter(&self, control: &Control, operation: Operation, role: ChildRole) -> u32 {
+        if !self.active.get() {
+            return 0;
+        }
+        let step = self
+            .step
+            .get()
+            .checked_add(1)
+            .filter(|n| *n <= 262_143)
+            .unwrap_or(262_144);
+        self.step.set(step);
+        self.native(control, step, operation, role, 0);
+        step
+    }
+
+    fn native(
+        &self,
+        control: &Control,
+        step: u32,
+        operation: Operation,
+        role: ChildRole,
+        boundary: u64,
+    ) {
+        if !self.active.get() || step == 0 {
+            return;
+        }
+        let time = u64::try_from(control.entered.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let word = call_word(
+            if boundary == 0 {
+                CallWordKind::NativeEnter
+            } else {
+                CallWordKind::NativeReturn
+            },
+            [
+                time,
+                u64::from(self.epoch.get()),
+                u64::from(step),
+                u64::from(operation as u8),
+                u64::from(self.phase.get()),
+                u64::from(role as u8),
+                boundary,
+            ],
+        );
+        let slot = if boundary == 0 {
+            &control.calls.native_enter
+        } else {
+            &control.calls.native_return
+        };
+        slot.store(word, Ordering::Release);
+    }
+
+    fn io_return(&self, control: &Control, step: u32, operation: Operation, ok: bool) {
+        self.native(
+            control,
+            step,
+            operation,
+            ChildRole::ControlCli,
+            if ok { 1 } else { 2 },
+        );
+    }
+
+    fn wait_return(
+        &self,
+        control: &Control,
+        step: u32,
+        operation: Operation,
+        result: &io::Result<Option<std::process::ExitStatus>>,
+    ) {
+        if !self.active.get() || step == 0 {
+            return;
+        }
+        let (kind, code, boundary) = match result {
+            Ok(None) => (1, None, 3),
+            Ok(Some(status)) => (2, status.code(), 4),
+            Err(_error) => (3, None, 2),
+        };
+        let signed = signed_payload(code);
+        control.calls.current_wait.store(
+            call_word(
+                CallWordKind::Wait,
+                [
+                    signed & RAW_MASK,
+                    (signed >> 32) & 1,
+                    u64::from(self.epoch.get()),
+                    u64::from(step),
+                    kind,
+                    0,
+                    0,
+                ],
+            ),
+            Ordering::Release,
+        );
+        self.native(control, step, operation, ChildRole::ControlCli, boundary);
+    }
+
+    fn read_return(&self, control: &Control, step: u32, count: usize) {
+        if !self.active.get() || step == 0 {
+            return;
+        }
+        control.calls.capture_read.store(
+            call_word(
+                CallWordKind::Read,
+                [
+                    u64::try_from(count).unwrap_or(u64::MAX),
+                    u64::from(self.epoch.get()),
+                    u64::from(step),
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+            ),
+            Ordering::Release,
+        );
+    }
+
+    fn begin_history(&self) {
+        let entered = Instant::now();
+        let serial = self
+            .history_serial
+            .get()
+            .checked_add(1)
+            .filter(|n| *n <= 1023)
+            .unwrap_or(1024);
+        self.history_serial.set(serial);
+        self.pending.set(Some(PendingHistory {
+            serial,
+            epoch: 0,
+            stage: self.stage.get(),
+            entered,
+        }));
+    }
+
+    fn history_return(&self, control: &Control, result: &Result<String, Code>, returned: Instant) {
+        if let (Some(history), Ok(state)) = (self.pending.get(), result) {
+            let state = match state.as_str() {
+                "queued" => 1,
+                "running" => 2,
+                "cancelled" => 3,
+                "succeeded" => 4,
+                _ => 5,
+            };
+            control.calls.last_history.store(
+                call_word(
+                    CallWordKind::History,
+                    [
+                        state,
+                        u64::from(history.epoch),
+                        u64::from(history.serial),
+                        u64::from(history.stage),
+                        observed_micros(control.entered, returned),
+                        0,
+                        0,
+                    ],
+                ),
+                Ordering::Release,
+            );
+            let duration = returned
+                .checked_duration_since(history.entered)
+                .map(|elapsed| elapsed.as_micros());
+            let sum = self
+                .history_sum
+                .get()
+                .zip(duration)
+                .and_then(|(sum, duration)| sum.checked_add(duration));
+            self.history_sum.set(sum);
+            control.calls.history_cost.store(
+                call_word(
+                    CallWordKind::Cost,
+                    [
+                        duration
+                            .and_then(|n| u64::try_from(n).ok())
+                            .unwrap_or(u64::MAX),
+                        sum.and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
+                        u64::from(history.serial),
+                        0,
+                        0,
+                        0,
+                        0,
+                    ],
+                ),
+                Ordering::Release,
+            );
+        }
+        self.pending.set(None);
+    }
+
+    fn progress_return(
+        &self,
+        control: &Control,
+        result: &Result<Vec<u64>, Code>,
+        missing: bool,
+        returned: Instant,
+    ) {
+        let (class, count) = match result {
+            Ok(_) if missing => (1, 0),
+            Ok(counters) => (2, u64::try_from(counters.len()).unwrap_or(u64::MAX)),
+            Err(Code::Expired) => (4, 0),
+            Err(_code) => (3, 0),
+        };
+        control.calls.last_progress.store(
+            call_word(
+                CallWordKind::Progress,
+                [
+                    count,
+                    u64::from(self.history.get()),
+                    u64::from(self.epoch.get()),
+                    observed_micros(control.entered, returned),
+                    u64::from(self.stage.get()),
+                    class,
+                    0,
+                ],
+            ),
+            Ordering::Release,
+        );
+    }
+}
+
 /// Fixed non-sensitive result; a late result cannot qualify successful cleanup.
 pub struct CaseResult {
     code: Code,
@@ -691,6 +1409,8 @@ pub struct CaseResult {
     observations: ObservationSnapshot,
     stdout_bytes: u32,
     cli_live_seen: bool,
+    calls: CallSnapshot,
+    capture_proof: u8,
 }
 
 impl CaseResult {
@@ -723,7 +1443,8 @@ impl fmt::Display for CaseResult {
             } else {
                 "unobserved"
             }
-        )
+        )?;
+        fmt::Display::fmt(&self.calls, formatter)
     }
 }
 
@@ -746,6 +1467,7 @@ struct Control {
     observations: Observations,
     stdout_bytes: AtomicU32,
     cli_live_seen: AtomicBool,
+    calls: CallObservations,
 }
 
 impl Control {
@@ -763,6 +1485,7 @@ impl Control {
             observations: Observations::new(),
             stdout_bytes: AtomicU32::new(UNOBSERVED_BYTES),
             cli_live_seen: AtomicBool::new(false),
+            calls: CallObservations::new(),
         })
     }
 
@@ -885,6 +1608,8 @@ impl Control {
             observations: self.observations.snapshot(),
             stdout_bytes: self.stdout_bytes.load(Ordering::Acquire),
             cli_live_seen: self.cli_live_seen.load(Ordering::Acquire),
+            calls: self.calls.snapshot(),
+            capture_proof: self.calls.capture_proof.load(Ordering::Acquire),
         }
     }
 }
@@ -1003,6 +1728,7 @@ struct Owner {
     completed_cli: bool,
     reaped: bool,
     uncertain_cleanup: bool,
+    call_context: CallContext,
 }
 
 impl Owner {
@@ -1026,6 +1752,7 @@ impl Owner {
             completed_cli: false,
             reaped: false,
             uncertain_cleanup: false,
+            call_context: CallContext::new(),
         }
     }
 
@@ -1077,6 +1804,20 @@ impl Owner {
             }
         }
         // Anchor the actual handle before publication/checks or any allocation.
+        if role == ChildRole::Daemon {
+            let word = match returned
+                .checked_duration_since(self.control.entered)
+                .and_then(|elapsed| u64::try_from(elapsed.as_micros()).ok())
+            {
+                Some(us) if us <= CALL_TIME_US => us + 1,
+                Some(_) => DAEMON_OVERFLOW,
+                None => DAEMON_INVALID,
+            };
+            self.control
+                .calls
+                .daemon_spawn
+                .store(word, Ordering::Release);
+        }
         if let Some(duration) = post_spawn {
             self.control
                 .publish_case((returned + duration).min(self.control.deadline))?;
@@ -1206,15 +1947,24 @@ impl Owner {
         let path = self.capture_path(number)?;
         self.capture_count = number;
         self.control.observations.intent(Operation::StdoutCreate);
+        let step = self.call_context.enter(
+            &self.control,
+            Operation::StdoutCreate,
+            ChildRole::ControlCli,
+        );
         let opened = create_private_new(&path);
         match opened {
             Ok(file) => {
                 let index = self.captures.len();
                 self.captures.push(file);
+                self.call_context
+                    .io_return(&self.control, step, Operation::StdoutCreate, true);
                 self.control.check(self.control.deadline)?;
                 Ok(index)
             }
             Err(error) => {
+                self.call_context
+                    .io_return(&self.control, step, Operation::StdoutCreate, false);
                 self.control.observations.error(
                     Operation::StdoutCreate,
                     ChildRole::ControlCli,
@@ -1235,11 +1985,30 @@ impl Owner {
         self.control
             .observations
             .intent(Operation::StdoutReaderOpen);
-        let opened =
-            open_read_no_follow(self.captures.get(index).ok_or(Code::Cli)?.normalized_path());
+        let capture = self.captures.get(index).ok_or(Code::Cli)?;
+        let reader_step = self.call_context.enter(
+            &self.control,
+            Operation::StdoutReaderOpen,
+            ChildRole::ControlCli,
+        );
+        let opened = open_read_no_follow(capture.normalized_path());
         match opened {
-            Ok(reader) => self.capture_reader = Some(reader),
+            Ok(reader) => {
+                self.capture_reader = Some(reader);
+                self.call_context.io_return(
+                    &self.control,
+                    reader_step,
+                    Operation::StdoutReaderOpen,
+                    true,
+                );
+            }
             Err(error) => {
+                self.call_context.io_return(
+                    &self.control,
+                    reader_step,
+                    Operation::StdoutReaderOpen,
+                    false,
+                );
                 self.control.observations.error(
                     Operation::StdoutReaderOpen,
                     ChildRole::ControlCli,
@@ -1251,6 +2020,11 @@ impl Owner {
         }
         self.control.check(self.control.deadline)?;
         let original = native(&self.control, self.control.deadline, Code::Cli, || {
+            let step = self.call_context.enter(
+                &self.control,
+                Operation::StdoutIdentity,
+                ChildRole::ControlCli,
+            );
             self.control.observations.intent(Operation::StdoutIdentity);
             let identity = file_identity(
                 self.captures
@@ -1262,9 +2036,20 @@ impl Owner {
                 ChildRole::ControlCli,
                 &identity,
             );
+            self.call_context.io_return(
+                &self.control,
+                step,
+                Operation::StdoutIdentity,
+                identity.is_ok(),
+            );
             identity
         })?;
         let reader = native(&self.control, self.control.deadline, Code::Cli, || {
+            let step = self.call_context.enter(
+                &self.control,
+                Operation::StdoutIdentity,
+                ChildRole::ControlCli,
+            );
             self.control.observations.intent(Operation::StdoutIdentity);
             let identity = file_identity(
                 self.capture_reader
@@ -1275,6 +2060,12 @@ impl Owner {
                 Operation::StdoutIdentity,
                 ChildRole::ControlCli,
                 &identity,
+            );
+            self.call_context.io_return(
+                &self.control,
+                step,
+                Operation::StdoutIdentity,
+                identity.is_ok(),
             );
             identity
         })?;
@@ -1289,17 +2080,24 @@ impl Owner {
             self.control.check(self.control.deadline)?;
             self.control.observations.intent(operation);
             let count = buffer.len().min(limit - bytes.len());
-            let read =
-                (&mut **self.capture_reader.as_mut().ok_or(Code::Cli)?).read(&mut buffer[..count]);
+            let reader = self.capture_reader.as_mut().ok_or(Code::Cli)?;
+            let read_step =
+                self.call_context
+                    .enter(&self.control, operation, ChildRole::ControlCli);
+            let read = (&mut **reader).read(&mut buffer[..count]);
             self.control
                 .observations
                 .io(operation, ChildRole::ControlCli, &read);
+            self.call_context
+                .io_return(&self.control, read_step, operation, read.is_ok());
             if let Ok(count) = &read {
                 bytes.extend_from_slice(&buffer[..*count]);
                 self.control.stdout_bytes.store(
                     u32::try_from(bytes.len()).map_err(|_| Code::Native)?,
                     Ordering::Release,
                 );
+                self.call_context
+                    .read_return(&self.control, read_step, bytes.len());
             }
             self.control.check(self.control.deadline)?;
             let count = read.map_err(|_| Code::Cli)?;
@@ -1319,6 +2117,19 @@ impl Owner {
         hold_duplicate: bool,
         poll_span: Option<Duration>,
     ) -> Result<Output, Code> {
+        self.call_context.begin(&self.control, phase);
+        let result = self.captured_output_body(phase, command, hold_duplicate, poll_span);
+        self.call_context.returned(&self.control, &result);
+        result
+    }
+
+    fn captured_output_body(
+        &mut self,
+        phase: Phase,
+        command: &mut Command,
+        hold_duplicate: bool,
+        poll_span: Option<Duration>,
+    ) -> Result<Output, Code> {
         self.control.step(phase, self.control.deadline)?;
         if self.active_cli.is_some()
             || self.capture_reader.is_some()
@@ -1332,6 +2143,11 @@ impl Owner {
         self.control.cli_live_seen.store(false, Ordering::Release);
         let index = self.new_capture()?;
         let duplicate = native(&self.control, self.control.deadline, Code::Cli, || {
+            let step = self.call_context.enter(
+                &self.control,
+                Operation::StdoutClone,
+                ChildRole::ControlCli,
+            );
             self.control.observations.intent(Operation::StdoutClone);
             let cloned = self
                 .captures
@@ -1341,6 +2157,12 @@ impl Owner {
             self.control
                 .observations
                 .io(Operation::StdoutClone, ChildRole::ControlCli, &cloned);
+            self.call_context.io_return(
+                &self.control,
+                step,
+                Operation::StdoutClone,
+                cloned.is_ok(),
+            );
             cloned
         })?;
         if hold_duplicate {
@@ -1349,10 +2171,30 @@ impl Owner {
             }
             self.control.check(self.control.deadline)?;
             self.control.observations.intent(Operation::StdoutClone);
-            let cloned = self.captures.get(index).ok_or(Code::Cli)?.try_clone();
+            let capture = self.captures.get(index).ok_or(Code::Cli)?;
+            let clone_step = self.call_context.enter(
+                &self.control,
+                Operation::StdoutClone,
+                ChildRole::ControlCli,
+            );
+            let cloned = capture.try_clone();
             match cloned {
-                Ok(cloned) => self.capture_duplicate = Some(cloned),
+                Ok(cloned) => {
+                    self.capture_duplicate = Some(cloned);
+                    self.call_context.io_return(
+                        &self.control,
+                        clone_step,
+                        Operation::StdoutClone,
+                        true,
+                    );
+                }
                 Err(error) => {
+                    self.call_context.io_return(
+                        &self.control,
+                        clone_step,
+                        Operation::StdoutClone,
+                        false,
+                    );
                     self.control.observations.error(
                         Operation::StdoutClone,
                         ChildRole::ControlCli,
@@ -1367,6 +2209,9 @@ impl Owner {
         let (spawn, read, wait) = cli_operations(phase).ok_or(Code::Cli)?;
         self.control.check(self.control.deadline)?;
         self.control.observations.intent(spawn);
+        let spawn_step = self
+            .call_context
+            .enter(&self.control, spawn, ChildRole::ControlCli);
         let child = command
             .stdout(Stdio::from(duplicate))
             .stderr(Stdio::null())
@@ -1375,6 +2220,8 @@ impl Owner {
         let child = match child {
             Ok(child) => child,
             Err(error) => {
+                self.call_context
+                    .io_return(&self.control, spawn_step, spawn, false);
                 self.control
                     .observations
                     .error(spawn, ChildRole::ControlCli, &error);
@@ -1383,6 +2230,8 @@ impl Owner {
             }
         };
         self.active_cli = Some(child);
+        self.call_context
+            .io_return(&self.control, spawn_step, spawn, true);
         // Only the independent live control supplies a new, shorter poll horizon.
         if let Some(span) = poll_span {
             self.control
@@ -1392,7 +2241,11 @@ impl Owner {
         let status = loop {
             self.control.check(self.control.deadline)?;
             self.control.observations.intent(wait);
-            let waited = self.active_cli.as_mut().ok_or(Code::Cli)?.try_wait();
+            let child = self.active_cli.as_mut().ok_or(Code::Cli)?;
+            let wait_step = self
+                .call_context
+                .enter(&self.control, wait, ChildRole::ControlCli);
+            let waited = child.try_wait();
             self.control
                 .observations
                 .io(wait, ChildRole::ControlCli, &waited);
@@ -1405,6 +2258,8 @@ impl Owner {
                 Ok(None) => self.control.cli_live_seen.store(true, Ordering::Release),
                 Err(_) => {}
             }
+            self.call_context
+                .wait_return(&self.control, wait_step, wait, &waited);
             self.control.check(self.control.deadline)?;
             if let Some(status) = waited.map_err(|_| Code::Cli)? {
                 break status;
@@ -1434,6 +2289,15 @@ impl Owner {
     }
 
     fn history(&mut self, name: &str, run_id: &str) -> Result<String, Code> {
+        self.call_context.begin_history();
+        let result = self.history_body(name, run_id);
+        let returned = Instant::now();
+        self.call_context
+            .history_return(&self.control, &result, returned);
+        result
+    }
+
+    fn history_body(&mut self, name: &str, run_id: &str) -> Result<String, Code> {
         self.live(0, self.control.deadline)?;
         let output = self.output(
             Phase::History,
@@ -1772,6 +2636,12 @@ impl Owner {
     }
 
     fn complete(&mut self, work: Result<(), Code>) -> CaseResult {
+        self.call_context.active.set(false);
+        let retained = self
+            .call_context
+            .version_control
+            .get()
+            .then(|| self.control.calls.snapshot());
         let previous_phase = self.control.phase.load(Ordering::Acquire);
         self.control.observations.work(&work, previous_phase);
         self.control
@@ -1788,6 +2658,12 @@ impl Owner {
             code = Code::Expired;
         }
         self.control.phase.store(previous_phase, Ordering::Release);
+        if retained.is_some_and(|before| before != self.control.calls.snapshot()) {
+            self.control
+                .calls
+                .capture_proof
+                .fetch_and(!16, Ordering::Release);
+        }
         self.control.snapshot(code)
     }
 }
@@ -2074,6 +2950,7 @@ fn wake_work(owner: &mut Owner) -> Result<(), Code> {
             .args(super::success_process_args()),
     )?;
     let run_id = owner.submit("wake")?;
+    owner.call_context.stage.set(1);
     loop {
         match owner.history("wake", &run_id)?.as_str() {
             "succeeded" => break Ok(()),
@@ -2131,9 +3008,10 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
             ]),
     )?;
     let run_id = owner.submit("cancel")?;
+    owner.call_context.stage.set(2);
     loop {
         let state = owner.history("cancel", &run_id)?;
-        let counters = read_progress(&owner.control, &progress)?;
+        let counters = read_progress(&owner.control, &progress, &owner.call_context)?;
         if state == "running" && counters.len() >= 2 {
             owner.live(0, owner.control.deadline)?;
             break;
@@ -2147,7 +3025,9 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
             Duration::from_millis(25),
         )?;
     }
+    owner.call_context.stage.set(3);
     owner.output(Phase::Cancel, owner.command()?.args(["cancel", &run_id]))?;
+    owner.call_context.stage.set(4);
     loop {
         match owner.history("cancel", &run_id)?.as_str() {
             "cancelled" => break,
@@ -2160,7 +3040,8 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
             Duration::from_millis(25),
         )?;
     }
-    let stopped = read_progress(&owner.control, &progress)?;
+    owner.call_context.stage.set(5);
+    let stopped = read_progress(&owner.control, &progress, &owner.call_context)?;
     if stopped.len() < 2 {
         return Err(Code::Progress);
     }
@@ -2169,13 +3050,25 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
         owner.control.deadline,
         Duration::from_millis(25),
     )?;
-    if read_progress(&owner.control, &progress)? != stopped {
+    if read_progress(&owner.control, &progress, &owner.call_context)? != stopped {
         return Err(Code::Progress);
     }
     owner.live(0, owner.control.deadline)
 }
 
-fn read_progress(control: &Control, path: &Path) -> Result<Vec<u64>, Code> {
+fn read_progress(control: &Control, path: &Path, context: &CallContext) -> Result<Vec<u64>, Code> {
+    let mut missing = false;
+    let result = read_progress_body(control, path, &mut missing);
+    let returned = Instant::now();
+    context.progress_return(control, &result, missing, returned);
+    result
+}
+
+fn read_progress_body(
+    control: &Control,
+    path: &Path,
+    missing: &mut bool,
+) -> Result<Vec<u64>, Code> {
     control.step(Phase::Progress, control.deadline)?;
     control.observations.intent(Operation::ProgressOpen);
     let opened = open_read_no_follow(path);
@@ -2185,7 +3078,10 @@ fn read_progress(control: &Control, path: &Path) -> Result<Vec<u64>, Code> {
     control.check(control.deadline)?;
     let mut file = match opened {
         Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            *missing = true;
+            return Ok(Vec::new());
+        }
         Err(_) => return Err(Code::Progress),
     };
     let mut bytes = Vec::new();
@@ -2257,6 +3153,7 @@ fn capture_work(owner: &mut Owner, case: CaptureCase) -> Result<(), Code> {
 
 fn version_capture_work(owner: &mut Owner) -> Result<(), Code> {
     let expected = concat!("locron ", env!("CARGO_PKG_VERSION"), "\n").as_bytes();
+    owner.call_context.version_control.set(true);
     let first = owner.captured_output(
         Phase::Capture,
         owner.command()?.arg("--version"),
@@ -2269,10 +3166,26 @@ fn version_capture_work(owner: &mut Owner) -> Result<(), Code> {
     {
         return Err(Code::Native);
     }
+    owner.control.calls.prove(
+        1,
+        owner.control.calls.snapshot().output_returned(
+            1,
+            Code::Success,
+            u64::try_from(expected.len()).unwrap_or(u64::MAX),
+        ),
+    );
     let second = owner.output(Phase::Capture, owner.command()?.arg("--version"))?;
     if second.status.code() != Some(0) || second.stdout != expected {
         return Err(Code::Native);
     }
+    owner.control.calls.prove(
+        4,
+        owner.control.calls.snapshot().output_returned(
+            2,
+            Code::Success,
+            u64::try_from(expected.len()).unwrap_or(u64::MAX),
+        ),
+    );
     let first_identity = native(&owner.control, owner.control.deadline, Code::Native, || {
         owner.control.observations.intent(Operation::StdoutIdentity);
         let identity = file_identity(
@@ -2356,6 +3269,11 @@ fn version_capture_work(owner: &mut Owner) -> Result<(), Code> {
     if !matches!(collision, Err(Code::CaptureCollision)) || owner.active_cli.is_some() {
         return Err(Code::Native);
     }
+    owner
+        .control
+        .calls
+        .prove(8, owner.control.calls.snapshot().collision_returned());
+    let collision_observations = owner.control.calls.snapshot();
     let preserved = owner.collect_capture(index, Operation::CaptureCliRead)?;
     if preserved != b"0" || owner.capture_duplicate.is_none() {
         return Err(Code::Native);
@@ -2363,13 +3281,219 @@ fn version_capture_work(owner: &mut Owner) -> Result<(), Code> {
     owner.control.check(owner.control.deadline)?;
     owner.control.observations.intent(Operation::DropStdout);
     drop(owner.capture_reader.take());
+    owner
+        .control
+        .calls
+        .prove(16, owner.control.calls.snapshot() == collision_observations);
     owner.control.check(owner.control.deadline)
+}
+
+// Pure masks/decoding controls are not native producer or History evidence.
+fn assert_call_word_domains() {
+    for (kind, fields, expected) in [
+        (
+            CallWordKind::Cli,
+            [513, 1023, 14, 5, 30_000_000, 0, 0],
+            0x800e_4e1c_05ef_fe01_u64,
+        ),
+        (
+            CallWordKind::Cli,
+            [1, 0, 0, 0, 0, 0, 0],
+            0x8000_0000_0000_0001_u64,
+        ),
+        (
+            CallWordKind::NativeEnter,
+            [30_000, 513, 262_143, 61, 14, 3, 0],
+            0x807d_efff_ff00_f530_u64,
+        ),
+        (
+            CallWordKind::NativeReturn,
+            [30_000, 513, 262_143, 59, 14, 3, 4],
+            0x847d_dfff_ff00_f530_u64,
+        ),
+        (
+            CallWordKind::Wait,
+            [2_147_483_648, 1, 513, 262_143, 2, 0, 0],
+            0xdfff_fc03_8000_0000_u64,
+        ),
+        (
+            CallWordKind::Wait,
+            [2_147_483_647, 1, 513, 262_143, 2, 0, 0],
+            0xdfff_fc03_7fff_ffff_u64,
+        ),
+        (
+            CallWordKind::Wait,
+            [0, 0, 1, 1, 1, 0, 0],
+            0xa000_0802_0000_0000_u64,
+        ),
+        (
+            CallWordKind::Wait,
+            [0, 0, 1, 1, 2, 0, 0],
+            0xc000_0802_0000_0000_u64,
+        ),
+        (
+            CallWordKind::Wait,
+            [0, 0, 1, 1, 3, 0, 0],
+            0xe000_0802_0000_0000_u64,
+        ),
+        (
+            CallWordKind::Wrapper,
+            [14, 513, 1023, 14, 5, 30_000_000, 0],
+            0x80e4_e1c0_5eff_e01e_u64,
+        ),
+        (
+            CallWordKind::Read,
+            [65_537, 513, 262_143, 0, 0, 0, 0],
+            0x8000_1fff_fc03_0001_u64,
+        ),
+        (
+            CallWordKind::Read,
+            [0, 1, 1, 0, 0, 0, 0],
+            0x8000_0000_0802_0000_u64,
+        ),
+        (
+            CallWordKind::History,
+            [5, 513, 1023, 5, 30_000_000, 0, 0],
+            0x8007_270e_02ff_f00d_u64,
+        ),
+        (
+            CallWordKind::Cost,
+            [30_000_000, 30_000_000, 1023, 0, 0, 0, 0],
+            0x8fff_9387_01c9_c380_u64,
+        ),
+        (
+            CallWordKind::Progress,
+            [3855, 1023, 513, 30_000_000, 5, 2, 0],
+            0xabc9_c380_807f_ff0f_u64,
+        ),
+        (
+            CallWordKind::Progress,
+            [0, 0, 0, 0, 0, 1, 0],
+            0x9000_0000_0000_0000_u64,
+        ),
+    ] {
+        assert_eq!(
+            call_word(kind, fields),
+            expected,
+            "independent literal encoding"
+        );
+        assert_eq!(
+            call_fields(kind, expected),
+            Some(fields),
+            "independent literal decoding"
+        );
+        assert_ne!(expected, 0);
+        assert_ne!(expected, CALL_INVALID);
+        assert_ne!(expected, CALL_OVERFLOW);
+    }
+    for kind in [
+        CallWordKind::Cli,
+        CallWordKind::NativeEnter,
+        CallWordKind::NativeReturn,
+        CallWordKind::Wait,
+        CallWordKind::Wrapper,
+        CallWordKind::Read,
+        CallWordKind::History,
+        CallWordKind::Cost,
+        CallWordKind::Progress,
+    ] {
+        for word in [0, 1, 2, u64::MAX] {
+            assert!(
+                call_fields(kind, word).is_none(),
+                "sentinel/domain collision"
+            );
+        }
+    }
+    let mut association = CallSnapshot {
+        current_cli: 0x8000_0000_02a0_0802,
+        native_enter: 0,
+        native_return: 0,
+        current_wait: 0,
+        wrapper_return: 0,
+        capture_read: 0,
+        last_history: 0x8000_0000_0100_200a,
+        history_cost: 0,
+        last_progress: 0xa400_0000_0040_1000,
+        daemon_spawn: 0,
+    };
+    assert_eq!(
+        association.relation(CallWordKind::History, association.last_history),
+        "older"
+    );
+    assert_eq!(
+        association.relation(CallWordKind::Progress, association.last_progress),
+        "older"
+    );
+    association.current_cli = 0x8000_0000_02a0_0401;
+    assert_eq!(
+        association.relation(CallWordKind::History, association.last_history),
+        "same"
+    );
+    association.current_cli = 0x8000_0000_02a0_0801;
+    assert_eq!(
+        association.relation(CallWordKind::History, association.last_history),
+        "mixed"
+    );
+    assert_eq!(signed_payload(Some(i32::MIN)), 0x1_8000_0000);
+    assert_eq!(signed_payload(Some(i32::MAX)), 0x1_7fff_ffff);
+    assert_eq!(call_word(CallWordKind::Cli, [514, 0, 0, 0, 0, 0, 0]), 2);
+    assert_eq!(call_word(CallWordKind::Cli, [1, 1024, 0, 0, 0, 0, 0]), 2);
+    assert_eq!(
+        call_word(CallWordKind::Cli, [1, 0, 0, 0, 30_000_001, 0, 0]),
+        2
+    );
+    assert_eq!(
+        call_word(CallWordKind::NativeEnter, [30_001, 1, 1, 53, 14, 3, 0]),
+        2
+    );
+    assert_eq!(
+        call_word(CallWordKind::NativeEnter, [0, 1, 262_144, 53, 14, 3, 0]),
+        2
+    );
+    assert_eq!(call_word(CallWordKind::Read, [65_538, 1, 1, 0, 0, 0, 0]), 2);
+    assert_eq!(
+        call_word(CallWordKind::Progress, [3856, 0, 1, 0, 0, 2, 0]),
+        2
+    );
+    assert_eq!(call_word(CallWordKind::Cli, [0, 0, 0, 0, 0, 0, 0]), 1);
+    assert_eq!(call_word(CallWordKind::Cli, [1, 0, 15, 0, 0, 0, 0]), 1);
+    assert_eq!(call_word(CallWordKind::Cli, [1, 0, 0, 6, 0, 0, 0]), 1);
+    assert_eq!(call_word(CallWordKind::Cli, [1, 0, 0, 0, 0, 1, 0]), 1);
+    assert_eq!(call_word(CallWordKind::Wait, [1, 0, 1, 1, 2, 0, 0]), 1);
+    assert_eq!(call_word(CallWordKind::Wait, [1, 1, 1, 1, 1, 0, 0]), 1);
+    assert_eq!(
+        call_word(CallWordKind::NativeEnter, [0, 1, 1, 53, 14, 3, 1]),
+        1
+    );
+    assert_eq!(call_word(CallWordKind::Progress, [1, 0, 1, 0, 0, 1, 0]), 1);
+    assert_eq!(call_word(CallWordKind::Cost, [2, 1, 1, 0, 0, 0, 0]), 1);
+    assert!(
+        call_fields(CallWordKind::Cli, 0x8010_0000_0000_0001).is_none(),
+        "reserved bit accepted"
+    );
+    assert!(
+        call_fields(CallWordKind::NativeReturn, 0x8800_0000_0000_0000).is_none(),
+        "reserved bit accepted"
+    );
+    for (kind, word, expected) in [
+        (CallWordKind::Cli, 0, "unobserved"),
+        (CallWordKind::Cli, 1, "invalid"),
+        (CallWordKind::Cli, 2, "overflow"),
+        (CallWordKind::Daemon, 0, "unobserved"),
+        (CallWordKind::Daemon, 1, "0"),
+        (CallWordKind::Daemon, 30_000_001, "30000000"),
+        (CallWordKind::Daemon, u64::MAX, "invalid"),
+        (CallWordKind::Daemon, u64::MAX - 1, "overflow"),
+    ] {
+        assert_eq!(CallWordDisplay { kind, word }.to_string(), expected);
+    }
 }
 
 #[test]
 fn native_cli_output_capture_contract() {
     let entered = Instant::now();
     let deadline = entered + Duration::from_secs(30);
+    assert_call_word_domains();
     for case in [
         CaptureCase::Version,
         CaptureCase::Oversized,
@@ -2411,6 +3535,10 @@ fn native_cli_output_capture_contract() {
         match case {
             CaptureCase::Version => {
                 assert!(
+                    completed.capture_proof == 31 && completed.calls.collision_returned(),
+                    "version epoch/reset/retention evidence failed: {completed}"
+                );
+                assert!(
                     completed.succeeded(),
                     "version/collision capture control failed: {completed}"
                 );
@@ -2428,6 +3556,12 @@ fn native_cli_output_capture_contract() {
                 );
             }
             CaptureCase::Oversized => {
+                assert!(
+                    completed
+                        .calls
+                        .output_returned(1, Code::CaptureOversized, 65_537),
+                    "oversized epoch/actual return evidence failed: {completed}"
+                );
                 assert_eq!(
                     completed.code,
                     Code::CaptureOversized,
@@ -2447,6 +3581,10 @@ fn native_cli_output_capture_contract() {
                 );
             }
             CaptureCase::Live => {
+                assert!(
+                    completed.calls.live_returned(),
+                    "live epoch/None/no-read retention failed: {completed}"
+                );
                 assert_eq!(
                     completed.code,
                     Code::Expired,
