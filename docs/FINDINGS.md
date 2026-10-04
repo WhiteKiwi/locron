@@ -5660,3 +5660,8 @@ Root selects the complete [WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md](p
 ## Windows initial Run stderr seam research (2026-10-05)
 
 Separate read-only research establishes that original capture-body stderr(null) discards the selected prepared initial Run carrier at its sole spawn. The incomplete four-path draft is frozen. Root reviewed all37 artifacts and complete194739-byte three-replacement inverse at proof3decb1c4c66cc72119eb559e718462a4249cbbbe1540ae7f3cafc9d1b27ed794. Typed fixed Owner slot/private entry is selected in the complete producer-attempt plan; NORMAL collector, stdout/JSON, observer, first work and clocks remain exact. This is a static incompatibility, not a native cause or a compiled implementation.
+
+
+## Windows producer hosted lint research, 2026-10-05
+
+The completed Windows1.98 workspace Clippy job on71a10 prints two errors (constant width2 chunks and Fields passed by value); later test Clippy is skipped. Separate frozen55 research establishes safe as_chunks sinceRust1.88 under pinned1.94, equal-length/empty-remainder semantics and the private synchronous resource-free Fields borrow. Both whole-file inverses and317 mode/blob protections are exact; analogous support iterator is not a printed third diagnostic. Root selected all four replacements after full research/API/Source review; no type/runtime/native/cause PASS is implied. Follow the complete WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md before separate Source.

@@ -165,3 +165,8 @@ Issue31 remains active/open after e9d MSRV Wake and1f5 ARM Cancel failures. Actu
 ## Windows producer Run stderr boundary (2026-10-05)
 
 Issue31 / draftPR167 owns the before-Source narrow initial Run stderr refinement. Preserve the four incomplete Source drafts during this Docs-only amendment. Record the complete amended plan and its Verify, exact Issue GET/body/state readback, then Root whole final committed-plan reread before the separate developer resumes. Native delivery/types/control fit and first work/cleanup acceptance remain pending.
+
+
+## Issue31 hosted producer lint continuation, 2026-10-05
+
+Issue31 and draftPR167 remain open. Record the complete four-step Verify from planning/WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md with exact comment GET and unchanged original Issue state/body; parent whole final committed-plan reread then separate development. Only two Source paths/four literal syntax sites are selected. Current71a10 actual queued/cancellation controls PASSall3, old x64/ARM Wake and Windows lint FAIL; changed-head acceptance is pending. Preserve signing37 deferred and separate release/account/task/logon/reboot/WinGet work.
