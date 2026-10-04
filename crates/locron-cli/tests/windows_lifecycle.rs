@@ -261,7 +261,12 @@ impl Fixture {
             .and_then(|value| value.parse().ok())
     }
 
-    fn assert_target_continues(&self, run_id: &str, previous_heartbeat: u64) {
+    fn assert_target_continues(
+        &self,
+        run_id: &str,
+        previous_heartbeat: u64,
+        dashboard_status: ExitStatus,
+    ) {
         let store = Store::open(self.paths.clone(), "test", 1).expect("preserved durable target");
         let run = store.run(run_id).expect("preserved running state");
         assert_eq!(
@@ -277,23 +282,42 @@ impl Fixture {
                 .expect("cancellation fact")
         );
         let deadline = Instant::now() + Duration::from_secs(3);
+        let mut progress =
+            LifecycleProgress::new(ProgressSite::PreservedBaseline, Some(dashboard_status));
         let baseline = loop {
-            if let Some(current) = self.heartbeat() {
+            progress.reset_iteration();
+            if let Some(current) =
+                progress.read_heartbeat(&self.paths.root.join("native-completed.heartbeat"))
+            {
+                progress.relation = HeartbeatRelation::NotCompared;
                 break current.max(previous_heartbeat);
             }
             assert!(
                 Instant::now() < deadline,
-                "native heartbeat was not readable after exit"
+                "native heartbeat was not readable after exit ; {progress}"
             );
             std::thread::sleep(Duration::from_millis(20));
         };
+        progress.site = ProgressSite::PreservedAdvance;
         loop {
-            if self.heartbeat().is_some_and(|current| current > baseline) {
+            progress.reset_iteration();
+            if progress
+                .read_heartbeat(&self.paths.root.join("native-completed.heartbeat"))
+                .is_some_and(|current| {
+                    let greater = current > baseline;
+                    progress.relation = if greater {
+                        HeartbeatRelation::Greater
+                    } else {
+                        HeartbeatRelation::Nongreater
+                    };
+                    greater
+                })
+            {
                 return;
             }
             assert!(
                 Instant::now() < deadline,
-                "native target stopped making progress"
+                "native target stopped making progress ; {progress}"
             );
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -354,6 +378,205 @@ impl Fixture {
                 process.stderr()
             );
             std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ProgressSite {
+    PreservedBaseline,
+    PreservedAdvance,
+    DescendantPreCrash,
+}
+
+impl ProgressSite {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::PreservedBaseline => "preserved_baseline",
+            Self::PreservedAdvance => "preserved_advance",
+            Self::DescendantPreCrash => "descendant_pre_crash",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum HeartbeatRead {
+    Unobserved,
+    IoError,
+    ParseError,
+    Numeric,
+}
+
+impl HeartbeatRead {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Unobserved => "unobserved",
+            Self::IoError => "io_error",
+            Self::ParseError => "parse_error",
+            Self::Numeric => "numeric",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum HeartbeatRelation {
+    Unobserved,
+    NotCompared,
+    Zero,
+    Nonzero,
+    Nongreater,
+    Greater,
+}
+
+impl HeartbeatRelation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Unobserved => "unobserved",
+            Self::NotCompared => "not_compared",
+            Self::Zero => "zero",
+            Self::Nonzero => "nonzero",
+            Self::Nongreater => "nongreater",
+            Self::Greater => "greater",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ObservedBool {
+    Unobserved,
+    False,
+    True,
+}
+
+impl ObservedBool {
+    fn from_bool(value: bool) -> Self {
+        if value { Self::True } else { Self::False }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Unobserved => "unobserved",
+            Self::False => "false",
+            Self::True => "true",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ObservedIoKind {
+    Unobserved,
+    NotFound,
+    PermissionDenied,
+    Interrupted,
+    InvalidData,
+    WouldBlock,
+    TimedOut,
+    Other,
+}
+
+impl ObservedIoKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Unobserved => "unobserved",
+            Self::NotFound => "not_found",
+            Self::PermissionDenied => "permission_denied",
+            Self::Interrupted => "interrupted",
+            Self::InvalidData => "invalid_data",
+            Self::WouldBlock => "would_block",
+            Self::TimedOut => "timed_out",
+            Self::Other => "other",
+        }
+    }
+}
+
+struct LifecycleProgress {
+    site: ProgressSite,
+    last: HeartbeatRead,
+    relation: HeartbeatRelation,
+    marker: ObservedBool,
+    first_kind: ObservedIoKind,
+    first_raw: Option<i32>,
+    dashboard_success: ObservedBool,
+    dashboard_code: Option<i32>,
+}
+
+impl LifecycleProgress {
+    fn new(site: ProgressSite, dashboard_status: Option<ExitStatus>) -> Self {
+        let (dashboard_success, dashboard_code) = dashboard_status
+            .map_or((ObservedBool::Unobserved, None), |status| {
+                (ObservedBool::from_bool(status.success()), status.code())
+            });
+        Self {
+            site,
+            last: HeartbeatRead::Unobserved,
+            relation: HeartbeatRelation::Unobserved,
+            marker: ObservedBool::Unobserved,
+            first_kind: ObservedIoKind::Unobserved,
+            first_raw: None,
+            dashboard_success,
+            dashboard_code,
+        }
+    }
+
+    fn reset_iteration(&mut self) {
+        self.last = HeartbeatRead::Unobserved;
+        self.relation = HeartbeatRelation::Unobserved;
+        self.marker = ObservedBool::Unobserved;
+    }
+
+    fn read_heartbeat(&mut self, path: &Path) -> Option<u64> {
+        let value = match std::fs::read_to_string(path) {
+            Ok(value) => value,
+            Err(error) => {
+                self.last = HeartbeatRead::IoError;
+                if matches!(self.first_kind, ObservedIoKind::Unobserved) {
+                    self.first_kind = match error.kind() {
+                        std::io::ErrorKind::NotFound => ObservedIoKind::NotFound,
+                        std::io::ErrorKind::PermissionDenied => ObservedIoKind::PermissionDenied,
+                        std::io::ErrorKind::Interrupted => ObservedIoKind::Interrupted,
+                        std::io::ErrorKind::InvalidData => ObservedIoKind::InvalidData,
+                        std::io::ErrorKind::WouldBlock => ObservedIoKind::WouldBlock,
+                        std::io::ErrorKind::TimedOut => ObservedIoKind::TimedOut,
+                        _ => ObservedIoKind::Other,
+                    };
+                    self.first_raw = error.raw_os_error();
+                }
+                return None;
+            }
+        };
+        if let Ok(value) = value.parse::<u64>() {
+            self.last = HeartbeatRead::Numeric;
+            Some(value)
+        } else {
+            self.last = HeartbeatRead::ParseError;
+            None
+        }
+    }
+}
+
+impl std::fmt::Display for LifecycleProgress {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "windows-lifecycle-progress-failure site={} last={} relation={} marker={} first_kind={} first_raw=",
+            self.site.as_str(),
+            self.last.as_str(),
+            self.relation.as_str(),
+            self.marker.as_str(),
+            self.first_kind.as_str(),
+        )?;
+        match self.first_raw {
+            Some(code) => write!(formatter, "{code}")?,
+            None => formatter.write_str("none")?,
+        }
+        write!(
+            formatter,
+            " dashboard_success={} dashboard_code=",
+            self.dashboard_success.as_str(),
+        )?;
+        match self.dashboard_code {
+            Some(code) => write!(formatter, "{code}"),
+            None => formatter.write_str("none"),
         }
     }
 }
@@ -866,17 +1089,28 @@ fn registered_daemon_crash_kills_live_tree_and_recovers_one_unknown_run_without_
     let run_id = fixture.queue_descendant_run(name, &gate, &descendant);
     let root_before = fixture.wait_running(&run_id);
     let deadline = Instant::now() + Duration::from_secs(30);
+    let mut progress = LifecycleProgress::new(ProgressSite::DescendantPreCrash, None);
     let descendant_before = loop {
-        if descendant.is_file()
-            && let Ok(value) = std::fs::read_to_string(&descendant_heartbeat)
-            && let Ok(value) = value.parse::<u64>()
-            && value > 0
+        progress.reset_iteration();
+        let marker_is_file = descendant.is_file();
+        progress.marker = ObservedBool::from_bool(marker_is_file);
+        if marker_is_file
+            && let Some(value) = progress.read_heartbeat(&descendant_heartbeat)
+            && {
+                let nonzero = value > 0;
+                progress.relation = if nonzero {
+                    HeartbeatRelation::Nonzero
+                } else {
+                    HeartbeatRelation::Zero
+                };
+                nonzero
+            }
         {
             break value;
         }
         assert!(
             Instant::now() < deadline,
-            "native descendant did not publish progress"
+            "native descendant did not publish progress ; {progress}"
         );
         std::thread::sleep(Duration::from_millis(20));
     };
@@ -1325,7 +1559,7 @@ async fn actual_dashboard_exit_closes_active_sse_while_a_native_job_continues() 
     .expect("SSE transport ended after actual dashboard process exit");
 
     assert_manual_owner_is_preserved(&mut manual, &fixture.paths, &manual_owner);
-    fixture.assert_target_continues(&run_id, heartbeat);
+    fixture.assert_target_continues(&run_id, heartbeat, status);
     std::fs::write(gate, b"release").expect("release fixture target");
     fixture.wait_marker_run(&run_id);
 }
@@ -1391,7 +1625,7 @@ async fn actual_dashboard_exit_is_bounded_with_idle_http_clients() {
     }
     assert_dashboard_is_gone(&fixture.paths, &dashboard_owner);
     assert_manual_owner_is_preserved(&mut manual, &fixture.paths, &manual_owner);
-    fixture.assert_target_continues(&run_id, heartbeat);
+    fixture.assert_target_continues(&run_id, heartbeat, status);
     // Both malicious connections remain held until actual process and role-lock exit are proven.
     drop((headers, body));
     std::fs::write(gate, b"release").expect("release fixture target");
