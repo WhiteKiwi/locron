@@ -5214,3 +5214,26 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+### Native CLI wake/cancel and independent exact gate before Source (2026-10-04)
+
+Continue the existing two platform-incompatible CLI fixtures on reviewed main4644588.
+Frozen product behavior remains actual prompt admission and confirmed cancellation.
+Select exactly three Source paths per planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md:
+two test-only files and one additive existing foundation workflow step. The
+private owner retains actual daemon/state/guard/client/query authority and original
+5s/8s caller clocks; same-connected native server PID+strict ACK witnesses wake,
+actual running+two native-target counter frames witnesses cancellation admission.
+No readiness is inferred from paths, passive status or serialized identity.
+
+Keep actual native wrappers safe, metadata-only duplication/no limbo, one cold
+entry200ms, target30s/1201frames/64KiB read and production5s grace. Late/unknown
+owners remain retained and refuse; exact owned cleanup precedes private teardown.
+Use six individually frozen --exact selectors after runtime/doctor and before
+service units under the existing status condition; auxiliary role returns count
+zero acceptance. Four ordered Verify criteria cover ownership negatives, real
+protocol/progress, whole-file/workflow conservation and all three changed-head
+native rows plus original required/paired evidence. Root reviews full Docs/Issue
+Verify before separate Source, then all Source and publication evidence. Old
+wake/cancel/supervisor/WAL/full lint/later-binary failures remain; no clock increase,
+retry/reset/whole-suite serialization, owner-PC effect or broader support claim.

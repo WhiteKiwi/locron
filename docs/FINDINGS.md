@@ -5405,3 +5405,35 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+### Native CLI wake/cancel fixture continuation before Source (2026-10-04)
+
+Separate research pins e6eb887 and proves both old selector bodies unchanged
+through current main4644588/PR13502f. Source waits for Unix wake.sock on Windows,
+although Engine binds a named pipe. Old495f ARM/MSRV reaches wake.exists1124 and
+the final cancel assertion1214; cc37162098246 ARM/MSRV reaches301 unitPASS and
+CLI73/75 with wake1142/cancel1232 failures. Actual terminal reason/phase timing is
+unprinted; the platform mismatch does not establish a production failure cause.
+Wake reuses one5s clock; cancel one8s, production grace5s, Unix sleep30 remain.
+
+Checksum-qualified Tokio1.53.1/interprocess2.4.4 Source confirms the safe native
+same-connected-handle metadata composition: NamedPipeClient.AsHandle clone,
+sync byte PipeStream conversion, is_client/server_process_id, every-result
+evade_limbo; frame/ACK remain on the original Tokio stream. All14 primary members
+match locked crate archives; existing Windows CLI dev graph needs no change.
+Research report SHA2563f476ec623d6f26748c272e34d46b5381d242dbf19ac8798c1575ade549c7eee,
+candidate ABI c4131680961256c934504ee03d778ee46167f84007a6ec45e1118cc8d159fd26,
+receipt934f7a27e0124a099657da180e49c234818eb84f38361b2b72f7054e083ac231.
+Native API metadata success still requires real positive/foreign-peer execution.
+
+Additional read-only CI research selects one additive exact acceptance step,
+explicitly adding ci.yml as a third Source path before separate development.
+The same !cancelled/native_core-success expression includes a status function,
+so prior failure stays failed without imposing a hidden success-only precondition.
+[GitHub status-check semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)
+support independent qualification before the known later service-unit preemption;
+this does not diagnose or repair that supervisor failure. Research receipt
+bbe7bd2683e09dd085576f04adbfef3c69792b69f1855513c1e379cd24a38467 also preserves
+the old41 lint sequence. planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md freezes
+six actual selectors, auxiliary zero-acceptance roles, original clocks/finite
+owners and strict progress/protocol before Issue31 Verify. No owner-PC effects.
