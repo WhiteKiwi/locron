@@ -1,0 +1,38 @@
+name: Release publication snapshot fixtures
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-snapshot.yml'
+      - 'scripts/release-assets.py'
+      - 'scripts/release_snapshot.py'
+      - 'scripts/test-release-snapshot.py'
+      - 'scripts/windows_release.py'
+      - 'scripts/windows_zip.py'
+      - 'scripts/windows_probe.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-snapshot.yml'
+      - 'scripts/release-assets.py'
+      - 'scripts/release_snapshot.py'
+      - 'scripts/test-release-snapshot.py'
+      - 'scripts/windows_release.py'
+      - 'scripts/windows_zip.py'
+      - 'scripts/windows_probe.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-snapshot-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-publication-snapshots:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test exact upload bytes and failure cleanup without publication
+        run: python3 -B scripts/test-release-snapshot.py

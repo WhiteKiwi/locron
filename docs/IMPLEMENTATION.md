@@ -5215,6 +5215,41 @@ separate development, whole-workflow inverse and parent review, then fresh ordin
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
 
+## PR140 finite output controls before separate development (2026-10-04)
+
+Frozen SPEC is unchanged. Follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. First compose reviewed oldPR140 and main137 through a recorded main merge; only renderer main() can be reconciled, exactly old140 pre-main plus merged137 suffix. A separate developer then adds scripts/test-winget-output.py and additive windows-paired-manifest workflow controls. Other inherited main137 paths remain exact; no renderer/writer redesign, dependency, package/catalog/installer/updater/native Locron effect is selected.
+
+Use real file streams/IDs and one-shot stdlib boundary injections with actual underlying close, fixed small Unicode/LF documents, per-case ownership and explicit controlled second calls. Native Windows rows require actual platform/Python/runner architecture and nonzero file identities with no skip; register read-only attribute restoration before mutation and verify the exact test-owned file before changing it. The original Ubuntu workflow commands/timeout/permission/concurrency and all old tests stay exact; independent5-minute Windows x64/ARM rows run14 methods/38 controls and old entrypoint8. Outer job timeout does not preempt a synchronous native file call. Root Docs/Issues/final review precede Source; whole Source/inherited union/reverse workflow/rules checks precede one reviewed-head automatic CI publication. Public release/WinGet/clean-account requirements stay open.
+
+
+## WinGet output controls: reviewed Source then main139 (2026-10-04)
+
+Sourceaf824 was Root-reviewed, not executed. Its direct real-stream writer tests
+and10/32 portable,14/38 native selections remain exact. Follow the appended
+WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md Git-only integration plan: exact
+reviewed814, common15820, full incoming/own mode/blob union and both literal Docs
+suffixes. No writer/test/workflow adaptation or newer main. Root Docs and CLI
+Issues32/35/final review precede separate integration, Root Source review and
+fresh Windows/Ubuntu CI. Clean-account/public-byte/real WinGet acceptance stays
+open, signing37 deferred and initial release unsigned.
+
+## PR139 shared production controls before separate Source (2026-10-04)
+
+Frozen SPEC and the existing dashboard completion contract remain unchanged. Select the exact appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md after Root review of the47-file design. Only crates/locron-server/src/lib.rs may change. Public bind delegates its existing parsing/loopback/range/fallback implementation through a private generic SocketAddr binder; public serve_until retains token/router/real Axum tasks and calls a private owning supervisor containing the same original select/broadcast/10s-drain/abort-all/full-join body. The existing Windows dashboard_ctrl_c stays byte-exact. No public hook, boxed callback/dependency/new duration/test-util/Store/CLI/policy/workflow change.
+
+Add11 meaningfully controlled tests in that same private lib module: three bind cases and eight supervisor cases. Real per-case task/channel/Drop ownership and original shutdown receiver path verify notification, held-survivor non-completion, all joins, first-error retention and unchanged TimedOut precedence; one real10s expiry stays under a13s fixture guard. Preserve all31 old native cases, actual fixed owned-port conflict, active SSE/stalled contracts. Root Docs/Issue30 Verify/final review precede a separate one-file Source lease; full extraction inverses/all other modes-blobs/rules/static checks precede changed-head ordinary hosted x64 stable/ARM stable/x64 Rust1.94 and Windows warnings-denied lint. Planned42 native Server cases is inventory only until all11 named new cases actually pass without new skip/ignore. Broader detached/started-Store/account/install/release acceptance remains open.
+## PR139 elapsed-payload lint repair before separate Source (2026-10-04)
+
+The existing frozen SPEC is unchanged. Follow the measured-failure appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md. Select only the new test helper's outer timeout match in crates/locron-server/src/lib.rs: change the Err(_) panic arm to Err(error) and include : {error} after the original panic text. Preserve the actual abort/reap/Drop ordering before this arm and every other Source byte apart from rustfmt of this arm. Root Docs/Issue30/final plan review precede a separate developer lease; Root then reviews the full one-arm inverse and all other mode/blob conservation before one ordinary changed-head push. Fresh native and all warnings-denied lint outcomes are required before merge; the previous failed head remains failed.
+
+## Before-integration Root selection, 2026-10-04 (pr138)
+
+The complete ordered plan is [RELEASE_PUBLICATION_MAIN140_2026-10-04.md](planning/RELEASE_PUBLICATION_MAIN140_2026-10-04.md). SPEC stays frozen. Exact incoming mainc4/treef90 replaces the previous main814/prospective140 selection only within this plan. Parent Root handles Docs/Issues/final review/publication; separate development handles Git integration of already reviewed whole Source blobs.
+
+Retain all five exact PR138 snapshot paths and import reviewed main139/140 without Source adaptation; shared Docs are common15820 + complete incomingc4 suffix + complete new Root suffix.
+
+Verify before development: clean exact Source parent, Docs-only mode/blob diff, exact Issue readback and complete final plan reread. Verify integration: explicit parent OIDs, complete Source/Docs/rules/tree conservation, staged+unstaged inspection and permitted static checks; unexpected conflicts return to Root. Verify publication: Root full review, fresh remote ancestry and main pin, one ordinary FF. Verify acceptance: genuine changed-head hosted native rows and all original required gates; prior PASS, optional SKIP and unknown causes remain at their actual scope. Broad release/catalog/install/account/logon/reboot work stays open.
+
 ## Separate output repair qualification development (2026-10-04)
 
 Follow planning/OUTPUT_REPAIR_QUALIFICATION.md in Store-then-Engine slices, with concrete Verify on all four selected steps and the original five-step research plan. Root freezes the private shared parser/opened-file seam and finite 96-key union before Issue #146 exact GET and complete plan reread. Separate Source development preserves public signatures, all writer and old-test bytes, native guards, policy differences and original clocks. Root handles full review, exact current-main Source union, normal publication and actual hosted qualification. No new public test API, dependency or workflow is selected.
