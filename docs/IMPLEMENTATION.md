@@ -5214,3 +5214,7 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+## PR 141 closed lock publication and separate development handoff (2026-10-04)
+
+Follow docs/planning/DASHBOARD_TOKEN_SERIALIZATION.md's reviewed handoff. Windows publishes a known-owned empty private candidate only after actual constructor/leaf closure, using one disabled-cleanup TempPath.persist_noclobber and original five-second clock. Existing final remains permanent; timely collision cleans only the loser then opens the winner, non-collision errors preserve their primary error, late success never rolls the final back, and unknown disposal remains a private empty candidate. Unix and all original tests/constants stay conserved. Add the finite cfg(test) actual-process/fault/publication/sharing controls with actual Child ownership, fixed protocol/capture/reap bounds and separately counted support entry. The Source lease is five paths, with only already-locked target-Windows tempfile usage and byte-exact Cargo.lock; no workflow, Core, Store, router or CLI change. Issue 162 holds concrete Verify before the separate developer starts; parent reviews/publishes and fresh exact-head hosted regression/native/lint/paired evidence remains mandatory.

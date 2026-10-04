@@ -5405,3 +5405,7 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+## PR 141 Windows first-lock publication and qualification review (2026-10-04)
+
+At original head 1e0c19a82d9efd4f67135d32f16617b2e41adcae, token.rs opens the permanent lock with Core open_private_or_create. Core filesystem_worker.ps1:46–47 exposes CreateNew's final name while its FullControl/FileShare.ReadWrite constructor remains live; filesystem.rs:574–583's concurrent guarded open omits delete sharing. The access/share combination can produce raw32 before try_lock; occurrence and holder in actual PR 141 are unmeasured. Select Windows-only closed private candidate/no-clobber publication with exact deadline and ownership/error precedence, preserving Unix and the permanent final. Locked tempfile 3.27.0 archive/API checksum matches Cargo.lock and is already a Server dev edge; a target-Windows usage introduces no new package/version. Original sequential CI success does not qualify concurrency/failure/publication. docs/planning/DASHBOARD_TOKEN_SERIALIZATION.md defines 11 portable and 2 native drivers, real OS and injected-fault evidence separately, under Issue 162; main PR 139 and Issue 30 remain intact.
