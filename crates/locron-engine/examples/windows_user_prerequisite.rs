@@ -19,7 +19,7 @@ fn main() -> ExitCode {
 #[cfg(windows)]
 mod windows {
     use std::fs::{File, OpenOptions};
-    use std::io::{self, Read as _, Seek as _, SeekFrom, Write};
+    use std::io::{self, Read, Seek as _, SeekFrom, Write};
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
     use std::path::{Component, Path, PathBuf, Prefix};
     use std::process::{Command as NativeCommand, ExitCode, Stdio};
