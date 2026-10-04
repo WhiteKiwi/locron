@@ -102,6 +102,28 @@ impl FrameWriter {
     }
 }
 
+/// Keep parser-detected corruption distinct from errors returned by file I/O.
+/// An I/O InvalidData is not, by itself, proof of a corrupt output tail.
+enum FrameReadError {
+    Io(io::Error),
+    InvalidFrame(&'static str),
+}
+
+impl From<io::Error> for FrameReadError {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+
+impl FrameReadError {
+    fn into_io(self) -> io::Error {
+        match self {
+            Self::Io(error) => error,
+            Self::InvalidFrame(message) => io::Error::new(io::ErrorKind::InvalidData, message),
+        }
+    }
+}
+
 /// Reads back a framed stream produced by [`FrameWriter`].
 pub struct FrameReader {
     file: File,
@@ -112,9 +134,15 @@ pub struct FrameReader {
 impl FrameReader {
     /// Opens a frame file and validates its magic header.
     pub fn open(path: &Path) -> io::Result<Self> {
-        let (mut file, guard) =
-            locron_core::filesystem::open_private(path, OpenOptions::new().read(true))?
-                .into_parts();
+        Self::from_guarded(locron_core::filesystem::open_private(
+            path,
+            OpenOptions::new().read(true),
+        )?)
+    }
+
+    /// Consumes the caller's admitted handle without reopening its pathname.
+    fn from_guarded(file: locron_core::filesystem::GuardedFile) -> io::Result<Self> {
+        let (mut file, guard) = file.into_parts();
         let mut magic = [0; 8];
         file.read_exact(&mut magic)?;
         if &magic != MAGIC {
@@ -132,17 +160,21 @@ impl FrameReader {
     }
     /// Reads the next frame, returning `None` at end of stream.
     pub fn next_frame(&mut self) -> io::Result<Option<Frame>> {
+        self.read_frame().map_err(FrameReadError::into_io)
+    }
+
+    fn read_frame(&mut self) -> Result<Option<Frame>, FrameReadError> {
         let mut header = [0; FRAME_HEADER_LEN];
         match self.file.read_exact(&mut header) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
         let channel = match header[0] {
             1 => FrameChannel::Stdout,
             2 => FrameChannel::Stderr,
             3 => FrameChannel::Body,
-            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "bad channel")),
+            _ => return Err(FrameReadError::InvalidFrame("bad channel")),
         };
         // The slices below are compile-time constants of the exact array length,
         // so the conversions cannot fail and the default is never used.
@@ -151,7 +183,7 @@ impl FrameReader {
         let len = u32::from_le_bytes(header[17..21].try_into().unwrap_or_default()) as usize;
         let expected = u32::from_le_bytes(header[21..25].try_into().unwrap_or_default());
         if len > MAX_FRAME_PAYLOAD || sequence != self.next {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid frame"));
+            return Err(FrameReadError::InvalidFrame("invalid frame"));
         }
         let mut payload = vec![0; len];
         self.file.read_exact(&mut payload)?;
@@ -159,10 +191,7 @@ impl FrameReader {
         hasher.update(&header[..21]);
         hasher.update(&payload);
         if hasher.finalize() != expected {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "checksum mismatch",
-            ));
+            return Err(FrameReadError::InvalidFrame("checksum mismatch"));
         }
         self.next += 1;
         self.valid += FRAME_HEADER_LEN as u64 + len as u64;
@@ -175,26 +204,46 @@ impl FrameReader {
     }
 }
 
-/// Truncates a partial frame file to its last complete frame and reports the repair.
+/// Truncates an inactive partial file to its last complete frame and reports the repair.
+/// The caller must exclude live attempts; observed size checks are not writer exclusion.
 pub fn repair_partial(path: &Path) -> io::Result<OutputRepair> {
-    let original = locron_core::filesystem::open_private(path, OpenOptions::new().read(true))?
-        .metadata()?
-        .len();
-    let mut reader = FrameReader::open(path)?;
+    let file = locron_core::filesystem::open_private(
+        path,
+        OpenOptions::new().read(true).write(true),
+    )?;
+    let original = file.metadata()?.len();
+    let mut reader = FrameReader::from_guarded(file)?;
     let mut repair = OutputRepair {
-        physical_bytes: 8,
+        physical_bytes: MAGIC.len() as u64,
         ..OutputRepair::default()
     };
-    while let Ok(Some(frame)) = reader.next_frame() {
-        repair.frames += 1;
-        repair.payload_bytes += frame.payload.len() as u64;
-        repair.physical_bytes = reader.valid;
+    loop {
+        match reader.read_frame() {
+            Ok(Some(frame)) => {
+                repair.frames += 1;
+                repair.payload_bytes += frame.payload.len() as u64;
+                repair.physical_bytes = reader.valid;
+            }
+            Ok(None) | Err(FrameReadError::InvalidFrame(_)) => break,
+            Err(FrameReadError::Io(error))
+                if error.kind() == io::ErrorKind::UnexpectedEof =>
+            {
+                break;
+            }
+            Err(FrameReadError::Io(error)) => return Err(error),
+        }
     }
-    repair.tail_removed = original.saturating_sub(repair.physical_bytes);
-    drop(reader);
-    let file = locron_core::filesystem::open_private(path, OpenOptions::new().write(true))?;
-    file.set_len(repair.physical_bytes)?;
-    file.sync_all()?;
+    if repair.physical_bytes > original || reader.file.metadata()?.len() != original {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "output file length changed during repair",
+        ));
+    }
+    repair.tail_removed = original - repair.physical_bytes;
+    // Scan and truncation use the same object, even if its pathname was replaced.
+    // Keep the file and its directory guards alive through the final sync.
+    reader.file.set_len(repair.physical_bytes)?;
+    reader.file.sync_all()?;
     Ok(repair)
 }
 
