@@ -42,6 +42,9 @@ pub enum AuthKind {
     Session,
 }
 
+#[cfg(test)]
+mod qualification;
+
 /// Distinguishes a genuinely absent field from invalid or ambiguous supplied values.
 fn single_header(headers: &HeaderMap, name: HeaderName) -> Result<Option<&str>, ()> {
     let all = headers.get_all(name);
@@ -83,29 +86,49 @@ fn valid_token_value(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-/// Reads one named plain-hex cookie across all semicolon-separated Cookie fields.
-/// Split fields are valid, but duplicate target names are ambiguous even when equal.
-fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    let mut found = None;
-    for header in headers.get_all(header::COOKIE).iter() {
-        let cookies = header.to_str().ok()?;
+/// Missing, readable malformed, and untrusted supplied cookies have different admission paths.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CookieState<'a> {
+    Missing,
+    UniqueValidHex(&'a str),
+    UniqueReadableMalformed,
+    DuplicateOrUnreadable,
+}
+
+/// Scan every Cookie field and pair, including values after a malformed target.
+/// An unreadable field makes either target untrusted, even if another field is readable.
+fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> CookieState<'a> {
+    let mut found = CookieState::Missing;
+    let mut unreadable = false;
+    for header in &headers.get_all(header::COOKIE) {
+        let Ok(cookies) = header.to_str() else {
+            unreadable = true;
+            continue;
+        };
         for pair in cookies.split(';') {
             let pair = pair.trim();
-            let Some((key, value)) = pair.split_once('=') else {
-                if pair == name {
-                    return None;
+            let supplied = match pair.split_once('=') {
+                Some((key, value)) if key.trim() == name => {
+                    if key == name && valid_token_value(value) {
+                        CookieState::UniqueValidHex(value)
+                    } else {
+                        CookieState::UniqueReadableMalformed
+                    }
                 }
-                continue;
+                None if pair == name => CookieState::UniqueReadableMalformed,
+                _ => continue,
             };
-            if key.trim() == name {
-                if key != name || found.is_some() || !valid_token_value(value) {
-                    return None;
-                }
-                found = Some(value);
-            }
+            found = match found {
+                CookieState::Missing => supplied,
+                _ => CookieState::DuplicateOrUnreadable,
+            };
         }
     }
-    found.map(str::to_owned)
+    if unreadable {
+        CookieState::DuplicateOrUnreadable
+    } else {
+        found
+    }
 }
 
 /// Constant-time comparison for the token; both sides are always 64 hex characters.
@@ -173,6 +196,7 @@ fn origin_matches(state: &AppState, origin: &str) -> bool {
 /// data; every `/api/v1` route is token-gated.
 pub async fn authenticate(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let (mut parts, body) = request.into_parts();
+    let entry_request = parts.method == Method::GET && !parts.uri.path().starts_with("/api/");
     let auth = match single_header(&parts.headers, header::AUTHORIZATION) {
         Ok(Some(bearer)) => {
             if let Some(token) = bearer
@@ -189,12 +213,15 @@ pub async fn authenticate(State(state): State<AppState>, request: Request, next:
             }
         }
         Ok(None) => match cookie_value(&parts.headers, SESSION_COOKIE) {
-            Some(cookie) if constant_time_eq(&cookie, &state.token) => AuthKind::Session,
-            _ => AuthKind::Unauthenticated,
+            CookieState::UniqueValidHex(cookie) if constant_time_eq(cookie, &state.token) => {
+                AuthKind::Session
+            }
+            CookieState::Missing | CookieState::UniqueValidHex(_) => AuthKind::Unauthenticated,
+            _ if entry_request => AuthKind::Unauthenticated,
+            _ => return unauthorized(),
         },
         Err(()) => return unauthorized(),
     };
-    let entry_request = parts.method == Method::GET && !parts.uri.path().starts_with("/api/");
     let paste_request = parts.method == Method::POST && parts.uri.path() == "/api/v1/session";
     if auth == AuthKind::Unauthenticated && !entry_request && !paste_request {
         return unauthorized();
@@ -227,13 +254,37 @@ pub async fn csrf(State(state): State<AppState>, mut request: Request, next: Nex
         request.method(),
         &Method::POST | &Method::PUT | &Method::PATCH | &Method::DELETE
     );
+    if auth == AuthKind::Session
+        && request.method() == Method::GET
+        && request.uri().path() == "/api/v1/session"
+        && matches!(
+            cookie_value(request.headers(), CSRF_COOKIE),
+            CookieState::UniqueReadableMalformed | CookieState::DuplicateOrUnreadable
+        )
+    {
+        return unauthorized();
+    }
     if unsafe_method && auth == AuthKind::Session {
-        let Some(cookie) = cookie_value(request.headers(), CSRF_COOKIE) else {
-            return envelope::error(
-                StatusCode::FORBIDDEN,
-                "refused",
-                "cookie-authenticated mutations require a CSRF token",
-            );
+        let cookie = match cookie_value(request.headers(), CSRF_COOKIE) {
+            CookieState::UniqueValidHex(cookie) => cookie.to_owned(),
+            CookieState::UniqueReadableMalformed
+                if request.method() == Method::POST
+                    && request.uri().path() == "/api/v1/session"
+                    && matches!(
+                        single_header(request.headers(), HeaderName::from_static(CSRF_HEADER)),
+                        Ok(None)
+                    ) =>
+            {
+                // The existing Json extractor and exact secret validation still precede issuance.
+                return next.run(request).await;
+            }
+            _ => {
+                return envelope::error(
+                    StatusCode::FORBIDDEN,
+                    "refused",
+                    "cookie-authenticated mutations require a CSRF token",
+                );
+            }
         };
         let echoed = match single_header(request.headers(), HeaderName::from_static(CSRF_HEADER)) {
             Ok(Some(value)) if valid_token_value(value) => Some(value.to_owned()),
