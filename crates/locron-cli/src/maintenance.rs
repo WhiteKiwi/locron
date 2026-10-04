@@ -1321,7 +1321,9 @@ mod tests {
             let final_path = h.need(key, "final-path", || paths.final_output(&run_id, 1));
             let mut expected = SEED.to_vec();
             expected.extend_from_slice(&[1, 1, 0]);
-            if key != "C-LIVE-STARTING" {
+            if key == "C-LIVE-STARTING" {
+                absent(h, key, &partial);
+            } else {
                 if key == "C-REFUSAL" {
                     expected = b"LOCRON\0\x02".to_vec();
                     let mut writer = h.need(key, "create-bad-magic", || {
@@ -1351,8 +1353,6 @@ mod tests {
                 }
                 h.check(key, "all-writers-released");
                 exact_bytes(h, key, &partial, &expected);
-            } else {
-                absent(h, key, &partial);
             }
 
             if matches!(
