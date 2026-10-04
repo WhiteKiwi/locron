@@ -95,6 +95,221 @@ jobs:
       - name: Verify durable store and runtime library contracts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
+      - name: Qualify retained Engine output and bounded repair receipts
+        env:
+          ENGINE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          ENGINE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: pwsh
+        run: |
+          $program = @'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("engine-output-qualification")
+          PHASE = "initial"
+          ACTUAL_TEST_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              global PHASE
+              PHASE = "bounded-capture"
+              with path.open("rb") as stream:
+                  data = stream.read(cap + 1)
+              require(len(data) <= cap, "capture-cap")
+              return data
+
+
+          def invoke(command, name):
+              global PHASE, ACTUAL_TEST_STATUS
+              PHASE = "actual-" + name
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr).returncode
+              if name == "tests":
+                  ACTUAL_TEST_STATUS = status
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name in ("build", "tests"):
+                  sys.stdout.write(out.decode("utf-8", errors="backslashreplace"))
+                  sys.stderr.write(err.decode("utf-8", errors="backslashreplace"))
+              return status, out
+
+
+          def git(*arguments):
+              status, data = invoke(["git", *arguments], "git-" + str(len(list(ROOT.glob("git-*.stdout")))))
+              require(status == 0, "git-status")
+              return data.decode("ascii").strip()
+
+
+          def executable_facts(path, host):
+              global PHASE
+              PHASE = "executable-identity"
+              initial = path.stat()
+              require(path.is_file() and 0 < initial.st_size <= 512 * 1024 * 1024, "executable-size")
+              arch = host.split("-")[0]
+              with path.open("rb") as stream:
+                  header = stream.read(64)
+                  if host.endswith("windows-msvc"):
+                      require(header[:2] == b"MZ" and len(header) == 64, "native-pe-header")
+                      offset = struct.unpack_from("<I", header, 60)[0]
+                      require(offset <= 1024 * 1024 and offset + 6 <= initial.st_size, "native-pe-offset")
+                      stream.seek(offset)
+                      pe = stream.read(6)
+                      require(pe[:4] == b"PE\0\0" and struct.unpack_from("<H", pe, 4)[0] == {"x86_64": 0x8664, "aarch64": 0xAA64}[arch], "native-pe-machine")
+                  elif host.endswith("apple-darwin"):
+                      require(header[:4] == b"\xcf\xfa\xed\xfe" and struct.unpack_from("<I", header, 4)[0] == {"x86_64": 0x01000007, "aarch64": 0x0100000C}[arch], "native-mach-machine")
+                  else:
+                      require(header[:6] == b"\x7fELF\x02\x01" and struct.unpack_from("<H", header, 18)[0] == {"x86_64": 62, "aarch64": 183}[arch], "native-elf-machine")
+                  stream.seek(0)
+                  digest = hashlib.sha256()
+                  total = 0
+                  while True:
+                      part = stream.read(64 * 1024)
+                      if not part:
+                          break
+                      total += len(part)
+                      require(total <= 512 * 1024 * 1024, "executable-hash-cap")
+                      digest.update(part)
+              final = path.stat()
+              require(total == initial.st_size and (initial.st_size, initial.st_mtime_ns) == (final.st_size, final.st_mtime_ns), "executable-stable")
+              return {"sha256": digest.hexdigest(), "bytes": total, "native_host": host}
+
+
+          def main():
+              global PHASE, ACTUAL_TEST_STATUS
+              ROOT.mkdir()
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["ENGINE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "selected-native-platform")
+              key_platform, system, expected_host = systems[selected]
+              require(platform.system() == system, "actual-native-system")
+              status, toolchain = invoke(["rustc", "-vV"], "toolchain")
+              require(status == 0, "toolchain-status")
+              hosts = re.findall(rb"^host: ([^\r\n]+)\r?$", toolchain, re.MULTILINE)
+              require(len(hosts) == 1 and hosts[0].decode("ascii") == expected_host, "actual-native-host")
+              revision = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) is not None for value in (revision, tree, os.environ["GITHUB_SHA"])), "actual-checkout-shapes")
+              require(revision == os.environ["GITHUB_SHA"], "actual-checkout-binding")
+              head = os.environ["ENGINE_QUALIFICATION_HEAD"]
+              require(re.fullmatch(r"[0-9a-f]{40}", head) is not None, "head-shape")
+              status, commit = invoke(["git", "cat-file", "-p", revision], "head-binding")
+              require(status == 0, "actual-commit-header-status")
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", parent) is not None for parent in parents) and len(parents) == len(set(parents)), "actual-unique-parent-shapes")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "known-checkout-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and head != revision) if event == "pull_request" else head == revision, "actual-head-checkout-parent-binding")
+              status, data = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], "metadata")
+              require(status == 0, "metadata-status")
+              metadata = json.loads(data)
+              packages = [package for package in metadata["packages"] if package["name"] == "locron-engine"]
+              require(len(packages) == 1, "one-actual-package")
+              package_id = packages[0]["id"]
+              status, data = invoke(["cargo", "test", "-p", "locron-engine", "--lib", "--locked", "--no-run", "--message-format=json"], "build")
+              require(status == 0, "locked-build-status")
+              artifacts = []
+              for line in data.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == "locron_engine" and message["target"]["kind"] == ["lib"] and message.get("profile", {}).get("test") is True and message.get("executable"):
+                      artifacts.append(message)
+              require(len(artifacts) == 1, "one-actual-test-artifact")
+              artifact = artifacts[0]
+              executable = pathlib.Path(artifact["executable"]).resolve(strict=True)
+              target = pathlib.Path(metadata["target_directory"]).resolve(strict=True)
+              relative = executable.relative_to(target)
+              facts = executable_facts(executable, expected_host)
+              ledger_bytes = bounded(pathlib.Path("docs/planning/OUTPUT_REPAIR_QUALIFICATION_ROWS.json"), 128 * 1024)
+              ledger_sha = hashlib.sha256(ledger_bytes).hexdigest()
+              require(ledger_sha == "1c3703e6463a52386f1aaf9939e095ccc3348ef81436a2d26a267db1a8d48819", "frozen-ledger")
+              ledger = json.loads(ledger_bytes)
+              rows = [row for row in ledger["rows"] if row["module"] == "engine" and row["platform"] in ("all", "windows" if key_platform == "windows" else "unix") or row["module"] == "engine-memory" and row["platform"] == key_platform]
+              expected = {row["key"] for row in rows}
+              require(len(expected) == {"linux": 45, "macos": 42, "windows": 43}[key_platform], "frozen-platform-count")
+              status, raw = invoke([str(executable), "output::", "--nocapture"], "tests")
+              ACTUAL_TEST_STATUS = status
+              text = raw.decode("utf-8")
+              observed = re.findall(r"output-qualification PASS ([A-Za-z0-9:_-]+)", text)
+              counter = collections.Counter(observed)
+              require(set(counter) == expected and all(count == 1 for count in counter.values()), "exact-unique-completed-keys")
+              totals = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(totals) == 1, "one-actual-test-summary")
+              passed, failed, ignored, measured, _ = map(int, totals[0])
+              require((passed, failed, ignored, measured) == ({"linux": 10, "macos": 8, "windows": 9}[key_platform], 0, 0, 0), "actual-selector-total-no-skips")
+              metrics = {}
+              for line in text.splitlines():
+                  position = line.find("output-qualification MEMORY ")
+                  if position < 0:
+                      continue
+                  words = line[position:].split()
+                  require(len(words) == 16 and words[0:2] == ["output-qualification", "MEMORY"], "memory-receipt-shape")
+                  key = words[2]
+                  require(key in expected and key.startswith("M-") and key not in metrics, "memory-unique-selected-key")
+                  values = {}
+                  for word in words[3:]:
+                      field, number = word.split("=")
+                      require(field not in values and re.fullmatch(r"[0-9]+", number) is not None, "memory-numeric-fields")
+                      values[field] = int(number)
+                  require(set(values) == {"pid", "before_kib", "after_kib", "delta_kib", "frames", "input", "valid", "payload", "crc32", "exit_success", "exit_code", "reaped", "cleanup"}, "memory-exact-fields")
+                  row = next(row for row in rows if row["key"] == key)
+                  require(values["pid"] > 0 and values["before_kib"] > 0 and values["after_kib"] >= values["before_kib"] and values["delta_kib"] == values["after_kib"] - values["before_kib"], "memory-actual-numeric-facts")
+                  require((values["frames"], values["input"], values["valid"], values["payload"]) == (row["frames"], row["input_bytes"], row["valid_physical_bytes"], row["payload_bytes"]), "memory-exact-counters")
+                  require((values["exit_success"], values["exit_code"], values["reaped"], values["cleanup"]) == (1, 0, 1, 1), "memory-confirmed-completion")
+                  require(values["delta_kib"] >= 96 * 1024 if key == "M-COLLECT-128" else values["delta_kib"] <= 16 * 1024, "memory-fixed-threshold")
+                  metrics[key] = values
+              require(set(metrics) == ({"M-REPAIR-004", "M-REPAIR-128", "M-COLLECT-128"} if key_platform == "linux" else set()), "memory-exact-three-or-none")
+              if key_platform == "linux":
+                  require(len({values["pid"] for values in metrics.values()}) == 3, "three-actual-owned-children")
+                  require(max(0, metrics["M-REPAIR-128"]["delta_kib"] - metrics["M-REPAIR-004"]["delta_kib"]) <= 16 * 1024, "memory-fixed-size-excess")
+              require(status == 0, "actual-test-exit-status")
+              record = {
+                  "revision": revision, "tree": tree, "head": head, "checkout_parents": parents, "event": event, "ref": os.environ["GITHUB_REF"],
+                  "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"], "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+                  "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+                  "repository": os.environ["GITHUB_REPOSITORY"], "job": os.environ["GITHUB_JOB"],
+                  "platform": key_platform, "native_host": expected_host, "toolchain": toolchain.decode("ascii"),
+                  "package_id": package_id, "target": artifact["target"], "test_profile": artifact["profile"],
+                  "executable_relative_to_target": str(relative), "executable": facts,
+                  "ledger_sha256": ledger_sha, "completed_keys": sorted(counter), "memory": metrics,
+                  "actual_test_status": status, "actual_test_totals": {"passed": passed, "failed": failed, "ignored": ignored, "measured": measured},
+                  "stdout_sha256": hashlib.sha256(raw).hexdigest(), "stderr_sha256": hashlib.sha256(bounded(ROOT / "tests.stderr")).hexdigest(),
+              }
+              (ROOT / "receipt.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("engine-output-receipt PASS keys=" + str(len(counter)) + " selectors=" + str(passed))
+
+
+          try:
+              main()
+          except Exception as error:
+              print("engine-output-receipt FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(ACTUAL_TEST_STATUS if ACTUAL_TEST_STATUS not in (None, 0) else 1)
+          '@
+          $program | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native default doctor facts and output
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         shell: pwsh
@@ -209,6 +424,7 @@ jobs:
             target/debug/deps/mcp-*.exe
             target/debug/deps/contract-*.exe
             windows-native-evidence.json
+            engine-output-qualification/
             windows-native-sha256.txt
 
   windows-lint-foundation:
@@ -355,6 +571,227 @@ jobs:
           rustc -vV
           test "$(rustup which rustc)" = "$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)"
       - run: cargo test --workspace --all-targets
+      - name: Qualify retained Engine output and bounded repair receipts
+        env:
+          ENGINE_QUALIFICATION_PLATFORM: ${{ matrix.runner.platform }}
+          ENGINE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          python3 - <<'PY_ENGINE_RECEIPT'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("engine-output-qualification")
+          PHASE = "initial"
+          ACTUAL_TEST_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              global PHASE
+              PHASE = "bounded-capture"
+              with path.open("rb") as stream:
+                  data = stream.read(cap + 1)
+              require(len(data) <= cap, "capture-cap")
+              return data
+
+
+          def invoke(command, name):
+              global PHASE, ACTUAL_TEST_STATUS
+              PHASE = "actual-" + name
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr).returncode
+              if name == "tests":
+                  ACTUAL_TEST_STATUS = status
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name in ("build", "tests"):
+                  sys.stdout.write(out.decode("utf-8", errors="backslashreplace"))
+                  sys.stderr.write(err.decode("utf-8", errors="backslashreplace"))
+              return status, out
+
+
+          def git(*arguments):
+              status, data = invoke(["git", *arguments], "git-" + str(len(list(ROOT.glob("git-*.stdout")))))
+              require(status == 0, "git-status")
+              return data.decode("ascii").strip()
+
+
+          def executable_facts(path, host):
+              global PHASE
+              PHASE = "executable-identity"
+              initial = path.stat()
+              require(path.is_file() and 0 < initial.st_size <= 512 * 1024 * 1024, "executable-size")
+              arch = host.split("-")[0]
+              with path.open("rb") as stream:
+                  header = stream.read(64)
+                  if host.endswith("windows-msvc"):
+                      require(header[:2] == b"MZ" and len(header) == 64, "native-pe-header")
+                      offset = struct.unpack_from("<I", header, 60)[0]
+                      require(offset <= 1024 * 1024 and offset + 6 <= initial.st_size, "native-pe-offset")
+                      stream.seek(offset)
+                      pe = stream.read(6)
+                      require(pe[:4] == b"PE\0\0" and struct.unpack_from("<H", pe, 4)[0] == {"x86_64": 0x8664, "aarch64": 0xAA64}[arch], "native-pe-machine")
+                  elif host.endswith("apple-darwin"):
+                      require(header[:4] == b"\xcf\xfa\xed\xfe" and struct.unpack_from("<I", header, 4)[0] == {"x86_64": 0x01000007, "aarch64": 0x0100000C}[arch], "native-mach-machine")
+                  else:
+                      require(header[:6] == b"\x7fELF\x02\x01" and struct.unpack_from("<H", header, 18)[0] == {"x86_64": 62, "aarch64": 183}[arch], "native-elf-machine")
+                  stream.seek(0)
+                  digest = hashlib.sha256()
+                  total = 0
+                  while True:
+                      part = stream.read(64 * 1024)
+                      if not part:
+                          break
+                      total += len(part)
+                      require(total <= 512 * 1024 * 1024, "executable-hash-cap")
+                      digest.update(part)
+              final = path.stat()
+              require(total == initial.st_size and (initial.st_size, initial.st_mtime_ns) == (final.st_size, final.st_mtime_ns), "executable-stable")
+              return {"sha256": digest.hexdigest(), "bytes": total, "native_host": host}
+
+
+          def main():
+              global PHASE, ACTUAL_TEST_STATUS
+              ROOT.mkdir()
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["ENGINE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "selected-native-platform")
+              key_platform, system, expected_host = systems[selected]
+              require(platform.system() == system, "actual-native-system")
+              status, toolchain = invoke(["rustc", "-vV"], "toolchain")
+              require(status == 0, "toolchain-status")
+              hosts = re.findall(rb"^host: ([^\r\n]+)\r?$", toolchain, re.MULTILINE)
+              require(len(hosts) == 1 and hosts[0].decode("ascii") == expected_host, "actual-native-host")
+              revision = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) is not None for value in (revision, tree, os.environ["GITHUB_SHA"])), "actual-checkout-shapes")
+              require(revision == os.environ["GITHUB_SHA"], "actual-checkout-binding")
+              head = os.environ["ENGINE_QUALIFICATION_HEAD"]
+              require(re.fullmatch(r"[0-9a-f]{40}", head) is not None, "head-shape")
+              status, commit = invoke(["git", "cat-file", "-p", revision], "head-binding")
+              require(status == 0, "actual-commit-header-status")
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", parent) is not None for parent in parents) and len(parents) == len(set(parents)), "actual-unique-parent-shapes")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "known-checkout-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and head != revision) if event == "pull_request" else head == revision, "actual-head-checkout-parent-binding")
+              status, data = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], "metadata")
+              require(status == 0, "metadata-status")
+              metadata = json.loads(data)
+              packages = [package for package in metadata["packages"] if package["name"] == "locron-engine"]
+              require(len(packages) == 1, "one-actual-package")
+              package_id = packages[0]["id"]
+              status, data = invoke(["cargo", "test", "-p", "locron-engine", "--lib", "--locked", "--no-run", "--message-format=json"], "build")
+              require(status == 0, "locked-build-status")
+              artifacts = []
+              for line in data.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == "locron_engine" and message["target"]["kind"] == ["lib"] and message.get("profile", {}).get("test") is True and message.get("executable"):
+                      artifacts.append(message)
+              require(len(artifacts) == 1, "one-actual-test-artifact")
+              artifact = artifacts[0]
+              executable = pathlib.Path(artifact["executable"]).resolve(strict=True)
+              target = pathlib.Path(metadata["target_directory"]).resolve(strict=True)
+              relative = executable.relative_to(target)
+              facts = executable_facts(executable, expected_host)
+              ledger_bytes = bounded(pathlib.Path("docs/planning/OUTPUT_REPAIR_QUALIFICATION_ROWS.json"), 128 * 1024)
+              ledger_sha = hashlib.sha256(ledger_bytes).hexdigest()
+              require(ledger_sha == "1c3703e6463a52386f1aaf9939e095ccc3348ef81436a2d26a267db1a8d48819", "frozen-ledger")
+              ledger = json.loads(ledger_bytes)
+              rows = [row for row in ledger["rows"] if row["module"] == "engine" and row["platform"] in ("all", "windows" if key_platform == "windows" else "unix") or row["module"] == "engine-memory" and row["platform"] == key_platform]
+              expected = {row["key"] for row in rows}
+              require(len(expected) == {"linux": 45, "macos": 42, "windows": 43}[key_platform], "frozen-platform-count")
+              status, raw = invoke([str(executable), "output::", "--nocapture"], "tests")
+              ACTUAL_TEST_STATUS = status
+              text = raw.decode("utf-8")
+              observed = re.findall(r"output-qualification PASS ([A-Za-z0-9:_-]+)", text)
+              counter = collections.Counter(observed)
+              require(set(counter) == expected and all(count == 1 for count in counter.values()), "exact-unique-completed-keys")
+              totals = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(totals) == 1, "one-actual-test-summary")
+              passed, failed, ignored, measured, _ = map(int, totals[0])
+              require((passed, failed, ignored, measured) == ({"linux": 10, "macos": 8, "windows": 9}[key_platform], 0, 0, 0), "actual-selector-total-no-skips")
+              metrics = {}
+              for line in text.splitlines():
+                  position = line.find("output-qualification MEMORY ")
+                  if position < 0:
+                      continue
+                  words = line[position:].split()
+                  require(len(words) == 16 and words[0:2] == ["output-qualification", "MEMORY"], "memory-receipt-shape")
+                  key = words[2]
+                  require(key in expected and key.startswith("M-") and key not in metrics, "memory-unique-selected-key")
+                  values = {}
+                  for word in words[3:]:
+                      field, number = word.split("=")
+                      require(field not in values and re.fullmatch(r"[0-9]+", number) is not None, "memory-numeric-fields")
+                      values[field] = int(number)
+                  require(set(values) == {"pid", "before_kib", "after_kib", "delta_kib", "frames", "input", "valid", "payload", "crc32", "exit_success", "exit_code", "reaped", "cleanup"}, "memory-exact-fields")
+                  row = next(row for row in rows if row["key"] == key)
+                  require(values["pid"] > 0 and values["before_kib"] > 0 and values["after_kib"] >= values["before_kib"] and values["delta_kib"] == values["after_kib"] - values["before_kib"], "memory-actual-numeric-facts")
+                  require((values["frames"], values["input"], values["valid"], values["payload"]) == (row["frames"], row["input_bytes"], row["valid_physical_bytes"], row["payload_bytes"]), "memory-exact-counters")
+                  require((values["exit_success"], values["exit_code"], values["reaped"], values["cleanup"]) == (1, 0, 1, 1), "memory-confirmed-completion")
+                  require(values["delta_kib"] >= 96 * 1024 if key == "M-COLLECT-128" else values["delta_kib"] <= 16 * 1024, "memory-fixed-threshold")
+                  metrics[key] = values
+              require(set(metrics) == ({"M-REPAIR-004", "M-REPAIR-128", "M-COLLECT-128"} if key_platform == "linux" else set()), "memory-exact-three-or-none")
+              if key_platform == "linux":
+                  require(len({values["pid"] for values in metrics.values()}) == 3, "three-actual-owned-children")
+                  require(max(0, metrics["M-REPAIR-128"]["delta_kib"] - metrics["M-REPAIR-004"]["delta_kib"]) <= 16 * 1024, "memory-fixed-size-excess")
+              require(status == 0, "actual-test-exit-status")
+              record = {
+                  "revision": revision, "tree": tree, "head": head, "checkout_parents": parents, "event": event, "ref": os.environ["GITHUB_REF"],
+                  "workflow_ref": os.environ["GITHUB_WORKFLOW_REF"], "workflow_sha": os.environ["GITHUB_WORKFLOW_SHA"],
+                  "run": os.environ["GITHUB_RUN_ID"], "attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+                  "repository": os.environ["GITHUB_REPOSITORY"], "job": os.environ["GITHUB_JOB"],
+                  "platform": key_platform, "native_host": expected_host, "toolchain": toolchain.decode("ascii"),
+                  "package_id": package_id, "target": artifact["target"], "test_profile": artifact["profile"],
+                  "executable_relative_to_target": str(relative), "executable": facts,
+                  "ledger_sha256": ledger_sha, "completed_keys": sorted(counter), "memory": metrics,
+                  "actual_test_status": status, "actual_test_totals": {"passed": passed, "failed": failed, "ignored": ignored, "measured": measured},
+                  "stdout_sha256": hashlib.sha256(raw).hexdigest(), "stderr_sha256": hashlib.sha256(bounded(ROOT / "tests.stderr")).hexdigest(),
+              }
+              (ROOT / "receipt.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("engine-output-receipt PASS keys=" + str(len(counter)) + " selectors=" + str(passed))
+
+
+          try:
+              main()
+          except Exception as error:
+              print("engine-output-receipt FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(ACTUAL_TEST_STATUS if ACTUAL_TEST_STATUS not in (None, 0) else 1)
+          PY_ENGINE_RECEIPT
+      - name: Upload actual Engine output qualification receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: engine-output-${{ matrix.runner.platform }}-rust-${{ matrix.rust }}
+          if-no-files-found: error
+          retention-days: 14
+          path: engine-output-qualification/
 
   lint:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}

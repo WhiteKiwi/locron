@@ -203,16 +203,40 @@ pub fn repair_partial(path: impl AsRef<Path>) -> io::Result<OutputStats> {
         path.as_ref(),
         std::fs::OpenOptions::new().read(true).write(true),
     )?;
-    let original = file.metadata()?.len();
-    let (valid_len, retained_bytes) = scan_valid_frames(&mut *file, drop)?;
-    if valid_len > original || file.metadata()?.len() != original {
+    repair_opened(&mut *file)
+}
+
+trait RepairFile: Read + Seek {
+    fn repair_len(&mut self) -> io::Result<u64>;
+    fn repair_set_len(&mut self, len: u64) -> io::Result<()>;
+    fn repair_sync(&mut self) -> io::Result<()>;
+}
+
+impl RepairFile for std::fs::File {
+    fn repair_len(&mut self) -> io::Result<u64> {
+        self.metadata().map(|metadata| metadata.len())
+    }
+
+    fn repair_set_len(&mut self, len: u64) -> io::Result<()> {
+        self.set_len(len)
+    }
+
+    fn repair_sync(&mut self) -> io::Result<()> {
+        self.sync_all()
+    }
+}
+
+fn repair_opened(file: &mut impl RepairFile) -> io::Result<OutputStats> {
+    let original = file.repair_len()?;
+    let (valid_len, retained_bytes) = scan_valid_frames(file, drop)?;
+    if valid_len > original || file.repair_len()? != original {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "output file length changed during repair",
         ));
     }
-    file.set_len(valid_len)?;
-    file.sync_all()?;
+    file.repair_set_len(valid_len)?;
+    file.repair_sync()?;
     Ok(OutputStats {
         retained_bytes,
         physical_bytes: valid_len,
@@ -221,6 +245,10 @@ pub fn repair_partial(path: impl AsRef<Path>) -> io::Result<OutputStats> {
 }
 
 fn read_valid_frames(file: &mut std::fs::File) -> io::Result<(Vec<Frame>, u64)> {
+    collect_valid_frames(file)
+}
+
+fn collect_valid_frames(file: &mut (impl Read + Seek)) -> io::Result<(Vec<Frame>, u64)> {
     let mut frames = Vec::new();
     let (valid_len, _) = scan_valid_frames(file, |frame| frames.push(frame))?;
     Ok((frames, valid_len))
@@ -291,6 +319,12 @@ fn scan_valid_frames(
     file.seek(SeekFrom::Start(valid_len))?;
     Ok((valid_len, retained_bytes))
 }
+
+#[cfg(test)]
+mod qualification;
+
+#[cfg(all(test, target_os = "linux"))]
+mod memory;
 
 #[cfg(test)]
 mod tests {
