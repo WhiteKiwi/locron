@@ -16,6 +16,147 @@ use crate::runner::{
 
 const MAX_GLOBAL_CONCURRENCY: usize = 64;
 
+// The original future expression is evaluated once, before the borrowed observer
+// is constructed. Non-Windows and release expansion is that exact expression.
+#[cfg(all(windows, debug_assertions))]
+macro_rules! wake_future {
+    ($future:expr, $op:expr, $mapper:ident) => {
+        observe_future($future, $op, $mapper)
+    };
+}
+#[cfg(not(all(windows, debug_assertions)))]
+macro_rules! wake_future {
+    ($future:expr, $op:expr, $mapper:ident) => {
+        $future
+    };
+}
+#[cfg(all(windows, debug_assertions))]
+macro_rules! wake_attempt {
+    ($future:expr, $attempt:expr, $op:expr, $value:expr, $mapper:ident) => {
+        observe_attempt(
+            $future,
+            &$attempt.run_id,
+            $attempt.context.attempt,
+            $op,
+            $value,
+            $mapper,
+        )
+    };
+}
+#[cfg(not(all(windows, debug_assertions)))]
+macro_rules! wake_attempt {
+    ($future:expr, $attempt:expr, $op:expr, $value:expr, $mapper:ident) => {
+        $future
+    };
+}
+
+#[cfg(all(windows, debug_assertions))]
+fn wake_phase(op: &'static str, edge: &'static str, value: Option<u64>) {
+    tracing::trace!(target: "locron::windows_wake_diagnostics", op, edge,
+        value_present = value.is_some(), value = value.unwrap_or(0),
+        kind = "none", raw_present = false, raw = 0_i64);
+}
+#[cfg(all(windows, debug_assertions))]
+fn attempt_phase(
+    run_uuid: &str,
+    ordinal: u32,
+    op: &'static str,
+    edge: &'static str,
+    value: Option<u64>,
+) {
+    tracing::trace!(target: "locron::windows_wake_diagnostics", op, edge,
+        value_present = value.is_some(), value = value.unwrap_or(0),
+        kind = "none", raw_present = false, raw = 0_i64, run_uuid, ordinal = u64::from(ordinal));
+}
+#[cfg(all(windows, debug_assertions))]
+async fn observe_future<F, T>(
+    future: F,
+    op: &'static str,
+    returned: fn(&T) -> (&'static str, Option<u64>),
+) -> T
+where
+    F: Future<Output = T>,
+{
+    // This body is entered only on the wrapper's first actual poll.
+    wake_phase(op, "enter", None);
+    let result = future.await;
+    let (edge, value) = returned(&result);
+    wake_phase(op, edge, value);
+    result
+}
+#[cfg(all(windows, debug_assertions))]
+async fn observe_attempt<F, T>(
+    future: F,
+    run_uuid: &str,
+    ordinal: u32,
+    op: &'static str,
+    value: Option<u64>,
+    returned: fn(&T) -> (&'static str, Option<u64>),
+) -> T
+where
+    F: Future<Output = T>,
+{
+    attempt_phase(run_uuid, ordinal, op, "enter", value);
+    let result = future.await;
+    let (edge, value) = returned(&result);
+    attempt_phase(run_uuid, ordinal, op, edge, value);
+    result
+}
+#[cfg(all(windows, debug_assertions))]
+fn unit_return<E>(result: &Result<(), E>) -> (&'static str, Option<u64>) {
+    (if result.is_ok() { "ok" } else { "err" }, None)
+}
+#[cfg(all(windows, debug_assertions))]
+fn tick_return(result: &Result<TickResult, DaemonError>) -> (&'static str, Option<u64>) {
+    (if result.is_ok() { "ok" } else { "err" }, None)
+}
+#[cfg(all(windows, debug_assertions))]
+fn count_return(result: &Result<usize, String>) -> (&'static str, Option<u64>) {
+    match result {
+        Ok(count) => ("ok", u64::try_from(*count).ok()),
+        Err(_) => ("err", None),
+    }
+}
+#[cfg(all(windows, debug_assertions))]
+fn admitted_return(result: &Result<Vec<AdmittedAttempt>, String>) -> (&'static str, Option<u64>) {
+    match result {
+        Ok(attempts) => ("ok", u64::try_from(attempts.len()).ok()),
+        Err(_) => ("err", None),
+    }
+}
+#[cfg(all(windows, debug_assertions))]
+fn bool_return(result: &Result<bool, String>) -> (&'static str, Option<u64>) {
+    match result {
+        Ok(value) => ("ok", Some(u64::from(*value))),
+        Err(_) => ("err", None),
+    }
+}
+#[cfg(all(windows, debug_assertions))]
+fn execution_return(result: &Result<ExecutionOutcome, RunnerError>) -> (&'static str, Option<u64>) {
+    match result {
+        Ok(outcome) => (
+            "ok",
+            Some(match &outcome.kind {
+                crate::runner::OutcomeKind::Succeeded => 1,
+                crate::runner::OutcomeKind::FailedRetryable => 2,
+                crate::runner::OutcomeKind::Failed => 3,
+                crate::runner::OutcomeKind::TimedOut => 4,
+                crate::runner::OutcomeKind::Cancelled => 5,
+                crate::runner::OutcomeKind::TerminationUnconfirmed => 6,
+            }),
+        ),
+        Err(_) => ("err", None),
+    }
+}
+#[cfg(all(windows, debug_assertions))]
+fn completion_return(result: &Result<(), CompletionError>) -> (&'static str, Option<u64>) {
+    match result {
+        Ok(()) => ("ok", None),
+        Err(CompletionError::Transient(_)) => ("err", Some(1)),
+        Err(CompletionError::Conflict(_)) => ("err", Some(2)),
+    }
+}
+
 /// Daemon timing and resource limits.
 #[derive(Clone, Debug)]
 pub struct DaemonConfig {
@@ -188,18 +329,21 @@ impl<S: DaemonStore> Daemon<S> {
 
     /// Performs one deterministic reconcile/admission pass.
     pub async fn tick(&self, semaphore: &Arc<Semaphore>) -> Result<TickResult, DaemonError> {
-        let reconciled = match self.store.reconcile().await {
+        let reconciled = match wake_future!(self.store.reconcile(), "reconcile", count_return).await
+        {
             Ok(count) => count,
             Err(error) => {
                 self.store.persistence_degraded(&error).await;
                 return Err(DaemonError::Store(error));
             }
         };
-        if let Err(error) = self.store.maintain().await {
+        if let Err(error) = wake_future!(self.store.maintain(), "maintain", unit_return).await {
             self.store.persistence_degraded(&error).await;
             tracing::error!(%error, "daemon maintenance failed; continuing reconciliation");
         }
         let available = semaphore.available_permits();
+        #[cfg(all(windows, debug_assertions))]
+        wake_phase("capacity", "ok", u64::try_from(available).ok());
         if available > MAX_GLOBAL_CONCURRENCY {
             return Err(DaemonError::InvalidConcurrency);
         }
@@ -209,13 +353,14 @@ impl<S: DaemonStore> Daemon<S> {
                 admitted: 0,
             });
         }
-        let attempts = match self.store.admit(available).await {
-            Ok(attempts) => attempts,
-            Err(error) => {
-                self.store.persistence_degraded(&error).await;
-                return Err(DaemonError::Store(error));
-            }
-        };
+        let attempts =
+            match wake_future!(self.store.admit(available), "admit", admitted_return).await {
+                Ok(attempts) => attempts,
+                Err(error) => {
+                    self.store.persistence_degraded(&error).await;
+                    return Err(DaemonError::Store(error));
+                }
+            };
         let admitted = attempts.len();
         for mut attempt in attempts {
             let shutdown = self.cancellation.child_token();
@@ -230,6 +375,8 @@ impl<S: DaemonStore> Daemon<S> {
             let retry_cap = self.config.pre_spawn_retry_cap;
             let wake = Arc::clone(&self.wake);
             self.tracker.spawn(async move {
+                #[cfg(all(windows, debug_assertions))]
+                attempt_phase(&attempt.run_id, attempt.context.attempt, "attempt_begin", "enter", None);
                 crate::test_crash_boundary("before-spawn").await;
                 let mut retry_delay = retry_initial;
                 loop {
@@ -239,7 +386,7 @@ impl<S: DaemonStore> Daemon<S> {
                             drop(permit);
                             return;
                         }
-                        decision = store.mark_running(&attempt) => decision,
+                        decision = wake_attempt!(store.mark_running(&attempt), attempt, "mark_running", None, bool_return) => decision,
                     };
                     match decision {
                         Ok(true) => break,
@@ -262,13 +409,19 @@ impl<S: DaemonStore> Daemon<S> {
                 }
                 let cancellation = attempt.context.cancellation.clone();
                 let execution = runner.execute(&attempt.target, &attempt.context);
+                #[cfg(all(windows, debug_assertions))]
+                let execution = observe_attempt(execution, &attempt.run_id, attempt.context.attempt, "execution", None, execution_return);
                 tokio::pin!(execution);
                 let outcome = loop {
                     tokio::select! {
                         outcome = &mut execution => break outcome,
                         () = tokio::time::sleep(Duration::from_millis(200)) => {
-                            match store.cancellation_requested(&attempt.run_id).await {
-                                Ok(true) => cancellation.cancel(),
+                            match wake_attempt!(store.cancellation_requested(&attempt.run_id), attempt, "cancel_poll", None, bool_return).await {
+                                Ok(true) => {
+                                    cancellation.cancel();
+                                    #[cfg(all(windows, debug_assertions))]
+                                    attempt_phase(&attempt.run_id, attempt.context.attempt, "cancel_signal", "ok", None);
+                                },
                                 Ok(false) => {}
                                 Err(error) => store.persistence_degraded(&error).await,
                             }
@@ -284,12 +437,12 @@ impl<S: DaemonStore> Daemon<S> {
                         loop {
                             let completion = if first_completion {
                                 first_completion = false;
-                                store.complete(&attempt, &outcome, completed_at_us).await
+                                wake_attempt!(store.complete(&attempt, &outcome, completed_at_us), attempt, "completion", None, completion_return).await
                             } else {
                                 tokio::select! {
                                     biased;
                                     () = shutdown.cancelled() => break,
-                                    completion = store.complete(&attempt, &outcome, completed_at_us) => completion,
+                                    completion = wake_attempt!(store.complete(&attempt, &outcome, completed_at_us), attempt, "completion", None, completion_return) => completion,
                                 }
                             };
                             match completion {
@@ -302,13 +455,13 @@ impl<S: DaemonStore> Daemon<S> {
                                     let reason = format!(
                                         "durable completion conflict after target outcome: {error}"
                                     );
-                                    let fallback = store
+                                    let fallback = wake_attempt!(store
                                         .complete_runner_failure(
                                             &attempt,
                                             RunnerFailureKind::ExecutionMayHaveStarted,
                                             &reason,
                                             completed_at_us,
-                                        )
+                                        ), attempt, "failure_complete", Some(2), completion_return)
                                         .await;
                                     if let Err(CompletionError::Conflict(error)) = fallback {
                                         tracing::error!(
@@ -339,24 +492,30 @@ impl<S: DaemonStore> Daemon<S> {
                         loop {
                             let completion = if first_completion {
                                 first_completion = false;
-                                store
+                                wake_attempt!(store
                                     .complete_runner_failure(
                                         &attempt,
                                         kind,
                                         &reason,
                                         completed_at_us,
-                                    )
+                                    ), attempt, "failure_complete", Some(match kind {
+                                        RunnerFailureKind::OutputPreparation => 1,
+                                        RunnerFailureKind::ExecutionMayHaveStarted => 2,
+                                    }), completion_return)
                                     .await
                             } else {
                                 tokio::select! {
                                     biased;
                                     () = shutdown.cancelled() => break,
-                                    completion = store.complete_runner_failure(
+                                    completion = wake_attempt!(store.complete_runner_failure(
                                         &attempt,
                                         kind,
                                         &reason,
                                         completed_at_us,
-                                    ) => completion,
+                                    ), attempt, "failure_complete", Some(match kind {
+                                        RunnerFailureKind::OutputPreparation => 1,
+                                        RunnerFailureKind::ExecutionMayHaveStarted => 2,
+                                    }), completion_return) => completion,
                                 }
                             };
                             match completion {
@@ -404,8 +563,7 @@ impl<S: DaemonStore> Daemon<S> {
     where
         F: Future<Output = ()> + Send,
     {
-        self.store
-            .begin_lifetime()
+        wake_future!(self.store.begin_lifetime(), "begin_lifetime", unit_return)
             .await
             .map_err(DaemonError::Store)?;
         let semaphore = Arc::new(Semaphore::new(MAX_GLOBAL_CONCURRENCY));
@@ -413,20 +571,60 @@ impl<S: DaemonStore> Daemon<S> {
         let mut first = true;
         loop {
             if !first {
+                #[cfg(all(windows, debug_assertions))]
+                wake_phase("delay", "enter", None);
+                #[cfg(all(windows, debug_assertions))]
+                let diagnostic_edge;
                 let admission_delay = match self.store.next_admission_delay().await {
-                    Ok(Some(delay)) => delay.min(self.config.safety_reconciliation),
-                    Ok(None) => self.config.safety_reconciliation,
+                    Ok(Some(delay)) => {
+                        #[cfg(all(windows, debug_assertions))]
+                        {
+                            diagnostic_edge = "some";
+                        }
+                        delay.min(self.config.safety_reconciliation)
+                    }
+                    Ok(None) => {
+                        #[cfg(all(windows, debug_assertions))]
+                        {
+                            diagnostic_edge = "none";
+                        }
+                        self.config.safety_reconciliation
+                    }
                     Err(error) => {
+                        #[cfg(all(windows, debug_assertions))]
+                        {
+                            diagnostic_edge = "err";
+                        }
                         self.store.persistence_degraded(&error).await;
                         self.config.safety_reconciliation
                     }
                 };
+                #[cfg(all(windows, debug_assertions))]
+                {
+                    let chosen = u64::try_from(admission_delay.as_micros()).unwrap_or(u64::MAX);
+                    wake_phase("delay", diagnostic_edge, Some(chosen));
+                    wake_phase("wait", "enter", Some(chosen));
+                }
                 tokio::select! {
                     biased;
-                    () = external_cancel.cancelled() => break,
-                    () = &mut shutdown_signal => break,
-                    () = self.wake.notified() => {}
-                    () = tokio::time::sleep(admission_delay) => {}
+                    () = external_cancel.cancelled() => {
+                        #[cfg(all(windows, debug_assertions))]
+                        wake_phase("wait", "external", None);
+                        break;
+                    },
+                    () = &mut shutdown_signal => {
+                        #[cfg(all(windows, debug_assertions))]
+                        wake_phase("wait", "signal", None);
+                        break;
+                    },
+                    () = self.wake.notified() => {
+                        #[cfg(all(windows, debug_assertions))]
+                        wake_phase("wait", "wake", None);
+                    }
+                    () = tokio::time::sleep(admission_delay) => {
+                        #[cfg(all(windows, debug_assertions))]
+                        wake_phase("wait", "timer", None);
+                    }
                 }
             }
             first = false;
@@ -435,7 +633,7 @@ impl<S: DaemonStore> Daemon<S> {
                 biased;
                 () = external_cancel.cancelled() => break,
                 () = &mut shutdown_signal => break,
-                tick = self.tick(&semaphore) => tick,
+                tick = wake_future!(self.tick(&semaphore), "tick", tick_return) => tick,
             };
             if let Err(error) = tick {
                 tracing::error!(%error, "daemon tick failed; admission paused until next reconciliation");

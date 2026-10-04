@@ -1135,6 +1135,10 @@ fn wake_socket_makes_new_manual_run_promptly_visible_to_daemon() {
     #[cfg(windows)]
     {
         let result = windows_cli_control::run_wake_case();
+        #[cfg(debug_assertions)]
+        if !result.succeeded() {
+            eprintln!("{}", result.producer_output());
+        }
         assert!(
             result.succeeded(),
             "wake notification did not prompt daemon admission: {result}"
@@ -1192,6 +1196,10 @@ fn durable_cancel_terminates_a_running_process() {
     #[cfg(windows)]
     {
         let result = windows_cli_control::run_cancel_case();
+        #[cfg(debug_assertions)]
+        if !result.succeeded() {
+            eprintln!("{}", result.producer_output());
+        }
         assert!(
             result.succeeded(),
             "durable cancellation did not terminate the process: {result}\n{}",

@@ -1853,6 +1853,1055 @@ impl PairedCapture {
 }
 // END paired daemon diagnostic domains.
 
+// BEGIN independent producer domains. No raw carrier/key enters a public result.
+#[cfg(debug_assertions)]
+const WAKE_OPS: [&str; 22] = [
+    "role_lock",
+    "store_open",
+    "settings",
+    "enqueue",
+    "hint",
+    "begin_lifetime",
+    "tick",
+    "reconcile",
+    "maintain",
+    "capacity",
+    "admit",
+    "delay",
+    "wait",
+    "run_return",
+    "attempt_begin",
+    "mark_running",
+    "execution",
+    "cancel_poll",
+    "cancel_signal",
+    "completion",
+    "failure_complete",
+    "limit",
+];
+#[cfg(debug_assertions)]
+const WAKE_EDGES: [&str; 9] = [
+    "enter", "ok", "err", "some", "none", "wake", "timer", "external", "signal",
+];
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ProducerCapture {
+    Complete,
+    Empty,
+    Truncated,
+    Malformed,
+    Oversized,
+    Overflow,
+    BindingRefused,
+    Late,
+    ReadError,
+    Unreaped,
+    Unobserved,
+}
+#[cfg(debug_assertions)]
+impl ProducerCapture {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Empty => "empty",
+            Self::Truncated => "truncated",
+            Self::Malformed => "malformed",
+            Self::Oversized => "oversized",
+            Self::Overflow => "overflow",
+            Self::BindingRefused => "binding_refused",
+            Self::Late => "late",
+            Self::ReadError => "read_error",
+            Self::Unreaped => "unreaped",
+            Self::Unobserved => "unobserved",
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy, Default)]
+struct ProducerOp {
+    enter: u16,
+    returned: u16,
+    edge: Option<u8>,
+    value: Option<u64>,
+    pending: bool,
+}
+#[cfg(debug_assertions)]
+impl ProducerOp {
+    fn observe(&mut self, row: WakeRow, retry: bool) -> bool {
+        if row.edge == 0 {
+            if self.pending || (self.returned != 0 && !retry) {
+                return false;
+            }
+            self.enter = row.sequence;
+            self.pending = true;
+        } else {
+            if !self.pending {
+                return false;
+            }
+            self.returned = row.sequence;
+            self.edge = Some(row.edge);
+            self.value = row.value;
+            self.pending = false;
+        }
+        true
+    }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy)]
+struct WakeRow {
+    sequence: u16,
+    tick: u8,
+    attempt: u8,
+    op: u8,
+    edge: u8,
+    value: Option<u64>,
+    kind: &'static str,
+    raw: Option<i32>,
+    time: u64,
+}
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy, Default)]
+struct AttemptLedger {
+    digest: [u8; 32],
+    ordinal: u32,
+    binding: u16,
+    begun: bool,
+    mark: ProducerOp,
+    execution: ProducerOp,
+    poll: ProducerOp,
+    signal: u16,
+    signalled_poll: u16,
+    completion: ProducerOp,
+    failure: ProducerOp,
+    failure_kind: Option<u64>,
+}
+#[cfg(debug_assertions)]
+impl AttemptLedger {
+    fn observe(&mut self, row: WakeRow) -> bool {
+        match row.op {
+            14 => {
+                if self.begun || row.edge != 0 {
+                    return false;
+                }
+                self.begun = true;
+                true
+            }
+            15 => {
+                self.begun
+                    && self.execution.enter == 0
+                    && self.mark.observe(row, self.mark.edge == Some(2))
+            }
+            16 => {
+                self.begun
+                    && !self.mark.pending
+                    && self.mark.edge == Some(1)
+                    && self.mark.value == Some(1)
+                    && (row.edge == 0 || !self.poll.pending)
+                    && self.execution.observe(row, false)
+            }
+            17 => self.execution.pending && self.poll.observe(row, self.poll.returned != 0),
+            18 => {
+                if !self.execution.pending
+                    || self.poll.pending
+                    || self.poll.edge != Some(1)
+                    || self.poll.value != Some(1)
+                    || self.poll.returned == self.signalled_poll
+                {
+                    return false;
+                }
+                self.signal = row.sequence;
+                self.signalled_poll = self.poll.returned;
+                true
+            }
+            19 => {
+                !self.execution.pending
+                    && self.execution.edge == Some(1)
+                    && self.completion.observe(
+                        row,
+                        self.completion.edge == Some(2) && self.completion.value == Some(1),
+                    )
+            }
+            20 => {
+                let runner_error = !self.execution.pending && self.execution.edge == Some(2);
+                let conflict = !self.completion.pending
+                    && self.completion.edge == Some(2)
+                    && self.completion.value == Some(2);
+                if row.edge == 0 {
+                    if self
+                        .failure_kind
+                        .is_some_and(|kind| row.value != Some(kind))
+                    {
+                        return false;
+                    }
+                    self.failure_kind = row.value;
+                }
+                (runner_error || conflict)
+                    && (!conflict || row.edge != 0 || row.value == Some(2))
+                    && self.failure.observe(
+                        row,
+                        runner_error
+                            && self.failure.edge == Some(2)
+                            && self.failure.value == Some(1),
+                    )
+            }
+            _ => false,
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+struct WakeLedger {
+    sequence: u16,
+    tick: u8,
+    count: u8,
+    awaiting_begin: Option<u8>,
+    time: Option<u64>,
+    latest: Option<WakeRow>,
+    ops: [ProducerOp; 14],
+    attempts: [AttemptLedger; 64],
+    hint_kind: &'static str,
+    hint_raw: Option<i32>,
+}
+#[cfg(debug_assertions)]
+impl WakeLedger {
+    fn empty() -> Self {
+        Self {
+            sequence: 0,
+            tick: 0,
+            count: 0,
+            awaiting_begin: None,
+            time: None,
+            latest: None,
+            ops: [ProducerOp::default(); 14],
+            attempts: [AttemptLedger::default(); 64],
+            hint_kind: "none",
+            hint_raw: None,
+        }
+    }
+    fn sequence(&mut self, sequence: u16, time: u64) -> bool {
+        if sequence != self.sequence + 1
+            || sequence > 256
+            || self.time.is_some_and(|previous| time < previous)
+        {
+            return false;
+        }
+        self.sequence = sequence;
+        self.time = Some(time);
+        true
+    }
+    fn observe(&mut self, row: WakeRow, run: bool) -> bool {
+        if self
+            .awaiting_begin
+            .is_some_and(|epoch| row.op != 14 || row.attempt != epoch)
+        {
+            return false;
+        }
+        if row.op >= 14 && row.op <= 20 {
+            if run || row.tick != 0 || row.attempt == 0 || row.attempt > self.count {
+                return false;
+            }
+            if !self.attempts[usize::from(row.attempt - 1)].observe(row) {
+                return false;
+            }
+            if row.op == 14 {
+                self.awaiting_begin = None;
+            }
+        } else {
+            if row.attempt != 0 {
+                return false;
+            }
+            let op = usize::from(row.op);
+            if run {
+                if row.tick != 0 || ![3, 4, 13].contains(&op) {
+                    return false;
+                }
+                if op == 13 {
+                    if self.ops[13].returned != 0
+                        || (row.edge == 1
+                            && (self.ops[3].edge != Some(1) || self.ops[4].returned == 0))
+                    {
+                        return false;
+                    }
+                    self.ops[13].returned = row.sequence;
+                    self.ops[13].edge = Some(row.edge);
+                } else {
+                    if op == 4 && self.ops[3].edge != Some(1) {
+                        return false;
+                    }
+                    if !self.ops[op].observe(row, false) {
+                        return false;
+                    }
+                    if op == 4 && row.edge != 0 {
+                        self.hint_kind = row.kind;
+                        self.hint_raw = row.raw;
+                    }
+                }
+            } else if [0, 1, 2, 5].contains(&op) {
+                if row.tick != 0 || self.tick != 0 {
+                    return false;
+                }
+                let preceding = match op {
+                    1 => Some(0),
+                    2 => Some(1),
+                    5 => Some(2),
+                    _ => None,
+                };
+                if preceding.is_some_and(|index| self.ops[index].edge != Some(1))
+                    || !self.ops[op].observe(row, false)
+                {
+                    return false;
+                }
+            } else {
+                if ![6, 7, 8, 9, 10, 11, 12].contains(&op) || self.ops[5].edge != Some(1) {
+                    return false;
+                }
+                if op == 6 && row.edge == 0 {
+                    if self.tick == 255
+                        || row.tick != self.tick + 1
+                        || self.ops[6].pending
+                        || (self.tick > 0
+                            && (self.ops[12].pending || !matches!(self.ops[12].edge, Some(5 | 6))))
+                    {
+                        return false;
+                    }
+                    self.tick = row.tick;
+                    for index in [7, 8, 9, 10, 11, 12] {
+                        self.ops[index] = ProducerOp::default();
+                    }
+                }
+                if row.tick == 0 || row.tick != self.tick {
+                    return false;
+                }
+                if [7, 8, 9, 10].contains(&op) && !self.ops[6].pending {
+                    return false;
+                }
+                match op {
+                    6 if row.edge != 0 => {
+                        if self.ops[7].pending
+                            || self.ops[8].pending
+                            || self.ops[10].pending
+                            || self.ops[7].returned == 0
+                        {
+                            return false;
+                        }
+                        if row.edge == 1
+                            && (self.ops[9].returned == 0
+                                || (self.ops[9].value != Some(0) && self.ops[10].edge != Some(1)))
+                        {
+                            return false;
+                        }
+                    }
+                    8 if self.ops[7].edge != Some(1) => return false,
+                    9 if self.ops[8].returned == 0 => return false,
+                    10 if self.ops[9].returned == 0 || self.ops[9].value == Some(0) => {
+                        return false;
+                    }
+                    11 if self.ops[6].pending || self.ops[6].returned == 0 => return false,
+                    12 if self.ops[11].pending
+                        || self.ops[11].returned == 0
+                        || (row.edge == 0 && row.value != self.ops[11].value) =>
+                    {
+                        return false;
+                    }
+                    _ => {}
+                }
+                if op == 9 {
+                    if self.ops[9].returned != 0 {
+                        return false;
+                    }
+                    self.ops[9].returned = row.sequence;
+                    self.ops[9].edge = Some(row.edge);
+                    self.ops[9].value = row.value;
+                } else if !self.ops[op].observe(row, op == 6 && self.ops[6].returned != 0) {
+                    return false;
+                }
+            }
+        }
+        self.latest = Some(row);
+        true
+    }
+}
+
+#[cfg(debug_assertions)]
+fn wake_unsigned(text: &str, maximum: u64) -> Option<u64> {
+    if text.is_empty()
+        || (text.len() > 1 && text.starts_with('0'))
+        || !text.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    text.parse::<u64>().ok().filter(|value| *value <= maximum)
+}
+#[cfg(debug_assertions)]
+fn wake_value(text: &str) -> Option<Option<u64>> {
+    if text == "None" {
+        Some(None)
+    } else {
+        Some(Some(wake_unsigned(
+            text.strip_prefix("Some(")?.strip_suffix(')')?,
+            u64::MAX,
+        )?))
+    }
+}
+#[cfg(debug_assertions)]
+fn wake_signed(text: &str) -> Option<Option<i32>> {
+    if text == "None" {
+        return Some(None);
+    }
+    let number = text.strip_prefix("Some(")?.strip_suffix(')')?;
+    let absolute = number.strip_prefix('-').unwrap_or(number);
+    let value = wake_unsigned(absolute, 2_147_483_648)?;
+    if number == "-0" {
+        return None;
+    }
+    let signed = if number.starts_with('-') {
+        -i64::try_from(value).ok()?
+    } else {
+        i64::try_from(value).ok()?
+    };
+    Some(Some(i32::try_from(signed).ok()?))
+}
+#[cfg(debug_assertions)]
+fn wake_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
+    if text.len() != N * 2 {
+        return None;
+    }
+    let mut result = [0; N];
+    for (destination, pair) in result.iter_mut().zip(text.as_bytes().chunks_exact(2)) {
+        let digit = |byte: u8| match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            _ => None,
+        };
+        *destination = digit(pair[0])? * 16 + digit(pair[1])?;
+    }
+    Some(result)
+}
+#[cfg(debug_assertions)]
+fn wake_fields<'a, const N: usize>(
+    line: &'a str,
+    marker: &str,
+    names: [&str; N],
+) -> Option<[&'a str; N]> {
+    let mut tokens = line.split(' ');
+    if tokens.next()? != marker {
+        return None;
+    }
+    let mut values = [""; N];
+    for (value, name) in values.iter_mut().zip(names) {
+        let token = tokens.next()?;
+        let (key, text) = token.split_once('=')?;
+        if key != name || text.is_empty() {
+            return None;
+        }
+        *value = text;
+    }
+    if tokens.next().is_some() {
+        return None;
+    }
+    Some(values)
+}
+
+#[cfg(debug_assertions)]
+fn wake_shape(row: WakeRow) -> bool {
+    let absent = row.value.is_none();
+    if (row.op != 4 || row.edge != 2) && (row.kind != "none" || row.raw.is_some()) {
+        return false;
+    }
+    match row.op {
+        14 => row.edge == 0 && absent,
+        18 => row.edge == 1 && absent,
+        15 | 17 => match row.edge {
+            0 | 2 => absent,
+            1 => matches!(row.value, Some(0 | 1)),
+            _ => false,
+        },
+        16 => match row.edge {
+            0 | 2 => absent,
+            1 => row.value.is_some_and(|value| (1..=6).contains(&value)),
+            _ => false,
+        },
+        19 | 20 => match row.edge {
+            0 if row.op == 20 => matches!(row.value, Some(1 | 2)),
+            0 | 1 => absent,
+            2 => matches!(row.value, Some(1 | 2)),
+            _ => false,
+        },
+        9 => row.edge == 1 && row.value.is_some(),
+        7 | 10 if row.edge == 1 => row.value.is_some(),
+        11 => {
+            if row.edge == 0 {
+                absent
+            } else {
+                [2, 3, 4].contains(&row.edge) && row.value.is_some_and(|value| value <= 30_000_000)
+            }
+        }
+        12 => {
+            if row.edge == 0 {
+                row.value.is_some_and(|value| value <= 30_000_000)
+            } else {
+                (5..=8).contains(&row.edge) && absent
+            }
+        }
+        13 => [1, 2].contains(&row.edge) && absent,
+        21 => row.edge == 2 && absent && row.tick == 0 && row.attempt == 0,
+        _ => [0, 1, 2].contains(&row.edge) && absent,
+    }
+}
+
+#[cfg(debug_assertions)]
+fn wake_digest(context: [u8; 16], uuid: [u8; 16], ordinal: u32) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    hash.update(b"locron-wake-attempt/v1\0");
+    hash.update(context);
+    hash.update(uuid);
+    hash.update(ordinal.to_be_bytes());
+    hash.finalize().into()
+}
+
+#[cfg(debug_assertions)]
+fn decode_wake(bytes: &[u8], context: [u8; 16], run: bool) -> Result<WakeLedger, ProducerCapture> {
+    if bytes.len() > 65_536 {
+        return Err(ProducerCapture::Oversized);
+    }
+    if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+        return Err(ProducerCapture::Truncated);
+    }
+    let mut ledger = WakeLedger::empty();
+    let mut terminal = false;
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        if !line
+            .windows(b"locron_wake_".len())
+            .any(|window| window == b"locron_wake_")
+        {
+            continue;
+        }
+        if terminal || !line.is_ascii() || line.contains(&b'\r') {
+            return Err(ProducerCapture::Malformed);
+        }
+        let text = std::str::from_utf8(line.strip_suffix(b"\n").ok_or(ProducerCapture::Truncated)?)
+            .map_err(|_| ProducerCapture::Malformed)?;
+        if text.starts_with("locron_wake_bind/v1 ") {
+            if run || line.len() > 203 || ledger.awaiting_begin.is_some() {
+                return Err(ProducerCapture::BindingRefused);
+            }
+            let fields = wake_fields(
+                text,
+                "locron_wake_bind/v1",
+                ["ctx", "role", "seq", "attempt", "ordinal", "corr", "t_us"],
+            )
+            .ok_or(ProducerCapture::Malformed)?;
+            let (
+                Some(observed_context),
+                "daemon",
+                Some(sequence),
+                Some(epoch),
+                Some(ordinal),
+                Some(digest),
+                Some(time),
+            ) = (
+                wake_hex::<16>(fields[0]),
+                fields[1],
+                wake_unsigned(fields[2], 255),
+                wake_unsigned(fields[3], 64),
+                wake_unsigned(fields[4], u64::from(u32::MAX)),
+                wake_hex::<32>(fields[5]),
+                wake_unsigned(fields[6], u64::MAX),
+            )
+            else {
+                return Err(ProducerCapture::BindingRefused);
+            };
+            if observed_context != context
+                || epoch == 0
+                || epoch != u64::from(ledger.count) + 1
+                || ordinal == 0
+                || ledger.attempts[..usize::from(ledger.count)]
+                    .iter()
+                    .any(|entry| entry.digest == digest && u64::from(entry.ordinal) == ordinal)
+                || !ledger.sequence(
+                    u16::try_from(sequence).map_err(|_| ProducerCapture::Malformed)?,
+                    time,
+                )
+            {
+                return Err(ProducerCapture::BindingRefused);
+            }
+            ledger.attempts[usize::from(ledger.count)] = AttemptLedger {
+                digest,
+                ordinal: u32::try_from(ordinal).map_err(|_| ProducerCapture::BindingRefused)?,
+                binding: u16::try_from(sequence).map_err(|_| ProducerCapture::Malformed)?,
+                ..AttemptLedger::default()
+            };
+            ledger.count += 1;
+            ledger.awaiting_begin = Some(ledger.count);
+            continue;
+        }
+        if line.len() > 241 {
+            return Err(ProducerCapture::Malformed);
+        }
+        let fields = wake_fields(
+            text,
+            "locron_wake_phase/v2",
+            [
+                "ctx", "role", "seq", "tick", "attempt", "op", "edge", "value", "kind", "raw",
+                "t_us",
+            ],
+        )
+        .ok_or(ProducerCapture::Malformed)?;
+        let Some(observed_context) = wake_hex::<16>(fields[0]) else {
+            return Err(ProducerCapture::BindingRefused);
+        };
+        if observed_context != context || fields[1] != if run { "run" } else { "daemon" } {
+            return Err(ProducerCapture::BindingRefused);
+        }
+        let row = WakeRow {
+            sequence: u16::try_from(
+                wake_unsigned(fields[2], 256).ok_or(ProducerCapture::Malformed)?,
+            )
+            .map_err(|_| ProducerCapture::Malformed)?,
+            tick: u8::try_from(wake_unsigned(fields[3], 255).ok_or(ProducerCapture::Malformed)?)
+                .map_err(|_| ProducerCapture::Malformed)?,
+            attempt: u8::try_from(wake_unsigned(fields[4], 64).ok_or(ProducerCapture::Malformed)?)
+                .map_err(|_| ProducerCapture::Malformed)?,
+            op: u8::try_from(
+                WAKE_OPS
+                    .iter()
+                    .position(|op| *op == fields[5])
+                    .ok_or(ProducerCapture::Malformed)?,
+            )
+            .map_err(|_| ProducerCapture::Malformed)?,
+            edge: u8::try_from(
+                WAKE_EDGES
+                    .iter()
+                    .position(|edge| *edge == fields[6])
+                    .ok_or(ProducerCapture::Malformed)?,
+            )
+            .map_err(|_| ProducerCapture::Malformed)?,
+            value: wake_value(fields[7]).ok_or(ProducerCapture::Malformed)?,
+            kind: if ["none", "unknown"].contains(&fields[8]) {
+                if fields[8] == "none" {
+                    "none"
+                } else {
+                    "unknown"
+                }
+            } else {
+                STORE_IO_KINDS
+                    .iter()
+                    .copied()
+                    .find(|kind| *kind == fields[8])
+                    .ok_or(ProducerCapture::Malformed)?
+            },
+            raw: wake_signed(fields[9]).ok_or(ProducerCapture::Malformed)?,
+            time: wake_unsigned(fields[10], u64::MAX).ok_or(ProducerCapture::Malformed)?,
+        };
+        if !wake_shape(row) || !ledger.sequence(row.sequence, row.time) {
+            return Err(ProducerCapture::Malformed);
+        }
+        if row.op == 21 {
+            terminal = true;
+            continue;
+        }
+        if row.sequence == 256 || !ledger.observe(row, run) {
+            return Err(ProducerCapture::Malformed);
+        }
+    }
+    if terminal {
+        Err(ProducerCapture::Overflow)
+    } else {
+        Ok(ledger)
+    }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy)]
+struct ProducerFact {
+    capture: ProducerCapture,
+    bytes: Option<u32>,
+    records: Option<u16>,
+    time: Option<u64>,
+    latest: Option<WakeRow>,
+    enqueue: ProducerOp,
+    hint: ProducerOp,
+    kind: &'static str,
+    raw: Option<i32>,
+    matched: Option<(u8, AttemptLedger)>,
+    binding_refused: bool,
+}
+#[cfg(debug_assertions)]
+impl ProducerFact {
+    const UNOBSERVED: Self = Self {
+        capture: ProducerCapture::Unobserved,
+        bytes: None,
+        records: None,
+        time: None,
+        latest: None,
+        enqueue: ProducerOp {
+            enter: 0,
+            returned: 0,
+            edge: None,
+            value: None,
+            pending: false,
+        },
+        hint: ProducerOp {
+            enter: 0,
+            returned: 0,
+            edge: None,
+            value: None,
+            pending: false,
+        },
+        kind: "none",
+        raw: None,
+        matched: None,
+        binding_refused: false,
+    };
+    fn from_bytes(bytes: &[u8], context: [u8; 16], run: bool, uuid: Option<[u8; 16]>) -> Self {
+        let count = u32::try_from(bytes.len()).ok();
+        let ledger = match decode_wake(bytes, context, run) {
+            Ok(ledger) => ledger,
+            Err(capture) => {
+                return Self {
+                    capture,
+                    bytes: count,
+                    binding_refused: capture == ProducerCapture::BindingRefused,
+                    ..Self::UNOBSERVED
+                };
+            }
+        };
+        let matched = uuid.and_then(|uuid| {
+            ledger.attempts[..usize::from(ledger.count)]
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| entry.digest == wake_digest(context, uuid, entry.ordinal))
+                .max_by_key(|(_, entry)| entry.binding)
+                .and_then(|(index, entry)| {
+                    u8::try_from(index + 1).ok().map(|epoch| (epoch, *entry))
+                })
+        });
+        Self {
+            capture: if ledger.sequence == 0 {
+                ProducerCapture::Empty
+            } else {
+                ProducerCapture::Complete
+            },
+            bytes: count,
+            records: Some(ledger.sequence),
+            time: ledger.time,
+            latest: ledger.latest,
+            enqueue: ledger.ops[3],
+            hint: ledger.ops[4],
+            kind: ledger.hint_kind,
+            raw: ledger.hint_raw,
+            matched,
+            binding_refused: false,
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy)]
+enum CancelReply {
+    Unobserved,
+    Requested,
+    BeforeExecution,
+}
+#[cfg(debug_assertions)]
+impl CancelReply {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Unobserved => "unobserved",
+            Self::Requested => "requested",
+            Self::BeforeExecution => "before_execution",
+        }
+    }
+}
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy)]
+struct ProducerSnapshot {
+    facts: [ProducerFact; 2],
+    cancel: CancelReply,
+    released: bool,
+    identities: [Option<locron_core::filesystem::FileIdentity>; 2],
+    zero_cursors: [bool; 2],
+    run_status: Option<i32>,
+    run_queued: bool,
+}
+#[cfg(debug_assertions)]
+impl ProducerSnapshot {
+    const UNOBSERVED: Self = Self {
+        facts: [ProducerFact::UNOBSERVED; 2],
+        cancel: CancelReply::Unobserved,
+        released: false,
+        identities: [None; 2],
+        zero_cursors: [false; 2],
+        run_status: None,
+        run_queued: false,
+    };
+}
+
+#[cfg(debug_assertions)]
+struct ProducerSummary {
+    snapshot: ProducerSnapshot,
+    cancel: bool,
+}
+#[cfg(debug_assertions)]
+fn producer_number(
+    formatter: &mut fmt::Formatter<'_>,
+    value: Option<impl fmt::Display>,
+) -> fmt::Result {
+    if let Some(value) = value {
+        write!(formatter, "{value}")
+    } else {
+        formatter.write_str("unobserved")
+    }
+}
+#[cfg(debug_assertions)]
+fn producer_edge(op: ProducerOp) -> (&'static str, u16) {
+    if op.enter > op.returned {
+        ("enter", op.enter)
+    } else if let Some(edge) = op.edge {
+        (WAKE_EDGES[usize::from(edge)], op.returned)
+    } else {
+        ("unobserved", 0)
+    }
+}
+#[cfg(debug_assertions)]
+fn producer_result(op: ProducerOp, domain: u8) -> &'static str {
+    if op.returned == 0 {
+        return "unobserved";
+    }
+    if op.edge == Some(2) {
+        return if domain == 2 {
+            match op.value {
+                Some(1) => "transient",
+                Some(2) => "conflict",
+                _ => "unobserved",
+            }
+        } else {
+            "err"
+        };
+    }
+    match domain {
+        0 => match op.value {
+            Some(0) => "false",
+            Some(1) => "true",
+            _ => "unobserved",
+        },
+        1 => match op.value {
+            Some(1) => "succeeded",
+            Some(2) => "failed_retryable",
+            Some(3) => "failed",
+            Some(4) => "timed_out",
+            Some(5) => "cancelled",
+            Some(6) => "unconfirmed",
+            _ => "unobserved",
+        },
+        _ => "ok",
+    }
+}
+#[cfg(debug_assertions)]
+impl fmt::Display for ProducerSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let run = self.snapshot.facts[1];
+        let (enqueue, enqueue_sequence) = producer_edge(run.enqueue);
+        let (hint, hint_sequence) = producer_edge(run.hint);
+        if self.cancel {
+            write!(
+                formatter,
+                "wake_request role=cancel lane=cleanup_diagnostic outcome={} run_capture={} bytes=",
+                self.snapshot.cancel.label(),
+                run.capture.label()
+            )?;
+        } else {
+            write!(
+                formatter,
+                "wake_producer role=run lane=cleanup_diagnostic capture={} bytes=",
+                run.capture.label()
+            )?;
+        }
+        producer_number(formatter, run.bytes)?;
+        formatter.write_str(" records=")?;
+        producer_number(formatter, run.records)?;
+        if self.cancel {
+            write!(
+                formatter,
+                " run_enqueue={enqueue}@{enqueue_sequence} run_hint={hint}@{hint_sequence} run_kind={} run_raw=",
+                run.kind
+            )?;
+        } else {
+            write!(
+                formatter,
+                " enqueue={enqueue}@{enqueue_sequence} hint={hint}@{hint_sequence} kind={} raw=",
+                run.kind
+            )?;
+        }
+        if let Some(raw) = run.raw {
+            write!(formatter, "Some({raw})")?;
+        } else {
+            formatter.write_str("None")?;
+        }
+        if self.cancel {
+            formatter.write_str(" cancel_hint=unobserved")?;
+        }
+        formatter.write_str(" t_us=")?;
+        producer_number(formatter, run.time)?;
+        formatter.write_str("\n")?;
+        let daemon = self.snapshot.facts[0];
+        write!(
+            formatter,
+            "wake_attempt role=daemon lane=cleanup_diagnostic capture={} bytes=",
+            daemon.capture.label()
+        )?;
+        producer_number(formatter, daemon.bytes)?;
+        formatter.write_str(" records=")?;
+        producer_number(formatter, daemon.records)?;
+        if let Some(row) = daemon.latest {
+            write!(
+                formatter,
+                " producer={}/{}@{}:{}",
+                WAKE_OPS[usize::from(row.op)],
+                WAKE_EDGES[usize::from(row.edge)],
+                row.tick,
+                row.sequence
+            )?;
+        } else {
+            formatter.write_str(" producer=unobserved/unobserved@0:0")?;
+        }
+        let bound = if daemon.binding_refused {
+            "refused"
+        } else if daemon.matched.is_some() {
+            "matched"
+        } else {
+            "unobserved"
+        };
+        write!(formatter, " bound={bound} a=")?;
+        producer_number(formatter, daemon.matched.map(|(epoch, _)| epoch))?;
+        let attempt = daemon
+            .matched
+            .map(|(_, attempt)| attempt)
+            .unwrap_or_default();
+        for (name, op, domain) in [
+            ("mark", attempt.mark, 0),
+            ("exec", attempt.execution, 1),
+            ("poll", attempt.poll, 0),
+            ("completion", attempt.completion, 2),
+            ("failure", attempt.failure, 2),
+        ] {
+            if name == "completion" {
+                formatter.write_str(" signal=")?;
+                producer_number(formatter, (attempt.signal != 0).then_some(attempt.signal))?;
+            }
+            write!(
+                formatter,
+                " {name}={}@{}:{}",
+                producer_result(op, domain),
+                op.enter,
+                op.returned
+            )?;
+        }
+        formatter.write_str(" t_us=")?;
+        producer_number(formatter, daemon.time)
+    }
+}
+
+#[cfg(debug_assertions)]
+struct Producers {
+    enabled: bool,
+    positive: bool,
+    context: [u8; 16],
+    writers: [Option<GuardedFile>; 2],
+    readers: [Option<GuardedFile>; 2],
+    commands: [Option<Command>; 2],
+    snapshot: ProducerSnapshot,
+    uuid: Option<[u8; 16]>,
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy)]
+enum ProducerKind {
+    Wake,
+    Cancel,
+    QueuedControl,
+}
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum InitialRunState {
+    Partial,
+    Prepared,
+    Dispatched,
+}
+#[cfg(debug_assertions)]
+struct PreparedInitialRunCommand {
+    command: Command,
+    state: InitialRunState,
+}
+#[cfg(debug_assertions)]
+impl PreparedInitialRunCommand {
+    fn unused(&self) -> Result<(), Code> {
+        if self.state == InitialRunState::Prepared {
+            Ok(())
+        } else {
+            Err(Code::Native)
+        }
+    }
+    fn dispatch(&mut self) -> Result<&mut Command, Code> {
+        self.unused()?;
+        self.state = InitialRunState::Dispatched;
+        Ok(&mut self.command)
+    }
+}
+enum CaptureSource<'a> {
+    Default(&'a mut Command),
+    #[cfg(debug_assertions)]
+    InitialRunOwner,
+}
+#[cfg(debug_assertions)]
+impl Producers {
+    fn empty() -> Self {
+        Self {
+            enabled: false,
+            positive: false,
+            context: [0; 16],
+            writers: [None, None],
+            readers: [None, None],
+            commands: [None, None],
+            snapshot: ProducerSnapshot::UNOBSERVED,
+            uuid: None,
+        }
+    }
+    fn has_owners(&self) -> bool {
+        self.writers.iter().any(Option::is_some)
+            || self.readers.iter().any(Option::is_some)
+            || self.commands.iter().any(Option::is_some)
+    }
+}
+#[cfg(debug_assertions)]
+enum ProducerLane {
+    FailureDiagnostic,
+    PositiveControl,
+}
+#[cfg(debug_assertions)]
+struct ProducerPermit {
+    deadline: Instant,
+    lane: ProducerLane,
+}
+#[cfg(debug_assertions)]
+impl ProducerPermit {
+    fn check(&self, control: &Control) -> Result<(), Code> {
+        if matches!(self.lane, ProducerLane::PositiveControl) {
+            control.check(self.deadline)?;
+        }
+        if Instant::now() >= self.deadline {
+            Err(Code::Expired)
+        } else {
+            Ok(())
+        }
+    }
+}
+// END independent producer domains.
+
 /// Fixed non-sensitive result; a late result cannot qualify successful cleanup.
 pub struct CaseResult {
     code: Code,
@@ -1931,6 +2980,8 @@ struct Control {
     calls: CallObservations,
     paired_facts: [OnceLock<PairFact>; 2],
     paired_proof: OnceLock<PairProof>,
+    #[cfg(debug_assertions)]
+    producer_diagnostic: OnceLock<ProducerSnapshot>,
 }
 
 impl Control {
@@ -1951,6 +3002,8 @@ impl Control {
             calls: CallObservations::new(),
             paired_facts: [OnceLock::new(), OnceLock::new()],
             paired_proof: OnceLock::new(),
+            #[cfg(debug_assertions)]
+            producer_diagnostic: OnceLock::new(),
         })
     }
 
@@ -2204,6 +3257,10 @@ struct Owner {
     uncertain_cleanup: bool,
     call_context: CallContext,
     paired: PairedCapture,
+    #[cfg(debug_assertions)]
+    producers: Producers,
+    #[cfg(debug_assertions)]
+    initial_run: Option<PreparedInitialRunCommand>,
 }
 
 impl Owner {
@@ -2229,6 +3286,10 @@ impl Owner {
             uncertain_cleanup: false,
             call_context: CallContext::new(),
             paired: PairedCapture::empty(),
+            #[cfg(debug_assertions)]
+            producers: Producers::empty(),
+            #[cfg(debug_assertions)]
+            initial_run: None,
         }
     }
 
@@ -2313,6 +3374,310 @@ impl Owner {
         )
     }
 
+    // BEGIN selected producer owners; native objects never enter a driver/channel.
+    #[cfg(debug_assertions)]
+    fn prepare_producers(&mut self, kind: ProducerKind) -> Result<(), Code> {
+        self.control.check(self.control.deadline)?;
+        if self.producers.enabled || self.initial_run.is_some() {
+            return Err(Code::Native);
+        }
+        self.producers.enabled = true;
+        self.producers.positive = matches!(kind, ProducerKind::QueuedControl);
+        self.producers.context = *uuid::Uuid::now_v7().as_bytes();
+        let context = uuid::Uuid::from_bytes(self.producers.context)
+            .simple()
+            .to_string();
+        let job = match kind {
+            ProducerKind::Wake => "wake",
+            ProducerKind::Cancel => "cancel",
+            ProducerKind::QueuedControl => "producer-queued",
+        };
+        let mut command = self.command()?;
+        command.args(["--json", "run", job]);
+        self.initial_run = Some(PreparedInitialRunCommand {
+            command,
+            state: InitialRunState::Partial,
+        });
+        self.control.check(self.control.deadline)?;
+        let paired = matches!(kind, ProducerKind::Cancel);
+        if matches!(kind, ProducerKind::Wake) {
+            let mut command = self.command()?;
+            command.args(["daemon", "run"]).stdout(Stdio::null());
+            self.producers.commands[0] = Some(command);
+            self.control.check(self.control.deadline)?;
+        }
+        for index in 0..2 {
+            if index == 0 && matches!(kind, ProducerKind::QueuedControl) {
+                continue;
+            }
+            self.control.check(self.control.deadline)?;
+            if !(index == 0 && paired) {
+                let path = self.root()?.join(if index == 0 {
+                    "wake-daemon-stderr"
+                } else {
+                    "wake-run-stderr"
+                });
+                let opened = create_private_new(&path);
+                match opened {
+                    Ok(writer) => self.producers.writers[index] = Some(writer),
+                    Err(error) => {
+                        self.control.check(self.control.deadline)?;
+                        return Err(if error.kind() == io::ErrorKind::AlreadyExists {
+                            Code::CaptureCollision
+                        } else {
+                            Code::Cli
+                        });
+                    }
+                }
+                self.control.check(self.control.deadline)?;
+            }
+            let writer = if index == 0 && paired {
+                self.paired.writers[1].as_ref()
+            } else {
+                self.producers.writers[index].as_ref()
+            }
+            .ok_or(Code::Native)?;
+            let path = writer.normalized_path().to_path_buf();
+            let identity = file_identity(writer);
+            if let Ok(identity) = &identity {
+                self.producers.snapshot.identities[index] = Some(*identity);
+            }
+            self.control.check(self.control.deadline)?;
+            identity.map_err(|_| Code::Cli)?;
+            if !(index == 0 && paired) {
+                let duplicate = self.producers.writers[index]
+                    .as_ref()
+                    .ok_or(Code::Native)?
+                    .try_clone();
+                match duplicate {
+                    Ok(duplicate) => {
+                        let command = if index == 0 {
+                            self.producers.commands[0].as_mut()
+                        } else {
+                            self.initial_run
+                                .as_mut()
+                                .map(|prepared| &mut prepared.command)
+                        }
+                        .ok_or(Code::Native)?;
+                        command.stderr(Stdio::from(duplicate));
+                    }
+                    Err(_) => {
+                        self.control.check(self.control.deadline)?;
+                        return Err(Code::Cli);
+                    }
+                }
+                self.control.check(self.control.deadline)?;
+            }
+            // This is an independent cursor, prepared before any selected root.
+            let opened = locron_core::filesystem::open_private(
+                &path,
+                std::fs::OpenOptions::new().read(true),
+            );
+            match opened {
+                Ok(reader) => self.producers.readers[index] = Some(reader),
+                Err(_) => {
+                    self.control.check(self.control.deadline)?;
+                    return Err(Code::Cli);
+                }
+            }
+            self.control.check(self.control.deadline)?;
+            let reader_id =
+                file_identity(self.producers.readers[index].as_ref().ok_or(Code::Native)?);
+            self.control.check(self.control.deadline)?;
+            if Some(reader_id.map_err(|_| Code::Cli)?) != self.producers.snapshot.identities[index]
+            {
+                return Err(Code::Cli);
+            }
+            let cursor = self.producers.readers[index]
+                .as_mut()
+                .ok_or(Code::Native)?
+                .stream_position();
+            self.control.check(self.control.deadline)?;
+            if cursor.map_err(|_| Code::Cli)? != 0 {
+                return Err(Code::Cli);
+            }
+            let command = if index == 1 {
+                self.initial_run
+                    .as_mut()
+                    .map(|prepared| &mut prepared.command)
+            } else if paired {
+                self.paired.command.as_mut()
+            } else {
+                self.producers.commands[0].as_mut()
+            }
+            .ok_or(Code::Native)?;
+            command
+                .env("LOCRON_WINDOWS_DIAGNOSTIC_VERSION", "2")
+                .env(
+                    "LOCRON_WINDOWS_DIAGNOSTIC_ROLE",
+                    if index == 0 { "daemon" } else { "run" },
+                )
+                .env("LOCRON_WINDOWS_DIAGNOSTIC_CONTEXT", &context);
+        }
+        if self.producers.snapshot.identities[0].is_some()
+            && self.producers.snapshot.identities[0] == self.producers.snapshot.identities[1]
+        {
+            return Err(Code::Cli);
+        }
+        self.control.check(self.control.deadline)?;
+        self.initial_run.as_mut().ok_or(Code::Native)?.state = InitialRunState::Prepared;
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    fn wake_daemon(&mut self) -> Result<(), Code> {
+        self.prepare_producers(ProducerKind::Wake)?;
+        // The existing paired-spawn ownership pattern is used only for this daemon.
+        // Restore its stack-owned Command before resuming an unwind to outer Owner.
+        let mut command = self.producers.commands[0].take().ok_or(Code::Native)?;
+        let spawned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.spawn_child(
+                0,
+                &mut command,
+                Some(Duration::from_secs(5)),
+                ChildRole::Daemon,
+            )
+        }));
+        self.producers.commands[0] = Some(command);
+        match spawned {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn initial_run_output(&mut self) -> Result<Output, Code> {
+        // A Phase/env/string cannot elect this path. Pure fixed-slot validation
+        // happens before stdout creation, native spawn or any fallback.
+        self.initial_run.as_ref().ok_or(Code::Native)?.unused()?;
+        self.call_context.begin(&self.control, Phase::Run);
+        let result =
+            self.captured_output_body(Phase::Run, CaptureSource::InitialRunOwner, false, None);
+        self.call_context.returned(&self.control, &result);
+        result
+    }
+
+    #[cfg(debug_assertions)]
+    fn initial_submit(&mut self) -> Result<String, Code> {
+        let output = self.initial_run_output()?;
+        self.producers.snapshot.run_status = output.status.code();
+        self.control.observations.intent(Operation::SubmitJson);
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&output.stdout).map_err(|_| Code::Run)?;
+        self.control.check(self.control.deadline)?;
+        self.control.observations.intent(Operation::SubmitSelect);
+        self.producers.snapshot.run_queued = envelope["data"]["state"] == "queued";
+        let result = envelope["data"]["run_id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or(Code::Run);
+        if let Ok(run_id) = &result {
+            self.producers.uuid = uuid::Uuid::parse_str(run_id)
+                .ok()
+                .filter(|uuid| !uuid.is_nil() && uuid.hyphenated().to_string() == *run_id)
+                .map(uuid::Uuid::into_bytes);
+        }
+        result
+    }
+
+    #[cfg(debug_assertions)]
+    fn classify_cancel(&mut self, bytes: &[u8], run_id: &str) {
+        self.producers.snapshot.cancel = if bytes
+            == format!("cancellation requested: {run_id}\n").as_bytes()
+        {
+            CancelReply::Requested
+        } else if bytes
+            == format!("cancellation requested: {run_id} (cancelled before execution)\n").as_bytes()
+        {
+            CancelReply::BeforeExecution
+        } else {
+            CancelReply::Unobserved
+        };
+    }
+
+    #[cfg(debug_assertions)]
+    fn collect_producers(&mut self, permit: &ProducerPermit) -> Result<(), Code> {
+        if !self.reaped {
+            return Err(Code::Cleanup);
+        }
+        for index in 0..2 {
+            if self.producers.readers[index].is_none() {
+                continue;
+            }
+            permit.check(&self.control)?;
+            let identity =
+                file_identity(self.producers.readers[index].as_ref().ok_or(Code::Native)?);
+            permit.check(&self.control)?;
+            if identity.ok() != self.producers.snapshot.identities[index] {
+                self.producers.snapshot.facts[index].capture = ProducerCapture::BindingRefused;
+                continue;
+            }
+            let cursor = self.producers.readers[index]
+                .as_mut()
+                .ok_or(Code::Native)?
+                .stream_position();
+            permit.check(&self.control)?;
+            if cursor.ok() != Some(0) {
+                self.producers.snapshot.facts[index].capture = ProducerCapture::BindingRefused;
+                continue;
+            }
+            self.producers.snapshot.zero_cursors[index] = true;
+            let mut bytes = Vec::with_capacity(65_537);
+            let mut buffer = [0; 4096];
+            let state = loop {
+                permit.check(&self.control)?;
+                let count = buffer.len().min(65_537 - bytes.len());
+                let read = self.producers.readers[index]
+                    .as_mut()
+                    .ok_or(Code::Native)?
+                    .read(&mut buffer[..count]);
+                if let Ok(count) = &read {
+                    bytes.extend_from_slice(&buffer[..*count]);
+                }
+                permit.check(&self.control)?;
+                match read {
+                    Err(_) => break ProducerCapture::ReadError,
+                    Ok(_) if bytes.len() == 65_537 => break ProducerCapture::Oversized,
+                    Ok(0) => break ProducerCapture::Complete,
+                    Ok(_) => {}
+                }
+            };
+            self.producers.snapshot.facts[index] = if state == ProducerCapture::Complete {
+                ProducerFact::from_bytes(
+                    &bytes,
+                    self.producers.context,
+                    index == 1,
+                    self.producers.uuid,
+                )
+            } else {
+                ProducerFact {
+                    capture: state,
+                    bytes: u32::try_from(bytes.len()).ok(),
+                    ..ProducerFact::UNOBSERVED
+                }
+            };
+            permit.check(&self.control)?;
+        }
+        permit.check(&self.control)
+    }
+
+    #[cfg(debug_assertions)]
+    fn release_producers(&mut self) -> Result<(), Code> {
+        cleanup_gate(&self.control)?;
+        drop(self.initial_run.take());
+        cleanup_gate(&self.control)?;
+        for index in 0..2 {
+            drop(self.producers.readers[index].take());
+            cleanup_gate(&self.control)?;
+            drop(self.producers.commands[index].take());
+            cleanup_gate(&self.control)?;
+            drop(self.producers.writers[index].take());
+            cleanup_gate(&self.control)?;
+        }
+        Ok(())
+    }
+    // END selected producer owners.
+
     // BEGIN additive paired methods; no CLI CallContext observation here.
     fn pair_path(&self, index: usize) -> Result<PathBuf, Code> {
         let name = ["daemon-stdout", "daemon-stderr"]
@@ -2395,6 +3760,8 @@ impl Owner {
         let mut command = self.command()?;
         command.args(["daemon", "run"]);
         self.prepare_pair(command)?;
+        #[cfg(debug_assertions)]
+        self.prepare_producers(ProducerKind::Cancel)?;
         self.spawn_pair(Some(Duration::from_secs(8)))
     }
 
@@ -2862,7 +4229,12 @@ impl Owner {
         poll_span: Option<Duration>,
     ) -> Result<Output, Code> {
         self.call_context.begin(&self.control, phase);
-        let result = self.captured_output_body(phase, command, hold_duplicate, poll_span);
+        let result = self.captured_output_body(
+            phase,
+            CaptureSource::Default(command),
+            hold_duplicate,
+            poll_span,
+        );
         self.call_context.returned(&self.control, &result);
         result
     }
@@ -2870,7 +4242,7 @@ impl Owner {
     fn captured_output_body(
         &mut self,
         phase: Phase,
-        command: &mut Command,
+        source: CaptureSource<'_>,
         hold_duplicate: bool,
         poll_span: Option<Duration>,
     ) -> Result<Output, Code> {
@@ -2956,10 +4328,19 @@ impl Owner {
         let spawn_step = self
             .call_context
             .enter(&self.control, spawn, ChildRole::ControlCli);
-        let child = command
-            .stdout(Stdio::from(duplicate))
-            .stderr(Stdio::null())
-            .spawn();
+        let command = match source {
+            CaptureSource::Default(command) => {
+                command.stdout(Stdio::from(duplicate)).stderr(Stdio::null())
+            }
+            #[cfg(debug_assertions)]
+            CaptureSource::InitialRunOwner => self
+                .initial_run
+                .as_mut()
+                .ok_or(Code::Native)?
+                .dispatch()?
+                .stdout(Stdio::from(duplicate)),
+        };
+        let child = command.spawn();
         let returned = Instant::now();
         let child = match child {
             Ok(child) => child,
@@ -3060,6 +4441,7 @@ impl Owner {
             .ok_or(Code::Run)
     }
 
+    #[cfg(not(debug_assertions))]
     fn submit(&mut self, name: &str) -> Result<String, Code> {
         let output = self.output(Phase::Run, self.command()?.args(["--json", "run", name]))?;
         self.control.observations.intent(Operation::SubmitJson);
@@ -3319,6 +4701,10 @@ impl Owner {
     }
 
     fn release(&mut self) -> Result<(), Code> {
+        #[cfg(debug_assertions)]
+        if self.producers.has_owners() || self.initial_run.is_some() {
+            self.release_producers()?;
+        }
         // BEGIN pair release before unchanged owner release.
         self.release_pair()?;
         // END pair release.
@@ -3396,13 +4782,59 @@ impl Owner {
             .store(Phase::Cleanup as u8, Ordering::Release);
         if self.reap().is_err() {
             self.uncertain_cleanup = true;
+            #[cfg(debug_assertions)]
+            if self.producers.enabled {
+                self.producers.snapshot.facts = [ProducerFact {
+                    capture: ProducerCapture::Unreaped,
+                    ..ProducerFact::UNOBSERVED
+                }; 2];
+                let _ = self
+                    .control
+                    .producer_diagnostic
+                    .set(self.producers.snapshot);
+            }
             // No result/field destruction while exact root exit is unknown.
             self.quarantine();
         }
         // BEGIN normal-only optional pair observation after exact reap.
         self.observe_pair_after_reap();
         // END optional pair observation.
+        #[cfg(debug_assertions)]
+        if self.producers.enabled
+            && (self.producers.positive
+                || work.is_err()
+                || !self.control.admitted.load(Ordering::Acquire))
+        {
+            let permit = ProducerPermit {
+                deadline: self.control.deadline,
+                lane: if self.producers.positive {
+                    ProducerLane::PositiveControl
+                } else {
+                    ProducerLane::FailureDiagnostic
+                },
+            };
+            if self.collect_producers(&permit).is_err() {
+                self.producers.snapshot.facts = [ProducerFact {
+                    capture: ProducerCapture::Late,
+                    ..ProducerFact::UNOBSERVED
+                }; 2];
+                let _ = self
+                    .control
+                    .producer_diagnostic
+                    .set(self.producers.snapshot);
+                self.quarantine();
+            }
+        }
         let cleanup = self.release();
+        #[cfg(debug_assertions)]
+        if self.producers.enabled {
+            self.producers.snapshot.released =
+                cleanup.is_ok() && self.control.flags.load(Ordering::Acquire) & CLEANED != 0;
+            let _ = self
+                .control
+                .producer_diagnostic
+                .set(self.producers.snapshot);
+        }
         let _ = self.control.paired_proof.set(self.paired.proof);
         let mut code = cleanup.and(work).err().unwrap_or(Code::Success);
         if code == Code::Success && self.control.check(self.control.deadline).is_err() {
@@ -3441,6 +4873,16 @@ impl Drop for Owner {
             || self.capture_duplicate.is_some()
             || !self.captures.is_empty()
             || self.paired.has_owners()
+            || {
+                #[cfg(debug_assertions)]
+                {
+                    self.producers.has_owners() || self.initial_run.is_some()
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    false
+                }
+            }
         {
             if self.release().is_err() {
                 self.quarantine();
@@ -3600,6 +5042,15 @@ enum CaseKind {
     Peer(PeerMode),
     Capture(CaptureCase),
     Paired(PairedCase),
+    #[cfg(debug_assertions)]
+    Producer(ProducerControl),
+}
+
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy)]
+enum ProducerControl {
+    Queued,
+    Cancellation,
 }
 
 fn admit(hook: Option<ReturnGate>) -> Result<CaseAdmission, CaseResult> {
@@ -3638,7 +5089,10 @@ fn admit_control(
                 owner.initialize_state()?;
                 match kind {
                     CaseKind::Wake => {
+                        #[cfg(not(debug_assertions))]
                         owner.daemon(0, Some(Duration::from_secs(5)))?;
+                        #[cfg(debug_assertions)]
+                        owner.wake_daemon()?;
                         wake_work(&mut owner)
                     }
                     CaseKind::Cancel => {
@@ -3658,6 +5112,17 @@ fn admit_control(
                     }
                     CaseKind::Capture(case) => capture_work(&mut owner, case),
                     CaseKind::Paired(case) => paired_work(&mut owner, case),
+                    #[cfg(debug_assertions)]
+                    CaseKind::Producer(ProducerControl::Queued) => {
+                        owner.prepare_producers(ProducerKind::QueuedControl)?;
+                        producer_queued_work(&mut owner)
+                    }
+                    #[cfg(debug_assertions)]
+                    CaseKind::Producer(ProducerControl::Cancellation) => {
+                        owner.cancellation_daemon()?;
+                        owner.producers.positive = true;
+                        cancel_work(&mut owner)
+                    }
                 }
             }))
             .unwrap_or(Err(Code::Panicked));
@@ -3677,6 +5142,7 @@ fn admit_control(
     })
 }
 
+#[cfg(not(debug_assertions))]
 fn drive(kind: CaseKind) -> CaseResult {
     let mut driver = match admit(None) {
         Ok(driver) => driver,
@@ -3696,7 +5162,135 @@ fn drive(kind: CaseKind) -> CaseResult {
     result
 }
 
+/// The unchanged first work result and separately admitted closed diagnostics.
+#[cfg(debug_assertions)]
+pub struct ProducerCaseResult {
+    first: CaseResult,
+    diagnostic: ProducerSnapshot,
+    cancel: bool,
+}
+#[cfg(debug_assertions)]
+impl ProducerCaseResult {
+    /// Only the original work/cleanup oracle can supply success.
+    #[must_use]
+    pub fn succeeded(&self) -> bool {
+        self.first.succeeded()
+    }
+    /// The original independent daemon-output summary stays literal.
+    #[must_use]
+    pub fn daemon_output(&self) -> impl fmt::Display {
+        self.first.daemon_output()
+    }
+    /// Two closed lines; private context, UUID, digest and logger bytes are absent.
+    #[must_use]
+    pub fn producer_output(&self) -> impl fmt::Display {
+        ProducerSummary {
+            snapshot: self.diagnostic,
+            cancel: self.cancel,
+        }
+    }
+}
+#[cfg(debug_assertions)]
+impl fmt::Display for ProducerCaseResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.first, formatter)
+    }
+}
+
+#[cfg(debug_assertions)]
+fn wait_producer_until(control: &Control) -> ProducerSnapshot {
+    // Same irreversible close and outer horizon as wait_cleanup_until. The
+    // ordinary result channel/late CaseResult is deliberately not consulted.
+    control.admitted.store(false, Ordering::Release);
+    loop {
+        if Instant::now() >= control.deadline {
+            return ProducerSnapshot::UNOBSERVED;
+        }
+        if let Some(snapshot) = control.producer_diagnostic.get().copied() {
+            if Instant::now() >= control.deadline {
+                return ProducerSnapshot::UNOBSERVED;
+            }
+            return snapshot;
+        }
+        thread::sleep(
+            Duration::from_millis(1)
+                .min(control.deadline.saturating_duration_since(Instant::now())),
+        );
+    }
+}
+
+#[cfg(debug_assertions)]
+fn drive_producer(kind: CaseKind, cancel: bool) -> ProducerCaseResult {
+    let mut driver = match admit(None) {
+        Ok(driver) => driver,
+        Err(result) => {
+            return ProducerCaseResult {
+                first: result,
+                diagnostic: ProducerSnapshot::UNOBSERVED,
+                cancel,
+            };
+        }
+    };
+    // Primitive slots only: no native owner, channel error or cleanup callback.
+    let control = Arc::clone(&driver.control);
+    if let Err(code) = driver.dispatch(kind) {
+        let result = driver.control.snapshot(code);
+        driver.finish_if_returned();
+        return ProducerCaseResult {
+            first: result,
+            diagnostic: ProducerSnapshot::UNOBSERVED,
+            cancel,
+        };
+    }
+    let mut result = driver.receive_until(driver.control.deadline);
+    let limit = driver.control.observation_deadline(driver.control.deadline);
+    driver.finish_if_returned();
+    if limit.is_err() || limit.is_ok_and(|deadline| Instant::now() >= deadline) {
+        result.code = Code::Expired;
+    }
+    // Freeze before any diagnostic wait; never substitute a late normal result.
+    let first = result;
+    let diagnostic = if first.succeeded() {
+        ProducerSnapshot::UNOBSERVED
+    } else {
+        wait_producer_until(&control)
+    };
+    ProducerCaseResult {
+        first,
+        diagnostic,
+        cancel,
+    }
+}
+
+/// Tests the original genuine Wake oracle, with failure-only diagnostics.
+#[cfg(debug_assertions)]
+pub fn run_wake_case() -> ProducerCaseResult {
+    drive_producer(CaseKind::Wake, false)
+}
+/// Tests the original genuine Cancel oracle, with failure-only diagnostics.
+#[cfg(debug_assertions)]
+pub fn run_cancel_case() -> ProducerCaseResult {
+    drive_producer(CaseKind::Cancel, true)
+}
+
+#[cfg(debug_assertions)]
+fn producer_queued_work(owner: &mut Owner) -> Result<(), Code> {
+    owner.output(
+        Phase::Add,
+        owner
+            .command()?
+            .args(["add", "producer-queued", "--every", "1h", "--"])
+            .args(super::success_process_args()),
+    )?;
+    let _run_id = owner.initial_submit()?;
+    if owner.producers.snapshot.run_status != Some(0) || !owner.producers.snapshot.run_queued {
+        return Err(Code::Run);
+    }
+    Ok(())
+}
+
 /// Tests secured actual-daemon delivery and manual admission within original5s.
+#[cfg(not(debug_assertions))]
 pub fn run_wake_case() -> CaseResult {
     drive(CaseKind::Wake)
 }
@@ -3712,7 +5306,10 @@ fn wake_work(owner: &mut Owner) -> Result<(), Code> {
             .args(["add", "wake", "--every", "1h", "--"])
             .args(super::success_process_args()),
     )?;
+    #[cfg(not(debug_assertions))]
     let run_id = owner.submit("wake")?;
+    #[cfg(debug_assertions)]
+    let run_id = owner.initial_submit()?;
     owner.call_context.stage.set(1);
     loop {
         match owner.history("wake", &run_id)?.as_str() {
@@ -3729,6 +5326,7 @@ fn wake_work(owner: &mut Owner) -> Result<(), Code> {
 }
 
 /// Tests actual Engine native progress and durable cancellation within original8s.
+#[cfg(not(debug_assertions))]
 pub fn run_cancel_case() -> CaseResult {
     drive(CaseKind::Cancel)
 }
@@ -3770,7 +5368,10 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
                 "--test-threads=1",
             ]),
     )?;
+    #[cfg(not(debug_assertions))]
     let run_id = owner.submit("cancel")?;
+    #[cfg(debug_assertions)]
+    let run_id = owner.initial_submit()?;
     owner.call_context.stage.set(2);
     loop {
         let state = owner.history("cancel", &run_id)?;
@@ -3789,7 +5390,13 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
         )?;
     }
     owner.call_context.stage.set(3);
+    #[cfg(not(debug_assertions))]
     owner.output(Phase::Cancel, owner.command()?.args(["cancel", &run_id]))?;
+    #[cfg(debug_assertions)]
+    {
+        let output = owner.output(Phase::Cancel, owner.command()?.args(["cancel", &run_id]))?;
+        owner.classify_cancel(&output.stdout, &run_id);
+    }
     owner.call_context.stage.set(4);
     loop {
         match owner.history("cancel", &run_id)?.as_str() {
@@ -4881,7 +6488,456 @@ fn native_cli_output_capture_contract() {
         "four genuine original identities missing"
     );
     // END appended genuine pair cases.
+    #[cfg(debug_assertions)]
+    producer_controls(entered, deadline);
 }
+
+// BEGIN selected producer controls, after all original capture/pair cases.
+#[cfg(debug_assertions)]
+fn producer_controls(entered: Instant, deadline: Instant) {
+    assert_wake_decoder_controls();
+    for case in [ProducerControl::Queued, ProducerControl::Cancellation] {
+        assert!(
+            Instant::now() < deadline,
+            "producer control expired before admission"
+        );
+        let mut driver = admit_control(Control::new(entered, deadline), None)
+            .expect("resource-free producer admission failed");
+        assert!(
+            driver.dispatch(CaseKind::Producer(case)).is_ok(),
+            "producer dispatch refused"
+        );
+        let observed = driver.receive_until(deadline);
+        let completed = if observed.flags & CLEANED == 0 {
+            driver.wait_cleanup_until(deadline)
+        } else {
+            observed
+        };
+        let snapshot = driver
+            .control
+            .producer_diagnostic
+            .get()
+            .copied()
+            .unwrap_or(ProducerSnapshot::UNOBSERVED);
+        driver.finish_if_returned();
+        if !completed.succeeded() {
+            eprintln!(
+                "{}",
+                ProducerSummary {
+                    snapshot,
+                    cancel: matches!(case, ProducerControl::Cancellation)
+                }
+            );
+        }
+        assert!(
+            Instant::now() < deadline,
+            "producer control exceeded the SAME capture horizon"
+        );
+        assert!(
+            completed.succeeded(),
+            "genuine producer work/owned cleanup failed: {completed}"
+        );
+        assert!(
+            snapshot.released,
+            "producer carrier release was not confirmed"
+        );
+        assert_eq!(
+            snapshot.run_status,
+            Some(0),
+            "genuine initial Run exit was not zero"
+        );
+        assert!(snapshot.run_queued, "genuine initial Run did not queue");
+        let run = snapshot.facts[1];
+        assert!(
+            run.capture == ProducerCapture::Complete,
+            "genuine Run carrier was not complete"
+        );
+        assert!(
+            run.bytes.is_some_and(|count| count > 0 && count <= 65_536),
+            "Run carrier byte bound failed"
+        );
+        assert!(
+            run.records.is_some_and(|count| count > 0 && count <= 255),
+            "Run carrier record bound failed"
+        );
+        assert!(
+            snapshot.identities[1].is_some() && snapshot.zero_cursors[1],
+            "actual independent Run reader proof missing"
+        );
+        assert!(
+            run.enqueue.edge == Some(1) && !run.enqueue.pending,
+            "actual enqueue Ready-success missing"
+        );
+        assert!(
+            matches!(run.hint.edge, Some(1 | 2)) && !run.hint.pending,
+            "actual hint Ready-result missing"
+        );
+        match case {
+            ProducerControl::Queued => {
+                assert!(
+                    snapshot.identities[0].is_none(),
+                    "listener-free control acquired a daemon carrier"
+                );
+                println!(
+                    "wake_producer_control=queued run_exit=0 queued=true enqueue=ok hint=returned independent_reader=true zero_cursor=true cleanup=confirmed"
+                );
+            }
+            ProducerControl::Cancellation => {
+                let daemon = snapshot.facts[0];
+                assert!(
+                    daemon.capture == ProducerCapture::Complete,
+                    "genuine daemon carrier was not complete"
+                );
+                assert!(
+                    daemon
+                        .bytes
+                        .is_some_and(|count| count > 0 && count <= 65_536),
+                    "daemon carrier byte bound failed"
+                );
+                assert!(
+                    daemon
+                        .records
+                        .is_some_and(|count| count > 0 && count <= 255),
+                    "daemon carrier record bound failed"
+                );
+                assert!(
+                    snapshot.identities[0].is_some()
+                        && snapshot.identities[0] != snapshot.identities[1]
+                        && snapshot.zero_cursors[0],
+                    "actual distinct daemon reader proof missing"
+                );
+                let (_, role, payload) = event_header(completed.observations.statuses[0], 2)
+                    .expect("actual daemon returned status is unobserved");
+                assert!(
+                    role == ChildRole::Daemon && decode_signed(payload).flatten().is_some(),
+                    "actual daemon reap/status proof missing"
+                );
+                assert!(
+                    matches!(snapshot.cancel, CancelReply::Requested),
+                    "actual requested Cancel reply missing"
+                );
+                let Some((_, attempt)) = daemon.matched else {
+                    panic!("genuine Run attempt binding missing");
+                };
+                assert!(
+                    attempt.begun && attempt.mark.edge == Some(1) && attempt.mark.value == Some(1),
+                    "actual matched mark-running true missing"
+                );
+                assert!(
+                    attempt.poll.edge == Some(1) && attempt.poll.value == Some(1),
+                    "actual matched cancellation-poll true missing"
+                );
+                assert!(
+                    attempt.signal != 0 && attempt.signalled_poll == attempt.poll.returned,
+                    "actual post-poll cancel signal missing"
+                );
+                assert!(
+                    attempt.execution.edge == Some(1) && attempt.execution.value == Some(5),
+                    "actual runner Cancelled result missing"
+                );
+                assert!(
+                    attempt.completion.edge == Some(1) && !attempt.completion.pending,
+                    "actual completion Ready-success missing"
+                );
+                println!(
+                    "wake_producer_control=cancel run_exit=0 queued=true cancel_reply=requested mark=true poll=true signal=returned execution=cancelled completion=ok independent_readers=true zero_cursors=true cleanup=confirmed"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+fn wake_phase_vector(
+    sequence: u16,
+    tick: u8,
+    attempt: u8,
+    op: &str,
+    edge: &str,
+    value: Option<u64>,
+) -> String {
+    format!(
+        "locron_wake_phase/v2 ctx={} role=daemon seq={sequence} tick={tick} attempt={attempt} op={op} edge={edge} value={value:?} kind=none raw=None t_us={sequence}\n",
+        "00".repeat(16)
+    )
+}
+
+#[cfg(debug_assertions)]
+fn wake_binding_vector(sequence: u16, attempt: u8, uuid: [u8; 16], ordinal: u32) -> String {
+    use std::fmt::Write as _;
+    let mut digest = String::with_capacity(64);
+    for byte in wake_digest([0; 16], uuid, ordinal) {
+        write!(&mut digest, "{byte:02x}").expect("fixed digest formatting failed");
+    }
+    format!(
+        "locron_wake_bind/v1 ctx={} role=daemon seq={sequence} attempt={attempt} ordinal={ordinal} corr={digest} t_us={sequence}\n",
+        "00".repeat(16)
+    )
+}
+
+#[cfg(debug_assertions)]
+fn assert_wake_decoder_controls() {
+    // Closed byte/model controls have ZERO native/effect/causal acceptance.
+    let mut rows = Vec::new();
+    for op in ["role_lock", "store_open", "settings", "begin_lifetime"] {
+        for edge in ["enter", "ok"] {
+            rows.push(wake_phase_vector(
+                u16::try_from(rows.len() + 1).expect("bounded vector"),
+                0,
+                0,
+                op,
+                edge,
+                None,
+            ));
+        }
+    }
+    for (op, edge, value) in [
+        ("tick", "enter", None),
+        ("reconcile", "enter", None),
+        ("reconcile", "ok", Some(0)),
+        ("maintain", "enter", None),
+        ("maintain", "ok", None),
+        ("capacity", "ok", Some(0)),
+        ("tick", "ok", None),
+    ] {
+        rows.push(wake_phase_vector(
+            u16::try_from(rows.len() + 1).expect("bounded vector"),
+            1,
+            0,
+            op,
+            edge,
+            value,
+        ));
+    }
+    rows.push(wake_binding_vector(16, 1, [1; 16], 1));
+    rows.push(wake_phase_vector(17, 0, 1, "attempt_begin", "enter", None));
+    rows.push(wake_phase_vector(18, 0, 1, "mark_running", "enter", None));
+    rows.push(wake_binding_vector(19, 2, [2; 16], 1));
+    rows.push(wake_phase_vector(20, 0, 2, "attempt_begin", "enter", None));
+    rows.push(wake_phase_vector(21, 0, 2, "mark_running", "enter", None));
+    rows.push(wake_phase_vector(22, 0, 2, "mark_running", "ok", Some(1)));
+    rows.push(wake_phase_vector(23, 0, 2, "execution", "enter", None));
+    rows.push(wake_phase_vector(24, 0, 1, "mark_running", "ok", Some(1)));
+    rows.push(wake_phase_vector(25, 0, 1, "execution", "enter", None));
+    rows.push(wake_phase_vector(26, 0, 1, "cancel_poll", "enter", None));
+    rows.push(wake_phase_vector(27, 0, 1, "cancel_poll", "ok", Some(1)));
+    rows.push(wake_phase_vector(28, 0, 1, "cancel_signal", "ok", None));
+    rows.push(wake_phase_vector(29, 0, 2, "execution", "ok", Some(1)));
+    rows.push(wake_phase_vector(30, 0, 2, "completion", "enter", None));
+    rows.push(wake_phase_vector(31, 0, 2, "completion", "ok", None));
+    rows.push(wake_phase_vector(32, 0, 1, "execution", "ok", Some(5)));
+    rows.push(wake_phase_vector(33, 0, 1, "completion", "enter", None));
+    rows.push(wake_phase_vector(34, 0, 1, "completion", "ok", None));
+    let valid = rows.concat();
+    let Ok(ledger) = decode_wake(valid.as_bytes(), [0; 16], false) else {
+        panic!("valid interleaved ledger refused");
+    };
+    assert_eq!(ledger.count, 2);
+    let matched = ProducerFact::from_bytes(valid.as_bytes(), [0; 16], false, Some([1; 16]));
+    let Some((epoch, attempt)) = matched.matched else {
+        panic!("derived genuine-key vector did not match");
+    };
+    assert_eq!(epoch, 1);
+    assert!(attempt.execution.value == Some(5) && attempt.completion.edge == Some(1));
+    let foreign = ProducerFact::from_bytes(valid.as_bytes(), [0; 16], false, Some([3; 16]));
+    assert!(foreign.matched.is_none(), "unrelated key became matched");
+    let trailing = rows[..16].concat();
+    let Ok(binding_only) = decode_wake(trailing.as_bytes(), [0; 16], false) else {
+        panic!("trailing binding prefix refused");
+    };
+    assert!(
+        !binding_only.attempts[0].begun,
+        "binding fabricated task-body entry"
+    );
+    let mut retry = rows[..15].concat();
+    retry.push_str(&wake_binding_vector(16, 1, [1; 16], 2));
+    retry.push_str(&wake_phase_vector(17, 0, 1, "attempt_begin", "enter", None));
+    retry.push_str(&wake_phase_vector(18, 0, 1, "mark_running", "enter", None));
+    retry.push_str(&wake_phase_vector(19, 0, 1, "mark_running", "err", None));
+    retry.push_str(&wake_phase_vector(20, 0, 1, "mark_running", "enter", None));
+    let Ok(retried) = decode_wake(retry.as_bytes(), [0; 16], false) else {
+        panic!("legal retry prefix refused");
+    };
+    assert_eq!(retried.attempts[0].mark.enter, 20);
+    assert_eq!(retried.attempts[0].mark.returned, 19);
+    assert!(
+        retried.attempts[0].mark.pending,
+        "pending retry replaced its earlier return"
+    );
+    for invalid in [
+        valid.replacen("seq=1 ", "seq=01 ", 1),
+        valid.replacen("seq=1 ", "seq=2 ", 1),
+        valid.replacen("role=daemon", "role=run", 1),
+        valid.replacen("ctx=00", "ctx=10", 1),
+        valid.replacen("ordinal=1 ", "ordinal=0 ", 1),
+        valid.replacen("ordinal=1 ", "ordinal=4294967296 ", 1),
+        valid.replacen("attempt=2 ordinal=1", "attempt=1 ordinal=1", 1),
+        valid.replacen("seq=19 attempt=2", "seq=19 attempt=65", 1),
+        valid.replacen("seq=20 tick=0 attempt=2", "seq=20 tick=0 attempt=3", 1),
+        valid.replacen(
+            "op=mark_running edge=ok value=Some(1)",
+            "op=mark_running edge=ok value=None",
+            1,
+        ),
+        valid.replacen(
+            "op=mark_running edge=ok value=Some(1)",
+            "op=mark_running edge=ok value=Some(0)",
+            1,
+        ),
+        valid.replacen(
+            "op=cancel_poll edge=ok value=Some(1)",
+            "op=cancel_poll edge=ok value=Some(0)",
+            1,
+        ),
+        valid.replacen("op=cancel_signal edge=ok", "op=cancel_signal edge=enter", 1),
+        valid.replacen(
+            "op=completion edge=ok value=None",
+            "op=completion edge=err value=Some(2)",
+            1,
+        ) + &wake_phase_vector(35, 0, 2, "completion", "enter", None),
+        valid.replacen("raw=None", "raw=Some(-0)", 1),
+        valid.replacen("raw=None", "raw=Some(2)", 1),
+        valid.replacen(
+            "t_us=1",
+            "run_uuid=00000000-0000-0000-0000-000000000001 t_us=1",
+            1,
+        ),
+        format!("\u{1b}[0m{valid}"),
+        valid.replace('\n', "\r\n"),
+        valid.trim_end_matches('\n').to_owned(),
+        "x".repeat(65_537),
+        rows[..19].concat() + &wake_phase_vector(20, 0, 1, "attempt_begin", "enter", None),
+        rows[..28].concat() + &wake_phase_vector(29, 0, 1, "cancel_signal", "ok", None),
+        valid.clone() + &wake_phase_vector(35, 0, 1, "execution", "enter", None),
+        valid.clone() + &wake_phase_vector(35, 1, 0, "admit", "enter", None),
+        valid.clone() + &wake_phase_vector(35, 2, 0, "tick", "enter", None),
+        valid.clone() + &wake_phase_vector(256, 0, 1, "cancel_poll", "enter", None),
+    ] {
+        assert!(
+            decode_wake(invalid.as_bytes(), [0; 16], false).is_err(),
+            "illegal closed stream accepted"
+        );
+        assert!(
+            ProducerFact::from_bytes(invalid.as_bytes(), [0; 16], false, Some([1; 16]))
+                .matched
+                .is_none(),
+            "refused stream leaked selected facts"
+        );
+    }
+    let mut duplicate = rows[..18].to_vec();
+    duplicate.push(wake_binding_vector(19, 2, [1; 16], 1));
+    assert!(
+        decode_wake(duplicate.concat().as_bytes(), [0; 16], false).is_err(),
+        "duplicate digest/ordinal remapped"
+    );
+    let mut terminal = valid.clone();
+    terminal.push_str(&wake_phase_vector(35, 0, 0, "limit", "err", None));
+    assert!(matches!(
+        decode_wake(terminal.as_bytes(), [0; 16], false),
+        Err(ProducerCapture::Overflow)
+    ));
+    terminal.push_str(&wake_phase_vector(36, 0, 1, "cancel_poll", "enter", None));
+    assert!(matches!(
+        decode_wake(terminal.as_bytes(), [0; 16], false),
+        Err(ProducerCapture::Malformed)
+    ));
+    let mut ceiling = rows[..8].concat();
+    ceiling.push_str(&wake_binding_vector(9, 1, [1; 16], 1));
+    ceiling.push_str(&wake_phase_vector(10, 0, 1, "attempt_begin", "enter", None));
+    for sequence in 11..=255 {
+        ceiling.push_str(&wake_phase_vector(
+            sequence,
+            0,
+            1,
+            "mark_running",
+            if sequence % 2 == 1 { "enter" } else { "err" },
+            None,
+        ));
+    }
+    assert!(
+        decode_wake(ceiling.as_bytes(), [0; 16], false).is_ok(),
+        "legal 255-record pending prefix refused"
+    );
+    let overflow = ceiling.clone() + &wake_phase_vector(256, 0, 0, "limit", "err", None);
+    assert!(matches!(
+        decode_wake(overflow.as_bytes(), [0; 16], false),
+        Err(ProducerCapture::Overflow)
+    ));
+    ceiling.push_str(&wake_phase_vector(256, 0, 1, "mark_running", "err", None));
+    assert!(
+        decode_wake(ceiling.as_bytes(), [0; 16], false).is_err(),
+        "256th ordinary record accepted"
+    );
+    let mut epochs = rows[..8].concat();
+    for epoch in 1..=64 {
+        let sequence = 7 + u16::from(epoch) * 2;
+        epochs.push_str(&wake_binding_vector(
+            sequence,
+            epoch,
+            [1; 16],
+            u32::from(epoch),
+        ));
+        epochs.push_str(&wake_phase_vector(
+            sequence + 1,
+            0,
+            epoch,
+            "attempt_begin",
+            "enter",
+            None,
+        ));
+    }
+    assert!(
+        decode_wake(epochs.as_bytes(), [0; 16], false).is_ok(),
+        "64 immutable bindings refused"
+    );
+    epochs.push_str(&wake_binding_vector(137, 65, [1; 16], 65));
+    assert!(
+        decode_wake(epochs.as_bytes(), [0; 16], false).is_err(),
+        "65th binding accepted"
+    );
+    let run = [
+        "locron_wake_phase/v2 ctx=00000000000000000000000000000000 role=run seq=1 tick=0 attempt=0 op=enqueue edge=enter value=None kind=none raw=None t_us=0\n",
+        "locron_wake_phase/v2 ctx=00000000000000000000000000000000 role=run seq=2 tick=0 attempt=0 op=enqueue edge=ok value=None kind=none raw=None t_us=1\n",
+        "locron_wake_phase/v2 ctx=00000000000000000000000000000000 role=run seq=3 tick=0 attempt=0 op=hint edge=enter value=None kind=none raw=None t_us=2\n",
+        "locron_wake_phase/v2 ctx=00000000000000000000000000000000 role=run seq=4 tick=0 attempt=0 op=hint edge=err value=None kind=PermissionDenied raw=Some(-2147483648) t_us=3\n",
+        "locron_wake_phase/v2 ctx=00000000000000000000000000000000 role=run seq=5 tick=0 attempt=0 op=run_return edge=ok value=None kind=none raw=None t_us=4\n",
+    ].concat();
+    let Ok(run_ledger) = decode_wake(run.as_bytes(), [0; 16], true) else {
+        panic!("actual hint-result grammar refused");
+    };
+    assert_eq!(run_ledger.hint_raw, Some(i32::MIN));
+    assert_eq!(run_ledger.hint_kind, "PermissionDenied");
+    for invalid in [
+        run.replacen("raw=Some(-2147483648)", "raw=Some(2147483648)", 1),
+        run.replacen("role=run", "role=daemon", 1),
+        run.replacen("op=hint edge=err", "op=hint edge=ok", 1),
+    ] {
+        assert!(
+            decode_wake(invalid.as_bytes(), [0; 16], true).is_err(),
+            "invalid Run I/O grammar accepted"
+        );
+    }
+    for cancel in [false, true] {
+        let lines = ProducerSummary {
+            snapshot: ProducerSnapshot::UNOBSERVED,
+            cancel,
+        }
+        .to_string();
+        assert_eq!(lines.lines().count(), 2);
+        assert!(
+            lines
+                .lines()
+                .all(|line| line.is_ascii() && line.len() + 2 <= 512)
+        );
+        for private in ["ctx=", "corr=", "ordinal=", "run_uuid=", "00000000-0000-"] {
+            assert!(
+                !lines.contains(private),
+                "private correlation escaped closed summaries"
+            );
+        }
+    }
+}
+// END selected producer controls.
 
 #[test]
 fn native_cli_output_target() {
