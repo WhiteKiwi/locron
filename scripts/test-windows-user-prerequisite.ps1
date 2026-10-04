@@ -45,6 +45,9 @@ function Write-FixedRefusalDiagnostic($branch,$driverKind=$null) {
     $categories=@('preflight','account','credential_start','token','protocol','containment','deadline','cleanup','guard_setup','native_owner_unknown')
     $kinds=@('unauthorized','security','io','win32','argument','invalid_operation','timeout','method_invocation','runtime','pipeline','unknown')
     $evidenceStates=@('not_attempted','attempting','written','refused')
+    # BEGIN fixed-prerequisite-substage renderer_closed_set
+    $substages=@('entry','path_validation','attributes','directory_security','security_owner','security_sddl','security_raw_acl','security_rules','owner_check','owner_untrusted','acl_presence_check','null_acl','ace_shape_check','ace_shape','foreign_mutation_check','foreign_mutation','file_open','file_security','evidence_serialize','evidence_parent','evidence_directory_create','evidence_directory_security','evidence_identity_write','evidence_receipt_write')
+    # END fixed-prerequisite-substage renderer_closed_set
     $checkpoint=Fixed-DiagnosticValue $shared['checkpoint'] $checkpoints
     $failureCheckpoint=Fixed-DiagnosticValue $shared['failure_checkpoint'] $checkpoints
     $branch=Fixed-DiagnosticValue $branch $branches
@@ -53,12 +56,23 @@ function Write-FixedRefusalDiagnostic($branch,$driverKind=$null) {
     if ($null -ne $driverKind) {$kind=Fixed-DiagnosticValue $driverKind $kinds}
     $evidence=Fixed-DiagnosticValue $shared['failure_evidence'] $evidenceStates
     $evidenceKind=Fixed-DiagnosticValue $shared['evidence_kind'] $kinds
+    # BEGIN fixed-prerequisite-substage renderer_validation
+    $substage=Fixed-DiagnosticValue $shared['substage'] $substages
+    $failureSubstage=Fixed-DiagnosticValue $shared['failure_substage'] $substages
+    $evidenceSubstage=Fixed-DiagnosticValue $shared['evidence_substage'] $substages
+    # END fixed-prerequisite-substage renderer_validation
     $line='windows-user-prerequisite failed: native_owner_unknown checkpoint='+$checkpoint+
         ' failure_checkpoint='+$failureCheckpoint+' branch='+$branch+' category='+$category+
         ' kind='+$kind+' evidence='+$evidence+' evidence_kind='+$evidenceKind
+    # BEGIN fixed-prerequisite-substage renderer_append
+    $line+=' substage='+$substage+' failure_substage='+$failureSubstage+' evidence_substage='+$evidenceSubstage
+    # END fixed-prerequisite-substage renderer_append
     # Every selected scalar is fixed ASCII; allow two bytes for the newline.
     if ($line.Length -gt 510) {
         $line='windows-user-prerequisite failed: native_owner_unknown checkpoint=unknown failure_checkpoint=unknown branch=unknown category=unknown kind=unknown evidence=unknown evidence_kind=unknown'
+        # BEGIN fixed-prerequisite-substage renderer_fallback
+        $line+=' substage=unknown failure_substage=unknown evidence_substage=unknown'
+        # END fixed-prerequisite-substage renderer_fallback
     }
     [Console]::Error.WriteLine($line)
 }
@@ -377,6 +391,9 @@ $nativeOwner = {
     }
 
     function Local-Path([string]$value) {
+        # BEGIN fixed-prerequisite-substage path_validation
+        $shared['substage']='path_validation'
+        # END fixed-prerequisite-substage path_validation
         if ([string]::IsNullOrEmpty($value) -or $value.Length -gt 512 -or
             -not [regex]::IsMatch($value,'\A[A-Za-z]:\\') -or
             $value.Contains('/') -or $value.Contains('~')) {throw 'guard_setup'}
@@ -391,6 +408,9 @@ $nativeOwner = {
     }
 
     function Check-Attributes([string]$path,[bool]$directory) {
+        # BEGIN fixed-prerequisite-substage attributes
+        $shared['substage']='attributes'
+        # END fixed-prerequisite-substage attributes
         $attributes=Native-Call {[IO.File]::GetAttributes($path)}
         if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
             ((($attributes -band [IO.FileAttributes]::Directory) -ne 0) -ne $directory)) {throw 'guard_setup'}
@@ -412,20 +432,64 @@ $nativeOwner = {
 
     function Check-FixedSecurity($security,[bool]$directory) {
         $trusted=@('S-1-5-18','S-1-5-32-544','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+        # BEGIN fixed-prerequisite-substage fixed_security_owner
+        $shared['substage']='security_owner'
+        # END fixed-prerequisite-substage fixed_security_owner
         $owner=Native-Call {$security.GetOwner([Security.Principal.SecurityIdentifier]).Value}
-        if ($owner -cnotin $trusted) {throw 'guard_setup'}
+        # BEGIN fixed-prerequisite-substage owner_predicate
+        $shared['substage']='owner_check'
+        # END fixed-prerequisite-substage owner_predicate
+        if ($owner -cnotin $trusted) {
+            # BEGIN fixed-prerequisite-substage owner_rejection
+            $shared['substage']='owner_untrusted'
+            # END fixed-prerequisite-substage owner_rejection
+            throw 'guard_setup'
+        }
+        # BEGIN fixed-prerequisite-substage fixed_security_sddl
+        $shared['substage']='security_sddl'
+        # END fixed-prerequisite-substage fixed_security_sddl
         $sddl=Native-Call {$security.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::All)}
+        # BEGIN fixed-prerequisite-substage fixed_security_raw_acl
+        $shared['substage']='security_raw_acl'
+        # END fixed-prerequisite-substage fixed_security_raw_acl
         $raw=Native-Call {[Security.AccessControl.RawSecurityDescriptor]::new($sddl)}
-        if ($null -eq $raw.DiscretionaryAcl) {throw 'guard_setup'}
+        # BEGIN fixed-prerequisite-substage acl_presence_predicate
+        $shared['substage']='acl_presence_check'
+        # END fixed-prerequisite-substage acl_presence_predicate
+        if ($null -eq $raw.DiscretionaryAcl) {
+            # BEGIN fixed-prerequisite-substage acl_presence_rejection
+            $shared['substage']='null_acl'
+            # END fixed-prerequisite-substage acl_presence_rejection
+            throw 'guard_setup'
+        }
         $mask=[long]1343029590
         if ($directory) {$mask=$mask -band (-bnot [long]6)}
+        # BEGIN fixed-prerequisite-substage fixed_security_rules
+        $shared['substage']='security_rules'
+        # END fixed-prerequisite-substage fixed_security_rules
         foreach ($ace in $raw.DiscretionaryAcl) {
+            # BEGIN fixed-prerequisite-substage ace_shape_predicate
+            $shared['substage']='ace_shape_check'
+            # END fixed-prerequisite-substage ace_shape_predicate
             if ($ace -isnot [Security.AccessControl.CommonAce] -or $ace.IsCallback -or
-                $ace.AceQualifier -notin @([Security.AccessControl.AceQualifier]::AccessAllowed,[Security.AccessControl.AceQualifier]::AccessDenied)) {throw 'guard_setup'}
+                $ace.AceQualifier -notin @([Security.AccessControl.AceQualifier]::AccessAllowed,[Security.AccessControl.AceQualifier]::AccessDenied)) {
+                # BEGIN fixed-prerequisite-substage ace_shape_rejection
+                $shared['substage']='ace_shape'
+                # END fixed-prerequisite-substage ace_shape_rejection
+                throw 'guard_setup'
+            }
+            # BEGIN fixed-prerequisite-substage foreign_mutation_predicate
+            $shared['substage']='foreign_mutation_check'
+            # END fixed-prerequisite-substage foreign_mutation_predicate
             if ($ace.AceQualifier -eq [Security.AccessControl.AceQualifier]::AccessAllowed -and
                 ($ace.AceFlags -band [Security.AccessControl.AceFlags]::InheritOnly) -eq 0 -and
                 $ace.SecurityIdentifier.Value -cnotin $trusted -and
-                ([long]$ace.AccessMask -band $mask) -ne 0) {throw 'guard_setup'}
+                ([long]$ace.AccessMask -band $mask) -ne 0) {
+                # BEGIN fixed-prerequisite-substage foreign_mutation_rejection
+                $shared['substage']='foreign_mutation'
+                # END fixed-prerequisite-substage foreign_mutation_rejection
+                throw 'guard_setup'
+            }
         }
         Check-Deadline
     }
@@ -437,6 +501,9 @@ $nativeOwner = {
         for ($index=-1;$index -lt $parts.Count;$index++) {
             if ($index -ge 0) {$current=[IO.Path]::Combine($current,$parts[$index])}
             Check-Attributes $current $true
+            # BEGIN fixed-prerequisite-substage directory_security
+            $shared['substage']='directory_security'
+            # END fixed-prerequisite-substage directory_security
             $security=Native-Call {[IO.DirectoryInfo]::new($current).GetAccessControl()}
             Check-FixedSecurity $security $true
         }
@@ -447,9 +514,15 @@ $nativeOwner = {
         $null=Local-Path $path
         Bootstrap-Chain ([IO.Path]::GetDirectoryName($path))
         Check-Attributes $path $false
+        # BEGIN fixed-prerequisite-substage file_open
+        $shared['substage']='file_open'
+        # END fixed-prerequisite-substage file_open
         $stream=Native-Call {[IO.FileStream]::new($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
         $shared['resources'].Add($stream)
         Check-Attributes $path $false
+        # BEGIN fixed-prerequisite-substage file_security
+        $shared['substage']='file_security'
+        # END fixed-prerequisite-substage file_security
         $security=Native-Call {$stream.GetAccessControl()}
         Check-FixedSecurity $security $false
         return $stream
@@ -742,15 +815,27 @@ $nativeOwner = {
     }
 
     function Check-PublicSecurity($security,[bool]$directory) {
+        # BEGIN fixed-prerequisite-substage public_security_owner
+        $shared['substage']='security_owner'
+        # END fixed-prerequisite-substage public_security_owner
         $owner=Native-Call {$security.GetOwner([Security.Principal.SecurityIdentifier]).Value}
         if (-not $security.AreAccessRulesProtected -or
             $owner -cnotin @('S-1-5-18','S-1-5-32-544')) {throw 'cleanup'}
+        # BEGIN fixed-prerequisite-substage public_security_sddl
+        $shared['substage']='security_sddl'
+        # END fixed-prerequisite-substage public_security_sddl
         $sddl=Native-Call {$security.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::All)}
+        # BEGIN fixed-prerequisite-substage public_security_raw_acl
+        $shared['substage']='security_raw_acl'
+        # END fixed-prerequisite-substage public_security_raw_acl
         $raw=Native-Call {[Security.AccessControl.RawSecurityDescriptor]::new($sddl)}
         if ($null -eq $raw.DiscretionaryAcl -or $raw.DiscretionaryAcl.Count -ne 2) {throw 'cleanup'}
         $seen=[Collections.Generic.List[string]]::new()
         $flags=0
         if ($directory) {$flags=3}
+        # BEGIN fixed-prerequisite-substage public_security_rules
+        $shared['substage']='security_rules'
+        # END fixed-prerequisite-substage public_security_rules
         foreach ($ace in $raw.DiscretionaryAcl) {
             if ($ace -isnot [Security.AccessControl.CommonAce] -or $ace.IsCallback -or
                 $ace.AceQualifier -ne [Security.AccessControl.AceQualifier]::AccessAllowed -or
@@ -778,6 +863,9 @@ $nativeOwner = {
     }
 
     function Write-Evidence($receipt) {
+        # BEGIN fixed-prerequisite-substage evidence_serialize
+        $shared['substage']='evidence_serialize'
+        # END fixed-prerequisite-substage evidence_serialize
         $encoder=[Text.UTF8Encoding]::new($false,$true)
         $bytes=$encoder.GetBytes((Json-Public $receipt))
         if ($bytes.Length -gt 4096) {throw 'protocol'}
@@ -785,6 +873,9 @@ $nativeOwner = {
             base_sha=$metadata.base_sha;target=$metadata.target;compiler='1.94.0';sha256=$script:exampleHash}
         $identityBytes=$encoder.GetBytes((Json-Public $identity))
         if ($identityBytes.Length -gt 4096) {throw 'protocol'}
+        # BEGIN fixed-prerequisite-substage evidence_parent
+        $shared['substage']='evidence_parent'
+        # END fixed-prerequisite-substage evidence_parent
         Bootstrap-Chain $metadata.cwd
         $directory=[IO.Path]::Combine($metadata.cwd,'prerequisite-evidence')
         $security=[Security.AccessControl.DirectorySecurity]::new()
@@ -792,10 +883,22 @@ $nativeOwner = {
         # Existing-or-new only. This supplies NO create-this-run or removal authority;
         # unknown/existing descriptors are read back and refused without repair.
         $info=[IO.DirectoryInfo]::new($directory)
+        # BEGIN fixed-prerequisite-substage evidence_directory_create
+        $shared['substage']='evidence_directory_create'
+        # END fixed-prerequisite-substage evidence_directory_create
         $null=Native-Call {$info.Create($security)}
         Check-Attributes $directory $true
+        # BEGIN fixed-prerequisite-substage evidence_directory_security
+        $shared['substage']='evidence_directory_security'
+        # END fixed-prerequisite-substage evidence_directory_security
         Check-PublicSecurity (Native-Call {$info.GetAccessControl()}) $true
+        # BEGIN fixed-prerequisite-substage evidence_identity_write
+        $shared['substage']='evidence_identity_write'
+        # END fixed-prerequisite-substage evidence_identity_write
         Write-PublicNew ([IO.Path]::Combine($directory,'built-example.json')) $identityBytes
+        # BEGIN fixed-prerequisite-substage evidence_receipt_write
+        $shared['substage']='evidence_receipt_write'
+        # END fixed-prerequisite-substage evidence_receipt_write
         Write-PublicNew ([IO.Path]::Combine($directory,'receipt.json')) $bytes
     }
 
@@ -1036,6 +1139,9 @@ $nativeOwner = {
         $shared['failure_checkpoint']=$shared['checkpoint']
         $shared['failure_category']=$category
         $shared['failure_kind']=Get-FixedFailureKind $_.Exception
+        # BEGIN fixed-prerequisite-substage first_failure_snapshot
+        $shared['failure_substage']=$shared['substage']
+        # END fixed-prerequisite-substage first_failure_snapshot
         # END fixed-prerequisite-diagnostics owner_failure_snapshot
         $guardFacts.continuous=$false
         try {
@@ -1057,6 +1163,9 @@ $nativeOwner = {
         # BEGIN fixed-prerequisite-diagnostics evidence_refusal_handler
         } catch {
             $shared['evidence_kind']=Get-FixedFailureKind $_.Exception
+            # BEGIN fixed-prerequisite-substage evidence_failure_snapshot
+            $shared['evidence_substage']=$shared['substage']
+            # END fixed-prerequisite-substage evidence_failure_snapshot
             $shared['failure_evidence']='refused'
         }
         # END fixed-prerequisite-diagnostics evidence_refusal_handler
@@ -1076,6 +1185,11 @@ $shared['failure_kind']='unknown'
 $shared['failure_evidence']='not_attempted'
 $shared['evidence_kind']='unknown'
 # END fixed-prerequisite-diagnostics diagnostic_defaults
+# BEGIN fixed-prerequisite-substage defaults
+$shared['substage']='entry'
+$shared['failure_substage']='unknown'
+$shared['evidence_substage']='unknown'
+# END fixed-prerequisite-substage defaults
 $metadata=@{source_sha=$env:GITHUB_SHA;base_sha=$env:LOCRON_PREREQUISITE_BASE_SHA;
     workflow=$env:GITHUB_WORKFLOW;run_id=$env:GITHUB_RUN_ID;run_attempt=$env:GITHUB_RUN_ATTEMPT;
     target=$env:LOCRON_PREREQUISITE_TARGET;image=($env:ImageOS+'/'+$env:ImageVersion);cwd=[Environment]::CurrentDirectory}
