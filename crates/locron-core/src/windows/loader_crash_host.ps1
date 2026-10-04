@@ -144,6 +144,7 @@ throw 'staged publisher was not terminated'
 }
 
 # locron-heartbeat-normal-body
+$directory = [string]$request.directory
 $info = [Diagnostics.ProcessStartInfo]::new()
 $info.FileName = [string]$request.executable
 $info.Arguments = '--exact windows::loader_tests::owned_loader_fixture_child --nocapture'
@@ -163,12 +164,230 @@ $pending = [IO.Path]::Combine($directory, 'generic-pids.pending')
 [IO.File]::Move($pending, [IO.Path]::Combine($directory, 'generic-pids.json'))
 $counter = [uint64]0
 $heartbeat = [IO.Path]::Combine($directory, 'generic-heartbeat')
-$first = $true
 $clock = [Diagnostics.Stopwatch]::StartNew()
+$file = New-Beat $heartbeat $clock 30000
 while ($clock.ElapsedMilliseconds -lt 30000) {
     $counter++
-    Publish-LocronHeartbeatSnapshot (New-LocronHeartbeatSnapshot $heartbeat $counter) $heartbeat $first
-    $first = $false
+    Add-Beat $file $counter 21 $clock 30000
     [Threading.Thread]::Sleep(25)
 }
 throw 'crash host was not terminated inside its owned fixture budget'
+
+# locron-heartbeat-append-common
+$beatSource = @'
+function Check-Time($clock, [int]$limit) {
+if ($clock.ElapsedMilliseconds -ge $limit) { throw 'append deadline elapsed' }
+}
+function New-Beat([string]$path, $clock, [int]$limit) {
+Check-Time $clock $limit
+$file = [IO.FileStream]::new($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+Check-Time $clock $limit
+return $file
+}
+function Add-Beat($file, [uint64]$seq, [int]$size, $clock, [int]$limit) {
+if ($seq -lt 1 -or $seq -gt 2048 -or $size -lt 1 -or $size -gt 21) { throw 'append bound' }
+$bytes = [Text.Encoding]::ASCII.GetBytes($seq.ToString('D20', [Globalization.CultureInfo]::InvariantCulture) + "`n")
+Check-Time $clock $limit
+$file.Write($bytes, 0, $size)
+Check-Time $clock $limit
+$file.Flush()
+Check-Time $clock $limit
+}
+'@
+. ([scriptblock]::Create($beatSource))
+
+# locron-heartbeat-append-proof-body
+$dir = [string]$request.directory
+$limit = [int]$request.budget_ms
+if ($limit -le 0 -or $limit -gt 30000) { throw 'append proof budget' }
+$clock = [Diagnostics.Stopwatch]::StartNew()
+function Left {
+$left = $limit - $clock.ElapsedMilliseconds
+if ($left -le 0) { throw 'append deadline elapsed' }
+return [int]$left
+}
+function Read-Bytes($file) {
+$null = Left
+$null = $file.Seek(0, [IO.SeekOrigin]::Begin)
+$null = Left
+$bytes = [byte[]]::new(43009)
+$count = 0
+while ($count -lt $bytes.Length) {
+$null = Left
+$read = $file.Read($bytes, $count, $bytes.Length - $count)
+$null = Left
+if ($read -eq 0) { break }
+$count += $read
+}
+if ($count -eq 0) { return ,([byte[]]::new(0)) }
+return ,([byte[]]$bytes[0..($count - 1)])
+}
+function Require($file) {
+$bytes = Read-Bytes $file
+$exact = [Text.Encoding]::ASCII.GetBytes('00000000000000000001' + "`n" + '00000000000000000002')
+if ($bytes.Length -ne 41) { throw 'partial append length' }
+for ($i = 0; $i -lt 41; $i++) {
+if ($bytes[$i] -ne $exact[$i]) { throw 'partial append bytes' }
+}
+}
+$move = [IO.Path]::Combine($dir, 'powershell-append-rename')
+$moved = [IO.Path]::Combine($dir, 'powershell-append-renamed')
+$drop = [IO.Path]::Combine($dir, 'powershell-append-delete')
+function Refuse {
+$noMove = $false
+$noDrop = $false
+try { $null = Left; [IO.File]::Move($move, $moved) } catch { $noMove = $true }
+$null = Left
+try { $null = Left; [IO.File]::Delete($drop) } catch { $noDrop = $true }
+$null = Left
+if (-not $noMove -or -not $noDrop) { throw 'append mutation unexpectedly admitted' }
+}
+$code = $beatSource + @'
+# locron-heartbeat-append-child-begin
+$ErrorActionPreference = 'Stop'
+$dir = [Environment]::GetEnvironmentVariable('LOCRON_LOADER_CRASH_DIRECTORY')
+$limit = [int]::Parse([Environment]::GetEnvironmentVariable('LOCRON_HEARTBEAT_PROBE_BUDGET_MS'), [Globalization.CultureInfo]::InvariantCulture)
+if ($limit -le 0 -or $limit -gt 30000) { throw 'append child budget' }
+$clock = [Diagnostics.Stopwatch]::StartNew()
+$writers = @()
+try {
+foreach ($name in @('powershell-append-rename', 'powershell-append-delete')) {
+$writer = New-Beat ([IO.Path]::Combine($dir, $name)) $clock $limit
+$writers += $writer
+Add-Beat $writer 1 21 $clock $limit
+Add-Beat $writer 2 20 $clock $limit
+}
+$ready = New-Beat ([IO.Path]::Combine($dir, 'powershell-append-ready')) $clock $limit
+try {
+$bytes = [Text.Encoding]::ASCII.GetBytes($PID.ToString([Globalization.CultureInfo]::InvariantCulture))
+Check-Time $clock $limit
+$ready.Write($bytes, 0, $bytes.Length)
+Check-Time $clock $limit
+$ready.Flush()
+Check-Time $clock $limit
+} finally { $ready.Dispose() }
+while ($clock.ElapsedMilliseconds -lt $limit) { [Threading.Thread]::Sleep(5) }
+throw 'append child was not terminated'
+} finally { foreach ($writer in $writers) { $writer.Dispose() } }
+# locron-heartbeat-append-child-end
+'@
+$info = [Diagnostics.ProcessStartInfo]::new()
+$null = Left
+$info.FileName = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+$null = Left
+$info.Arguments = '-NoProfile -NonInteractive -EncodedCommand ' + [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
+$info.UseShellExecute = $false
+$info.CreateNoWindow = $true
+$info.RedirectStandardInput = $true
+$info.RedirectStandardOutput = $true
+$info.RedirectStandardError = $true
+$info.EnvironmentVariables['LOCRON_LOADER_CRASH_DIRECTORY'] = $dir
+$info.EnvironmentVariables['LOCRON_HEARTBEAT_PROBE_BUDGET_MS'] = (Left).ToString([Globalization.CultureInfo]::InvariantCulture)
+$null = Left
+$command = '"' + $info.FileName + '" ' + $info.Arguments + [char]0
+if ($command.Length -gt 31743) { throw 'append command bound' }
+$null = Left
+$child = [Diagnostics.Process]::Start($info)
+$readMove = $null
+$readDrop = $null
+try {
+$null = Left
+$childPid = [uint32]$child.Id
+$null = Left
+$handle = $child.Handle
+$null = Left
+$alive = -not $child.HasExited
+$null = Left
+if ($childPid -eq 0 -or $handle -eq [IntPtr]::Zero -or -not $alive) { throw 'append publisher not live' }
+$pidText = $childPid.ToString([Globalization.CultureInfo]::InvariantCulture)
+$ready = [IO.Path]::Combine($dir, 'powershell-append-ready')
+while ($true) {
+$null = Left
+if ([IO.File]::Exists($ready)) {
+$null = Left
+$receipt = [IO.FileStream]::new($ready, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+$null = Left
+try { $bytes = Read-Bytes $receipt } finally { $receipt.Dispose() }
+if ($bytes.Length -gt 0) {
+$text = [Text.Encoding]::ASCII.GetString($bytes)
+if (-not $pidText.StartsWith($text, [StringComparison]::Ordinal)) { throw 'append publisher identity mismatch' }
+if ($text -ceq $pidText) { break }
+}
+}
+$null = Left
+if ($child.HasExited) { throw 'append publisher exited before ready' }
+$null = Left
+[Threading.Thread]::Sleep(5)
+}
+$null = Left
+$readMove = [IO.FileStream]::new($move, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+$null = Left
+$readDrop = [IO.FileStream]::new($drop, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+$null = Left
+Require $readMove
+Require $readDrop
+$null = Left
+if ($child.HasExited) { throw 'append publisher not live before kill' }
+$null = Left
+Refuse
+$null = Left
+$child.Kill()
+$null = Left
+if (-not $child.WaitForExit((Left))) { throw 'append publisher not reaped' }
+$null = Left
+if ($child.ExitCode -eq 0) { throw 'append publisher not hard stopped' }
+$null = Left
+if ($child.StandardOutput.ReadToEnd().Length -ne 0) { throw 'unexpected append child output' }
+$null = Left
+if ($child.StandardError.ReadToEnd().Length -ne 0) { throw 'unexpected append child error' }
+$null = Left
+Require $readMove
+Require $readDrop
+Refuse
+$readMove.Dispose(); $readMove = $null
+$readDrop.Dispose(); $readDrop = $null
+$null = Left
+[IO.File]::Move($move, $moved)
+$null = Left
+$file = [IO.FileStream]::new($moved, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+$null = Left
+try { Require $file } finally { $file.Dispose() }
+$null = Left
+[IO.File]::Delete($drop)
+$null = Left
+$absent = $false
+try { $null = [IO.File]::GetAttributes($drop) } catch {
+$e = $_.Exception
+for ($i = 0; $i -lt 5 -and $null -ne $e; $i++) {
+if ($e -is [IO.FileNotFoundException]) { $absent = $true; break }
+$e = $e.InnerException
+}
+}
+$null = Left
+if (-not $absent) { throw 'append deletion unknown' }
+$hit = $false
+try { $unexpected = New-Beat $moved $clock $limit; $unexpected.Dispose() } catch { $hit = $true }
+$null = Left
+if (-not $hit) { throw 'append CreateNew collision admitted' }
+$file = [IO.FileStream]::new($moved, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+$null = Left
+try { Require $file } finally { $file.Dispose() }
+$null = Left
+[IO.File]::Delete($moved)
+$null = Left
+$next = New-Beat $moved $clock $limit
+try { Add-Beat $next 1 21 $clock $limit } finally { $next.Dispose() }
+$null = Left
+$file = [IO.FileStream]::new($moved, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+$null = Left
+try {
+$bytes = Read-Bytes $file
+if ($bytes.Length -ne 21 -or [Text.Encoding]::ASCII.GetString($bytes) -cne ('00000000000000000001' + "`n")) { throw 'append collision continuation bytes' }
+} finally { $file.Dispose() }
+$null = Left
+@{root_pid=[uint32]$PID; publisher_pid=$childPid; staged=$true; killed=$true; reaped=$true; reader_refused=$true; rename_released=$true; delete_released=$true; collision=$hit; count=1; tail_len=20} | & $locronToJson -Compress
+} finally {
+if ($null -ne $readMove) { $readMove.Dispose() }
+if ($null -ne $readDrop) { $readDrop.Dispose() }
+$child.Dispose()
+}

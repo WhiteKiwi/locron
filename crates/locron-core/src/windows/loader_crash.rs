@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -19,21 +19,65 @@ const HOST: &str = include_str!("loader_crash_host.ps1");
 const OBSERVER: &str = include_str!("loader_crash_observer.ps1");
 const PROOF_BODY: &str = "# locron-heartbeat-proof-body";
 const NORMAL_BODY: &str = "# locron-heartbeat-normal-body";
+const APPEND_COMMON: &str = "# locron-heartbeat-append-common";
+const APPEND_PROOF_BODY: &str = "# locron-heartbeat-append-proof-body";
+const APPEND_CHILD_BEGIN: &str = "# locron-heartbeat-append-child-begin";
+const APPEND_CHILD_END: &str = "# locron-heartbeat-append-child-end";
+const APPEND_RECORD_BYTES: usize = 21;
+const APPEND_MAX_RECORDS: u64 = 2_048;
+const APPEND_MAX_BYTES: usize = 43_008;
 
-fn select_host_source(source: &str, proof: bool) -> String {
-    assert_eq!(source.matches(PROOF_BODY).count(), 1);
-    assert_eq!(source.matches(NORMAL_BODY).count(), 1);
-    let (shared, bodies) = source.split_once(PROOF_BODY).unwrap();
-    let (proof_body, normal_body) = bodies.split_once(NORMAL_BODY).unwrap();
-    format!("{shared}{}", if proof { proof_body } else { normal_body })
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HostProgram {
+    Normal,
+    SnapshotProof,
+    AppendProof,
 }
 
-fn host_source(proof: bool) -> &'static str {
+fn select_host_source(source: &str, program: HostProgram) -> String {
+    let markers = [
+        PROOF_BODY,
+        NORMAL_BODY,
+        APPEND_COMMON,
+        APPEND_PROOF_BODY,
+        APPEND_CHILD_BEGIN,
+        APPEND_CHILD_END,
+    ];
+    for marker in markers {
+        assert_eq!(source.matches(marker).count(), 1);
+    }
+    for line in source
+        .lines()
+        .filter(|line| line.starts_with("# locron-heartbeat-"))
+    {
+        assert!(
+            markers.contains(&line),
+            "unknown heartbeat program delimiter"
+        );
+    }
+    let (shared, bodies) = source.split_once(PROOF_BODY).unwrap();
+    let (proof_body, bodies) = bodies.split_once(NORMAL_BODY).unwrap();
+    let (normal_body, bodies) = bodies.split_once(APPEND_COMMON).unwrap();
+    let (append_common, append_proof) = bodies.split_once(APPEND_PROOF_BODY).unwrap();
+    assert!(append_proof.find(APPEND_CHILD_BEGIN) < append_proof.find(APPEND_CHILD_END));
+    match program {
+        HostProgram::Normal => format!("{append_common}{normal_body}"),
+        HostProgram::SnapshotProof => format!("{shared}{proof_body}"),
+        HostProgram::AppendProof => format!("{append_common}{append_proof}"),
+    }
+}
+
+fn host_source(program: HostProgram) -> &'static str {
     static NORMAL: OnceLock<String> = OnceLock::new();
-    static PROOF: OnceLock<String> = OnceLock::new();
-    let selected = if proof { &PROOF } else { &NORMAL };
+    static SNAPSHOT_PROOF: OnceLock<String> = OnceLock::new();
+    static APPEND_PROOF: OnceLock<String> = OnceLock::new();
+    let selected = match program {
+        HostProgram::Normal => &NORMAL,
+        HostProgram::SnapshotProof => &SNAPSHOT_PROOF,
+        HostProgram::AppendProof => &APPEND_PROOF,
+    };
     selected
-        .get_or_init(|| select_host_source(HOST, proof))
+        .get_or_init(|| select_host_source(HOST, program))
         .as_str()
 }
 
@@ -94,12 +138,27 @@ struct CounterObservation {
     in_flight: bool,
 }
 
+#[derive(Debug, Default)]
+struct AppendObservation {
+    name: &'static str,
+    status: &'static str,
+    count: Option<u64>,
+    tail_len: Option<usize>,
+    bytes: usize,
+    error_kind: Option<io::ErrorKind>,
+    raw_os_error: Option<i32>,
+    elapsed_ms: u128,
+    attempts: u64,
+    in_flight: bool,
+}
+
 struct Observations {
     started: Instant,
     deadline: Instant,
     phases: VecDeque<(&'static str, u128, u128)>,
     facts: OwnershipFacts,
     counters: [CounterObservation; 2],
+    appends: [AppendObservation; 2],
 }
 
 impl Observations {
@@ -110,6 +169,10 @@ impl Observations {
             phases: VecDeque::new(),
             facts: OwnershipFacts::default(),
             counters: std::array::from_fn(|_| CounterObservation::default()),
+            appends: std::array::from_fn(|_| AppendObservation {
+                status: "unknown",
+                ..AppendObservation::default()
+            }),
         }
     }
 
@@ -117,8 +180,8 @@ impl Observations {
         super::remaining(self.deadline).map_err(|error| {
             // Only saved, bounded observations: never reopen files or poll children on expiry.
             format!(
-                "{error:?}: phases={:?} facts={:?} counters={:?}",
-                self.phases, self.facts, self.counters
+                "{error:?}: phases={:?} facts={:?} counters={:?} appends={:?}",
+                self.phases, self.facts, self.counters, self.appends
             )
         })
     }
@@ -221,6 +284,230 @@ impl Observations {
         file.take(32 * 1024).read_to_string(&mut text).unwrap();
         self.check();
         text
+    }
+
+    fn append_sample(
+        &mut self,
+        slot: usize,
+        name: &'static str,
+        initial: bool,
+        read: impl FnOnce(&Self) -> io::Result<Vec<u8>>,
+    ) -> Result<Option<AppendSample>, String> {
+        self.remaining()?;
+        let observation = &mut self.appends[slot];
+        if observation.name != name {
+            *observation = AppendObservation {
+                name,
+                status: "unknown",
+                ..AppendObservation::default()
+            };
+        }
+        observation.attempts = observation.attempts.saturating_add(1);
+        observation.in_flight = true;
+        let result = read(self);
+        let observation = &mut self.appends[slot];
+        observation.in_flight = false;
+        observation.elapsed_ms = self.started.elapsed().as_millis();
+        observation.count = None;
+        observation.tail_len = None;
+        observation.bytes = 0;
+        observation.error_kind = None;
+        observation.raw_os_error = None;
+        let parsed = match result {
+            Ok(bytes) => {
+                observation.bytes = bytes.len();
+                match parse_append(&bytes) {
+                    Ok(sample) => {
+                        observation.status = if sample.count == 0 {
+                            "no_complete_record"
+                        } else {
+                            "ordered_prefix"
+                        };
+                        observation.count = Some(sample.count);
+                        observation.tail_len = Some(sample.tail_len);
+                        Ok(Some(sample))
+                    }
+                    Err(class) => {
+                        observation.status = class;
+                        Err(class)
+                    }
+                }
+            }
+            Err(error) => {
+                observation.status = "read_error";
+                observation.error_kind = Some(error.kind());
+                observation.raw_os_error = error.raw_os_error();
+                if initial && error.kind() == io::ErrorKind::NotFound {
+                    observation.status = "not_created";
+                    Ok(None)
+                } else {
+                    Err("read_error")
+                }
+            }
+        };
+        self.remaining()?;
+        parsed.map_err(|class| format!("{class}: {:?}", self.appends[slot]))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AppendSample {
+    count: u64,
+    tail_len: usize,
+}
+
+impl AppendSample {
+    fn prefix_len(self) -> usize {
+        usize::try_from(self.count).unwrap() * APPEND_RECORD_BYTES + self.tail_len
+    }
+}
+
+fn append_record(sequence: u64) -> [u8; APPEND_RECORD_BYTES] {
+    assert!((1..=APPEND_MAX_RECORDS).contains(&sequence));
+    format!("{sequence:020}\n").into_bytes().try_into().unwrap()
+}
+
+fn parse_append(bytes: &[u8]) -> Result<AppendSample, &'static str> {
+    if bytes.len() > APPEND_MAX_BYTES {
+        return Err("oversized");
+    }
+    let count = bytes.len() / APPEND_RECORD_BYTES;
+    for (index, record) in bytes.chunks_exact(APPEND_RECORD_BYTES).enumerate() {
+        if record[20] != b'\n' || !record[..20].iter().all(u8::is_ascii_digit) {
+            return Err("malformed_record");
+        }
+        if record != append_record(u64::try_from(index).unwrap() + 1) {
+            return Err("sequence_mismatch");
+        }
+    }
+    let tail = &bytes[count * APPEND_RECORD_BYTES..];
+    if !tail.is_empty() && tail != &append_record(u64::try_from(count).unwrap() + 1)[..tail.len()] {
+        return Err("invalid_tail");
+    }
+    Ok(AppendSample {
+        count: u64::try_from(count).unwrap(),
+        tail_len: tail.len(),
+    })
+}
+
+fn read_append(file: &mut File, deadline: Instant) -> io::Result<Vec<u8>> {
+    super::remaining(deadline)?;
+    file.seek(SeekFrom::Start(0))?;
+    super::remaining(deadline)?;
+    let mut bytes = Vec::with_capacity(APPEND_MAX_BYTES + 1);
+    let mut buffer = [0_u8; 4_096];
+    while bytes.len() <= APPEND_MAX_BYTES {
+        let limit = buffer.len().min(APPEND_MAX_BYTES + 1 - bytes.len());
+        super::remaining(deadline)?;
+        let count = file.read(&mut buffer[..limit])?;
+        super::remaining(deadline)?;
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+    }
+    Ok(bytes)
+}
+
+#[derive(Default)]
+struct AppendReaders {
+    files: [Option<File>; 2],
+    previous: [Option<AppendSample>; 2],
+}
+
+impl AppendReaders {
+    fn sample(
+        &mut self,
+        directory: &Path,
+        name: &'static str,
+        slot: usize,
+        observations: &mut Observations,
+    ) -> AppendSample {
+        self.try_sample(directory, name, slot, observations)
+            .unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    fn try_sample(
+        &mut self,
+        directory: &Path,
+        name: &'static str,
+        slot: usize,
+        observations: &mut Observations,
+    ) -> Result<AppendSample, String> {
+        loop {
+            let initial = self.files[slot].is_none();
+            let mut candidate = None;
+            let sample = observations.append_sample(slot, name, initial, |observations| {
+                let file = if let Some(file) = self.files[slot].as_mut() {
+                    file
+                } else {
+                    observations.check();
+                    candidate = Some(
+                        OpenOptions::new()
+                            .read(true)
+                            .share_mode(3)
+                            .open(directory.join(name))?,
+                    );
+                    observations.check();
+                    candidate.as_mut().unwrap()
+                };
+                read_append(file, observations.deadline)
+            })?;
+            if let Some(sample) = sample {
+                if self.previous[slot]
+                    .is_some_and(|previous| sample.prefix_len() < previous.prefix_len())
+                {
+                    observations.appends[slot].status = "prefix_rewind";
+                    return Err(format!("prefix_rewind: {:?}", observations.appends[slot]));
+                }
+                if sample.count > 0 {
+                    if initial {
+                        self.files[slot] = candidate;
+                    }
+                    self.previous[slot] = Some(sample);
+                    return Ok(sample);
+                }
+                assert!(initial, "ready heartbeat lost every complete record");
+            }
+            observations.remaining()?;
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+struct HeartbeatAppender {
+    file: File,
+    next: u64,
+}
+
+impl HeartbeatAppender {
+    fn create(path: &Path, deadline: Instant) -> io::Result<Self> {
+        super::remaining(deadline)?;
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .share_mode(3)
+            .open(path)?;
+        super::remaining(deadline)?;
+        Ok(Self { file, next: 1 })
+    }
+
+    fn append(&mut self, deadline: Instant) -> io::Result<()> {
+        self.write_next(APPEND_RECORD_BYTES, deadline)?;
+        self.next += 1;
+        Ok(())
+    }
+
+    fn write_next(&mut self, length: usize, deadline: Instant) -> io::Result<()> {
+        if self.next > APPEND_MAX_RECORDS || !(1..=APPEND_RECORD_BYTES).contains(&length) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "append bound"));
+        }
+        super::remaining(deadline)?;
+        self.file.write_all(&append_record(self.next)[..length])?;
+        super::remaining(deadline)?;
+        self.file.flush()?;
+        super::remaining(deadline)?;
+        Ok(())
     }
 }
 
@@ -342,10 +629,14 @@ fn wait_artifact(
     }
 }
 
-fn beats(directory: &Path, observations: &mut Observations) -> (u64, u64) {
+fn beats(
+    directory: &Path,
+    readers: &mut AppendReaders,
+    observations: &mut Observations,
+) -> (AppendSample, AppendSample) {
     (
-        observations.counter(directory, "generic-heartbeat", 0),
-        observations.counter(directory, "native-heartbeat", 1),
+        readers.sample(directory, "generic-heartbeat", 0, observations),
+        readers.sample(directory, "native-heartbeat", 1, observations),
     )
 }
 
@@ -365,6 +656,8 @@ pub(super) fn driver() {
     let started = Instant::now();
     let deadline = started + Duration::from_secs(45);
     let mut observations = Observations::new(started, deadline);
+    // These actual file owners never enter saved failure formatting.
+    let mut readers = AppendReaders::default();
     observations.phase("host-spawn");
     let mut host = Helper::spawn("parent-exit-host", &directory);
     observations.phase("observer-spawn");
@@ -382,11 +675,11 @@ pub(super) fn driver() {
     );
     observations.facts.confirm(OwnershipFact::HandlesBound);
     observations.phase("before-crash-counter-baseline");
-    let before = beats(&directory, &mut observations);
+    let before = beats(&directory, &mut readers, &mut observations);
     std::thread::sleep(Duration::from_millis(200));
     observations.phase("before-crash-counter-progress");
-    let live = beats(&directory, &mut observations);
-    assert!(live.0 > before.0 && live.1 > before.1);
+    let live = beats(&directory, &mut readers, &mut observations);
+    assert!(live.0.count > before.0.count && live.1.count > before.1.count);
     host.live(&observations);
     observer.live(&observations);
     observations.check();
@@ -421,10 +714,10 @@ pub(super) fn driver() {
     observations.check();
     observations.facts.confirm(OwnershipFact::GuardRefusedAfter);
     observations.phase("after-crash-counter-baseline");
-    let stopped = beats(&directory, &mut observations);
+    let stopped = beats(&directory, &mut readers, &mut observations);
     std::thread::sleep(Duration::from_millis(200));
     observations.phase("after-crash-counter-settled");
-    assert_eq!(beats(&directory, &mut observations), stopped);
+    assert_eq!(beats(&directory, &mut readers, &mut observations), stopped);
     observations.phase("observer-release");
     publish(&directory, "observer-release", b"release");
     observations.facts.confirm(OwnershipFact::ObserverReleased);
@@ -453,7 +746,8 @@ pub(super) fn driver() {
     observations.facts.confirm(OwnershipFact::GuardReleased);
     std::thread::sleep(Duration::from_millis(200));
     observations.phase("final-counter-settled");
-    assert_eq!(beats(&directory, &mut observations), stopped);
+    assert_eq!(beats(&directory, &mut readers, &mut observations), stopped);
+    drop(readers);
     drop(released);
     observations.check();
     println!("parent-exit-targets-handles-heartbeats-guards-confirmed");
@@ -504,6 +798,7 @@ fn observation_proofs(started: Instant, deadline: Instant) {
 
 fn publication_proofs(directory: &Path, observations: &mut Observations) {
     observation_proofs(observations.started, observations.deadline);
+    append_file_proofs(directory, observations);
     observations.phase("rust-publication-first");
     let path = directory.join("rust-publication-heartbeat");
     publish_heartbeat(heartbeat_snapshot(&path, 7).unwrap(), &path, true).unwrap();
@@ -587,11 +882,19 @@ fn publication_proofs(directory: &Path, observations: &mut Observations) {
         7
     );
     assert_eq!(observations.counters[0].bytes, b"7");
+    observations.phase("rust-append-before-kill");
+    let mut append_readers = AppendReaders::default();
+    assert_rust_partial_files(directory, &mut append_readers, observations);
+    rust_append_mutations_refuse(directory, observations);
     observations.phase("rust-direct-publisher-kill");
     publisher.child.0.kill().unwrap();
     let status = publisher.exit_until(observations);
     assert!(!status.success());
     observations.phase("rust-direct-publisher-reaped");
+    assert_rust_partial_files(directory, &mut append_readers, observations);
+    rust_append_mutations_refuse(directory, observations);
+    drop(append_readers);
+    rust_append_mutations_release(directory, observations);
     assert_eq!(
         observations.counter(directory, "rust-publication-heartbeat", 0),
         7
@@ -623,6 +926,230 @@ fn publication_proofs(directory: &Path, observations: &mut Observations) {
             .text(&powershell.stdout)
             .contains("powershell-heartbeat-publication-proofs-confirmed")
     );
+    assert!(
+        observations
+            .text(&powershell.stdout)
+            .contains("powershell-heartbeat-append-proofs-confirmed")
+    );
+}
+
+fn partial_bytes() -> Vec<u8> {
+    let mut bytes = append_record(1).to_vec();
+    bytes.extend_from_slice(&append_record(2)[..20]);
+    bytes
+}
+
+fn assert_rust_partial_files(
+    directory: &Path,
+    readers: &mut AppendReaders,
+    observations: &mut Observations,
+) {
+    for (slot, name) in ["rust-append-rename", "rust-append-delete"]
+        .into_iter()
+        .enumerate()
+    {
+        assert_eq!(
+            readers.sample(directory, name, slot, observations),
+            AppendSample {
+                count: 1,
+                tail_len: 20
+            }
+        );
+    }
+}
+
+fn rust_append_mutations_refuse(directory: &Path, observations: &Observations) {
+    observations.check();
+    let rename = fs::rename(
+        directory.join("rust-append-rename"),
+        directory.join("rust-append-renamed"),
+    )
+    .unwrap_err();
+    observations.check();
+    let delete = fs::remove_file(directory.join("rust-append-delete")).unwrap_err();
+    observations.check();
+    // Exact same operations must later succeed after all actual holders release.
+    println!(
+        "rust-append-mutation-refused rename={:?}/{:?} delete={:?}/{:?}",
+        rename.kind(),
+        rename.raw_os_error(),
+        delete.kind(),
+        delete.raw_os_error()
+    );
+}
+
+fn rust_append_mutations_release(directory: &Path, observations: &Observations) {
+    observations.check();
+    fs::rename(
+        directory.join("rust-append-rename"),
+        directory.join("rust-append-renamed"),
+    )
+    .unwrap();
+    observations.check();
+    let mut renamed = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(directory.join("rust-append-renamed"))
+        .unwrap();
+    observations.check();
+    assert_eq!(
+        read_append(&mut renamed, observations.deadline).unwrap(),
+        partial_bytes()
+    );
+    drop(renamed);
+    observations.check();
+    fs::remove_file(directory.join("rust-append-delete")).unwrap();
+    observations.check();
+    let absent = fs::symlink_metadata(directory.join("rust-append-delete")).unwrap_err();
+    observations.check();
+    assert_eq!(absent.kind(), io::ErrorKind::NotFound);
+    println!("rust-heartbeat-partial-append-kill-reader-release-confirmed");
+}
+
+fn append_file_proofs(directory: &Path, observations: &mut Observations) {
+    observations.phase("append-actual-file-controls");
+    let collision_path = directory.join("append-create-collision");
+    let mut writer = HeartbeatAppender::create(&collision_path, observations.deadline).unwrap();
+    writer.append(observations.deadline).unwrap();
+    writer.write_next(20, observations.deadline).unwrap();
+    let collision = match HeartbeatAppender::create(&collision_path, observations.deadline) {
+        Ok(_) => panic!("append CreateNew adopted an existing file"),
+        Err(error) => error,
+    };
+    assert_eq!(collision.kind(), io::ErrorKind::AlreadyExists);
+    observations.check();
+    let mut reader = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(&collision_path)
+        .unwrap();
+    observations.check();
+    assert_eq!(
+        read_append(&mut reader, observations.deadline).unwrap(),
+        partial_bytes()
+    );
+    drop(reader);
+    drop(writer);
+    observations.check();
+    fs::remove_file(&collision_path).unwrap();
+    observations.check();
+    let mut continuation =
+        HeartbeatAppender::create(&collision_path, observations.deadline).unwrap();
+    continuation.append(observations.deadline).unwrap();
+    drop(continuation);
+    observations.check();
+    let mut reader = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(&collision_path)
+        .unwrap();
+    observations.check();
+    assert_eq!(
+        read_append(&mut reader, observations.deadline).unwrap(),
+        append_record(1)
+    );
+    drop(reader);
+
+    observations.check();
+    let rewind_path = directory.join("append-rewind");
+    let mut corruptor = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .share_mode(3)
+        .open(&rewind_path)
+        .unwrap();
+    observations.check();
+    corruptor
+        .write_all(&[append_record(1), append_record(2)].concat())
+        .unwrap();
+    observations.check();
+    corruptor.flush().unwrap();
+    observations.check();
+    let mut readers = AppendReaders::default();
+    assert_eq!(
+        readers.sample(directory, "append-rewind", 0, observations),
+        AppendSample {
+            count: 2,
+            tail_len: 0
+        }
+    );
+    observations.check();
+    // Explicit corruption control, never an operation of either real appender.
+    corruptor.set_len(21).unwrap();
+    observations.check();
+    let rewind = readers
+        .try_sample(directory, "append-rewind", 0, observations)
+        .unwrap_err();
+    assert!(rewind.starts_with("prefix_rewind"));
+    assert_eq!(observations.appends[0].status, "prefix_rewind");
+    drop(corruptor);
+    drop(readers);
+
+    let mut bad_tail = append_record(1).to_vec();
+    bad_tail.extend_from_slice(b"x");
+    for (name, bytes, expected) in [
+        ("append-malformed", vec![b'x'; 21], "malformed_record"),
+        (
+            "append-sequence",
+            append_record(2).to_vec(),
+            "sequence_mismatch",
+        ),
+        ("append-tail", bad_tail, "invalid_tail"),
+        (
+            "append-overflow",
+            vec![b'0'; APPEND_MAX_BYTES + 1],
+            "oversized",
+        ),
+    ] {
+        observations.check();
+        let path = directory.join(name);
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        observations.check();
+        file.write_all(&bytes).unwrap();
+        observations.check();
+        file.flush().unwrap();
+        observations.check();
+        drop(file);
+        observations.check();
+        let mut file = OpenOptions::new()
+            .read(true)
+            .share_mode(3)
+            .open(&path)
+            .unwrap();
+        observations.check();
+        let error = observations
+            .append_sample(0, name, false, |observations| {
+                read_append(&mut file, observations.deadline)
+            })
+            .unwrap_err();
+        assert!(error.starts_with(expected));
+        assert_eq!(observations.appends[0].status, expected);
+    }
+
+    // The file is real, but the expired observation must not even enter its seek/read.
+    observations.check();
+    let mut file = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(&collision_path)
+        .unwrap();
+    observations.check();
+    let mut expired = Observations::new(observations.started, Instant::now());
+    let mut entered = false;
+    assert!(
+        expired
+            .append_sample(0, "append-expired", false, |observations| {
+                entered = true;
+                read_append(&mut file, observations.deadline)
+            })
+            .is_err()
+    );
+    assert!(!entered);
+    assert_eq!(expired.appends[0].attempts, 0);
 }
 
 fn probe_deadline() -> Instant {
@@ -639,6 +1166,14 @@ pub(super) fn rust_staged_publisher() {
     let deadline = probe_deadline();
     let path = directory.join("rust-publication-heartbeat");
     let _unpublished = heartbeat_snapshot(&path, 8).unwrap();
+    let mut rename =
+        HeartbeatAppender::create(&directory.join("rust-append-rename"), deadline).unwrap();
+    rename.append(deadline).unwrap();
+    rename.write_next(20, deadline).unwrap();
+    let mut delete =
+        HeartbeatAppender::create(&directory.join("rust-append-delete"), deadline).unwrap();
+    delete.append(deadline).unwrap();
+    delete.write_next(20, deadline).unwrap();
     super::remaining(deadline).unwrap();
     let ready = directory.join("rust-stage-ready");
     publish_heartbeat(
@@ -657,7 +1192,7 @@ pub(super) fn powershell_publication_proof() {
     let directory = directory();
     let deadline = probe_deadline();
     let request = prepare_adapter(
-        host_source(true),
+        host_source(HostProgram::SnapshotProof),
         &json!({"directory":directory,"operation":"heartbeat-publication-proof",
             "budget_ms":super::remaining(deadline).unwrap().as_millis()}),
     )
@@ -682,6 +1217,39 @@ pub(super) fn powershell_publication_proof() {
     println!(
         "powershell-heartbeat-publication-proofs-confirmed root_pid={root} publisher_pid={publisher}"
     );
+    // run_adapter_worker returned only after the preceding owned root, Job and pipes finished.
+    super::remaining(deadline).unwrap();
+    let request = prepare_adapter(
+        host_source(HostProgram::AppendProof),
+        &json!({"directory":directory,"budget_ms":super::remaining(deadline).unwrap().as_millis()}),
+    )
+    .unwrap();
+    super::remaining(deadline).unwrap();
+    let trace = Arc::clone(&request.trace);
+    let permit = ADAPTER_WORKERS.acquire(deadline).unwrap();
+    let result = run_adapter_worker(request, deadline, permit).unwrap();
+    super::remaining(deadline).unwrap();
+    let root = trace.stage_value("spawn-complete").unwrap();
+    assert!(root > 0 && Some(u64::from(root)) == result["root_pid"].as_u64());
+    let publisher = result["publisher_pid"].as_u64().unwrap();
+    assert!(publisher > 0 && publisher != u64::from(root));
+    for fact in [
+        "staged",
+        "killed",
+        "reaped",
+        "reader_refused",
+        "rename_released",
+        "delete_released",
+        "collision",
+    ] {
+        assert_eq!(result[fact], true);
+    }
+    assert_eq!(result["count"], 1);
+    assert_eq!(result["tail_len"], 20);
+    assert!(trace.has_stage("root-completed"));
+    println!(
+        "powershell-heartbeat-append-proofs-confirmed root_pid={root} publisher_pid={publisher}"
+    );
 }
 
 pub(super) fn host() {
@@ -696,7 +1264,7 @@ pub(super) fn host() {
     });
     let deadline = Instant::now() + ADAPTER_TIMEOUT;
     let request = prepare_adapter(
-        host_source(false),
+        host_source(HostProgram::Normal),
         &json!({"directory":directory,"executable":std::env::current_exe().unwrap()}),
     )
     .unwrap();
@@ -745,10 +1313,9 @@ pub(super) fn observer() {
 pub(super) fn heartbeat() {
     let path = directory().join("native-heartbeat");
     let deadline = Instant::now() + ADAPTER_TIMEOUT;
-    let mut count = 0_u64;
+    let mut appender = HeartbeatAppender::create(&path, deadline).unwrap();
     while Instant::now() < deadline {
-        count += 1;
-        publish_heartbeat(heartbeat_snapshot(&path, count).unwrap(), &path, count == 1).unwrap();
+        appender.append(deadline).unwrap();
         std::thread::sleep(Duration::from_millis(25));
     }
     panic!("native heartbeat descendant was not contained by parent Job closure");
@@ -757,23 +1324,57 @@ pub(super) fn heartbeat() {
 #[test]
 fn stock_crash_sources_fit_the_encoded_windows_command_line() {
     use base64::Engine as _;
+    use std::os::windows::ffi::OsStrExt as _;
 
-    let command_units = |encoded: &str| {
-        format!(
-            "\"\\\\?\\C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}\0"
-        )
-        .encode_utf16()
-        .count()
+    // Mirror only command geometry from the configured path's validated components;
+    // no guard, SID query, adapter or native canonicalization warms the cold gate.
+    let configured = super::stock_powershell().unwrap();
+    let mut components = configured.components();
+    let Some(std::path::Component::Prefix(prefix)) = components.next() else {
+        panic!("stock command lacks a local volume");
     };
-    for proof in [false, true] {
-        let request = prepare_adapter(host_source(proof), &serde_json::Value::Null).unwrap();
-        assert!(command_units(&request.encoded) <= 32_767);
+    let (std::path::Prefix::Disk(volume) | std::path::Prefix::VerbatimDisk(volume)) = prefix.kind()
+    else {
+        panic!("stock command lacks a local volume");
+    };
+    assert_eq!(components.next(), Some(std::path::Component::RootDir));
+    let mut executable = PathBuf::from(format!(r"\\?\{}:\", char::from(volume)));
+    for component in components {
+        let std::path::Component::Normal(value) = component else {
+            panic!("stock command has an unsupported component");
+        };
+        assert!(
+            !value
+                .encode_wide()
+                .any(|unit| unit == u16::from(b'/') || unit == u16::from(b'\\'))
+        );
+        executable.push(value);
+    }
+    let executable_units = executable.as_os_str().encode_wide().count();
+    let command_units = |encoded: &str, nested: bool| {
+        let flags = if nested {
+            " -NoProfile -NonInteractive -EncodedCommand "
+        } else {
+            " -NoLogo -NoProfile -NonInteractive -EncodedCommand "
+        };
+        // Two executable quotes, all actual flags/separators and terminating NUL.
+        executable_units + 2 + flags.encode_utf16().count() + encoded.encode_utf16().count() + 1
+    };
+    for program in [
+        HostProgram::Normal,
+        HostProgram::SnapshotProof,
+        HostProgram::AppendProof,
+    ] {
+        let request = prepare_adapter(host_source(program), &serde_json::Value::Null).unwrap();
+        assert!(command_units(&request.encoded, false) < 32_767);
 
         let lf_host = HOST.replace("\r\n", "\n");
-        let lf = select_host_source(&lf_host, proof);
-        let crlf = select_host_source(&lf_host.replace('\n', "\r\n"), proof);
+        let lf = select_host_source(&lf_host, program);
+        let crlf = select_host_source(&lf_host.replace('\n', "\r\n"), program);
         assert_eq!(crlf, lf.replace('\n', "\r\n"));
-        assert!(!lf.contains(PROOF_BODY) && !lf.contains(NORMAL_BODY));
+        for marker in [PROOF_BODY, NORMAL_BODY, APPEND_COMMON, APPEND_PROOF_BODY] {
+            assert!(!lf.contains(marker));
+        }
 
         let source = super::generic_trace::source(&lf).replace("\r\n", "\n");
         for source in [&source, &source.replace('\n', "\r\n")] {
@@ -783,7 +1384,58 @@ fn stock_crash_sources_fit_the_encoded_windows_command_line() {
                     .flat_map(u16::to_le_bytes)
                     .collect::<Vec<_>>(),
             );
-            assert!(command_units(&encoded) <= 32_767);
+            let units = command_units(&encoded, false);
+            assert!(units < 32_767);
+            if program != HostProgram::SnapshotProof {
+                assert!(32_767 - units >= 1_024);
+            }
+        }
+    }
+    // Exact literal definitions + child bodies, matching both ProcessStartInfo commands.
+    let lf_host = HOST.replace("\r\n", "\n");
+    for (program, definition_start, child_start) in [
+        (
+            HostProgram::SnapshotProof,
+            "$heartbeatSource = @'\n",
+            "$publisherSource = $heartbeatSource + @'\n",
+        ),
+        (
+            HostProgram::AppendProof,
+            "$beatSource = @'\n",
+            "$code = $beatSource + @'\n",
+        ),
+    ] {
+        let selected = select_host_source(&lf_host, program);
+        let definitions = selected
+            .split_once(definition_start)
+            .unwrap()
+            .1
+            .split_once("\n'@")
+            .unwrap()
+            .0;
+        let body = selected
+            .split_once(child_start)
+            .unwrap()
+            .1
+            .split_once("\n'@")
+            .unwrap()
+            .0;
+        if program == HostProgram::AppendProof {
+            assert!(body.starts_with(APPEND_CHILD_BEGIN) && body.ends_with(APPEND_CHILD_END));
+        }
+        let child = format!("{definitions}{body}");
+        for source in [&child, &child.replace('\n', "\r\n")] {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(
+                source
+                    .encode_utf16()
+                    .flat_map(u16::to_le_bytes)
+                    .collect::<Vec<_>>(),
+            );
+            let units = command_units(&encoded, true);
+            assert!(units < 32_767);
+            if program == HostProgram::AppendProof {
+                assert!(32_767 - units >= 1_024);
+            }
         }
     }
 }
