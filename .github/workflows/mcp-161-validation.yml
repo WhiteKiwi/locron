@@ -37,7 +37,8 @@ jobs:
         run: cargo test --locked -p locron --test mcp -- --test-threads=1
       - name: Test all MCP unit regressions
         if: ${{ !cancelled() }}
-        run: cargo test --locked -p locron --bin locron mcp:: -- --test-threads=1
+        run: |
+          cargo test --locked -p locron --bin locron mcp:: -- --test-threads=1
       - name: Test all migrated Store regressions
         if: ${{ !cancelled() }}
         run: cargo test --locked -p locron-store --lib -- --test-threads=1
