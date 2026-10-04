@@ -1393,17 +1393,34 @@ fn tool_cancel_run(paths: &StatePaths, args: &Value) -> Result<Value> {
         open(paths)?
     };
     if dry_run {
-        let run = store.run(run_id)?;
-        let active = matches!(
-            run.state.as_str(),
-            "queued" | "starting" | "running" | "retry_wait"
-        );
-        let already_requested = active && store.cancellation_requested(run_id)?;
+        let preview = store.preview_cancellation(run_id, acknowledge_unconfirmed)?;
+        let before_execution = preview.outcome == CancelOutcome::CancelledBeforeExecution;
+        let risk_acknowledgement = preview.outcome == CancelOutcome::AcknowledgedUnconfirmed;
+        let decision = match preview.outcome {
+            CancelOutcome::CancelledBeforeExecution => "cancelled_before_execution",
+            CancelOutcome::AcknowledgedUnconfirmed => "acknowledged_unconfirmed",
+            CancelOutcome::CancellationRequested if preview.already_requested => {
+                "already_requested"
+            }
+            CancelOutcome::CancellationRequested => "cancellation_requested",
+        };
+        let resulting_state = if before_execution {
+            "cancelled"
+        } else if risk_acknowledgement {
+            "interrupted_unknown"
+        } else {
+            preview.state.as_str()
+        };
         return Ok(json!({
             "dry_run": true,
             "run_id": run_id,
-            "state": run.state,
-            "would_request_cancellation": active && !already_requested
+            "state": preview.state,
+            "decision": decision,
+            "already_requested": preview.already_requested,
+            "would_request_cancellation": before_execution || (!risk_acknowledgement && !preview.already_requested),
+            "would_cancel_before_execution": before_execution,
+            "would_acknowledge_unconfirmed": risk_acknowledgement,
+            "resulting_state": resulting_state
         }));
     }
     let outcome = store.cancel_with_acknowledgement(run_id, now_us(), acknowledge_unconfirmed)?;

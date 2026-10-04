@@ -78,7 +78,8 @@ impl Store {
         id: &str,
         acknowledge_unconfirmed: bool,
     ) -> StoreResult<CancellationPreview> {
-        observe(&self.conn()?, id, acknowledge_unconfirmed)
+        let connection = self.conn()?;
+        observe(&connection, id, acknowledge_unconfirmed)
     }
 }
 
@@ -88,25 +89,55 @@ mod tests {
 
     use super::*;
 
+    fn conflict_message(result: StoreResult<CancelOutcome>) -> String {
+        match result {
+            Err(StoreError::Conflict(message)) => message,
+            other => panic!("expected a cancellation conflict, got {other:?}"),
+        }
+    }
+
     #[test]
     fn admission_preserves_live_state_and_acknowledgement_policy() {
-        for state in ["queued", "retry_wait", "starting", "running", "succeeded", "failed", "timed_out", "cancelled", "skipped_overlap", "skipped_concurrency", "interrupted_unknown", "unknown"] {
+        for state in [
+            "queued",
+            "retry_wait",
+            "starting",
+            "running",
+            "succeeded",
+            "failed",
+            "timed_out",
+            "cancelled",
+            "skipped_overlap",
+            "skipped_concurrency",
+            "interrupted_unknown",
+            "unknown",
+        ] {
             for reason in [None, Some("ordinary"), Some("termination_unconfirmed")] {
                 for acknowledge in [false, true] {
                     let actual = decision("run", state, reason, acknowledge);
-                    let quarantine = state == "running" && reason == Some("termination_unconfirmed");
+                    let quarantine =
+                        state == "running" && reason == Some("termination_unconfirmed");
                     if acknowledge && quarantine {
                         assert_eq!(actual.unwrap(), CancelOutcome::AcknowledgedUnconfirmed);
                     } else if acknowledge {
-                        assert_eq!(actual.unwrap_err().to_string(), "durable conflict: run run is not an active termination-unconfirmed quarantine");
+                        assert_eq!(
+                            conflict_message(actual),
+                            "run run is not an active termination-unconfirmed quarantine"
+                        );
                     } else if quarantine {
-                        assert_eq!(actual.unwrap_err().to_string(), "durable conflict: run run termination is unconfirmed; repeat cancel with --acknowledge-unconfirmed to accept the risk and release the quarantine");
+                        assert_eq!(
+                            conflict_message(actual),
+                            "run run termination is unconfirmed; repeat cancel with --acknowledge-unconfirmed to accept the risk and release the quarantine"
+                        );
                     } else if ["queued", "retry_wait"].contains(&state) {
                         assert_eq!(actual.unwrap(), CancelOutcome::CancelledBeforeExecution);
                     } else if ["starting", "running"].contains(&state) {
                         assert_eq!(actual.unwrap(), CancelOutcome::CancellationRequested);
                     } else {
-                        assert_eq!(actual.unwrap_err().to_string(), format!("durable conflict: run run is already terminal ({state})"));
+                        assert_eq!(
+                            conflict_message(actual),
+                            format!("run run is already terminal ({state})")
+                        );
                     }
                 }
             }
@@ -123,7 +154,12 @@ mod tests {
             for requested in [None, Some(123)] {
                 for reason in [None, Some("termination_unconfirmed")] {
                     connection.pragma_update(None, "query_only", false).unwrap();
-                    connection.execute("INSERT OR REPLACE INTO runs VALUES('run',?1,?2,?3)", params![state, requested, reason]).unwrap();
+                    connection
+                        .execute(
+                            "INSERT OR REPLACE INTO runs VALUES('run',?1,?2,?3)",
+                            params![state, requested, reason],
+                        )
+                        .unwrap();
                     connection.pragma_update(None, "query_only", true).unwrap();
                     let before = connection.total_changes();
                     for acknowledge in [false, true] {
@@ -134,7 +170,12 @@ mod tests {
                                 assert_eq!(preview.outcome, outcome);
                                 assert_eq!(preview.already_requested, requested.is_some());
                             }
-                            Err(expected) => assert_eq!(observe(&connection, "run", acknowledge).unwrap_err().to_string(), expected.to_string()),
+                            Err(expected) => assert_eq!(
+                                observe(&connection, "run", acknowledge)
+                                    .unwrap_err()
+                                    .to_string(),
+                                expected.to_string()
+                            ),
                         }
                     }
                     let after: (String, Option<i64>, Option<String>) = connection.query_row("SELECT state,cancellation_requested_at_us,reason FROM runs WHERE id='run'", [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap();
@@ -143,6 +184,9 @@ mod tests {
                 }
             }
         }
-        assert!(matches!(observe(&connection, "missing", false), Err(StoreError::NotFound(_))));
+        assert!(matches!(
+            observe(&connection, "missing", false),
+            Err(StoreError::NotFound(_))
+        ));
     }
 }

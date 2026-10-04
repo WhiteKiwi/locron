@@ -169,3 +169,24 @@ This document defines the specification for the Model Context Protocol (MCP) int
 1. **Transactional Parity**: Every mutation goes through `locron-core` command validation and `locron-store` immediate transactions.
 2. **Redaction**: Inline secrets and sensitive environment variables match the existing redaction boundary.
 3. **No Stale Process Signalling**: Process cancellation strictly uses durable process groups supervised by the daemon.
+
+
+## Cancellation preview clarification (2026-10-04)
+
+A `locron_cancel_run` dry-run observes the same durable cancellation admission as
+the live Store transaction. It does not reserve that outcome or prove process
+death. The later live operation always rechecks current state.
+
+The preview retains `dry_run`, `run_id`, `state` and `would_request_cancellation`.
+It adds `decision`, `already_requested`, `would_cancel_before_execution`,
+`would_acknowledge_unconfirmed` and `resulting_state`. Queued/retry-wait runs
+describe immediate before-execution cancellation; ordinary starting/running
+runs describe a request, or `already_requested` when the durable request exists.
+A running termination-unconfirmed quarantine requires explicit acknowledgement:
+that preview uses `decision: acknowledged_unconfirmed`,
+`would_acknowledge_unconfirmed: true`, `would_request_cancellation: false` and
+`resulting_state: interrupted_unknown`. It never describes acknowledgement as
+a new cancellation or confirmed termination. Terminal runs, quarantine without
+acknowledgement and acknowledgement outside quarantine refuse with the same
+tool-error contract as live cancellation. No preview emits a wake or changes
+durable state. See [the reviewed decision table](../planning/MCP_CANCELLATION_PREVIEW.md).
