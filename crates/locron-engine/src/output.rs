@@ -400,8 +400,7 @@ mod tests {
         assert!(!finalization.is_finished());
         assert!(partial.exists());
         drop(reader);
-        let stats = finalization.await.unwrap();
-        let stats = stats.unwrap();
+        let stats = finalization.await.unwrap().unwrap();
         assert_eq!(stats.retained_bytes, 22);
         assert!(!partial.exists());
         assert_eq!(
