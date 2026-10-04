@@ -5405,3 +5405,73 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+### Native CLI wake/cancel fixture continuation before Source (2026-10-04)
+
+Separate research pins e6eb887 and proves both old selector bodies unchanged
+through current main4644588/PR13502f. Source waits for Unix wake.sock on Windows,
+although Engine binds a named pipe. Old495f ARM/MSRV reaches wake.exists1124 and
+the final cancel assertion1214; cc37162098246 ARM/MSRV reaches301 unitPASS and
+CLI73/75 with wake1142/cancel1232 failures. Actual terminal reason/phase timing is
+unprinted; the platform mismatch does not establish a production failure cause.
+Wake reuses one5s clock; cancel one8s, production grace5s, Unix sleep30 remain.
+
+Checksum-qualified Tokio1.53.1/interprocess2.4.4 Source confirms the safe native
+same-connected-handle metadata composition: NamedPipeClient.AsHandle clone,
+sync byte PipeStream conversion, is_client/server_process_id, every-result
+evade_limbo; frame/ACK remain on the original Tokio stream. All14 primary members
+match locked crate archives; existing Windows CLI dev graph needs no change.
+Research report SHA2563f476ec623d6f26748c272e34d46b5381d242dbf19ac8798c1575ade549c7eee,
+candidate ABI c4131680961256c934504ee03d778ee46167f84007a6ec45e1118cc8d159fd26,
+receipt934f7a27e0124a099657da180e49c234818eb84f38361b2b72f7054e083ac231.
+Native API metadata success still requires real positive/foreign-peer execution.
+
+Additional read-only CI research selects one additive exact acceptance step,
+explicitly adding ci.yml as a third Source path before separate development.
+The same !cancelled/native_core-success expression includes a status function,
+so prior failure stays failed without imposing a hidden success-only precondition.
+[GitHub status-check semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions#status-check-functions)
+support independent qualification before the known later service-unit preemption;
+this does not diagnose or repair that supervisor failure. Research receipt
+bbe7bd2683e09dd085576f04adbfef3c69792b69f1855513c1e379cd24a38467 also preserves
+the old41 lint sequence. planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md freezes
+six actual selectors, auxiliary zero-acceptance roles, original clocks/finite
+owners and strict progress/protocol before Issue31 Verify. No owner-PC effects.
+
+### Native negative wake peer default descriptor boundary (2026-10-04)
+
+At merged main46445881, independent research verifies locked Tokio1.53.1 safe
+Byte/duplex/first-instance/remote-refusal create with NULL security attrs; no
+direct widestring edge or unsafe application API is needed. The default pipe
+DACL is intentionally untrusted and gains no privacy from an existing-private
+filesystem root. Actual same-connection PID mismatch decides the foreign-peer
+refusal; only the secured production daemon supplies positive wake readiness.
+Mio1.2.2 Drop requests connect/read cancellation and permits writes to complete;
+neither future cancellation nor Drop proves synchronous closure. Existing finite
+actual Child/client/runtime/guard ownership and cleanup/quarantine stay required.
+Root reviewed every addendum/source-pin byte hash. Addendum SHA256
+ca5284748b851bac8c1de1dbacd06e10e67401020a6abd6d8d180d9fc4a9b307;
+receipt eccaf14167d6c3a620e84d5cca83269f9f7e56f454d3b916880700bf6fb73ad2.
+[Tokio pinned source](https://docs.rs/crate/tokio/1.53.1/source/src/net/windows/named_pipe.rs),
+[Microsoft pipe security](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights),
+[CancelIoEx completion contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex).
+
+### Native test owner admission and probe-clock research (2026-10-04)
+
+Separate research5db5c2a freezes three allowed uncommitted WIP paths. Report
+902c57b46d0e29aa059cf1ab21a9b0962fdd4aa667a226d63835c240f18ee92a,
+proposal8fefb54feeaa6397fd560540a9a53797b01d0c75f1cd7f4e2a5739f59613e422,
+receiptd903d84107ec91f1725cd85b1d903e556ee6f43f3bdb63c5bdc00d626adba4bd;
+Root verifies all34 artifacts and reads complete report/ABI/Source call map.
+Rust1.94 Windows thread creation drops initializer on failed CreateThread;
+SendError/TrySendError returns payload, so actual Owner handoff can run blocking
+Drop on driver. WIP Driver case-only wait misses blocked query's entry200ms.
+Select resource-free one-command admission before fixture resources, same-worker
+partial Owner/setup/actual daemon; new tighter30s setup horizon + original literal
+post-spawn5s/8s minimum. Retain probe deadline and on-time completion seal from
+immutable origin; independently bounded result polling, no blind slot clear or
+late reopening. Safe API cannot establish hard admission/preemption/abort cleanup.
+No native test/compiler/parser/mutation occurred; Source remained stopped. Actual
+six-selector changed-head native acceptance still required. Tagged primary std
+thread/channel source and SDK facts are retained in the hash-qualified report;
+no closure/channel metadata is substituted for actual child/guard/peer/cleanup.

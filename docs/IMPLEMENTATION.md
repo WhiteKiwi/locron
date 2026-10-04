@@ -5214,3 +5214,56 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+### Native CLI wake/cancel and independent exact gate before Source (2026-10-04)
+
+Continue the existing two platform-incompatible CLI fixtures on reviewed main4644588.
+Frozen product behavior remains actual prompt admission and confirmed cancellation.
+Select exactly three Source paths per planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md:
+two test-only files and one additive existing foundation workflow step. The
+private owner retains actual daemon/state/guard/client/query authority and original
+5s/8s caller clocks; same-connected native server PID+strict ACK witnesses wake,
+actual running+two native-target counter frames witnesses cancellation admission.
+No readiness is inferred from paths, passive status or serialized identity.
+
+Keep actual native wrappers safe, metadata-only duplication/no limbo, one cold
+entry200ms, target30s/1201frames/64KiB read and production5s grace. Late/unknown
+owners remain retained and refuse; exact owned cleanup precedes private teardown.
+Use six individually frozen --exact selectors after runtime/doctor and before
+service units under the existing status condition; auxiliary role returns count
+zero acceptance. Four ordered Verify criteria cover ownership negatives, real
+protocol/progress, whole-file/workflow conservation and all three changed-head
+native rows plus original required/paired evidence. Root reviews full Docs/Issue
+Verify before separate Source, then all Source and publication evidence. Old
+wake/cancel/supervisor/WAL/full lint/later-binary failures remain; no clock increase,
+retry/reset/whole-suite serialization, owner-PC effect or broader support claim.
+
+### Untrusted negative native peer construction before Source (2026-10-04)
+
+The wake/cancel continuation's three-path/six-selector lease selects safe public
+Tokio Byte duplex first-instance/remote-refusal default-descriptor server only
+for native negative helper children. It is untrusted test input, not filesystem-
+inherited pipe privacy or production readiness. Real connected actual-child PID
+and strict refusal/cleanup checks remain required; genuine daemon positive uses
+the existing secured listener. No widestring/dependency/unsafe/API/clock change.
+Apply the amended planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md four Verify
+steps only after Issue31 exact readback and Root plan review; no Source existed
+before this detail. Retain actual child/client/runtime/root through confirmed
+original-budget cleanup or quarantine, never default-Drop closure success.
+
+### Refine Windows test admission and active driver clock before Source
+
+Replace actual-Owner transfer ABI in planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md
+with no-argument private wake/cancel entries, one empty admitted worker and one
+fixed resource-free case command. Partial owner and unchanged real state/daemon
+setup live only on that worker; new tighter outer30s bounds setup, original literal
+post-spawn5s/8s min still bounds all positive assertions and owned cleanup.
+Retain once-published200ms deadline plus on-time completion seal from immutable
+origin, independently polled in bounded driver slices without reopening/join.
+Negative cleanup observation stays on original30s with admission closed and same
+actual owner. Explicit empty/partial/channel/panic/late/unknown cleanup lanes
+preserve resources; no native ownership reaches admission closure/error/result.
+Apply the amended four Verify steps/three Source paths/six real selectors after
+Root exact Issue31 readback and plan review. Preserve Unix/state factory/production/
+deps/workflow existing commands and bounds. No hard admission/preemption claim,
+renewal/retry/reset/skip, owner-PC effect or unqualified support/lint acceptance.

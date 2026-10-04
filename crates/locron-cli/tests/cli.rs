@@ -3,6 +3,10 @@
 #[path = "support/private_state.rs"]
 mod private_state;
 
+#[cfg(windows)]
+#[path = "support/windows_cli_control.rs"]
+mod windows_cli_control;
+
 use private_state::{PrivateState, private_state_fixture};
 
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
@@ -1128,111 +1132,135 @@ fn conflicting_schedule_selectors_fail_without_state() {
 
 #[test]
 fn wake_socket_makes_new_manual_run_promptly_visible_to_daemon() {
-    let state = private_state_fixture();
-    let mut daemon = locron(&state)
-        .args(["daemon", "run"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !state.path().join("wake.sock").exists() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
+    #[cfg(windows)]
+    {
+        let result = windows_cli_control::run_wake_case();
+        assert!(
+            result.succeeded(),
+            "wake notification did not prompt daemon admission: {result}"
+        );
     }
-    assert!(state.path().join("wake.sock").exists());
-    assert_cmd::assert::Assert::new(
-        locron(&state)
-            .args(["add", "wake", "--every", "1h", "--", "/usr/bin/true"])
-            .output()
-            .unwrap(),
-    )
-    .success();
-    assert_cmd::assert::Assert::new(locron(&state).args(["run", "wake"]).output().unwrap())
-        .success();
-    let completed = loop {
-        let output = locron(&state)
-            .args(["--json", "history", "wake"])
-            .output()
+
+    #[cfg(unix)]
+    {
+        let state = private_state_fixture();
+        let mut daemon = locron(&state)
+            .args(["daemon", "run"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
             .unwrap();
-        let text = String::from_utf8(output.stdout).unwrap();
-        if text.contains("\"state\":\"succeeded\"") {
-            break true;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !state.path().join("wake.sock").exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
         }
-        if Instant::now() >= deadline {
-            break false;
-        }
-        thread::sleep(Duration::from_millis(25));
-    };
-    let _ = daemon.kill();
-    let _ = daemon.wait();
-    assert!(
-        completed,
-        "wake notification did not prompt daemon admission"
-    );
+        assert!(state.path().join("wake.sock").exists());
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", "wake", "--every", "1h", "--", "/usr/bin/true"])
+                .output()
+                .unwrap(),
+        )
+        .success();
+        assert_cmd::assert::Assert::new(locron(&state).args(["run", "wake"]).output().unwrap())
+            .success();
+        let completed = loop {
+            let output = locron(&state)
+                .args(["--json", "history", "wake"])
+                .output()
+                .unwrap();
+            let text = String::from_utf8(output.stdout).unwrap();
+            if text.contains("\"state\":\"succeeded\"") {
+                break true;
+            }
+            if Instant::now() >= deadline {
+                break false;
+            }
+            thread::sleep(Duration::from_millis(25));
+        };
+        let _ = daemon.kill();
+        let _ = daemon.wait();
+        assert!(
+            completed,
+            "wake notification did not prompt daemon admission"
+        );
+    }
 }
 
 #[test]
 fn durable_cancel_terminates_a_running_process() {
-    let state = private_state_fixture();
-    let mut daemon = locron(&state)
-        .args(["daemon", "run"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while !state.path().join("wake.sock").exists() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
+    #[cfg(windows)]
+    {
+        let result = windows_cli_control::run_cancel_case();
+        assert!(
+            result.succeeded(),
+            "durable cancellation did not terminate the process: {result}"
+        );
     }
-    assert_cmd::assert::Assert::new(
-        locron(&state)
-            .args(["add", "cancel", "--every", "1h"])
-            .args(shell_fixture_args(
-                "sleep 30",
-                "[Threading.Thread]::Sleep(30000)",
-            ))
-            .output()
-            .unwrap(),
-    )
-    .success();
-    let output = locron(&state)
-        .args(["--json", "run", "cancel"])
-        .output()
-        .unwrap();
-    let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let run_id = envelope["data"]["run_id"].as_str().unwrap();
-    loop {
-        let history = locron(&state)
-            .args(["--json", "history", "cancel"])
-            .output()
+
+    #[cfg(unix)]
+    {
+        let state = private_state_fixture();
+        let mut daemon = locron(&state)
+            .args(["daemon", "run"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
             .unwrap();
-        if String::from_utf8_lossy(&history.stdout).contains("\"state\":\"running\"") {
-            break;
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while !state.path().join("wake.sock").exists() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
         }
-        assert!(Instant::now() < deadline, "run never entered running state");
-        thread::sleep(Duration::from_millis(25));
-    }
-    assert_cmd::assert::Assert::new(locron(&state).args(["cancel", run_id]).output().unwrap())
+        assert_cmd::assert::Assert::new(
+            locron(&state)
+                .args(["add", "cancel", "--every", "1h"])
+                .args(shell_fixture_args(
+                    "sleep 30",
+                    "[Threading.Thread]::Sleep(30000)",
+                ))
+                .output()
+                .unwrap(),
+        )
         .success();
-    let cancelled = loop {
-        let history = locron(&state)
-            .args(["--json", "history", "cancel"])
+        let output = locron(&state)
+            .args(["--json", "run", "cancel"])
             .output()
             .unwrap();
-        if String::from_utf8_lossy(&history.stdout).contains("\"state\":\"cancelled\"") {
-            break true;
+        let envelope: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let run_id = envelope["data"]["run_id"].as_str().unwrap();
+        loop {
+            let history = locron(&state)
+                .args(["--json", "history", "cancel"])
+                .output()
+                .unwrap();
+            if String::from_utf8_lossy(&history.stdout).contains("\"state\":\"running\"") {
+                break;
+            }
+            assert!(Instant::now() < deadline, "run never entered running state");
+            thread::sleep(Duration::from_millis(25));
         }
-        if Instant::now() >= deadline {
-            break false;
-        }
-        thread::sleep(Duration::from_millis(25));
-    };
-    let _ = daemon.kill();
-    let _ = daemon.wait();
-    assert!(
-        cancelled,
-        "durable cancellation did not terminate the process"
-    );
+        assert_cmd::assert::Assert::new(locron(&state).args(["cancel", run_id]).output().unwrap())
+            .success();
+        let cancelled = loop {
+            let history = locron(&state)
+                .args(["--json", "history", "cancel"])
+                .output()
+                .unwrap();
+            if String::from_utf8_lossy(&history.stdout).contains("\"state\":\"cancelled\"") {
+                break true;
+            }
+            if Instant::now() >= deadline {
+                break false;
+            }
+            thread::sleep(Duration::from_millis(25));
+        };
+        let _ = daemon.kill();
+        let _ = daemon.wait();
+        assert!(
+            cancelled,
+            "durable cancellation did not terminate the process"
+        );
+    }
 }
 
 #[test]
