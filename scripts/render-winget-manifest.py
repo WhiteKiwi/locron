@@ -141,9 +141,11 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--validate", action="store_true", help="run installed winget validate; no package installation")
     parser.add_argument("--paired", action="store_true",
-                        help="inspect draft five-file ZIPs; keep the sole console alias and do not execute images")
+                        help="compatibility flag: paired five-file ZIP inspection is always enabled by the CLI")
     args = parser.parse_args()
-    directory = render(args.tag, args.directory, args.output, paired=args.paired)
+    # All supported Windows releases contain the console/GUI pair. The older
+    # render(..., paired=False) route is retained only for explicit fixture callers.
+    directory = render(args.tag, args.directory, args.output, paired=True)
     if args.validate:
         subprocess.run(["winget", "validate", "--manifest", str(directory.resolve()), "--disable-interactivity"],
                        check=True, timeout=120)
