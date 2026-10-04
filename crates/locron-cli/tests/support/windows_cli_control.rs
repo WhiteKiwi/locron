@@ -2,12 +2,15 @@
 
 use super::private_state::{PrivateState, private_state_fixture};
 use interprocess::os::windows::named_pipe::{PipeStream, pipe_mode};
-use locron_core::filesystem::{DirectoryGuard, create_private_new, open_read_no_follow};
+use locron_core::filesystem::{
+    DirectoryGuard, GuardedFile, create_private_new, file_identity, is_private, open_read_no_follow,
+};
 use locron_core::notification::{ACK_MESSAGE, WAKE_MESSAGE, endpoint_name_guarded};
 use locron_store::{DaemonLock, LockProbe};
 use std::fmt;
 use std::future::{Future, poll_fn};
 use std::io::{self, Read, Write};
+use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::{AsHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::pin::pin;
@@ -2004,6 +2007,7 @@ enum PeerMode {
     Malformed,
     Idle,
     Withheld,
+    PublicationProof,
 }
 
 impl PeerMode {
@@ -2013,6 +2017,7 @@ impl PeerMode {
             Self::Malformed => "malformed",
             Self::Idle => "idle",
             Self::Withheld => "withheld",
+            Self::PublicationProof => "publication-proof",
         }
     }
 }
@@ -2027,12 +2032,152 @@ fn native_wake_peer_target() {
         Some("malformed") => PeerMode::Malformed,
         Some("idle") => PeerMode::Idle,
         Some("withheld") => PeerMode::Withheld,
+        Some("publication-proof") => PeerMode::PublicationProof,
         _ => panic!("invalid native peer role"),
     };
     let entered = Instant::now();
     let control = Control::new(entered, entered + Duration::from_secs(30));
     let result = peer_target(mode, &control);
     assert!(result.is_ok(), "native peer refused: {:?}", result.err());
+}
+
+// Every operation stays on the actual auxiliary child, inside its original
+// horizon. A synchronous SDK call may block; these gates do not preempt it.
+fn peer_operation<T>(control: &Control, operation: impl FnOnce() -> T) -> Result<T, Code> {
+    control.check(control.deadline)?;
+    let result = operation();
+    control.check(control.deadline)?;
+    Ok(result)
+}
+
+fn close_peer_stage(
+    stage: GuardedFile,
+    control: &Control,
+) -> Result<(tempfile::TempPath, DirectoryGuard), Code> {
+    let path = stage.normalized_path().to_path_buf();
+    let (file, parent) = stage.into_parts();
+    peer_operation(control, || drop(file))?;
+    let wrapped = peer_operation(control, || {
+        tempfile::TempPath::try_from_path(path).map(|mut stage| {
+            // This is only the known CreateNew stage. Pure Drop must not add
+            // native deletion after expiry; the existing reaped fixture owns it.
+            stage.disable_cleanup(true);
+            stage
+        })
+    })?;
+    Ok((wrapped.map_err(|_| Code::Native)?, parent))
+}
+
+fn persist_peer_stage(
+    stage: tempfile::TempPath,
+    destination: &Path,
+    control: &Control,
+) -> Result<Result<(), tempfile::PathPersistError>, Code> {
+    peer_operation(control, || stage.persist_noclobber(destination))
+}
+
+fn peer_file_bytes(path: &Path, limit: u64, control: &Control) -> Result<Vec<u8>, Code> {
+    let mut file =
+        peer_operation(control, || open_read_no_follow(path))?.map_err(|_| Code::Native)?;
+    let mut bytes = Vec::new();
+    peer_operation(control, || (&mut *file).take(limit).read_to_end(&mut bytes))?
+        .map_err(|_| Code::Native)?;
+    peer_operation(control, || drop(file))?;
+    Ok(bytes)
+}
+
+fn peer_final_absent(path: &Path, control: &Control) -> Result<(), Code> {
+    let result = peer_operation(control, || open_read_no_follow(path))?;
+    if result
+        .err()
+        .is_some_and(|error| error.kind() == io::ErrorKind::NotFound)
+    {
+        Ok(())
+    } else {
+        Err(Code::Native)
+    }
+}
+
+fn peer_publication_proof(root: &Path, control: &Control) -> Result<(), Code> {
+    let proof = peer_operation(control, || {
+        create_private_new(&root.join("peer-share-proof"))
+    })?
+    .map_err(|_| Code::Native)?;
+    let proof_path = proof.normalized_path().to_path_buf();
+    let (file, proof_parent) = proof.into_parts();
+    peer_operation(control, || drop(file))?;
+    if !peer_file_bytes(&proof_path, 2, control)?.is_empty() {
+        return Err(Code::Native);
+    }
+    // Exact FileSystemRights.FullControl (including DELETE), share READ|WRITE.
+    // The parent guards remain live; this is an existing, known private leaf.
+    let held = peer_operation(control, || {
+        std::fs::OpenOptions::new()
+            .access_mode(0x001f_01ff)
+            .share_mode(3)
+            .custom_flags(0x0020_0000)
+            .open(&proof_path)
+    })?
+    .map_err(|_| Code::Native)?;
+    let metadata = peer_operation(control, || held.metadata())?.map_err(|_| Code::Native)?;
+    if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
+        return Err(Code::Native);
+    }
+    let refused = peer_operation(control, || open_read_no_follow(&proof_path))?;
+    if refused.err().and_then(|error| error.raw_os_error()) != Some(32) {
+        return Err(Code::Native);
+    }
+    peer_operation(control, || drop(held))?;
+    if !peer_file_bytes(&proof_path, 2, control)?.is_empty() {
+        return Err(Code::Native);
+    }
+    peer_operation(control, || drop(proof_parent))?;
+
+    let mut collision =
+        peer_operation(control, || create_private_new(&root.join("peer-collision")))?
+            .map_err(|_| Code::Native)?;
+    peer_operation(control, || collision.write_all(b"collision"))?.map_err(|_| Code::Native)?;
+    peer_operation(control, || collision.flush())?.map_err(|_| Code::Native)?;
+    let collision_path = collision.normalized_path().to_path_buf();
+    let original_identity =
+        peer_operation(control, || file_identity(&collision))?.map_err(|_| Code::Native)?;
+    let private = peer_operation(control, || is_private(&collision_path, false))?
+        .map_err(|_| Code::Native)?;
+    if !private {
+        return Err(Code::Native);
+    }
+    let (file, collision_parent) = collision.into_parts();
+    // No destination leaf handle may mask a replacing implementation.
+    peer_operation(control, || drop(file))?;
+    let mut candidate = peer_operation(control, || {
+        create_private_new(&root.join("peer-collision-pending"))
+    })?
+    .map_err(|_| Code::Native)?;
+    peer_operation(control, || candidate.write_all(b"candidate"))?.map_err(|_| Code::Native)?;
+    peer_operation(control, || candidate.flush())?.map_err(|_| Code::Native)?;
+    let (candidate, candidate_parent) = close_peer_stage(candidate, control)?;
+    let Err(refusal) = persist_peer_stage(candidate, &collision_path, control)? else {
+        return Err(Code::Native);
+    };
+    let reopened = peer_operation(control, || open_read_no_follow(&collision_path))?
+        .map_err(|_| Code::Native)?;
+    let unchanged_identity =
+        peer_operation(control, || file_identity(&reopened))?.map_err(|_| Code::Native)?;
+    let private = peer_operation(control, || is_private(&collision_path, false))?
+        .map_err(|_| Code::Native)?;
+    if unchanged_identity != original_identity || !private {
+        return Err(Code::Native);
+    }
+    peer_operation(control, || drop(reopened))?;
+    if peer_file_bytes(&collision_path, 10, control)? != b"collision"
+        || peer_file_bytes(refusal.path.as_ref(), 10, control)? != b"candidate"
+    {
+        return Err(Code::Native);
+    }
+    // The failed disabled-cleanup stage owner is retained through all readback.
+    peer_operation(control, || drop(refusal))?;
+    peer_operation(control, || drop((candidate_parent, collision_parent)))?;
+    Ok(())
 }
 
 fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
@@ -2062,9 +2207,16 @@ fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
         control.check(deadline)?;
         let mut server = created.map_err(|_| Code::Native)?;
         control.check(deadline)?;
-        let created = create_private_new(&root.join("peer-ready"));
+        if matches!(mode, PeerMode::PublicationProof) {
+            peer_publication_proof(&root, control)?;
+        }
+        let final_ready = root.join("peer-ready");
+        let created = create_private_new(&root.join("peer-ready-pending"));
         control.check(deadline)?;
         let mut ready = created.map_err(|_| Code::Native)?;
+        if matches!(mode, PeerMode::PublicationProof) {
+            peer_final_absent(&final_ready, control)?;
+        }
         control.check(deadline)?;
         let written = ready.write_all(b"1");
         control.check(deadline)?;
@@ -2073,10 +2225,20 @@ fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
         let flushed = ready.flush();
         control.check(deadline)?;
         flushed.map_err(|_| Code::Native)?;
-        drop(ready);
+        let (stage, ready_parent) = close_peer_stage(ready, control)?;
+        if matches!(mode, PeerMode::PublicationProof) {
+            peer_final_absent(&final_ready, control)?;
+        }
+        persist_peer_stage(stage, &final_ready, control)?.map_err(|_| Code::Native)?;
+        if matches!(mode, PeerMode::PublicationProof)
+            && peer_file_bytes(&final_ready, 2, control)? != b"1"
+        {
+            return Err(Code::Native);
+        }
+        peer_operation(control, || drop(ready_parent))?;
         gated(control, deadline, server.connect()).await?;
         match mode {
-            PeerMode::Malformed => {
+            PeerMode::Malformed | PeerMode::PublicationProof => {
                 let mut frame = [0_u8; 16];
                 gated(control, deadline, server.read_exact(&mut frame)).await?;
                 if frame[0] != 15 || &frame[1..] != WAKE_MESSAGE {
@@ -2233,6 +2395,11 @@ fn idle_wake_peer_expires_original_probe_deadline() {
     refused_peer(PeerMode::Idle, Code::Expired);
 }
 
+#[test]
+fn private_peer_publication_preserves_no_clobber_boundary() {
+    refused_peer(PeerMode::PublicationProof, Code::BadAck);
+}
+
 struct ReturnGate {
     entered: SyncSender<HeldNotice>,
     release: Receiver<()>,
@@ -2272,7 +2439,12 @@ fn withheld_native_return_retains_case_owner_at_deadline() {
     );
     let notice = notice
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .expect("actual native query did not reach the controlled return gate");
+        .unwrap_or_else(|error| {
+            panic!(
+                "actual native query did not reach the controlled return gate: {error:?} {}",
+                driver.control.observations.snapshot(),
+            );
+        });
     // The caller supplies only the original outer horizon. The driver must
     // independently discover and refuse the published 200 ms incomplete probe.
     let refused = driver.receive_until(deadline);
