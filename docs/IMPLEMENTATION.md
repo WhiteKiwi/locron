@@ -5214,3 +5214,8 @@ clocks and protections stay exact. Three Verify criteria require docs/Issues bef
 separate development, whole-workflow inverse and parent review, then fresh ordinary
 native and paired-package evidence. Preserve prior full failures; do not repeat an
 unchanged exploratory command or infer an unknown supervisor/WAL cause.
+
+
+## PR140 guarded output recovery verification before separate Source (2026-10-04)
+
+Freeze SPEC and follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. Normal reviewed main814 union first preserves old140 pre-main + main137 paired-default main(). Separate developer then splits directory identity handling from individual leaf absence so unconfirmed cleanup annotates the same primary exception; preserve nonrecursive/exclusive identity-based recovery and all successful bytes. Add one finite real-file/fd-backed portable32/native6 fixture module plus only the selected existing-workflow filters/portable step/two native rows. Root Docs/Issue35 readback precedes Source; full inverses/other mode-blobs/workflow/Source review and fresh hosted exact-head evidence precede merge. Owner-PC native/compiler/effectful acceptance and wider release/catalog/install acceptance remain unexecuted/open.

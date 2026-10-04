@@ -5405,3 +5405,11 @@ Select a strictly additive independent doctor gate in the ordinary Windows
 foundation matrix before the existing service command. This avoids an unrelated
 early failure hiding doctor evidence while retaining every existing refusal.
 No application/test changes or unchanged full rerun are selected.
+
+
+## PR140 incomplete directory cleanup diagnosis (2026-10-04)
+
+Parent and separate reviewer fully read original renderer70c9. A renamed-away output directory can make directory lstat raise FileNotFoundError inside the leaf-absence handler and final cleanup handler, leaving moved manifests without a cleanup note. This is a source-backed missing diagnosis, not observed foreign deletion or a complete sandbox guarantee. Existing paired tests do not cover the selected fault/recovery paths. Separate research defines actual-fd portable32 and Windows6 controls with object identities/guarded readonly restoration and no fake native error values. Unavailable unpublished Docs9038 is not treated as read; the verified current Source/15-line plan/Issue35 comment5977693549 ground the selected control plan.
+
+
+Official [setup-python architecture inputs](https://github.com/actions/setup-python/blob/main/action.yml) and the [Python distribution manifest](https://github.com/actions/python-versions/blob/main/versions-manifest.json) were read before Source on2026-10-04. Stable3.14 Windows x64 and ARM64 artifacts are listed. Select setup-python@v6 with3.14 and explicit x64/arm64 inputs for the new fixture job, then require actual interpreter architecture observations; installer selection alone is not native test evidence. No freethreaded interpreter, owner-PC installation or emulation is selected.
