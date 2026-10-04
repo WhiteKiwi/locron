@@ -147,6 +147,15 @@ the complete execution context.
 | [locron/windows-2026-10-02/36](https://github.com/WhiteKiwi/locron/issues/36) | [item 260622031](https://github.com/users/WhiteKiwi/projects/4?pane=issue&itemId=260622031) | [#36](https://github.com/WhiteKiwi/locron/issues/36) | Todo |
 | [pnpm integration (PR38)](https://github.com/WhiteKiwi/locron/pull/38) | [item 260689470](https://github.com/users/WhiteKiwi/projects/4?pane=issue&itemId=260689470) | [#114](https://github.com/WhiteKiwi/locron/issues/114) | Done |
 
+## PR136 reviewed observation continuation (2026-10-04)
+
+Issue31 remains open:7343/run37196440237 has one actual ARM History expiry and unknown cleanup completion. The helper-only current-call observation continuation is documented before Source; it does not close Windows native acceptance or change the original clocks/oracles. planning/WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md carries the four-step Verify handoff and immutable raw/proposal hashes.
+
+
+## Current PR136 observer and concurrent publication integration
+
+Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
 
 ### PR166 current-main output-recovery continuation (2026-10-05)
 
