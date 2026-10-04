@@ -5446,3 +5446,8 @@ The helper already aborts/reaps its owned controller and observes captured yield
 ### PR142 measured embedded URL suffix lint (2026-10-04)
 
 Changed-head37198413636 has14 ordinary successes/three lint failures. Raw Windows/Linux lint identifies middleware831 ends_with(.js) case-sensitive-file-extension lint. Keep the exact lowercase embedded URL rule through rsplit_once plus exact suffix js; preserve all152 rows and other Source. No case relaxation/allow/gate waiver. Root Docs/Issue162 readback precede separate one-assertion Source repair and fresh changed-head qualification.
+
+
+## PR142 reviewed qualification and exact main138 integration
+
+The [completed integration plan](planning/DASHBOARD_HEADERS_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
