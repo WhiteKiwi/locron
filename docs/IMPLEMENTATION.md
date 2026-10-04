@@ -5423,3 +5423,7 @@ Root found the shared repair wrapper destructures File and DirectoryGuard into r
 ## PR147 separate Git integration with reviewed main136
 
 SPEC remains frozen. [The complete five-step plan](planning/OUTPUT_REPAIR_MAIN136_2026-10-04.md) selects exact normal Source union and whole incoming Docs plus all ordered byte-exact own insertion blocks; whole own/incoming inverses are required. Root exact Issue146 GET/final reread precede separate development; full original gates and actual functional/paired provenance qualify the combined head.
+
+## Store147 selected receiver correction (2026-10-05)
+
+Apply only the actual Clippy receiver autoref suggestion under planning/OUTPUT_REPAIR_READ_RECEIVER_2026-10-05.md after exact Issue146 readback and Root final reread. Preserve complete parent inverse, fixed47/48 controls, errors, guards and every old gate/clock; separate Source implementation and Root review precede normal publication/fresh hosted acceptance. This syntax change supplies no repair claim for unrelated Windows wake/Ack/GUI failures.
