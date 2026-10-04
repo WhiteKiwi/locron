@@ -1,0 +1,239 @@
+name: Prepare bounded history Draft
+'on':
+  push:
+    branches: [fix/history-pagination-and-memory]
+    paths: [.github/workflows/locron-history-draft.yml]
+permissions: {}
+jobs:
+  prepare-source:
+    if: github.repository == 'WhiteKiwi/locron' && github.ref == 'refs/heads/fix/history-pagination-and-memory'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Prepare exact candidate without changing branch references
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: python
+        run: |
+          import base64
+          import difflib
+          import hashlib
+          import json
+          import os
+          import subprocess
+          
+          REPO = 'WhiteKiwi/locron'
+          BRANCH = 'fix/history-pagination-and-memory'
+          WORKFLOW = '.github/workflows/locron-history-draft.yml'
+          STORE = 'crates/locron-store/src/store.rs'
+          API = 'crates/locron-server/src/api.rs'
+          EXPECTED = {STORE: 'e13f2a235434627ec958f32de73d0256cd7ae8dd', API: '3c96ff786be7389aedd6b5130a742d3c23249d19'}
+          
+          OLD_SEARCH = '''    /// Searches the complete run history by literal Unicode-lowercased run id
+              /// or current durable job name and returns a stable page and total from one
+              /// read transaction. An empty query matches every run.
+              pub fn search_history(
+                  &self,
+                  query: &str,
+                  limit: usize,
+                  offset: usize,
+              ) -> StoreResult<RunHistoryPage> {
+                  let normalized = query.trim().to_lowercase();
+                  let mut conn = self.conn()?;
+                  let tx = conn.transaction()?;
+                  let mut statement = tx.prepare(
+                      "SELECT r.id,r.job_id,r.revision,r.trigger,r.nominal_us,r.requested_at_us,r.eligible_at_us,r.state,r.reason,r.snapshot_json,r.finished_at_us,j.name FROM runs r JOIN jobs j ON j.id=r.job_id ORDER BY r.requested_at_us DESC,r.id DESC",
+                  )?;
+                  let rows = statement
+                      .query_map([], |row| Ok((map_run(row)?, row.get::<_, String>(11)?)))?
+                      .collect::<Result<Vec<_>, _>>()?;
+                  drop(statement);
+          
+                  let matching = rows.into_iter().filter(|(run, job_name)| {
+                      normalized.is_empty()
+                          || run.id.to_lowercase().contains(&normalized)
+                          || job_name.to_lowercase().contains(&normalized)
+                  });
+                  let mut runs = Vec::new();
+                  let mut total = 0;
+                  let page_end = offset.saturating_add(limit.min(100));
+                  for (run, _) in matching {
+                      if total >= offset && total < page_end {
+                          runs.push(run);
+                      }
+                      total += 1;
+                  }
+                  tx.commit()?;
+                  Ok(RunHistoryPage { total, runs })
+              }
+          '''
+          NEW_SEARCH = '''    /// Returns a newest-first page and its total from one read transaction.
+              /// A supplied reference must identify a live job, matching the dashboard's
+              /// existing job filter. Pages are capped at 100 rows, but offsets are not
+              /// limited by the presentation cap of [`Store::history`].
+              pub fn history_page(
+                  &self,
+                  job: Option<&str>,
+                  limit: usize,
+                  offset: usize,
+              ) -> StoreResult<RunHistoryPage> {
+                  let mut conn = self.conn()?;
+                  let tx = conn.transaction()?;
+                  let job_id: Option<String> = match job {
+                      Some(reference) => Some(
+                          tx.query_row(
+                              "SELECT id FROM jobs WHERE (id=?1 OR name=?1) AND removed_at_us IS NULL",
+                              [reference],
+                              |row| row.get(0),
+                          )
+                          .optional()?
+                          .ok_or_else(|| StoreError::NotFound(reference.into()))?,
+                      ),
+                      None => None,
+                  };
+                  let count: i64 = tx.query_row(
+                      "SELECT COUNT(*) FROM runs WHERE (?1 IS NULL OR job_id=?1)",
+                      params![job_id],
+                      |row| row.get(0),
+                  )?;
+                  let total = usize::try_from(count).map_err(|_| {
+                      StoreError::Conflict("run history total is outside supported range".into())
+                  })?;
+                  // A huge offset is an empty page, not a wrapped SQLite integer. No
+                  // offset conversion is needed after the end of this transaction's data.
+                  let runs = if limit == 0 || offset >= total {
+                      Vec::new()
+                  } else {
+                      let sql_offset = i64::try_from(offset).map_err(|_| {
+                          StoreError::Conflict("run history offset is outside supported range".into())
+                      })?;
+                      let mut statement = tx.prepare(
+                          "SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE (?1 IS NULL OR job_id=?1) ORDER BY requested_at_us DESC,id DESC LIMIT ?2 OFFSET ?3",
+                      )?;
+                      statement
+                          .query_map(params![job_id, limit.min(100) as i64, sql_offset], map_run)?
+                          .collect::<Result<Vec<_>, _>>()?
+                  };
+                  tx.commit()?;
+                  Ok(RunHistoryPage { total, runs })
+              }
+          
+              /// Searches the complete run history by literal Unicode-lowercased run id
+              /// or current durable job name and returns a stable page and total from one
+              /// read transaction. An empty query uses SQL pagination. Nonempty searches
+              /// retain only the requested page and the current row while counting matches.
+              pub fn search_history(
+                  &self,
+                  query: &str,
+                  limit: usize,
+                  offset: usize,
+              ) -> StoreResult<RunHistoryPage> {
+                  let normalized = query.trim().to_lowercase();
+                  if normalized.is_empty() {
+                      return self.history_page(None, limit, offset);
+                  }
+                  let mut conn = self.conn()?;
+                  let tx = conn.transaction()?;
+                  let mut statement = tx.prepare(
+                      "SELECT r.id,r.job_id,r.revision,r.trigger,r.nominal_us,r.requested_at_us,r.eligible_at_us,r.state,r.reason,r.snapshot_json,r.finished_at_us,j.name FROM runs r JOIN jobs j ON j.id=r.job_id ORDER BY r.requested_at_us DESC,r.id DESC",
+                  )?;
+                  let mut runs = Vec::new();
+                  let mut total = 0_usize;
+                  let page_end = offset.saturating_add(limit.min(100));
+                  for row in statement.query_map([], |row| {
+                      Ok((map_run(row)?, row.get::<_, String>(11)?))
+                  })? {
+                      let (run, job_name) = row?;
+                      if !run.id.to_lowercase().contains(&normalized)
+                          && !job_name.to_lowercase().contains(&normalized)
+                      {
+                          continue;
+                      }
+                      if total >= offset && total < page_end {
+                          runs.push(run);
+                      }
+                      total = total.checked_add(1).ok_or_else(|| {
+                          StoreError::Conflict("run history total is outside supported range".into())
+                      })?;
+                  }
+                  drop(statement);
+                  tx.commit()?;
+                  Ok(RunHistoryPage { total, runs })
+              }
+          '''
+          OLD_API = '''            let total = usize::try_from(store.count_runs(Some(job))?).map_err(|_| {
+                          StoreError::Conflict("run history total is outside supported range".into())
+                      })?;
+                      let runs = store
+                          .history(Some(job), query.limit.saturating_add(query.offset))?
+                          .into_iter()
+                          .skip(query.offset)
+                          .take(query.limit)
+                          .collect();
+                      (total, runs)
+          '''
+          NEW_API = '''            let page = store.history_page(Some(job), query.limit, query.offset)?;
+                      (page.total, page.runs)
+          '''
+          
+          def api(method, endpoint, payload=None):
+              command = ['gh', 'api', '--method', method, endpoint]
+              if payload is not None:
+                  command.extend(['--input', '-'])
+              result = subprocess.run(command, input=None if payload is None else json.dumps(payload),
+                                      text=True, capture_output=True, timeout=45)
+              if result.returncode:
+                  raise RuntimeError(f'GitHub {method} {endpoint} failed: {result.stderr}')
+              return json.loads(result.stdout)
+          
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          
+          assert os.environ['GITHUB_REPOSITORY'] == REPO
+          assert os.environ['GITHUB_REF'] == 'refs/heads/' + BRANCH
+          head = os.environ['GITHUB_SHA']
+          prefix = f'repos/{REPO}'
+          ref = f'{prefix}/git/refs/heads/{BRANCH}'
+          assert api('GET', ref)['object']['sha'] == head, 'branch advanced before source read'
+          commit = api('GET', f'{prefix}/git/commits/{head}')
+          tree = api('GET', f"{prefix}/git/trees/{commit['tree']['sha']}?recursive=1")
+          assert not tree.get('truncated')
+          entries = {item['path']: item for item in tree['tree'] if item['type'] != 'tree'}
+          assert entries[WORKFLOW]['mode'] == '100644'
+          changes = []
+          blobs = {}
+          for path, old, new in [(STORE, OLD_SEARCH, NEW_SEARCH), (API, OLD_API, NEW_API)]:
+              assert entries[path]['sha'] == EXPECTED[path] and entries[path]['mode'] == '100644'
+              value = api('GET', f'{prefix}/git/blobs/{EXPECTED[path]}')
+              assert value['encoding'] == 'base64'
+              raw = base64.b64decode(value['content'])
+              assert blob_sha(raw) == EXPECTED[path]
+              source = raw.decode('utf-8')
+              assert source.count(old) == 1, f'{path}: source anchor mismatch'
+              updated = source.replace(old, new, 1)
+              assert updated.count(new) == 1
+              assert updated.replace(new, old, 1) == source, f'{path}: inverse mismatch'
+              print(''.join(difflib.unified_diff(source.splitlines(True), updated.splitlines(True),
+                                               fromfile=path, tofile=path)))
+              blob = api('POST', f'{prefix}/git/blobs', {'content': updated, 'encoding': 'utf-8'})
+              assert blob['sha'] == blob_sha(updated.encode())
+              blobs[path] = blob['sha']
+              changes.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
+          changes.append({'path': WORKFLOW, 'mode': '100644', 'type': 'blob', 'sha': None})
+          new_tree = api('POST', f'{prefix}/git/trees', {'base_tree': commit['tree']['sha'], 'tree': changes})
+          readback = api('GET', f"{prefix}/git/trees/{new_tree['sha']}?recursive=1")
+          assert not readback.get('truncated')
+          new_entries = {item['path']: item for item in readback['tree'] if item['type'] != 'tree'}
+          assert set(new_entries) == set(entries) - {WORKFLOW}
+          for path, item in new_entries.items():
+              assert (item['sha'], item['mode']) == (blobs.get(path, entries[path]['sha']), entries[path]['mode'])
+          assert api('GET', ref)['object']['sha'] == head, 'branch advanced before candidate creation'
+          result = api('POST', f'{prefix}/git/commits', {
+              'message': 'fix: paginate complete history without buffering every run',
+              'tree': new_tree['sha'], 'parents': [head],
+          })
+          print(json.dumps({'candidate_commit': result['sha'], 'source_blobs': blobs,
+                            'temporary_workflow_removed': True, 'branch_updated': False,
+                            'rust_tests_executed': False}))
