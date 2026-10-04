@@ -12,6 +12,58 @@ if (-not $HostedPrerequisite -or $env:GITHUB_ACTIONS -cne 'true' -or
 
 # Only this retained runspace may own account, credential, stream or filesystem operations.
 # Driver code below consumes only its bounded sanitized result and deadline scalars.
+# BEGIN fixed-prerequisite-diagnostics driver_helpers
+function Get-FixedFailureKind($exception) {
+    $specific='unknown'; $wrapper='unknown'; $node=$exception
+    for ($index=0; $index -lt 5; $index++) {
+        if ($node -isnot [Exception]) {break}
+        if ($node -is [UnauthorizedAccessException]) {$specific='unauthorized'}
+        elseif ($node -is [Security.SecurityException]) {$specific='security'}
+        elseif ($node -is [IO.IOException]) {$specific='io'}
+        elseif ($node -is [ComponentModel.Win32Exception]) {$specific='win32'}
+        elseif ($node -is [ArgumentException]) {$specific='argument'}
+        elseif ($node -is [InvalidOperationException]) {$specific='invalid_operation'}
+        elseif ($node -is [TimeoutException]) {$specific='timeout'}
+        elseif ($node -is [Management.Automation.PipelineStoppedException]) {$wrapper='pipeline'}
+        elseif ($node -is [Management.Automation.MethodInvocationException]) {$wrapper='method_invocation'}
+        elseif ($node -is [Management.Automation.RuntimeException]) {$wrapper='runtime'}
+        if ($index -eq 4) {break}
+        $node=$node.InnerException
+    }
+    if ($specific -cne 'unknown') {return $specific}
+    return $wrapper
+}
+
+function Fixed-DiagnosticValue($value,[string[]]$allowed) {
+    if ($value -is [string] -and $value -cin $allowed) {return $value}
+    return 'unknown'
+}
+
+function Write-FixedRefusalDiagnostic($branch,$driverKind=$null) {
+    $checkpoints=@('entry','metadata','stock_preflight','stock_utility_open','stock_utility_import','stock_accounts_open','stock_accounts_import','stock_exports','runner_identity','os_metadata','checkout_bootstrap','image_open','image_hash','anchor_bootstrap','guardian_start','guard_acquire_anchor','guard_create_job','account_a_create','account_b_create','guard_create_controls','image_copy','guard_hold_image','actor_start','actor_read','cleanup_accounts','cleanup_release_image','cleanup_remove_image','cleanup_remove_markers','cleanup_release_controls','cleanup_remove_controls','cleanup_release_job','cleanup_remove_job','cleanup_finish_guard','cleanup_guard_eof','cleanup_dispose','evidence_publish','confirmed')
+    $branches=@('shared_unknown','phase_expired_pending','phase_expired_completed','endinvoke_exception','result_rejected','phase_expired_after_dispose','phase_expired_after_success_print')
+    $categories=@('preflight','account','credential_start','token','protocol','containment','deadline','cleanup','guard_setup','native_owner_unknown')
+    $kinds=@('unauthorized','security','io','win32','argument','invalid_operation','timeout','method_invocation','runtime','pipeline','unknown')
+    $evidenceStates=@('not_attempted','attempting','written','refused')
+    $checkpoint=Fixed-DiagnosticValue $shared['checkpoint'] $checkpoints
+    $failureCheckpoint=Fixed-DiagnosticValue $shared['failure_checkpoint'] $checkpoints
+    $branch=Fixed-DiagnosticValue $branch $branches
+    $category=Fixed-DiagnosticValue $shared['failure_category'] $categories
+    $kind=Fixed-DiagnosticValue $shared['failure_kind'] $kinds
+    if ($null -ne $driverKind) {$kind=Fixed-DiagnosticValue $driverKind $kinds}
+    $evidence=Fixed-DiagnosticValue $shared['failure_evidence'] $evidenceStates
+    $evidenceKind=Fixed-DiagnosticValue $shared['evidence_kind'] $kinds
+    $line='windows-user-prerequisite failed: native_owner_unknown checkpoint='+$checkpoint+
+        ' failure_checkpoint='+$failureCheckpoint+' branch='+$branch+' category='+$category+
+        ' kind='+$kind+' evidence='+$evidence+' evidence_kind='+$evidenceKind
+    # Every selected scalar is fixed ASCII; allow two bytes for the newline.
+    if ($line.Length -gt 510) {
+        $line='windows-user-prerequisite failed: native_owner_unknown checkpoint=unknown failure_checkpoint=unknown branch=unknown category=unknown kind=unknown evidence=unknown evidence_kind=unknown'
+    }
+    [Console]::Error.WriteLine($line)
+}
+
+# END fixed-prerequisite-diagnostics driver_helpers
 $nativeOwner = {
     param($shared, $metadata)
     $ErrorActionPreference = 'Stop'
@@ -22,6 +74,29 @@ $nativeOwner = {
     $InformationPreference = 'SilentlyContinue'
     Set-StrictMode -Version 2.0
 
+    # BEGIN fixed-prerequisite-diagnostics owner_classifier
+    function Get-FixedFailureKind($exception) {
+        $specific='unknown'; $wrapper='unknown'; $node=$exception
+        for ($index=0; $index -lt 5; $index++) {
+            if ($node -isnot [Exception]) {break}
+            if ($node -is [UnauthorizedAccessException]) {$specific='unauthorized'}
+            elseif ($node -is [Security.SecurityException]) {$specific='security'}
+            elseif ($node -is [IO.IOException]) {$specific='io'}
+            elseif ($node -is [ComponentModel.Win32Exception]) {$specific='win32'}
+            elseif ($node -is [ArgumentException]) {$specific='argument'}
+            elseif ($node -is [InvalidOperationException]) {$specific='invalid_operation'}
+            elseif ($node -is [TimeoutException]) {$specific='timeout'}
+            elseif ($node -is [Management.Automation.PipelineStoppedException]) {$wrapper='pipeline'}
+            elseif ($node -is [Management.Automation.MethodInvocationException]) {$wrapper='method_invocation'}
+            elseif ($node -is [Management.Automation.RuntimeException]) {$wrapper='runtime'}
+            if ($index -eq 4) {break}
+            $node=$node.InnerException
+        }
+        if ($specific -cne 'unknown') {return $specific}
+        return $wrapper
+    }
+
+    # END fixed-prerequisite-diagnostics owner_classifier
     function Check-Deadline {
         if ($shared['expired'] -or [Diagnostics.Stopwatch]::GetTimestamp() -ge
             [long]$shared['phase_deadline']) { throw 'deadline' }
@@ -392,22 +467,43 @@ $nativeOwner = {
     }
 
     function Bind-Stock {
+        # BEGIN fixed-prerequisite-diagnostics stock_preflight
+        $shared['checkpoint']='stock_preflight'
+        # END fixed-prerequisite-diagnostics stock_preflight
         if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or
             $PSVersionTable.PSEdition -cne 'Desktop' -or -not [Environment]::Is64BitProcess) {throw 'preflight'}
         $system=Local-Path $env:SystemRoot
         $name='Microsoft.PowerShell.Commands.Utility'
         $binary=[IO.Path]::Combine($system,'Microsoft.NET','assembly','GAC_MSIL',$name,
             'v4.0_3.0.0.0__31bf3856ad364e35',($name+'.dll'))
+        # BEGIN fixed-prerequisite-diagnostics stock_utility_open
+        $shared['checkpoint']='stock_utility_open'
+        # END fixed-prerequisite-diagnostics stock_utility_open
         $null=Open-FixedFile $binary
+        # BEGIN fixed-prerequisite-diagnostics stock_utility_import
+        $shared['checkpoint']='stock_utility_import'
+        # END fixed-prerequisite-diagnostics stock_utility_import
         $module=Native-Call {Import-Module -Name $binary -PassThru -ErrorAction Stop}
+        # BEGIN fixed-prerequisite-diagnostics stock_utility_exports
+        $shared['checkpoint']='stock_exports'
+        # END fixed-prerequisite-diagnostics stock_utility_exports
         $script:fromJson=$module.ExportedCmdlets['ConvertFrom-Json']
         $script:toJson=$module.ExportedCmdlets['ConvertTo-Json']
         if ($null -eq $script:fromJson -or $null -eq $script:toJson -or $module.Path -cne $binary) {throw 'preflight'}
         # Import only the exact held native module; no manifest/nested-file autoload.
         $localModule=[IO.Path]::Combine($system,'System32','WindowsPowerShell','v1.0','Modules','Microsoft.PowerShell.LocalAccounts','Microsoft.PowerShell.LocalAccounts.dll')
+        # BEGIN fixed-prerequisite-diagnostics stock_accounts_open
+        $shared['checkpoint']='stock_accounts_open'
+        # END fixed-prerequisite-diagnostics stock_accounts_open
         $null=Open-FixedFile $localModule
+        # BEGIN fixed-prerequisite-diagnostics stock_accounts_import
+        $shared['checkpoint']='stock_accounts_import'
+        # END fixed-prerequisite-diagnostics stock_accounts_import
         $accountsModule=Native-Call {Import-Module -Name $localModule -PassThru -ErrorAction Stop}
         if ($accountsModule.Path -cne $localModule) {throw 'preflight'}
+        # BEGIN fixed-prerequisite-diagnostics stock_account_exports
+        $shared['checkpoint']='stock_exports'
+        # END fixed-prerequisite-diagnostics stock_account_exports
         $script:localCommands=@{}
         foreach ($command in @('New-LocalUser','Get-LocalUser','Get-LocalGroup','Get-LocalGroupMember','Add-LocalGroupMember','Remove-LocalUser')) {
             $info=$accountsModule.ExportedCmdlets[$command]
@@ -713,24 +809,45 @@ $nativeOwner = {
     $facts=[Collections.Generic.List[object]]::new()
     $runnerAdministrative=$false; $os='unavailable'; $build='unavailable'
     try {
+        # BEGIN fixed-prerequisite-diagnostics metadata
+        $shared['checkpoint']='metadata'
+        # END fixed-prerequisite-diagnostics metadata
         Check-Metadata
         Begin-Phase 30 $shared['entered']
         $setupDeadline=[long]$shared['phase_deadline']
         Bind-Stock
+        # BEGIN fixed-prerequisite-diagnostics runner_identity
+        $shared['checkpoint']='runner_identity'
+        # END fixed-prerequisite-diagnostics runner_identity
         $identity=Native-Call {[Security.Principal.WindowsIdentity]::GetCurrent()}
         $shared['resources'].Add($identity)
         $principal=[Security.Principal.WindowsPrincipal]::new($identity)
         $runnerAdministrative=Native-Call {$principal.IsInRole([Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'))}
         $script:runnerSid=Native-Call {$identity.User.Value}
         if (-not $runnerAdministrative) {throw 'preflight'}
+        # BEGIN fixed-prerequisite-diagnostics os_metadata
+        $shared['checkpoint']='os_metadata'
+        # END fixed-prerequisite-diagnostics os_metadata
         $os=Native-Call {[Microsoft.Win32.Registry]::GetValue('HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion','ProductName',$null)}
         $build=Native-Call {[Microsoft.Win32.Registry]::GetValue('HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion','CurrentBuildNumber',$null)}
         $os=Bounded-Ascii ([string]$os) 96; $build=Bounded-Ascii ([string]$build) 32
+        # BEGIN fixed-prerequisite-diagnostics checkout_bootstrap
+        $shared['checkpoint']='checkout_bootstrap'
+        # END fixed-prerequisite-diagnostics checkout_bootstrap
         $cwd=Local-Path $metadata.cwd
         Bootstrap-Chain $cwd
+        # BEGIN fixed-prerequisite-diagnostics image_open
+        $shared['checkpoint']='image_open'
+        # END fixed-prerequisite-diagnostics image_open
         $sourcePath=Local-Path ([IO.Path]::Combine($cwd,'target',$metadata.target,'debug','examples','windows_user_prerequisite.exe'))
         $source=Open-FixedFile $sourcePath
+        # BEGIN fixed-prerequisite-diagnostics image_hash
+        $shared['checkpoint']='image_hash'
+        # END fixed-prerequisite-diagnostics image_hash
         $script:exampleHash=Stream-Hash $source
+        # BEGIN fixed-prerequisite-diagnostics anchor_bootstrap
+        $shared['checkpoint']='anchor_bootstrap'
+        # END fixed-prerequisite-diagnostics anchor_bootstrap
         $anchor=Local-Path $env:ProgramFiles
         Bootstrap-Chain $anchor
         # Guardian TEMP/TMP is the already validated existing administrative anchor;
@@ -740,30 +857,54 @@ $nativeOwner = {
         $script:guardNonce=[Guid]::NewGuid().ToString('N')
         $jobName='locron-prerequisite-v1-'+[Guid]::NewGuid().ToString('N')
         $job=[IO.Path]::Combine($anchor,$jobName)
+        # BEGIN fixed-prerequisite-diagnostics guardian_start
+        $shared['checkpoint']='guardian_start'
+        # END fixed-prerequisite-diagnostics guardian_start
         $guardBorn=[Diagnostics.Stopwatch]::GetTimestamp()
         $info=New-StartInfo $sourcePath $cwd '--hosted-prerequisite guard-admin' $temporary
         $info.RedirectStandardInput=$true; $info.LoadUserProfile=$false
         $script:guardian=Start-Retained $info $guardBorn $setupDeadline $false
         $script:guardStdout=New-Channel (Native-Call {$script:guardian.StandardOutput.BaseStream}) 'guard'
         $script:guardStderr=New-Channel (Native-Call {$script:guardian.StandardError.BaseStream}) 'empty'
+        # BEGIN fixed-prerequisite-diagnostics guard_acquire_anchor
+        $shared['checkpoint']='guard_acquire_anchor'
+        # END fixed-prerequisite-diagnostics guard_acquire_anchor
         $ack=Guard-Request 'acquire_anchor' ([ordered]@{anchor=$anchor;source_image=$sourcePath;source_sha256=$script:exampleHash;cwd=$cwd;
             controller_remaining_ms=(Remaining-Milliseconds $shared['controller_deadline'] 180000);
             setup_remaining_ms=(Remaining-Milliseconds $setupDeadline 30000)}) 'anchor_held'
         $guardianId=Native-Call {$script:guardian.Id}
         if ($ack.pid -ne $guardianId -or $ack.runner_sid -cne $script:runnerSid -or $ack.source_sha256 -cne $script:exampleHash) {throw 'guard_setup'}
         $guardFacts.anchor_held=$true
+        # BEGIN fixed-prerequisite-diagnostics guard_create_job
+        $shared['checkpoint']='guard_create_job'
+        # END fixed-prerequisite-diagnostics guard_create_job
         $null=Guard-Request 'create_job' ([ordered]@{name=$jobName}) 'job_held'
         $guardFacts.job_created=$true
         Check-HeldDirectory $job
         $nameStem='lc'+([Guid]::NewGuid().ToString('N')).Substring(0,12)
+        # BEGIN fixed-prerequisite-diagnostics account_a_create
+        $shared['checkpoint']='account_a_create'
+        # END fixed-prerequisite-diagnostics account_a_create
         $accountA=New-Account 'A' ($nameStem+'a')
+        # BEGIN fixed-prerequisite-diagnostics account_b_create
+        $shared['checkpoint']='account_b_create'
+        # END fixed-prerequisite-diagnostics account_b_create
         $accountB=New-Account 'B' ($nameStem+'b')
         if ($accountA.sid.Value -ceq $accountB.sid.Value) {throw 'account'}
+        # BEGIN fixed-prerequisite-diagnostics guard_create_controls
+        $shared['checkpoint']='guard_create_controls'
+        # END fixed-prerequisite-diagnostics guard_create_controls
         $null=Guard-Request 'create_controls' ([ordered]@{actors=@([ordered]@{label='A';sid=$accountA.sid.Value},[ordered]@{label='B';sid=$accountB.sid.Value})}) 'controls_held'
         $guardFacts.controls_held=$true
         foreach ($account in $script:accounts) {Check-HeldDirectory ([IO.Path]::Combine($job,$account.label))}
         $imagePath=[IO.Path]::Combine($job,'windows_user_prerequisite.exe')
+        # BEGIN fixed-prerequisite-diagnostics image_copy
+        $shared['checkpoint']='image_copy'
+        # END fixed-prerequisite-diagnostics image_copy
         Copy-Image $imagePath $source $script:exampleHash
+        # BEGIN fixed-prerequisite-diagnostics guard_hold_image
+        $shared['checkpoint']='guard_hold_image'
+        # END fixed-prerequisite-diagnostics guard_hold_image
         $hashAck=Guard-Request 'hold_image' ([ordered]@{sha256=$script:exampleHash}) 'image_held'
         if ($hashAck.sha256 -cne $script:exampleHash) {throw 'guard_setup'}
         $guardFacts.image_held=$true
@@ -781,41 +922,77 @@ $nativeOwner = {
             $info=New-StartInfo $imagePath $control ($quoted -join ' ') $control
             $info.UserName=$account.name; $info.Domain=[Environment]::MachineName
             $info.Password=$account.password; $info.LoadUserProfile=$true
+            # BEGIN fixed-prerequisite-diagnostics actor_start
+            $shared['checkpoint']='actor_start'
+            # END fixed-prerequisite-diagnostics actor_start
             $process=Start-Retained $info $actorBorn $actorDeadline $true
+            # BEGIN fixed-prerequisite-diagnostics actor_read
+            $shared['checkpoint']='actor_read'
+            # END fixed-prerequisite-diagnostics actor_read
             $facts.Add((Read-Actor $process $account))
             Guard-Live
             $null=Native-Call {$process.Dispose()}
         }
         $shared['phase_deadline']=$shared['controller_deadline']; Check-Deadline
         Begin-Phase 30 ([Diagnostics.Stopwatch]::GetTimestamp())
+        # BEGIN fixed-prerequisite-diagnostics cleanup_accounts
+        $shared['checkpoint']='cleanup_accounts'
+        # END fixed-prerequisite-diagnostics cleanup_accounts
         foreach ($account in $script:accounts) {Remove-RecordedAccount $account}
         Guard-Live
         $guardFacts.continuous=$true
+        # BEGIN fixed-prerequisite-diagnostics cleanup_release_image
+        $shared['checkpoint']='cleanup_release_image'
+        # END fixed-prerequisite-diagnostics cleanup_release_image
         $null=Guard-Request 'release_image' ([ordered]@{}) 'image_released'
         $guardFacts.image_released=$true
+        # BEGIN fixed-prerequisite-diagnostics cleanup_remove_image
+        $shared['checkpoint']='cleanup_remove_image'
+        # END fixed-prerequisite-diagnostics cleanup_remove_image
         Exact-Entries $job @('A','B','windows_user_prerequisite.exe')
         $null=Native-Call {[IO.File]::Delete($imagePath)}
         Require-Absent $imagePath
+        # BEGIN fixed-prerequisite-diagnostics cleanup_remove_markers
+        $shared['checkpoint']='cleanup_remove_markers'
+        # END fixed-prerequisite-diagnostics cleanup_remove_markers
         foreach ($account in $script:accounts) {
             $control=[IO.Path]::Combine($job,$account.label)
             Exact-Entries $control @('grandchild.ready')
             Verify-RemoveMarker ([IO.Path]::Combine($control,'grandchild.ready')) $account.sid.Value
             Exact-Entries $control @()
         }
+        # BEGIN fixed-prerequisite-diagnostics cleanup_release_controls
+        $shared['checkpoint']='cleanup_release_controls'
+        # END fixed-prerequisite-diagnostics cleanup_release_controls
         $null=Guard-Request 'release_controls' ([ordered]@{}) 'controls_released'
         $guardFacts.controls_released=$true
+        # BEGIN fixed-prerequisite-diagnostics cleanup_remove_controls
+        $shared['checkpoint']='cleanup_remove_controls'
+        # END fixed-prerequisite-diagnostics cleanup_remove_controls
         foreach ($account in $script:accounts) {
             $control=[IO.Path]::Combine($job,$account.label)
             $null=Native-Call {[IO.Directory]::Delete($control,$false)}
             Require-Absent $control
         }
         Exact-Entries $job @()
+        # BEGIN fixed-prerequisite-diagnostics cleanup_release_job
+        $shared['checkpoint']='cleanup_release_job'
+        # END fixed-prerequisite-diagnostics cleanup_release_job
         $null=Guard-Request 'release_job' ([ordered]@{}) 'job_released'
         $guardFacts.job_released=$true
+        # BEGIN fixed-prerequisite-diagnostics cleanup_remove_job
+        $shared['checkpoint']='cleanup_remove_job'
+        # END fixed-prerequisite-diagnostics cleanup_remove_job
         $null=Native-Call {[IO.Directory]::Delete($job,$false)}
         Require-Absent $job
+        # BEGIN fixed-prerequisite-diagnostics cleanup_finish_guard
+        $shared['checkpoint']='cleanup_finish_guard'
+        # END fixed-prerequisite-diagnostics cleanup_finish_guard
         $null=Guard-Request 'finish' ([ordered]@{}) 'all_released' $true
         $guardFacts.all_released=$true
+        # BEGIN fixed-prerequisite-diagnostics cleanup_guard_eof
+        $shared['checkpoint']='cleanup_guard_eof'
+        # END fixed-prerequisite-diagnostics cleanup_guard_eof
         do {
             Pump-Channel $script:guardStdout; Pump-Channel $script:guardStderr
             $exited=Native-Call {$script:guardian.HasExited}
@@ -824,6 +1001,9 @@ $nativeOwner = {
         $guardianExit=Native-Call {$script:guardian.ExitCode}
         if ($script:guardSequence -ne 8 -or $script:guardStdout.frames.Count -ne 8 -or $guardianExit -ne 0) {throw 'cleanup'}
         $guardFacts.stdout_eof=$true; $guardFacts.stderr_eof=$true; $guardFacts.exit_zero=$true
+        # BEGIN fixed-prerequisite-diagnostics cleanup_dispose
+        $shared['checkpoint']='cleanup_dispose'
+        # END fixed-prerequisite-diagnostics cleanup_dispose
         foreach ($resource in $shared['resources']) {
             if ($resource -is [IDisposable]) {$null=Native-Call {$resource.Dispose()}}
         }
@@ -835,8 +1015,14 @@ $nativeOwner = {
             cleanup='confirmed';profile_disposition='disposable-vm';elapsed_ms=$elapsed;failure=$null;guard=$guardFacts}
         if ($facts.Count -ne 2 -or $script:counts.created -ne 2 -or $script:counts.executed -ne 2 -or $script:counts.removed -ne 2) {throw 'protocol'}
         foreach ($value in $guardFacts.Values) {if (-not $value) {throw 'protocol'}}
+        # BEGIN fixed-prerequisite-diagnostics evidence_publish_success
+        $shared['checkpoint']='evidence_publish'
+        # END fixed-prerequisite-diagnostics evidence_publish_success
         Write-Evidence $receipt
         Check-Deadline
+        # BEGIN fixed-prerequisite-diagnostics confirmed
+        $shared['checkpoint']='confirmed'
+        # END fixed-prerequisite-diagnostics confirmed
         [pscustomobject]@{confirmed=$true}
     } catch {
         # A raw exception/identity/path/partial native result never escapes this owner.
@@ -846,6 +1032,11 @@ $nativeOwner = {
         if ($_.Exception.Message -cin @('preflight','account','credential_start','token','protocol','containment','deadline','cleanup','guard_setup')) {
             $category=$_.Exception.Message
         }
+        # BEGIN fixed-prerequisite-diagnostics owner_failure_snapshot
+        $shared['failure_checkpoint']=$shared['checkpoint']
+        $shared['failure_category']=$category
+        $shared['failure_kind']=Get-FixedFailureKind $_.Exception
+        # END fixed-prerequisite-diagnostics owner_failure_snapshot
         $guardFacts.continuous=$false
         try {
             Check-Deadline
@@ -855,8 +1046,20 @@ $nativeOwner = {
                 os=[ordered]@{sku=$os;build=$build;image=$metadata.image};compiler='1.94.0';example_sha256=$script:exampleHash;
                 runner_administrative=$runnerAdministrative;identities_distinct=$false;actors=$facts.ToArray();counts=$script:counts;
                 cleanup='unknown';profile_disposition='disposable-vm';elapsed_ms=$elapsed;failure=$category;guard=$guardFacts}
+            # BEGIN fixed-prerequisite-diagnostics failure_evidence_attempt
+            $shared['checkpoint']='evidence_publish'
+            $shared['failure_evidence']='attempting'
+            # END fixed-prerequisite-diagnostics failure_evidence_attempt
             Write-Evidence $receipt
-        } catch { }
+            # BEGIN fixed-prerequisite-diagnostics failure_evidence_written
+            $shared['failure_evidence']='written'
+            # END fixed-prerequisite-diagnostics failure_evidence_written
+        # BEGIN fixed-prerequisite-diagnostics evidence_refusal_handler
+        } catch {
+            $shared['evidence_kind']=Get-FixedFailureKind $_.Exception
+            $shared['failure_evidence']='refused'
+        }
+        # END fixed-prerequisite-diagnostics evidence_refusal_handler
         Keep-Unknown
     }
 }
@@ -865,6 +1068,14 @@ $shared=[hashtable]::Synchronized(@{entered=$controllerEntered;
     controller_deadline=($controllerEntered+(180*[Diagnostics.Stopwatch]::Frequency));
     phase_deadline=($controllerEntered+(30*[Diagnostics.Stopwatch]::Frequency));
     expired=$false;unknown=$false;resources=[Collections.Generic.List[object]]::new()})
+# BEGIN fixed-prerequisite-diagnostics diagnostic_defaults
+$shared['checkpoint']='entry'
+$shared['failure_checkpoint']='unknown'
+$shared['failure_category']='unknown'
+$shared['failure_kind']='unknown'
+$shared['failure_evidence']='not_attempted'
+$shared['evidence_kind']='unknown'
+# END fixed-prerequisite-diagnostics diagnostic_defaults
 $metadata=@{source_sha=$env:GITHUB_SHA;base_sha=$env:LOCRON_PREREQUISITE_BASE_SHA;
     workflow=$env:GITHUB_WORKFLOW;run_id=$env:GITHUB_RUN_ID;run_attempt=$env:GITHUB_RUN_ATTEMPT;
     target=$env:LOCRON_PREREQUISITE_TARGET;image=($env:ImageOS+'/'+$env:ImageVersion);cwd=[Environment]::CurrentDirectory}
@@ -876,20 +1087,26 @@ while (-not $pending.IsCompleted) {
     if ($shared['unknown'] -or [Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {
         $shared['expired']=$true
         # No unfinished EndInvoke/Stop/Dispose, resource-list access or cleanup claim.
-        [Console]::Error.WriteLine('windows-user-prerequisite failed: native_owner_unknown')
+        # BEGIN fixed-prerequisite-diagnostics pending_refusal
+        $branch='phase_expired_pending'
+        if ($shared['unknown']) {$branch='shared_unknown'}
+        Write-FixedRefusalDiagnostic $branch
+        # END fixed-prerequisite-diagnostics pending_refusal
         [Environment]::Exit(1)
     }
     [Threading.Thread]::Sleep(5)
 }
-if ($shared['expired'] -or [Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {[Environment]::Exit(1)}
+if ($shared['expired'] -or [Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {Write-FixedRefusalDiagnostic 'phase_expired_completed'; [Environment]::Exit(1)}
 try {$result=$invocation.EndInvoke($pending)} catch {
-    [Console]::Error.WriteLine('windows-user-prerequisite failed: native_owner_unknown')
+    # BEGIN fixed-prerequisite-diagnostics endinvoke_refusal
+    Write-FixedRefusalDiagnostic 'endinvoke_exception' (Get-FixedFailureKind $_.Exception)
+    # END fixed-prerequisite-diagnostics endinvoke_refusal
     [Environment]::Exit(1)
 }
 if ($invocation.HadErrors -or $result.Count -ne 1 -or -not $result[0].confirmed -or
-    [Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {[Environment]::Exit(1)}
+    [Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {Write-FixedRefusalDiagnostic 'result_rejected'; [Environment]::Exit(1)}
 $invocation.Dispose()
-if ([Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {[Environment]::Exit(1)}
+if ([Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {Write-FixedRefusalDiagnostic 'phase_expired_after_dispose'; [Environment]::Exit(1)}
 [Console]::WriteLine('windows-user-prerequisite confirmed: A/B tokens, trees, accounts and guards')
-if ([Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {[Environment]::Exit(1)}
+if ([Diagnostics.Stopwatch]::GetTimestamp() -ge [long]$shared['phase_deadline']) {Write-FixedRefusalDiagnostic 'phase_expired_after_success_print'; [Environment]::Exit(1)}
 [Environment]::Exit(0)
