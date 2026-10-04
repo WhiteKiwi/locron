@@ -5308,6 +5308,38 @@ Add11 meaningfully controlled tests in that same private lib module: three bind 
 
 The existing frozen SPEC is unchanged. Follow the measured-failure appendix in planning/DASHBOARD_LISTENER_LIFECYCLE.md. Select only the new test helper's outer timeout match in crates/locron-server/src/lib.rs: change the Err(_) panic arm to Err(error) and include : {error} after the original panic text. Preserve the actual abort/reap/Drop ordering before this arm and every other Source byte apart from rustfmt of this arm. Root Docs/Issue30/final plan review precede a separate developer lease; Root then reviews the full one-arm inverse and all other mode/blob conservation before one ordinary changed-head push. Fresh native and all warnings-denied lint outcomes are required before merge; the previous failed head remains failed.
 
+## PR136 review follow-up before separate Source (2026-10-04)
+
+Freeze product SPEC and integrate reviewed main814e689 without Source edits.
+The native CLI and stock plans select a two-file lease at clean2e6c0cd:
+windows_cli_control.rs privately stages/flushes/closes one owned marker before
+single no-clobber publication, adds actual absence/completion/collision controls
+inside existing actual peer children, and adds fixed existing metadata only on
+withheld notice failure. loader_crash.rs changes only complete-chunk iteration
+and collision let-else syntax for required strict lint. All other Source remains
+exact, including cli.rs, lifecycle, workflow, PowerShell and all original owners,
+read errors, clocks, selectors, old/new stock proofs and complete commands.
+
+Four concrete Verify steps in the native plan require Docs/Issue31 readback
+before separate development, whole two-file inverse/protected inventory,
+complete Root Source/rules/static review and fresh exact-head ordinary native/
+lint/paired qualification. Actual ReadyOpen raw32 is preserved as evidence;
+the identified incompatible-sharing Source window does not prove which internal
+call produced the old result. Withheld Disconnected stays unobserved until
+already available metadata establishes more. Failure diagnostics never add
+native I/O, delay, mutable authority or late success. No unchanged rerun,
+deadline relaxation, ignored test/lint, owner-PC native effect or public release.
+
+
+## PR136 concurrent ancestry integration (2026-10-04)
+
+Before Source integration, select a normal merge of remote b131 into local062aa2 plus this Docs parent. Conserve both append-only planning histories. Resolve the stock syntax overlap to the exact complete remote loader_crash.rs blob; conserve the complete local ready helper and all other Source/workflow/lockfile mode/blobs. The developer owns integration, reports full-tree conservation and formatting/metadata checks, and does not publish. Parent rechecks current remote ancestry and publishes one fast-forward head, then requires fresh ordinary CI, native six-case and lifecycle evidence plus exact paired artifacts before merge. Issue31 remains open for wider unresolved acceptance.
+
+
+## Lifecycle observer lint follow-up before separate Source (2026-10-04)
+
+Frozen SPEC. After normal reviewed integration78af945, lease only the single parse match in LifecycleProgress::read_heartbeat, as documented in WINDOWS_LIFECYCLE_PROGRESS_OBSERVATIONS_2026-10-04.md. Use if let Ok(value) ... else with identical branch bodies, one parse call and unchanged observer/formatter/assertions/16 selectors/clocks. Root Docs and Issue31 readback precede the separate one-file developer; full inverse/all other mode-blobs and formatting/actionlint/locked metadata precede parent review and ordinary changed-head publication. All original native/lifecycle and required Windows lint gates remain required; no allowance, filter, clock change, owner-PC native execution or earlier-run cause is selected.
+
 
 ## Windows test-private readiness selection after b131 (2026-10-04)
 

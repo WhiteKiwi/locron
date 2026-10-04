@@ -307,3 +307,40 @@ Only new Append/common variable/function identifiers and indentation may compact
 ### Before-Source syntax follow-up, 2026-10-04
 
 Actual3f5 stock parent-exit assertions passed on all three Windows rows; four managed-record assertions passed inside the nested helper while concrete values remained outer-log unobserved. The two new test Clippy syntax findings are independently planned in WINDOWS_STOCK_CLIPPY_SYNTAX_2026-10-04.md. This selects only borrowed constant-size iteration with literal old slice body and same one-call collision error capture, after exact reviewedmain139 integration. It does not change this heartbeat protocol, managed-record retention, cleanup/publication semantics or original clocks and does not select any readiness/cause repair.
+
+## Reviewed strict lint corrections before Source (2026-10-04)
+
+Required Windows lint at3f5fb95/run37184851251 reports exactly two new
+loader_crash.rs errors: chunks_exact_to_as_chunks at375 and manual_let_else
+at1015. Production Clippy/fmt passed; later selected CLI/GUI lint was skipped.
+These failures are not the old41 exploratory diagnostics or native proof.
+
+Lease only those two syntax sites in loader_crash.rs. Iterate the same complete
+21-byte records using as_chunks::<APPEND_RECORD_BYTES>().0.iter(), preserving
+the existing independently checked tail, ordering, count and overflow predicates.
+Bind each enumerated item as `(index, &record)`: the iterator returns a reference
+to a 21-byte array, while the existing comparison returns an array value. Copy
+the same complete bytes into the binding so the original comparison, indexing
+and digit predicates remain unchanged. This refinement changes only the leased
+loop binding and introduces no I/O, allocation, clock or acceptance change.
+This documented refinement must precede its Source edit and owning Issue31
+readback; the other Source work remains uncommitted until that readback.
+Express the actual CreateNew collision using let Err(collision)=... else with the
+identical panic and AlreadyExists assertion. No allow, changed expected value,
+extra call, clock, helper mode, parser, PowerShell source or proof weakening.
+
+The native-control follow-up in WINDOWS_NATIVE_CLI_CONTROL_2026-10-04.md owns the
+four ordered Verify steps and separate two-file handoff. Whole inverse must
+restore this Rust file exactly at2e6c0cd after these two syntax substitutions;
+every old/new snapshot/appender/control/reader/clock/geometry assertion remains.
+Fresh actual strict Windows lint and all original native assertions are required
+at the combined head. Earlier concrete managed HResult values remain unobserved
+in outer stdout even when inner strict four-record validation passed; do not
+invent those values or forward logs through a new unplanned Source path.
+
+
+### Reconcile the concurrently published stock syntax fix before Source integration
+
+Remote PR136 now points to b131edc1ad420532c69b91c854ddb8ceb187b767, descended from the original 3f5 through the separately documented stock syntax selection and exact reviewed main814e689. The parent fully reviewed its 73-line WINDOWS_STOCK_CLIPPY_SYNTAX_2026-10-04.md and the complete two-site Source diff. Its as_chunks loop borrows each array with record.as_slice(), preserving the old slice loop body literally. This achieves the same MSRV-safe lint correction as the local copied-array binding selected in a4127d5, without copying the record. Select the already published borrowed-slice Source exactly; the local copied-array selection remains historical and is superseded for integration. The collision let-else is identical.
+
+Verify before publication: merge b131 normally into the reviewed local 062aa2a8c088b0ab480394219feca26b8c1f26cc plus this Docs parent; preserve both complete Docs histories and exact main814e689. The resulting loader_crash.rs must equal the complete remote b131 blob, the ready helper must equal local 062aa2, and every other Source/workflow/lockfile mode/blob must remain exact. Run Rust1.94/1.98 formatting, actionlint and locked metadata, inspect staged/unstaged changes, and review the complete merge tree. No force push, warning allowance, selector/deadline change or owner-PC native execution is selected. Fresh hosted Windows compilation and all original assertions remain required.

@@ -5522,6 +5522,46 @@ Ordinary changed-head run37183332242, exact PR head4852c51ae38cf28568db34d861e7b
 
 The helper already aborts/reaps its owned controller and observes captured yielding-task Drop receipts before handling the timeout result. Select only binding the returned Elapsed value and including its Display in the existing failure panic after that cleanup. This uses an already-returned error and adds no call, query, retry, clock, task or owner. Existing13s fixture/10s supervisor guards, eleven control oracles and production behavior remain unchanged. No allow attribute or warning suppression is selected.
 
+## PR136 review: completed-marker sharing race and strict lint (2026-10-04)
+
+Root reviewed original3f5fb95 ordinary37184851251 raw native/lint logs:
+x64/ARM first-work Native/Setup with ReadyOpen Other/raw32 in four negative
+cases, x64 withheld Disconnected before its notice with no CaseResult, MSRV
+all six cases pass. Both stable rows stop before lifecycle/downstream admission;
+service64/GUI12 and the explicit stock diagnostic controls still execute.
+Required lint reports chunks_exact_to_as_chunks and manual_let_else in the
+new stock Rust helper; later CLI/GUI lint is skipped. None permits merging.
+
+Separate read-only review of the complete2324-line helper and callers finds
+final create_private_new exposes peer-ready during private ACL CreateNew.
+filesystem_worker.ps1 requests FullControl, including DELETE; no-follow
+inspection/open shares only READ|WRITE. [Microsoft CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+documents incompatible sharing and delete-access refusal. This proves a Source
+race path, not the exact internal instruction/holder of the observed ReadyOpen.
+The withheld underlying failure and old lifecycle/full/native unknowns remain.
+
+Locked tempfile3.27.0 already exists in CLI dev dependencies. Its absolute
+TempPath::try_from_path adds no CWD I/O; persist_noclobber retains the owned
+candidate on failure and invokes Windows MoveFileExW without overwrite/copy.
+Select closed private staging before final publication, actual staged-absence/
+complete-read/collision-preservation controls inside existing real peer children,
+and failure-only scalar snapshots for the existing withheld notice. Keep every
+reader refusal and original clock/selector/owner boundary. Two strict lint
+syntax corrections preserve the stock parser and collision assertion. See the
+amended native and stock plans; Source waits for Issue31 exact readback and
+the separate developer lease. No old missing visible-empty control or concrete
+managed HResult is fabricated as current acceptance.
+
+
+## Concurrent PR136 stock syntax publication (2026-10-04)
+
+Remote b131edc1ad420532c69b91c854ddb8ceb187b767 contains a Docs-before-Source borrowed-slice as_chunks correction and the same main814e689 union. Its complete stock diff is two syntax sites, with no native helper/lifecycle/PowerShell/CI change from3f5. Both syntax choices are safe Rust1.94 operations; retain the independently published borrowed-slice blob to avoid replacing reviewed work. Local062aa2 supplies the separately selected closed-candidate readiness publication and failure-only unobserved outcome diagnostic. Complete locked metadata succeeds with354 packages/nodes after locked dependency downloads and no lockfile change; actual Windows compilation and native acceptance are still pending.
+
+
+## Observed lifecycle strict lint after stock syntax correction (2026-10-04)
+
+Remote b131 completed ordinary37189751211 with4 failed executed jobs: Windows strict lint and all three foundations. The raw lint111399286359 identifies only the new observer parse match at windows_lifecycle.rs547, Clippy single_match_else; later GUI lint is skipped. Root reviewed its complete suggested if-let/else rewrite against the selected observer's unchanged one-read/one-parse and Numeric/ParseError Option contract. Stock syntax lint passed. Separately, actual native observations include repeated ready-open raw32, History expiries, daemon exit5, withheld Disconnected and ARM target/debug/locron.exe removal access5; these are preserved without attributing an unmeasured cause. The integration78af945 keeps all native controls/clocks intact and does not claim to repair those additional failures.
+
 
 ## Root-reviewed private peer publication research (2026-10-04)
 
