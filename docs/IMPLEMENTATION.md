@@ -5255,3 +5255,7 @@ Integrate reviewed remote4a normally and preserve its exact main139/old32+6 test
 ## Publish reviewed WinGet recovery follow-up (2026-10-04)
 
 PR 140 is already merged. Follow the publication appendix in planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md: normal-compose published c4ef8b9 with reviewed 2d6a1c4d, preserve the exact three leased Source blobs and every other main Source, keep canonical Docs plus unique literal planning appendices, then publish a follow-up Draft linked to Issue 35/PR 140. New 42/49 controls and native CPython3.14/ABI facts require fresh exact-head hosted evidence; no prior result, local fixture execution, real WinGet installation or public release is adopted.
+
+### PR166 measured A03 Windows path representation (2026-10-04)
+
+Paired-writer37198110854 executes portable42/42 but both native rows48/49: A03 compares actual extended-namespace readlink text with a drive-path target. Select only that method: retain actual pre-call readlink and compare exact post-call text, plus real samefile(target) assertions before/after the writer. Preserve no-follow link ID, target bytes/tree, all zero-operation/parent/checked-cleanup assertions and fixed42/49 keys. Root Docs/Issue35 readback precede separate Source; fresh changed-head native/portable/ordinary evidence stays required. Pythonprimary readlink/samefile contracts are linked in the plan.
