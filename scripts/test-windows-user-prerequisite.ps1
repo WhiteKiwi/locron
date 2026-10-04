@@ -49,7 +49,7 @@ function Write-FixedRefusalDiagnostic($branch,$driverKind=$null) {
     $kinds=@('unauthorized','security','io','win32','argument','invalid_operation','timeout','method_invocation','runtime','pipeline','invalid_cast','overflow','parent_error_record','unknown')
     $evidenceStates=@('not_attempted','attempting','written','refused')
     # BEGIN fixed-prerequisite-substage renderer_closed_set
-    $substages=@('entry','path_validation','attributes','directory_security','security_owner','security_sddl','security_raw_acl','security_rules','owner_check','owner_untrusted','acl_presence_check','null_acl','ace_shape_check','ace_shape','foreign_mutation_check','foreign_mutation','file_open','file_security','evidence_serialize','evidence_parent','evidence_directory_create','evidence_directory_security','evidence_identity_write','evidence_receipt_write')
+    $substages=@('entry','path_validation','attributes','directory_security','security_owner','security_sddl','security_raw_acl','security_rules','owner_check','owner_untrusted','acl_presence_check','null_acl','ace_shape_check','ace_shape','foreign_mutation_check','foreign_mutation','file_open','file_security','evidence_serialize','evidence_parent','evidence_directory_create','evidence_directory_security','evidence_identity_write','evidence_receipt_write','foreign_allow_check','foreign_inherit_check','foreign_sid_check','foreign_mask_check','foreign_loop_advance','foreign_deadline_check','foreign_check_complete')
     # END fixed-prerequisite-substage renderer_closed_set
     $checkpoint=Fixed-DiagnosticValue $shared['checkpoint'] $checkpoints
     $failureCheckpoint=Fixed-DiagnosticValue $shared['failure_checkpoint'] $checkpoints
@@ -487,17 +487,41 @@ $nativeOwner = {
             # BEGIN fixed-prerequisite-substage foreign_mutation_predicate
             $shared['substage']='foreign_mutation_check'
             # END fixed-prerequisite-substage foreign_mutation_predicate
-            if ($ace.AceQualifier -eq [Security.AccessControl.AceQualifier]::AccessAllowed -and
-                ($ace.AceFlags -band [Security.AccessControl.AceFlags]::InheritOnly) -eq 0 -and
-                $ace.SecurityIdentifier.Value -cnotin $trusted -and
-                ([long]$ace.AccessMask -band $mask) -ne 0) {
-                # BEGIN fixed-prerequisite-substage foreign_mutation_rejection
-                $shared['substage']='foreign_mutation'
-                # END fixed-prerequisite-substage foreign_mutation_rejection
-                throw 'guard_setup'
+            # BEGIN fixed-prerequisite-substage foreign_allow_check
+            $shared['substage']='foreign_allow_check'
+            # END fixed-prerequisite-substage foreign_allow_check
+            if ($ace.AceQualifier -eq [Security.AccessControl.AceQualifier]::AccessAllowed) {
+                # BEGIN fixed-prerequisite-substage foreign_inherit_check
+                $shared['substage']='foreign_inherit_check'
+                # END fixed-prerequisite-substage foreign_inherit_check
+                if (($ace.AceFlags -band [Security.AccessControl.AceFlags]::InheritOnly) -eq 0) {
+                    # BEGIN fixed-prerequisite-substage foreign_sid_check
+                    $shared['substage']='foreign_sid_check'
+                    # END fixed-prerequisite-substage foreign_sid_check
+                    if ($ace.SecurityIdentifier.Value -cnotin $trusted) {
+                        # BEGIN fixed-prerequisite-substage foreign_mask_check
+                        $shared['substage']='foreign_mask_check'
+                        # END fixed-prerequisite-substage foreign_mask_check
+                        if (([long]$ace.AccessMask -band $mask) -ne 0) {
+                            # BEGIN fixed-prerequisite-substage foreign_mutation_rejection
+                            $shared['substage']='foreign_mutation'
+                            # END fixed-prerequisite-substage foreign_mutation_rejection
+                            throw 'guard_setup'
+                        }
+                    }
+                }
             }
+            # BEGIN fixed-prerequisite-substage foreign_loop_advance
+            $shared['substage']='foreign_loop_advance'
+            # END fixed-prerequisite-substage foreign_loop_advance
         }
+        # BEGIN fixed-prerequisite-substage foreign_deadline_check
+        $shared['substage']='foreign_deadline_check'
+        # END fixed-prerequisite-substage foreign_deadline_check
         Check-Deadline
+        # BEGIN fixed-prerequisite-substage foreign_check_complete
+        $shared['substage']='foreign_check_complete'
+        # END fixed-prerequisite-substage foreign_check_complete
     }
 
     function Bootstrap-Chain([string]$path) {
