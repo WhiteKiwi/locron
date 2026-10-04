@@ -11,7 +11,8 @@ This document defines the official versioning, release, CI/CD, packaging, and di
 The Windows support milestone adds native x64/ARM64 ZIPs starting at `v0.10.0`. Earlier releases
 retain their exact historical Unix asset inventories. A Windows release adds exactly the two
 `*-pc-windows-msvc.zip` archives, `install.ps1` and `uninstall.ps1`; the ZIP contains its exact
-version/target directory with `locron.exe`, `README.md`, `LICENSE-MIT` and `LICENSE-APACHE`.
+version/target directory with `locron.exe`, `locron-service-launcher.exe`, `README.md`,
+`LICENSE-MIT` and `LICENSE-APACHE`.
 `SHA256SUMS.txt` covers the final payload archives/packages with bare filenames. Immutable
 publication additionally checks the installer asset digests; reruns never replace changed bytes.
 
@@ -45,6 +46,10 @@ checksum inventory, then validate them on Windows:
 ```powershell
 python -B scripts/render-winget-manifest.py v0.10.0 final-release-inputs winget-manifests --validate
 ```
+
+The command always requires the five-file console/GUI pair. The optional `--paired` flag remains
+a compatible spelling; it is no longer required. The command never executes either Windows
+image. Only `--validate` runs the installed WinGet structural validator after generation.
 
 This creates three reviewable schema 1.12 manifests and performs no package install or submission.
 The identifier `WhiteKiwi.locron` remains proposed until namespace availability and community
@@ -82,7 +87,7 @@ internal dependency requirements must change with it. Independent versioning is 
 
 ### Git Tag Convention
 - Release tags MUST follow the exact format `v{MAJOR}.{MINOR}.{PATCH}` (e.g. `v0.1.0`).
-- Pre-release tags (if any) MUST use `v{MAJOR}.{MINOR}.{PATCH}-{alpha|beta|rc}.{N}` (e.g. `v0.1.0-rc.1`).
+- Pre-release tags MUST use the exact format `v{MAJOR}.{MINOR}.{PATCH}-{alpha|beta|rc}.{N}` (e.g. `v0.1.0-rc.1`).
 - Release tags are **immutable**. Once pushed and published, a tag must never be deleted, moved, or overwritten.
 
 ---
