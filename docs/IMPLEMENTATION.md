@@ -5298,6 +5298,23 @@ Root reviews full Source inverse, all16 selectors and actual evaluation/call sit
 ## Stock Clippy syntax conservation (2026-10-04)
 
 Keep frozen SPEC and all production behavior. Follow WINDOWS_STOCK_CLIPPY_SYNTAX_2026-10-04.md: separate developer first integrates exact reviewed main814e689bb0717aba183dbd084e6151ba11ac4e99 with native3f5 and this Docs parent, preserving the independently selected inherited Source and literal Docs appendices. Then only loader_crash.rs receives the constant-chunk loop plus borrowed slice binding and the one-call collision let-else. Keep the original partial-tail acceptance, error order, constants, actual children/readers/guard/publication/mutation controls, command sizes, clocks and success/failure predicates; add no warning allowance, test/filter/dependency/clock/retry change. Root reviews the complete inverse/full tree and publishes ordinary changed-head hosted CI. Fresh Windows lint/MSRV and existing stock proofs must pass; native readiness/withheld failures stay failures until separately researched and selected, and broad Issue31 remains open.
+## PR140 finite output controls before separate development (2026-10-04)
+
+Frozen SPEC is unchanged. Follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. First compose reviewed oldPR140 and main137 through a recorded main merge; only renderer main() can be reconciled, exactly old140 pre-main plus merged137 suffix. A separate developer then adds scripts/test-winget-output.py and additive windows-paired-manifest workflow controls. Other inherited main137 paths remain exact; no renderer/writer redesign, dependency, package/catalog/installer/updater/native Locron effect is selected.
+
+Use real file streams/IDs and one-shot stdlib boundary injections with actual underlying close, fixed small Unicode/LF documents, per-case ownership and explicit controlled second calls. Native Windows rows require actual platform/Python/runner architecture and nonzero file identities with no skip; register read-only attribute restoration before mutation and verify the exact test-owned file before changing it. The original Ubuntu workflow commands/timeout/permission/concurrency and all old tests stay exact; independent5-minute Windows x64/ARM rows run14 methods/38 controls and old entrypoint8. Outer job timeout does not preempt a synchronous native file call. Root Docs/Issues/final review precede Source; whole Source/inherited union/reverse workflow/rules checks precede one reviewed-head automatic CI publication. Public release/WinGet/clean-account requirements stay open.
+
+
+## WinGet output controls: reviewed Source then main139 (2026-10-04)
+
+Sourceaf824 was Root-reviewed, not executed. Its direct real-stream writer tests
+and10/32 portable,14/38 native selections remain exact. Follow the appended
+WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md Git-only integration plan: exact
+reviewed814, common15820, full incoming/own mode/blob union and both literal Docs
+suffixes. No writer/test/workflow adaptation or newer main. Root Docs and CLI
+Issues32/35/final review precede separate integration, Root Source review and
+fresh Windows/Ubuntu CI. Clean-account/public-byte/real WinGet acceptance stays
+open, signing37 deferred and initial release unsigned.
 
 ## PR139 shared production controls before separate Source (2026-10-04)
 
