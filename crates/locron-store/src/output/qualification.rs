@@ -395,7 +395,7 @@ impl Read for Adapter {
         self.counts.largest_read = self.counts.largest_read.max(buffer.len());
         let result = self
             .fault_at(Point::ReadAt(self.counts.bytes_read))
-            .and_then(|()| (&mut *self.file).read(buffer));
+            .and_then(|()| (*self.file).read(buffer));
         self.horizon.check(self.key, "read");
         if let Ok(count) = &result {
             self.counts.bytes_read += *count as u64;
