@@ -228,9 +228,9 @@ fn publish_closed(path: &Path, body: impl FnOnce() -> Check<Vec<u8>>, cap: usize
         .map_err(|_| "private stage write failed")?;
     file.sync_all().map_err(|_| "private stage sync failed")?;
     drop(file);
-    let owned = tempfile::TempPath::try_from_path(stage).map_err(|_| "stage owner failed")?;
-    if let Err(error) = owned.persist_noclobber(path) {
-        let _ = error.path.keep();
+    let mut owned = tempfile::TempPath::try_from_path(stage).map_err(|_| "stage owner failed")?;
+    owned.disable_cleanup(true);
+    if owned.persist_noclobber(path).is_err() {
         return Err("closed stage no-clobber publication failed");
     }
     let final_file = private_read(path)?;
