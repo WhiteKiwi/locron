@@ -3,17 +3,18 @@
 use super::private_state::{PrivateState, private_state_fixture};
 use interprocess::os::windows::named_pipe::{PipeStream, pipe_mode};
 use locron_core::filesystem::{
-    DirectoryGuard, GuardedFile, create_private_new, open_read_no_follow,
+    DirectoryGuard, GuardedFile, create_private_new, file_identity, open_read_no_follow,
 };
 use locron_core::notification::{ACK_MESSAGE, WAKE_MESSAGE, endpoint_name_guarded};
 use locron_store::{DaemonLock, LockProbe};
 use std::fmt;
+use std::fs::File;
 use std::future::{Future, poll_fn};
 use std::io::{self, Read, Write};
 use std::os::windows::io::{AsHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::pin::pin;
-use std::process::{Child, ChildStdout, Command, Output, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -33,9 +34,12 @@ const ACK: u8 = 16;
 const REAPED: u8 = 32;
 const CLEANED: u8 = 64;
 const READ_LIMIT: u64 = 64 * 1024;
+const MAX_CLI_CAPTURES: u16 = 512;
+const UNOBSERVED_BYTES: u32 = u32::MAX;
 const OUTER_NANOS: u64 = 30_000_000_000;
 const TARGET_SELECTOR: &str = "windows_cli_control::native_cancel_target";
 const PEER_SELECTOR: &str = "windows_cli_control::native_wake_peer_target";
+const OUTPUT_SELECTOR: &str = "windows_cli_control::native_cli_output_target";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Code {
@@ -52,6 +56,8 @@ enum Code {
     Progress,
     Cleanup,
     Panicked,
+    CaptureOversized,
+    CaptureCollision,
 }
 
 impl Code {
@@ -70,6 +76,8 @@ impl Code {
             Self::Progress => 10,
             Self::Cleanup => 11,
             Self::Panicked => 12,
+            Self::CaptureOversized => 13,
+            Self::CaptureCollision => 14,
         }
     }
     fn decode(slot: u8) -> Option<Self> {
@@ -87,6 +95,8 @@ impl Code {
             10 => Some(Self::Progress),
             11 => Some(Self::Cleanup),
             12 => Some(Self::Panicked),
+            13 => Some(Self::CaptureOversized),
+            14 => Some(Self::CaptureCollision),
             _ => None,
         }
     }
@@ -109,6 +119,7 @@ enum Phase {
     Progress,
     Cancel,
     Cleanup,
+    Capture,
 }
 
 impl Phase {
@@ -127,13 +138,14 @@ impl Phase {
             11 => Self::Progress,
             12 => Self::Cancel,
             13 => Self::Cleanup,
+            14 => Self::Capture,
             _ => Self::Setup,
         }
     }
 }
 
 // Scalar observations are independent returned facts, never ownership/readiness.
-const OP_NAMES: [&str; 53] = [
+const OP_NAMES: [&str; 62] = [
     "unobserved",
     "StateSetup",
     "StateGuard",
@@ -187,6 +199,15 @@ const OP_NAMES: [&str; 53] = [
     "DropState",
     "CleanupStateExists",
     "WorkOutcome",
+    "StdoutCreate",
+    "StdoutClone",
+    "StdoutIdentity",
+    "StdoutReaderOpen",
+    "CaptureCliSpawn",
+    "CaptureCliRead",
+    "CaptureCliWait",
+    "StdoutControlWrite",
+    "StdoutControlFlush",
 ];
 
 #[derive(Clone, Copy)]
@@ -244,6 +265,15 @@ enum Operation {
     DropState,
     CleanupStateExists,
     WorkOutcome,
+    StdoutCreate,
+    StdoutClone,
+    StdoutIdentity,
+    StdoutReaderOpen,
+    CaptureCliSpawn,
+    CaptureCliRead,
+    CaptureCliWait,
+    StdoutControlWrite,
+    StdoutControlFlush,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -284,7 +314,7 @@ const INVALID_EVENT: u64 = u64::MAX;
 
 fn event_word(tag: u8, operation: Operation, role: ChildRole, payload: u64) -> u64 {
     let operation = operation as u8;
-    if !(1..=4).contains(&tag) || !(1..=52).contains(&operation) || payload > PAYLOAD_MASK {
+    if !(1..=4).contains(&tag) || !(1..=61).contains(&operation) || payload > PAYLOAD_MASK {
         return INVALID_EVENT;
     }
     VALID_EVENT
@@ -410,7 +440,7 @@ impl Observations {
             Ok(()) => Code::Success,
             Err(code) => *code,
         };
-        let word = if phase <= 13 {
+        let word = if phase <= 14 {
             event_word(
                 3,
                 Operation::WorkOutcome,
@@ -484,7 +514,7 @@ fn event_header(word: u64, tag: u8) -> Option<(u8, ChildRole, u64)> {
     if word & VALID_EVENT == 0
         || word & !allowed != 0
         || (word >> 60) & 7 != u64::from(tag)
-        || !(1..=52).contains(&operation)
+        || !(1..=61).contains(&operation)
     {
         return None;
     }
@@ -527,7 +557,7 @@ impl fmt::Display for EventDisplay {
             2 => {
                 if payload >> 33 != 0
                     || role == ChildRole::NoChild
-                    || !matches!(operation, 6 | 17..=20 | 41 | 43)
+                    || !matches!(operation, 6 | 17..=20 | 41 | 43 | 59)
                 {
                     return formatter.write_str("invalid");
                 }
@@ -545,7 +575,7 @@ impl fmt::Display for EventDisplay {
                 if operation != 52
                     || role != ChildRole::NoChild
                     || payload >> 8 != 0
-                    || (payload >> 4) > 13
+                    || (payload >> 4) > 14
                 {
                     return formatter.write_str("invalid");
                 }
@@ -588,7 +618,7 @@ impl fmt::Display for EventDisplay {
 
 impl fmt::Display for ObservationSnapshot {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // 577 ASCII bytes maximum including original fields, 579 with CRLF.
+        // At most 640 ASCII bytes including the fixed capture operation names.
         // Slots are independent observations, not same-instruction causal facts.
         let intent = OP_NAMES
             .get(usize::from(self.intent))
@@ -659,6 +689,8 @@ pub struct CaseResult {
     frame_bytes: u32,
     elapsed_us: u128,
     observations: ObservationSnapshot,
+    stdout_bytes: u32,
+    cli_live_seen: bool,
 }
 
 impl CaseResult {
@@ -676,7 +708,22 @@ impl fmt::Display for CaseResult {
             "code={:?} phase={:?} flags={} frame_bytes={} elapsed_us={}",
             self.code, self.phase, self.flags, self.frame_bytes, self.elapsed_us
         )?;
-        fmt::Display::fmt(&self.observations, formatter)
+        fmt::Display::fmt(&self.observations, formatter)?;
+        formatter.write_str(" stdout_bytes=")?;
+        if self.stdout_bytes == UNOBSERVED_BYTES {
+            formatter.write_str("unobserved")?;
+        } else {
+            write!(formatter, "{}", self.stdout_bytes)?;
+        }
+        write!(
+            formatter,
+            " cli_live_seen={}",
+            if self.cli_live_seen {
+                "true"
+            } else {
+                "unobserved"
+            }
+        )
     }
 }
 
@@ -697,6 +744,8 @@ struct Control {
     probe_expiry: AtomicU64,
     probe_complete: AtomicU64,
     observations: Observations,
+    stdout_bytes: AtomicU32,
+    cli_live_seen: AtomicBool,
 }
 
 impl Control {
@@ -712,6 +761,8 @@ impl Control {
             probe_expiry: AtomicU64::new(0),
             probe_complete: AtomicU64::new(0),
             observations: Observations::new(),
+            stdout_bytes: AtomicU32::new(UNOBSERVED_BYTES),
+            cli_live_seen: AtomicBool::new(false),
         })
     }
 
@@ -832,6 +883,8 @@ impl Control {
             frame_bytes: self.frame_bytes.load(Ordering::Acquire),
             elapsed_us: self.entered.elapsed().as_micros(),
             observations: self.observations.snapshot(),
+            stdout_bytes: self.stdout_bytes.load(Ordering::Acquire),
+            cli_live_seen: self.cli_live_seen.load(Ordering::Acquire),
         }
     }
 }
@@ -943,7 +996,11 @@ struct Owner {
     client: Option<NamedPipeClient>,
     metadata: Option<MetadataPipe>,
     query_handle: Option<OwnedHandle>,
-    cli_stdout: Option<ChildStdout>,
+    captures: Vec<GuardedFile>,
+    capture_reader: Option<GuardedFile>,
+    capture_duplicate: Option<File>,
+    capture_count: u16,
+    completed_cli: bool,
     reaped: bool,
     uncertain_cleanup: bool,
 }
@@ -962,7 +1019,11 @@ impl Owner {
             client: None,
             metadata: None,
             query_handle: None,
-            cli_stdout: None,
+            captures: Vec::with_capacity(usize::from(MAX_CLI_CAPTURES)),
+            capture_reader: None,
+            capture_duplicate: None,
+            capture_count: 0,
+            completed_cli: false,
             reaped: false,
             uncertain_cleanup: false,
         }
@@ -1126,69 +1187,240 @@ impl Owner {
     }
 
     fn output(&mut self, phase: Phase, command: &mut Command) -> Result<Output, Code> {
+        self.captured_output(phase, command, false, None)
+    }
+
+    fn capture_path(&self, number: u16) -> Result<PathBuf, Code> {
+        if number == 0 || number > MAX_CLI_CAPTURES {
+            return Err(Code::Cli);
+        }
+        Ok(self.root()?.join(format!("cli-stdout-{number:04}")))
+    }
+
+    fn new_capture(&mut self) -> Result<usize, Code> {
+        self.control.check(self.control.deadline)?;
+        if self.captures.len() >= usize::from(MAX_CLI_CAPTURES) {
+            return Err(Code::Cli);
+        }
+        let number = self.capture_count.checked_add(1).ok_or(Code::Cli)?;
+        let path = self.capture_path(number)?;
+        self.capture_count = number;
+        self.control.observations.intent(Operation::StdoutCreate);
+        let opened = create_private_new(&path);
+        match opened {
+            Ok(file) => {
+                let index = self.captures.len();
+                self.captures.push(file);
+                self.control.check(self.control.deadline)?;
+                Ok(index)
+            }
+            Err(error) => {
+                self.control.observations.error(
+                    Operation::StdoutCreate,
+                    ChildRole::ControlCli,
+                    &error,
+                );
+                self.control.check(self.control.deadline)?;
+                if error.kind() == io::ErrorKind::AlreadyExists {
+                    Err(Code::CaptureCollision)
+                } else {
+                    Err(Code::Cli)
+                }
+            }
+        }
+    }
+
+    fn collect_capture(&mut self, index: usize, operation: Operation) -> Result<Vec<u8>, Code> {
+        self.control.check(self.control.deadline)?;
+        self.control
+            .observations
+            .intent(Operation::StdoutReaderOpen);
+        let opened =
+            open_read_no_follow(self.captures.get(index).ok_or(Code::Cli)?.normalized_path());
+        match opened {
+            Ok(reader) => self.capture_reader = Some(reader),
+            Err(error) => {
+                self.control.observations.error(
+                    Operation::StdoutReaderOpen,
+                    ChildRole::ControlCli,
+                    &error,
+                );
+                self.control.check(self.control.deadline)?;
+                return Err(Code::Cli);
+            }
+        }
+        self.control.check(self.control.deadline)?;
+        let original = native(&self.control, self.control.deadline, Code::Cli, || {
+            self.control.observations.intent(Operation::StdoutIdentity);
+            let identity = file_identity(
+                self.captures
+                    .get(index)
+                    .ok_or_else(|| io::Error::other("missing owned capture"))?,
+            );
+            self.control.observations.io(
+                Operation::StdoutIdentity,
+                ChildRole::ControlCli,
+                &identity,
+            );
+            identity
+        })?;
+        let reader = native(&self.control, self.control.deadline, Code::Cli, || {
+            self.control.observations.intent(Operation::StdoutIdentity);
+            let identity = file_identity(
+                self.capture_reader
+                    .as_ref()
+                    .ok_or_else(|| io::Error::other("missing owned reader"))?,
+            );
+            self.control.observations.io(
+                Operation::StdoutIdentity,
+                ChildRole::ControlCli,
+                &identity,
+            );
+            identity
+        })?;
+        if original != reader {
+            return Err(Code::Cli);
+        }
+        // This reader has its own offset; never seek the shared stdout duplicate.
+        let limit = usize::try_from(READ_LIMIT + 1).map_err(|_| Code::Native)?;
+        let mut bytes = Vec::with_capacity(limit);
+        let mut buffer = [0_u8; 4096];
+        loop {
+            self.control.check(self.control.deadline)?;
+            self.control.observations.intent(operation);
+            let count = buffer.len().min(limit - bytes.len());
+            let read =
+                (&mut **self.capture_reader.as_mut().ok_or(Code::Cli)?).read(&mut buffer[..count]);
+            self.control
+                .observations
+                .io(operation, ChildRole::ControlCli, &read);
+            if let Ok(count) = &read {
+                bytes.extend_from_slice(&buffer[..*count]);
+                self.control.stdout_bytes.store(
+                    u32::try_from(bytes.len()).map_err(|_| Code::Native)?,
+                    Ordering::Release,
+                );
+            }
+            self.control.check(self.control.deadline)?;
+            let count = read.map_err(|_| Code::Cli)?;
+            if bytes.len() == limit {
+                return Err(Code::CaptureOversized);
+            }
+            if count == 0 {
+                return Ok(bytes);
+            }
+        }
+    }
+
+    fn captured_output(
+        &mut self,
+        phase: Phase,
+        command: &mut Command,
+        hold_duplicate: bool,
+        poll_span: Option<Duration>,
+    ) -> Result<Output, Code> {
         self.control.step(phase, self.control.deadline)?;
-        if self.active_cli.is_some() || self.cli_stdout.is_some() {
+        if self.active_cli.is_some()
+            || self.capture_reader.is_some()
+            || (poll_span.is_some() && !matches!(phase, Phase::Capture))
+        {
             return Err(Code::Native);
         }
-        // Retain the actual control CLI too: Command::output would conceal its
-        // Child on an I/O failure. The command/JSON/status under test is unchanged.
-        let operations = cli_operations(phase);
-        if let Some((spawn, _, _)) = operations {
-            self.control.observations.intent(spawn);
+        self.control
+            .stdout_bytes
+            .store(UNOBSERVED_BYTES, Ordering::Release);
+        self.control.cli_live_seen.store(false, Ordering::Release);
+        let index = self.new_capture()?;
+        let duplicate = native(&self.control, self.control.deadline, Code::Cli, || {
+            self.control.observations.intent(Operation::StdoutClone);
+            let cloned = self
+                .captures
+                .get(index)
+                .ok_or_else(|| io::Error::other("missing owned capture"))?
+                .try_clone();
+            self.control
+                .observations
+                .io(Operation::StdoutClone, ChildRole::ControlCli, &cloned);
+            cloned
+        })?;
+        if hold_duplicate {
+            if self.capture_duplicate.is_some() {
+                return Err(Code::Native);
+            }
+            self.control.check(self.control.deadline)?;
+            self.control.observations.intent(Operation::StdoutClone);
+            let cloned = self.captures.get(index).ok_or(Code::Cli)?.try_clone();
+            match cloned {
+                Ok(cloned) => self.capture_duplicate = Some(cloned),
+                Err(error) => {
+                    self.control.observations.error(
+                        Operation::StdoutClone,
+                        ChildRole::ControlCli,
+                        &error,
+                    );
+                    self.control.check(self.control.deadline)?;
+                    return Err(Code::Cli);
+                }
+            }
+            self.control.check(self.control.deadline)?;
         }
-        let child = command.stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
+        let (spawn, read, wait) = cli_operations(phase).ok_or(Code::Cli)?;
+        self.control.check(self.control.deadline)?;
+        self.control.observations.intent(spawn);
+        let child = command
+            .stdout(Stdio::from(duplicate))
+            .stderr(Stdio::null())
+            .spawn();
+        let returned = Instant::now();
         let child = match child {
             Ok(child) => child,
             Err(error) => {
-                if let Some((spawn, _, _)) = operations {
-                    self.control
-                        .observations
-                        .error(spawn, ChildRole::ControlCli, &error);
-                }
+                self.control
+                    .observations
+                    .error(spawn, ChildRole::ControlCli, &error);
                 self.control.check(self.control.deadline)?;
                 return Err(Code::Cli);
             }
         };
         self.active_cli = Some(child);
-        self.control.check(self.control.deadline)?;
-        self.cli_stdout = self.active_cli.as_mut().ok_or(Code::Cli)?.stdout.take();
-        self.control.check(self.control.deadline)?;
-        let mut bytes = Vec::new();
-        if let Some((_, read, _)) = operations {
-            self.control.observations.intent(read);
-        }
-        let read = self
-            .cli_stdout
-            .as_mut()
-            .ok_or(Code::Cli)?
-            .read_to_end(&mut bytes);
-        if let Some((_, operation, _)) = operations {
+        // Only the independent live control supplies a new, shorter poll horizon.
+        if let Some(span) = poll_span {
             self.control
-                .observations
-                .io(operation, ChildRole::ControlCli, &read);
+                .publish_case((returned + span).min(self.control.deadline))?;
         }
         self.control.check(self.control.deadline)?;
-        read.map_err(|_| Code::Cli)?;
-        self.control.check(self.control.deadline)?;
-        if let Some((_, _, wait)) = operations {
+        let status = loop {
+            self.control.check(self.control.deadline)?;
             self.control.observations.intent(wait);
-        }
-        let status = self.active_cli.as_mut().ok_or(Code::Cli)?.wait();
-        if let Some((_, _, wait)) = operations {
+            let waited = self.active_cli.as_mut().ok_or(Code::Cli)?.try_wait();
             self.control
                 .observations
-                .io(wait, ChildRole::ControlCli, &status);
-            if let Ok(status) = &status {
-                self.control
-                    .observations
-                    .status(wait, ChildRole::ControlCli, status);
+                .io(wait, ChildRole::ControlCli, &waited);
+            match &waited {
+                Ok(Some(status)) => {
+                    self.control
+                        .observations
+                        .status(wait, ChildRole::ControlCli, status)
+                }
+                Ok(None) => self.control.cli_live_seen.store(true, Ordering::Release),
+                Err(_) => {}
             }
-        }
+            self.control.check(self.control.deadline)?;
+            if let Some(status) = waited.map_err(|_| Code::Cli)? {
+                break status;
+            }
+            pause(
+                &self.control,
+                self.control.deadline,
+                Duration::from_millis(5),
+            )?;
+        };
+        let bytes = self.collect_capture(index, read)?;
         self.control.check(self.control.deadline)?;
-        let status = status.map_err(|_| Code::Cli)?;
-        // The actual control CLI has been reaped before its pipe is released.
+        // All original capture guards survive this actual CLI's confirmed reap.
         self.control.observations.intent(Operation::DropStdout);
-        drop(self.cli_stdout.take());
+        drop(self.capture_reader.take());
+        self.completed_cli = true;
         drop(self.active_cli.take());
         self.control.check(self.control.deadline)?;
         if !status.success() {
@@ -1418,7 +1650,7 @@ impl Owner {
     }
 
     fn reap(&mut self) -> Result<(), Code> {
-        let mut actual_child = false;
+        let mut actual_child = self.completed_cli;
         for (index, child) in self
             .children
             .iter_mut()
@@ -1483,7 +1715,15 @@ impl Owner {
         // Reaping, not cancellation/Drop, authorizes removal of private state.
         cleanup_gate(&self.control)?;
         self.control.observations.intent(Operation::DropStdout);
-        drop(self.cli_stdout.take());
+        drop(self.capture_reader.take());
+        cleanup_gate(&self.control)?;
+        drop(self.capture_duplicate.take());
+        cleanup_gate(&self.control)?;
+        while !self.captures.is_empty() {
+            cleanup_gate(&self.control)?;
+            drop(self.captures.pop());
+            cleanup_gate(&self.control)?;
+        }
         cleanup_gate(&self.control)?;
         self.control.observations.intent(Operation::DropMetadata);
         drop(self.metadata.take());
@@ -1570,7 +1810,9 @@ impl Drop for Owner {
             || self.client.is_some()
             || self.metadata.is_some()
             || self.query_handle.is_some()
-            || self.cli_stdout.is_some()
+            || self.capture_reader.is_some()
+            || self.capture_duplicate.is_some()
+            || !self.captures.is_empty()
         {
             if self.release().is_err() {
                 self.quarantine();
@@ -1611,6 +1853,11 @@ fn cli_operations(phase: Phase) -> Option<(Operation, Operation, Operation)> {
             Operation::CancelCliSpawn,
             Operation::CancelCliRead,
             Operation::CancelCliWait,
+        )),
+        Phase::Capture => Some((
+            Operation::CaptureCliSpawn,
+            Operation::CaptureCliRead,
+            Operation::CaptureCliWait,
         )),
         _ => None,
     }
@@ -1703,16 +1950,31 @@ async fn gated<T>(
 }
 
 #[derive(Clone, Copy)]
+enum CaptureCase {
+    Version,
+    Oversized,
+    Live,
+}
+
+#[derive(Clone, Copy)]
 enum CaseKind {
     Wake,
     Cancel,
     Peer(PeerMode),
+    Capture(CaptureCase),
 }
 
 fn admit(hook: Option<ReturnGate>) -> Result<CaseAdmission, CaseResult> {
     // The only origin/outer horizon is born before even empty OS admission.
     let entered = Instant::now();
     let control = Control::new(entered, entered + Duration::from_secs(30));
+    admit_control(control, hook)
+}
+
+fn admit_control(
+    control: Arc<Control>,
+    hook: Option<ReturnGate>,
+) -> Result<CaseAdmission, CaseResult> {
     let (command, commands) = mpsc::sync_channel(1);
     let (sender, result) = mpsc::sync_channel(1);
     let worker_control = Arc::clone(&control);
@@ -1756,6 +2018,7 @@ fn admit(hook: Option<ReturnGate>) -> Result<CaseAdmission, CaseResult> {
                         };
                         owner.probe(index, hook.take())
                     }
+                    CaseKind::Capture(case) => capture_work(&mut owner, case),
                 }
             }))
             .unwrap_or(Err(Code::Panicked));
@@ -1955,6 +2218,316 @@ fn read_progress(control: &Control, path: &Path) -> Result<Vec<u64>, Code> {
     }
     control.check(control.deadline)?;
     Ok(counters)
+}
+
+fn capture_work(owner: &mut Owner, case: CaptureCase) -> Result<(), Code> {
+    owner.retain_guard()?;
+    if matches!(case, CaptureCase::Version) {
+        return version_capture_work(owner);
+    }
+    owner.control.check(owner.control.deadline)?;
+    owner.control.observations.intent(Operation::CaseCurrentExe);
+    let executable = std::env::current_exe();
+    owner.control.observations.io(
+        Operation::CaseCurrentExe,
+        ChildRole::ControlCli,
+        &executable,
+    );
+    owner.control.check(owner.control.deadline)?;
+    let executable = executable.map_err(|_| Code::Native)?;
+    let role = match case {
+        CaptureCase::Oversized => "oversized-v1",
+        CaptureCase::Live => "live-v1",
+        CaptureCase::Version => return Err(Code::Native),
+    };
+    let mut command = Command::new(executable);
+    command
+        .args([
+            "--exact",
+            OUTPUT_SELECTOR,
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("WINDOWS_CLI_OUTPUT_ROLE", role);
+    let poll_span = matches!(case, CaptureCase::Live).then_some(Duration::from_secs(1));
+    owner
+        .captured_output(Phase::Capture, &mut command, false, poll_span)
+        .map(|_| ())
+}
+
+fn version_capture_work(owner: &mut Owner) -> Result<(), Code> {
+    let expected = concat!("locron ", env!("CARGO_PKG_VERSION"), "\n").as_bytes();
+    let first = owner.captured_output(
+        Phase::Capture,
+        owner.command()?.arg("--version"),
+        true,
+        None,
+    )?;
+    if first.status.code() != Some(0)
+        || first.stdout != expected
+        || owner.capture_duplicate.is_none()
+    {
+        return Err(Code::Native);
+    }
+    let second = owner.output(Phase::Capture, owner.command()?.arg("--version"))?;
+    if second.status.code() != Some(0) || second.stdout != expected {
+        return Err(Code::Native);
+    }
+    let first_identity = native(&owner.control, owner.control.deadline, Code::Native, || {
+        owner.control.observations.intent(Operation::StdoutIdentity);
+        let identity = file_identity(
+            owner
+                .captures
+                .first()
+                .ok_or_else(|| io::Error::other("missing first capture"))?,
+        );
+        owner
+            .control
+            .observations
+            .io(Operation::StdoutIdentity, ChildRole::ControlCli, &identity);
+        identity
+    })?;
+    let second_identity = native(&owner.control, owner.control.deadline, Code::Native, || {
+        owner.control.observations.intent(Operation::StdoutIdentity);
+        let identity = file_identity(
+            owner
+                .captures
+                .get(1)
+                .ok_or_else(|| io::Error::other("missing second capture"))?,
+        );
+        owner
+            .control
+            .observations
+            .io(Operation::StdoutIdentity, ChildRole::ControlCli, &identity);
+        identity
+    })?;
+    if first_identity == second_identity {
+        return Err(Code::Native);
+    }
+    owner.control.check(owner.control.deadline)?;
+    let number = owner.capture_count.checked_add(1).ok_or(Code::Native)?;
+    let path = owner.capture_path(number)?;
+    owner.control.observations.intent(Operation::StdoutCreate);
+    let opened = create_private_new(&path);
+    let index = owner.captures.len();
+    match opened {
+        Ok(file) => owner.captures.push(file),
+        Err(error) => {
+            owner.control.observations.error(
+                Operation::StdoutCreate,
+                ChildRole::ControlCli,
+                &error,
+            );
+            owner.control.check(owner.control.deadline)?;
+            return Err(Code::Native);
+        }
+    }
+    owner.control.check(owner.control.deadline)?;
+    owner
+        .control
+        .observations
+        .intent(Operation::StdoutControlWrite);
+    let written = owner
+        .captures
+        .get_mut(index)
+        .ok_or(Code::Native)?
+        .write_all(b"0");
+    owner.control.observations.io(
+        Operation::StdoutControlWrite,
+        ChildRole::ControlCli,
+        &written,
+    );
+    owner.control.check(owner.control.deadline)?;
+    written.map_err(|_| Code::Native)?;
+    owner.control.check(owner.control.deadline)?;
+    owner
+        .control
+        .observations
+        .intent(Operation::StdoutControlFlush);
+    let flushed = owner.captures.get_mut(index).ok_or(Code::Native)?.flush();
+    owner.control.observations.io(
+        Operation::StdoutControlFlush,
+        ChildRole::ControlCli,
+        &flushed,
+    );
+    owner.control.check(owner.control.deadline)?;
+    flushed.map_err(|_| Code::Native)?;
+    let collision = owner.output(Phase::Capture, owner.command()?.arg("--version"));
+    if !matches!(collision, Err(Code::CaptureCollision)) || owner.active_cli.is_some() {
+        return Err(Code::Native);
+    }
+    let preserved = owner.collect_capture(index, Operation::CaptureCliRead)?;
+    if preserved != b"0" || owner.capture_duplicate.is_none() {
+        return Err(Code::Native);
+    }
+    owner.control.check(owner.control.deadline)?;
+    owner.control.observations.intent(Operation::DropStdout);
+    drop(owner.capture_reader.take());
+    owner.control.check(owner.control.deadline)
+}
+
+#[test]
+fn native_cli_output_capture_contract() {
+    let entered = Instant::now();
+    let deadline = entered + Duration::from_secs(30);
+    for case in [
+        CaptureCase::Version,
+        CaptureCase::Oversized,
+        CaptureCase::Live,
+    ] {
+        assert!(
+            Instant::now() < deadline,
+            "capture gate expired before admission"
+        );
+        let mut driver = admit_control(Control::new(entered, deadline), None)
+            .expect("resource-free capture admission failed");
+        assert!(
+            driver.dispatch(CaseKind::Capture(case)).is_ok(),
+            "capture dispatch refused"
+        );
+        let observed = driver.receive_until(deadline);
+        let completed = if observed.flags & CLEANED == 0 {
+            driver.wait_cleanup_until(deadline)
+        } else {
+            observed
+        };
+        driver.finish_if_returned();
+        assert!(
+            Instant::now() < deadline,
+            "capture gate cleanup exceeded original horizon"
+        );
+        assert_eq!(
+            completed.flags & (REAPED | CLEANED),
+            REAPED | CLEANED,
+            "actual capture cleanup unconfirmed: {completed}"
+        );
+        let (operation, role, payload) = event_header(completed.observations.statuses[2], 2)
+            .expect("actual capture producer status is unobserved");
+        assert!(
+            matches!(role, ChildRole::ControlCli),
+            "wrong capture producer role"
+        );
+        let actual_code = decode_signed(payload).flatten();
+        match case {
+            CaptureCase::Version => {
+                assert!(
+                    completed.succeeded(),
+                    "version/collision capture control failed: {completed}"
+                );
+                assert_eq!(
+                    actual_code,
+                    Some(0),
+                    "actual version exit failed: {completed}"
+                );
+                assert_eq!(
+                    completed.stdout_bytes, 1,
+                    "collision bytes changed: {completed}"
+                );
+                println!(
+                    "capture_control=version exit=0 held_writer=true fresh=2 collision=AlreadyExists preserved_bytes=1 cleanup=confirmed"
+                );
+            }
+            CaptureCase::Oversized => {
+                assert_eq!(
+                    completed.code,
+                    Code::CaptureOversized,
+                    "explicit output cap refusal missing: {completed}"
+                );
+                assert_eq!(
+                    actual_code,
+                    Some(0),
+                    "actual oversized producer exit failed: {completed}"
+                );
+                assert_eq!(
+                    completed.stdout_bytes, 65_537,
+                    "bounded sentinel read missing: {completed}"
+                );
+                println!(
+                    "capture_control=oversized exit=0 read_count=65537 refusal=CaptureOversized cleanup=confirmed"
+                );
+            }
+            CaptureCase::Live => {
+                assert_eq!(
+                    completed.code,
+                    Code::Expired,
+                    "live producer did not expire: {completed}"
+                );
+                assert!(
+                    completed.cli_live_seen,
+                    "actual live Child was never observed: {completed}"
+                );
+                assert_eq!(
+                    completed.stdout_bytes, UNOBSERVED_BYTES,
+                    "expired producer entered output read: {completed}"
+                );
+                assert_eq!(
+                    operation,
+                    Operation::CleanupWait as u8,
+                    "actual kill/reap path missing: {completed}"
+                );
+                assert!(
+                    actual_code.is_some_and(|code| code != 0),
+                    "actual killed producer exit missing: {completed}"
+                );
+                assert_eq!(
+                    completed.observations.io_error, 0,
+                    "actual capture kill or I/O failed: {completed}"
+                );
+                assert_ne!(
+                    completed.observations.first_work, 0,
+                    "completed live refusal is unobserved"
+                );
+                println!(
+                    "capture_control=live observed=None poll_horizon_ms=1000 refusal=Expired output_read=unobserved kill_reap=confirmed cleanup=confirmed"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn native_cli_output_target() {
+    let Some(role) = std::env::var_os("WINDOWS_CLI_OUTPUT_ROLE") else {
+        return;
+    };
+    let entered = Instant::now();
+    match role.to_str() {
+        Some("oversized-v1") => {
+            let deadline = entered + Duration::from_secs(30);
+            let payload = vec![b'x'; 65_537];
+            assert!(
+                Instant::now() < deadline,
+                "output producer expired before lock"
+            );
+            let mut stdout = io::stdout().lock();
+            assert!(
+                Instant::now() < deadline,
+                "output producer expired before write"
+            );
+            let written = stdout.write_all(&payload);
+            assert!(
+                Instant::now() < deadline,
+                "output producer write returned late"
+            );
+            assert!(written.is_ok(), "output producer write refused");
+            let flushed = stdout.flush();
+            assert!(
+                Instant::now() < deadline,
+                "output producer flush returned late"
+            );
+            assert!(flushed.is_ok(), "output producer flush refused");
+        }
+        Some("live-v1") => {
+            let deadline = entered + Duration::from_secs(10);
+            while Instant::now() < deadline {
+                thread::sleep(
+                    Duration::from_millis(25)
+                        .min(deadline.saturating_duration_since(Instant::now())),
+                );
+            }
+        }
+        _ => panic!("invalid fixed output producer role"),
+    }
 }
 
 #[test]

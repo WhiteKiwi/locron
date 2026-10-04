@@ -141,6 +141,12 @@ jobs:
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::withheld_native_return_retains_case_owner_at_deadline -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify owned bounded native CLI output capture
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          cargo test -p locron --test cli --locked windows_cli_control::native_cli_output_capture_contract -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native registered service semantics
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=1'
