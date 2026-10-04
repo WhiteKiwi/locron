@@ -5419,3 +5419,8 @@ Follow planning/DASHBOARD_DRY_RUN_HTTP_QUALIFICATION_2026-10-04.md for PR144/Iss
 ## PR144 exact-main Git-only handoff (2026-10-05)
 
 Follow the complete docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md after exact owning Issue Verify readback and final committed Root reread. One ordinary merge of the selected Docs tip and exactf90 preserves whole incoming native Source/CI and reviewed own Source/plans. Full tree/Source/Doc inverses and permitted static checks precede ordinary publication and actual changed-head qualification; skipped/unreached/failed native or own tests cannot be counted as PASS. No Source adaptation, unrelated PR import, rerun or permission waiver is selected.
+
+
+## Preserve overlap while qualifying each HTTP query form (2026-10-05)
+
+Under Issue143 follow the four-step Verify plan in planning/HTTP_QUERY_FIXTURE_ISOLATION_2026-10-05.md. Root Docs/Issue exact readback and final whole-plan reread precede the separate two-path developer: unique unqueued run-{label} jobs only inside the existing query test second loop, plus one existing cold-Core/noncancelled condition on native HTTP. Preserve all strict assertions, whole inverses, original tests/commands/conditions/clocks and unrelated Source; then Root review/ordinary publication and actual changed-head HTTP/native/lint/package qualification. Native failures and broader acceptance stay open.

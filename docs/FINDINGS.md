@@ -5640,3 +5640,8 @@ Root independently reviewed exacta5e7 with125 immutable artifacts/63 Source snap
 ## PR144 full incoming f90 compatibility before Git integration (2026-10-05)
 
 Separate read-only research and independent Root proof 4c13f900da8ca5702f6b143e0b15532b1831fd12a3a12caa0f715c2524ae72ae select normal exactf90 integration with no Source adaptation. Preserve complete incoming FINDINGS/IMPLEMENTATION as authoritative prefixes and append only reviewed own/new components once; incoming native histories are not a guessed common9de suffix. Actual mainf90 native22PASS2FAIL remains failed, while the selected own HTTP/macOS Source has not gained new hosted acceptance. Full scope and every Verify are in docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md.
+
+
+## Exact HTTP query fixture failure and independent Windows collection (2026-10-05)
+
+CI37221831243/1 has seven actual skipped_overlap-versus-queued failures in the new query test; seeded original was already active under the unchanged skip policy. Root489-artifact/17raw/319 Source proof4dd970d7 binds the full synthetic checkout. Select per-job unqueued fixtures only in that second matrix. Server/Core/Store test dependencies and private router fixtures permit independently collecting native HTTP after cold Core success, retaining the earlier failed job and unknown native causes. See planning/HTTP_QUERY_FIXTURE_ISOLATION_2026-10-05.md before Source.
