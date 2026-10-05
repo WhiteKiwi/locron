@@ -2675,6 +2675,122 @@ async fn run_owned(ticket: &Ticket, clock: &Clock) -> Check<Value> {
     Ok(result)
 }
 
+// Correlate an existing refusal message; this does not prove native provenance.
+#[cfg(windows)]
+fn facts_refusal_projection(
+    error: &std::io::Error,
+    facts_path: &Path,
+) -> (&'static str, Option<u8>) {
+    use std::fmt;
+    use std::path::{Component, Prefix};
+
+    const ERROR_TEXT_CAP: usize = 2048;
+    const CHAIN_CAP: usize = 64;
+    const MANAGED: &str = "unsafe managed path: ";
+    const STOCK: &str = "unsafe stock Windows servicing path";
+
+    struct CappedText {
+        bytes: [u8; ERROR_TEXT_CAP],
+        len: usize,
+    }
+
+    impl fmt::Write for CappedText {
+        fn write_str(&mut self, value: &str) -> fmt::Result {
+            let available = self.bytes.len().checked_sub(self.len).ok_or(fmt::Error)?;
+            let take = available.min(value.len());
+            let end = self.len.checked_add(take).ok_or(fmt::Error)?;
+            self.bytes[self.len..end].copy_from_slice(&value.as_bytes()[..take]);
+            self.len = end;
+            if take == value.len() {
+                Ok(())
+            } else {
+                Err(fmt::Error)
+            }
+        }
+    }
+
+    fn local_parts(path: &Path) -> Option<(u8, std::path::Components<'_>)> {
+        let spelling = path.to_str()?;
+        if spelling.len() > ERROR_TEXT_CAP
+            || spelling.contains('\0')
+            || spelling
+                .split(['\\', '/'])
+                .any(|part| matches!(part, "." | ".."))
+        {
+            return None;
+        }
+        let mut parts = path.components();
+        let Some(Component::Prefix(prefix)) = parts.next() else {
+            return None;
+        };
+        if !matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_)) {
+            return None;
+        }
+        // Compare original drive spelling, not Prefix::Disk's normalized drive value.
+        let prefix = prefix.as_os_str().to_str()?;
+        let drive = prefix.strip_prefix(r"\\?\").unwrap_or(prefix).as_bytes();
+        let drive = match drive {
+            [letter, b':'] if letter.is_ascii_alphabetic() => *letter,
+            _ => return None,
+        };
+        if parts.next() != Some(Component::RootDir)
+            || parts
+                .clone()
+                .any(|part| !matches!(part, Component::Normal(_)))
+        {
+            return None;
+        }
+        Some((drive, parts))
+    }
+
+    fn chain_index(facts_path: &Path, refused: &str) -> Option<u8> {
+        let (facts_drive, _) = local_parts(facts_path)?;
+        let (refused_drive, refused_parts) = local_parts(Path::new(refused))?;
+        if facts_drive != refused_drive {
+            return None;
+        }
+        let count = facts_path.ancestors().count();
+        if count > CHAIN_CAP {
+            return None;
+        }
+        let leaf_first = facts_path.ancestors().position(|ancestor| {
+            local_parts(ancestor).is_some_and(|(drive, parts)| {
+                drive == refused_drive && parts.eq(refused_parts.clone())
+            })
+        })?;
+        u8::try_from(count.checked_sub(leaf_first)?.checked_sub(1)?).ok()
+    }
+
+    // Do not format an OS-code representation or an unrelated kind.
+    if error.kind() != std::io::ErrorKind::PermissionDenied || error.raw_os_error().is_some() {
+        return ("other", None);
+    }
+    let mut text = CappedText {
+        bytes: [0; ERROR_TEXT_CAP],
+        len: 0,
+    };
+    let complete = fmt::write(&mut text, format_args!("{error}")).is_ok();
+    let bytes = &text.bytes[..text.len];
+    let result = if complete && bytes == STOCK.as_bytes() {
+        ("stock_path", None)
+    } else if bytes.starts_with(MANAGED.as_bytes()) {
+        let index = if complete {
+            std::str::from_utf8(bytes)
+                .ok()
+                .and_then(|message| message.strip_prefix(MANAGED))
+                .and_then(|refused| chain_index(facts_path, refused))
+        } else {
+            None
+        };
+        ("managed_path", index)
+    } else {
+        ("other", None)
+    };
+    // No message bytes leave this temporary buffer; this is not a zeroization guarantee.
+    text.bytes.fill(0);
+    result
+}
+
 async fn qualification() -> Check<()> {
     let facts_path = PathBuf::from(
         std::env::var_os("LOCRON_PR144_BUILD_FACTS")
@@ -2699,6 +2815,15 @@ async fn qualification() -> Check<()> {
                 ErrorKind::ConnectionReset => "ConnectionReset",
                 _ => "unrecognized",
             };
+            #[cfg(windows)]
+            {
+                let (cause, chain_index) = facts_refusal_projection(&error, &facts_path);
+                eprintln!(
+                    "PR144 facts admission failed: kind={kind} raw={:?} cause={cause} chain_index={chain_index:?}",
+                    error.raw_os_error()
+                );
+            }
+            #[cfg(not(windows))]
             eprintln!(
                 "PR144 facts admission failed: kind={kind} raw={:?}",
                 error.raw_os_error()
