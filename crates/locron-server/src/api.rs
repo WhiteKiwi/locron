@@ -262,7 +262,7 @@ where
 }
 
 /// Runs `f` on the blocking pool with the dry-run store: read-only when the
-/// state database exists, `None` (defaults) when it does not.
+/// state database exists, `None` (defaults) when it is not.
 async fn with_dry_store<T>(
     state: &AppState,
     f: impl FnOnce(Option<&Store>) -> Result<T, ApiError> + Send + 'static,
@@ -310,19 +310,29 @@ where
 // Query and body shapes
 // ---------------------------------------------------------------------------
 
-/// Deserializes bare query flags (`?wait`), empty flags (`?wait=`), and
-/// explicit booleans.
+/// Deserializes native JSON booleans and the existing textual query flags
+/// (`?wait`, `?wait=`, `?wait=true`). Explicit null retains the legacy true value.
 fn deserialize_flag<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let raw = Option::<String>::deserialize(deserializer)?;
-    match raw.as_deref() {
-        None | Some("" | "true" | "1") => Ok(true),
-        Some("false" | "0") => Ok(false),
-        Some(other) => Err(serde::de::Error::custom(format!(
-            "invalid boolean flag {other:?}"
-        ))),
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Flag {
+        Boolean(bool),
+        Text(String),
+    }
+
+    match Option::<Flag>::deserialize(deserializer)? {
+        Some(Flag::Boolean(value)) => Ok(value),
+        None => Ok(true),
+        Some(Flag::Text(value)) => match value.as_str() {
+            "" | "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            other => Err(serde::de::Error::custom(format!(
+                "invalid boolean flag {other:?}"
+            ))),
+        },
     }
 }
 
@@ -1472,7 +1482,8 @@ pub(crate) async fn settings_put(
                 } else {
                     "created"
                 };
-            if let Some(store) = store {
+            if !body.dry_run {
+                let store = store.expect("live store");
                 store.set_environment(name, Some(&body.value), now_us())?;
                 send_wake(store.paths());
             }

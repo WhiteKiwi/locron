@@ -5468,6 +5468,20 @@ Follow [GROUPED_PR_INTEGRATION_2026-10-05.md](planning/GROUPED_PR_INTEGRATION_20
 
 Follow [DASHBOARD_NATIVE_DESTINATION_2026-10-05.md](planning/DASHBOARD_NATIVE_DESTINATION_2026-10-05.md) under #162. After exact Docs/Issue GET and parent entire final reread, a separate developer leases only two cfg(test) files for three real fixed proofs: held/released std and unchanged Core same-candidate full-ID migration, plus actual token refusal and new-scratch released rotation. One Windows Operation variant is additive; framing/13 selectors/support/old3/other32/33 callers/production/Core/CI and original15/5/4/30/3s clocks stay literal. Only the destination expectation becomes exact PermissionDenied/raw5 and loses its unsupported five-second minimum. Parent whole inverses/protected-tree review and later group-specific union precede one fresh composed-head native/strict ordinary/Guardian/fullpaired qualification. The current raw5/Core stage and separate native Wake/cancel cause remain unknown.
 
+## Selected dashboard HTTP verification (2026-10-04)
+
+Follow planning/DASHBOARD_DRY_RUN_HTTP_QUALIFICATION_2026-10-04.md for PR144/Issue143: Root Docs/Issue4Verify/finalreread first; separate developer integrates exactmain9de with complete Docs ancestry and adapts only server tests/contract.rs; add real body-type/env/no-state/query controls; preserve original API/tests/helper bodies and all other Source; Root entire-inverse/protected-tree review then fresh actual hosted Windows3/Unix/fullrequiredCI qualification. Additional native listener, dependency/workflow or timing/owner wrapper choices need a Root amendment first. No Source/native/merge/Issue closure is claimed by this planning commit.
+
+
+## PR144 exact-main Git-only handoff (2026-10-05)
+
+Follow the complete docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md after exact owning Issue Verify readback and final committed Root reread. One ordinary merge of the selected Docs tip and exactf90 preserves whole incoming native Source/CI and reviewed own Source/plans. Full tree/Source/Doc inverses and permitted static checks precede ordinary publication and actual changed-head qualification; skipped/unreached/failed native or own tests cannot be counted as PASS. No Source adaptation, unrelated PR import, rerun or permission waiver is selected.
+
+
+## Preserve overlap while qualifying each HTTP query form (2026-10-05)
+
+Under Issue143 follow the four-step Verify plan in planning/HTTP_QUERY_FIXTURE_ISOLATION_2026-10-05.md. Root Docs/Issue exact readback and final whole-plan reread precede the separate two-path developer: unique unqueued run-{label} jobs only inside the existing query test second loop, plus one existing cold-Core/noncancelled condition on native HTTP. Preserve all strict assertions, whole inverses, original tests/commands/conditions/clocks and unrelated Source; then Root review/ordinary publication and actual changed-head HTTP/native/lint/package qualification. Native failures and broader acceptance stay open.
+
 
 ## Windows token held/released destination fixture amendment (2026-10-05)
 

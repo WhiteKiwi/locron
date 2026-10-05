@@ -176,6 +176,7 @@ jobs:
       - name: Verify native MCP stdio contracts
         run: cargo test -p locron --test mcp --locked
       - name: Verify native HTTP API and stream contracts
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: cargo test -p locron-server --test contract --locked
       - name: Record native artifact evidence
         shell: pwsh

@@ -5687,6 +5687,20 @@ Changed652 CI37231275837/1 completed14PASS/3nativeFAIL/2optional. Exact three-ro
 
 Root reviewed [Rust1.94 Windows rename](https://github.com/rust-lang/rust/blob/4a4ef493e3a1488c6e321570238084b38948f6db/library/std/src/sys/fs/windows.rs#L1311) and [Rust1.99 Windows rename](https://github.com/rust-lang/rust/blob/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/sys/fs/windows.rs#L1321): the byte-identical3258-byte functions may preserve originalMoveFileExW raw5 after a failed secondary DELETE-open/FileRenameInfoEx attempt. Exact Core stage/secondary errno/cause is unknown, and POSIX semantics prevent a universal open-target refusal promise. The unchanged Core held-source tests passed3×3 and differ from held-destination. Select only the scenario-specific exact raw5 plus real std/Core same-candidate identity/nonmutation/release positives and token new-scratch rotation positive in DASHBOARD_NATIVE_DESTINATION_2026-10-05.md; all new controls remain unmeasured pending actual hosted qualification.
 
+## PR144 HTTP qualification continuation (2026-10-04)
+
+Root independently reviewed exacta5e7 with125 immutable artifacts/63 Source snapshots, full API inverse,34 test paths and5 checksum-qualified primary members (proof6dcfb572a514dd74c5a488649552108efd5d460629115a3941a7e3d2c09ce72c). The actual bool/text/null DTO grammar and existing-environment read-only preview fix have no complete new HTTP regression matrix. Select only contract.rs genuine authenticated router controls, absent-state checks and closed-writer durable snapshots against actualmain9de. Source-proven wake exclusion is recorded; actual native wake observation/dev edge is not selected in this tranche. SPEC/runtime/API/UI/old helpers/tests/manifests/workflow remain protected.
+
+
+## PR144 full incoming f90 compatibility before Git integration (2026-10-05)
+
+Separate read-only research and independent Root proof 4c13f900da8ca5702f6b143e0b15532b1831fd12a3a12caa0f715c2524ae72ae select normal exactf90 integration with no Source adaptation. Preserve complete incoming FINDINGS/IMPLEMENTATION as authoritative prefixes and append only reviewed own/new components once; incoming native histories are not a guessed common9de suffix. Actual mainf90 native22PASS2FAIL remains failed, while the selected own HTTP/macOS Source has not gained new hosted acceptance. Full scope and every Verify are in docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md.
+
+
+## Exact HTTP query fixture failure and independent Windows collection (2026-10-05)
+
+CI37221831243/1 has seven actual skipped_overlap-versus-queued failures in the new query test; seeded original was already active under the unchanged skip policy. Root489-artifact/17raw/319 Source proof4dd970d7 binds the full synthetic checkout. Select per-job unqueued fixtures only in that second matrix. Server/Core/Store test dependencies and private router fixtures permit independently collecting native HTTP after cold Core success, retaining the earlier failed job and unknown native causes. See planning/HTTP_QUERY_FIXTURE_ISOLATION_2026-10-05.md before Source.
+
 
 ## Actual Windows token destination raw5 and release-success qualification (2026-10-05)
 
