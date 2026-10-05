@@ -86,7 +86,10 @@ fn decode_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
         return None;
     }
     let mut bytes = [0; N];
-    for (destination, pair) in bytes.iter_mut().zip(text.as_bytes().chunks_exact(2)) {
+    for (destination, pair) in bytes
+        .iter_mut()
+        .zip(text.as_bytes().as_chunks::<2>().0.iter())
+    {
         let digit = |byte: u8| match byte {
             b'0'..=b'9' => Some(byte - b'0'),
             b'a'..=b'f' => Some(byte - b'a' + 10),
@@ -371,7 +374,7 @@ impl<S: Subscriber> Layer<S> for WakeLayer {
         if state.fused {
             return;
         }
-        if !state.emit(fields) {
+        if !state.emit(&fields) {
             state.fused = true;
         }
     }
@@ -395,7 +398,7 @@ struct State {
 }
 
 impl State {
-    fn emit(&mut self, fields: Fields) -> bool {
+    fn emit(&mut self, fields: &Fields) -> bool {
         let (Some(op), Some(edge), Some(kind)) = (fields.op, fields.edge, fields.kind) else {
             return false;
         };
