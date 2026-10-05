@@ -5442,3 +5442,8 @@ SPEC remains frozen. [The complete five-step plan](planning/WINGET_OUTPUT_MAIN13
 ## Group D representative166 integration and private observation (2026-10-05)
 
 Follow planning/GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md for representative166 normal integration of exact7429/3a, literal contributor/Docs conservation, helper-only closed scalar and one required lint command. All old production/privacy/ownership/5s/8s/30s/control/gate boundaries stay literal. Root Docs/Issues/final whole reread precede separate Source and Root whole publication review.
+
+
+## PR166 exact mainf90 integration before separate development (2026-10-05)
+
+Follow planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md under Issue35. Preserve complete b5f three Source blobs; normal-merge only exact f90 with original histories, whole incoming Source and literal selected Docs components. Commit this full four-step Verify plan, get exact Issue GET and Root final whole committed-plan reread before separate developer. Root reviews clean316-path handback and ordinary-publishes existing PR166; fresh actual42 portable/49 per-native key receipts, architecture facts and all required ordinary gates precede merge. Static inverses/API success/old-base CI do not qualify current-main. Broader unsigned public bytes, real schema/WinGet/catalog/clean-account lifecycle remain OPEN.

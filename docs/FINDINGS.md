@@ -5666,3 +5666,8 @@ PR136 is merged as f90a9d5 with exact reviewed/tested tree and actual ordinary/n
 ## Group D representative166 integration and private observation (2026-10-05)
 
 The separate Group D next-diagnostic research binds current167 actual15P/2nativeF and distinct166/E16P/1ARMF. Select only the primitive positive-control scalar and directly required Windows CLI-test Clippy gap in GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md. Missing first_work is an observation gap; current cause and broader native fault classes remain unknown. The19 new controls remain unselected.
+
+
+## PR166 exact mainf90 composition before Source (2026-10-05)
+
+Separate frozen130-artifact research and Root proof f82efca7788bd061732259e0c513986626776a8095cde5e12d1914f3ec01a21a independently check all919 original canonical blobs and three trees. Whole b5f renderer/test/paired-workflow have no bilateral incoming Source edit; only FINDINGS/IMPLEMENTATION require full canonical f90 plus complete own b5f-beyond-c4 suffix. Root selects Git-only normal integration and new actual current-base qualification in planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md. Old-base b5f raw logs and actual a840b2e tree are separate historical evidence, never mainf90 acceptance. No new writer/test/behavior or owner-PC execution is selected.

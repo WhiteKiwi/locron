@@ -160,3 +160,8 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Group D representative166 integration and private observation (2026-10-05)
 
 Group D continues existing35/31/coordination163 with five explicit Verify steps in planning/GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md. Integration, private observation and hosted acceptance are separate phases. Preserve broader release/WinGet/Windows requirements and actual unknown causes; no premature issue/member closure.
+
+
+### PR166 current-main output-recovery continuation (2026-10-05)
+
+Issue35 owns the exact b5f/f90 Git-only integration and current-head Verify in planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md. Preserve old Source and actual evidence separately, record exact plan GET and final reread before the separate developer, and keep native/public-release/installed-channel acceptance open. Signing37 remains deferred; Project-only historical instructions stay superseded.
