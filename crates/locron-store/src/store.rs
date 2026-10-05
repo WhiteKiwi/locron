@@ -7500,3 +7500,6 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod dashboard_pr144_snapshot_fixture;

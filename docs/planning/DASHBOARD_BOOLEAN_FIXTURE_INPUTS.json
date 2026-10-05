@@ -1,0 +1,107 @@
+{
+  "schema": "locron.private.pr144-independent-inputs/v1",
+  "source_head": "a5e79b14cbae1375f9726fcb3563b3a5aa55fe1b",
+  "execution_status": "UNMEASURED",
+  "definition_source": "original contract.rs:185..234 literal process definition schema, without calling API deserialize_flag/redaction or using writer/handler response as expected",
+  "placeholder_policy": "These are descriptor variables, not shell interpolation. Hosted implementation uses actual owned verified artifact/cwd/canary and JSON serialization.",
+  "definition_literal": {
+    "schedule": {
+      "kind": "cron",
+      "expression": "* * * * *",
+      "timezone": {
+        "mode": "local"
+      }
+    },
+    "target": {
+      "kind": "process",
+      "executable": "${VERIFIED_CANDIDATE_ARTIFACT}",
+      "args": []
+    },
+    "cwd": "${OWNED_FIXTURE_CWD}",
+    "environment": {
+      "values": {
+        "PR144_SECRET": "${OWNED_NONCE_CANARY}"
+      }
+    },
+    "policy": {
+      "overlap": "skip",
+      "missed_run": "skip",
+      "catch_up_limit": 10,
+      "retries": 0,
+      "retry_delay": 0,
+      "retry_cap": 0,
+      "backoff": "exponential",
+      "retry_timeout": false,
+      "timeout": null,
+      "start_deadline": null,
+      "termination_grace": 0,
+      "per_job_concurrency": 1
+    }
+  },
+  "create_body": {
+    "name": "pr144-create",
+    "description": "pr144 fixture",
+    "tags": [],
+    "enabled": true,
+    "definition": {
+      "schedule": {
+        "kind": "cron",
+        "expression": "* * * * *",
+        "timezone": {
+          "mode": "local"
+        }
+      },
+      "target": {
+        "kind": "process",
+        "executable": "${VERIFIED_CANDIDATE_ARTIFACT}",
+        "args": []
+      },
+      "cwd": "${OWNED_FIXTURE_CWD}",
+      "environment": {
+        "values": {
+          "PR144_SECRET": "${OWNED_NONCE_CANARY}"
+        }
+      },
+      "policy": {
+        "overlap": "skip",
+        "missed_run": "skip",
+        "catch_up_limit": 10,
+        "retries": 0,
+        "retry_delay": 0,
+        "retry_cap": 0,
+        "backoff": "exponential",
+        "retry_timeout": false,
+        "timeout": null,
+        "start_deadline": null,
+        "termination_grace": 0,
+        "per_job_concurrency": 1
+      }
+    }
+  },
+  "update_body": {
+    "description": "would change"
+  },
+  "setting_body": {
+    "value": "4"
+  },
+  "setting_precondition": {
+    "global_concurrency": 3,
+    "settings_updated_at_us": 100
+  },
+  "mixed_case_native_seed": {
+    "environment_json": {
+      "Pr144_Name": "${OLD_OWNED_CANARY}"
+    },
+    "stored_json": "canonical serde BTreeMap serialization, exact raw case observed before measurement",
+    "setup_operation": "fixed test-only native legacy seed operation in same Store internal child before any measurement; not production set_environment which normalizes to uppercase"
+  },
+  "independent_redaction_expected": {
+    "definition.environment.values.PR144_SECRET": "<redacted>",
+    "live_job_response.definition_json": "string containing independently expected redacted definition; original plaintext only in private DB snapshot",
+    "settings.environment.PR144_NAME": {
+      "configured": true,
+      "value_redacted": true
+    }
+  },
+  "live_time_uuid_policy": "Generated UUID is valid canonical lowercase version7 and exact persisted id; production timestamps are within measured before/after wall-time bounds and obey mandatory cross-table relations. Expected metadata/revisions/events/cursors are independently specified; do not self-compare response to response."
+}

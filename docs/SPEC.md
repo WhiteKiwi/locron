@@ -656,3 +656,7 @@ backend facts retain their boolean values and existing shapes; true permission
 and I/O failures still refuse. Diagnostic observation does not enable services,
 create an access token or dispatch installation/update. This qualifies a limited
 diagnostic behavior and does not advertise completed Windows support.
+
+## Dashboard dry-run input correction (2026-10-05)
+
+Dashboard job creation, job updates and settings accept native JSON boolean dry-run values and the existing nullable/text grammar. A preview of an environment value succeeds for both creation and replacement without changing durable state, revealing the value or waking execution. Explicit false and omitted dry-run retain the existing live behavior. Unsupported input types still refuse, and query flag grammar remains unchanged.

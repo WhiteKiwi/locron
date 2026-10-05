@@ -5482,6 +5482,15 @@ Follow the complete docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md after
 
 Under Issue143 follow the four-step Verify plan in planning/HTTP_QUERY_FIXTURE_ISOLATION_2026-10-05.md. Root Docs/Issue exact readback and final whole-plan reread precede the separate two-path developer: unique unqueued run-{label} jobs only inside the existing query test second loop, plus one existing cold-Core/noncancelled condition on native HTTP. Preserve all strict assertions, whole inverses, original tests/commands/conditions/clocks and unrelated Source; then Root review/ordinary publication and actual changed-head HTTP/native/lint/package qualification. Native failures and broader acceptance stay open.
 
+## Dashboard144 selected implementation and Verify (2026-10-05)
+
+Use the six-path private fixture/build lease in planning/DASHBOARD_BOOLEAN_QUALIFICATION_2026-10-05.md. Preserve the actual API/Store/core paths, dependency direction and existing gates. The Store libtest child owns real readonly typed snapshots; the Windows CLI example reuses Engine Job/child and secured wake ownership. A real scoped wake delegate distinguishes attempt0/delivery0 from live SendOk. Frozen193 Unix/195 Windows rows require actual identity, state/redaction, termination and nonrecursive cleanup evidence. The selected four steps each contain concrete Verify; Docs/Issue exact GET and final reread precede Source in a separate development sub-session. Hosted execution and full actual paired/tree proof remain required before Root merges.
+
+
+## Dashboard144 private stage retention implementation (2026-10-05)
+
+Apply only the separate developer's three-helper retention lease in [the supplemental plan](planning/DASHBOARD_BOOLEAN_STAGE_RETENTION_2026-10-05.md), after Issue143 exact GET and complete final-plan reread. Disable the TempPath cleanup flag before one publication and preserve the original fixed Err, success identity path, all193/195 assertions and every other Source byte. Root reviews full inverses and handles later normal integration/publication with current published1f5 preserved. Existing hosted/Guardian/paired gates and uncertainty boundaries remain.
+
 
 ## Windows token held/released destination fixture amendment (2026-10-05)
 
