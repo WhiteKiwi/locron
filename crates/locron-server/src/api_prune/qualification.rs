@@ -272,13 +272,93 @@ fn root_id(path: &Path, deadline: Instant) -> Identity {
     }
 }
 
-fn open_guarded(path: &Path, deadline: Instant) -> GuardedFile {
-    need(
-        checked(deadline, || {
-            locron_core::filesystem::open_read_no_follow(path)
-        }),
-        "guarded-open",
-    )
+#[derive(Clone, Copy)]
+enum AdmissionRole {
+    PruneArtifact,
+    RecoveryArtifact,
+    ArtifactBinding,
+    Database,
+    ReportedDatabase,
+    OracleLeaf,
+    SharingControl,
+}
+
+impl AdmissionRole {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::PruneArtifact => "prune_artifact",
+            Self::RecoveryArtifact => "recovery_artifact",
+            Self::ArtifactBinding => "artifact_binding",
+            Self::Database => "database",
+            Self::ReportedDatabase => "reported_database",
+            Self::OracleLeaf => "oracle_leaf",
+            Self::SharingControl => "sharing_control",
+        }
+    }
+}
+
+fn admission_kind(kind: std::io::ErrorKind) -> &'static str {
+    use std::io::ErrorKind;
+    match kind {
+        ErrorKind::NotFound => "NotFound",
+        ErrorKind::PermissionDenied => "PermissionDenied",
+        ErrorKind::AlreadyExists => "AlreadyExists",
+        ErrorKind::WouldBlock => "WouldBlock",
+        ErrorKind::TimedOut => "TimedOut",
+        ErrorKind::Interrupted => "Interrupted",
+        ErrorKind::InvalidData => "InvalidData",
+        ErrorKind::InvalidInput => "InvalidInput",
+        ErrorKind::WriteZero => "WriteZero",
+        ErrorKind::Unsupported => "Unsupported",
+        ErrorKind::Other => "Other",
+        ErrorKind::ConnectionReset => "ConnectionReset",
+        _ => "unrecognized",
+    }
+}
+
+struct OptionalNumber<T>(Option<T>);
+
+impl<T: std::fmt::Display> std::fmt::Display for OptionalNumber<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Some(value) => std::fmt::Display::fmt(value, formatter),
+            None => formatter.write_str("none"),
+        }
+    }
+}
+
+fn guard_refusal_fields(
+    error: &std::io::Error,
+) -> (&'static str, &'static str, Option<u32>, Option<u32>) {
+    #[cfg(all(windows, debug_assertions))]
+    if let Some(observation) = locron_core::filesystem::guard_refusal_observation(error) {
+        return (
+            observation.object(),
+            observation.predicate(),
+            observation.chain_index(),
+            observation.ace_index(),
+        );
+    }
+    #[cfg(not(all(windows, debug_assertions)))]
+    let _ = error;
+    ("unobserved", "unobserved", None, None)
+}
+
+fn open_guarded(path: &Path, deadline: Instant, role: AdmissionRole) -> GuardedFile {
+    checked(deadline, || {
+        locron_core::filesystem::open_read_no_follow(path)
+    })
+    .unwrap_or_else(|error| {
+        let (object, predicate, chain, ace) = guard_refusal_fields(&error);
+        panic!(
+            "prune qualification refused phase=guarded-open role={} kind={} raw={} object={object} predicate={predicate} chain={} ace={}",
+            role.label(),
+            admission_kind(error.kind()),
+            OptionalNumber(error.raw_os_error()),
+            OptionalNumber(chain),
+            OptionalNumber(ace),
+        );
+    })
 }
 
 fn read_guarded(file: &GuardedFile, cap: usize, deadline: Instant) -> Vec<u8> {
@@ -497,7 +577,7 @@ struct FileFact {
 }
 
 fn fact(path: &Path, deadline: Instant) -> FileFact {
-    let reader = open_guarded(path, deadline);
+    let reader = open_guarded(path, deadline, AdmissionRole::OracleLeaf);
     let identity = checked(deadline, || file_id(&reader, deadline));
     let bytes = read_guarded(&reader, CAP, deadline);
     let metadata = need(checked(deadline, || reader.metadata()), "fact-metadata");
@@ -630,7 +710,7 @@ impl Owner {
             );
         }
         self.guards.push(guard);
-        let database = open_guarded(&self.paths.database, deadline);
+        let database = open_guarded(&self.paths.database, deadline, AdmissionRole::Database);
         let normalized = database.normalized_path().to_owned();
         let db_id = file_id(&database, deadline);
         self.database_slot = Some(self.files.len());
@@ -662,7 +742,15 @@ impl Owner {
         );
         let _initial = oracle(conn, deadline);
         let reported = conn.path().expect("raw DB filename missing");
-        let unchanged = db_id == file_id(&open_guarded(Path::new(reported), deadline), deadline);
+        let unchanged = db_id
+            == file_id(
+                &open_guarded(
+                    Path::new(reported),
+                    deadline,
+                    AdmissionRole::ReportedDatabase,
+                ),
+                deadline,
+            );
         assert!(unchanged, "raw connection opened another DB");
     }
 
@@ -1411,10 +1499,15 @@ fn native_abi(file: &GuardedFile, deadline: Instant) {
     check(deadline);
 }
 
-fn artifact(owner: &mut Owner, name: &'static str, deadline: Instant) -> Artifact {
+fn artifact(
+    owner: &mut Owner,
+    name: &'static str,
+    deadline: Instant,
+    role: AdmissionRole,
+) -> Artifact {
     let path = PathBuf::from(need(std::env::var(name), "required-prune-artifact-env"));
     path_text(&path);
-    let file = open_guarded(&path, deadline);
+    let file = open_guarded(&path, deadline, role);
     let identity = file_id(&file, deadline);
     native_abi(&file, deadline);
     let (sha256, bytes) = digest_file(&file, deadline);
@@ -1439,8 +1532,18 @@ fn recheck(owner: &Owner, artifact: &Artifact, deadline: Instant) {
 }
 
 fn bindings(owner: &mut Owner, deadline: Instant) -> (Artifact, Artifact, Binding) {
-    let production = artifact(owner, "LOCRON_PRUNE_TEST_BINARY", deadline);
-    let recovery = artifact(owner, "LOCRON_PRUNE_RECOVERY_TEST_BINARY", deadline);
+    let production = artifact(
+        owner,
+        "LOCRON_PRUNE_TEST_BINARY",
+        deadline,
+        AdmissionRole::PruneArtifact,
+    );
+    let recovery = artifact(
+        owner,
+        "LOCRON_PRUNE_RECOVERY_TEST_BINARY",
+        deadline,
+        AdmissionRole::RecoveryArtifact,
+    );
     let distinct = production.identity != recovery.identity && production.path != recovery.path;
     assert!(distinct, "production/recovery artifacts must differ");
     // Fixed adjacent record is emitted by the admitted CargoJSON producer, not an env guess.
@@ -1452,7 +1555,7 @@ fn bindings(owner: &mut Owner, deadline: Instant) -> (Artifact, Artifact, Bindin
         .parent()
         .unwrap()
         .join("prune-artifact-binding.json");
-    let file = open_guarded(&path, deadline);
+    let file = open_guarded(&path, deadline, AdmissionRole::ArtifactBinding);
     let identity = file_id(&file, deadline);
     let bytes = read_guarded(&file, 32768, deadline);
     let slot = owner.files.len();
@@ -2475,7 +2578,7 @@ fn native_case(
             );
         }
         "N07" => {
-            let file = open_guarded(&path, deadline);
+            let file = open_guarded(&path, deadline, AdmissionRole::SharingControl);
             assert!(
                 file_id(&file, deadline) == original.identity,
                 "held leaf identity changed"
