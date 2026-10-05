@@ -288,6 +288,8 @@ async fn history_active_public_lifecycle_http() {
         token: checked(locron_server::token::ensure(&paths)),
         bound_port: 10824,
     };
+    // Complete the permanent lock probe before the physical observation boundary.
+    checked(locron_store::DaemonLock::try_prove_free(&paths.daemon_lock));
     assert_eq!(checked(writer.count_runs(Some(JOB))), 1319);
     assert_eq!(checked(writer.active_runs_for_job(JOB, 0)).0, 114);
     drop(writer);
