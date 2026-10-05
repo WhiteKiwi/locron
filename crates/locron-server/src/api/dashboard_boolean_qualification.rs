@@ -1951,19 +1951,105 @@ struct BuildFacts {
     controller: Option<BuiltArtifact>,
 }
 
-fn open_artifact(path: &Path) -> Check<GuardedFile> {
+#[derive(Clone, Copy)]
+enum ArtifactRole {
+    Store,
+    Controller,
+    Server,
+}
+
+#[cfg(windows)]
+impl ArtifactRole {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Store => "store_artifact",
+            Self::Controller => "controller_artifact",
+            Self::Server => "server_artifact",
+        }
+    }
+}
+
+#[cfg(windows)]
+fn admission_kind(kind: std::io::ErrorKind) -> &'static str {
+    use std::io::ErrorKind;
+    match kind {
+        ErrorKind::NotFound => "NotFound",
+        ErrorKind::PermissionDenied => "PermissionDenied",
+        ErrorKind::AlreadyExists => "AlreadyExists",
+        ErrorKind::WouldBlock => "WouldBlock",
+        ErrorKind::TimedOut => "TimedOut",
+        ErrorKind::Interrupted => "Interrupted",
+        ErrorKind::InvalidData => "InvalidData",
+        ErrorKind::InvalidInput => "InvalidInput",
+        ErrorKind::WriteZero => "WriteZero",
+        ErrorKind::Unsupported => "Unsupported",
+        ErrorKind::Other => "Other",
+        ErrorKind::ConnectionReset => "ConnectionReset",
+        _ => "unrecognized",
+    }
+}
+
+#[cfg(windows)]
+struct OptionalNumber<T>(Option<T>);
+
+#[cfg(windows)]
+impl<T: std::fmt::Display> std::fmt::Display for OptionalNumber<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Some(value) => std::fmt::Display::fmt(value, formatter),
+            None => formatter.write_str("none"),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn guard_refusal_fields(
+    error: &std::io::Error,
+) -> (&'static str, &'static str, Option<u32>, Option<u32>) {
+    #[cfg(all(windows, debug_assertions))]
+    if let Some(observation) = locron_core::filesystem::guard_refusal_observation(error) {
+        return (
+            observation.object(),
+            observation.predicate(),
+            observation.chain_index(),
+            observation.ace_index(),
+        );
+    }
+    #[cfg(not(all(windows, debug_assertions)))]
+    let _ = error;
+    ("unobserved", "unobserved", None, None)
+}
+
+#[cfg(windows)]
+fn artifact_refusal(error: &std::io::Error, role: ArtifactRole) {
+    let (object, predicate, chain, ace) = guard_refusal_fields(error);
+    eprintln!(
+        "fs_admission role={} kind={} raw={} object={object} predicate={predicate} chain={} ace={}",
+        role.label(),
+        admission_kind(error.kind()),
+        OptionalNumber(error.raw_os_error()),
+        OptionalNumber(chain),
+        OptionalNumber(ace),
+    );
+}
+
+fn open_artifact(path: &Path, role: ArtifactRole) -> Check<GuardedFile> {
+    #[cfg(unix)]
+    let _ = role;
     #[cfg(windows)]
-    let file = locron_core::filesystem::read_owned_executable(path)
-        .map_err(|_| "owned candidate executable refused")?;
+    let file = locron_core::filesystem::read_owned_executable(path).map_err(|error| {
+        artifact_refusal(&error, role);
+        "owned candidate executable refused"
+    })?;
     #[cfg(unix)]
     let file = locron_core::filesystem::open_read_no_follow(path)
         .map_err(|_| "candidate executable refused")?;
     Ok(file)
 }
 
-fn binding(fact: &BuiltArtifact) -> Check<(Artifact, GuardedFile)> {
+fn binding(fact: &BuiltArtifact, role: ArtifactRole) -> Check<(Artifact, GuardedFile)> {
     // Admit the passed compiler path before canonicalizing its native spelling.
-    let file = open_artifact(&fact.path)?;
+    let file = open_artifact(&fact.path, role)?;
     let path = fs::canonicalize(&fact.path).map_err(|_| "actual compiler artifact missing")?;
     require(
         fact.path.is_absolute() && !fact.package_id.is_empty() && !fact.target_kind.is_empty(),
@@ -2818,9 +2904,12 @@ async fn qualification() -> Check<()> {
             #[cfg(windows)]
             {
                 let (cause, chain_index) = facts_refusal_projection(&error, &facts_path);
+                let (object, predicate, chain, ace) = guard_refusal_fields(&error);
                 eprintln!(
-                    "PR144 facts admission failed: kind={kind} raw={:?} cause={cause} chain_index={chain_index:?}",
-                    error.raw_os_error()
+                    "PR144 facts admission failed: kind={kind} raw={:?} cause={cause} chain_index={chain_index:?} role=build_facts object={object} predicate={predicate} chain={} ace={}",
+                    error.raw_os_error(),
+                    OptionalNumber(chain),
+                    OptionalNumber(ace),
                 );
             }
             #[cfg(not(windows))]
@@ -2862,7 +2951,7 @@ async fn qualification() -> Check<()> {
             && facts.store.package_id.contains("locron-store"),
         "Store compiler artifact selector mismatch",
     )?;
-    let (store, store_guard) = binding(&facts.store)?;
+    let (store, store_guard) = binding(&facts.store, ArtifactRole::Store)?;
     let (controller, controller_guard) = if cfg!(windows) {
         let fact = facts
             .controller
@@ -2874,7 +2963,7 @@ async fn qualification() -> Check<()> {
                 && fact.package_id.contains("locron"),
             "native example compiler selector mismatch",
         )?;
-        let (binding, guard) = binding(fact)?;
+        let (binding, guard) = binding(fact, ArtifactRole::Controller)?;
         (Some(binding), Some(guard))
     } else {
         require(
@@ -2887,7 +2976,7 @@ async fn qualification() -> Check<()> {
         std::env::current_exe().map_err(|_| "actual Server test artifact missing")?,
     )
     .map_err(|_| "Server artifact canonicalization failed")?;
-    let server_guard = open_artifact(&executable)?;
+    let server_guard = open_artifact(&executable, ArtifactRole::Server)?;
     let server = Artifact {
         path: executable,
         identity: identity(&server_guard)?,
