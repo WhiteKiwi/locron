@@ -163,4 +163,9 @@ Issues146/149/152 and coordination163 continue the selected three-argument genui
 
 ## Group B CI native identity Verify continuation — 2026-10-05
 
-Owning146/149/152 and coordination163 retain their complete qualification and ordered completion scope. planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md selects a narrow runner-side read-only identity routine after rejecting fstat-only fallback evidence. Verify all nine frozen Source bytes and unchanged49/58/94; exact owning POST/GET ALL followed by Root entire final reread; complete known-handle/two-hash/old CI inverses; then genuine same-head94/96/state/native gates and full paired provenance before closure.
+Owning146/149/152 and coordination163 retain their complete qualification and ordered completion scope. planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md selects a narrow runner-side read-only identity routine after rejecting fstat-only fallback evidence. Verify all nine frozen Source bytes and unchanged49/58/94; exact owning POST/GET ALL followed by Root entire amended-plan review and exact previously reviewed authority reuse; complete known-handle/two-hash/old CI inverses; then genuine same-head94/96/state/native gates and full paired provenance before closure.
+
+
+## Group B binding JSON execution scope — 2026-10-05
+
+Owning146/149/152 and coordination163 continue the amended GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md. Verify the fixed32768-byte closed JSON producer/receiver observation with genuine two-owner full identity/hash/closure and exact original executable-reader/49/58/94/96/state/native3 preservation. All four exact Issue readbacks and final changed-plan review with exact unchanged-evidence reuse precede Source. Actual same-head required CI/native/full-paired/current-base publication remains pending; member and wider acceptance issues remain open.

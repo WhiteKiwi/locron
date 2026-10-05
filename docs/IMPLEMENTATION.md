@@ -5481,4 +5481,9 @@ Follow the selected creator/writer/artifact/production-child supplement only aft
 
 ## Group B runner artifact reader continuation — 2026-10-05
 
-After all owning146/149/152/163 exact GETs and Root entire49/58/new plan/all94 reread, resume the original nine-path developer with the narrow inline CI ctypes/msvcrt read-only metadata exception. Preserve the fixture parent's no-FFI policy, original descriptor fields/CargoJSON/managed-path admission, same-pending FI07 and N07 recovery, full old96/state/native3 and every clock/gate. No new helper file, dependency, Python floor, public API or local native execution is selected. Full Source/ownership/old CI inverses and actual same-head acceptance remain required.
+After all owning146/149/152/163 exact GETs and Root entire final amended-plan review with exact original49/58/all94 proof reuse, resume the original nine-path developer with the narrow inline CI ctypes/msvcrt read-only metadata exception. Preserve the fixture parent's no-FFI policy, original descriptor fields/CargoJSON/managed-path admission, same-pending FI07 and N07 recovery, full old96/state/native3 and every clock/gate. No new helper file, dependency, Python floor, public API or local native execution is selected. Full Source/ownership/old CI inverses and actual same-head acceptance remain required.
+
+
+## Group B fixed binding JSON continuation — 2026-10-05
+
+Follow the amended GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md only after all146/149/152/163 exact GETs and Root entire amended-plan review. Reuse the completed full49/58/94 review only when every original byte remains exact; any drift requires a full changed review. The original nine-path developer uses a distinct fixed32768-byte JSON observation with two retained full-identity owners, strict closed fields, complete bytes/hash and known closure, while preserving all executable ABI checks, old qualification and clocks. No arbitrary reader mode, new helper/dependency/public API or local execution is selected.

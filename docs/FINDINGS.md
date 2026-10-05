@@ -5705,3 +5705,8 @@ Actual Store open takes StatePaths/version/now; tempfile ownership does not impl
 ## Group B CI full native identity admission — 2026-10-05
 
 Actual CPython3.12.7 can report successful Windows stat after FileIdInfo failure with lower-resolution fallback. Root reviewed the nonexecuted ten-entry packet and exact Core/locked SDK/CPython ranges. Select only the fixed CI artifact reader's successful full FileIdInfo/regular no-reparse retained handle, two complete hashes and exact owner-transfer/close proof; a version floor is insufficient. All native/layout/timing behavior remains unmeasured. Full scope, finite bounds and Verify are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.
+
+
+## Group B retained binding JSON observation — 2026-10-05
+
+The fixed binding record is JSON and cannot pass an executable ABI decoder. The nonexecuted candidate preserves all five artifact reader bodies, reuses their genuine retained native owners, and independently caps JSON at32768 bytes before parsing with duplicate-key/closed-schema checks and two full observations. Root checked the five-entry packet and frozen Source/CI bytes; native/layout/cost remains unmeasured. The explicit selected bounds and exact unchanged-evidence reuse are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.
