@@ -5445,3 +5445,23 @@ After owning146/149/152/163 exact readbacks and Root entire final plan/ledger af
 ## Engine output qualification on reviewed main (2026-10-05)
 
 Continue the frozen SPEC/STORAGE and original streaming-repair plan under Issue146. Follow the complete ENGINE_OUTPUT_QUALIFICATION_2026-10-05.md and byte-exact shared96-key JSON ledger: normally integrate reviewed main f90a9d5dc2e6bafbc163567b333c398777647402 before Source with whole document-component inverses, preserve GuardedFile ownership and the literal scanner, add the three private Engine seams/modules and an additive hosted CI receipt step only. The six steps include concrete Verify for fixed42/43 functional controls, three owned-child Linux memory rows with immutable180/30/5/3-second clocks and fixed16/96MiB thresholds, actual Cargo JSON artifact identity and bounded uncaptured key/metric evidence, full Source/inverse/protected-mode review, fresh strict hosted/native/paired gates and oldest-first publication. Exact Issue readback and whole final-plan reread precede the separate development lease. Compiler/runtime/native execution stays hosted, original commands/conditions/clocks/Cargo/source policies remain, and both output PR merges plus all Verify criteria are required before closing146.
+
+
+### Root XDG child-command regression continuation before Source (2026-10-04)
+
+Follow planning/XDG_STATE_WITHOUT_HOME.md after exact Issue152 readback and final
+Root review. Integrate actual main9de and preserve paths.rs6a26 exactly. Adapt
+only the existing Unix state_discovery test module: isolated child env, independent
+byte-preserving expected paths, dry-run no-state before actual live DB placement,
+Linux matrix and real macOS/override policies. No global env/dependency/workflow
+change; actual new head Linux/macOS and unchanged Windows required gates qualify.
+
+
+## PR153 measured macOS/lint amendment before separate Source (2026-10-04)
+
+Follow planning/XDG_MACOS_RAW_STATE_REFUSAL_2026-10-04.md after exact Issue152 readback and final committed Root review. Only new cli.rs state_discovery additions adapt: one private platform helper at three raw-byte call sites, genuine macOS JSON refusal and valid owned-parent empty enumeration; Linux retains successful original helper/DB placement. Fix only the measured new assertion message while preserving its predicate. Preserve original tests, whole paths.rs6a26, all other production/Windows/dependency/workflow Source. Full inverses and permitted static checks precede fresh actual Linux/macOS/native Windows/strict required CI; unchanged filtered standalone workflows are honestly NOT RUN with exact qualified-main dependency binding.
+
+
+## PR153 exact-main Git-only handoff (2026-10-05)
+
+Follow the complete docs/planning/PR153_MAIN_F90_INTEGRATION_2026-10-05.md after exact owning Issue Verify readback and final committed Root reread. One ordinary merge of the selected Docs tip and exactf90 preserves whole incoming native Source/CI and reviewed own Source/plans. Full tree/Source/Doc inverses and permitted static checks precede ordinary publication and actual changed-head qualification; skipped/unreached/failed native or own tests cannot be counted as PASS. No Source adaptation, unrelated PR import, rerun or permission waiver is selected.

@@ -5666,3 +5666,25 @@ Source-backed147/148/150/151/153/154 projection preserves whole contributions bu
 ## Engine output qualification on reviewed main (2026-10-05)
 
 Refs #146 / PR148. Root reread the complete original411-line Engine module and separate read-only pre-development handoff. The unchanged96-key ledger selects Engine common41 plus Unix1/Windows2, yielding42/43 functional controls; the three Linux memory rows produce45Linux/42macOS/43Windows and Engine47 union. Earlier43/44 wording was a handoff count error, not a new case. The File-typed collector wrapper is necessary to retain GuardedFile deref coercion while the private generic collector shares the literal scanner. Default libtest success output is captured, so ordinary suite totals alone cannot establish fixed keys or real VmHWM numbers. The new committed ENGINE_OUTPUT_QUALIFICATION_2026-10-05.md selects an additive hosted CI receipt step and preserved native/Unix artifact outputs before Source; this supersedes the prep's no-CI lease only for that bounded addition. All new controls and memory metrics remain unmeasured, and separate Store success is not Engine acceptance.
+
+
+### Root isolated XDG/HOME discovery research (2026-10-04)
+
+Separate104-artifact Source research and Root proof15d9ba7a establish that
+head6a26 selects nonempty Linux XDG before HOME fallback, while the complete
+macOS/Windows branches, override policies and old tests remain exact. Existing
+three CLI discovery cases do not qualify the HOME/XDG matrix or invalid-byte
+path selection. Actual ServiceContext still has separate HOME requirements.
+Select only genuine child-command discovery regressions and exact actual main9de
+in planning/XDG_STATE_WITHOUT_HOME.md before separate development; no old CI
+metadata is new acceptance.
+
+
+## PR153 actual macOS raw-state refusal before further Source (2026-10-04)
+
+Actual CI37207052645 at1ba658 ran Linux10/10 on all three rows but macOS6/9 on both rows: three raw-byte live config calls returned exit5/EILSEQ92 after dry-run, then their success assertions failed. Post-refusal state checks were unexecuted. Unix lint separately rejects only a new Debug-path assertion message. Root327-artifact actual proof21b8e38e and separate105-artifact refinement proof96953e16 preserve the observed facts and unknown native primitive/filesystem. The original6a26 macOS semantics are unchanged but its refactored raw block differs from incoming main. Follow planning/XDG_MACOS_RAW_STATE_REFUSAL_2026-10-04.md; use actual JSON refusal and successful valid-parent empty enumeration, keeping Linux successful placement and whole production Source unchanged.
+
+
+## PR153 full incoming f90 compatibility before Git integration (2026-10-05)
+
+Separate read-only research and independent Root proof 05a6e83fc5554d0da7c349eb9db8ae4556fee4ba09093b88987d444d8b56798a select normal exactf90 integration with no Source adaptation. Preserve complete incoming FINDINGS/IMPLEMENTATION as authoritative prefixes and append only reviewed own/new components once; incoming native histories are not a guessed common9de suffix. Actual mainf90 native22PASS2FAIL remains failed, while the selected own HTTP/macOS Source has not gained new hosted acceptance. Full scope and every Verify are in docs/planning/PR153_MAIN_F90_INTEGRATION_2026-10-05.md.
