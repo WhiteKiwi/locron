@@ -251,11 +251,23 @@ jobs:
               ROOT.mkdir()
               _, host = native_host()
               selected_revision, checkout = revision()
-              production_target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "locron-prune-production-target"
+              local = os.environ.get("LOCALAPPDATA", "")
+              require(bool(local) and pathlib.Path(local).is_absolute() and not any(char in local for char in "\r\n\0"), "absolute-local-build-root")
+              identifiers = [os.environ.get(name, "") for name in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB")]
+              row = "${{ matrix.platform }}-${{ matrix.rust }}"
+              patterns = (r"[0-9]+", r"[0-9]+", r"[A-Za-z0-9_-]+", r"[A-Za-z0-9_.-]+")
+              require(all(re.fullmatch(pattern, value) is not None for pattern, value in zip(patterns, [*identifiers, row])), "local-build-identifiers")
+              namespace = pathlib.Path(local) / ("locron-guard-b-" + "-".join([*identifiers, row]))
+              namespace.mkdir()
+              production_target = namespace / "production-target"
               require(production_target.is_absolute() and not production_target.exists(), "fresh-production-target")
               production_target.mkdir()
               copied = os.environ.copy()
               copied["CARGO_TARGET_DIR"] = str(production_target)
+              recovery_target = namespace / "recovery-target"
+              recovery_target.mkdir()
+              recovery_environment = os.environ.copy()
+              recovery_environment["CARGO_TARGET_DIR"] = str(recovery_target)
               production_metadata = metadata("production-metadata", copied)
               require(pathlib.Path(production_metadata["target_directory"]).resolve(strict=True) == production_target.resolve(strict=True), "production-target-binding")
               status, messages, _ = invoke(["cargo", "build", "-p", "locron", "--bin", "locron", "--locked", "--message-format=json", "--target-dir", str(production_target)], "production-build", copied)
@@ -263,10 +275,11 @@ jobs:
               production = artifact(messages, package(production_metadata, "locron"), "locron", "bin", False)
               production_path = pathlib.Path(production["executable"])
               require(production_path.parent.name == "debug" and production_path.parent.parent.resolve(strict=True) == production_target.resolve(strict=True), "default-production-placement")
-              tests_metadata = metadata("recovery-metadata")
+              tests_metadata = metadata("recovery-metadata", recovery_environment)
               test_target = pathlib.Path(tests_metadata["target_directory"]).resolve()
+              require(test_target.resolve(strict=True) == recovery_target.resolve(strict=True), "recovery-target-binding")
               require(test_target != production_target.resolve(strict=True), "separate-test-target")
-              status, messages, _ = invoke(["cargo", "test", "-p", "locron", "--bin", "locron", "--locked", "--no-run", "--message-format=json"], "recovery-build")
+              status, messages, _ = invoke(["cargo", "test", "-p", "locron", "--bin", "locron", "--locked", "--no-run", "--message-format=json", "--target-dir", str(recovery_target)], "recovery-build", recovery_environment)
               require(status == 0, "recovery-build-status")
               recovery = artifact(messages, package(tests_metadata, "locron"), "locron", "bin", True)
               recovery_path = pathlib.Path(recovery["executable"])
@@ -289,6 +302,7 @@ jobs:
               with pathlib.Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as stream:
                   stream.write("LOCRON_PRUNE_TEST_BINARY=" + prod["path"] + "\n")
                   stream.write("LOCRON_PRUNE_RECOVERY_TEST_BINARY=" + rec["path"] + "\n")
+                  stream.write("LOCRON_PRUNE_RECOVERY_CARGO_TARGET_DIR=" + str(recovery_target) + "\n")
               receipt = {"revision": selected_revision, "checkout": checkout, "native_host": host, "production_artifact": production, "recovery_artifact": recovery, "production_identity": prod_id, "recovery_identity": rec_id, "production_target": str(production_target), "test_target": str(test_target), "binding_sha256": binding_sha, "binding_identity": binding_id}
               (ROOT / "producer.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
               print("prune-artifact-binding PASS production=1 recovery=1")
@@ -304,9 +318,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify durable store and runtime library contracts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
-        run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
+        env:
+          CARGO_TARGET_DIR: ${{ env.LOCRON_PRUNE_RECOVERY_CARGO_TARGET_DIR }}
+        run: |
+          python -c "import os, pathlib, sys; value = os.environ.get('CARGO_TARGET_DIR', ''); sys.exit(0 if value and pathlib.Path(value).is_absolute() else 'missing or relative qualification target')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
       - name: Qualify retained Engine output and bounded repair receipts
         env:
+          CARGO_TARGET_DIR: ${{ env.LOCRON_PRUNE_RECOVERY_CARGO_TARGET_DIR }}
           ENGINE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
           ENGINE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: pwsh
@@ -497,6 +517,8 @@ jobs:
               event = os.environ["GITHUB_EVENT_NAME"]
               require(event in ("pull_request", "push", "workflow_dispatch"), "known-checkout-event")
               require((len(parents) == 2 and parents.count(head) == 1 and head != revision) if event == "pull_request" else head == revision, "actual-head-checkout-parent-binding")
+              selected_target = os.environ.get("CARGO_TARGET_DIR", "")
+              require(bool(selected_target) and pathlib.Path(selected_target).is_absolute(), "forwarded-recovery-target-input")
               status, data = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], "metadata")
               require(status == 0, "metadata-status")
               metadata = json.loads(data)
@@ -514,6 +536,7 @@ jobs:
               artifact = artifacts[0]
               executable = pathlib.Path(artifact["executable"]).resolve(strict=True)
               target = pathlib.Path(metadata["target_directory"]).resolve(strict=True)
+              require(target == pathlib.Path(selected_target).resolve(strict=True), "forwarded-recovery-target-binding")
               relative = executable.relative_to(target)
               retained_engine_facts = retained_artifact_facts(pathlib.Path(artifact["executable"]), expected_host)
               facts = executable_facts(executable, expected_host)
@@ -590,6 +613,7 @@ jobs:
       - name: Qualify explicit output prune and same-pending recovery receipts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         env:
+          CARGO_TARGET_DIR: ${{ env.LOCRON_PRUNE_RECOVERY_CARGO_TARGET_DIR }}
           PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
           PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           PRUNE_QUALIFICATION_STAGE: prune-receiver
@@ -756,8 +780,11 @@ jobs:
               prod, prod_id = facts(production_path, host)
               rec, rec_id = facts(recovery_path, host)
               bind_again(binding, host)
+              selected_target = os.environ.get("CARGO_TARGET_DIR", "")
+              require(bool(selected_target) and pathlib.Path(selected_target).is_absolute(), "forwarded-recovery-target-input")
               data = metadata("scoped-metadata")
               target = pathlib.Path(data["target_directory"]).resolve(strict=True)
+              require(target == pathlib.Path(selected_target).resolve(strict=True), "forwarded-recovery-target-binding")
               recovery_path.resolve(strict=True).relative_to(target)
               status, messages, _ = invoke(["cargo", "test", "-p", "locron-server", "--lib", "--locked", "--no-run", "--message-format=json"], "server-build")
               require(status == 0, "server-build-status")

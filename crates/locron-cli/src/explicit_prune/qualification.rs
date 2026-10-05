@@ -169,6 +169,7 @@ fn need<T, E>(result: Result<T, E>, phase: &'static str) -> T {
     }
 }
 
+#[track_caller]
 fn check(deadline: Instant) {
     assert!(
         Instant::now() < deadline,
