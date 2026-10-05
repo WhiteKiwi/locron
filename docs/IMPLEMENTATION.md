@@ -5473,3 +5473,7 @@ Follow GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md after exact146/149/152/163 GE
 ## Group B actual selector handoff correction — 2026-10-05
 
 Use the actual api::prune_output::qualification::contracts name under the GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md correction after exact owning GET and Root complete final reread. No Source scope or clock/gate/test count changes; retain CLI prune_qualification::contracts and all original qualification.
+
+## Group B dependent admission handoff — 2026-10-05
+
+Follow the selected creator/writer/artifact/production-child supplement only after all four owning exact GETs and Root full final reread. Preserve six Source WIP blobs and all original49/94/96/state/native3. Use actual three-argument Store creator on the genuinely absent normalized child, retain its writer through raw oracle, independently bind the fixed CI record, and use only existing Core-owned closed Windows production/recovery invocations before capture reads. The9-path/API/dependency/clock/gate scope is unchanged; complete branch union size and full ownership inverses precede publication. Unsupported or material choices return to Docs first.

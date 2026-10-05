@@ -5696,3 +5696,7 @@ Actual production daemon entry changes lifetime/reconciliation; its executable a
 ## Group B actual qualification module name — 2026-10-05
 
 Actual Server lib.rs13/api.rs47 module declarations yield api::prune_output::qualification::contracts, rather than the original plan’s filename-based selector. Correct the selected CI/receipt name before dependent Source; preserve module declarations/paths and original49/94 bytes. Zero matched tests remain failure.
+
+## Group B creator, writer and production-child proof admission — 2026-10-05
+
+Actual Store open takes StatePaths/version/now; tempfile ownership does not imply Core privacy. The read-only proposal c12f3540f4b0a8ebc404fa6c10d1ac8cc3a05078748c9de91213266687e883ac selects an absent canonical state child with retained prefix admission before the real Store creator, retained actual initializing writer/no-CREATE raw oracle, and a strict fixed CI artifact record. Production CLI root reap alone is not Job-empty; use the same existing Core-owned fixed adapter with closed production/recovery operations and original genuine completion/capture clocks. Full finite schema, ownership and Verify are in GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md. New APIs/native/SQLite behavior and costs remain unmeasured.
