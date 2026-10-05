@@ -195,23 +195,71 @@ pub fn read_frames(path: impl AsRef<Path>) -> io::Result<Vec<Frame>> {
     read_valid_frames(&mut file).map(|(frames, _)| frames)
 }
 
-/// Truncates an interrupted file after the last complete valid frame.
+/// Truncates an inactive interrupted file after the last complete valid frame.
+/// Repair retains one bounded payload at a time, not the complete log in memory.
+/// Caller quiescence is still required; length checks do not exclude active writers.
 pub fn repair_partial(path: impl AsRef<Path>) -> io::Result<OutputStats> {
     let mut file = locron_core::filesystem::open_private(
         path.as_ref(),
         std::fs::OpenOptions::new().read(true).write(true),
     )?;
-    let (frames, valid_len) = read_valid_frames(&mut file)?;
-    file.set_len(valid_len)?;
-    file.sync_all()?;
+    repair_opened(&mut *file)
+}
+
+trait RepairFile: Read + Seek {
+    fn repair_len(&mut self) -> io::Result<u64>;
+    fn repair_set_len(&mut self, len: u64) -> io::Result<()>;
+    fn repair_sync(&mut self) -> io::Result<()>;
+}
+
+impl RepairFile for std::fs::File {
+    fn repair_len(&mut self) -> io::Result<u64> {
+        self.metadata().map(|metadata| metadata.len())
+    }
+
+    fn repair_set_len(&mut self, len: u64) -> io::Result<()> {
+        self.set_len(len)
+    }
+
+    fn repair_sync(&mut self) -> io::Result<()> {
+        self.sync_all()
+    }
+}
+
+fn repair_opened(file: &mut impl RepairFile) -> io::Result<OutputStats> {
+    let original = file.repair_len()?;
+    let (valid_len, retained_bytes) = scan_valid_frames(file, drop)?;
+    if valid_len > original || file.repair_len()? != original {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "output file length changed during repair",
+        ));
+    }
+    file.repair_set_len(valid_len)?;
+    file.repair_sync()?;
     Ok(OutputStats {
-        retained_bytes: frames.iter().map(|frame| frame.payload.len() as u64).sum(),
+        retained_bytes,
         physical_bytes: valid_len,
         ..OutputStats::default()
     })
 }
 
 fn read_valid_frames(file: &mut std::fs::File) -> io::Result<(Vec<Frame>, u64)> {
+    collect_valid_frames(file)
+}
+
+fn collect_valid_frames(file: &mut (impl Read + Seek)) -> io::Result<(Vec<Frame>, u64)> {
+    let mut frames = Vec::new();
+    let (valid_len, _) = scan_valid_frames(file, |frame| frames.push(frame))?;
+    Ok((frames, valid_len))
+}
+
+/// Returns the valid physical prefix and payload count without retaining prior frames.
+/// Only actual short reads and the existing parser-detected tail failures end a scan.
+fn scan_valid_frames(
+    file: &mut (impl Read + Seek),
+    mut consume: impl FnMut(Frame),
+) -> io::Result<(u64, u64)> {
     let mut magic = [0_u8; 8];
     file.read_exact(&mut magic)?;
     if &magic != MAGIC {
@@ -220,7 +268,8 @@ fn read_valid_frames(file: &mut std::fs::File) -> io::Result<(Vec<Frame>, u64)> 
             "invalid output magic",
         ));
     }
-    let mut frames = Vec::new();
+    let mut next_sequence = 0_u64;
+    let mut retained_bytes = 0_u64;
     let mut valid_len = MAGIC.len() as u64;
     loop {
         let mut header = [0_u8; FRAME_HEADER_LEN];
@@ -238,17 +287,29 @@ fn read_valid_frames(file: &mut std::fs::File) -> io::Result<(Vec<Frame>, u64)> 
             break;
         }
         let mut payload = vec![0_u8; length];
-        if file.read_exact(&mut payload).is_err() {
-            break;
+        match file.read_exact(&mut payload) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(error) => return Err(error),
         }
         let mut checksum = Hasher::new();
         checksum.update(&header[..21]);
         checksum.update(&payload);
-        if checksum.finalize() != expected_crc || sequence != frames.len() as u64 {
+        if checksum.finalize() != expected_crc || sequence != next_sequence {
             break;
         }
-        valid_len = valid_len.saturating_add(FRAME_HEADER_LEN as u64 + length as u64);
-        frames.push(Frame {
+        next_sequence = next_sequence.checked_add(1).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "output frame count overflow")
+        })?;
+        retained_bytes = retained_bytes.checked_add(length as u64).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "output payload count overflow")
+        })?;
+        valid_len = valid_len
+            .checked_add(FRAME_HEADER_LEN as u64 + length as u64)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "output file length overflow")
+            })?;
+        consume(Frame {
             channel,
             sequence,
             elapsed_micros,
@@ -256,8 +317,14 @@ fn read_valid_frames(file: &mut std::fs::File) -> io::Result<(Vec<Frame>, u64)> 
         });
     }
     file.seek(SeekFrom::Start(valid_len))?;
-    Ok((frames, valid_len))
+    Ok((valid_len, retained_bytes))
 }
+
+#[cfg(test)]
+mod qualification;
+
+#[cfg(all(test, target_os = "linux"))]
+mod memory;
 
 #[cfg(test)]
 mod tests {
