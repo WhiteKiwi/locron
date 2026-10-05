@@ -2980,8 +2980,8 @@ impl CleanupRecord {
             _ => false,
         };
         let duration_valid = if event == CleanupEvent::Return {
-            (self.duration_us <= CALL_TIME_US || self.duration_us == CLEANUP_UNKNOWN_DURATION)
-                && (self.clock == 1 || self.duration_us == CLEANUP_UNKNOWN_DURATION)
+            self.duration_us == CLEANUP_UNKNOWN_DURATION
+                || (self.duration_us <= CALL_TIME_US && self.clock == 1)
         } else {
             self.duration_us == 0
         };
@@ -3749,6 +3749,11 @@ impl Drop for CaseAdmission {
     }
 }
 
+enum CleanupObservation {
+    Unclaimed,
+    Claimed,
+}
+
 struct Owner {
     control: Arc<Control>,
     state: Option<PrivateState>,
@@ -3769,7 +3774,7 @@ struct Owner {
     uncertain_cleanup: bool,
     call_context: CallContext,
     paired: PairedCapture,
-    cleanup_observed: bool,
+    cleanup_observed: CleanupObservation,
     #[cfg(debug_assertions)]
     producers: Producers,
     #[cfg(debug_assertions)]
@@ -3799,7 +3804,7 @@ impl Owner {
             uncertain_cleanup: false,
             call_context: CallContext::new(),
             paired: PairedCapture::empty(),
-            cleanup_observed: false,
+            cleanup_observed: CleanupObservation::Unclaimed,
             #[cfg(debug_assertions)]
             producers: Producers::empty(),
             #[cfg(debug_assertions)]
@@ -5245,10 +5250,10 @@ impl Owner {
         drop(self.guard.take());
         cleanup_gate(&self.control)?;
         self.control.observations.intent(Operation::DropState);
-        let cleanup_entry = if self.cleanup_observed {
+        let cleanup_entry = if matches!(self.cleanup_observed, CleanupObservation::Claimed) {
             None
         } else {
-            self.cleanup_observed = true;
+            self.cleanup_observed = CleanupObservation::Claimed;
             let entered = Instant::now();
             self.control
                 .cleanup
