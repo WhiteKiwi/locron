@@ -164,12 +164,12 @@ jobs:
                       "package_id":package_id, "target_kind":item["target"]["kind"],
                       "profile_test":test, "features":item["features"]}
 
-          store = artifact(["cargo", "test", "-p", "locron-store", "--lib", "--no-run", "--locked", "--message-format=json"],
-                           package("locron-store"), "lib", "locron_store", True)
           controller = None
           if os.name == "nt":
               controller = artifact(["cargo", "build", "-p", "locron", "--example", "dashboard_pr144_wake_fixture", "--locked", "--message-format=json"],
                                     package("locron"), "example", "dashboard_pr144_wake_fixture", False)
+          store = artifact(["cargo", "test", "-p", "locron-store", "-p", "locron-engine", "-p", "locron-server", "--lib", "--no-run", "--locked", "--message-format=json"],
+                           package("locron-store"), "lib", "locron_store", True)
           checkout = command(["git", "rev-parse", "HEAD"]).strip()
           assert len(checkout) == 40
           parent = build_parent if os.name == "nt" else pathlib.Path(tempfile.mkdtemp(prefix="locron-pr144-build-", dir=os.environ["RUNNER_TEMP"]))
