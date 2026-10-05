@@ -238,3 +238,60 @@ Stable manual semantics and static formatting are not Rust1.98/native acceptance
    handles/Job/heartbeats/capture/guard-release proofs plus original required gates must
    pass. Preserve failed b4c422 lint and three cold-gate failures as measured history;
    no unchanged-head rerun, prior PASS transfer, skip, allowance or relaxed clock.
+
+## Hosted lib-test syntax correction (2026-10-06)
+
+Actual d89cd3e122d2de9aa2703fded3ac8027962e4715 CI37346840859/attempt1 Windows lint
+111887419929 completed FAILURE. Its one-GET CSI-only lines422-459 report ONLY two
+locron-core lib-test errors: manual_assert_eq at loader_tests.rs179's new zero-PID
+assertion, and elidable_lifetime_names at windows.rs812-815's immediate_sid_reply helper.
+Earlier production receiver lint is no longer reported in the checked lib stage419-421.
+Raw SHA256 cf1660737a05e9d5fba7f4a049624eb4b6ab087ddfafc2f86f4870eb34ac416a;
+CSI-only SHA256 e23573a6b5e040add78cf1aee878caf6af7d80b843fc244c6c2d6576ac55b2ec.
+Root snapshot2 reports10 ordinary metadataPASS/1FAIL/2optionalSKIP/5pending; the three
+native and two package jobs are pending in that snapshot. These are lint observations,
+not native SID/containment/Wake/Cancel/package acceptance. Preserve both earlier failed
+runs and their actual unrun scopes; no earlier PASS transfers to this changed head.
+Root's later snapshot3 metadata shows all three rows progressed through Core/stock modes
+into registered service semantics. Stable/MSRV have no failed step at that snapshot;
+ARM's native CLI cancellation-ownership step is marked failure while jobs are running.
+Completed raw qualification of actual137/native-selector/Cancel outcomes is not available
+in this draft. ARM cause remains UNKNOWN; step progress is not complete runtime PASS.
+
+Select ONLY loader_tests.rs's new zero-PID assertion syntax as
+assert_eq!(super::filesystem_worker::observed_pid(), 0). Its predicate remains identical;
+only integer PID values can enter the failure message, never SID/path values. Keep all
+native-first, genuine same-deadline stock request, fixed Boolean identity and original
+elapsed/positive-PID/marker statements literal. No assertion is removed or relaxed.
+
+Select ONLY the cfg(test) immediate_sid_reply signature in windows.rs: remove the <'a>
+binder, replace the input with WorkerPermit<'_> and the output with SidReply<'_>. Its
+(query(), permit) body and every caller remain literal. The one input lifetime still
+binds the returned SAME borrowed permit under the Rust Reference's single-input elision
+rule; no 'static, borrowing API change, lifetime widening or production policy change.
+Root read the [stable manual's assertion rule](https://rust-lang.github.io/rust-clippy/stable/index.html?groups=cargo#manual_assert_eq),
+[stable lifetime rule](https://rust-lang.github.io/rust-clippy/stable/index.html?groups=cargo#elidable_lifetime_names)
+and [Rust Reference lifetime elision](https://doc.rust-lang.org/reference/lifetime-elision.html).
+These are primary semantics references, not Rust1.98 type/native proof; no claim is made
+that the log's versioned1.98 manual pages were read. Actual type/Clippy fit remains hosted.
+
+This latest follow-up changes only windows.rs and loader_tests.rs within the unchanged
+cumulative four-file boundary. Filesystem_worker.rs and loader_crash.rs remain byte-exact
+d89cd3e1, including the generic separate deadline and all parent-exit containment/capture/
+heartbeats/disposal. Preserve every clock, selector, old positive PID, privacy, cache,
+owner/permit, returned-error gate and control. No allowance, new test, dependency, public
+API, workflow, fallback, skip, retry, clock growth or unchanged-head rerun is selected.
+
+1. Root records the complete amended plan before Source. **Verify:** exactly four append-only
+   Docs, all original prefixes and d89cd3e1 Source exact; owning #27/#31/#163 whole-plan
+   POST/exact GET retains original bodies/state. Root then actually rereads the whole
+   final committed plan and new Docs AFTER ALL GETs before separate development resumes.
+2. Apply only these syntax replacements. **Verify:** full staged/unstaged/committed diff;
+   reversing the one assertion replacement and three signature substitutions restores
+   both complete files to d89cd3e1. Independently verify316 Docs-parent entries and314
+   protected modes/blobs. Scoped rustfmt1.94/1.98, locked offline metadata/diff locally;
+   native compilation/Clippy/runtime are NOT RUN on the owner PC.
+3. Root reviews/publishes the genuinely changed head. **Verify:** clean exact parents/tree,
+   fresh warnings-denied Windows lint and all three original/new SID, cold/PID/containment,
+   unchanged downstream and required gates qualify actual results. Preserve failed/optional/
+   pending/unrun scope explicitly; no old PASS/count, Cancel repair or support claim.

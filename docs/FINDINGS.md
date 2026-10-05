@@ -5702,3 +5702,23 @@ parent/observer Child/Job/handle/heartbeat/reader/capture/disposal/guard-release
 original45/30/3s clocks and assertions. This latest scope supersedes the earlier three-file
 boundary: cumulative four paths, follow-up three, filesystem_worker.rs literal b4c422;
 313 other modes/blobs follow from an independently verified316-entry Docs-parent tree.
+
+### Hosted SID lib-test syntax findings (2026-10-06)
+
+Actual d89cd3e1 CI37346840859/1 Windows lint111887419929 CSI-only422-459 reports ONLY
+manual_assert_eq on the new zero-PID assertion and elidable_lifetime_names on the existing
+cfg(test) immediate_sid_reply signature. Production receiver lint is not repeated in the
+checked lib stage419-421. Raw SHA256cf1660737a05e9d5fba7f4a049624eb4b6ab087ddfafc2f86f4870eb34ac416a;
+CSI-only SHA256e23573a6b5e040add78cf1aee878caf6af7d80b843fc244c6c2d6576ac55b2ec.
+Select assert_eq!(observed_pid(),0), exposing only integer PID on failure, and helper
+lifetime elision retaining the SAME single-input borrowed permit in its result. Helper
+body/callers, SID comparisons and original clocks/positive PID/containment remain literal.
+Root read stable Clippy's two manual sections and Rust Reference elision; versioned1.98
+pages/type/runtime are not qualified by those references. Snapshot2 has10 metadataPASS/
+1FAIL/2optionalSKIP/5pending, including all three native/two package jobs pending then.
+Later Root snapshot3 metadata shows all three rows advanced into service after Core/stock,
+with ARM cancellation-ownership step failure while still running; stable/MSRV have no
+failed step at that snapshot. Completed raw actual137/native-selector/Cancel facts remain
+unqualified and ARM cause UNKNOWN. Metadata advancement does not qualify runtime gates.
+No native/cancellation/package outcome follows from the measured lint. Complete amended
+owning plan readbacks and final whole reread precede the two-path syntax Source correction.

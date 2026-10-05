@@ -5470,3 +5470,16 @@ The latest scope supersedes the prior cumulative three-file boundary: four cumul
 paths, only windows.rs/loader_tests.rs/loader_crash.rs follow-up edits, filesystem_worker.rs
 literal b4c422. Require all313 protected mode/blob entries of the actual316-entry Docs
 parent and three full-file inverses before fresh lint/cold/parent-exit/three-row gates.
+
+### SID lib-test syntax-only continuation (2026-10-06)
+
+Follow the complete latest WINDOWS_NATIVE_TOKEN_SID plan: replace only the new zero-PID
+assert with assert_eq! on integer values, and elide only immediate_sid_reply's named
+lifetime into WorkerPermit<'_>/SidReply<'_>. Its literal body/callers return the SAME
+borrowed permit; no lifetime widening/'static, production owner/query/gate or clock change.
+All native-first/stock/PID/privacy and original containment/capture/disposal remain exact;
+filesystem_worker.rs and loader_crash.rs stay d89cd3e1. Owning #27/#31/#163 complete-plan
+GETs and Root whole final reread precede the two-path follow-up. Require complete inverses
+and314 protected entries of the actual316-entry Docs parent, pinned static checks, then
+fresh hosted warnings-denied lint/three-row required gates. Snapshot2's pending native/
+packages and historical failures cannot supply acceptance or a Cancel-fix claim.

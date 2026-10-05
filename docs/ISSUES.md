@@ -201,3 +201,17 @@ the three-file boundary: cumulative four paths, follow-up three, filesystem_work
 unchanged. Verify actual316-entry Docs parent and313 protected modes/blobs, all original
 selectors and three full-file inverses. Fresh hosted parent-exit remains required; an
 unrun gate is not PASS. The same owning whole-plan POST/GET/final reread precedes Source.
+
+### Native SID lib-test syntax Verify (2026-10-06)
+
+Continue #27/#31/#163 under the complete latest plan: actual d89cd3e1 Windows lib-test lint
+has two errors, with native/package jobs pending at snapshot2. Select only integer
+assert_eq! for zero PID and the test-helper's single-input lifetime elision; preserve the
+returned SAME borrowed permit/body, all original clocks/owners/positive PID/privacy and
+parent-exit controls. Complete owning whole-plan POST/GET and Root actual final reread
+precede Source; two full-file inverses and314 protected modes/blobs of316 precede fresh
+lint/native/downstream qualification. No allowances/new tests/skips/old PASS transfer or
+issue closure is implied. Other Source, including fixed worker/crash host, stays d89cd3e1.
+Root's later metadata-only snapshot3 ARM cancellation step failure is cause UNKNOWN;
+completed raw native counts/Cancel outcomes remain unqualified. This syntax selection
+makes no runtime repair or all-gates-PASS claim.
