@@ -159,7 +159,40 @@ impl Fixture {
         let guard =
             locron_core::filesystem::DirectoryGuard::private(&temporary.path().join("private"))
                 .fixed();
-        let store = Store::open(StatePaths::new(guard.normalized_path().into()), "test", 1).fixed();
+        let paths = StatePaths::new(guard.normalized_path().into());
+        #[cfg(unix)]
+        let creator_id = {
+            use std::os::unix::fs::MetadataExt as _;
+            let creator = locron_core::filesystem::create_private_new(&paths.database).fixed();
+            let metadata = creator.metadata().fixed();
+            assert!(
+                metadata.is_file()
+                    && metadata.len() == 0
+                    && locron_core::filesystem::is_private(&paths.database, false).fixed(),
+                "initial qualification database was not private"
+            );
+            let identity = (metadata.dev(), metadata.ino());
+            drop(creator);
+            identity
+        };
+        let store = Store::open(paths, "test", 1).fixed();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            let initialized = locron_core::filesystem::open_private(
+                &store.paths().database,
+                std::fs::OpenOptions::new().read(true),
+            )
+            .fixed();
+            let metadata = initialized.metadata().fixed();
+            assert!(
+                metadata.is_file()
+                    && (metadata.dev(), metadata.ino()) == creator_id
+                    && locron_core::filesystem::is_private(&store.paths().database, false).fixed(),
+                "initialized qualification database identity or privacy changed"
+            );
+            drop(initialized);
+        }
         for (id, name) in [(A, "Ledger Ü %_"), (B, "distinct"), (C, "removed")] {
             store
                 .create_job(&CreateJob {
@@ -441,6 +474,16 @@ fn history_qualification_late_decode_errors_propagate() {
 
 fn snapshot_barrier(active: bool) {
     let fixture = Fixture::new(1205, 114);
+    let mode: String = fixture
+        .store
+        .conn()
+        .fixed()
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .fixed();
+    assert!(
+        mode == "wal",
+        "actual qualification WAL mode was not admitted"
+    );
     for suffix in ["-wal", "-shm"] {
         let path = fixture.store.paths().root.join(format!("state.db{suffix}"));
         assert!(
