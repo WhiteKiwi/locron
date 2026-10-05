@@ -5414,3 +5414,7 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Group E grouped dependency integration — 2026-10-05
 
 Follow GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md under163 after exact readback and Root entire final reread. A separate developer normally conserves all three exact contributions in only CI/Engine manifest/single-lock-package bytes, returns full inverses/protected physical/static proofs, and leaves publication/current-base17ordinary/Guardian/full paired qualification and oldest-first squash/member closure to Root. No local runtime/install/frontend generation or old-head success transfer.
+
+## Group E shared lock scope correction — 2026-10-05
+
+Before integration, reread the corrected entire GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md and this Findings/Implementation correction after exact coordination163 readback. Preserve the originally selected three Source paths/five literal replacements and every other package/manifest/feature; qualify the shared production TLS resolution with fresh whole Engine/HTTP/native gates. No application repair, dependency expansion or local runtime execution is authorized.

@@ -5635,3 +5635,7 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Group E dependency composition findings — 2026-10-05
 
 Exact168/169/170 change only two CI action references and Engine’s dev-only TLS version/single lock package. Primary action/vendor Source and checksummed0.26.4/0.26.6 archives preserve current API/MSRV/features while documenting new checksum/minimum-age and batch-read behavior. Completed individual CI is17/0/2,15/2/2,16/1/2; actual mise/frontend and native TLS positives do not qualify a composed head or explain old Wake/Cancel failures. See GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md.
+
+## Group E shared production TLS lock boundary — 2026-10-05
+
+The Engine tokio-rustls declaration is dev-only, but the single workspace lock package is referenced by production hyper-rustls/reqwest, and Engine reqwest uses the root rustls feature. The selected0.26.6 lock resolution therefore changes production TLS implementation while every production manifest/feature remains exact. The final Group E plan explicitly retains whole transport/runtime qualification and makes no dev-only-runtime or unchanged-production-behavior claim.
