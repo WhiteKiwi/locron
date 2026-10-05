@@ -5715,3 +5715,8 @@ The fixed binding record is JSON and cannot pass an executable ABI decoder. The 
 ## Group B GitHub run-body length boundary — 2026-10-05
 
 Official workflow syntax limits each run body to21000 characters; four unsaved repeated-reader candidates exceed it. The selected single private CI module retains all five native reader bodies and three JSON routines, with explicit strictUTF8 decode and no import-time native work. Root read the complete helper and verified all seven packet hashes/ASTs; fixed checkout-file loading avoids namespace-package shadow resolution. Full selected exception, Source limits and Verify are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.
+
+
+## Group B hosted qualification conformance — 2026-10-05
+
+Actual f664 strict lint exposes21 fatal union sites and Windows frozen-ledger failure before94 rows; the observed hash equals exact LF→CRLF projection. Returned-success ownership must precede original post-clock checks. Root verified the complete125-payload read-only candidate and whole five-file inverse. SEL02/SEL05/FI07 phase, binary-size cost and native causes remain UNKNOWN. Full evidence/effects/Verify: [selected plan](planning/GROUP_B_HOSTED_QUALIFICATION_CONFORMANCE_2026-10-05.md).

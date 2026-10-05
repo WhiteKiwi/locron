@@ -5492,3 +5492,8 @@ Follow the amended GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md only after 
 ## Group B single CI reader module handoff — 2026-10-05
 
 The run-length supplement in GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md admits exactly the original nine Source paths plus scripts/ci_prune_artifact_facts.py. After all four exact owning GETs and full final changed-plan review with frozen-byte reuse, the same developer loads only that fixed checkout file at existing CI call sites, preserves original native function/Engine inverses, implements selected strictUTF8, and verifies all decoded run bodies<=21000. This is the sole no-helper exception; product APIs/runtime/dependencies/rows/clocks/gates remain unchanged.
+
+
+## Group B hosted qualification conformance — 2026-10-05
+
+Select the closed four-test-Rust-path lint/returned-owner candidate and one ledger-specific LF attribute, preserving full frozen94 bytes, native ownership, SQL/oracles, original horizons and failure admission. Stack8192/read cost, borrowed Copy and cached-wait refusal effects are explicit in the [complete plan](planning/GROUP_B_HOSTED_QUALIFICATION_CONFORMANCE_2026-10-05.md). Docs/owning ALL GET/Root final review precede a separate Source child; fresh actual gates remain mandatory. Latest user direction defers #141 and qualifies remaining groups independently.

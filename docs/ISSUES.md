@@ -174,3 +174,8 @@ Owning146/149/152 and coordination163 continue the amended GROUP_B_CI_NATIVE_ART
 ## Group B CI length Verify refinement — 2026-10-05
 
 Issues146/149/152 and coordination163 continue the existing scope with one selected CI-only module. Verify exact ten-path scope, fixed checkout-file loading/no native import work, whole native-reader/Engine/CI inverses, strictUTF8 binding and every decoded run<=21000. Four exact readbacks and final amended-plan review with exact unchanged49/58/94/frozen9 reuse precede Source. All actual required/native/full-paired acceptance and closures remain pending.
+
+
+## Group B hosted qualification conformance — 2026-10-05
+
+Continue owning #146/#149/#152 and coordination #163 for representative #147. The [final four-step plan](planning/GROUP_B_HOSTED_QUALIFICATION_CONFORMANCE_2026-10-05.md) supplies concrete Verify per step; all four entire-plan comment POST/GET bodies and Root final after-GET review must precede Source. Actual current failures remain open; member closure and broader acceptance require final main contribution and fresh complete qualification. #141 remains deferred.
