@@ -280,6 +280,7 @@ enum AdmissionRole {
     Database,
     ReportedDatabase,
     OracleLeaf,
+    #[cfg(windows)]
     SharingControl,
 }
 
@@ -292,6 +293,7 @@ impl AdmissionRole {
             Self::Database => "database",
             Self::ReportedDatabase => "reported_database",
             Self::OracleLeaf => "oracle_leaf",
+            #[cfg(windows)]
             Self::SharingControl => "sharing_control",
         }
     }
