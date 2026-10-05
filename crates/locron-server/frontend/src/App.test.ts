@@ -64,7 +64,7 @@ class CookieDomFixture {
   readonly container = document.createElement("div");
   readonly expiration = () => { this.expired += 1; };
   expired = 0;
-  mounted: RenderResult | undefined;
+  mounted: Pick<RenderResult, "unmount"> | undefined;
   restoreFetch: (() => void) | undefined;
 
   constructor() {

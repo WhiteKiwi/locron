@@ -773,7 +773,9 @@ fn secret_free(outcome: &Outcome) {
 }
 
 fn issued(outcome: &Outcome, count: usize) {
-    let cookies = (&outcome.headers.get_all(header::SET_COOKIE))
+    let cookies = outcome
+        .headers
+        .get_all(header::SET_COOKIE)
         .into_iter()
         .collect::<Vec<_>>();
     assert!(cookies.len() == count, "PR145 actual Set-Cookie count");
@@ -1250,7 +1252,7 @@ async fn group(name: &'static str, keys: &'static [&'static str]) {
 }
 
 // Whole frozen wires and expected oracles. New public6 supplements every original184 backend row.
-const ROWS: &str = r###"[
+const ROWS: &str = r#"[
 {"id":"SC01-status","group":"session_cookie","adapter":"production_router","wire":{"label":"missing","method":"GET","uri":"/api/v1/session","cookie_fields":[],"authorization":[],"csrf_echo":[],"content_type":["application/json"],"body":"{\"token\":\"{T}\"}","session_state":"Missing","csrf_state":"Missing"},"expected":{"status":401,"request_stream_polls":"ZERO","set_cookie_fields":0,"paired_probe_next_calls":0,"profile":"generic_auth","state_effects":"ZERO","referrer_policy":"no-referrer"},"observed_auth":"NOT_ENTERED"},
 {"id":"SC01-paste","group":"session_cookie","adapter":"production_router","wire":{"label":"missing","method":"POST","uri":"/api/v1/session","cookie_fields":[],"authorization":[],"csrf_echo":[],"content_type":["application/json"],"body":"{\"token\":\"{T}\"}","session_state":"Missing","csrf_state":"Missing"},"expected":{"status":200,"request_stream_polls":"POSITIVE","set_cookie_fields":2,"paired_probe_next_calls":1,"profile":"session_success","state_effects":"ZERO","referrer_policy":"no-referrer","auth_extension":"Unauthenticated"},"observed_auth":"Unauthenticated"},
 {"id":"SC02-status","group":"session_cookie","adapter":"production_router","wire":{"label":"unrelated_only","method":"GET","uri":"/api/v1/session","cookie_fields":["other=OTHER"],"authorization":[],"csrf_echo":[],"content_type":["application/json"],"body":"{\"token\":\"{T}\"}","session_state":"Missing","csrf_state":"Missing"},"expected":{"status":401,"request_stream_polls":"ZERO","set_cookie_fields":0,"paired_probe_next_calls":0,"profile":"generic_auth","state_effects":"ZERO","referrer_policy":"no-referrer"},"observed_auth":"NOT_ENTERED"},
@@ -1441,7 +1443,7 @@ const ROWS: &str = r###"[
 {"id":"PUBLIC-DUPLICATE-SCRIPT","group":"public","adapter":"production_router","wire":{"label":"public_duplicate_script","method":"GET","uri":"{ENTRY_REFERENCED_SCRIPT}","cookie_fields":["locron_session={T}; locron_session={T}"],"authorization":[],"csrf_echo":[],"content_type":[],"body":"BODYCANARY"},"expected":{"status":200,"request_stream_polls":"ZERO","set_cookie_fields":0,"paired_probe_next_calls":1,"profile":"embedded_asset_exact","auth_extension":"Unauthenticated","state_effects":"ZERO","referrer_policy":"no-referrer"},"observed_auth":"Unauthenticated"},
 {"id":"PUBLIC-UNREADABLE-ENTRY","group":"public","adapter":"production_router","wire":{"label":"public_unreadable_entry","method":"GET","uri":"/","cookie_fields":[{"hex":"6c6f63726f6e5f73657373696f6e3dff"}],"authorization":[],"csrf_echo":[],"content_type":[],"body":"BODYCANARY"},"expected":{"status":200,"request_stream_polls":"ZERO","set_cookie_fields":0,"paired_probe_next_calls":1,"profile":"embedded_asset_exact","auth_extension":"Unauthenticated","state_effects":"ZERO","referrer_policy":"no-referrer"},"observed_auth":"Unauthenticated"},
 {"id":"PUBLIC-UNREADABLE-SCRIPT","group":"public","adapter":"production_router","wire":{"label":"public_unreadable_script","method":"GET","uri":"{ENTRY_REFERENCED_SCRIPT}","cookie_fields":[{"hex":"6c6f63726f6e5f73657373696f6e3dff"}],"authorization":[],"csrf_echo":[],"content_type":[],"body":"BODYCANARY"},"expected":{"status":200,"request_stream_polls":"ZERO","set_cookie_fields":0,"paired_probe_next_calls":1,"profile":"embedded_asset_exact","auth_extension":"Unauthenticated","state_effects":"ZERO","referrer_policy":"no-referrer"},"observed_auth":"Unauthenticated"}
-]"###;
+]"#;
 
 #[tokio::test]
 async fn dashboard_cookie_session_cookie_completes_all_50_rows() {

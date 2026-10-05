@@ -100,7 +100,7 @@ enum CookieState<'a> {
 fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> CookieState<'a> {
     let mut found = CookieState::Missing;
     let mut unreadable = false;
-    for header in &headers.get_all(header::COOKIE) {
+    for header in headers.get_all(header::COOKIE) {
         let Ok(cookies) = header.to_str() else {
             unreadable = true;
             continue;

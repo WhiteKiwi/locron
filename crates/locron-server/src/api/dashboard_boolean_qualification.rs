@@ -2176,10 +2176,7 @@ fn cleanup(
         match fs::symlink_metadata(&path) {
             Err(error)
                 if error.kind() == std::io::ErrorKind::NotFound
-                    && name.starts_with("state.db-") =>
-            {
-                ()
-            }
+                    && name.starts_with("state.db-") => {}
             Err(_) => return Err("required cleanup leaf missing"),
             Ok(meta) => {
                 require(
@@ -2282,7 +2279,7 @@ fn cleanup(
     )?;
     let mut parent_leaves = Vec::new();
     for name in parent_allowed {
-        let path = root.parent.join(name);
+        let path = root.parent.join(&name);
         let file = private_read(&path)?;
         require(
             file.metadata()
