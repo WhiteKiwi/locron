@@ -1159,6 +1159,11 @@ mod tests {
         run_isolated_fixture("phase-order", "fixed-worker-phase-order-confirmed");
     }
 
+    #[test]
+    fn native_process_sid_matches_the_isolated_fixed_worker() {
+        run_isolated_fixture("sid-identity", "native-stock-sid-identity-confirmed");
+    }
+
     fn run_isolated_fixture(mode: &str, confirmation: &str) {
         let temporary = tempfile::tempdir().unwrap();
         let hostile_modules = temporary.path().join("hostile modules");
@@ -1215,6 +1220,10 @@ mod tests {
         assert!(DISPATCHER.get().is_none());
         if mode == "phase-order" {
             phase_order_fixture();
+            return;
+        }
+        if mode == "sid-identity" {
+            sid_identity_fixture();
             return;
         }
         assert_eq!(mode, "reuse");
@@ -1288,7 +1297,7 @@ mod tests {
 
     fn phase_order_fixture() {
         let deadline = Instant::now() + Duration::from_secs(30);
-        crate::windows::current_user_sid().unwrap();
+        request("sid", None, deadline).unwrap();
         let pid = LAST_PID.load(Ordering::Acquire);
         let phases = Arc::clone(LAST_PHASES.lock().unwrap().as_ref().unwrap());
         wait_for_phases(
@@ -1329,5 +1338,23 @@ mod tests {
         assert_eq!(std::fs::metadata(&path).unwrap().len(), 0);
         assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
         println!("fixed-worker-phase-order-confirmed");
+    }
+
+    fn sid_identity_fixture() {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        assert!(
+            crate::windows::cached_current_user_sid()
+                .is_err_and(|error| error.kind() == io::ErrorKind::NotConnected)
+        );
+        let native = crate::windows::current_user_sid_until(deadline).unwrap();
+        assert!(DISPATCHER.get().is_none());
+        let stock = request("sid", None, deadline).unwrap();
+        assert!(
+            stock.as_str().is_some_and(|stock| stock == native),
+            "native and stock process identities differed"
+        );
+        assert_ne!(LAST_PID.load(Ordering::Acquire), 0);
+        remaining(deadline).unwrap();
+        println!("native-stock-sid-identity-confirmed");
     }
 }
