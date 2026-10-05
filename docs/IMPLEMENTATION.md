@@ -5414,3 +5414,7 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Group C reconciled history and MCP development
 
 Follow GROUP_C_HISTORY_MCP_INTEGRATION_2026-10-05.md under156/158/160/161/163 after exact readback and Root entire final reread. Separate development normally conserves157/159/once164-in165 plus currentmain, corrects only Source-backed owner/format/setup/oracle gaps, and adds selected meaningful original deep/public/snapshot/representation/native helper qualification. Complete independent logical tables/schema and old live deltas replace invalid all-raw-file invariance; physical observations retain their real boundaries. Existing SQL, policies, production dependencies, clocks/gates and all original tests remain. Root reviews full handback and owns fresh composed qualification/publication/squash/member completion, preserving unknown native causes and partial acceptance.
+
+## Group C shared private oracle continuation — 2026-10-05
+
+Follow GROUP_C_SHARED_TEST_ORACLE_2026-10-05.md after exact156/158/160/161/163 readback and Root entire original-plus-supplement reread. Lease adds only CLI tests/support/history_logical.rs and private includes; preserve the original independent oracle, all required real public controls, sole bare CLI test dependency, old MCP prefix and all clocks/gates. Separate developer handback and same-head hosted/native/paired acceptance precede completion.
