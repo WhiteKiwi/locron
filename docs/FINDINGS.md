@@ -5700,3 +5700,8 @@ Actual Server lib.rs13/api.rs47 module declarations yield api::prune_output::qua
 ## Group B creator, writer and production-child proof admission — 2026-10-05
 
 Actual Store open takes StatePaths/version/now; tempfile ownership does not imply Core privacy. The read-only proposal c12f3540f4b0a8ebc404fa6c10d1ac8cc3a05078748c9de91213266687e883ac selects an absent canonical state child with retained prefix admission before the real Store creator, retained actual initializing writer/no-CREATE raw oracle, and a strict fixed CI artifact record. Production CLI root reap alone is not Job-empty; use the same existing Core-owned fixed adapter with closed production/recovery operations and original genuine completion/capture clocks. Full finite schema, ownership and Verify are in GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md. New APIs/native/SQLite behavior and costs remain unmeasured.
+
+
+## Group B CI full native identity admission — 2026-10-05
+
+Actual CPython3.12.7 can report successful Windows stat after FileIdInfo failure with lower-resolution fallback. Root reviewed the nonexecuted ten-entry packet and exact Core/locked SDK/CPython ranges. Select only the fixed CI artifact reader's successful full FileIdInfo/regular no-reparse retained handle, two complete hashes and exact owner-transfer/close proof; a version floor is insufficient. All native/layout/timing behavior remains unmeasured. Full scope, finite bounds and Verify are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.

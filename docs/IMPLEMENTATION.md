@@ -5477,3 +5477,8 @@ Use the actual api::prune_output::qualification::contracts name under the GROUP_
 ## Group B dependent admission handoff — 2026-10-05
 
 Follow the selected creator/writer/artifact/production-child supplement only after all four owning exact GETs and Root full final reread. Preserve six Source WIP blobs and all original49/94/96/state/native3. Use actual three-argument Store creator on the genuinely absent normalized child, retain its writer through raw oracle, independently bind the fixed CI record, and use only existing Core-owned closed Windows production/recovery invocations before capture reads. The9-path/API/dependency/clock/gate scope is unchanged; complete branch union size and full ownership inverses precede publication. Unsupported or material choices return to Docs first.
+
+
+## Group B runner artifact reader continuation — 2026-10-05
+
+After all owning146/149/152/163 exact GETs and Root entire49/58/new plan/all94 reread, resume the original nine-path developer with the narrow inline CI ctypes/msvcrt read-only metadata exception. Preserve the fixture parent's no-FFI policy, original descriptor fields/CargoJSON/managed-path admission, same-pending FI07 and N07 recovery, full old96/state/native3 and every clock/gate. No new helper file, dependency, Python floor, public API or local native execution is selected. Full Source/ownership/old CI inverses and actual same-head acceptance remain required.

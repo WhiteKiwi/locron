@@ -159,3 +159,8 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Group B dependent proof admission — 2026-10-05
 
 Issues146/149/152 and coordination163 continue the selected three-argument genuine creator, retained Store/raw oracle, strict CI artifact binding and existing Core-owned production/recovery child admission in GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md. Original94/96/state/native acceptance and every clock/gate remain open until actual qualification and required publication. All owning exact GETs and Root full final reread precede dependent Source.
+
+
+## Group B CI native identity Verify continuation — 2026-10-05
+
+Owning146/149/152 and coordination163 retain their complete qualification and ordered completion scope. planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md selects a narrow runner-side read-only identity routine after rejecting fstat-only fallback evidence. Verify all nine frozen Source bytes and unchanged49/58/94; exact owning POST/GET ALL followed by Root entire final reread; complete known-handle/two-hash/old CI inverses; then genuine same-head94/96/state/native gates and full paired provenance before closure.
