@@ -22,6 +22,8 @@ use crate::migration::migrate;
 use crate::{DaemonLock, LockMetadata, StatePaths};
 
 mod activity;
+mod cancellation;
+pub use cancellation::CancellationPreview;
 
 type AdmissionRow = (String, String, String, i64, String, Option<i64>);
 const MAINTENANCE_BATCH_LIMIT: usize = 100;
@@ -1934,43 +1936,31 @@ impl Store {
         let Some((state, job_id, cancellation_requested_at_us, reason)) = current else {
             return Err(StoreError::NotFound(id.into()));
         };
-        let quarantined =
-            state == "running" && reason.as_deref() == Some("termination_unconfirmed");
-        if acknowledge_unconfirmed {
-            if !quarantined {
-                return Err(StoreError::Conflict(format!(
-                    "run {id} is not an active termination-unconfirmed quarantine"
-                )));
-            }
-            let changed = tx.execute(
+        let outcome =
+            cancellation::decision(id, &state, reason.as_deref(), acknowledge_unconfirmed)?;
+        match outcome {
+            CancelOutcome::AcknowledgedUnconfirmed => {
+                let changed = tx.execute(
                 "UPDATE runs SET state='interrupted_unknown',reason='termination unconfirmed; risk acknowledged by operator',finished_at_us=?2,replacement_candidate=0 WHERE id=?1 AND state='running' AND reason='termination_unconfirmed'",
                 params![id, now_us],
             )?;
-            if changed != 1 {
-                return Err(StoreError::Conflict(format!(
-                    "run {id} quarantine changed before acknowledgement"
-                )));
+                if changed != 1 {
+                    return Err(StoreError::Conflict(format!(
+                        "run {id} quarantine changed before acknowledgement"
+                    )));
+                }
+                tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [id])?;
+                event(
+                    &tx,
+                    now_us,
+                    "termination_unconfirmed_acknowledged",
+                    Some(&job_id),
+                    Some(id),
+                    r#"{"source":"user","risk":"process_liveness_unconfirmed"}"#,
+                )?;
+                soft_remove_after_one_time_completion(&tx, id, now_us)?;
             }
-            tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [id])?;
-            event(
-                &tx,
-                now_us,
-                "termination_unconfirmed_acknowledged",
-                Some(&job_id),
-                Some(id),
-                r#"{"source":"user","risk":"process_liveness_unconfirmed"}"#,
-            )?;
-            soft_remove_after_one_time_completion(&tx, id, now_us)?;
-            tx.commit()?;
-            return Ok(CancelOutcome::AcknowledgedUnconfirmed);
-        }
-        if quarantined {
-            return Err(StoreError::Conflict(format!(
-                "run {id} termination is unconfirmed; repeat cancel with --acknowledge-unconfirmed to accept the risk and release the quarantine"
-            )));
-        }
-        let outcome = match state.as_str() {
-            "queued" | "retry_wait" => {
+            CancelOutcome::CancelledBeforeExecution => {
                 tx.execute(
                     "UPDATE runs SET state='cancelled',reason='cancelled by user before execution',finished_at_us=?2,cancellation_requested_at_us=?2,cancellation_reason='user',replacement_candidate=0 WHERE id=?1",
                     params![id, now_us],
@@ -1985,9 +1975,8 @@ impl Store {
                     r#"{"source":"user","before_execution":true}"#,
                 )?;
                 soft_remove_after_one_time_completion(&tx, id, now_us)?;
-                CancelOutcome::CancelledBeforeExecution
             }
-            "starting" | "running" => {
+            CancelOutcome::CancellationRequested => {
                 if cancellation_requested_at_us.is_none() {
                     tx.execute(
                         "UPDATE runs SET cancellation_requested_at_us=?2,cancellation_reason='user' WHERE id=?1",
@@ -2002,14 +1991,8 @@ impl Store {
                         r#"{"source":"user"}"#,
                     )?;
                 }
-                CancelOutcome::CancellationRequested
             }
-            terminal => {
-                return Err(StoreError::Conflict(format!(
-                    "run {id} is already terminal ({terminal})"
-                )));
-            }
-        };
+        }
         tx.commit()?;
         Ok(outcome)
     }

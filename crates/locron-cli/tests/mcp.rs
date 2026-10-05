@@ -504,3 +504,9 @@ fn terminates_cleanly_on_sigterm() {
     assert!(status.success(), "clean exit on SIGTERM");
     client.assert_clean_streams();
 }
+
+#[path = "mcp/input_validation.rs"]
+mod mutation_input_validation;
+
+#[path = "mcp/cancellation_preview.rs"]
+mod cancellation_preview;

@@ -22,6 +22,9 @@ use crate::{
     send_wake, terminal_run_state, validate_metadata,
 };
 
+#[path = "mcp_arguments.rs"]
+mod arguments;
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct JsonRpcRequest {
     pub jsonrpc: String,
@@ -291,7 +294,7 @@ fn handle_tools_list() -> Value {
                             "description": "Execution timeout in seconds."
                         },
                         "description": {
-                            "type": "string",
+                            "type": ["string", "null"],
                             "description": "Human-readable job description."
                         },
                         "tags": {
@@ -378,7 +381,7 @@ fn handle_tools_list() -> Value {
                             "description": "Execution timeout in seconds."
                         },
                         "description": {
-                            "type": "string",
+                            "type": ["string", "null"],
                             "description": "Job description."
                         },
                         "tags": {
@@ -912,6 +915,7 @@ fn parse_target(
 }
 
 fn tool_add_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_add_job", args)?;
     let name = args
         .get("name")
         .and_then(Value::as_str)
@@ -1048,6 +1052,7 @@ fn tool_add_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_update_job", args)?;
     let job_name_or_id = args
         .get("job")
         .and_then(Value::as_str)
@@ -1057,11 +1062,8 @@ fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
-    let store = if dry_run {
-        open_read_only(paths)?
-    } else {
-        open(paths)?
-    };
+    // Build and validate the complete edit without creating or migrating state.
+    let store = open_read_only(paths)?;
     let existing = store.job(job_name_or_id)?;
     let mut def: JobDefinition = serde_json::from_str(&existing.definition_json)?;
     let now = Timestamp::from_epoch_micros(now_us());
@@ -1191,7 +1193,7 @@ fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
         }));
     }
 
-    let updated = store.update_job(&UpdateJob {
+    let updated = open(paths)?.update_job(&UpdateJob {
         id: existing.id.clone(),
         expected_revision: existing.current_revision,
         name: new_name,
@@ -1212,6 +1214,7 @@ fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 fn tool_enable_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_enable_job", args)?;
     let job = args
         .get("job")
         .and_then(Value::as_str)
@@ -1240,6 +1243,7 @@ fn tool_enable_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 fn tool_disable_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_disable_job", args)?;
     let job = args
         .get("job")
         .and_then(Value::as_str)
@@ -1268,6 +1272,7 @@ fn tool_disable_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 fn tool_remove_job(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_remove_job", args)?;
     let job = args
         .get("job")
         .and_then(Value::as_str)
@@ -1291,15 +1296,13 @@ fn tool_remove_job(paths: &StatePaths, args: &Value) -> Result<Value> {
 }
 
 async fn tool_run_job(paths: &StatePaths, args: Value) -> Result<Value> {
+    arguments::validate("locron_run_job", &args)?;
     let job = args
         .get("job")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("missing required parameter: job"))?;
     let wait = args.get("wait").and_then(Value::as_bool).unwrap_or(false);
-    let timeout_seconds = args
-        .get("timeout_seconds")
-        .and_then(Value::as_u64)
-        .unwrap_or(30);
+    let deadline = arguments::wait_deadline(&args, Instant::now())?;
     let dry_run = args
         .get("dry_run")
         .and_then(Value::as_bool)
@@ -1336,7 +1339,6 @@ async fn tool_run_job(paths: &StatePaths, args: Value) -> Result<Value> {
     send_wake(paths);
 
     if wait {
-        let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
         let mut current_run = run;
         while Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1361,6 +1363,7 @@ async fn tool_run_job(paths: &StatePaths, args: Value) -> Result<Value> {
 }
 
 fn tool_cancel_run(paths: &StatePaths, args: &Value) -> Result<Value> {
+    arguments::validate("locron_cancel_run", args)?;
     let run_id = args
         .get("run_id")
         .and_then(Value::as_str)
@@ -1381,17 +1384,34 @@ fn tool_cancel_run(paths: &StatePaths, args: &Value) -> Result<Value> {
         open(paths)?
     };
     if dry_run {
-        let run = store.run(run_id)?;
-        let active = matches!(
-            run.state.as_str(),
-            "queued" | "starting" | "running" | "retry_wait"
-        );
-        let already_requested = active && store.cancellation_requested(run_id)?;
+        let preview = store.preview_cancellation(run_id, acknowledge_unconfirmed)?;
+        let before_execution = preview.outcome == CancelOutcome::CancelledBeforeExecution;
+        let risk_acknowledgement = preview.outcome == CancelOutcome::AcknowledgedUnconfirmed;
+        let decision = match preview.outcome {
+            CancelOutcome::CancelledBeforeExecution => "cancelled_before_execution",
+            CancelOutcome::AcknowledgedUnconfirmed => "acknowledged_unconfirmed",
+            CancelOutcome::CancellationRequested if preview.already_requested => {
+                "already_requested"
+            }
+            CancelOutcome::CancellationRequested => "cancellation_requested",
+        };
+        let resulting_state = if before_execution {
+            "cancelled"
+        } else if risk_acknowledgement {
+            "interrupted_unknown"
+        } else {
+            preview.state.as_str()
+        };
         return Ok(json!({
             "dry_run": true,
             "run_id": run_id,
-            "state": run.state,
-            "would_request_cancellation": active && !already_requested
+            "state": preview.state,
+            "decision": decision,
+            "already_requested": preview.already_requested,
+            "would_request_cancellation": before_execution || (!risk_acknowledgement && !preview.already_requested),
+            "would_cancel_before_execution": before_execution,
+            "would_acknowledge_unconfirmed": risk_acknowledgement,
+            "resulting_state": resulting_state
         }));
     }
     let outcome = store.cancel_with_acknowledgement(run_id, now_us(), acknowledge_unconfirmed)?;
