@@ -185,3 +185,8 @@ Issue31 and draftPR167 remain open. Record the complete four-step Verify from pl
 ## Before-Source producer lint formatter reconciliation, 2026-10-05
 
 Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
+
+
+## Group D strict helper lint Verify continuation — 2026-10-05
+
+Owning35/31 and coordination163 retain native/publication acceptance, including unresolved actual22 ARM Wake. planning/GROUP_D_WINDOWS_HELPER_STRICT_LINT_2026-10-05.md selects only the closed21 private lint repairs after Docs/owning readback. Verify unchanged Source/old plans/full inverses and all owning exact GETs before Root entire final reread; then separate helper-only clean development, full Root review and genuine changed-head required lint/native/package/paired evidence. Positive producer scalars or static proofs do not qualify failed native selectors or unknown allocation/fault classes.

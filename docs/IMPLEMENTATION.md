@@ -5484,3 +5484,8 @@ Frozen SPEC/prior164-line producer plan remain exact. The complete [WINDOWS_PROD
 ## Before-Source producer lint formatter reconciliation, 2026-10-05
 
 Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
+
+
+## Group D helper-only strict lint handoff — 2026-10-05
+
+After owning35/31/163 exact GET ALL and Root entire37/164/36/new plan reread, separate development changes only windows_cli_control.rs's selected21 diagnostics/private necessary callers. Preserve genuine invalid/None/value, independent collision witnesses, original owner/error/deadline order and literal successful worker; error-only Box has no native owner and unmeasured cost. Only new-expression formatter wrapping with full inverse is selected. No native-cause/control/selector/production/CI/dependency/clock/gate change or local runtime is authorized. Full clean handback and actual changed-head gates precede Root publication/completion.

@@ -5710,3 +5710,8 @@ The completed Windows1.98 workspace Clippy job on71a10 prints two errors (consta
 ## Before-Source producer lint formatter reconciliation, 2026-10-05
 
 Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
+
+
+## Group D actual CLI helper lint21 admission — 2026-10-05
+
+The new required Windows1.98 CLI-test Clippy exposes21 private helper diagnostics at actual22; overall15PASS/2FAIL and ARM Wake cause UNKNOWN remain. Root reviewed the entire530-line candidate/closed finite proof and independently restored original whole helper/324-entry tree. Select only equivalent private syntax/domain/Copy/witness wiring plus the disclosed primitive error-only Box after actual thread-spawn refusal. Native behavior and allocation cost are unmeasured. Full exact scope and Verify are in planning/GROUP_D_WINDOWS_HELPER_STRICT_LINT_2026-10-05.md.
