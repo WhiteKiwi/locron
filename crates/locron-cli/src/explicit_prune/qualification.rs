@@ -1,7 +1,9 @@
 //! Instance-local qualification of the real explicit-prune caller.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
+use std::fs;
+#[cfg(unix)]
+use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
@@ -10,7 +12,9 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use locron_core::filesystem::{DirectoryGuard, GuardedFile};
-use locron_store::{RetentionCandidate, StatePaths, Store};
+#[cfg(windows)]
+use locron_store::RetentionCandidate;
+use locron_store::{StatePaths, Store};
 use rusqlite::{Connection, OpenFlags, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -582,12 +586,12 @@ impl Owner {
 
     fn initialize(&mut self, deadline: Instant) {
         assert!(self.store.is_none(), "fixture initialized twice");
-        let store = need(
-            checked(deadline, || {
-                Store::open(self.paths.clone(), env!("CARGO_PKG_VERSION"), FIXED_NOW)
-            }),
-            "actual-store-creator",
-        );
+        check(deadline);
+        let created = Store::open(self.paths.clone(), env!("CARGO_PKG_VERSION"), FIXED_NOW);
+        let created = created.map(|store| self.store = Some(store));
+        check(deadline);
+        need(created, "actual-store-creator");
+        let store = self.store.as_ref().unwrap();
         let guard = need(
             checked(deadline, || {
                 DirectoryGuard::existing_private(&self.paths.root)
@@ -629,23 +633,22 @@ impl Owner {
         let db_id = file_id(&database, deadline);
         self.database_slot = Some(self.files.len());
         self.files.push(database);
-        #[cfg(windows)]
-        let raw = checked(deadline, || {
-            Connection::open_with_flags_and_vfs(
-                &normalized,
-                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                "win32-longpath",
-            )
-        });
-        #[cfg(unix)]
-        let raw = checked(deadline, || {
-            Connection::open_with_flags(
-                &normalized,
-                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-            )
-        });
         check(deadline);
-        self.connection = Some(need(raw, "live-writer-raw-no-create"));
+        #[cfg(windows)]
+        let raw = Connection::open_with_flags_and_vfs(
+            &normalized,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            "win32-longpath",
+        );
+        #[cfg(unix)]
+        let raw = Connection::open_with_flags(
+            &normalized,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        );
+        let raw = raw.map(|connection| self.connection = Some(connection));
+        check(deadline);
+        check(deadline);
+        need(raw, "live-writer-raw-no-create");
         let conn = self.connection.as_ref().unwrap();
         need(
             checked(deadline, || conn.busy_timeout(Duration::from_secs(5))),
@@ -659,7 +662,6 @@ impl Owner {
         let reported = conn.path().expect("raw DB filename missing");
         let unchanged = db_id == file_id(&open_guarded(Path::new(reported), deadline), deadline);
         assert!(unchanged, "raw connection opened another DB");
-        self.store = Some(store);
     }
 
     #[cfg(unix)]
@@ -724,7 +726,11 @@ fn owned_row(key: &'static str, run: impl FnOnce(&mut Owner, Instant) + Send + '
     // Origin is before any preparation; a blocked native owner is never joined.
     let entered = Instant::now();
     let deadline = entered + Duration::from_secs(90);
-    let operation = (entered + Duration::from_secs(60)).min(deadline - Duration::from_secs(10));
+    let operation = (entered + Duration::from_secs(60)).min(
+        deadline
+            .checked_sub(Duration::from_secs(10))
+            .expect("overflow when subtracting duration from instant"),
+    );
     let (sender, receiver) = mpsc::sync_channel(1);
     let worker = std::thread::spawn(move || {
         let mut owner = Owner::new(operation);
@@ -1174,8 +1180,12 @@ fn owned_files(owner: &Owner, deadline: Instant) -> BTreeMap<PathBuf, FileFact> 
             );
             paths.push(orphan);
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(_) => panic!("orphan observation refused"),
+        Err(error) => {
+            assert!(
+                error.kind() == io::ErrorKind::NotFound,
+                "orphan observation refused"
+            );
+        }
     }
     let mut result = BTreeMap::new();
     for path in paths {
@@ -1214,6 +1224,7 @@ fn expect_files(before: &BTreeMap<PathBuf, FileFact>, removed: &[PathBuf], deadl
     }
 }
 
+#[cfg(windows)]
 fn candidate(item: &Seed) -> RetentionCandidate {
     RetentionCandidate {
         run_id: item.run.clone(),
@@ -1301,7 +1312,7 @@ fn digest_file(file: &GuardedFile, deadline: Instant) -> (String, u64) {
         checked(deadline, || reader.seek(SeekFrom::Start(0))),
         "artifact-seek",
     );
-    let mut buffer = [0_u8; 65536];
+    let mut buffer = [0_u8; 8192];
     let mut total = 0_u64;
     let mut hash = Sha256::new();
     loop {
@@ -1378,9 +1389,9 @@ fn native_abi(file: &GuardedFile, deadline: Instant) {
         assert_eq!(
             u32::from_le_bytes(header[4..8].try_into().unwrap()),
             if cfg!(target_arch = "aarch64") {
-                0x0100000c
+                0x0100_000c
             } else {
-                0x01000007
+                0x0100_0007
             }
         );
     }
@@ -1551,7 +1562,10 @@ fn invoke_child(
         }
         std::thread::yield_now();
     };
-    owner.children.remove(slot);
+    need(
+        owner.children.remove(slot).wait(),
+        "actual-child-cached-wait",
+    );
     let same = out_id == file_id(&owner.files[stdout], deadline)
         && err_id == file_id(&owner.files[stderr], deadline);
     assert!(same, "retained captures changed");
@@ -1676,7 +1690,7 @@ fn verify_support(out: &[u8], err: &[u8], code: i32, surface: &str) {
 }
 
 #[cfg(windows)]
-const RECOVERY_SCRIPT: &str = r###"
+const RECOVERY_SCRIPT: &str = r#"
 $child = $null
 $files = @($null, $null)
 $streams = @($null, $null)
@@ -1780,10 +1794,12 @@ try {
     foreach ($file in $files) { if ($null -ne $file) { $file.Dispose() } }
     if ($null -ne $child) { $child.Dispose() }
 }
-"###;
+"#;
 
 #[cfg(windows)]
 fn native_call(owner: &mut Owner, script: &'static str, input: &Value, deadline: Instant) -> Value {
+    use std::os::windows::ffi::OsStrExt as _;
+
     check(deadline);
     if owner.stock.is_none() {
         owner.stock = Some(need(
@@ -1794,7 +1810,6 @@ fn native_call(owner: &mut Owner, script: &'static str, input: &Value, deadline:
             "owned-stock-admission",
         ));
     }
-    use std::os::windows::ffi::OsStrExt as _;
     assert!(
         owner
             .stock
@@ -1813,6 +1828,7 @@ fn native_call(owner: &mut Owner, script: &'static str, input: &Value, deadline:
 }
 
 #[cfg(windows)]
+#[derive(Clone, Copy)]
 struct NativeInvocation<'a> {
     operation: &'static str,
     envelope: &'a str,
@@ -1828,11 +1844,6 @@ fn native_invoke(
     invocation: NativeInvocation<'_>,
     deadline: Instant,
 ) -> (i32, Vec<u8>, Vec<u8>) {
-    let NativeInvocation {
-        operation,
-        envelope,
-        suffix,
-    } = invocation;
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Completion {
@@ -1845,6 +1856,11 @@ fn native_invoke(
         stderr_bytes: usize,
         io_complete: bool,
     }
+    let NativeInvocation {
+        operation,
+        envelope,
+        suffix,
+    } = invocation;
     let recovery_mode = matches!(operation, "recovery-api" | "recovery-cli");
     let surface = if operation == "recovery-api" {
         "api"
@@ -2244,7 +2260,10 @@ fn filesystem_case(
     let files_before = owned_files(owner, deadline);
     let external = owner.paths.root.join("external-canary");
     let canary = fact(&external, deadline);
+    #[cfg(unix)]
     let outputs_id = root_id(&owner.paths.outputs, deadline);
+    #[cfg(not(unix))]
+    let _outputs_id = root_id(&owner.paths.outputs, deadline);
     match name {
         "FS02" => {
             let rows = query(
@@ -2505,9 +2524,9 @@ fn native_case(
                 file_id(&file, deadline) == original.identity,
                 "held leaf identity changed"
             );
-            let error = helper_remove(&owner.paths, &path, deadline)
-                .err()
-                .expect("actual held-helper refusal absent");
+            let Err(error) = helper_remove(&owner.paths, &path, deadline) else {
+                panic!("actual held-helper refusal absent");
+            };
             assert!(
                 error.kind == Some(io::ErrorKind::PermissionDenied)
                     && matches!(error.raw, Some(32 | 33)),
@@ -2526,7 +2545,7 @@ fn native_case(
             let saved = result["attributes"]
                 .as_u64()
                 .expect("actual attributes missing");
-            assert!(saved <= u64::from(u32::MAX), "attributes range refused");
+            assert!(u32::try_from(saved).is_ok(), "attributes range refused");
             attributes = Some(saved);
             assert_eq!(
                 need(
@@ -2640,11 +2659,8 @@ fn native_case(
             &oracle(owner.connection.as_ref().unwrap(), deadline),
             &changes(spec, 1, Change::Recovery),
         );
-        expect_files(&files, &[path.clone()], deadline);
-        println!(
-            "prune-qualification CONTROL {} N07 helper-finish-positive",
-            SURFACE
-        );
+        expect_files(&files, std::slice::from_ref(&path), deadline);
+        println!("prune-qualification CONTROL {SURFACE} N07 helper-finish-positive");
     }
     if let Some(sddl) = saved_acl {
         let restored = native_call(
@@ -2947,7 +2963,7 @@ fn rejected(outcome: &Outcome, case: &str) {
 #[cfg(unix)]
 fn sync_refusal(owner: &mut Owner, deadline: Instant) {
     let mut calls = 0_usize;
-    let error = checked(deadline, || {
+    let Err(error) = checked(deadline, || {
         super::prune_with_remover(&owner.paths, false, super::Format::Json, |paths, path| {
             super::explicit_prune::remove_output_with_sync(paths, path, |directory| {
                 check(deadline);
@@ -2959,9 +2975,9 @@ fn sync_refusal(owner: &mut Owner, deadline: Instant) {
                 Err(io::Error::other("owned post-unlink sync-stage refusal"))
             })
         })
-    })
-    .err()
-    .expect("actual sync-stage refusal missing");
+    }) else {
+        panic!("actual sync-stage refusal missing");
+    };
     check(deadline);
     assert_eq!(calls, 1, "actual sync stage must be evaluated once");
     assert!(
@@ -3243,7 +3259,11 @@ fn support(surface: &str, text: &str) {
 fn owned_row_support(surface: &str, text: &str) {
     let entered = Instant::now();
     let deadline = entered + Duration::from_secs(90);
-    let operation = (entered + Duration::from_secs(60)).min(deadline - Duration::from_secs(10));
+    let operation = (entered + Duration::from_secs(60)).min(
+        deadline
+            .checked_sub(Duration::from_secs(10))
+            .expect("overflow when subtracting duration from instant"),
+    );
     let marker_surface = surface.to_owned();
     let surface = surface.to_owned();
     let text = text.to_owned();
@@ -3346,30 +3366,27 @@ fn owned_row_support(surface: &str, text: &str) {
             native_abi(&current, operation);
             owner.files.push(current);
             // Validate same existing DB/owners before actual Store access, never create input state.
-            let store = need(
-                checked(operation, || {
-                    Store::open(owner.paths.clone(), env!("CARGO_PKG_VERSION"), FIXED_NOW)
-                }),
-                "support actual existing Store",
-            );
+            check(operation);
+            let store = Store::open(owner.paths.clone(), env!("CARGO_PKG_VERSION"), FIXED_NOW);
+            let store = store.map(|store| owner.store = Some(store));
+            check(operation);
+            need(store, "support actual existing Store");
             let normalized = owner.files[0].normalized_path();
+            check(operation);
             #[cfg(windows)]
-            let raw = checked(operation, || {
-                Connection::open_with_flags_and_vfs(
-                    normalized,
-                    OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                    "win32-longpath",
-                )
-            });
+            let raw = Connection::open_with_flags_and_vfs(
+                normalized,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                "win32-longpath",
+            );
             #[cfg(unix)]
-            let raw = checked(operation, || {
-                Connection::open_with_flags(
-                    normalized,
-                    OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                )
-            });
-            owner.connection = Some(need(raw, "support retained writer raw oracle"));
-            owner.store = Some(store);
+            let raw = Connection::open_with_flags(
+                normalized,
+                OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            );
+            let raw = raw.map(|connection| owner.connection = Some(connection));
+            check(operation);
+            need(raw, "support retained writer raw oracle");
             need(
                 checked(operation, || {
                     owner

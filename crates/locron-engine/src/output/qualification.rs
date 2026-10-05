@@ -214,7 +214,10 @@ impl Fixture {
             counts: Counts::default(),
             control: Control::None,
             control_ran: false,
+            #[cfg(unix)]
             owned: Rc::clone(&self.owned),
+            #[cfg(not(unix))]
+            _owned: Rc::clone(&self.owned),
         }
     }
 
@@ -409,7 +412,10 @@ struct Adapter {
     counts: Counts,
     control: Control,
     control_ran: bool,
+    #[cfg(unix)]
     owned: Rc<RefCell<BTreeMap<PathBuf, ObjectIdentity>>>,
+    #[cfg(not(unix))]
+    _owned: Rc<RefCell<BTreeMap<PathBuf, ObjectIdentity>>>,
 }
 
 impl Adapter {

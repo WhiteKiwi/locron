@@ -596,14 +596,14 @@ impl Harness {
 
 impl Drop for Harness {
     fn drop(&mut self) {
-        if !self.closed {
-            if let Err(error) = self.cleanup() {
-                eprintln!(
-                    "engine-memory cleanup-unconfirmed kind={:?} raw={:?}",
-                    error.kind(),
-                    error.raw_os_error()
-                );
-            }
+        if !self.closed
+            && let Err(error) = self.cleanup()
+        {
+            eprintln!(
+                "engine-memory cleanup-unconfirmed kind={:?} raw={:?}",
+                error.kind(),
+                error.raw_os_error()
+            );
         }
     }
 }
@@ -721,7 +721,7 @@ fn memory_child() {
     let mode = match std::env::var(MODE_ENV) {
         Ok(mode) => mode,
         Err(std::env::VarError::NotPresent) => return,
-        Err(_) => panic!("engine-memory phase=mode-encoding"),
+        Err(std::env::VarError::NotUnicode(_)) => panic!("engine-memory phase=mode-encoding"),
     };
     let case = match mode.as_str() {
         "M-REPAIR-004" => Case::Repair4,
