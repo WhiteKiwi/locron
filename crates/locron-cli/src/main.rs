@@ -4057,7 +4057,16 @@ pub(crate) fn send_wake(paths: &StatePaths) {
     #[cfg(all(windows, debug_assertions))]
     {
         windows_wake_diagnostics::emit("hint", "enter", None);
-        let result = locron_core::notification::send_wake(&paths.root);
+        let (result, stage) = locron_core::notification::send_wake_with_stage(&paths.root);
+        if let (Some(stage), Some(error)) = (stage, result.as_ref().err()) {
+            let op = match stage {
+                locron_core::notification::WakePipeFailureStage::Name => "pipe_name",
+                locron_core::notification::WakePipeFailureStage::Open => "pipe_open",
+                locron_core::notification::WakePipeFailureStage::Exchange => "pipe_exchange",
+                locron_core::notification::WakePipeFailureStage::Infrastructure => "pipe_infra",
+            };
+            windows_wake_diagnostics::pipe_failure(op, error);
+        }
         windows_wake_diagnostics::hint(result.as_ref().err());
         if let Err(error) = result {
             tracing::debug!(%error, "wake notification unavailable; command is already durable");

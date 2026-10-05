@@ -1862,7 +1862,7 @@ impl PairedCapture {
 
 // BEGIN independent producer domains. No raw carrier/key enters a public result.
 #[cfg(debug_assertions)]
-const WAKE_OPS: [&str; 22] = [
+const WAKE_OPS: [&str; 27] = [
     "role_lock",
     "store_open",
     "settings",
@@ -1885,6 +1885,11 @@ const WAKE_OPS: [&str; 22] = [
     "completion",
     "failure_complete",
     "limit",
+    "pipe_name",
+    "pipe_open",
+    "pipe_exchange",
+    "pipe_infra",
+    "pipe_accept",
 ];
 #[cfg(debug_assertions)]
 const WAKE_EDGES: [&str; 9] = [
@@ -2073,6 +2078,7 @@ struct WakeLedger {
     attempts: [AttemptLedger; 64],
     hint_kind: &'static str,
     hint_raw: Option<i32>,
+    pipe_error: Option<WakeRow>,
 }
 #[cfg(debug_assertions)]
 impl WakeLedger {
@@ -2088,6 +2094,7 @@ impl WakeLedger {
             attempts: [AttemptLedger::default(); 64],
             hint_kind: "none",
             hint_raw: None,
+            pipe_error: None,
         }
     }
     fn sequence(&mut self, sequence: u16, time: u64) -> bool {
@@ -2107,6 +2114,14 @@ impl WakeLedger {
             .is_some_and(|epoch| row.op != 14 || row.attempt != epoch)
         {
             return false;
+        }
+        if (22..=26).contains(&row.op) {
+            if !wake_pipe_role(row, run) || row.tick != if run { 0 } else { self.tick } {
+                return false;
+            }
+            self.pipe_error = Some(row);
+            self.latest = Some(row);
+            return true;
         }
         if row.op >= 14 && row.op <= 20 {
             if run || row.tick != 0 || row.attempt == 0 || row.attempt > self.count {
@@ -2326,6 +2341,14 @@ fn wake_fields<'a, const N: usize>(
 #[cfg(debug_assertions)]
 fn wake_shape(row: WakeRow) -> bool {
     let absent = row.value.is_none();
+    if (22..=26).contains(&row.op) {
+        return row.edge == 2
+            && absent
+            && row.attempt == 0
+            && row.kind != "none"
+            && (row.op != 23 || row.raw != Some(231))
+            && (row.op != 26 || row.kind != "WouldBlock");
+    }
     if (row.op != 4 || row.edge != 2) && (row.kind != "none" || row.raw.is_some()) {
         return false;
     }
@@ -2368,6 +2391,16 @@ fn wake_shape(row: WakeRow) -> bool {
         21 => row.edge == 2 && absent && row.tick == 0 && row.attempt == 0,
         _ => [0, 1, 2].contains(&row.edge) && absent,
     }
+}
+
+#[cfg(debug_assertions)]
+fn wake_pipe_role(row: WakeRow, run: bool) -> bool {
+    row.attempt == 0
+        && if run {
+            (22..=25).contains(&row.op)
+        } else {
+            row.op == 26
+        }
 }
 
 #[cfg(debug_assertions)]
@@ -2547,6 +2580,7 @@ struct ProducerFact {
     raw: Option<i32>,
     matched: Option<(u8, AttemptLedger)>,
     binding_refused: bool,
+    pipe_error: Option<WakeRow>,
 }
 #[cfg(debug_assertions)]
 impl ProducerFact {
@@ -2574,6 +2608,7 @@ impl ProducerFact {
         raw: None,
         matched: None,
         binding_refused: false,
+        pipe_error: None,
     };
     fn from_bytes(bytes: &[u8], context: [u8; 16], run: bool, uuid: Option<[u8; 16]>) -> Self {
         let count = u32::try_from(bytes.len()).ok();
@@ -2614,6 +2649,7 @@ impl ProducerFact {
             raw: ledger.hint_raw,
             matched,
             binding_refused: false,
+            pipe_error: ledger.pipe_error,
         }
     }
 }
@@ -3383,6 +3419,50 @@ impl fmt::Display for ProducerFirstSummary<'_> {
 }
 
 #[cfg(debug_assertions)]
+struct PipeStageSummary {
+    fact: ProducerFact,
+    run: bool,
+}
+#[cfg(debug_assertions)]
+impl fmt::Display for PipeStageSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let role = if self.run { "run" } else { "daemon" };
+        let row = self.fact.pipe_error.filter(|row| {
+            self.fact.capture == ProducerCapture::Complete
+                && (1..=255).contains(&row.sequence)
+                && wake_shape(*row)
+                && wake_pipe_role(*row, self.run)
+                && (!self.run || row.tick == 0)
+                && (row.kind == "unknown" || STORE_IO_KINDS.contains(&row.kind))
+        });
+        let Some(row) = row else {
+            return write!(
+                formatter,
+                "wake_pipe_stage/v1 role={role} lane=cleanup_diagnostic fact=unobserved"
+            );
+        };
+        let stage = match row.op {
+            22 => "pipe_name",
+            23 => "pipe_open",
+            24 => "pipe_exchange",
+            25 => "pipe_infra",
+            26 => "pipe_accept",
+            _ => {
+                return write!(
+                    formatter,
+                    "wake_pipe_stage/v1 role={role} lane=cleanup_diagnostic fact=unobserved"
+                );
+            }
+        };
+        write!(
+            formatter,
+            "wake_pipe_stage/v1 role={role} lane=cleanup_diagnostic stage={stage} seq={} kind={} raw={:?}",
+            row.sequence, row.kind, row.raw
+        )
+    }
+}
+
+#[cfg(debug_assertions)]
 struct ProducerFailureSummary {
     original: ProducerSummary,
     first_cleanup: CleanupSnapshot,
@@ -3405,6 +3485,18 @@ impl fmt::Display for ProducerFailureSummary {
                 snapshot: self.later_cleanup,
                 scope: CleanupScope::AfterExistingWait,
                 case: self.case
+            }
+        )?;
+        write!(
+            formatter,
+            "\n{}\n{}",
+            PipeStageSummary {
+                fact: self.original.snapshot.facts[1],
+                run: true
+            },
+            PipeStageSummary {
+                fact: self.original.snapshot.facts[0],
+                run: false
             }
         )
     }
@@ -7092,6 +7184,7 @@ impl fmt::Display for ProducerControlScalar {
 #[cfg(debug_assertions)]
 fn producer_controls(entered: Instant, deadline: Instant) {
     assert_wake_decoder_controls();
+    assert_pipe_stage_decoder_controls();
     for case in [ProducerControl::Queued, ProducerControl::Cancellation] {
         assert!(
             Instant::now() < deadline,
@@ -7158,6 +7251,17 @@ fn producer_controls(entered: Instant, deadline: Instant) {
                 ProducerSummary {
                     snapshot,
                     cancel: matches!(case, ProducerControl::Cancellation)
+                }
+            );
+            eprintln!(
+                "{}\n{}",
+                PipeStageSummary {
+                    fact: snapshot.facts[1],
+                    run: true
+                },
+                PipeStageSummary {
+                    fact: snapshot.facts[0],
+                    run: false
                 }
             );
         }
@@ -7569,6 +7673,118 @@ fn assert_wake_decoder_controls() {
         }
     }
 }
+#[cfg(debug_assertions)]
+fn pipe_stage_vector(run: bool, op: &str, sequence: u16, raw: Option<i32>) -> String {
+    let role = if run { "run" } else { "daemon" };
+    format!(
+        "locron_wake_phase/v2 ctx={} role={role} seq={sequence} tick=0 attempt=0 op={op} edge=err value=None kind=NotFound raw={raw:?} t_us=0\n",
+        "00".repeat(16)
+    )
+}
+
+#[cfg(debug_assertions)]
+fn assert_pipe_stage_decoder_controls() {
+    // These closed byte controls have ZERO native endpoint/lifecycle acceptance.
+    for (run, op) in [
+        (true, "pipe_name"),
+        (true, "pipe_open"),
+        (true, "pipe_exchange"),
+        (true, "pipe_infra"),
+        (false, "pipe_accept"),
+    ] {
+        for raw in [None, Some(i32::MIN), Some(i32::MAX)] {
+            let valid = pipe_stage_vector(run, op, 1, raw);
+            let fact = ProducerFact::from_bytes(valid.as_bytes(), [0; 16], run, None);
+            assert!(matches!(fact.capture, ProducerCapture::Complete));
+            let Some(row) = fact.pipe_error else {
+                panic!("returned pipe stage was not retained");
+            };
+            assert_eq!(row.raw, raw);
+            assert_eq!(row.sequence, 1);
+            let line = PipeStageSummary { fact, run }.to_string();
+            assert!(line.is_ascii() && line.len() + 2 < 256);
+            assert!(line.contains(&format!("stage={op} seq=1 kind=NotFound")));
+        }
+        let valid = pipe_stage_vector(run, op, 1, Some(2));
+        let unknown = valid.replace("kind=NotFound", "kind=unknown");
+        assert!(decode_wake(unknown.as_bytes(), [0; 16], run).is_ok());
+        let opposite = valid.replace(
+            if run { "role=run" } else { "role=daemon" },
+            if run { "role=daemon" } else { "role=run" },
+        );
+        assert!(decode_wake(opposite.as_bytes(), [0; 16], !run).is_err());
+        for invalid in [
+            valid.replace("edge=err", "edge=enter"),
+            valid.replace("edge=err", "edge=ok"),
+            valid.replace("value=None", "value=Some(0)"),
+            valid.replace("attempt=0", "attempt=1"),
+            valid.replace("kind=NotFound", "kind=none"),
+            valid.replace("kind=NotFound", "kind=private_text"),
+            valid.replace("raw=Some(2)", "raw=Some(2147483648)"),
+            valid.replace("raw=Some(2)", "raw=Some(-2147483649)"),
+            valid.replace("raw=Some(2)", "raw=Some(-0)"),
+            valid.replace("raw=Some(2)", "raw=Some(02)"),
+            valid.replace(" raw=Some(2)", ""),
+            valid.replace("raw=Some(2)", "raw=Some(2) raw=None"),
+            valid.replace("t_us=0", "extra=0 t_us=0"),
+            valid.replace("ctx=00", "ctx=10"),
+            valid.replace("seq=1", "seq=01"),
+        ] {
+            assert!(decode_wake(invalid.as_bytes(), [0; 16], run).is_err());
+            assert!(
+                ProducerFact::from_bytes(invalid.as_bytes(), [0; 16], run, None)
+                    .pipe_error
+                    .is_none(),
+                "refused pipe carrier retained an error fact"
+            );
+        }
+        let later = valid.clone() + &pipe_stage_vector(run, op, 2, None);
+        let latest = ProducerFact::from_bytes(later.as_bytes(), [0; 16], run, None);
+        assert!(
+            latest
+                .pipe_error
+                .is_some_and(|row| row.sequence == 2 && row.raw.is_none())
+        );
+    }
+    for (run, invalid) in [
+        (true, pipe_stage_vector(true, "pipe_open", 1, Some(231))),
+        (
+            false,
+            pipe_stage_vector(false, "pipe_accept", 1, None)
+                .replace("kind=NotFound", "kind=WouldBlock"),
+        ),
+    ] {
+        assert!(decode_wake(invalid.as_bytes(), [0; 16], run).is_err());
+    }
+    for (run, op) in [(true, "pipe_name"), (false, "pipe_accept")] {
+        let mut ceiling = String::new();
+        for sequence in 1..=255 {
+            ceiling.push_str(&pipe_stage_vector(run, op, sequence, None));
+        }
+        assert!(decode_wake(ceiling.as_bytes(), [0; 16], run).is_ok());
+        let overflow = ceiling.clone()
+            + &pipe_stage_vector(run, "limit", 256, None).replace("kind=NotFound", "kind=none");
+        assert!(matches!(
+            decode_wake(overflow.as_bytes(), [0; 16], run),
+            Err(ProducerCapture::Overflow)
+        ));
+        ceiling.push_str(&pipe_stage_vector(run, op, 256, None));
+        assert!(decode_wake(ceiling.as_bytes(), [0; 16], run).is_err());
+    }
+    for run in [false, true] {
+        let line = PipeStageSummary {
+            fact: ProducerFact::UNOBSERVED,
+            run,
+        }
+        .to_string();
+        assert!(line.is_ascii() && line.len() + 2 < 256);
+        assert!(line.ends_with("fact=unobserved"));
+        for private in ["ctx=", "corr=", "pid=", "uuid=", "t_us="] {
+            assert!(!line.contains(private));
+        }
+    }
+}
+
 // END selected producer controls.
 
 #[test]

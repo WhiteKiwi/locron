@@ -121,6 +121,13 @@ pub(crate) fn hint(error: Option<&io::Error>) {
         raw_present = raw.is_some(), raw = i64::from(raw.unwrap_or(0)));
 }
 
+pub(crate) fn pipe_failure(op: &'static str, error: &io::Error) {
+    let raw = error.raw_os_error();
+    tracing::trace!(target: TARGET, op, edge = "err", value_present = false, value = 0_u64,
+        kind = io_kind(error.kind()), raw_present = raw.is_some(),
+        raw = i64::from(raw.unwrap_or(0)));
+}
+
 fn io_kind(kind: io::ErrorKind) -> &'static str {
     use io::ErrorKind;
     match kind {
@@ -182,7 +189,7 @@ struct Fields {
     ordinal: u32,
 }
 
-const OPS: [&str; 21] = [
+const OPS: [&str; 26] = [
     "role_lock",
     "store_open",
     "settings",
@@ -204,6 +211,11 @@ const OPS: [&str; 21] = [
     "cancel_signal",
     "completion",
     "failure_complete",
+    "pipe_name",
+    "pipe_open",
+    "pipe_exchange",
+    "pipe_infra",
+    "pipe_accept",
 ];
 const EDGES: [&str; 9] = [
     "enter", "ok", "err", "some", "none", "wake", "timer", "external", "signal",
@@ -402,15 +414,20 @@ impl State {
         let (Some(op), Some(edge), Some(kind)) = (fields.op, fields.edge, fields.kind) else {
             return false;
         };
-        let attempt_op = OPS[14..].contains(&op);
+        let attempt_op = OPS[14..21].contains(&op);
+        let pipe_op = OPS[21..].contains(&op);
         let expected = if attempt_op { 511 } else { 127 };
         if fields.refused
             || fields.seen != expected
             || (!fields.value_present && fields.value != 0)
             || (!fields.raw_present && fields.raw != 0)
-            || ((op != "hint" || edge != "err") && (kind != "none" || fields.raw_present))
-            || (self.role == Role::Run && !["enqueue", "hint", "run_return"].contains(&op))
-            || (self.role == Role::Daemon && ["enqueue", "hint", "run_return"].contains(&op))
+            || (pipe_op && !pipe_failure_shape(self.role, op, edge, fields))
+            || (!pipe_op
+                && (((op != "hint" || edge != "err") && (kind != "none" || fields.raw_present))
+                    || (self.role == Role::Run
+                        && !["enqueue", "hint", "run_return"].contains(&op))
+                    || (self.role == Role::Daemon
+                        && ["enqueue", "hint", "run_return"].contains(&op))))
         {
             return false;
         }
@@ -518,8 +535,23 @@ fn option_signed(value: Option<i32>) -> String {
     value.map_or_else(|| "None".to_owned(), |value| format!("Some({value})"))
 }
 
+fn pipe_failure_shape(role: Role, op: &str, edge: &str, fields: &Fields) -> bool {
+    if edge != "err" || fields.value_present || fields.kind == Some("none") {
+        return false;
+    }
+    match (role, op) {
+        (Role::Run, "pipe_name" | "pipe_exchange" | "pipe_infra") => true,
+        (Role::Run, "pipe_open") => !fields.raw_present || fields.raw != 231,
+        (Role::Daemon, "pipe_accept") => fields.kind != Some("WouldBlock"),
+        _ => false,
+    }
+}
+
 fn shape(op: &str, edge: &str, value: Option<u64>) -> bool {
     match op {
+        "pipe_name" | "pipe_open" | "pipe_exchange" | "pipe_infra" | "pipe_accept" => {
+            edge == "err" && value.is_none()
+        }
         "attempt_begin" => edge == "enter" && value.is_none(),
         "cancel_signal" => edge == "ok" && value.is_none(),
         "mark_running" | "cancel_poll" => match edge {

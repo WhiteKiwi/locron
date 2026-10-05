@@ -147,6 +147,9 @@ where
         Action::Wake(_) => WAKE_MESSAGE,
         Action::Stop(_) => SHUTDOWN_MESSAGE,
     };
+    #[cfg(debug_assertions)]
+    let wake_diagnostic =
+        role == "wake" && lifetime.is_none() && matches!(&action, Action::Wake(_));
     Ok(tokio::spawn(async move {
         let _guard = guard;
         loop {
@@ -157,6 +160,14 @@ where
                     continue;
                 }
                 Err(error) => {
+                    #[cfg(debug_assertions)]
+                    if wake_diagnostic {
+                        let raw = error.raw_os_error();
+                        tracing::trace!(target: "locron::windows_wake_diagnostics",
+                            op = "pipe_accept", edge = "err", value_present = false, value = 0_u64,
+                            kind = wake_pipe_io_kind(error.kind()),
+                            raw_present = raw.is_some(), raw = i64::from(raw.unwrap_or(0)));
+                    }
                     tracing::warn!(%error, "local endpoint accept failed");
                     break;
                 }
@@ -210,6 +221,53 @@ where
             .await;
         }
     }))
+}
+
+#[cfg(debug_assertions)]
+fn wake_pipe_io_kind(kind: io::ErrorKind) -> &'static str {
+    use io::ErrorKind;
+    match kind {
+        ErrorKind::NotFound => "NotFound",
+        ErrorKind::PermissionDenied => "PermissionDenied",
+        ErrorKind::ConnectionRefused => "ConnectionRefused",
+        ErrorKind::ConnectionReset => "ConnectionReset",
+        ErrorKind::HostUnreachable => "HostUnreachable",
+        ErrorKind::NetworkUnreachable => "NetworkUnreachable",
+        ErrorKind::ConnectionAborted => "ConnectionAborted",
+        ErrorKind::NotConnected => "NotConnected",
+        ErrorKind::AddrInUse => "AddrInUse",
+        ErrorKind::AddrNotAvailable => "AddrNotAvailable",
+        ErrorKind::NetworkDown => "NetworkDown",
+        ErrorKind::BrokenPipe => "BrokenPipe",
+        ErrorKind::AlreadyExists => "AlreadyExists",
+        ErrorKind::WouldBlock => "WouldBlock",
+        ErrorKind::NotADirectory => "NotADirectory",
+        ErrorKind::IsADirectory => "IsADirectory",
+        ErrorKind::DirectoryNotEmpty => "DirectoryNotEmpty",
+        ErrorKind::ReadOnlyFilesystem => "ReadOnlyFilesystem",
+        ErrorKind::StaleNetworkFileHandle => "StaleNetworkFileHandle",
+        ErrorKind::InvalidInput => "InvalidInput",
+        ErrorKind::InvalidData => "InvalidData",
+        ErrorKind::TimedOut => "TimedOut",
+        ErrorKind::WriteZero => "WriteZero",
+        ErrorKind::StorageFull => "StorageFull",
+        ErrorKind::NotSeekable => "NotSeekable",
+        ErrorKind::QuotaExceeded => "QuotaExceeded",
+        ErrorKind::FileTooLarge => "FileTooLarge",
+        ErrorKind::ResourceBusy => "ResourceBusy",
+        ErrorKind::ExecutableFileBusy => "ExecutableFileBusy",
+        ErrorKind::Deadlock => "Deadlock",
+        ErrorKind::CrossesDevices => "CrossesDevices",
+        ErrorKind::TooManyLinks => "TooManyLinks",
+        ErrorKind::InvalidFilename => "InvalidFilename",
+        ErrorKind::ArgumentListTooLong => "ArgumentListTooLong",
+        ErrorKind::Interrupted => "Interrupted",
+        ErrorKind::Unsupported => "Unsupported",
+        ErrorKind::UnexpectedEof => "UnexpectedEof",
+        ErrorKind::OutOfMemory => "OutOfMemory",
+        ErrorKind::Other => "Other",
+        _ => "unknown",
+    }
 }
 
 #[cfg(test)]
