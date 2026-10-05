@@ -5665,3 +5665,8 @@ Separate read-only research establishes that original capture-body stderr(null) 
 ## Windows producer hosted lint research, 2026-10-05
 
 The completed Windows1.98 workspace Clippy job on71a10 prints two errors (constant width2 chunks and Fields passed by value); later test Clippy is skipped. Separate frozen55 research establishes safe as_chunks sinceRust1.88 under pinned1.94, equal-length/empty-remainder semantics and the private synchronous resource-free Fields borrow. Both whole-file inverses and317 mode/blob protections are exact; analogous support iterator is not a printed third diagnostic. Root selected all four replacements after full research/API/Source review; no type/runtime/native/cause PASS is implied. Follow the complete WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md before separate Source.
+
+
+## Before-Source producer lint formatter reconciliation, 2026-10-05
+
+Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
