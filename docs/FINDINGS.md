@@ -5709,6 +5709,47 @@ Source review and the separate 195-row research distinguish actual Axum422 JSON 
 ## Dashboard144 private stage retention review (2026-10-05)
 
 Independent review of unpublished5ec finds that discarded TempPath::keep failures can leave implicit stage deletion enabled in locked tempfile3.27.0. The pure cleanup flag must be disabled before the existing no-clobber publication. No actual deletion or native failure was observed. The three-helper scope, Source conservation and current published1f5 ancestry boundary are frozen in [the supplemental retention plan](planning/DASHBOARD_BOOLEAN_STAGE_RETENTION_2026-10-05.md).
+## PR 142 generic refusal review and missing admission qualification (2026-10-04)
+
+Head507777cedd5bd02b162d9b347c2770cdf4585bc0 removes URI interpolation from authentication errors. Both contract.rs token_refusal expectations still contain /api/v1/jobs; ordinary run 37177628448 fails those assertions on eight platform jobs, while existing Server library tests and the other contract cases pass. Preserve the generic response and update those two expectations. Source review also confirms that single_header distinguishes actual absence, multiple fields and undecodable bytes, loopback_port refuses unsupported suffixes and malformed decimal ports, and unsafe Origin requires the actual bound port. Existing tests do not establish the adversarial matrix. Add actual-router admission/body-poll and real HTTP canary controls in PR 142 under Issue 162; PR 145 retains the separate cookie/CSRF slice. The selected tests use synthetic tokens and private ephemeral fixtures only; no installed dashboard credentials or live service are involved.
+
+### PR142 reviewed admission Source/current-main handoff (2026-10-04)
+
+Source4d229e61 preserves the full production middleware prefix and original contract except the two selected generic messages; parent-reviewed tests statically inventory152 rows. Format/locked metadata/diff pass; all new runtime/type/Clippy/native qualification remains pending. A normal current-main c4ef8b90 integration must preserve both Docs histories and the reviewed Source union, followed by fresh candidate/current-base CI and paired provenance. Refs #162; #163.
+### PR142 measured embedded URL suffix lint (2026-10-04)
+
+Changed-head37198413636 has14 ordinary successes/three lint failures. Raw Windows/Linux lint identifies middleware831 ends_with(.js) case-sensitive-file-extension lint. Keep the exact lowercase embedded URL rule through rsplit_once plus exact suffix js; preserve all152 rows and other Source. No case relaxation/allow/gate waiver. Root Docs/Issue162 readback precede separate one-assertion Source repair and fresh changed-head qualification.
+
+
+## PR142 reviewed qualification and exact main138 integration
+
+The [completed integration plan](planning/DASHBOARD_HEADERS_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
+
+
+## PR142 exact main136 integration selection
+
+PR136 is merged as f90a9d5 with exact reviewed/tested tree and actual ordinary/native/paired acceptance. Follow [the selected integration plan](planning/DASHBOARD_HEADERS_MAIN136_2026-10-04.md) to preserve the reviewed own Source and complete historical document blocks before fresh combined-head qualification. Prior successes do not qualify the new tree.
+
+## Dashboard145 strict cookie/recovery research and selection (2026-10-05)
+
+The complete original198 control research distinguishes missing cookies from malformed and duplicate/unreadable states, actual body polls from delivery, real issuer headers from DOM storage, and plaintext Axum rejections from API envelopes. Original public GET admitted malformed cookies as unauthenticated; preserving that load boundary adds six real entry/script controls without dropping any original key. Selected204=190 backend+14 client controls remain UNMEASURED. Source/CI evidence, primary request/asset code and pin reads establish the narrow recovery route and the need to generate the actually shipped RustEmbed dist. See planning/DASHBOARD_COOKIE_RECOVERY_2026-10-05.md and its complete original/public ledgers. Historical CI37178548023/1 failures remain evidence, not a claim about the future composed candidate.
+
+## Dashboard145 public predicate clarification before Source (2026-10-05)
+
+Both original cc0aaa and reviewed incoming b1d843 actually use GET and !uri.path().starts_with("/api/") for public entry. The initial selection's “outside /api/v1/” wording was incorrect. Preserve that whole existing /api/ predicate and reuse it solely to allow bad-session public loading; /api/other and /api/v2 remain protected. This corrects Docs before integration or Source; all original198 and newPUBLIC6 wires/keys remain unchanged.
+
+## Dashboard145 pinned generation environment before Source (2026-10-05)
+
+The developer observed default Node26.7.0 and pnpm10.34.6 without installing/building. The existing mise Node24.21.0 binary is present and Root directly read its exact version. Select that existing bin directory only in the copied child-command environment for the one isolated frozen install/build and verify both exact pins there. No global PATH/config/shim/tool installation/upgrade is selected. No generation, Source or runtime proof is claimed by these version reads.
+
+## Dashboard145 sentinel handle compatibility before dependent Source (2026-10-05)
+
+Preserved Core create_private_new returns a read/write GuardedFile; Windows open_private_read_stable uses FILE_SHARE_READ. The draft fixture cannot retain that writer while opening a stable reader. The actual API contract selects a same-full-ID handoff after initial sync: capture writer identity, release writer, reopen the known no-follow existing leaf read-only, compare its complete identity and retain that guard. This is Source-backed static compatibility, not a native result. No Core, 204-row ledger, old assertion, generation or deadline changes are selected; the full supplement is planning/DASHBOARD_COOKIE_SENTINEL_HANDOFF_2026-10-05.md.
+
+
+## Independent Unix sentinel readers (2026-10-05)
+
+Refs #162 / PR145. Root reviewed clean Source0c0086445f98ce8498fdf0ae670deb6a51ac2ce4 and its whole inverses/single generated build. Initial sentinel handoff is no-follow and read-only, but two independent Unix readers still use File::open between symlink_metadata checks. Those calls can follow a leaf link. DASHBOARD_COOKIE_UNIX_NOFOLLOW_2026-10-05.md selects only existing Core no-follow GuardedFile substitutions, the corresponding bounded reader borrow and unused import removal. All204 keys, Windows/production/frontend/generated bytes, clocks and quarantine policy remain frozen; this mismatch is static, not measured native failure.
 
 
 ## Actual Windows token destination raw5 and release-success qualification (2026-10-05)

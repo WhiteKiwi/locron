@@ -5490,6 +5490,39 @@ Use the six-path private fixture/build lease in planning/DASHBOARD_BOOLEAN_QUALI
 ## Dashboard144 private stage retention implementation (2026-10-05)
 
 Apply only the separate developer's three-helper retention lease in [the supplemental plan](planning/DASHBOARD_BOOLEAN_STAGE_RETENTION_2026-10-05.md), after Issue143 exact GET and complete final-plan reread. Disable the TempPath cleanup flag before one publication and preserve the original fixed Err, success identity path, all193/195 assertions and every other Source byte. Root reviews full inverses and handles later normal integration/publication with current published1f5 preserved. Existing hosted/Guardian/paired gates and uncertainty boundaries remain.
+## PR 142 reviewed security-admission test handoff (2026-10-04)
+
+Follow docs/planning/DASHBOARD_STRICT_SECURITY_HEADERS.md's review handoff before Source: keep the complete production middleware/router/handlers and dependencies unchanged, correct only two stale URI-bearing contract messages, and add the finite actual-router Host 36/Origin 96/authentication-public17 rows plus three real HTTP canary cases. An actual one-item streamed JSON body proves that refusal precedes paste-handler consumption; exact envelope/no-referrer/no-Set-Cookie and canary absence accompany each refusal. Issue 162 owns Verify and Issue 163 routes the work to existing PR 142; PR 145 owns CSRF/cookie qualification. The separate development sub-session implements Source after the exact issue-comment readback. Parent reviews whole blobs/inverses and publishes only after fresh current-head hosted regression, lint, native Windows and paired provenance; the owner's installed Locron/service is outside this test-only scope.
+
+### PR142 reviewed admission Source/current-main handoff (2026-10-04)
+
+Source4d229e61 preserves the full production middleware prefix and original contract except the two selected generic messages; parent-reviewed tests statically inventory152 rows. Format/locked metadata/diff pass; all new runtime/type/Clippy/native qualification remains pending. A normal current-main c4ef8b90 integration must preserve both Docs histories and the reviewed Source union, followed by fresh candidate/current-base CI and paired provenance. Refs #162; #163.
+### PR142 measured embedded URL suffix lint (2026-10-04)
+
+Changed-head37198413636 has14 ordinary successes/three lint failures. Raw Windows/Linux lint identifies middleware831 ends_with(.js) case-sensitive-file-extension lint. Keep the exact lowercase embedded URL rule through rsplit_once plus exact suffix js; preserve all152 rows and other Source. No case relaxation/allow/gate waiver. Root Docs/Issue162 readback precede separate one-assertion Source repair and fresh changed-head qualification.
+
+
+## PR142 reviewed qualification and exact main138 integration
+
+The [completed integration plan](planning/DASHBOARD_HEADERS_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
+
+
+## PR142 separate Git integration with reviewed main136
+
+SPEC remains frozen. [The complete five-step plan](planning/DASHBOARD_HEADERS_MAIN136_2026-10-04.md) selects exact normal Source union and whole incoming Docs plus all ordered byte-exact own insertion blocks; whole own/incoming inverses are required. Root exact Issue162 GET/final reread precede separate development; full original gates and actual functional/paired provenance qualify the combined head.
+
+## Dashboard145 selected production and qualification (2026-10-05)
+
+Use typed all-field Cookie scanning with strict Authorization first, scoped protected-session refusal, preserved public entry, narrow session-status401 and exact POST/unique-readable-malformed/no-echo recovery. Delegate actual body/issuer/API paths and limit the client echo omission to exact POST session. planning/DASHBOARD_COOKIE_RECOVERY_2026-10-05.md freezes the four Source paths, actual generated dist lease, all204 fixed controls, ownership/caps/clocks and four concrete Verify steps. A separate developer may generate the pinned bundle once with frozen ignored-scripts installation/build, while runtime/DOM/native/Rust qualification stays hosted. Preserve the full reviewed142 appendix/generic production contracts and all old assertions; Root independently reviews Source/dist and actual latest-base17/Guardian/paired/tree evidence before ordered merge.
+
+## Dashboard145 sentinel same-identity handoff (2026-10-05)
+
+The dependent private fixture correction follows planning/DASHBOARD_COOKIE_SENTINEL_HANDOFF_2026-10-05.md. Preserve the actual owned root/parent guard, sync the genuine created sentinel, capture its complete writer identity, release the writer before the incompatible Windows stable-reader open, and retain the exact-ID-equal read-only no-follow leaf. Independent later checks and cleanup retain all existing identity/digest/ownership/cap/clock refusal rules. This clarifies the four-path fixture implementation while leaving the complete original204 selection and actual once-generated dist bytes unchanged. Exact Issue162 readback and full final Root plan reread precede separate development; Source compatibility remains distinct from hosted native acceptance.
+
+
+## Independent Unix sentinel readers (2026-10-05)
+
+Follow DASHBOARD_COOKIE_UNIX_NOFOLLOW_2026-10-05.md after exact Issue162 GET/body equality and Root whole final15/40/13 plan reread. Separate developer corrects only private qualification.rs Unix independent opens with existing Core open_read_no_follow, retains real guards/full identity/digest and nonrecursive cleanup, and returns a clean one-file Source commit with full0c inverse/all324 other protected entries. Root independently reviews original9dd conservation/generated receipts and publishes in order. No repeated generation or local compiler/runtime; all actual190/99 and17/Guardian/paired Verify gates remain required.
 
 
 ## Windows token held/released destination fixture amendment (2026-10-05)
