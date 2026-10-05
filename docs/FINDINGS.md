@@ -5998,3 +5998,21 @@ call/evaluation/predicate/Result/error/owner/clock change or native-cause repair
 selected. Original125-line plan and every historical Doc byte remain preserved.
 Source stays paused for Root commits/all eight whole owning GETs/final entire reread;
 independent1.98/full inverses and fresh actual native/strict lint Verify remain pending.
+
+
+## Guard per-user direct-build hypothesis (2026-10-06)
+
+B production/recovery locator and original CLI fence remains an actual failed/unqualified scope. The frozen seven-payload
+placement-owner-policy research establishes no false owner/ACL rejection and no
+actual host path/SID/full mask/cost. Direct LOCALAPPDATA placement is a selected
+experiment; existing ancestor/leaf/private/identity guards decide, with no fallback,
+ACL repair, copy or private-target guarantee.
+A image guard requires TokenUser leaf-owner equality; Admin/SYSTEM write ACEs
+do not broaden it. A facts/B images/locator keep their four-owner ancestry
+guard without A's leaf equality; actual TokenOwner/TokenUser/leaf owners unknown.
+The concise identical
+[WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md](planning/WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md)
+pins current clean A88cd/B163e and the narrow step-scoped target/facts/readback
+composition; B alone adds one track_caller location hint, with cost/cause unknown.
+Every old failed result and every historical Doc byte remain preserved. Source
+waits for Root commits/all owning exact GETs/final entire reread and separate lease.

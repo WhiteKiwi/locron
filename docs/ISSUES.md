@@ -349,3 +349,15 @@ final after-GET reread BEFORE separate Source; exact two-closure/five-hunk/eight
 B-two-attribute inverses, independent1.98 and all protected Source; and fresh strict
 lint/native/full member/main contribution. The14-payload Source-zero stop and old
 failures stay frozen; no formatter/static/diagnostic result waives or closes work.
+
+
+## Per-user guard build four-step Verify gate (2026-10-06)
+
+For #27/#31/#162/#146/#149/#163 plus PR141/147, continue the whole concise
+WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md. Root owns Docs commits/all whole owning
+POST/exact GETs with bodies/state/history retained and actual final entire reread
+AFTER ALL GETs. Separate Source must prove exact workflow/marker-only inverses
+and protection, fresh three Windows foundation/full A/B real guard/row/cleanup
+outcomes plus B original Unix fence, and all required/paired/package/secret gates
+and actual member/main contribution before closure. Old failures/unobserved facts
+stay open; placement/build/static metadata or a location hint is no acceptance.

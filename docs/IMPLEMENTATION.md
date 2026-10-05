@@ -5749,3 +5749,17 @@ attributes; A/B complete Core final bytes must match. Independent1.98/full offli
 metadata/static protection precede Root actual required changed-head qualification.
 No surrounding clause adaptation, allowance, extra guard query or Source-first repair;
 the unmeasured native failures and independent SEL02 timeout remain outside this scope.
+
+
+## Selected per-user build before separate Source (2026-10-06)
+
+Use the whole concise WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md plan: one fresh
+absolute LOCALAPPDATA namespace per A/B/run/attempt/job/native row, no repair/copy/
+fallback/adoption/trust promise. A moves target AND facts/absent-evidence container
+and limits its target to producer/library. B separately binds production/recovery
+metadata/environments/direct images and its original adjacent durable locator;
+recovery target reaches only library/Engine-output/explicit-prune Windows steps.
+Unrelated default targets/evidence and every Unix producer byte stay literal. B
+only marks CLI check, not checked; all29 calls/body/clock/oracles remain exact.
+Root entire after-GET plan review precedes separate development, full static
+inverses/protection and fresh unchanged actual required matrices; no cause repair.
