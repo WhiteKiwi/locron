@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use locron_core::filesystem::{DirectoryGuard, GuardedFile, open_private};
-use locron_store::StatePaths;
+use locron_store::{StatePaths, Store};
 use rusqlite::{Connection, OpenFlags, types::ValueRef};
 
 pub fn checked<T, E>(result: Result<T, E>) -> T {
@@ -215,17 +215,121 @@ fn rows(connection: &Connection, sql: &str, budget: &mut usize) -> Vec<Vec<Cell>
     result
 }
 
+#[cfg(windows)]
+fn sqlite_sidecar(database: &Path, suffix: &str) -> PathBuf {
+    let mut path = database.as_os_str().to_os_string();
+    path.push(suffix);
+    path.into()
+}
+
+#[cfg(windows)]
+fn optional_sqlite_leaf(path: &Path) -> Option<GuardedFile> {
+    checked(
+        open_private(path, OpenOptions::new().read(true))
+            .map(Some)
+            .or_else(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    Ok(None)
+                } else {
+                    Err(error)
+                }
+            }),
+    )
+}
+
+#[cfg(windows)]
+fn sqlite_pair(database: &Path) -> Option<(GuardedFile, GuardedFile)> {
+    assert!(
+        optional_sqlite_leaf(&sqlite_sidecar(database, "-journal")).is_none(),
+        "oracle found a rollback journal"
+    );
+    let wal = optional_sqlite_leaf(&sqlite_sidecar(database, "-wal"));
+    let shm = optional_sqlite_leaf(&sqlite_sidecar(database, "-shm"));
+    match (wal, shm) {
+        (Some(wal), Some(shm)) => Some((wal, shm)),
+        (None, None) => None,
+        _ => panic!("oracle found a partial coordination pair"),
+    }
+}
+
+#[cfg(windows)]
+fn immutable_sqlite_uri(path: &Path) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let path = path
+        .to_str()
+        .filter(|path| !path.contains('\0'))
+        .expect("oracle path was not UTF-8 without NUL");
+    let mut uri = String::from("file:");
+    for byte in path.bytes() {
+        uri.push('%');
+        uri.push(char::from(HEX[usize::from(byte >> 4)]));
+        uri.push(char::from(HEX[usize::from(byte & 15)]));
+    }
+    uri.push_str("?mode=ro&immutable=1");
+    uri
+}
+
 pub fn logical(paths: &StatePaths) -> Logical {
+    logical_boundary(paths, None)
+}
+
+pub fn logical_with_writer(paths: &StatePaths, writer: &Store) -> Logical {
+    logical_boundary(paths, Some(writer))
+}
+
+fn logical_boundary(paths: &StatePaths, writer: Option<&Store>) -> Logical {
+    if let Some(writer) = writer {
+        assert!(
+            writer.paths().database == paths.database,
+            "oracle writer named another database"
+        );
+    }
     let parent = checked(DirectoryGuard::existing_private(&paths.root));
     let guard = checked(open_private(&paths.database, OpenOptions::new().read(true)));
     let original_id = identity(&guard);
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW;
     #[cfg(windows)]
-    let mut connection = checked(Connection::open_with_flags_and_vfs(
-        guard.normalized_path(),
-        flags,
-        "win32-longpath",
-    ));
+    let stable = if writer.is_none() {
+        let stable = checked(locron_core::filesystem::open_private_read_stable(
+            guard.normalized_path(),
+        ));
+        assert!(
+            identity(&stable) == original_id,
+            "oracle stable gate selected another database"
+        );
+        Some(stable)
+    } else {
+        None
+    };
+    #[cfg(windows)]
+    let coordination = sqlite_pair(guard.normalized_path());
+    #[cfg(windows)]
+    assert!(
+        writer.is_none() || coordination.is_some(),
+        "live oracle required an existing coordination pair"
+    );
+    #[cfg(windows)]
+    let coordination_id = coordination
+        .as_ref()
+        .map(|(wal, shm)| (identity(wal), identity(shm)));
+    #[cfg(windows)]
+    let mut connection = if coordination.is_some() {
+        checked(Connection::open_with_flags_and_vfs(
+            guard.normalized_path(),
+            flags,
+            "win32-longpath",
+        ))
+    } else {
+        assert!(
+            stable.is_some() && sqlite_pair(guard.normalized_path()).is_none(),
+            "closed oracle coordination absence changed"
+        );
+        checked(Connection::open_with_flags_and_vfs(
+            immutable_sqlite_uri(guard.normalized_path()),
+            flags | OpenFlags::SQLITE_OPEN_URI,
+            "win32-longpath",
+        ))
+    };
     #[cfg(unix)]
     let mut connection = checked(Connection::open_with_flags(guard.normalized_path(), flags));
     assert!(
@@ -315,7 +419,31 @@ pub fn logical(paths: &StatePaths) -> Logical {
         "oracle file identity changed"
     );
     drop(connection);
+    #[cfg(windows)]
+    {
+        let readback = sqlite_pair(guard.normalized_path());
+        assert!(
+            readback
+                .as_ref()
+                .map(|(wal, shm)| (identity(wal), identity(shm)))
+                == coordination_id,
+            "oracle coordination identity or absence changed"
+        );
+        assert!(
+            identity(&guard) == original_id
+                && stable
+                    .as_ref()
+                    .is_none_or(|stable| identity(stable) == original_id),
+            "oracle retained database identity changed"
+        );
+        drop(readback);
+    }
     drop(reported_guard);
+    #[cfg(windows)]
+    {
+        drop(coordination);
+        drop(stable);
+    }
     drop(guard);
     drop(parent);
     Logical {
@@ -411,5 +539,8 @@ pub fn unchanged_physical(before: &Physical, immediately_after: &Physical) {
     );
     // Each coordination record was independently admitted private/no-follow and read at full identity.
     // Its actual presence, identity and bytes remain separate observations, never a permission to mutate SQL.
-    let _actual_coordination_changed = before.coordination != immediately_after.coordination;
+    eprintln!(
+        "history_coordination/v1 changed={}",
+        before.coordination != immediately_after.coordination
+    );
 }

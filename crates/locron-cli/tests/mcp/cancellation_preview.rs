@@ -108,7 +108,7 @@ impl Fixture {
             checked(file.sync_all());
         }
         drop(output_guard);
-        let logical_before = logical::logical(&paths);
+        let logical_before = logical::logical_with_writer(&paths, &store);
         drop(store); // Close every independent reader before the original final writer close.
         assert!(
             Instant::now() + Duration::from_secs(10) < deadline,
@@ -603,7 +603,7 @@ fn history_active_mcp_dry_why_preserve_full_state() {
             }
             expected.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1)));
             let expected: Vec<_> = expected.into_iter().take(100).map(|(_, id)| id).collect();
-            let before = logical::logical(&paths);
+            let before = logical::logical_with_writer(&paths, &writer);
             drop(writer);
             assert!(
                 Instant::now() + Duration::from_secs(10) < deadline,
@@ -620,14 +620,14 @@ fn history_active_mcp_dry_why_preserve_full_state() {
             );
             assert_eq!(run["dry_run"], true);
             assert_eq!(run["eligible"], !active || policy != "skip");
-            let decision = if !active {
-                "eligible"
-            } else {
+            let decision = if active {
                 match policy {
                     "skip" => "would_skip_overlap",
                     "replace" => "would_replace",
                     _ => "eligible_subject_to_capacity",
                 }
+            } else {
+                "eligible"
             };
             assert_eq!(run["decision"], decision);
             assert!(
@@ -675,6 +675,24 @@ fn history_active_mcp_update_releases_readonly_owner_in_both_modes() {
         let temporary = checked(tempfile::tempdir());
         let guard = checked(DirectoryGuard::private(&temporary.path().join("private")));
         let paths = StatePaths::new(guard.normalized_path().to_path_buf());
+        #[cfg(unix)]
+        let creator_id = {
+            let creator = checked(locron_core::filesystem::create_private_new(&paths.database));
+            let creator_id = logical::identity(&creator);
+            assert_eq!(checked(creator.metadata()).len(), 0);
+            assert!(
+                checked(locron_core::filesystem::is_private(&paths.database, false)),
+                "initial database was not private"
+            );
+            let named = checked(open_private(&paths.database, OpenOptions::new().read(true)));
+            assert!(
+                logical::identity(&named) == creator_id,
+                "initial database creator identity changed"
+            );
+            drop(named);
+            drop(creator);
+            creator_id
+        };
         let mut client = McpClient::spawn(&paths.root);
         client.call_tool("locron_add_job", add_job_arguments("owner"));
         let writer = populated_wal
@@ -695,6 +713,12 @@ fn history_active_mcp_update_releases_readonly_owner_in_both_modes() {
         }
         let leaf = checked(open_private(&paths.database, OpenOptions::new().read(true)));
         let original_id = logical::identity(&leaf);
+        #[cfg(unix)]
+        assert!(
+            original_id == creator_id
+                && checked(locron_core::filesystem::is_private(&paths.database, false)),
+            "initialized database identity or privacy changed"
+        );
         let started = Instant::now();
         let updated = client.call_tool(
             "locron_update_job",
@@ -711,7 +735,10 @@ fn history_active_mcp_update_releases_readonly_owner_in_both_modes() {
             "legitimate update replaced the database"
         );
         drop(leaf);
-        let before = logical::logical(&paths);
+        let before = match writer.as_ref() {
+            Some(writer) => logical::logical_with_writer(&paths, writer),
+            None => logical::logical(&paths),
+        };
         let physical_before = logical::physical(&paths);
         let preview = client.call_tool(
             "locron_update_job",
@@ -722,7 +749,11 @@ fn history_active_mcp_update_releases_readonly_owner_in_both_modes() {
         assert_eq!(preview["dry_run"], true);
         assert!(preview["updated"]["description"].is_null());
         assert!(
-            before == logical::logical(&paths),
+            before
+                == match writer.as_ref() {
+                    Some(writer) => logical::logical_with_writer(&paths, writer),
+                    None => logical::logical(&paths),
+                },
             "update preview changed logical state"
         );
         let cleared = client.call_tool(
@@ -732,7 +763,10 @@ fn history_active_mcp_update_releases_readonly_owner_in_both_modes() {
         assert!(cleared["description"].is_null());
         assert_eq!(cleared["current_revision"], 3);
         // The public Store's original optimistic-revision admission remains independent.
-        let stale_before = logical::logical(&paths);
+        let stale_before = match writer.as_ref() {
+            Some(writer) => logical::logical_with_writer(&paths, writer),
+            None => logical::logical(&paths),
+        };
         let store = checked(Store::open(paths.clone(), env!("CARGO_PKG_VERSION"), 1));
         let job = checked(store.job("owner"));
         let refused = store.update_job(&locron_store::UpdateJob {
@@ -751,7 +785,7 @@ fn history_active_mcp_update_releases_readonly_owner_in_both_modes() {
             "stale revision did not refuse"
         );
         assert!(
-            stale_before == logical::logical(&paths),
+            stale_before == logical::logical_with_writer(&paths, &store),
             "stale revision changed logical state"
         );
         drop(store);

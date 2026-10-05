@@ -49,7 +49,7 @@ struct Fixture {
     deadline: Instant,
     token: String,
     capture: DirectoryGuard,
-    _guard: DirectoryGuard,
+    guard: DirectoryGuard,
     temporary: tempfile::TempDir,
 }
 
@@ -190,7 +190,7 @@ impl Fixture {
             checked(file.sync_all());
         }
         drop(output_guard);
-        let before = logical::logical(&paths); // Readers close while the normal setup writer still lives.
+        let before = logical::logical_with_writer(&paths, &writer); // Readers close while the normal setup writer still lives.
         drop(writer);
         let mut calibration = before.clone();
         calibration.tables.get_mut("runs").unwrap().set(
@@ -224,7 +224,7 @@ impl Fixture {
             deadline,
             token,
             capture,
-            _guard: guard,
+            guard,
             temporary,
         };
         fixture.check();
@@ -261,7 +261,7 @@ impl Fixture {
     fn finish(self) {
         let deadline = self.deadline;
         drop(self.capture);
-        drop(self._guard);
+        drop(self.guard);
         checked(self.temporary.close());
         assert!(
             Instant::now() < deadline,
@@ -398,14 +398,14 @@ fn history_active_cli_dry_why_explain() {
             assert_eq!(run["dry_run"], true);
             assert_eq!(run["durable"], false);
             assert_eq!(run["capacity_reserved"], false);
-            let decision = if !active {
-                "eligible"
-            } else {
+            let decision = if active {
                 match policy {
                     OverlapPolicy::Skip => "would_skip_overlap",
                     OverlapPolicy::Replace => "would_replace",
                     OverlapPolicy::Allow => "eligible_subject_to_capacity",
                 }
+            } else {
+                "eligible"
             };
             assert_eq!(run["decision"], decision);
             fixture.unchanged();
@@ -645,14 +645,14 @@ async fn history_active_http_dry_why_contract() {
             assert_eq!(data["dry_run"], true);
             assert_eq!(data["durable"], false);
             assert_eq!(data["capacity_reserved"], false);
-            let expected = if !active {
-                "eligible"
-            } else {
+            let expected = if active {
                 match policy {
                     OverlapPolicy::Skip => "would_skip_overlap",
                     OverlapPolicy::Replace => "would_replace",
                     OverlapPolicy::Allow => "eligible_subject_to_capacity",
                 }
+            } else {
+                "eligible"
             };
             assert_eq!(data["decision"], expected);
             fixture.unchanged();
