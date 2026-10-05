@@ -3612,15 +3612,34 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         open(paths)?
     };
     let settings = store.settings()?;
-    let mut retained = store.retained_output_bytes()?;
+    let mut projected = store.retained_output_bytes()?;
+    if projected < 0 || settings.output_limit_bytes < 0 {
+        return Err(StoreError::Conflict(
+            "output byte accounting must be non-negative".into(),
+        )
+        .into());
+    }
     let age_cutoff = now_us().saturating_sub(30_i64 * 24 * 60 * 60 * 1_000_000);
-    let candidates = store
-        .output_retention_candidates(100)?
-        .into_iter()
-        .filter(|candidate| {
-            candidate.finalized_at_us < age_cutoff || retained > settings.output_limit_bytes
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut bytes = 0_i64;
+    for candidate in store.output_retention_candidates(100)? {
+        if candidate.physical_bytes < 0 {
+            return Err(StoreError::Conflict(
+                "output artifact byte count must be non-negative".into(),
+            )
+            .into());
+        }
+        if candidate.finalized_at_us >= age_cutoff
+            && projected <= settings.output_limit_bytes
+        {
+            continue;
+        }
+        bytes = bytes.checked_add(candidate.physical_bytes).ok_or_else(|| {
+            StoreError::Conflict("selected output byte count exceeds supported range".into())
+        })?;
+        projected = projected.saturating_sub(candidate.physical_bytes).max(0);
+        candidates.push(candidate);
+    }
     if !dry_run {
         for candidate in &candidates {
             #[cfg(windows)]
@@ -3650,7 +3669,6 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
                 Err(error) => return Err(error.into()),
             }
             store.finish_output_prune(candidate, now_us())?;
-            retained = retained.saturating_sub(candidate.physical_bytes);
         }
     }
     let outputs = candidates.len();
@@ -3659,10 +3677,6 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         .map(|candidate| candidate.run_id.as_str())
         .collect::<BTreeSet<_>>()
         .len();
-    let bytes: i64 = candidates
-        .iter()
-        .map(|candidate| candidate.physical_bytes)
-        .sum();
     if format == Format::Human {
         if dry_run {
             println!("dry run: would prune {runs} runs, {outputs} outputs ({bytes} bytes)");
