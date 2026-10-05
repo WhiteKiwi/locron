@@ -5469,3 +5469,7 @@ Follow the complete docs/planning/PR153_MAIN_F90_INTEGRATION_2026-10-05.md after
 ## Group B guarded same-pending recovery continuation — 2026-10-05
 
 Follow GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md after exact146/149/152/163 GET and Root entire original49/94 plus supplement reread. Separate development retains the9-path scope and every old94/96/state set, selects existing contracts support/actual bin-libtest artifact/fixed existing maintain once, and uses only existing Core native ownership with closed independent descriptor/capture/SQL facts. No production maintenance command/dependency/clock/gate/API change is selected. Parent reviews full handback, fresh provenance and ordered same-head qualification; unknown cleanup preserves owners/failure.
+
+## Group B actual selector handoff correction — 2026-10-05
+
+Use the actual api::prune_output::qualification::contracts name under the GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md correction after exact owning GET and Root complete final reread. No Source scope or clock/gate/test count changes; retain CLI prune_qualification::contracts and all original qualification.

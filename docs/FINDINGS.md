@@ -5692,3 +5692,7 @@ Separate read-only research and independent Root proof 05a6e83fc5554d0da7c349eb9
 ## Group B same-pending FI07 proof correction — 2026-10-05
 
 Actual production daemon entry changes lifetime/reconciliation; its executable alone is not an existing maintenance command. The read-only FI07 packet binds original CLI maintain and existing Core true root/Job/I/O/deadline success. Select strict existing-libtest support with distinct actual CargoJSON production/recovery bindings, independently guarded same-pending state and full13-table/file oracle. Existing Core-owned fixed PS5.1 adapter avoids the forbidden Server→Engine edge; descriptor hash is external, Framework Arguments is literal, captures and true support status are separate from Core Job evidence. New APIs/extra cold costs/native facts remain unmeasured. Full finite caps/ownership/clocks and Verify are in GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md.
+
+## Group B actual qualification module name — 2026-10-05
+
+Actual Server lib.rs13/api.rs47 module declarations yield api::prune_output::qualification::contracts, rather than the original plan’s filename-based selector. Correct the selected CI/receipt name before dependent Source; preserve module declarations/paths and original49/94 bytes. Zero matched tests remain failure.
