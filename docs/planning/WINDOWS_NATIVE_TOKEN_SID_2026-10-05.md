@@ -567,3 +567,73 @@ closure; ancestry or a successful unrelated boundary is insufficient. C/E remain
    stay open until those proofs, and broad#27/#31/#163/release/account/logon/reboot remain
    at their actual scope. No production repair is selected; any concrete repair needs new
    research/Docs/owning readback/final review before Source. C/E qualification still follows.
+
+
+## Hosted cleanup-observation lint correction (2026-10-06)
+
+Exact Source3905f944b973f51ebb530363024b26cda428d167, tree
+172e8d830896d2f6d2a178ecf1c4400ec21339d6, CI37367154610/attempt1 retains an
+actual Windows Rust1.98 lint FAILURE at job111954962586. CSI-only463-497 reports
+exactly nonminimal_bool at helper2983-2984 and struct_excessive_bools on Owner3752,
+then CLI-test compilation refusal due two errors. Raw SHA256
+9a44aeebfaa5ae6ad164e04d6029a3068715ff5bad01f724edb7a8e461a80d88;
+CSI-only SHA2563fc3b9de0fed91019342beca840eb8c6dc43cb4bef7c8d9e32fd650916e075ae.
+These actual pinned diagnostics are authoritative; the versioned1.98 manual page was
+unavailable. No claim of reading that page or local type/Clippy proof is made.
+
+ARM111954962954 actually passes Core137 and seven of eight original native selectors;
+only Wake fails, Expired/History flags31 elapsed_us5476339. Its frozen first cleanup
+snapshot is unobserved. After the existing diagnostic wait, the SAME owner's matched
+DropState return prints drop_wall_us27331, then the existing child-root query returns
+absent and CLEANED is confirmed. RootReturn is recorded BEFORE the unchanged post-gate;
+CLEANED follows that gate and absence classification. Neither returned unit nor late
+facts overwrite first failure, grant timely success or prove whole TempDir-container
+removal/the hidden deletion Result. Both genuine queued/cancel positive controls pass
+with immutable first/completion and separate checked records. Their success does not
+repair Wake. Root's retained snapshot2 has completed-success x64stable111954962906 and
+MSRV111954963303 foundations; complete current-head qualification remains pending and
+strict lint failed. Cancelled/missing/skipped jobs are not PASS; no earlier result transfers.
+
+Select ONLY the six literal spans in the separately reviewed unapplied patch SHA256
+73c6e1e9368cd477f19e233a89203aa90f75c54ad1a2374d7ba9f6ad01a05fd4, inside
+crates/locron-cli/tests/support/windows_cli_control.rs. Replace (A||U)&&(B||U) by
+U||(A&&B): A is duration_us<=CALL_TIME_US, U is equality with the existing unknown-duration
+sentinel, and B is clock==1. Preserve value_valid/sample_valid and every surrounding
+header/domain/encode/decode branch. The full eight Boolean rows and30 numeric boundary
+samples prove the pure equivalence, not native timing or compiler fit.
+
+Insert the private two-case CleanupObservation::{Unclaimed,Claimed} before Owner and
+map ONLY its four cleanup_observed member sites: field type, false initialization,
+first-claim conditional and true assignment. False/true become Unclaimed/Claimed; the
+condition uses matches!(..., Claimed). Keep the sole transition at the SAME worker-local
+first DropState claim before its original Instant sample. The enum is not serialized,
+release authority or a new owner/state machine; it preserves the existing first-group
+observation decision. No Copy/borrow/lifetime or actual resource/Result/drop change.
+
+No allowance/expect, warning suppression, unrelated MSRV fetch_update edit, extra Source,
+new query/worker/sample/slot/event/wire value, clock/reset/retry/readiness/collector change
+or production repair. Preserve every old first Code/phase/summary/assertion/selector,
+clocks5s/8s/200ms/30s/25ms/5sgrace, native owner/reap/retention/quarantine and formatter
+bounds. Reverse all six spans to restore the complete3905 helper byte-for-byte; formatting
+outside these selected expressions returns for Docs first. The full prior569-line prefix,
+frozen SPEC/ARCHITECTURE, all Core/Store/Engine/CLI/Unix/CI/Cargo and other bytes stay exact.
+
+1. Root freezes this complete amendment before Source. **Verify:** exactly four Docs,
+   all earlier raw/canonical prefixes and3905 Source/protected tree entries unchanged;
+   owning#27/#31/#35/#163/#171/#166/#167 receive the WHOLE final plan by exact POST/GET
+   with original bodies/state/history retained. AFTER ALL GETs Root actually rereads the
+   whole committed plan and every new Docs block before separate development resumes.
+2. Separate development applies only the six-span helper correction. **Verify:** full
+   staged/unstaged/committed diff, whole raw/canonical inverse to3905, unchanged selector/
+   oracle/clock/owner/grammar/formatter regions and every other Docs-parent mode/blob;
+   eight truth rows/state mapping and checked domains stay equal. Scoped pinned standalone
+   rustfmt1.94/1.98, full locked offline Cargo metadata and Git/text proof only locally;
+   compiler/Clippy/runtime/native/PowerShell/parser/fixture effects are NOT RUN.
+3. Root reviews and ordinarily publishes the genuinely changed head. **Verify:** exact
+   parents/main/synthetic equal tree, fresh strict warnings-denied lint and all three
+   original eight-selector rows plus genuine queued/cancel controls and all old Core/
+   stock/doctor/service/GUI/downstream/Unix/package/Guardian gates as actually triggered.
+   Record failed/unrun/optional/absent scope honestly; no unchanged-head rerun or PASS
+   transfer. Every member keeps its full required Verify and actual main contribution
+   before merge/closure; PR166/167 and broad Windows/privacy/release owners stay open
+   until those proofs. This syntax correction is not a Wake or causal runtime repair.
