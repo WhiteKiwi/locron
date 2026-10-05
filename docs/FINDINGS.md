@@ -5647,3 +5647,8 @@ Actual composed677 Linux/Windows strict lint reports four Store private-helper e
 ## Group C actual owner and initial DB boundaries — 2026-10-05
 
 New04e actual CI separates five lint sites, Unix before-oracle WAL-private refusal, Windows11/6 MCP including a real WAL DACL error, and separate Ack/History native expiry. Full native WAL proposal7234eead and actual existing Core/Store/locked SQLite Source select live actual-writer versus stable closed no-create raw oracle, Unix initial exclusive private DB in the existing update cell, and fixed bounded coordination scalar. Exact creators/modes/other phases/causes remain unknown; full scope/Verify is in GROUP_C_LOGICAL_OWNER_ADMISSION_2026-10-05.md.
+
+
+## Group C measured test-preparation corrections — 2026-10-05
+
+Actual ddcd run37270033159 binds the empty Unix private DB's premature settings read and the Server default Skip/per-job1 active1-versus114 preparation mismatch. Frozen product/SQL/policy remain; the selected real initializer closes before original MCP spawn. The independent existing14-table helper verifies the complete original114×17 run and six-cell manual-event relationships, then only113×3 typed cells change through bounded same-ID/no-CREATE guarded query preparation. Whole schema/settings/events/queue/other rows and writer/close ownership remain. Physical-before/immediate-after/post-logical observation is separately timed. The sole bare Server dev/local-lock rusqlite edge adds no registry/version/feature/public API. The sealed four-path proposal and full scope/Verify are in planning/GROUP_C_ACTUAL_FIXTURE_PREPARATION_2026-10-05.md; native cause and actual new-head acceptance remain unknown/unmeasured.

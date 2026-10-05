@@ -159,3 +159,8 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Group C logical owner admission continuation — 2026-10-05
 
 Owning156/158/160/161 and coordination163 continue GROUP_C_LOGICAL_OWNER_ADMISSION_2026-10-05.md with four concrete Verify steps. All original complete fixed-ledger/native/paired/merge/member acceptance remains open; actual known failures and unknown creator/native causes do not qualify completion.
+
+
+## Group C actual preparation Verify continuation — 2026-10-05
+
+Owning156/158/160/161 and coordination163 continue GROUP_C_ACTUAL_FIXTURE_PREPARATION_2026-10-05.md with three concrete Verify steps. Two real test-preparation failures receive a four-path private correction under unchanged execution policy/old acceptance. Full independent typed/physical/owner proof and fresh same-head ordinary/native/GitGuardian/paired qualification remain required; unknown native failures leave acceptance open. Preserve grouped merge order and close only after original Verify and merge/contribution evidence.

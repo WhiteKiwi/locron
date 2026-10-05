@@ -5426,3 +5426,8 @@ Follow GROUP_C_PRIVATE_TEST_ADMISSION_2026-10-05.md after exact156/158/160/161/1
 ## Group C genuine writer and closed oracle handoff — 2026-10-05
 
 After exact five owning GETs and Root entire41/14/18/new plan reread, separate development uses only the three selected private test files. Preserve basic13 and all production/SQL/keysets/assertions/clocks; express seven actual-writer/conditional calls while closed6 remain literal, close every guard before original writers/cleanup, precreate only Unix update fixture DB before MCP and conserve creator ID, and apply equivalent five lint sites with fixed scalar privacy. Full inverses/protected physical/static handback precede Root review and fresh qualification.
+
+
+## Group C actual fixture-preparation continuation — 2026-10-05
+
+Follow GROUP_C_ACTUAL_FIXTURE_PREPARATION_2026-10-05.md after all five owning exact GETs and Root full changed-plan review. A separate developer owns only the two existing fixture files and Server dev/local-lock edge, preserving the unchanged shared helper and product. Actual initialization precedes MCP settings access; Server query preparation preserves default policy and all original manual events while complete typed equality restricts the113-row/339-cell delta. Keep genuine root/writer guards, no-CREATE/no-follow/full-ID admission, known close order and physical-before/immediate-after/post-logical request boundaries. Reuse saved complete byte-identical old authority reviews; drift triggers full review. Root independently verifies the whole handback and fresh hosted acceptance before publication/merge/member completion.
