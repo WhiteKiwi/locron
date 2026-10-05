@@ -12,10 +12,7 @@ use locron_store::StatePaths;
 use rusqlite::{Connection, OpenFlags, types::ValueRef};
 
 pub fn checked<T, E>(result: Result<T, E>) -> T {
-    match result {
-        Ok(value) => value,
-        Err(_) => panic!("private qualification operation refused"),
-    }
+    result.unwrap_or_else(|_| panic!("private qualification operation refused"))
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]

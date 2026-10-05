@@ -21,10 +21,7 @@ const JOB: &str = "00000000-0000-7000-8000-000000009001";
 const CANARY: &str = "history-secret-canary";
 
 fn checked<T, E>(result: Result<T, E>) -> T {
-    match result {
-        Ok(value) => value,
-        Err(_) => panic!("private HTTP qualification refused"),
-    }
+    result.unwrap_or_else(|_| panic!("private HTTP qualification refused"))
 }
 fn run_id(index: usize) -> String {
     format!("00000000-0000-7000-8000-{index:012}")
@@ -40,8 +37,11 @@ async fn request(
         Instant::now() + Duration::from_secs(10) < deadline,
         "HTTP horizon exhausted"
     );
-    let operation_deadline =
-        (Instant::now() + Duration::from_secs(60)).min(deadline - Duration::from_secs(10));
+    let operation_deadline = (Instant::now() + Duration::from_secs(60)).min(
+        deadline
+            .checked_sub(Duration::from_secs(10))
+            .expect("HTTP horizon exhausted"),
+    );
     let response = checked(
         tokio::time::timeout_at(tokio::time::Instant::from_std(operation_deadline), async {
             let mut builder = Request::builder()
@@ -204,7 +204,7 @@ async fn history_active_public_lifecycle_http() {
     let (status, body) = request(
         &state,
         deadline,
-        &format!("/api/v1/jobs/{JOB}/run?dry_run=true"),
+        &format!("/api/v1/jobs/{JOB}/run?dry-run=true"),
         Some(json!({})),
     )
     .await;

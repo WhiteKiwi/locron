@@ -318,8 +318,12 @@ fn cli(fixture: &Fixture, args: &[&str], capture_index: usize) -> Value {
     let errors = checked(create_private_new(&error_path));
     let output_id = logical::identity(&output);
     let error_id = logical::identity(&errors);
-    let deadline =
-        (Instant::now() + Duration::from_secs(60)).min(fixture.deadline - Duration::from_secs(10));
+    let deadline = (Instant::now() + Duration::from_secs(60)).min(
+        fixture
+            .deadline
+            .checked_sub(Duration::from_secs(10))
+            .expect("qualification horizon exhausted"),
+    );
     let mut child = OwnedChild(checked(
         Command::new(assert_cmd::cargo::cargo_bin!("locron"))
             .arg("--state-dir")
@@ -459,8 +463,12 @@ impl Http {
     }
     async fn request(&self, fixture: &Fixture, path: &str, body: Option<Value>) -> (u16, Value) {
         fixture.check();
-        let deadline = (Instant::now() + Duration::from_secs(60))
-            .min(fixture.deadline - Duration::from_secs(10));
+        let deadline = (Instant::now() + Duration::from_secs(60)).min(
+            fixture
+                .deadline
+                .checked_sub(Duration::from_secs(10))
+                .expect("qualification horizon exhausted"),
+        );
         let response = checked(
             tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), async {
                 let mut request = if body.is_some() {
@@ -626,7 +634,7 @@ async fn history_active_http_dry_why_contract() {
             let (status, body) = http
                 .request(
                     &fixture,
-                    &format!("/api/v1/jobs/{A}/run?dry_run=true"),
+                    &format!("/api/v1/jobs/{A}/run?dry-run=true"),
                     Some(json!({})),
                 )
                 .await;

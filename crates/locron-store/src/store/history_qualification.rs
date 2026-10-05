@@ -13,10 +13,7 @@ trait PrivateResult<T> {
 
 impl<T, E> PrivateResult<T> for Result<T, E> {
     fn fixed(self) -> T {
-        match self {
-            Ok(value) => value,
-            Err(_) => panic!("private Store qualification refused"),
-        }
+        self.unwrap_or_else(|_| panic!("private Store qualification refused"))
     }
 }
 
@@ -243,13 +240,13 @@ impl Fixture {
             store,
             ledger,
             deadline,
-            _guard,
-            _temporary,
+            _guard: guard,
+            _temporary: temporary,
         } = self;
         drop(store);
         drop(ledger);
-        drop(_guard);
-        _temporary.close().fixed();
+        drop(guard);
+        temporary.close().fixed();
         assert!(
             Instant::now() < deadline,
             "qualification teardown exceeded one horizon"
@@ -455,8 +452,12 @@ fn snapshot_barrier(active: bool) {
     assert!(reader.conn().fixed().is_readonly(rusqlite::MAIN_DB).fixed());
     let (reached_sender, reached_receiver) = std::sync::mpsc::sync_channel(1);
     let (release_sender, release_receiver) = std::sync::mpsc::sync_channel(1);
-    let deadline =
-        (Instant::now() + Duration::from_secs(60)).min(fixture.deadline - Duration::from_secs(10));
+    let deadline = (Instant::now() + Duration::from_secs(60)).min(
+        fixture
+            .deadline
+            .checked_sub(Duration::from_secs(10))
+            .expect("qualification exhausted its preparation/operation horizon"),
+    );
     reader.history_observation.lock().fixed().barrier = Some(CountBarrier {
         reached: reached_sender,
         release: release_receiver,
