@@ -5656,3 +5656,8 @@ Actual ddcd run37270033159 binds the empty Unix private DB's premature settings 
 ## Group C permanent lock preparation boundary — 2026-10-05
 
 Actual6e CI9 ordinary PASS/8 FAIL reaches the same full physical comparison on all five Unix rows; changed-file/bytes and postlogical equality are unknown/not reached. Source shows the last why query can first create permanent daemon.lock inside that interval. Select the same real try_prove_free once in existing preparation before old counts/writer drop/baselines, preserving every query/assertion and the full stable map. Temporary lock/file/parent guard closes within the API; same root guard and old close/clock order remain. This does not change or qualify fresh absent-lock public why creation. The531B one-path inverse, full limits and Verify are in planning/GROUP_C_PERMANENT_LOCK_PREPARATION_2026-10-05.md.
+
+
+## Group C private WAL fixture preparation — 2026-10-05
+
+At actual b9d all five Unix lanes pass CLI3/MCP18/HTTP1 and four private Store controls; full HTTP physical AND post-logical comparisons pass. The two Store snapshot controls fail the first -wal privacy boolean before reader/barrier. Actual mode/type/umask and sole cause are UNKNOWN. Locked primary SQLite Source and the actual distinct MCP creator positive support explicit private-main-database preparation; Root verified whole candidate/inverse and exact synthetic parents/tree. Evidence/limits: [selected plan](planning/GROUP_C_PRIVATE_WAL_FIXTURE_PREPARATION_2026-10-05.md).

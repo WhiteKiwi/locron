@@ -5435,3 +5435,8 @@ Follow GROUP_C_ACTUAL_FIXTURE_PREPARATION_2026-10-05.md after all five owning ex
 ## Group C existing-lock fixture handoff — 2026-10-05
 
 Follow planning/GROUP_C_PERMANENT_LOCK_PREPARATION_2026-10-05.md after all five whole-plan exact owning GETs and Root complete final new-plan/Docs review. Separate development changes only the selected Server preparation comment/try_prove_free call. Retain the real initialized writer/root guard and original writer drop; include the actual existing lock in unchanged full logical/physical request boundaries. No API/sidecar/mask/clock/diagnostic/worker or writer-lifetime change is selected. Frozen SPEC/five previous whole plans reuse saved complete review only with exact hashes; independent clean handback, Root publication review and current-head required evidence precede merge.
+
+
+## Group C private WAL fixture preparation — 2026-10-05
+
+Select the sole private history qualification file: Unix shared constructor creates a genuinely absent private0-byte database, closes creator, runs original Store initializer, independently verifies full same-ID/private metadata and closes that guard. This applies to all7 Unix fixture instances; the two existing snapshots additionally read real journal_mode==wal without setting or reflecting it. Preserve all original reader/barrier/concurrent-write/full old+new totals,50 assertions and clocks. The [complete plan](planning/GROUP_C_PRIVATE_WAL_FIXTURE_PREPARATION_2026-10-05.md) governs Docs/ALL five owning GET/Root final review before separate-child Source, and new-head acceptance. #141 remains deferred.
