@@ -5720,3 +5720,18 @@ owners/cleanup/5s/8s/30s/25ms/200ms/native5s grace and every required owning/mem
 remain literal. Current c39 MSRV failure remains failed. Root owns commit/publication and
 fresh actual qualification; this order change selects no cause repair, main merge,
 acceptance waiver or closure without each complete Verify and required main contribution.
+
+
+## Guard hosted lint before separate Source (2026-10-06)
+
+Follow the complete shared
+[WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md](planning/WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md).
+After Root commits Docs, all owning whole-plan exact GETs and full final after-GET
+reread, separate development may change ONLY eight proven-u32 ACE optional projections
+in A/B Core and B's SharingControl variant/matching arm cfg attributes. Preserve checked
+usize ancestry conversions, whole original Source/operation/predicate/error/owner/oracle/
+clock/cleanup regions through exact inverse; no Source/CI/Cargo/Core-SID adaptation or
+lint allowance. Permit standalone1.94/1.98 format checks and full locked offline metadata
+only. Root owns changed-head ordinary publication/actual fresh strict lint and native
+qualification. Separate SEL02-cli60s failure stays failed/unknown and unchanged; complete
+owning/member Verify and required main contribution remain necessary before closure.
