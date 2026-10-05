@@ -876,6 +876,8 @@ fn windows_actual_sharing_failures_are_owned() {
         fs::OpenOptions::new().read(true),
     )
     .expect("actual no-delete destination handle");
+    let held_identity = locron_core::filesystem::file_identity(&held)
+        .expect("actual retained destination identity");
     let result = run(&mut destination, Operation::Regenerate);
     assert!(!result.ok, "actual held handle did not refuse");
     refused(&result, ErrorKind::PermissionDenied);
@@ -883,6 +885,12 @@ fn windows_actual_sharing_failures_are_owned() {
     assert_eq!(result.fault, None);
     assert_eq!(result.stats.renames, 1);
     assert_eq!(result.stats.cleanup, 1);
+    assert!(
+        locron_core::filesystem::file_identity(&held)
+            .expect("actual retained destination identity after refusal")
+            == held_identity,
+        "actual held destination identity changed"
+    );
     let deadline = destination.deadline();
     let key = "ND-TOKEN-REFUSAL-ROTATE";
     let lock_path = destination.paths.root.join(super::TOKEN_LOCK_FILE_NAME);
@@ -913,6 +921,18 @@ fn windows_actual_sharing_failures_are_owned() {
     assert_eq!(rotated.stats.closed, 1);
     assert_eq!(rotated.stats.renames, 1);
     assert_eq!(rotated.stats.cleanup, 0);
+    let replacement = open_private(
+        &super::token_path(&destination.paths),
+        fs::OpenOptions::new().read(true),
+    )
+    .expect("actual released private destination");
+    assert!(
+        locron_core::filesystem::file_identity(&replacement)
+            .expect("actual released destination identity")
+            != held_identity,
+        "released destination was not atomically replaced"
+    );
+    drop(replacement);
     native_destination_io(deadline, key, "released-scratch-inventory", || {
         assert!(scratch(&destination).is_empty());
         Ok(())

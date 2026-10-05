@@ -155,3 +155,8 @@ Issue31 remains open:7343/run37196440237 has one actual ARM History expiry and u
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+
+## Windows token destination evidence routing (2026-10-05)
+
+Issue162 / draftPR141 owns the selected held/released destination fixture amendment and its four concrete Verify steps in planning/DASHBOARD_TOKEN_DESTINATION_CONTROL_2026-10-05.md. Native CLI wake/cancel/unknown owner cleanup remains Issue31; wider account/logon/install/lifecycle acceptance remains Issue30. Exact full-plan Issue comment GET and Root whole committed-plan reread precede separate Source development; fresh actual controls and original required merges/gates precede closure. Execution status lives in Issues; the retired Project remains historical.
