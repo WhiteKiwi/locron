@@ -336,6 +336,7 @@ impl OwnedRoot {
             &paths.outputs,
             &paths.temporary,
             &paths.root.join(crate::token::TOKEN_FILE_NAME),
+            &paths.root.join("dashboard.token.lock"),
         ] {
             match fs::symlink_metadata(absent) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}

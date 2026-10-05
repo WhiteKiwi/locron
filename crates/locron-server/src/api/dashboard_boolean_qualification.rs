@@ -1554,7 +1554,12 @@ fn sha256(file: &GuardedFile) -> Check<String> {
 
 fn non_sqlite(ticket: &Ticket) -> Check<Value> {
     let mut inventory = json!({});
-    for name in ["sentinel", "dashboard.token", "outputs/owned-output"] {
+    for name in [
+        "sentinel",
+        "dashboard.token",
+        "dashboard.token.lock",
+        "outputs/owned-output",
+    ] {
         let path = ticket.state.join(name);
         let file = private_read(&path)?;
         inventory[name] = json!({"identity":identity(&file)?,"sha256":sha256(&file)?,"size":file.metadata().map_err(|_| "sentinel metadata failed")?.len()});
@@ -1609,7 +1614,41 @@ async fn http_child() -> Check<()> {
         "actual Server artifact SHA mismatch",
     )?;
     let paths = locron_store::StatePaths::new(ticket.state.clone());
+    let lock_path = ticket.state.join("dashboard.token.lock");
+    let mut lock_file = private_read(&lock_path)?;
+    let lock_id = identity(&lock_file)?;
+    require(
+        lock_file
+            .metadata()
+            .map_err(|_| "prepared permanent lock metadata failed")?
+            .len()
+            == 0
+            && lock_file
+                .read(&mut [0; 1])
+                .map_err(|_| "prepared permanent lock read failed")?
+                == 0,
+        "prepared permanent lock was not empty",
+    )?;
+    drop(lock_file);
     let token = crate::token::ensure(&paths).map_err(|_| "owned token issuer failed")?;
+    let mut lock_file = private_read(&lock_path)?;
+    require(
+        identity(&lock_file)? == lock_id,
+        "prepared permanent lock identity changed",
+    )?;
+    require(
+        lock_file
+            .metadata()
+            .map_err(|_| "reused permanent lock metadata failed")?
+            .len()
+            == 0
+            && lock_file
+                .read(&mut [0; 1])
+                .map_err(|_| "reused permanent lock read failed")?
+                == 0,
+        "reused permanent lock was not empty",
+    )?;
+    drop(lock_file);
     let token_file = private_read(&crate::token::token_path(&paths))?;
     record_owned(&crate::token::token_path(&paths), &identity(&token_file)?)?;
     drop(token_file);
@@ -2101,6 +2140,7 @@ fn cleanup(
     let mut state_files: BTreeSet<String> = ["sentinel"].map(str::to_owned).into_iter().collect();
     if row.is_some() {
         state_files.insert("dashboard.token".to_owned());
+        state_files.insert("dashboard.token.lock".to_owned());
     }
     if row.is_some_and(populated) {
         state_files.extend(
@@ -2146,12 +2186,25 @@ fn cleanup(
                     meta.is_file() && !meta.file_type().is_symlink(),
                     "state cleanup type refused",
                 )?;
-                let file = private_read(&path)?;
+                let mut file = private_read(&path)?;
                 let expected = expected_leaf(&path, &root.parent, owners)?;
                 require(
                     identity(&file)? == expected,
                     "owned state leaf replaced; retained",
                 )?;
+                if name == "dashboard.token.lock" {
+                    require(
+                        file.metadata()
+                            .map_err(|_| "cleanup permanent lock metadata failed")?
+                            .len()
+                            == 0
+                            && file
+                                .read(&mut [0; 1])
+                                .map_err(|_| "cleanup permanent lock read failed")?
+                                == 0,
+                        "nonempty permanent lock retained",
+                    )?;
+                }
                 leaves.push((path, expected));
             }
         }
@@ -2740,6 +2793,7 @@ async fn qualification() -> Check<()> {
         )?;
         let nonce = uuid::Uuid::now_v7().to_string();
         let root = fresh_root(&nonce)?;
+        owned_file(&root.state.join("dashboard.token.lock"), b"")?;
         let ticket = Ticket {
             schema: "locron.private.pr144/v1".to_owned(),
             nonce,

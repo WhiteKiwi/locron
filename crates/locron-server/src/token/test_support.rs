@@ -1374,12 +1374,30 @@ impl Harness {
                 Instant::now() < deadline,
                 "fixture expected event clock elapsed"
             );
+            let done = self.children[index]
+                .frames
+                .iter()
+                .find(|frame| frame.event == Event::Done);
+            let kind = match done.map(|frame| frame.kind.as_str()) {
+                Some(
+                    kind @ ("NotFound" | "PermissionDenied" | "AlreadyExists" | "WouldBlock"
+                    | "TimedOut" | "Interrupted" | "InvalidData" | "InvalidInput"
+                    | "WriteZero" | "Unsupported" | "Other" | "ConnectionReset"),
+                ) => kind,
+                _ => "unrecognized",
+            };
             assert!(
                 !self.children[index]
                     .frames
                     .iter()
                     .any(|frame| frame.event == Event::Done),
-                "fixture completed before expected event"
+                "fixture completed before expected event: event={event:?} index={index} ok={} kind={kind} raw={:?} elapsed_ms={} candidate={} publish={} cleanup={}",
+                done.is_some_and(|frame| frame.ok),
+                done.and_then(|frame| frame.raw),
+                done.map_or(0, |frame| frame.elapsed_ms),
+                done.map_or(0, |frame| frame.stats.candidate_attempts),
+                done.map_or(0, |frame| frame.stats.publish),
+                done.map_or(0, |frame| frame.stats.candidate_cleanup),
             );
             std::thread::sleep(Duration::from_millis(1));
         }
