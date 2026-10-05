@@ -15,8 +15,10 @@ const CONTROL_CAP: usize = 16 * 1024;
 const SNAPSHOT_CAP: usize = 16 * 1024 * 1024;
 const RESPONSE_CAP: usize = 1024 * 1024;
 const CELL_CAP: usize = 1024 * 1024;
+#[cfg(unix)]
 const STORE_SELECTOR: &str =
     "store::dashboard_pr144_snapshot_fixture::owned_snapshot_fixture_child";
+#[cfg(unix)]
 const SERVER_SELECTOR: &str = "api::dashboard_boolean_qualification::owned_http_fixture_child";
 
 #[derive(Clone, Deserialize, Serialize)]
