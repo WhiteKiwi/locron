@@ -186,3 +186,14 @@ history/state and every contribution/criterion. All owning complete-plan exact G
 Root final entire plan/new-Docs review precede separate common/A/B Source. Measured
 refusal observation leaves the actual native bugs and member qualification open;
 only successful owning Verify plus required merges can close them. Signing37 is deferred.
+
+## Early A/B diagnostic draft qualification Verify order (2026-10-06)
+
+Existing #27/#31/#162/#146/#149/#163 retain every original body/state/history/contribution.
+The complete shared guard-plan amendment selects only exact-c39 normal integration and
+early independent DIAGNOSTIC draft qualification before common main merge. Matching
+native-SID Docs, all owning exact whole-plan GETs and Root final full reread precede a
+separate Git-only handoff. Actual Source/mode/input ambiguity stops for Docs FIRST;
+all original required Verify/oracles/clocks/security/ownership and member/main acceptance
+remain necessary. Current c39 MSRV FAIL is not waived; diagnostic artifacts cannot close
+bugs or qualify main/support. Root handles commits, issue updates and publication.

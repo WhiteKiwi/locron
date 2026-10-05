@@ -5799,3 +5799,19 @@ wrapping, duplicate native query, permission change or assumed layout/holder rep
 Independent complete CRLF models are A214/B192/generic158 bytes within256; this is
 zero type/native/timing acceptance. The shared complete plan records scope and Verify:
 [WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+
+## Early A/B diagnostic integration research and selected order (2026-10-06)
+
+The sealed76-artifact manifest SHA614c7d7c194bc615866b199eb0eba8837b9967d6f404c45b88cebcda4d4623b5
+binds exact c39/tree9cec and guard A d24a2a65/B b6c9d1ec to common f90. Whole common
+filesystem/callers and native SID/Engine/helper contributions are disjoint; bilateral
+A ci.yml and B ci.yml/main.rs/tests/cli.rs have exact two-contributor whole inverses in
+pure byte models. This is not an actual Git merge, type/native proof or cause measurement.
+Both full Docs histories have exact f90 prefixes and complete separate suffixes.
+Select only early independent A/B DIAGNOSTIC draft qualification before common main
+merge, after exact-c39 normal integration and matching native-SID order amendment.
+Current c39 CI37355065492/1 remains16 ordinary PASS/1 MSRV FAIL/2 optional SKIP;
+package proof cannot waive that failure. Any actual Source/mode/input ambiguity stops
+for Docs FIRST. No path/ACL/holder/trust/clock repair or main/member acceptance follows.
+The complete shared plan amendment preserves all historical evidence and owning Verify:
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).

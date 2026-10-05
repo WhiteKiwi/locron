@@ -136,3 +136,63 @@ executes hosted. Preserve original5s/8s/30s/25ms/200ms and production5s grace ex
    required current-head gates pass. A sharing repair must retain/release its exact real
    conflicting holder and prove the same operation succeeds after release. Until then,
    native failures and owning/member acceptance stay open; diagnostics do not close bugs.
+
+## Early A/B diagnostic draft qualification order (2026-10-06)
+
+This narrow amendment changes ONLY the order of independent A/B DIAGNOSTIC draft
+qualification. It permits ordinary integration of exact reviewed/published common+D
+c39 before those drafts' next qualification, BEFORE the common fix merges into main.
+It supersedes the earlier common-main-first/A/B-later clauses only for that purpose;
+matching native-SID plan selection must be frozen before a separate Git-only handoff.
+It selects no new Source, native/production repair, main merge or acceptance waiver.
+Frozen SPEC/ARCHITECTURE and every original owning/member Verify remain unchanged.
+
+Pins: incoming c39ebeb3d2c3784bf8a06f383fa8d490f79edf61, tree
+9cec9f922b141ab4d0fd03f1cbd657cb64995663; unchanged main/base
+f90a9d5dc2e6bafbc163567b333c398777647402; common guard Source
+319a2a7aad21c9d00b3c7dc0f40dd49263b58821. Original A/B Source pins remain
+154de81b75725af1ecf8afc6084cbf31cb5cc9bf and
+875e946ac422cba0901e5a38f2f8a45f8d96bb43. Selected guard Source heads are A
+d24a2a65c05ef52eea644723d8f8ea5a11c0286a and B
+b6c9d1ecbf04db7e4dfd5b71a26de48d501ea4a0. Future Docs-only descendants of these
+heads may be used only after all non-Docs modes/blobs are proven exact; no newer/floating
+incoming or main is selected.
+
+Sealed76-artifact read-only research manifest SHA256
+614c7d7c194bc615866b199eb0eba8837b9967d6f404c45b88cebcda4d4623b5 binds f90
+as both merge bases. Core filesystem/guard callers are disjoint from native SID; the
+bilateral Source paths are A ci.yml and B ci.yml/main.rs/tests/cli.rs. Pure byte models
+preserve both complete contributions through inverses; actual Git conflicts, type fit
+and combined native behavior were NOT tested. Any actual Source conflict, mode/input
+ambiguity or required adaptation STOPS for Docs-first selection before Source changes.
+
+Preserve whole unilateral Source and every literal bilateral contribution, complete f90
+Docs plus each complete own/incoming suffix once, all original plans and this selected
+amendment. No subset SID cherry-pick, force/rebase, workflow/assertion/dependency change,
+trust relaxation, guessed path/ACL/holder repair, warm-up, retry or clock extension.
+Current c39 CI37355065492/1 remains FAILURE:16 ordinary PASS,1 MSRV FAIL,2 optional
+SKIP. Its current package proof is narrower and cannot waive the original failed oracle.
+Preserve5s Wake/8s Cancel/30s owners/25ms stop/200ms probe/production5s grace, privacy,
+errors, guards, ownership, cleanup and all member/main-contribution requirements.
+
+1. Root freezes this order amendment before integration. **Verify:** only these append-only
+   Docs; all original prefixes, Source and nonselected modes/blobs exact in A/B; matching
+   native-SID order amendment committed. Owning #27/#31/#162/#146/#149/#163 receive the
+   complete selected plan through exact POST/GET with original bodies/state/history
+   preserved, then Root rereads both whole committed plans and all new Docs blocks AFTER
+   ALL GETs before a separate developer Git-only lease.
+2. Separate developer ordinarily merges ONLY exact c39 into each selected planned guard
+   head. **Verify:** clean preflight/named backup, actual ordered two parents, unchanged
+   f90 base, whole common/caller and incoming/own contribution inverses, literal Docs
+   components once and no Source adaptation. Unexpected Source/mode/input conflicts
+   return for Docs FIRST; this research is not proof Git will merge without conflicts.
+3. Root reviews/publishes genuinely changed diagnostic drafts and qualifies fresh heads.
+   **Verify:** actual head/base/ref/synthetic ordered parents and complete equal tree;
+   acquire completed raw jobs once, preserve all original entrypoints/required contexts
+   and actual guard controls. A facts/compiled-artifact and B prune/recovery/binding
+   refusals retain original kind/raw plus only measured closed tags, or remain unobserved.
+   No old PASS/count, late facts or cleanup status overturns first failure. Common and
+   every representative/member still need their complete actual required Verify and main
+   contribution before merge/closure; diagnostic publication supplies neither. Any later
+   repair requires a separate cause-backed Docs-first handoff. Wide privacy/Windows/
+   delivery/account/logon/reboot/signing acceptance remains at its actual open scope.

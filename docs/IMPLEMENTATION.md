@@ -5573,3 +5573,19 @@ Root ordinarily integrates the independent native-SID common fix before new A/B 
 Complete source conservation and byte proofs precede disposable hosted qualification;
 actual predicate/holder evidence and a later Docs-first repair remain necessary.
 No source/static observation or successful API update closes remaining acceptance.
+
+## Early A/B diagnostic qualification order before separate Git-only development (2026-10-06)
+
+Follow the complete early-order amendment in
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+After matching native-SID Docs selection, all owning whole-plan exact GETs and Root final
+whole committed-plan/new-Docs reread, a separate developer may ordinarily merge ONLY
+published c39/tree9cec into exact guard A d24a2a65/B b6c9d1ec or Source-identical Docs-only
+descendants for independent DIAGNOSTIC draft qualification before common merges main.
+Keep f90 pinned, common319a exact, original154/875 and whole A/B/c39 contributions;
+preserve complete Docs suffixes once. Any actual Source conflict/mode/input ambiguity
+returns for Docs FIRST with no adaptation. All original predicates/errors/guards/privacy/
+owners/cleanup/5s/8s/30s/25ms/200ms/native5s grace and every required owning/member Verify
+remain literal. Current c39 MSRV failure remains failed. Root owns commit/publication and
+fresh actual qualification; this order change selects no cause repair, main merge,
+acceptance waiver or closure without each complete Verify and required main contribution.
