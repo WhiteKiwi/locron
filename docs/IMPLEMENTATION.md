@@ -5410,3 +5410,7 @@ A separate developer leases only the private Windows CLI control helper after Is
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+## Group E grouped dependency integration — 2026-10-05
+
+Follow GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md under163 after exact readback and Root entire final reread. A separate developer normally conserves all three exact contributions in only CI/Engine manifest/single-lock-package bytes, returns full inverses/protected physical/static proofs, and leaves publication/current-base17ordinary/Guardian/full paired qualification and oldest-first squash/member closure to Root. No local runtime/install/frontend generation or old-head success transfer.

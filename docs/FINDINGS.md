@@ -5631,3 +5631,7 @@ Current7343/run37196440237 completed16 ordinary PASS/1 ARM failure. Actual origi
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+## Group E dependency composition findings — 2026-10-05
+
+Exact168/169/170 change only two CI action references and Engine’s dev-only TLS version/single lock package. Primary action/vendor Source and checksummed0.26.4/0.26.6 archives preserve current API/MSRV/features while documenting new checksum/minimum-age and batch-read behavior. Completed individual CI is17/0/2,15/2/2,16/1/2; actual mise/frontend and native TLS positives do not qualify a composed head or explain old Wake/Cancel failures. See GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md.
