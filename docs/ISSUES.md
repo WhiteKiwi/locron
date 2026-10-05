@@ -323,3 +323,16 @@ separate Git-only handoff. Actual Source/mode/input ambiguity stops for Docs FIR
 all original required Verify/oracles/clocks/security/ownership and member/main acceptance
 remain necessary. Current c39 MSRV FAIL is not waived; diagnostic artifacts cannot close
 bugs or qualify main/support. Root handles commits, issue updates and publication.
+
+
+## Guard hosted lint concrete Verify continuation (2026-10-06)
+
+Owning #27/#31/#162/#146/#149/#163 and PR141/147 keep original bodies/state/history and
+complete acceptance. The three ordered concrete Verify in
+planning/WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md require append-only bilateral Docs and
+Source protection; whole-plan exact POST/GET ALL then Root final complete committed
+plan/new-Docs reread before separate eight-plus-two-site Source; full inverse/strict
+static conservation; Root genuine changed-head required lint/native/representative gates.
+Separate actual SEL02-cli original60s timeout and prior c39 failure are not waived or
+repaired. Root owns commit/publication/Issue evidence; member/main contribution and
+every original Verify remain required. Diagnostics or lint alone cannot close work.

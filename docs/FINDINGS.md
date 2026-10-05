@@ -6032,3 +6032,19 @@ package proof cannot waive that failure. Any actual Source/mode/input ambiguity 
 for Docs FIRST. No path/ACL/holder/trust/clock repair or main/member acceptance follows.
 The complete shared plan amendment preserves all historical evidence and owning Verify:
 [WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+
+
+## Actual guard hosted lint and independent CLI horizon (2026-10-06)
+
+Current A346 CI37365084437 Windows1.98 job111948190639 measures eight same-u32
+conversion errors in Core ACE diagnostic slots. Pinned permissions0.2.4 len/get_ace
+signatures prove those original loop indices are u32; Some(index) preserves their
+optional values, while separate usize ancestry conversions stay checked/literal.
+Ba29 CI37365095813 Linux1.98 job111948225647 measures SharingControl never constructed;
+its sole actual N07 caller is cfg(windows), so BOTH variant and matching label arm are
+selected for cfg(windows). Seven Windows/six Unix actual roles remain unchanged.
+Separate Linux ARMstable job111948225655 measures original first CLI SEL02 deadline at
+173 then false row755,89P/1F/60.22s. Its current call/path/holder/cause remains unknown;
+no timeout repair is selected. Full narrow plan and three concrete Verify are in
+[WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md](planning/WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md).
+Source is paused; no lint/type/native/whole-run or member/main acceptance is inferred.
