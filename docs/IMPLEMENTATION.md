@@ -5443,3 +5443,30 @@ refuse with that verified entry retained. Check and publication are not an atomi
 transaction. Keep the same permit through publication/refusal, all original gates and
 clocks, and no cache rollback. Root's complete amended owning readbacks and final plan
 reread precede continuation; static conservation does not qualify native behavior.
+
+### Hosted SID receiver-consumption handoff (2026-10-06)
+
+Follow the final owned-receiver correction in WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md.
+Preserve receive_sid_reply's owned Receiver and actual receive/post-deadline/error flow;
+explicitly drop only that receiver after the original remaining gate immediately before
+final reply. The SAME permit stays in the returned scalar reply; early-error RAII and
+all other ownership/cache/clock behavior remain literal. Extend only the existing cfg(test)
+loader sid-deadline branch: native SID/grammar stays first, zero-stock-PID and genuine
+explicit stock SID/Boolean equality use the SAME original deadline, then all original
+elapsed/PID/marker oracles remain. All other loader_tests modes and filesystem-worker bytes stay literal.
+Root four-Docs review, complete owning #27/#31/#163 amended-plan GETs and whole final
+reread precede the selected follow-up. Full selected-region inverses and pinned static checks precede
+fresh lint/cold-deadline/three-row qualification; no allowance or Cancel-fix claim.
+Preserve completed b4c422's13 metadataPASS/4FAIL/2optionalSKIP and unrun8x3 CLI scope;
+package/coherence metadata does not replace original-byte provenance or install acceptance.
+
+Additionally select only loader_crash.rs host()'s existing fixed thread: capture its native
+entry30s deadline, use current_user_sid_until(deadline) first, keep grammar, then genuine
+fixed request("sid", None, SAME deadline)/Boolean identity before the old PID/publish.
+Keep the generic separate deadline, all other host/driver/observer/publication bytes and
+original45/30/3s containment/capture/disposal/cleanup oracles unchanged. Parent-exit was
+unrun at b4c422; this repairs a Source-backed coupling without inventing a runtime result.
+The latest scope supersedes the prior cumulative three-file boundary: four cumulative
+paths, only windows.rs/loader_tests.rs/loader_crash.rs follow-up edits, filesystem_worker.rs
+literal b4c422. Require all313 protected mode/blob entries of the actual316-entry Docs
+parent and three full-file inverses before fresh lint/cold/parent-exit/three-row gates.

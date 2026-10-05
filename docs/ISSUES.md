@@ -176,3 +176,28 @@ publication. Preserve refusal without clearing a prior verified entry, and repor
 existing post-publication/outer-return expiry limit without promising rollback or atomic
 clock/publication. The complete precise plan and owning exact readbacks/final reread
 precede the Source commit; all genuine hosted identity/ownership/native gates remain open.
+
+### Native SID hosted lint Verify handoff (2026-10-06)
+
+#27/#31/#163 continue the same common repair: b4c422's actual Windows1.98 lint is FAIL,
+not completed native acceptance. The complete plan now selects one explicit scalar
+Receiver drop while preserving the owned lifetime, early-error RAII, SAME returned permit,
+all original gates/clocks. Actual all-three Core136P/1F additionally requires the existing
+sid-deadline coupling repair: native API first, explicit genuine stock SID under that SAME
+deadline, then original elapsed/PID/marker. All six new SID selectors passed, but the cold
+gate failed and CLI downstream/Cancel acceptance is unrun. Exact whole-plan POST/GET and
+Root whole committed-plan/new-Docs reread precede all selected scoped corrections; full
+selected-region inverses and fresh lint/native Verify follow. No closure or prior
+PASS transfer is implied; all other Source and filesystem-worker bytes remain unchanged.
+The completed run has13 ordinary metadataPASS/4FAIL/2optionalSKIP; package/coherence
+metadata lacks Root ZIP proof and original8x3 CLI/Wake/Cancel acceptance is unrun.
+
+The complete amended plan also covers the unrun parent-exit-host's direct native-SID-to-
+stock-PID coupling. Capture original30s at fixed-thread entry, native bounded API/grammar
+first, same-deadline genuine stock SID/Boolean identity, then old positive PID/publication;
+no SID output or deadline reset. Generic deadline/Child/Job/handles/heartbeat/capture/
+disposal/guard-release assertions and45/30/3s stay exact. This latest amendment supersedes
+the three-file boundary: cumulative four paths, follow-up three, filesystem_worker.rs
+unchanged. Verify actual316-entry Docs parent and313 protected modes/blobs, all original
+selectors and three full-file inverses. Fresh hosted parent-exit remains required; an
+unrun gate is not PASS. The same owning whole-plan POST/GET/final reread precedes Source.

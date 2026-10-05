@@ -143,3 +143,98 @@ accepted error, skip, oracle waiver, unchanged-head rerun or manual dispatch.
 Publication is not completed Windows support. Keep wider #23/#25–#36 and signing#37 at
 their actual state; #27/#31 stay open for remaining broad acceptance. A remaining native
 failure returns to source-backed research under the same clocks and ownership contracts.
+
+## Hosted lint and coupled cold-SID correction (2026-10-06)
+
+PR171 exact Source b4c422a1cc6d9f5f3ac026aa4213bc02e39d9a57 was published against
+mainf90. Ordinary CI37340588591/attempt1 Windows lint111866362894 completed FAILURE:
+Rust1.98 reports needless_pass_by_value at windows.rs722 on the owned receive_sid_reply
+Receiver; the retained CSI-only log lines405–419 ends with one prior lib error and exit1.
+Raw SHA256 c59cd588606cfb64fd69926d3ce8ef46c7afeeee5addd6ed2ab058f46e36a804;
+CSI-only SHA256 75de252383d17f285b078c849dbbad28d2df4def822dfbcb91b8ded7639b2d7c.
+Root acquired those bytes once. This is actual lint evidence, not a runtime failure.
+
+Completed snapshot3 reports19 jobs:13 ordinary metadataPASS,4FAIL (three Core rows and
+lint),2 optionalSKIP. Root retains all17 completed raw job logs, each acquired once.
+Windows package/coherence metadata is PASS, with no Root ZIP byte proof yet; this is
+not package/install/release acceptance. Original eight CLI controls across three rows,
+including Wake/Cancel, remain unrun after the failed foundation cold gate.
+
+The completed ARM111866362649, x64stable111866362684 and x64MSRV111866362789
+rows each report Core136PASS/1FAIL, zero ignored/filtered. All six new SID selectors
+pass, but existing actual_cold_sid_preserves_the_forwarded_qualification_deadline fails:
+the isolated sid-deadline child reaches loader_tests.rs181's original pid>0 assertion.
+Its native SID call, grammar and elapsed check precede that failure; the new native path
+does not implicitly start the stock worker. The fixed marker is unreached, the cold gate
+fails and CLI/native downstream acceptance is unrun. This is not proof Cancel is fixed.
+
+The original owned receiver lifetime remains selected. Add ONLY drop(receiver) after
+the original remaining(deadline)? and immediately before the existing final reply
+expression in receive_sid_reply. Keep its owned signature, receive call, post-deadline
+gate, returned result/error precedence and every early-error RAII path literal. This
+explicitly consumes the same scalar receiver at the existing exit; the returned reply
+still owns the SAME permit. No borrowed API/lifetime, native disposal, clock, fallback,
+warning allowance, new test/selector, dependency or owner policy changes.
+
+Extend the earlier cumulative two-file repair boundary only with cfg(test)
+crates/locron-core/src/windows/loader_tests.rs. In ONLY its existing sid-deadline branch,
+keep the native current_user_sid_until(deadline), start, original20ms sleep, ADAPTER_TIMEOUT,
+deadline and SID grammar literal. Immediately after native SID/grammar, assert the
+Boolean observed_pid()==0, then perform genuine existing filesystem_worker::request(
+"sid", None, SAME deadline) and fixed Boolean native==stock comparison without rendering
+either SID. Keep the original elapsed<ADAPTER_TIMEOUT, pid>0, marker and hostile-module
+isolated helper scope after that addition. Both operations share the original30s boundary;
+no clock reset, warm-up, stock substitute for the native API, skip or assertion waiver.
+All other loader_tests branches and filesystem_worker.rs remain byte-exact b4c422.
+
+A read-only host audit identifies a second direct native-SID-to-stock-PID coupling in
+cfg(test) crates/locron-core/src/windows/loader_crash.rs1353-1388. The parent-exit-host
+route's fixed thread currently calls current_user_sid(), checks grammar, then requires a
+positive filesystem-worker PID and publishes fixed-pid. Native SID does not start that
+worker. This is Source-backed prospective fixture evidence; b4c422's failed cold gate
+skipped parent-exit-driver, so no second runtime failure or containment result was measured.
+
+In ONLY host()'s existing fixed thread, capture one Instant::now()+ADAPTER_TIMEOUT at its
+original native-query entry. Use the existing current_user_sid_until(deadline) rather than
+the default wrapper so its native query and the following genuine existing
+filesystem_worker::request("sid", None, SAME deadline) share that original30s boundary.
+Retain the original SID grammar, then require fixed Boolean native==stock without printing
+either value BEFORE the original positive PID assertion and fixed-pid publication. Never
+create/reset a deadline after native lookup. Keep the generic thread's separate original
+deadline, prepare/capture/spawn, joins and all other host bytes literal. Parent/observer
+owned Child and Job containment, three actual target handles, heartbeat progress/stop,
+reader/capture/disposal, publication proofs, guard refusal/release and all original
+assertions remain literal. The driver45s, stock30s and existing3s cleanup stay unchanged.
+No new thread, selector, warm-up, native substitute, clock reset or assertion waiver.
+
+This latest amendment explicitly supersedes the prior cumulative three-file boundary:
+cumulative Source is windows.rs, filesystem_worker.rs, loader_tests.rs and loader_crash.rs.
+The follow-up changes only windows.rs, loader_tests.rs and loader_crash.rs;
+filesystem_worker.rs stays byte-exact b4c422. No further Source or test scope is selected.
+
+Root read the [stable Clippy manual](https://rust-lang.github.io/rust-clippy/stable/index.html?groups=cargo#needless_pass_by_value):
+the lint detects an unconsumed by-value argument; its reference suggestion is not the
+selected ownership policy. The log's versioned Rust1.98 reference page was not read.
+Stable manual semantics and static formatting are not Rust1.98/native acceptance.
+
+1. Record and reread the complete amended plan before Source. **Verify:** four Docs only,
+   complete earlier prefixes retained, b4c422 Source unchanged; #27/#31/#163 whole-plan
+   exact POST/GET retains original bodies/state, then Root rereads the whole committed
+   plan and all new Docs AFTER ALL GETs before returning the separate Source lease.
+2. Apply the owned-receiver drop and both coupled stock-SID fixture repairs. **Verify:** inspect
+   full staged/unstaged/committed diff; removing that one drop line restores windows.rs,
+   removing the new native/stock observation block restores loader_tests.rs, and removing
+   only the fixed-thread deadline/request/Boolean addition plus restoring its default SID
+   call restores loader_crash.rs. Each whole file must equal b4c422. Independently count
+   the new Docs-parent tree:316 entries minus these three follow-up paths protects313
+   modes/blobs, including every filesystem_worker.rs byte. All original selectors, old
+   assertions, clocks, branches and other host/loader bytes stay exact. Scoped pinned
+   rustfmt1.94/1.98, locked offline metadata and diff checks only locally; native
+   compilation/Clippy/tests are NOT RUN.
+3. Root reviews and publishes changed Source, then qualifies actual hosted results.
+   **Verify:** clean exact parent/head/base, one ordinary push and exact synthetic tree;
+   fresh Windows warnings-denied lint plus all three old/new native identity/cache/
+   ownership, actual cold forwarded deadline/stock PID and the genuine parent-exit
+   handles/Job/heartbeats/capture/guard-release proofs plus original required gates must
+   pass. Preserve failed b4c422 lint and three cold-gate failures as measured history;
+   no unchanged-head rerun, prior PASS transfer, skip, allowance or relaxed clock.

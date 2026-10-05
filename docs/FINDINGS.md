@@ -5668,3 +5668,37 @@ the verified entry intact while the caller is refused. There is no clock/publica
 transaction or rollback. [OnceLock](https://doc.rust-lang.org/std/sync/struct.OnceLock.html)
 documents nonblocking get and one-time publication, not atomicity with a clock. This is
 the existing semantic limit, not a native timing or Rust1.94 compilation result.
+
+### Hosted SID owned-receiver lint finding (2026-10-06)
+
+Actual PR171/b4c422 CI37340588591/1 Windows lint111866362894 fails Rust1.98
+needless_pass_by_value at windows.rs722; retained raw SHA256c59cd588606cfb64fd69926d3ce8ef46c7afeeee5addd6ed2ab058f46e36a804
+and CSI-only SHA25675de252383d17f285b078c849dbbad28d2df4def822dfbcb91b8ded7639b2d7c
+bind lines405–419 and one lib error. The method owns its receiver, borrows it for the
+existing receive and implicitly disposes it on exit. Select explicit drop(receiver)
+only after the original post-deadline gate and before final reply; early-error RAII and
+reply-held permit remain unchanged. Root read the stable Clippy manual, not the log's
+versioned1.98 page; no native-row outcome or runtime cause follows from this lint.
+Completed ARM111866362649/stable111866362684/MSRV111866362789 each report Core136P/1F
+and all six new SID selectors PASS. Existing sid-deadline's original pid>0 assertion fails
+after the native SID/grammar/elapsed checks; the native query no longer creates its implicit
+stock worker. Preserve that native API, add a zero-stock-PID Boolean plus explicit stock
+SID/Boolean identity under the SAME deadline before original elapsed/PID/marker checks.
+The cold marker/downstream CLI acceptance is unrun; Cancel is not qualified. The complete
+combined plan/owning readbacks/final reread precede the selected narrow Source corrections.
+Completed run metadata totals19 jobs:13PASS/4FAIL/2optionalSKIP; Root retains17 one-GET
+raw jobs. Package/coherence PASS is metadata only without ZIP proof; original8x3 CLI
+controls/Wake/Cancel remain unrun, so no cancellation or release repair is qualified.
+
+The same read-only audit finds loader_crash.rs host()'s fixed thread calls native SID and
+then requires observed_pid()>0/fixed-pid publication without an actual stock request.
+The parent-exit-host route therefore has the same Source-backed prospective coupling;
+its driver was skipped after b4c422's cold-gate failure, so this is not an observed second
+failure or qualified containment. Select a fixed-thread entry30s absolute deadline,
+current_user_sid_until(deadline) first, original grammar, genuine fixed request("sid", None,
+SAME deadline) and fixed Boolean identity before the unchanged positive PID/publication.
+No SID values are printed. Preserve the generic owner's separate deadline and all actual
+parent/observer Child/Job/handle/heartbeat/reader/capture/disposal/guard-release proofs,
+original45/30/3s clocks and assertions. This latest scope supersedes the earlier three-file
+boundary: cumulative four paths, follow-up three, filesystem_worker.rs literal b4c422;
+313 other modes/blobs follow from an independently verified316-entry Docs-parent tree.
