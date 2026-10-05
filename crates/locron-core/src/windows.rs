@@ -733,6 +733,7 @@ fn receive_sid_reply(
             }
         });
     remaining(deadline)?;
+    drop(receiver);
     reply
 }
 
