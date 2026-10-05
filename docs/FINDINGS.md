@@ -5771,3 +5771,7 @@ Changed-head3f741 fresh CI37255108990/1 fails before fixture/native execution: b
 ## Group A initial fixture admission evidence — 2026-10-05
 
 Actual1e0 fresh CI separates three strict lint sites, Unix populated-preview horizon, Windows13cookie fresh-root privacy refusals, PR144 facts no-follow input refusal and Constructor Done-before-event. Full native read-only handoff18a0f794 and locked SQLite/tempfile Source support initial private Unix DB creation, two-directory owned Windows fixture roots, existing-base canonicalization and a closed facts diagnostic; actual causal primitives remain unknown. Complete scope, count correction and Verify are in GROUP_A_FIXTURE_ADMISSION_2026-10-05.md.
+
+## Group A Boolean preparation API boundary — 2026-10-05
+
+Before dependent Boolean Source, actual fresh_root/callers and Core APIs show no parser preparation deadline/finite worker or public directory-handle identity shortcut. Preserve original Boolean root/callers and parser30 origin; narrow WROOT to cookie's existing deadline/full-ID boundary. Empty child removal followed by outer failure retains surviving outer without rollback. Full selected authority is the amended GROUP_A_FIXTURE_ADMISSION_2026-10-05.md.

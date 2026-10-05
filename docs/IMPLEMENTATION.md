@@ -5544,3 +5544,7 @@ After162/143/163 exact readbacks and Root entire original/supplement after-GET r
 ## Group A minimum fixture admission handoff — 2026-10-05
 
 After162/143/163 exact GET ALL and Root entire34/23/new final plan reread, separate development changes only the four selected fixture/support files. Preserve all production/frontend/CI/lock/native script/finite keys/assertions/clocks; initial exclusive DB creator is recorded once, Windows outer/child ownership cleans bottom-up, canonical existing base precedes child exposure, and facts observation stays closed≤74ASCII. Complete inverses/protected bytes/static handback precede Root review and fresh changed-head qualification.
+
+## Group A cookie-only directory admission continuation — 2026-10-05
+
+Preserve all independent four-path WIP and resume only after amended plan/exact162/143/163 GETs/Root entire final reread. Use cookie's existing deadline/absent-suffix full-ID protocol and selected two-scope cleanup; keep Boolean FreshRoot/fresh_root/cleanup/callers whole1e0 and parser30 origin literal. New deadline/worker/public Core API remains unselected. All original four Verify steps and native acceptance remain.

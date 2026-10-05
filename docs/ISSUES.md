@@ -164,3 +164,7 @@ Issue162 / draftPR141 owns the selected held/released destination fixture amendm
 ## Group A fixture admission continuation — 2026-10-05
 
 Owning162/143 and coordination163 remain open for the selected four-path initial fixture/lint/closed-facts continuation. Follow GROUP_A_FIXTURE_ADMISSION_2026-10-05.md and its four concrete Verify steps; full old finite/runtime/native/paired acceptance and exact ordered publication/member contribution must succeed before closure.
+
+## Group A narrowed fixture owner continuation — 2026-10-05
+
+Owning162/143 and coordination163 continue the amended fixture plan with cookie-only WROOT and unchanged Boolean preparation. Preserve independent WIP; exact PATCH/GET and entire final-plan review precede dependent Source. Implementation/static checks do not close original complete native/paired/merge acceptance.
