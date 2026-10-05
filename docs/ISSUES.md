@@ -155,3 +155,7 @@ Issue31 remains open:7343/run37196440237 has one actual ARM History expiry and u
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+## Group C logical owner admission continuation — 2026-10-05
+
+Owning156/158/160/161 and coordination163 continue GROUP_C_LOGICAL_OWNER_ADMISSION_2026-10-05.md with four concrete Verify steps. All original complete fixed-ledger/native/paired/merge/member acceptance remains open; actual known failures and unknown creator/native causes do not qualify completion.

@@ -5643,3 +5643,7 @@ The selected typed logical oracle is needed in two CLI test binaries. A private 
 ## Group C actual private test input/lint failures — 2026-10-05
 
 Actual composed677 Linux/Windows strict lint reports four Store private-helper errors; CLI new HTTP dry/why returns500 at its200 assertion. Actual kebab-case query key is dry-run; underscore is ignored/defaultfalse, but500 body/cell/cause/effects are unprinted UNKNOWN. Select13 literal test-only corrections across four new files with fixed error privacy/same cleanup/deadline/strict original assertions. Shared/Server analogous patterns are Source candidates, not reported diagnostics. MSRV WAL private-DACL and ARM old Cancel failures are separate unselected native research. Full scope and Verify: GROUP_C_PRIVATE_TEST_ADMISSION_2026-10-05.md.
+
+## Group C actual owner and initial DB boundaries — 2026-10-05
+
+New04e actual CI separates five lint sites, Unix before-oracle WAL-private refusal, Windows11/6 MCP including a real WAL DACL error, and separate Ack/History native expiry. Full native WAL proposal7234eead and actual existing Core/Store/locked SQLite Source select live actual-writer versus stable closed no-create raw oracle, Unix initial exclusive private DB in the existing update cell, and fixed bounded coordination scalar. Exact creators/modes/other phases/causes remain unknown; full scope/Verify is in GROUP_C_LOGICAL_OWNER_ADMISSION_2026-10-05.md.

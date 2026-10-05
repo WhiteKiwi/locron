@@ -5422,3 +5422,7 @@ Follow GROUP_C_SHARED_TEST_ORACLE_2026-10-05.md after exact156/158/160/161/163 r
 ## Group C finite private test admission continuation — 2026-10-05
 
 Follow GROUP_C_PRIVATE_TEST_ADMISSION_2026-10-05.md after exact156/158/160/161/163 readback and Root entire41/14/supplement/new blocks after all GETs. Separate developer applies only13 closed literals in the four new private test files, preserving every production/SQL/Cargo/CI/native behavior, clock/assertion/owner and all12/current32/older controls. Root independently reviews full whole inverses and publishes fresh composed qualification; native/WAL cause/repair are outside this lease and require separate Docs-first evidence.
+
+## Group C genuine writer and closed oracle handoff — 2026-10-05
+
+After exact five owning GETs and Root entire41/14/18/new plan reread, separate development uses only the three selected private test files. Preserve basic13 and all production/SQL/keysets/assertions/clocks; express seven actual-writer/conditional calls while closed6 remain literal, close every guard before original writers/cleanup, precreate only Unix update fixture DB before MCP and conserve creator ID, and apply equivalent five lint sites with fixed scalar privacy. Full inverses/protected physical/static handback precede Root review and fresh qualification.
