@@ -5418,3 +5418,7 @@ Follow GROUP_C_HISTORY_MCP_INTEGRATION_2026-10-05.md under156/158/160/161/163 af
 ## Group C shared private oracle continuation — 2026-10-05
 
 Follow GROUP_C_SHARED_TEST_ORACLE_2026-10-05.md after exact156/158/160/161/163 readback and Root entire original-plus-supplement reread. Lease adds only CLI tests/support/history_logical.rs and private includes; preserve the original independent oracle, all required real public controls, sole bare CLI test dependency, old MCP prefix and all clocks/gates. Separate developer handback and same-head hosted/native/paired acceptance precede completion.
+
+## Group C finite private test admission continuation — 2026-10-05
+
+Follow GROUP_C_PRIVATE_TEST_ADMISSION_2026-10-05.md after exact156/158/160/161/163 readback and Root entire41/14/supplement/new blocks after all GETs. Separate developer applies only13 closed literals in the four new private test files, preserving every production/SQL/Cargo/CI/native behavior, clock/assertion/owner and all12/current32/older controls. Root independently reviews full whole inverses and publishes fresh composed qualification; native/WAL cause/repair are outside this lease and require separate Docs-first evidence.

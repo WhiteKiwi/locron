@@ -5639,3 +5639,7 @@ Full groupC research binds all four heads/actualCI/synthetic trees and preserves
 ## Group C shared test-oracle placement — 2026-10-05
 
 The selected typed logical oracle is needed in two CLI test binaries. A private tests/support/history_logical.rs path include shares its pure admission/snapshot logic without a public Store/Server API or extra dependency. Real all4/all7 HTTP coverage remains in the CLI binary’s actual Server Router; Server’s public-lifecycle-only ledger is a separately identified additional regression. Original final-plan semantics and every lifetime/physical boundary remain.
+
+## Group C actual private test input/lint failures — 2026-10-05
+
+Actual composed677 Linux/Windows strict lint reports four Store private-helper errors; CLI new HTTP dry/why returns500 at its200 assertion. Actual kebab-case query key is dry-run; underscore is ignored/defaultfalse, but500 body/cell/cause/effects are unprinted UNKNOWN. Select13 literal test-only corrections across four new files with fixed error privacy/same cleanup/deadline/strict original assertions. Shared/Server analogous patterns are Source candidates, not reported diagnostics. MSRV WAL private-DACL and ARM old Cancel failures are separate unselected native research. Full scope and Verify: GROUP_C_PRIVATE_TEST_ADMISSION_2026-10-05.md.
