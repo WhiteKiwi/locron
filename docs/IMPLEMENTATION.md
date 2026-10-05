@@ -5763,3 +5763,20 @@ Unrelated default targets/evidence and every Unix producer byte stay literal. B
 only marks CLI check, not checked; all29 calls/body/clock/oracles remain exact.
 Root entire after-GET plan review precedes separate development, full static
 inverses/protection and fresh unchanged actual required matrices; no cause repair.
+
+
+## B narrow caller/refusal and test-profile implementation gate (2026-10-06)
+
+Follow the complete B-only
+[WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md](planning/WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md).
+After Root commits Docs, ALL owning whole-plan POST/exact GETs and actual final entire
+committed-plan/new-tail reread, separate development may only mark CLI checked,
+extend API N07's same-returned-error pure closed projection/failure suffix, and append
+[profile.test.package.sha2] opt-level=3. Preserve original assertion32|33, extraction
+order, all29/92 CLI call bodies, Unix branches, guards/full IDs/bytes/locator/receipts,
+8192 chunks/512MiB caps/60-90-3s horizons and genuine ownership/cleanup. No extra log
+write/query/retry;239CRLF payload excludes unchanged harness envelope. Other profiles,
+debug_assertions/overflow checks/dependencies/features/algorithms stay unchanged.
+The optimization is reversible and benefit unknown, with generic monomorphization limits.
+Full file/protected inverses, permitted static checks and fresh unchanged actual
+required matrices precede any closure; Root owns publication and causal decisions.

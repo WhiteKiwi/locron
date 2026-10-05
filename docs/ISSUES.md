@@ -361,3 +361,16 @@ and protection, fresh three Windows foundation/full A/B real guard/row/cleanup
 outcomes plus B original Unix fence, and all required/paired/package/secret gates
 and actual member/main contribution before closure. Old failures/unobserved facts
 stay open; placement/build/static metadata or a location hint is no acceptance.
+
+
+## B caller/refusal/test-profile four-step concrete Verify (2026-10-06)
+
+Owning #27/#31/#162/#146/#149/#163 and PR147 preserve original bodies/state/history
+and every acceptance criterion. Follow WHOLE
+WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md: Root Docs commits/ALL exact whole-plan
+GETs and actual final after-ALL reread BEFORE separate three-path Source; whole original
+inverses/protected bytes and allowed static checks; fresh Linux caller/N07 original
+held-plus-released native controls/all rows/cleanup; all required/paired/package/secret
+gates and actual main/member contribution before closure. Current d094 failed CI,
+unmeasured cost/benefit and UNKNOWN N07 facts remain open. No clock/oracle/security
+waiver, no Source-first implementation or old-PASS transfer. Root handles publication.

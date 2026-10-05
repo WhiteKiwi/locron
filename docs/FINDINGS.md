@@ -6016,3 +6016,20 @@ pins current clean A88cd/B163e and the narrow step-scoped target/facts/readback
 composition; B alone adds one track_caller location hint, with cost/cause unknown.
 Every old failed result and every historical Doc byte remain preserved. Source
 waits for Root commits/all owning exact GETs/final entire reread and separate lease.
+
+
+## B returned-refusal and caller/profile research selection (2026-10-06)
+
+At exact d094, CI37378467273/1 remains FAILURE (9 success/6 failure/2 macOS30-minute
+cancellations/2 optional skips); original24 native20PASS/4FAIL. Each Windows Server
+job passes28 prior rows/FI07 then N072591 refuses, kind/raw/tag UNKNOWN. N07 helper_remove
+returns a local Rust Err projection; earlier guards/private checks may refuse before
+delete, so no native instruction/holder/code5 is inferred. The selected same-error
+failure suffix retains original PermissionDenied && raw32|33 and bounds payload239CRLF.
+Linux181 is checked PRE,182 operation,183 POST; caller propagation does not measure cost.
+The conventional test-only sha2 opt-level3 package experiment preserves real full hashes
+and inherited checks; generic wrappers may retain caller optimization, benefit unmeasured.
+The sealed fence/N07 packets and every old failure remain frozen. The complete B-only
+[WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md](planning/WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md)
+selects only three later Source scopes after Root whole-owning GETs/final actual reread.
+SPEC/security/owners/oracles/clocks stay frozen; no Source implementation is authorized here.
