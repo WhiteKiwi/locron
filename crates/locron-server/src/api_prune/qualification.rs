@@ -2591,7 +2591,18 @@ fn native_case(
             assert!(
                 error.kind == Some(io::ErrorKind::PermissionDenied)
                     && matches!(error.raw, Some(32 | 33)),
-                "actual no-delete sharing refusal missing"
+                "actual no-delete sharing refusal missing surface=api role=sharing_control stage=helper_remove_returned family={} kind={} raw={} object={} predicate={} chain={} ace={}",
+                if error.kind.is_some() {
+                    "store_io"
+                } else {
+                    "non_io"
+                },
+                error.kind.map(admission_kind).unwrap_or("unobserved"),
+                OptionalNumber(error.raw),
+                error.guard.0,
+                error.guard.1,
+                OptionalNumber(error.guard.2),
+                OptionalNumber(error.guard.3),
             );
             holder = Some(file);
         }
@@ -2941,19 +2952,25 @@ struct Refusal {
     kind: Option<io::ErrorKind>,
     #[cfg(windows)]
     raw: Option<i32>,
+    #[cfg(windows)]
+    guard: (&'static str, &'static str, Option<u32>, Option<u32>),
 }
 
 fn helper_remove(paths: &StatePaths, path: &Path, deadline: Instant) -> Result<(), Refusal> {
     checked(deadline, || super::remove_output(paths, path)).map_err(|error| {
         #[cfg(windows)]
         {
-            let (kind, raw) =
+            let (kind, raw, guard) =
                 if let crate::api::ApiError::Store(locron_store::StoreError::Io(error)) = error {
-                    (Some(error.kind()), error.raw_os_error())
+                    (
+                        Some(error.kind()),
+                        error.raw_os_error(),
+                        guard_refusal_fields(&error),
+                    )
                 } else {
-                    (None, None)
+                    (None, None, ("unobserved", "unobserved", None, None))
                 };
-            Refusal { kind, raw }
+            Refusal { kind, raw, guard }
         }
         #[cfg(not(windows))]
         {

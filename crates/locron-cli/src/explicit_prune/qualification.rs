@@ -177,6 +177,7 @@ fn check(deadline: Instant) {
     );
 }
 
+#[track_caller]
 fn checked<T>(deadline: Instant, operation: impl FnOnce() -> T) -> T {
     check(deadline);
     let result = operation();
