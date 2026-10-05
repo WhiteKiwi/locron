@@ -5784,3 +5784,18 @@ Actual04c Windows1.98 raw39817B/SHA2c03536e613126d0d88d74303e803d9bf609154ab30ed
 ## Group A actual facts-refusal observation — 2026-10-05
 
 Actual f97 CI14ordinaryPASS/3WindowsFAIL records first facts PermissionDenied/rawNone before193195 controls; strict Windows lint now passes. Core normal managed-file admission does not directly require private-leaf DACL on this path. Existing managed/stock custom Error spellings can identify a class and a bounded lexical ancestor index without another native query; they do not identify actual native object/security predicate. Select only the one-file118-line class/index alternative with private stack2048, fixed labels, index0..63/unknown and104CRLF diagnostic cap. Original refusal/Error/Unix/facts read/body/root/clock remain whole. Arbitrary Error formatter work and real current failure cause remain unknown/unmeasured. Full scope and concrete Verify: planning/GROUP_A_FACTS_REFUSAL_OBSERVATION_2026-10-05.md.
+
+## Actual guarded-input refusal research before Source (2026-10-06)
+
+The sealed67-artifact research manifest SHA98f218b5a2bd037b54a09c7c434a75734ec34402141d2ec9b19fba72d182f491
+and independent Root full hash/mode/blob verification bind Core mainf90 == A154 == B875.
+A's custom facts refusal does not measure which original metadata/owner/DACL/ACE
+predicate rejected; B's first SEL02 failure occurs among production/recovery/binding
+opens before Store seed. B's exact caller is Server api_prune/qualification.rs, blob
+3b42e4b8c4583519969816314469419468b3e5a2, not a similarly named Store module.
+Select an error-bound closed tag only on the already-returned custom rejection and a
+debug-only pure projection for these dependency-facing Server fixtures. No native error
+wrapping, duplicate native query, permission change or assumed layout/holder repair.
+Independent complete CRLF models are A214/B192/generic158 bytes within256; this is
+zero type/native/timing acceptance. The shared complete plan records scope and Verify:
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).

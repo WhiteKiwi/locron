@@ -5557,3 +5557,19 @@ Follow GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md and its three concrete Verify s
 ## Group A facts-refusal message continuation — 2026-10-05
 
 After all162/143/163 exact GETs and Root full changed-plan review, separate development leases only dashboard_boolean_qualification.rs for the selected existing-error class/index observer. Use capped stack storage and purely lexical complete local-drive component comparison; never add native parent probe, expose original messages/paths, retry admission or invent ownership/deadline. Whole inverses conserve Error/refusal/Unix/read-to-EOF193195/old owners/clocks and all protected Source. Exact old complete reviews are reused by whole hash; changed authority is reread. Root reviews/publishes and interprets fresh actual fixed scalars as spelling evidence before any separate causal repair; original full qualification and ordered merge/contribution gates remain.
+
+## Actual guarded-input refusal observation before separate Source (2026-10-06)
+
+Follow the shared complete
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+Keep frozen SPEC/ARCHITECTURE and all original predicates, native error values, custom
+kind/raw/Display, owner/creation/case/clock/cleanup invariants. One private closed tag
+records only the actual existing rejection; one Windows debug-only pure accessor lets
+the two Server fixtures attach role/kind/raw/optional predicate at original failing calls.
+Root prepares three Docs-only worktrees and owning exact whole-plan GET ALL/final full
+review before one separate developer implements common Core, normally cherry-picks
+that exact Source-only commit into A/B and changes only each selected caller file.
+Root ordinarily integrates the independent native-SID common fix before new A/B CI.
+Complete source conservation and byte proofs precede disposable hosted qualification;
+actual predicate/holder evidence and a later Docs-first repair remain necessary.
+No source/static observation or successful API update closes remaining acceptance.

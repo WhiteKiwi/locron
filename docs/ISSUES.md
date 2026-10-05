@@ -177,3 +177,12 @@ Continue owning162/143 and grouped163 with the three concrete Verify steps in GR
 ## Group A facts-refusal execution pointer — 2026-10-05
 
 Owning162/143 and coordination163 continue GROUP_A_FACTS_REFUSAL_OBSERVATION_2026-10-05.md with three concrete Verify steps. One private existing-error observer is selected; actual facts admission and separate native failures remain unresolved. Keep full193195/other-member/ordinary/GitGuardian/paired/current-base/ordered-squash acceptance open, record unknown scalars and do not close on diagnostics or static proof.
+
+## Guarded-input refusal observation Verify handoff (2026-10-06)
+
+Existing #27/#31/#162/#146/#149/#163 own all four concrete Verify in
+planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md. Preserve original bodies,
+history/state and every contribution/criterion. All owning complete-plan exact GETs and
+Root final entire plan/new-Docs review precede separate common/A/B Source. Measured
+refusal observation leaves the actual native bugs and member qualification open;
+only successful owning Verify plus required merges can close them. Signing37 is deferred.
