@@ -672,9 +672,25 @@ fn child() -> Check<()> {
         format!("{:08x}", hash.finalize()) == ticket.store.crc32,
         "actual Store artifact CRC mismatch",
     )?;
+    #[cfg(unix)]
+    let created_database_identity = {
+        let path = ticket.state.join("state.db");
+        let writer = create_private_new(&path)
+            .map_err(|_| "initial exclusive private database creation failed")?;
+        let id = identity(&writer)?;
+        record_owned(&path, &id)?;
+        drop(writer);
+        id
+    };
     let keeper = seed(ticket)?;
     let database = private_read(&ticket.state.join("state.db"))?;
     let database_identity = identity(&database)?;
+    #[cfg(unix)]
+    require(
+        database_identity == created_database_identity,
+        "seeded database no longer has its exclusive creator identity",
+    )?;
+    #[cfg(windows)]
     record_owned(&ticket.state.join("state.db"), &database_identity)?;
     drop(database);
     admission.clock.check(30)?;

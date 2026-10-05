@@ -970,7 +970,9 @@ fn text_value(value: &Value) -> Check<String> {
     )?;
     let bytes = encoded
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let encoded = std::str::from_utf8(pair).map_err(|_| "hex encoding invalid")?;
             u8::from_str_radix(encoded, 16).map_err(|_| "hex byte invalid")
@@ -2677,8 +2679,30 @@ async fn qualification() -> Check<()> {
             .ok_or("required hosted compiler facts missing")?,
     );
     // This is an explicitly passed CI input, not a user-selected token/state path.
-    let mut facts_file = locron_core::filesystem::open_read_no_follow(&facts_path)
-        .map_err(|_| "hosted facts no-follow admission failed")?;
+    let mut facts_file =
+        locron_core::filesystem::open_read_no_follow(&facts_path).map_err(|error| {
+            use std::io::ErrorKind;
+            let kind = match error.kind() {
+                ErrorKind::NotFound => "NotFound",
+                ErrorKind::PermissionDenied => "PermissionDenied",
+                ErrorKind::AlreadyExists => "AlreadyExists",
+                ErrorKind::WouldBlock => "WouldBlock",
+                ErrorKind::TimedOut => "TimedOut",
+                ErrorKind::Interrupted => "Interrupted",
+                ErrorKind::InvalidData => "InvalidData",
+                ErrorKind::InvalidInput => "InvalidInput",
+                ErrorKind::WriteZero => "WriteZero",
+                ErrorKind::Unsupported => "Unsupported",
+                ErrorKind::Other => "Other",
+                ErrorKind::ConnectionReset => "ConnectionReset",
+                _ => "unrecognized",
+            };
+            eprintln!(
+                "PR144 facts admission failed: kind={kind} raw={:?}",
+                error.raw_os_error()
+            );
+            "hosted facts no-follow admission failed"
+        })?;
     let mut facts_bytes = Vec::new();
     Read::by_ref(&mut *facts_file)
         .take(
@@ -2774,7 +2798,7 @@ async fn qualification() -> Check<()> {
         .checked_add(Duration::from_secs(600))
         .ok_or("runtime phase overflow")?;
     let count = if cfg!(windows) { 195 } else { 193 };
-    for row in 156..count {
+    for (row, &key) in KEYS.iter().enumerate().take(count).skip(156) {
         require(
             Instant::now() < phase_deadline,
             "original runtime phase horizon expired",
@@ -2785,7 +2809,7 @@ async fn qualification() -> Check<()> {
         let started_us = wall_us()?;
         publish(
             &evidence.join(format!("begin-{row}.json")),
-            &json!({"key":KEYS[row],"completed":false,"phase":"started","checkout":facts.checkout,"run":facts.run,"attempt":facts.attempt,"job":facts.job}),
+            &json!({"key":key,"completed":false,"phase":"started","checkout":facts.checkout,"run":facts.run,"attempt":facts.attempt,"job":facts.job}),
             CONTROL_CAP,
         )?;
         let nonce = uuid::Uuid::now_v7().to_string();
@@ -2814,9 +2838,9 @@ async fn qualification() -> Check<()> {
             Instant::now() < phase_deadline,
             "original runtime phase horizon expired",
         )?;
-        completed.push(KEYS[row].to_owned());
+        completed.push(key.to_owned());
         let mut entry =
-            json!({"key":KEYS[row],"completed":true,"kind":"actual-http","cleanup_verified":true});
+            json!({"key":key,"completed":true,"kind":"actual-http","cleanup_verified":true});
         for field in [
             "http_status",
             "attempts",

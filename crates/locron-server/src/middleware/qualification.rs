@@ -183,6 +183,12 @@ struct OwnedRoot {
     sentinel: GuardedFile,
     #[cfg(windows)]
     initial_root: locron_core::filesystem::PrivateDirectoryPlan,
+    #[cfg(windows)]
+    outer: PathBuf,
+    #[cfg(windows)]
+    outer_id: Identity,
+    #[cfg(windows)]
+    outer_guard: DirectoryGuard,
 }
 
 impl OwnedRoot {
@@ -198,12 +204,38 @@ impl OwnedRoot {
             .ok_or_else(|| io::Error::other("PR145 root lacks parent"))?
             .to_owned();
         #[cfg(windows)]
+        let (raw, outer, outer_id, outer_guard, root_guard) = {
+            let outer_id = directory_identity(&raw, deadline)?;
+            let outer_guard = DirectoryGuard::ancestors(&raw)?;
+            let outer = outer_guard.normalized_path().to_owned();
+            if directory_identity(&outer, deadline)? != outer_id {
+                return Err(io::Error::other("PR145 created outer changed; quarantine"));
+            }
+            let child = outer.join("active");
+            match fs::symlink_metadata(&child) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                _ => {
+                    return Err(io::Error::other(
+                        "PR145 active child already exists; quarantine",
+                    ));
+                }
+            }
+            admit(deadline)?;
+            let root_guard = DirectoryGuard::private(&child)?;
+            let raw = root_guard.normalized_path().to_owned();
+            if directory_identity(&outer, deadline)? != outer_id {
+                return Err(io::Error::other("PR145 created outer changed; quarantine"));
+            }
+            (raw, outer, outer_id, outer_guard, root_guard)
+        };
+        #[cfg(windows)]
         let initial_root = directory_plan(&raw, deadline)?;
         let root_id = directory_identity(&raw, deadline)?;
         let parent_id = directory_identity(&parent, deadline)?;
         let parent_guard = DirectoryGuard::ancestors(&parent)?;
         admit(deadline)?;
         // Only the just-created, retained, test-owned object receives setup permissions.
+        #[cfg(not(windows))]
         let root_guard = DirectoryGuard::private(&raw)?;
         let path = root_guard.normalized_path().to_owned();
         if directory_identity(&path, deadline)? != root_id {
@@ -262,6 +294,12 @@ impl OwnedRoot {
             sentinel,
             #[cfg(windows)]
             initial_root,
+            #[cfg(windows)]
+            outer,
+            #[cfg(windows)]
+            outer_id,
+            #[cfg(windows)]
+            outer_guard,
         };
         owned.check(deadline)?;
         Ok(owned)
@@ -277,6 +315,21 @@ impl OwnedRoot {
 
     fn check(&self, deadline: Instant) -> io::Result<()> {
         admit(deadline)?;
+        #[cfg(windows)]
+        {
+            if directory_identity(&self.outer, deadline)? != self.outer_id {
+                return Err(io::Error::other("PR145 outer identity changed; quarantine"));
+            }
+            let names = fs::read_dir(&self.outer)?
+                .take(2)
+                .map(|entry| entry.map(|entry| entry.file_name()))
+                .collect::<io::Result<Vec<_>>>()?;
+            if names.len() != 1 || names[0] != "active" {
+                return Err(io::Error::other(
+                    "PR145 outer inventory changed; quarantine",
+                ));
+            }
+        }
         if directory_identity(&self.path, deadline)? != self.root_id
             || directory_identity(&self.parent, deadline)? != self.parent_id
             || leaf_identity(&self.sentinel)? != self.leaf_id
@@ -363,6 +416,12 @@ impl OwnedRoot {
             sentinel,
             #[cfg(windows)]
             initial_root,
+            #[cfg(windows)]
+            outer,
+            #[cfg(windows)]
+            outer_id,
+            #[cfg(windows)]
+            outer_guard,
         } = self;
         // Requests/native observations have terminated before releasing no-delete leaf handles.
         drop(sentinel);
@@ -401,6 +460,36 @@ impl OwnedRoot {
                 return Err(io::Error::other(
                     "PR145 cleanup did not remove exactly the owned root",
                 ));
+            }
+        }
+        #[cfg(windows)]
+        {
+            admit(deadline)?;
+            if directory_identity(&outer, deadline)? != outer_id
+                || directory_identity(&parent, deadline)? != parent_id
+            {
+                return Err(io::Error::other("PR145 cleanup outer changed; quarantine"));
+            }
+            if fs::read_dir(&outer)?.next().is_some() {
+                return Err(io::Error::other(
+                    "PR145 nonempty outer retained; quarantine",
+                ));
+            }
+            drop(outer_guard);
+            admit(deadline)?;
+            if directory_identity(&outer, deadline)? != outer_id
+                || directory_identity(&parent, deadline)? != parent_id
+            {
+                return Err(io::Error::other("PR145 cleanup outer changed; quarantine"));
+            }
+            fs::remove_dir(&outer)?;
+            match fs::symlink_metadata(&outer) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                _ => {
+                    return Err(io::Error::other(
+                        "PR145 cleanup did not remove exactly the owned outer",
+                    ));
+                }
             }
         }
         if directory_identity(&parent, deadline)? != parent_id {

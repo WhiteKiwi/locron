@@ -968,6 +968,9 @@ pub(super) struct Harness {
 impl Harness {
     pub fn new() -> Self {
         let directory = tempfile::tempdir().expect("disposable token root");
+        #[cfg(windows)]
+        let directory_base =
+            fs::canonicalize(directory.path()).expect("disposable token root canonicalization");
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture loopback listener");
         listener
             .set_nonblocking(true)
@@ -976,6 +979,9 @@ impl Harness {
             children: Vec::new(),
             pending: Vec::new(),
             listener,
+            #[cfg(windows)]
+            paths: locron_store::StatePaths::new(directory_base.join("private")),
+            #[cfg(not(windows))]
             paths: locron_store::StatePaths::new(directory.path().join("private")),
             directory: Some(directory),
             go: None,
@@ -1378,14 +1384,26 @@ impl Harness {
                 .frames
                 .iter()
                 .find(|frame| frame.event == Event::Done);
-            let kind = match done.map(|frame| frame.kind.as_str()) {
-                Some(
-                    kind @ ("NotFound" | "PermissionDenied" | "AlreadyExists" | "WouldBlock"
-                    | "TimedOut" | "Interrupted" | "InvalidData" | "InvalidInput"
-                    | "WriteZero" | "Unsupported" | "Other" | "ConnectionReset"),
-                ) => kind,
-                _ => "unrecognized",
-            };
+            let kind = done
+                .map(|frame| frame.kind.as_str())
+                .filter(|kind| {
+                    matches!(
+                        *kind,
+                        "NotFound"
+                            | "PermissionDenied"
+                            | "AlreadyExists"
+                            | "WouldBlock"
+                            | "TimedOut"
+                            | "Interrupted"
+                            | "InvalidData"
+                            | "InvalidInput"
+                            | "WriteZero"
+                            | "Unsupported"
+                            | "Other"
+                            | "ConnectionReset"
+                    )
+                })
+                .unwrap_or("unrecognized");
             assert!(
                 !self.children[index]
                     .frames
