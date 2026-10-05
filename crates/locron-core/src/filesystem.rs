@@ -13,6 +13,214 @@ mod private_directory;
 #[cfg(windows)]
 pub use private_directory::PrivateDirectoryPlan;
 
+// These macros preserve the original release/non-Windows error construction.
+macro_rules! observed_unsafe_path {
+    ($path:expr, $object:ident, $predicate:ident, $ace:expr) => {{
+        #[cfg(all(windows, debug_assertions))]
+        {
+            $crate::filesystem::unsafe_path_observed(
+                $path,
+                $crate::filesystem::RefusalObject::$object,
+                $crate::filesystem::RefusalPredicate::$predicate,
+                $ace,
+            )
+        }
+        #[cfg(not(all(windows, debug_assertions)))]
+        {
+            $crate::filesystem::unsafe_path($path)
+        }
+    }};
+}
+
+#[cfg(windows)]
+macro_rules! ancestor_refusal {
+    ($result:expr, $index:expr) => {{
+        #[cfg(debug_assertions)]
+        {
+            $result.map_err(|error| {
+                $crate::filesystem::refusal_context(
+                    error,
+                    $crate::filesystem::RefusalObject::Ancestor,
+                    u32::try_from($index).ok(),
+                )
+            })
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            let _ = $index;
+            $result
+        }
+    }};
+}
+
+#[cfg(windows)]
+macro_rules! executable_refusal {
+    ($result:expr) => {{
+        #[cfg(debug_assertions)]
+        {
+            $result.map_err(|error| {
+                $crate::filesystem::refusal_context(
+                    error,
+                    $crate::filesystem::RefusalObject::Executable,
+                    None,
+                )
+            })
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            $result
+        }
+    }};
+}
+
+#[cfg(all(windows, debug_assertions))]
+#[derive(Clone, Copy, Debug)]
+enum RefusalObject {
+    Ancestor,
+    Executable,
+    Leaf,
+}
+
+#[cfg(all(windows, debug_assertions))]
+#[derive(Clone, Copy, Debug)]
+enum RefusalPredicate {
+    Reparse,
+    NotDirectory,
+    OwnerMissing,
+    OwnerUntrusted,
+    DaclMissing,
+    AceMissing,
+    AceShape,
+    PrincipalMissing,
+    ForeignMutation,
+    NotFile,
+    OwnedOwnerMismatch,
+}
+
+/// Closed observation of an existing custom Windows guard refusal, with no IO authority.
+#[cfg(all(windows, debug_assertions))]
+#[derive(Clone, Copy, Debug)]
+pub struct GuardRefusalObservation {
+    object: RefusalObject,
+    predicate: RefusalPredicate,
+    chain_index: Option<u32>,
+    ace_index: Option<u32>,
+}
+
+#[cfg(all(windows, debug_assertions))]
+impl GuardRefusalObservation {
+    /// Object class of the original rejecting guard.
+    #[must_use]
+    pub const fn object(self) -> &'static str {
+        match self.object {
+            RefusalObject::Ancestor => "ancestor",
+            RefusalObject::Executable => "executable",
+            RefusalObject::Leaf => "leaf",
+        }
+    }
+
+    /// Original failed predicate, without private descriptor or identity values.
+    #[must_use]
+    pub const fn predicate(self) -> &'static str {
+        match self.predicate {
+            RefusalPredicate::Reparse => "reparse",
+            RefusalPredicate::NotDirectory => "not_directory",
+            RefusalPredicate::OwnerMissing => "owner_missing",
+            RefusalPredicate::OwnerUntrusted => "owner_untrusted",
+            RefusalPredicate::DaclMissing => "dacl_missing",
+            RefusalPredicate::AceMissing => "ace_missing",
+            RefusalPredicate::AceShape => "ace_shape",
+            RefusalPredicate::PrincipalMissing => "principal_missing",
+            RefusalPredicate::ForeignMutation => "foreign_mutation",
+            RefusalPredicate::NotFile => "not_file",
+            RefusalPredicate::OwnedOwnerMismatch => "owned_owner_mismatch",
+        }
+    }
+
+    /// Checked index of the original root-first traversal, when available.
+    #[must_use]
+    pub const fn chain_index(self) -> Option<u32> {
+        self.chain_index
+    }
+
+    /// Checked index of the original descriptor ACE, when available.
+    #[must_use]
+    pub const fn ace_index(self) -> Option<u32> {
+        self.ace_index
+    }
+}
+
+#[cfg(all(windows, debug_assertions))]
+struct GuardRefusalError {
+    message: String,
+    observation: GuardRefusalObservation,
+}
+
+#[cfg(all(windows, debug_assertions))]
+impl std::fmt::Display for GuardRefusalError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.message, formatter)
+    }
+}
+
+#[cfg(all(windows, debug_assertions))]
+impl std::fmt::Debug for GuardRefusalError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.message, formatter)
+    }
+}
+
+#[cfg(all(windows, debug_assertions))]
+impl std::error::Error for GuardRefusalError {}
+
+#[cfg(all(windows, debug_assertions))]
+fn unsafe_path_observed(
+    path: &Path,
+    object: RefusalObject,
+    predicate: RefusalPredicate,
+    ace_index: Option<u32>,
+) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        GuardRefusalError {
+            message: format!("unsafe managed path: {}", path.display()),
+            observation: GuardRefusalObservation {
+                object,
+                predicate,
+                chain_index: None,
+                ace_index,
+            },
+        },
+    )
+}
+
+#[cfg(all(windows, debug_assertions))]
+fn refusal_context(
+    mut error: io::Error,
+    object: RefusalObject,
+    chain_index: Option<u32>,
+) -> io::Error {
+    if let Some(payload) = error
+        .get_mut()
+        .and_then(|inner| inner.downcast_mut::<GuardRefusalError>())
+    {
+        payload.observation.object = object;
+        payload.observation.chain_index = chain_index;
+    }
+    // Native errors are returned unchanged, never wrapped in a custom IO error.
+    error
+}
+
+/// Reads only a private, error-bound closed tag; performs no native observation.
+#[cfg(all(windows, debug_assertions))]
+#[must_use]
+pub fn guard_refusal_observation(error: &io::Error) -> Option<GuardRefusalObservation> {
+    error
+        .get_ref()?
+        .downcast_ref::<GuardRefusalError>()
+        .map(|payload| payload.observation)
+}
+
 /// Live directory-chain handles and the validated absolute directory identity.
 #[derive(Debug)]
 pub struct DirectoryGuard {
@@ -289,7 +497,7 @@ fn open_with_guard(
     let _inspection = windows::inspect_existing_file(path, private)?;
     let file = options.open(path)?;
     if !file.metadata()?.is_file() {
-        return Err(unsafe_path(path));
+        return Err(observed_unsafe_path!(path, Leaf, NotFile, None));
     }
     #[cfg(windows)]
     {
@@ -584,7 +792,7 @@ mod windows {
         };
         reject_reparse(&file, path)?;
         if !file.metadata()?.is_file() {
-            return Err(unsafe_path(path));
+            return Err(observed_unsafe_path!(path, Leaf, NotFile, None));
         }
         if private {
             verify_private(&file, path, false)?;
@@ -658,7 +866,7 @@ mod windows {
 
     pub(super) fn reject_reparse(file: &File, path: &Path) -> io::Result<()> {
         if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return Err(unsafe_path(path));
+            return Err(observed_unsafe_path!(path, Leaf, Reparse, None));
         }
         Ok(())
     }
@@ -675,29 +883,53 @@ mod windows {
         let descriptor = descriptor(file)?;
         let owner = descriptor
             .owner()
-            .ok_or_else(|| unsafe_path(path))?
+            .ok_or_else(|| observed_unsafe_path!(path, Ancestor, OwnerMissing, None))?
             .to_string();
         if owner != sid && ![SYSTEM_SID, ADMIN_SID, INSTALLER_SID].contains(&owner.as_str()) {
-            return Err(unsafe_path(path));
+            return Err(observed_unsafe_path!(path, Ancestor, OwnerUntrusted, None));
         }
-        let acl = descriptor.dacl().ok_or_else(|| unsafe_path(path))?;
+        let acl = descriptor
+            .dacl()
+            .ok_or_else(|| observed_unsafe_path!(path, Ancestor, DaclMissing, None))?;
         for index in 0..acl.len() {
-            let ace = acl.get_ace(index).ok_or_else(|| unsafe_path(path))?;
+            let ace = acl.get_ace(index).ok_or_else(|| {
+                observed_unsafe_path!(path, Ancestor, AceMissing, u32::try_from(index).ok())
+            })?;
             if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
                 continue;
             }
             if ace.ace_type() != AceType::ACCESS_ALLOWED_ACE_TYPE {
-                return Err(unsafe_path(path));
+                return Err(observed_unsafe_path!(
+                    path,
+                    Ancestor,
+                    AceShape,
+                    u32::try_from(index).ok()
+                ));
             }
             if ace.flags().bits() & 0x08 != 0 {
                 continue;
             }
-            let principal = ace.sid().ok_or_else(|| unsafe_path(path))?.to_string();
+            let principal = ace
+                .sid()
+                .ok_or_else(|| {
+                    observed_unsafe_path!(
+                        path,
+                        Ancestor,
+                        PrincipalMissing,
+                        u32::try_from(index).ok()
+                    )
+                })?
+                .to_string();
             if principal != sid
                 && ![SYSTEM_SID, ADMIN_SID, INSTALLER_SID].contains(&principal.as_str())
                 && ace.mask().bits() & DIRECTORY_MUTATION != 0
             {
-                return Err(unsafe_path(path));
+                return Err(observed_unsafe_path!(
+                    path,
+                    Ancestor,
+                    ForeignMutation,
+                    u32::try_from(index).ok()
+                ));
             }
         }
         Ok(())
@@ -843,7 +1075,7 @@ mod windows {
         let chain = absolute.ancestors().collect::<Vec<_>>();
         let mut handles = Vec::with_capacity(chain.len());
         let mut created = false;
-        for component in chain.iter().rev() {
+        for (chain_index, component) in chain.iter().rev().enumerate() {
             let file = match directory_handle(component, false) {
                 Ok(file) => file,
                 Err(error) if error.kind() == io::ErrorKind::NotFound && create => {
@@ -853,11 +1085,19 @@ mod windows {
                 }
                 Err(error) => return Err(error),
             };
-            reject_reparse(&file, component)?;
+            ancestor_refusal!(reject_reparse(&file, component), chain_index)?;
             if !file.metadata()?.is_dir() {
-                return Err(unsafe_path(component));
+                return ancestor_refusal!(
+                    Err(observed_unsafe_path!(
+                        component,
+                        Ancestor,
+                        NotDirectory,
+                        None
+                    )),
+                    chain_index
+                );
             }
-            trusted_directory(&file, component, &sid)?;
+            ancestor_refusal!(trusted_directory(&file, component, &sid), chain_index)?;
             if created || (private && *component == absolute) {
                 verify_private(&file, component, true)?;
             }
@@ -931,9 +1171,9 @@ mod windows {
     }
 
     fn verify_owned_executable(file: &File, path: &Path) -> io::Result<()> {
-        reject_reparse(file, path)?;
+        executable_refusal!(reject_reparse(file, path))?;
         if !file.metadata()?.is_file() {
-            return Err(unsafe_path(path));
+            return Err(observed_unsafe_path!(path, Executable, NotFile, None));
         }
         let sid = crate::windows::current_user_sid()?;
         let descriptor = descriptor(file)?;
@@ -941,29 +1181,58 @@ mod windows {
             .owner()
             .is_none_or(|owner| owner.to_string() != sid)
         {
-            return Err(unsafe_path(path));
+            return Err(observed_unsafe_path!(
+                path,
+                Executable,
+                OwnedOwnerMismatch,
+                None
+            ));
         }
-        let acl = descriptor.dacl().ok_or_else(|| unsafe_path(path))?;
+        let acl = descriptor
+            .dacl()
+            .ok_or_else(|| observed_unsafe_path!(path, Executable, DaclMissing, None))?;
         for index in 0..acl.len() {
-            let ace = acl.get_ace(index).ok_or_else(|| unsafe_path(path))?;
+            let ace = acl.get_ace(index).ok_or_else(|| {
+                observed_unsafe_path!(path, Executable, AceMissing, u32::try_from(index).ok())
+            })?;
             if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
                 continue;
             }
             if ace.ace_type() != AceType::ACCESS_ALLOWED_ACE_TYPE {
-                return Err(unsafe_path(path));
+                return Err(observed_unsafe_path!(
+                    path,
+                    Executable,
+                    AceShape,
+                    u32::try_from(index).ok()
+                ));
             }
             // Inherit-only entries do not grant rights on this file object.
             if ace.flags().bits() & 0x08 != 0 {
                 continue;
             }
-            let principal = ace.sid().ok_or_else(|| unsafe_path(path))?.to_string();
+            let principal = ace
+                .sid()
+                .ok_or_else(|| {
+                    observed_unsafe_path!(
+                        path,
+                        Executable,
+                        PrincipalMissing,
+                        u32::try_from(index).ok()
+                    )
+                })?
+                .to_string();
             if principal != sid
                 && principal != SYSTEM_SID
                 && principal != ADMIN_SID
                 // Generic write/all and file write/append/EA/attributes/delete/control rights.
                 && ace.mask().bits() & 0x500D_0156 != 0
             {
-                return Err(unsafe_path(path));
+                return Err(observed_unsafe_path!(
+                    path,
+                    Executable,
+                    ForeignMutation,
+                    u32::try_from(index).ok()
+                ));
             }
         }
         Ok(())
@@ -1480,17 +1749,35 @@ mod tests {
                 ",
                 &json!({"path": path, "right": right}),
             ).unwrap();
+            let reader_error = read_owned_executable(&path).unwrap_err();
             assert_eq!(
-                read_owned_executable(&path).unwrap_err().kind(),
+                reader_error.kind(),
                 io::ErrorKind::PermissionDenied,
                 "{right}"
             );
+            #[cfg(debug_assertions)]
+            {
+                let observation = guard_refusal_observation(&reader_error).unwrap();
+                assert_eq!(observation.object(), "executable");
+                assert_eq!(observation.predicate(), "foreign_mutation");
+                assert_eq!(observation.chain_index(), None);
+                assert!(observation.ace_index().is_some());
+            }
             let descriptor = fixture_descriptor(&File::open(&path).unwrap());
+            let exclusive_error = open_owned_executable_exclusive(&path).unwrap_err();
             assert_eq!(
-                open_owned_executable_exclusive(&path).unwrap_err().kind(),
+                exclusive_error.kind(),
                 io::ErrorKind::PermissionDenied,
                 "{right}"
             );
+            #[cfg(debug_assertions)]
+            {
+                let observation = guard_refusal_observation(&exclusive_error).unwrap();
+                assert_eq!(observation.object(), "executable");
+                assert_eq!(observation.predicate(), "foreign_mutation");
+                assert_eq!(observation.chain_index(), None);
+                assert!(observation.ace_index().is_some());
+            }
             assert_eq!(fixture_descriptor(&File::open(&path).unwrap()), descriptor);
             assert_eq!(fs::metadata(&path).unwrap().len(), 0);
         }
@@ -1744,6 +2031,21 @@ mod tests {
                 None,
             )
             .unwrap();
+            #[cfg(debug_assertions)]
+            {
+                let observation = guard_refusal_observation(error.as_ref().unwrap()).unwrap();
+                assert_eq!(observation.object(), "ancestor");
+                assert_eq!(observation.predicate(), "foreign_mutation");
+                assert_eq!(
+                    observation.chain_index(),
+                    ancestor
+                        .ancestors()
+                        .count()
+                        .checked_sub(1)
+                        .and_then(|index| u32::try_from(index).ok())
+                );
+                assert_eq!(observation.ace_index(), Some(2));
+            }
             assert_eq!(error.unwrap().kind(), io::ErrorKind::PermissionDenied);
             assert!(unchanged);
             assert!(absent);
