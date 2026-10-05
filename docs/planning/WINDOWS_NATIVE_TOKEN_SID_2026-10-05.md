@@ -54,13 +54,21 @@ is static; immediate existing test closures can retain a borrowed local permit l
 No extra pool or global detached-resource registry is selected.
 
 One admitted std thread owns token query, conversion, validation and native disposal.
-Its finite single-result channel carries only io::Result<String> and publishes without
-blocking on an absent receiver. Retain the original absolute API-entry deadline, capped
+After every native object is disposed, its finite single-result channel transfers
+io::Result<String> together with the SAME scalar initializer permit, publishing without
+blocking on an absent receiver. A private transport Result distinguishes refusal before
+a reply from the replied native Result; immediate test closures can return their original
+borrowed permit, while production transfers its static permit. Retain the original absolute API-entry deadline, capped
 at30s, across admission, pre/post native stages, receive, cache publication and return.
 Only the caller can cache an on-time verified result. A native call is not preemptible:
 on timeout, refuse without joining an unfinished owner or releasing its permit. Late
-work cannot cache or authorize replacement work; the permit stays with the owner until
-native work/disposal actually finishes. Subsequent admission remains bounded. No child
+work cannot cache or authorize replacement work. The permit stays with the owner during
+native work/disposal, then with the queued reply or receiving caller through cache/refusal
+and return. Only already-native-disposed scalar/channel state can drop on the caller.
+Receiver drop or try_send refusal releases that returned permit once; a blocked owner
+keeps it until actual disposal. This closes the worker-exit-before-cache duplicate-query
+window without an extra pool, atomic handshake, polling or native resource in the reply.
+Subsequent admission remains bounded. No child
 is spawned for SID; stock filesystem plus generic/COM child ceilings stay unchanged.
 
 Native query/conversion failure, invalid UTF-8/grammar, thread creation failure, panic/
@@ -109,7 +117,8 @@ accepted error, skip, oracle waiver, unchanged-head rerun or manual dispatch.
    region inverses, unchanged dependencies/guards/creation/Stock/Store/Engine/helper/
    workflows/clocks; pinned formatting/static metadata as applicable. Hosted controls
    preserve every old cache selector and prove timeout while the owner remains pending,
-   second admission refusal, no late cache, release before later reuse, on-time sharing,
+   second admission refusal, no late cache, native disposal before scalar permit transfer,
+   retention through cache publication, release before later reuse, on-time once-sharing,
    error/disconnect/spawn-refusal lanes and cached-only noninitialization. Gated providers
    prove the ownership boundary, not real native duration. Native and type fit are pending.
 3. Root independently reviews and publishes the genuinely changed main-based PR.

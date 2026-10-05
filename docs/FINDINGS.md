@@ -5647,3 +5647,13 @@ unsafe/dependency, guessed identity or fallback. Explicit fixed SID request pres
 coupled phase fixture's original cold-worker proof. Actual type/native timing and unchanged
 acceptance remain pending. Full decision and Verify are in
 [WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md](planning/WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md).
+
+### Before-Source SID cache-publication ownership refinement (2026-10-06)
+
+Separate development found a source-level duplicate window if the native thread releases
+its initializer permit after sending a String but before the caller caches it. Source
+remained unchanged. Root selects returning that SAME scalar permit with the native Result
+only after all native objects are disposed; the reply/caller retains admission through
+cache/refusal/return. Receiver-drop or nonblocking-send refusal disposes only already-clean
+scalar state. This preserves once-sharing without a new pool, atomic handshake or polling.
+The complete amended plan and exact owning readback/final reread precede development.

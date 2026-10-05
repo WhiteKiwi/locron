@@ -5417,8 +5417,9 @@ Frozen SPEC/ARCHITECTURE stay unchanged. Follow the complete
 [WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md](planning/WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md)
 against exactmainf90 before separate two-file development. Use the already locked safe
 process-token query and fallible SID conversion in one original-deadline native owner;
-transfer the existing initializer permit through native disposal, return only a String/error
-and let only the on-time caller cache success. Preserve bounded waiting, late-owner
+transfer the existing initializer permit through native disposal, then return String/error
+WITH that same scalar permit and retain it through caller cache/refusal/return. Only the
+on-time caller caches success. Preserve bounded waiting, late-owner
 admission refusal, cache-only IPC and every unrelated adapter/creation/guard/grace/clock.
 Make only the coupled cold phase fixture's SID dispatch explicit and add genuine identity/
 owner controls. Root Docs/#27/#31/#163 exact whole-plan GET ALL and final complete reread
@@ -5426,3 +5427,9 @@ precede Source; permitted static conservation precedes changed-head disposable n
 MSRV/ARM/x64/full required/paired qualification. Publish this common repair first so other
 representatives integrate reviewed main without unrelated feature code. Failed/missing
 native behavior and wider release/account/logon/reboot acceptance remain open.
+
+The before-Source permit-return refinement closes worker-exit-before-cache duplicate
+admission. The one-result reply owns no native resource; blocked native work still holds
+the actual permit, while receiver-drop/send refusal can drop only already-disposed scalar
+state. No extra pool/atomic/polling is selected. Root amended complete plan/owning GET ALL
+and whole final reread precede the paused separate developer's Source continuation.
