@@ -892,19 +892,14 @@ mod windows {
             .dacl()
             .ok_or_else(|| observed_unsafe_path!(path, Ancestor, DaclMissing, None))?;
         for index in 0..acl.len() {
-            let ace = acl.get_ace(index).ok_or_else(|| {
-                observed_unsafe_path!(path, Ancestor, AceMissing, u32::try_from(index).ok())
-            })?;
+            let ace = acl
+                .get_ace(index)
+                .ok_or_else(|| observed_unsafe_path!(path, Ancestor, AceMissing, Some(index)))?;
             if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
                 continue;
             }
             if ace.ace_type() != AceType::ACCESS_ALLOWED_ACE_TYPE {
-                return Err(observed_unsafe_path!(
-                    path,
-                    Ancestor,
-                    AceShape,
-                    u32::try_from(index).ok()
-                ));
+                return Err(observed_unsafe_path!(path, Ancestor, AceShape, Some(index)));
             }
             if ace.flags().bits() & 0x08 != 0 {
                 continue;
@@ -912,12 +907,7 @@ mod windows {
             let principal = ace
                 .sid()
                 .ok_or_else(|| {
-                    observed_unsafe_path!(
-                        path,
-                        Ancestor,
-                        PrincipalMissing,
-                        u32::try_from(index).ok()
-                    )
+                    observed_unsafe_path!(path, Ancestor, PrincipalMissing, Some(index))
                 })?
                 .to_string();
             if principal != sid
@@ -928,7 +918,7 @@ mod windows {
                     path,
                     Ancestor,
                     ForeignMutation,
-                    u32::try_from(index).ok()
+                    Some(index)
                 ));
             }
         }
@@ -1192,9 +1182,9 @@ mod windows {
             .dacl()
             .ok_or_else(|| observed_unsafe_path!(path, Executable, DaclMissing, None))?;
         for index in 0..acl.len() {
-            let ace = acl.get_ace(index).ok_or_else(|| {
-                observed_unsafe_path!(path, Executable, AceMissing, u32::try_from(index).ok())
-            })?;
+            let ace = acl
+                .get_ace(index)
+                .ok_or_else(|| observed_unsafe_path!(path, Executable, AceMissing, Some(index)))?;
             if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
                 continue;
             }
@@ -1203,7 +1193,7 @@ mod windows {
                     path,
                     Executable,
                     AceShape,
-                    u32::try_from(index).ok()
+                    Some(index)
                 ));
             }
             // Inherit-only entries do not grant rights on this file object.
@@ -1213,12 +1203,7 @@ mod windows {
             let principal = ace
                 .sid()
                 .ok_or_else(|| {
-                    observed_unsafe_path!(
-                        path,
-                        Executable,
-                        PrincipalMissing,
-                        u32::try_from(index).ok()
-                    )
+                    observed_unsafe_path!(path, Executable, PrincipalMissing, Some(index))
                 })?
                 .to_string();
             if principal != sid
@@ -1231,7 +1216,7 @@ mod windows {
                     path,
                     Executable,
                     ForeignMutation,
-                    u32::try_from(index).ok()
+                    Some(index)
                 ));
             }
         }
