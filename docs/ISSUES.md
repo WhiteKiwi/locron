@@ -198,3 +198,7 @@ Continue owning35/31 and coordination163 with the four concrete Verify steps in 
 ## Group D role-before-probe Verify continuation — 2026-10-05
 
 Owning35/31 and coordination163 continue the four concrete Verify steps in planning/GROUP_D_ROLE_BEFORE_INITIAL_PROBE_2026-10-05.md. Exact full-plan owning GET ALL and Root entire final new-plan/Docs review precede helper-only separate Source. Preserve one-call inverse, protected bytes, actual PID/Held/metadata owner, original 8s/200ms/30s and every selector/capture/cleanup assertion. All current-head ordinary/native/GitGuardian/fullpaired gates remain required; role ownership is not Store/bind readiness and unknown native/raw32/capture causes remain failed/open. Latest user direction defers141/Group A; eligible remaining groups proceed against current main with full member contribution verification.
+
+## Group D first-signal Verify continuation — 2026-10-05
+
+Owning35/31 and coordination163 continue four concrete Verify steps in planning/GROUP_D_FIRST_CANCELLATION_SIGNAL_2026-10-05.md: exact entire plan POST/GET ALL then Root final full reread; separate helper-only metadata with full inverse/protected/clock/grammar evidence; independent current-head publication/ordered synthetic tree; all17 ordinary/native/GitGuardian/complete paired gates. Daemon-local first signal is an observation, not native termination or completed acceptance. Actual MSRV Queued, separate late-positive capture refusal and all native failures remain open. #141 is deferred; other eligible groups proceed independently against fresh main.

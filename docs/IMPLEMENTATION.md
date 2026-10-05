@@ -5497,3 +5497,7 @@ Follow planning/GROUP_D_CANCEL_INITIALIZATION_WITNESS_2026-10-05.md. Root comple
 ## Group D role preparation handoff — 2026-10-05
 
 Follow planning/GROUP_D_ROLE_BEFORE_INITIAL_PROBE_2026-10-05.md after all three exact owning GETs and Root full final new-plan/Docs review. Separate development inserts only existing expected_role before cancellation's existing probe. Preserve original owner, every strict deadline, actual liveness/PID/Held/repeated metadata checks, probe and all remainder/cleanup/capture bodies. Reuse complete frozen authority reviews only with whole matching hashes. Root independently reviews the clean complete inverse/protected handback and handles changed-head publication and required qualification. Latest user direction defers141/Group A; eligible remaining groups proceed against current main.
+
+## Group D first-signal metadata handoff — 2026-10-05
+
+Follow planning/GROUP_D_FIRST_CANCELLATION_SIGNAL_2026-10-05.md after all35/31/163 whole-plan exact GETs and Root entire final plan/Docs review. Separate development changes only three additive helper spans: fixed64 per-attempt first_signal, get_or_insert after existing op18 admission, and explicit daemon-local first metadata in the admitted matched summary. Four extra proposed controls are unselected. Original accepted grammar, latest signal/poll assignments, real CLI/native/owner/cleanup/assertions and8s/200ms/30s remain literal. Whole inverse/protected clean handback and independent Root review precede normal changed-head publication and all unchanged required qualification.
