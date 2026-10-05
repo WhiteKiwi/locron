@@ -1065,6 +1065,7 @@ fn tool_update_job(paths: &StatePaths, args: &Value) -> Result<Value> {
     // Build and validate the complete edit without creating or migrating state.
     let store = open_read_only(paths)?;
     let existing = store.job(job_name_or_id)?;
+    drop(store);
     let mut def: JobDefinition = serde_json::from_str(&existing.definition_json)?;
     let now = Timestamp::from_epoch_micros(now_us());
     let mut schedule_changed = false;

@@ -23,7 +23,22 @@ use crate::{DaemonLock, LockMetadata, StatePaths};
 
 mod activity;
 mod cancellation;
+#[cfg(test)]
+mod history_qualification;
 pub use cancellation::CancellationPreview;
+
+#[cfg(test)]
+macro_rules! history_lowercase {
+    ($store:expr, $value:expr) => {
+        history_qualification::observe_lowercase($store, $value)
+    };
+}
+#[cfg(not(test))]
+macro_rules! history_lowercase {
+    ($store:expr, $value:expr) => {
+        $value
+    };
+}
 
 type AdmissionRow = (String, String, String, i64, String, Option<i64>);
 const MAINTENANCE_BATCH_LIMIT: usize = 100;
@@ -1001,6 +1016,8 @@ pub struct ImportSummary {
 pub struct Store {
     paths: StatePaths,
     connection: Mutex<Connection>,
+    #[cfg(test)]
+    history_observation: Mutex<history_qualification::Observation>,
     // SQLite must close before retained read-only DB/WAL/SHM leaves and their parent guards.
     #[cfg(windows)]
     _read_guards: Vec<locron_core::filesystem::GuardedFile>,
@@ -1052,6 +1069,8 @@ impl Store {
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
+            #[cfg(test)]
+            history_observation: Mutex::new(history_qualification::Observation::default()),
             #[cfg(windows)]
             _read_guards: Vec::new(),
             #[cfg(windows)]
@@ -1082,6 +1101,8 @@ impl Store {
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
+            #[cfg(test)]
+            history_observation: Mutex::new(history_qualification::Observation::default()),
             #[cfg(windows)]
             _read_guards: read_guards,
             #[cfg(windows)]
@@ -1814,6 +1835,8 @@ impl Store {
         let total = usize::try_from(count).map_err(|_| {
             StoreError::Conflict("run history total is outside supported range".into())
         })?;
+        #[cfg(test)]
+        history_qualification::after_count(self)?;
         // A huge offset is an empty page, not a wrapped SQLite integer. No
         // offset conversion is needed after the end of this transaction's data.
         let runs = if limit == 0 || offset >= total {
@@ -1844,6 +1867,8 @@ impl Store {
         offset: usize,
     ) -> StoreResult<RunHistoryPage> {
         let normalized = query.trim().to_lowercase();
+        #[cfg(test)]
+        history_qualification::start_search(self, &normalized);
         if normalized.is_empty() {
             return self.history_page(None, limit, offset);
         }
@@ -1855,17 +1880,19 @@ impl Store {
         let mut runs = Vec::new();
         let mut total = 0_usize;
         let page_end = offset.saturating_add(limit.min(100));
-        for row in statement.query_map([], |row| {
-            Ok((map_run(row)?, row.get::<_, String>(11)?))
-        })? {
+        for row in statement.query_map([], |row| Ok((map_run(row)?, row.get::<_, String>(11)?)))? {
             let (run, job_name) = row?;
-            if !run.id.to_lowercase().contains(&normalized)
-                && !job_name.to_lowercase().contains(&normalized)
+            #[cfg(test)]
+            history_qualification::observe_row(self, &runs, &run, &job_name, &normalized);
+            if !history_lowercase!(self, run.id.to_lowercase()).contains(&normalized)
+                && !history_lowercase!(self, job_name.to_lowercase()).contains(&normalized)
             {
                 continue;
             }
             if total >= offset && total < page_end {
                 runs.push(run);
+                #[cfg(test)]
+                history_qualification::observe_retained(self, &runs);
             }
             total = total.checked_add(1).ok_or_else(|| {
                 StoreError::Conflict("run history total is outside supported range".into())

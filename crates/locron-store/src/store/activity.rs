@@ -29,6 +29,8 @@ impl Store {
         let total = usize::try_from(count).map_err(|_| {
             StoreError::Conflict("active run count is outside supported range".into())
         })?;
+        #[cfg(test)]
+        super::history_qualification::after_count(self)?;
         let runs = if limit == 0 || total == 0 {
             Vec::new()
         } else {
