@@ -5661,3 +5661,8 @@ The [completed integration plan](planning/WINGET_OUTPUT_MAIN138_2026-10-04.md) r
 ## PR166 exact main136 integration selection
 
 PR136 is merged as f90a9d5 with exact reviewed/tested tree and actual ordinary/native/paired acceptance. Follow [the selected integration plan](planning/WINGET_OUTPUT_MAIN136_2026-10-04.md) to preserve the reviewed own Source and complete historical document blocks before fresh combined-head qualification. Prior successes do not qualify the new tree.
+
+
+## Group D representative166 integration and private observation (2026-10-05)
+
+The separate Group D next-diagnostic research binds current167 actual15P/2nativeF and distinct166/E16P/1ARMF. Select only the primitive positive-control scalar and directly required Windows CLI-test Clippy gap in GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md. Missing first_work is an observation gap; current cause and broader native fault classes remain unknown. The19 new controls remain unselected.

@@ -155,3 +155,8 @@ Issue31 remains open:7343/run37196440237 has one actual ARM History expiry and u
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+
+## Group D representative166 integration and private observation (2026-10-05)
+
+Group D continues existing35/31/coordination163 with five explicit Verify steps in planning/GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md. Integration, private observation and hosted acceptance are separate phases. Preserve broader release/WinGet/Windows requirements and actual unknown causes; no premature issue/member closure.

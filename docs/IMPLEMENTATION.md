@@ -5437,3 +5437,8 @@ The [completed integration plan](planning/WINGET_OUTPUT_MAIN138_2026-10-04.md) r
 ## PR166 separate Git integration with reviewed main136
 
 SPEC remains frozen. [The complete five-step plan](planning/WINGET_OUTPUT_MAIN136_2026-10-04.md) selects exact normal Source union and whole incoming Docs plus all ordered byte-exact own insertion blocks; whole own/incoming inverses are required. Root exact Issue35 GET/final reread precede separate development; full original gates and actual functional/paired provenance qualify the combined head.
+
+
+## Group D representative166 integration and private observation (2026-10-05)
+
+Follow planning/GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md for representative166 normal integration of exact7429/3a, literal contributor/Docs conservation, helper-only closed scalar and one required lint command. All old production/privacy/ownership/5s/8s/30s/control/gate boundaries stay literal. Root Docs/Issues/final whole reread precede separate Source and Root whole publication review.
