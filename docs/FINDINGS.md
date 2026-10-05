@@ -5657,3 +5657,7 @@ Completed fresh hosted Linux/macOS Rust1.98 Clippy jobs111490407950/111490407940
 ## Grouped arrivals and exact contributor boundaries (2026-10-05)
 
 Fresh inventory has19 open PRs at unchangedmainf90. Git ancestry confirms newer141946 and1673a descend from selected652/e9d; newer1667429 diverges from localdf30 with only Docs differences and identical whole WinGet Source/CI. New168/169 are two distinct one-line action updates in ci.yml,170 is one Engine dev-dependency plus its exact lock package. The initial16-member/four-group checkpoint remains historical; a fifth dependency group168/169/170 is selected only for read-only research. Preserve all contributions and review new producer diagnostics and action/dependency Sources before new final integration decisions, per GROUPED_PR_ARRIVALS_2026-10-05.md.
+
+## Group B concrete integration and qualification findings — 2026-10-05
+
+Source-backed147/148/150/151/153/154 projection preserves whole contributions but historical Engine-only/output totals and native3 do not qualify combined96 or prune. Root selects complete94 prune contracts (Unix86/Windows88), full96 receipt bindings, corrected state10Linux/9mac names, typed private13table oracles, original-body-inverse FI04 seams and early separate production CargoJSON/env admission. Public config cannot admit negative cap; corrupt settings/junction-self and native ownership limits remain explicit. See GROUP_B_OUTPUT_PRUNE_STATE_INTEGRATION_2026-10-05.md and exact rows ledger.

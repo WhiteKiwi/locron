@@ -5436,3 +5436,7 @@ Follow OUTPUT_CALLER_BRANCH_ORDER_2026-10-05.md under Issue146: Docs/Issue exact
 ## Current grouped processing with arrivals
 
 Follow GROUPED_PR_ARRIVALS_2026-10-05.md under Issue163 after the initialda7 grouped research plan. Preserve nineteen current open PRs in five groups and both parallel local/published contributions; retain all old actual evidence at its measured head. Research the newer141/166/167 and dependency168/169/170 before group-specific final Docs/Issue/GET/parent reread and separate Source. Complete composed-head/current-base regression, strict ordinary/Guardian/native/paired qualification plus exact squash/main/member-contribution proof precede member completion. This arrival update selects no Source, product behavior or expanded clock.
+
+## Group B selected output/prune/state composition — 2026-10-05
+
+After owning146/149/152/163 exact readbacks and Root entire final plan/ledger after-GET reread, use a separate developer to normally conserve all six contributions and adapt only the nine selected paths/actual formatting sites. Return complete original-body/contributor/Docs/key/physical/static proofs and leave fresh hosted94/96/state/native17/Guardian/full paired/current-base/squash/member proof to Root. Preserve every original policy/clock/owner/first error; no local runtime or old-head success promotion.
