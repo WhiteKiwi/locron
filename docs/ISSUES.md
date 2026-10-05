@@ -281,3 +281,10 @@ Owning35/31 and coordination163 continue the four concrete Verify steps in plann
 ## Group D first-signal Verify continuation — 2026-10-05
 
 Owning35/31 and coordination163 continue four concrete Verify steps in planning/GROUP_D_FIRST_CANCELLATION_SIGNAL_2026-10-05.md: exact entire plan POST/GET ALL then Root final full reread; separate helper-only metadata with full inverse/protected/clock/grammar evidence; independent current-head publication/ordered synthetic tree; all17 ordinary/native/GitGuardian/complete paired gates. Daemon-local first signal is an observation, not native termination or completed acceptance. Actual MSRV Queued, separate late-positive capture refusal and all native failures remain open. #141 is deferred; other eligible groups proceed independently against fresh main.
+
+
+## c39 test-only observation and independent A/B Verify (2026-10-06)
+
+Continue existing privacy27/CI31/integration163 with the complete amended native SID plan and its five concrete Verify steps. Root commits four Docs, publishes whole-plan exact POST/GET ALL with original Issue body/state preserved, then actually rereads the full final committed plan before separate helper-only Source. Actual c39 original controls22PASS/2FAIL and MSRV downstream skip remain failed/unqualified; no causal runtime repair or completed Windows/support claim. First-only matched cleanup facts and complete first positive scalar retention do not waive the original5s/8s/200ms/30s/25ms/5sgrace or CLEANED assertions.
+
+Permit independent DIAGNOSTIC exact-c39+A d24a2a65c05ef52eea644723d8f8ea5a11c0286a/B b6c9d1ecbf04db7e4dfd5b71a26de48d501ea4a0 qualification before common main merge, with Docs-only descendants and each full own required Verify. Root retains commits/API/publication/memory. Preserve failed/current-head evidence, all existing oracles/main-inclusion/member-contribution and closure gates; no Source conflict decision, new diagnostics import, old PASS transfer or ancestry-only closure. C/E stay later and wider release/account/logon/reboot work remains open. This overrides only the earlier A/B schedule, not acceptance or security.

@@ -404,3 +404,166 @@ current native completion, library compilation or interruptibility.
    are proved. Only then may they close as verified subsumed work. Ancestry alone, static
    success or a diagnostic record is not closure; broad#27/#31/#163 and release/account/
    logon/reboot/signing acceptance retain their actual remaining scope.
+
+
+## Test-only cleanup return and first positive-result observations (2026-10-06)
+
+This amendment selects observation only at reviewed joined c39ebeb3d2c3784bf8a06f383fa8d490f79edf61,
+tree9cec9f922b141ab4d0fd03f1cbd657cb64995663, ordered parents [4860d25,D17133].
+CI37355065492/attempt1 remains FAILURE:16 ordinary jobs pass, MSRV foundation fails,
+and2 optional jobs skip. Original eight native selectors across three rows are22PASS/2FAIL.
+Stable/ARM pass all eight and their downstream commands; MSRV fails original Cancel and
+capture and skips lifecycle16/dashboard4/prune3/maintenance11/MCP4/HTTP21. All three
+pass Core137, Engine69, Server42, Store96, doctor6, Service64, GUI12 and the three isolated
+stock modes; current strict Windows fmt/Clippy passes. No runtime repair is established.
+
+MSRV original Cancel freezes Expired/Cleanup, flags63, elapsed_us8388318, intentDropState;
+first work is Success/Progress. Daemon CleanupWait application1 is a returned cleanup
+fact, not a prior fatal daemon observation. History observed Cancelled and stopped progress;
+its4,112,464us accumulated wrappers are wall-time, not SQLite/kernel cost. No CLEANED or
+later worker result is printed. Daemon_spawn_us378185 is entry-relative, not spawn cost or
+the exact post-spawn8s expiry anchor. Capture's queued control passes at entry-relative
+5663046us; cancel's first work is Expired/Connect at6389918us and later completion is
+Expired/Cleanup at30002453us, flags33/releasedfalse. Connect cause remains UNKNOWN.
+The current positive collector refuses closed admission and quarantines; changing that
+permit, eligibility, order or quarantine is not selected. Preserve the frozen failure packet
+windows-native-sid-joined-c39-msrv-readonly-37355065492-20261006/report.md SHA256
+15b26ca80ce821c6ab0ab691a648139993786a91b6fec41ab63f54c4ca5f88e8 and all raw evidence.
+
+### Minimal private Source boundary and matched cleanup records
+
+Future separate development changes ONLY crates/locron-cli/tests/support/windows_cli_control.rs.
+Existing CaseResult Display/Debug, ProducerControlScalar, ProducerSummary, PairSummary,
+all original summaries/assertions/selectors and every native/collector call remain literal.
+Core SID four paths, Store/Engine/IPC/CLI/Unix/workflows/dependencies are protected.
+The following anchors refer to exact c39, not a future line-number mapping:
+
+- Observations386-506, CaseResult2930-2942 and Control2991-3031/3143-3164: add a private
+  fixed cleanup observation/snapshot only. Four AtomicU64 words start at0/unobserved;
+  snapshots load each once with Acquire, without retrying to manufacture coherence.
+- Owner3263-3316: one worker-local first-group claim starts false, owns no resource and
+  changes once before the first DropState observation. It is never reset. Only this SAME
+  owner publishes; complete and later Drop/release cannot pair different removal calls.
+- release4755-4757: after the existing gate/intent and before the SAME drop(self.state.take()),
+  claim the first group, sample its entry Instant and publish entry. Retain that local Instant
+  and the Boolean actual state presence from the existing root Option; no path is emitted.
+  Immediately after that same drop actually returns, sample return and publish its record.
+  No return on panic/blocking/uncertain work is invented; no TempDir::close substitution.
+- release4765-4775: observe ONLY the already-returned root.try_exists Result as absent,
+  present or io_error before its original post-gate/branch. Publish CLEANED only immediately
+  after the existing flag(CLEANED), never on a returned drop alone. Existing IO observation,
+  error priority, post-gates and actual query remain unchanged. No second existence query.
+- complete4787-4866 and Owner::drop4870-4905: preserve work-first/cleanup.and(work), reap,
+  collector eligibility/order, original retained owner and quarantine exactly. TempDir's
+  destructor returning does not report its deletion Result; the original root query/flag
+  remains the release evidence. No new result, release authority or timely-success oracle.
+
+Use four checked self-contained u64 records with this exact layout: sample_us bits0-24,
+owner-computed duration_us bits25-49, clock_class bits50-51, value bits52-53, operation
+bits54-59, event bits60-62 and valid bit63. Widths25+25+2+2+6+3+1=64. Zero is unobserved.
+Event1/2 are DropState operation50 entry/return; event3/4 are CleanupStateExists operation51
+root-return/CLEANED. RoleNoChild and groupfirst are fixed by these private slots/sole-owner
+claim, not a PID or serialized authority. Reject other headers/domain/reserved values as
+invalid; no panic, acceptance or cleanup decision follows diagnostic decoding.
+Clock1 means representable origin-relative0..30000000us, NOT timely case admission;
+clock2 is outside_range and clock3 invalid_clock, both with numeric time unobserved and
+stored sample0. Entry/return value0/1 means none/present; root value0/1/2 means absent/
+present/io_error; CLEANED value0 means confirmed. Non-return duration bits must be0.
+Return carries checked floor(actual_return.checked_duration_since(actual_entry)) in us
+only for the locally matched first call with representable entry/return and0..30000000us.
+Otherwise duration uses the25-bit sentinel33554431 and renders unobserved. A reader may
+render duration ONLY when its entry and return validate as this same first group/state;
+it never subtracts independent snapshot stamps. Missing/invalid/mismatched return gives
+unobserved duration. Root/CLEANED facts remain separately observed, not inferred from it.
+
+At most four fresh Instant::now samples for the claimed group: entry, actual return,
+already-returned root query, and existing CLEANED publication; repeat teardown adds none.
+These are OS wall-clock samples (Rust Instant uses Windows QPC), charged to the original
+clock. Do not claim zero added native calls or kernel-only deletion cost. The returned
+interval brackets the compound Drop/private-state/TempDir destructor and observation
+overhead; it is not a cause, interruptibility or per-file latency measurement. Preserve
+all original5s Wake/8s post-spawn Cancel/200ms probe/30s outer/25ms stop/5s native grace,
+checks/sleeps/native queries and byte caps; no clock reset/growth or new admission gate.
+Exact post-spawn expiry remains unobserved; no optional expiry-slot fields are selected.
+
+### Full first positive result and bounded separate lines
+
+producer_controls6555-6717 retains the ENTIRE immutable first CaseResult after the existing
+receive_until. Keep every scalar field, including original observation/call/capture/pair
+proof facts; never place an actual Child/guard/client/runtime/reader/owner on a driver or
+channel. Where original6570-6574 currently moves it, hold only an optional distinct cleanup
+result from the SAME conditional wait_cleanup_until and borrow that result or the first
+for the existing completion assertions. No new wait/join, channel, gate or Code priority.
+Existing finish_if_returned/case-summary/producer-summary/assertion order remains literal.
+
+Append eight separately closed producer_first/v1 lines at the existing positive outcome
+report point after finish_if_returned, without another observation wait: (1)code/phase/
+flags/frame_bytes/elapsed_us/stdout_bytes/cli_live_seen/capture_proof; (2)intent/first_work;
+(3)last_io; (4)three role status slots; (5)cli/wait/native_enter; (6)native_return/wrapper_return/
+capture_read; (7)last_history/history_cost/last_progress; (8)daemon_spawn_us/history_rel/
+progress_rel. Reuse the existing checked EventDisplay/CallWordDisplay and closed enum
+names. No full one-line CaseResult formatter, raw packed word dump, SID/path/PID/UUID/
+context/digest/file identity/SQL/argv/environment/input/raw stream/error message. Pair
+proof identities remain retained privately and unprinted; existing pair summaries stay exact.
+
+Add four cleanup_state/v1 lines, one per slot, with scopefirst/completion_snapshot or
+after_existing_wait, casequeued/cancel/wake, event and a closed fact{op,role,group,clock,
+t_us,value}; only the return line adds drop_wall_us. A zero/invalid slot prints that fixed
+classification. The first snapshot stays frozen. In drive_producer5237-5277, ONLY after its
+already-existing failure-only wait_producer_until, copy the four scalar slots once for a
+separate later diagnostic; admission/dispatch failure and normal success use unobserved
+later facts. Expose them through the existing failure-output wrapper after its literal
+ProducerSummary. No new polling/read/collector/delay; a late actual return is a separate
+returned fact, never a replacement first Code, CLEANED success or permission to release.
+Positive controls report their frozen first and existing completion snapshots separately.
+
+The external source-domain width model proves eight first lines219/135/120/225/182/198/
+214/105 ASCII bytes includingCRLF, and four cleanup lines156/181/163/160 includingCRLF.
+The longest NEW line is225<256; eight first lines total1398 and two cleanup groups total1320,
+so all selected new positive output is at most2718<3072 bytes. Two cleanup-only groups are
+at most1320<1536. These are independent component maxima, not claimed reachable native
+combinations. Bound u128 decimal39, u32 decimal10, signed i32 decimal11 and capped time
+8 digits; invalid/overflow/unobserved fixed branches are included. New summaries do no
+query or OS sampling while formatting and their output cost stays in the original clock.
+Do not change original larger summaries to fit the NEW-line bound or silently truncate facts.
+
+### Independent diagnostic A/B qualification before common merge
+
+Supersede ONLY the previous common-main-first schedule for reviewed original guard groups
+A and B. Root may independently publish DIAGNOSTIC drafts using EXACT c39 Source plus
+original A d24a2a65c05ef52eea644723d8f8ea5a11c0286a or
+B b6c9d1ecbf04db7e4dfd5b71a26de48d501ea4a0; Docs-only descendants are allowed. Do not
+silently import pending observation Source, a newer main, C/E or an unreviewed guard edit.
+Preserve each full reviewed member contribution/own Verify, unchanged main/c39 sources
+outside that group and all required oracles. A Source conflict/new decision returns to
+Docs first. This is diagnostic isolation, not a cause/fix claim or prerequisite waiver.
+Current c39 FAILURE remains historical failed qualification; no PASS/count transfers.
+A/B draft failure or skipped step stays failed/unqualified. Common-main inclusion and each
+member's own actual required acceptance/merge/contribution proof remain mandatory before
+closure; ancestry or a successful unrelated boundary is insufficient. C/E remain later.
+
+1. Root commits only the four Docs and records complete owning#27/#31/#163 plans. **Verify:**
+   complete old prefixes, c39 Source/all329 tree entries except four Docs unchanged,
+   exact whole-plan POST/GET retains original Issue bodies/state; AFTER ALL GETs Root
+   actually rereads the whole final plan and every new Docs block before Source/integration.
+2. Separate development implements only the helper observation slice. **Verify:** whole-file
+   inverse restores c39 helper, all other Docs-parent modes/blobs and old selectors/bodies/
+   assertions/clock expressions/calls/collectors/owners remain exact. Text/domain models
+   check packed headers/25-bit limits/sentinel/first-only mismatches and every line bound;
+   matched returned duration only, first result retained, no added process/FS/security/IPC
+   query or leaked text. Scoped pinned fmt/static metadata only locally; type/native pending.
+3. Root reviews/publishes one changed observation head. **Verify:** exact parents/tree,
+   fresh hosted24 native outcomes and both genuine positive subcontrols plus original
+   Core/stock/doctor/service/GUI/downstream, strict fmt/lint/MSRV/Unix/package/Guardian
+   gates; missing/skipped/failed controls remain explicit. Observe actual entry/return/root/
+   CLEANED separately without requiring a failure to repeat or treating diagnostics as PASS.
+4. Root may qualify independent diagnostic A/B drafts before common-main merge. **Verify:**
+   exact c39 plus each approved original guard Source/Docs-only descendant, full contribution
+   union and each own Verify; actual fresh required jobs/guards, all existing failures/oracles
+   and package bindings remain revision-specific. No rerun, weakening, skipped gate or
+   A/B close/merge merely from this permission. No current integration is performed here.
+5. Complete common/main and member acceptance before closure. **Verify:** qualified exact
+   actual merge/main contribution and every member's own required Verify; PR166/167/A/B
+   stay open until those proofs, and broad#27/#31/#163/release/account/logon/reboot remain
+   at their actual scope. No production repair is selected; any concrete repair needs new
+   research/Docs/owning readback/final review before Source. C/E qualification still follows.
