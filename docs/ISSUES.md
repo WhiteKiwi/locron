@@ -169,3 +169,8 @@ Owning146/149/152 and coordination163 retain their complete qualification and or
 ## Group B binding JSON execution scope — 2026-10-05
 
 Owning146/149/152 and coordination163 continue the amended GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md. Verify the fixed32768-byte closed JSON producer/receiver observation with genuine two-owner full identity/hash/closure and exact original executable-reader/49/58/94/96/state/native3 preservation. All four exact Issue readbacks and final changed-plan review with exact unchanged-evidence reuse precede Source. Actual same-head required CI/native/full-paired/current-base publication remains pending; member and wider acceptance issues remain open.
+
+
+## Group B CI length Verify refinement — 2026-10-05
+
+Issues146/149/152 and coordination163 continue the existing scope with one selected CI-only module. Verify exact ten-path scope, fixed checkout-file loading/no native import work, whole native-reader/Engine/CI inverses, strictUTF8 binding and every decoded run<=21000. Four exact readbacks and final amended-plan review with exact unchanged49/58/94/frozen9 reuse precede Source. All actual required/native/full-paired acceptance and closures remain pending.

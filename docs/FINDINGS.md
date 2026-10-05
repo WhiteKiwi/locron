@@ -5710,3 +5710,8 @@ Actual CPython3.12.7 can report successful Windows stat after FileIdInfo failure
 ## Group B retained binding JSON observation — 2026-10-05
 
 The fixed binding record is JSON and cannot pass an executable ABI decoder. The nonexecuted candidate preserves all five artifact reader bodies, reuses their genuine retained native owners, and independently caps JSON at32768 bytes before parsing with duplicate-key/closed-schema checks and two full observations. Root checked the five-entry packet and frozen Source/CI bytes; native/layout/cost remains unmeasured. The explicit selected bounds and exact unchanged-evidence reuse are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.
+
+
+## Group B GitHub run-body length boundary — 2026-10-05
+
+Official workflow syntax limits each run body to21000 characters; four unsaved repeated-reader candidates exceed it. The selected single private CI module retains all five native reader bodies and three JSON routines, with explicit strictUTF8 decode and no import-time native work. Root read the complete helper and verified all seven packet hashes/ASTs; fixed checkout-file loading avoids namespace-package shadow resolution. Full selected exception, Source limits and Verify are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.

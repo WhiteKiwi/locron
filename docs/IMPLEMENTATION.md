@@ -5487,3 +5487,8 @@ After all owning146/149/152/163 exact GETs and Root entire final amended-plan re
 ## Group B fixed binding JSON continuation — 2026-10-05
 
 Follow the amended GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md only after all146/149/152/163 exact GETs and Root entire amended-plan review. Reuse the completed full49/58/94 review only when every original byte remains exact; any drift requires a full changed review. The original nine-path developer uses a distinct fixed32768-byte JSON observation with two retained full-identity owners, strict closed fields, complete bytes/hash and known closure, while preserving all executable ABI checks, old qualification and clocks. No arbitrary reader mode, new helper/dependency/public API or local execution is selected.
+
+
+## Group B single CI reader module handoff — 2026-10-05
+
+The run-length supplement in GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md admits exactly the original nine Source paths plus scripts/ci_prune_artifact_facts.py. After all four exact owning GETs and full final changed-plan review with frozen-byte reuse, the same developer loads only that fixed checkout file at existing CI call sites, preserves original native function/Engine inverses, implements selected strictUTF8, and verifies all decoded run bodies<=21000. This is the sole no-helper exception; product APIs/runtime/dependencies/rows/clocks/gates remain unchanged.
