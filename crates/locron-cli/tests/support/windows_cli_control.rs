@@ -1980,6 +1980,7 @@ struct AttemptLedger {
     execution: ProducerOp,
     poll: ProducerOp,
     signal: u16,
+    first_signal: Option<(u16, u64)>,
     signalled_poll: u16,
     completion: ProducerOp,
     failure: ProducerOp,
@@ -2019,6 +2020,7 @@ impl AttemptLedger {
                 {
                     return false;
                 }
+                self.first_signal.get_or_insert((row.sequence, row.time));
                 self.signal = row.sequence;
                 self.signalled_poll = self.poll.returned;
                 true
@@ -2808,6 +2810,12 @@ impl fmt::Display for ProducerSummary {
             if name == "completion" {
                 formatter.write_str(" signal=")?;
                 producer_number(formatter, (attempt.signal != 0).then_some(attempt.signal))?;
+                formatter.write_str(" first_signal=")?;
+                if let Some((sequence, time)) = attempt.first_signal {
+                    write!(formatter, "{sequence}@daemon_t_us={time}")?;
+                } else {
+                    formatter.write_str("unobserved")?;
+                }
             }
             write!(
                 formatter,
