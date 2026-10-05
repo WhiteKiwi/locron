@@ -5763,3 +5763,7 @@ Fresh inventory has19 open PRs at unchangedmainf90. Git ancestry confirms newer1
 ## Group A combined ownership and current native boundary (2026-10-05)
 
 The complete groupA read-only handoff8dbdaeef establishes a52-path source/doc union with both divergent144 contributions and actual newer946. Existing parent-owned CreateNew preparation can support193/195 boolean rows without token/Core adapters;145 remains state-missing. All946 held/replacement identity witnesses must be preserved with strict f559 finite native controls. Current946 actual constructor failure follows the first hidden=true loop but its event/Done/native cause is unknown; existing validated scalar reporting can locate it without new reads or changing failure/deadline. GROUP_A_DASHBOARD_INTEGRATION_2026-10-05.md selects the precise union, creator-ID/absence and reporting adaptations; all composed outcomes remain unmeasured.
+
+## Group A measured compile/type admission failures — 2026-10-05
+
+Changed-head3f741 fresh CI37255108990/1 fails before fixture/native execution: borrowed temporary Cookie/Set-Cookie GetAll, moved cleanup String, two strict lint expressions and DOM RenderResult generic mismatch. Actual synthetic550baf8a has ordered f90/3f741 parents and equal tree. Source-backed owned iteration/borrow/empty-unit/literal-delimiter/test-only Pick corrections preserve full policy/oracles; constructor and Windows lifecycle causes remain UNKNOWN. See GROUP_A_COMPILE_ADMISSION_2026-10-05.md.
