@@ -5340,6 +5340,7 @@ pub fn run_cancel_case() -> CaseResult {
 fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
     owner.retain_guard()?;
     owner.live(0, owner.control.deadline)?;
+    owner.expected_role(0)?;
     owner.probe(0, None)?;
     owner.control.check(owner.control.deadline)?;
     owner.control.observations.intent(Operation::CaseCurrentExe);
