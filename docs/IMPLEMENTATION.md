@@ -5795,3 +5795,17 @@ lint allowance. Permit standalone1.94/1.98 format checks and full locked offline
 only. Root owns changed-head ordinary publication/actual fresh strict lint and native
 qualification. Separate SEL02-cli60s failure stays failed/unknown and unchanged; complete
 owning/member Verify and required main contribution remain necessary before closure.
+
+
+## Exact guard formatter amendment before Source continuation (2026-10-06)
+
+Use the entire amended WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md after Root commits,
+all eight whole-plan exact owning GETs and final whole committed-plan/new-Docs reread.
+Only two existing AceMissing pure closure enclosures plus exact five pinned1.94 local
+formatting hunks supplement the original eight ACE projections and B two cfg lines.
+Preserve original calls/lazy evaluation/Results/errors/guards/owners/oracles/clocks.
+Full inverse restores the eight expressions, two braces/whole whitespace and B two
+attributes; A/B complete Core final bytes must match. Independent1.98/full offline
+metadata/static protection precede Root actual required changed-head qualification.
+No surrounding clause adaptation, allowance, extra guard query or Source-first repair;
+the unmeasured native failures and independent SEL02 timeout remain outside this scope.

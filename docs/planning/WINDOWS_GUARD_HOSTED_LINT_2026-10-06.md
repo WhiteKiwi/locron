@@ -123,3 +123,125 @@ Actual type, native behavior, current whole-run and every required Verify remain
    criteria pass; no previous count/metadata/late output/static proof waives them. Complete
    owning/member Verify plus required main contribution precedes closure. No signing,
    release/install/account/logon/reboot or broad acceptance follows from this correction.
+
+
+## Pinned formatter closure normalization amendment (2026-10-06)
+
+Root read the entire frozen five-hunk1.94 drift and selected this narrow amendment
+before Source. The original125-line plan above remains a literal historical prefix.
+This amendment supersedes its layout-only/no-surrounding-clause limitation ONLY for
+the TWO redundant enclosures of the existing sole-expression AceMissing ok_or_else
+closures in trusted_directory and verify_owned_executable, plus the exact FIVE local
+selected-expression formatting hunks below. No other closure or clause is selected.
+
+The stopped pre-write packet has14 payloads, manifest SHA256
+4d5ca010bf9c58d6bbaf91f8e4ef440c71954c38683ab0102294e55ed0cbde2b.
+It binds the exact eight-only candidate and pinned1.94 formatted output, empty stderr,
+five-hunk/full-parent inverse and CLEAN A11d/Bf8ef Source with zero Source writes.
+The exact unapplied drift SHA256 is 59366573041d239605969d0eb27385f651d4b1afbc26f5de467c57693127aa1f; the complete candidate/formatted
+physical SHA256 values are 00727a97450b7272e154a2b9a6ea684c8a89ae7bf426f87f046cdf32934aa9ad and a707d42cd19af9f997b8db3d2772413d000a9d880c1397064103f0bad71a3edb. LF canonical and native
+CRLF forms must each be bound; no Source normalization or extra input is implicit.
+
+Select only removal of those two braces around each unchanged lazy single macro
+expression and the displayed wrapping/collapse of its selected macro arguments.
+Keep original get_ace/ok_or_else calls, one original evaluation, same returned Result/
+Error/native object/raw/Display, every surrounding predicate/skip/mask/call/order,
+lifetimes/owners/guards/oracles/assertions/cleanup and all original horizons. Core's
+eight Some(index) values and both checked usize ancestry sites remain as already
+selected; B still adds exactly the two SharingControl cfg(windows) attributes.
+No fmt-skip, lint allow/expect, dummy use, cast, new guard/native query or cause/timeout
+repair. All frozen SPEC/Source beyond this explicit narrow syntax scope remain exact.
+
+```diff
+--- eight-only-Core.rs
++++ formatted-Core.rs
+@@ -892,19 +892,14 @@
+             .dacl()
+             .ok_or_else(|| observed_unsafe_path!(path, Ancestor, DaclMissing, None))?;
+         for index in 0..acl.len() {
+-            let ace = acl.get_ace(index).ok_or_else(|| {
+-                observed_unsafe_path!(path, Ancestor, AceMissing, Some(index))
+-            })?;
++            let ace = acl
++                .get_ace(index)
++                .ok_or_else(|| observed_unsafe_path!(path, Ancestor, AceMissing, Some(index)))?;
+             if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
+                 continue;
+             }
+             if ace.ace_type() != AceType::ACCESS_ALLOWED_ACE_TYPE {
+-                return Err(observed_unsafe_path!(
+-                    path,
+-                    Ancestor,
+-                    AceShape,
+-                    Some(index)
+-                ));
++                return Err(observed_unsafe_path!(path, Ancestor, AceShape, Some(index)));
+             }
+             if ace.flags().bits() & 0x08 != 0 {
+                 continue;
+@@ -912,12 +907,7 @@
+             let principal = ace
+                 .sid()
+                 .ok_or_else(|| {
+-                    observed_unsafe_path!(
+-                        path,
+-                        Ancestor,
+-                        PrincipalMissing,
+-                        Some(index)
+-                    )
++                    observed_unsafe_path!(path, Ancestor, PrincipalMissing, Some(index))
+                 })?
+                 .to_string();
+             if principal != sid
+@@ -1192,9 +1182,9 @@
+             .dacl()
+             .ok_or_else(|| observed_unsafe_path!(path, Executable, DaclMissing, None))?;
+         for index in 0..acl.len() {
+-            let ace = acl.get_ace(index).ok_or_else(|| {
+-                observed_unsafe_path!(path, Executable, AceMissing, Some(index))
+-            })?;
++            let ace = acl
++                .get_ace(index)
++                .ok_or_else(|| observed_unsafe_path!(path, Executable, AceMissing, Some(index)))?;
+             if ace.ace_type() == AceType::ACCESS_DENIED_ACE_TYPE {
+                 continue;
+             }
+@@ -1213,12 +1203,7 @@
+             let principal = ace
+                 .sid()
+                 .ok_or_else(|| {
+-                    observed_unsafe_path!(
+-                        path,
+-                        Executable,
+-                        PrincipalMissing,
+-                        Some(index)
+-                    )
++                    observed_unsafe_path!(path, Executable, PrincipalMissing, Some(index))
+                 })?
+                 .to_string();
+             if principal != sid
+```
+
+The original three ordered Verify steps remain mandatory with this exact refinement:
+
+1. **Verify:** append-only four Docs in each A11d/Bf8ef, all original125-line/full-Docs
+   prefixes and nonselected Source/modes/blobs/physical bytes exact. Root commits the
+   complete amended plans, completes all eight whole-plan owning exact GETs for
+   #27/#31/#162/#146/#149/#163 plus PR141/147 with original bodies/state/history intact,
+   then ACTUALLY rereads both entire committed amended plans/all new Docs AFTER ALL
+   GETs. Source stays paused until a later separate Source lease.
+2. **Verify:** separate Source applies only the eight projections, these two exact
+   closure-enclosure removals/five pinned formatting hunks, and B's two cfg attributes.
+   Independent1.98 format check must accept the selected1.94 output. Full inverses
+   restore eight original expressions, BOTH brace blocks, all exact whitespace and
+   B's two inserted attribute lines, yielding entire physical/canonical parents.
+   Require same complete Core final bytes in A/B and all protected entries exact;
+   full locked OFFLINE metadata and permitted standalone1.94/1.98 formatting only.
+   No owner-PC compiler/Clippy/tests/native/PowerShell/parser/security/fixture effects.
+   Any additional formatter/Source decision returns Docs FIRST before implementation.
+3. **Verify:** Root complete review/publication and genuinely changed-head strict lint/
+   native/complete original matrices with exact head/base/synthetic parents/tree/raw
+   bindings. Old guard controls, Windows seven/Unix six roles, first-work/cleanup and
+   independent original SEL02-cli60s/90s criterion remain literal. Previous native/
+   timing failures remain failed/unknown until each unchanged actual Verify passes;
+   static formatter proof is no type/native/main/member acceptance or issue closure.

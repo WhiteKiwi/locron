@@ -336,3 +336,14 @@ static conservation; Root genuine changed-head required lint/native/representati
 Separate actual SEL02-cli original60s timeout and prior c39 failure are not waived or
 repaired. Root owns commit/publication/Issue evidence; member/main contribution and
 every original Verify remain required. Diagnostics or lint alone cannot close work.
+
+
+## Guard formatter amendment Verify before Source (2026-10-06)
+
+Owning #27/#31/#162/#146/#149/#163 plus PR141/147 retain original state/body/history
+and complete acceptance. The whole amended WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md
+requires three concrete Verify with all eight whole-plan exact GETs and Root entire
+final after-GET reread BEFORE separate Source; exact two-closure/five-hunk/eight-value/
+B-two-attribute inverses, independent1.98 and all protected Source; and fresh strict
+lint/native/full member/main contribution. The14-payload Source-zero stop and old
+failures stay frozen; no formatter/static/diagnostic result waives or closes work.

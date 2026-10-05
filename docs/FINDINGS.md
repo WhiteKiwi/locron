@@ -6048,3 +6048,17 @@ Separate Linux ARMstable job111948225655 measures original first CLI SEL02 deadl
 no timeout repair is selected. Full narrow plan and three concrete Verify are in
 [WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md](planning/WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md).
 Source is paused; no lint/type/native/whole-run or member/main acceptance is inferred.
+
+
+## Before-Source pinned guard formatter normalization (2026-10-06)
+
+The exact eight-projection candidate's pinned1.94 preview produced five local hunks:
+two AceMissing sole-expression ok_or_else closures lose redundant braces; remaining
+selected macro calls wrap/collapse. The pre-write gate stopped with zero Source writes,
+CLEAN A11d/Bf8ef and complete parent inverse;14-payload stop manifest4d5ca010 remains
+frozen. Root selected only those two enclosure removals and exact five hunks through
+the complete appended WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md amendment. No extra
+call/evaluation/predicate/Result/error/owner/clock change or native-cause repair is
+selected. Original125-line plan and every historical Doc byte remain preserved.
+Source stays paused for Root commits/all eight whole owning GETs/final entire reread;
+independent1.98/full inverses and fresh actual native/strict lint Verify remain pending.
