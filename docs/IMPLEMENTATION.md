@@ -5489,3 +5489,7 @@ Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 b
 ## Group D helper-only strict lint handoff — 2026-10-05
 
 After owning35/31/163 exact GET ALL and Root entire37/164/36/new plan reread, separate development changes only windows_cli_control.rs's selected21 diagnostics/private necessary callers. Preserve genuine invalid/None/value, independent collision witnesses, original owner/error/deadline order and literal successful worker; error-only Box has no native owner and unmeasured cost. Only new-expression formatter wrapping with full inverse is selected. No native-cause/control/selector/production/CI/dependency/clock/gate change or local runtime is authorized. Full clean handback and actual changed-head gates precede Root publication/completion.
+
+## Group D cancellation fixture initialization handoff — 2026-10-05
+
+Follow planning/GROUP_D_CANCEL_INITIALIZATION_WITNESS_2026-10-05.md. Root completes owning35/31/163 whole-plan exact GET ALL and final entire new-plan/Docs review before separate helper-only development adds the existing probe after guard/live and before first Add. Its actual native PID/Wake/ACK/receipt/Notify and bounded polling are selected effects;200ms/8s/30s expressions, original remainder, producer controls and cleanup remain literal. Frozen SPEC/old37/164/36/28 plans reuse saved complete review only with whole exact hashes. Full one-call inverse/protected handback, Root independent review and changed-head required qualification precede completion; no historical raw32 or timing cause is inferred.
