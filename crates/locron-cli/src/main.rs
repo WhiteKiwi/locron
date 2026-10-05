@@ -3594,6 +3594,15 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
 }
 
 fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
+    prune_with_remover(paths, dry_run, format, explicit_prune::remove_output)
+}
+
+fn prune_with_remover(
+    paths: &StatePaths,
+    dry_run: bool,
+    format: Format,
+    mut remove: impl FnMut(&StatePaths, &Path) -> Result<()>,
+) -> Result<()> {
     if dry_run && !paths.database.is_file() {
         if format == Format::Human {
             println!("dry run: would prune 0 runs, 0 outputs (0 bytes)");
@@ -3615,10 +3624,9 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
     let settings = store.settings()?;
     let mut projected = store.retained_output_bytes()?;
     if projected < 0 || settings.output_limit_bytes < 0 {
-        return Err(StoreError::Conflict(
-            "output byte accounting must be non-negative".into(),
-        )
-        .into());
+        return Err(
+            StoreError::Conflict("output byte accounting must be non-negative".into()).into(),
+        );
     }
     let age_cutoff = now_us().saturating_sub(30_i64 * 24 * 60 * 60 * 1_000_000);
     let mut candidates = Vec::new();
@@ -3630,9 +3638,7 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
             )
             .into());
         }
-        if candidate.finalized_at_us >= age_cutoff
-            && projected <= settings.output_limit_bytes
-        {
+        if candidate.finalized_at_us >= age_cutoff && projected <= settings.output_limit_bytes {
             continue;
         }
         bytes = bytes.checked_add(candidate.physical_bytes).ok_or_else(|| {
@@ -3645,7 +3651,7 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
     if !dry_run {
         for (candidate, path) in candidates.iter().zip(&planned_paths) {
             store.mark_output_prune_pending(candidate, now_us())?;
-            explicit_prune::remove_output(paths, path)?;
+            remove(paths, path)?;
             store.finish_output_prune(candidate, now_us())?;
         }
     }
@@ -7394,3 +7400,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "explicit_prune/qualification.rs"]
+mod prune_qualification;

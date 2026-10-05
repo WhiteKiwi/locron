@@ -46,6 +46,23 @@ fn existing_directory(path: &Path) -> Result<Option<DirectoryGuard>> {
 /// Remove one prevalidated canonical path, retaining managed-parent guards through sync.
 /// The caller owns the durable pending intent and records completion only after success.
 pub(super) fn remove_output(paths: &StatePaths, path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        remove_output_with_sync(paths, path, |directory| {
+            std::fs::File::open(directory).and_then(|file| file.sync_all())
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        remove_output_with_sync(paths, path)
+    }
+}
+
+pub(super) fn remove_output_with_sync(
+    paths: &StatePaths,
+    path: &Path,
+    #[cfg(unix)] sync_directory: impl FnOnce(&Path) -> io::Result<()>,
+) -> Result<()> {
     let _root = existing_directory(&paths.root)?
         .ok_or_else(|| anyhow!("state directory disappeared during output pruning"))?;
     let Some(_outputs) = existing_directory(&paths.outputs)? else {
@@ -80,8 +97,6 @@ pub(super) fn remove_output(paths: &StatePaths, path: &Path) -> Result<()> {
     // Match Unix automatic maintenance: directory durability precedes Store completion.
     // Windows retains its native guarded-removal contract without an inferred fsync claim.
     #[cfg(unix)]
-    std::fs::File::open(directory)
-        .and_then(|file| file.sync_all())
-        .context("sync pruned output directory")?;
+    sync_directory(directory).context("sync pruned output directory")?;
     Ok(())
 }

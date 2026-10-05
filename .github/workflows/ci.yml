@@ -92,6 +92,216 @@ jobs:
             cargo test -p locron-core --lib --locked windows::loader_tests::owned_loader_fixture_child -- --exact --nocapture --test-threads=1
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+      - name: Bind actual production and recovery prune artifacts
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRUNE_QUALIFICATION_STAGE: prune-producer
+        shell: pwsh
+        run: |
+          $program = @'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("prune-qualification")
+          PHASE = "initial"
+          ACTUAL_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed prune qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              with pathlib.Path(path).open("rb") as stream:
+                  value = stream.read(cap + 1)
+              require(len(value) <= cap, "capture-cap")
+              return value
+
+
+          def invoke(command, name, environment=None):
+              global ACTUAL_STATUS
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr, env=environment).returncode
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name.endswith("tests"):
+                  ACTUAL_STATUS = status
+                  # Raw owned captures stay in the artifact; public output uses fixed receipts only.
+              return status, out, err
+
+
+          def git(*arguments):
+              name = "git-" + str(len(list(ROOT.glob("git-*.stdout"))))
+              status, out, _ = invoke(["git", *arguments], name)
+              require(status == 0, "git-status")
+              return out.decode("ascii").strip()
+
+
+          def native_host():
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["PRUNE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "closed-platform")
+              key, system, host = systems[selected]
+              require(platform.system() == system, "actual-system")
+              status, out, _ = invoke(["rustc", "-vV"], "toolchain-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              matches = re.findall(rb"^host: ([^\r\n]+)\r?$", out, re.MULTILINE)
+              require(status == 0 and len(matches) == 1 and matches[0].decode("ascii") == host, "actual-host")
+              return key, host
+
+
+          def revision():
+              checkout = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              head = os.environ["PRUNE_QUALIFICATION_HEAD"]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (checkout, tree, head, os.environ["GITHUB_SHA"])), "revision-shapes")
+              require(checkout == os.environ["GITHUB_SHA"], "actual-checkout")
+              status, commit, _ = invoke(["git", "cat-file", "-p", checkout], "commit-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(status == 0 and all(re.fullmatch(r"[0-9a-f]{40}", parent) for parent in parents) and len(parents) == len(set(parents)), "closed-parents")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "closed-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and checkout != head) if event == "pull_request" else checkout == head, "head-parent-binding")
+              return {"head": head, "tree": tree}, {"checkout": checkout, "parents": parents, "event": event}
+
+
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          facts = artifact_reader.facts
+          binding_json_facts = artifact_reader.binding_json_facts
+
+
+          def metadata(name, environment=None):
+              status, out, _ = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], name, environment)
+              require(status == 0, "metadata-status")
+              return json.loads(out)
+
+
+          def artifact(messages, package_id, name, kind, test):
+              values = []
+              for line in messages.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == name and message["target"]["kind"] == [kind] and message.get("profile", {}).get("test") is test and message.get("executable"):
+                      values.append(message)
+              require(len(values) == 1, "one-actual-artifact")
+              return values[0]
+
+
+          def package(data, name):
+              matches = [value for value in data["packages"] if value["name"] == name]
+              require(len(matches) == 1, "one-package")
+              return matches[0]["id"]
+
+
+          def totals(text, expected):
+              matches = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(matches) == 1 and tuple(map(int, matches[0][:4])) == (expected, 0, 0, 0), "actual-nonzero-summary")
+
+
+          def checked_records(data):
+              require(set(data) == {"version", "revision", "production", "recovery"} and data["version"] == 1, "closed-binding")
+              require(set(data["revision"]) == {"head", "tree"} and all(re.fullmatch(r"[0-9a-f]{40}", value) for value in data["revision"].values()), "closed-revision")
+              for name, test in (("production", False), ("recovery", True)):
+                  record = data[name]
+                  require(set(record) == {"path", "sha256", "size", "profile_test"} and record["profile_test"] is test and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) and type(record["size"]) is int and 0 < record["size"] <= 512 * 1024 * 1024, "closed-artifact-record")
+              require(data["production"]["path"] != data["recovery"]["path"], "distinct-artifacts")
+
+
+          def bind_again(binding, host):
+              for name in ("production", "recovery"):
+                  actual, _ = facts(binding[name]["path"], host)
+                  require(all(actual[field] == binding[name][field] for field in ("path", "sha256", "size")), "independent-binding-recheck")
+          def main():
+              ROOT.mkdir()
+              _, host = native_host()
+              selected_revision, checkout = revision()
+              production_target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "locron-prune-production-target"
+              require(production_target.is_absolute() and not production_target.exists(), "fresh-production-target")
+              production_target.mkdir()
+              copied = os.environ.copy()
+              copied["CARGO_TARGET_DIR"] = str(production_target)
+              production_metadata = metadata("production-metadata", copied)
+              require(pathlib.Path(production_metadata["target_directory"]).resolve(strict=True) == production_target.resolve(strict=True), "production-target-binding")
+              status, messages, _ = invoke(["cargo", "build", "-p", "locron", "--bin", "locron", "--locked", "--message-format=json", "--target-dir", str(production_target)], "production-build", copied)
+              require(status == 0, "production-build-status")
+              production = artifact(messages, package(production_metadata, "locron"), "locron", "bin", False)
+              production_path = pathlib.Path(production["executable"])
+              require(production_path.parent.name == "debug" and production_path.parent.parent.resolve(strict=True) == production_target.resolve(strict=True), "default-production-placement")
+              tests_metadata = metadata("recovery-metadata")
+              test_target = pathlib.Path(tests_metadata["target_directory"]).resolve()
+              require(test_target != production_target.resolve(strict=True), "separate-test-target")
+              status, messages, _ = invoke(["cargo", "test", "-p", "locron", "--bin", "locron", "--locked", "--no-run", "--message-format=json"], "recovery-build")
+              require(status == 0, "recovery-build-status")
+              recovery = artifact(messages, package(tests_metadata, "locron"), "locron", "bin", True)
+              recovery_path = pathlib.Path(recovery["executable"])
+              recovery_path.resolve(strict=True).relative_to(test_target.resolve(strict=True))
+              prod, prod_id = facts(production_path, host)
+              rec, rec_id = facts(recovery_path, host)
+              require(prod_id != rec_id, "distinct-full-artifact-identities")
+              binding = {"version": 1, "revision": selected_revision, "production": dict(prod, profile_test=False), "recovery": dict(rec, profile_test=True)}
+              checked_records(binding)
+              locator = production_target / "prune-artifact-binding.json"
+              encoded = (json.dumps(binding, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+              require(len(encoded) <= 32768, "binding-cap")
+              with locator.open("xb") as stream:
+                  stream.write(encoded)
+                  stream.flush()
+                  os.fsync(stream.fileno())
+              actual_binding, actual_encoded, binding_id, binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              require(actual_binding == binding and actual_encoded == encoded, "binding-write-readback")
+              bind_again(binding, host)
+              with pathlib.Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as stream:
+                  stream.write("LOCRON_PRUNE_TEST_BINARY=" + prod["path"] + "\n")
+                  stream.write("LOCRON_PRUNE_RECOVERY_TEST_BINARY=" + rec["path"] + "\n")
+              receipt = {"revision": selected_revision, "checkout": checkout, "native_host": host, "production_artifact": production, "recovery_artifact": recovery, "production_identity": prod_id, "recovery_identity": rec_id, "production_target": str(production_target), "test_target": str(test_target), "binding_sha256": binding_sha, "binding_identity": binding_id}
+              (ROOT / "producer.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("prune-artifact-binding PASS production=1 recovery=1")
+
+
+          try:
+              main()
+          except Exception as error:
+              print("prune-artifact-binding FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(1)
+          '@
+          $program | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify durable store and runtime library contracts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
@@ -191,6 +401,69 @@ jobs:
               return {"sha256": digest.hexdigest(), "bytes": total, "native_host": host}
 
 
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          retained_artifact_facts = artifact_reader.facts
+
+
+          def complete_output_union(metadata, host, key_platform, ledger, engine_record):
+              global ACTUAL_TEST_STATUS
+              union = set(engine_record["completed_keys"])
+              details = {"engine": engine_record}
+              target_root = pathlib.Path(metadata["target_directory"]).resolve(strict=True)
+              for module, package_name, target_name, target_kind, build_arguments, test_arguments, test_count in (
+                  ("store", "locron-store", "locron_store", "lib", ["--lib"], ["output::qualification::", "--nocapture"], 5),
+                  ("caller", "locron", "locron", "bin", ["--bin", "locron"], ["--exact", "maintenance::tests::output_repair_qualification::caller_contracts", "--nocapture"], 1),
+              ):
+                  packages = [package for package in metadata["packages"] if package["name"] == package_name]
+                  require(len(packages) == 1, "output-one-actual-" + module + "-package")
+                  status, messages = invoke(["cargo", "test", "-p", package_name, *build_arguments, "--locked", "--no-run", "--message-format=json"], module + "-build")
+                  require(status == 0, "output-actual-" + module + "-build")
+                  artifacts = []
+                  for line in messages.splitlines():
+                      message = json.loads(line)
+                      if message.get("reason") == "compiler-artifact" and message.get("package_id") == packages[0]["id"] and message.get("target", {}).get("name") == target_name and message["target"]["kind"] == [target_kind] and message.get("profile", {}).get("test") is True and message.get("executable"):
+                          artifacts.append(message)
+                  require(len(artifacts) == 1, "output-one-actual-" + module + "-artifact")
+                  artifact = artifacts[0]
+                  executable = pathlib.Path(artifact["executable"]).resolve(strict=True)
+                  executable.relative_to(target_root)
+                  before = retained_artifact_facts(executable, host)
+                  expected_rows = [row for row in ledger["rows"] if row["module"] == module and row["platform"] in ("all", "windows" if key_platform == "windows" else "unix")]
+                  expected = {row["key"] for row in expected_rows}
+                  require(len(expected) == (6 if module == "caller" else 42 if key_platform == "windows" else 41), "output-platform-count")
+                  status, raw = invoke([str(executable), *test_arguments], module + "-tests")
+                  ACTUAL_TEST_STATUS = status
+                  text = raw.decode("utf-8")
+                  observed = collections.Counter(re.findall(r"output-qualification PASS ([A-Za-z0-9:_-]+)", text))
+                  require(set(observed) == expected and all(value == 1 for value in observed.values()), "output-exact-" + module + "-keys")
+                  totals = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+                  require(status == 0 and len(totals) == 1 and tuple(map(int, totals[0][:4])) == (test_count, 0, 0, 0), "output-actual-" + module + "-status-total")
+                  require(retained_artifact_facts(executable, host) == before, "output-artifact-conserved")
+                  require(not union.intersection(observed), "output-disjoint-key-domains")
+                  union.update(observed)
+                  details[module] = {"package_id": packages[0]["id"], "target": artifact["target"], "profile": artifact["profile"], "executable": before, "completed_keys": sorted(observed), "actual_test_status": status, "actual_test_totals": {"passed": test_count, "failed": 0, "ignored": 0, "measured": 0}, "stdout_sha256": hashlib.sha256(raw).hexdigest(), "stderr_sha256": hashlib.sha256(bounded(ROOT / (module + "-tests.stderr"))).hexdigest()}
+              all_rows = [row for row in ledger["rows"] if row["platform"] in ("all", "windows" if key_platform == "windows" else "unix", key_platform)]
+              require(union == {row["key"] for row in all_rows} and len(union) == {"linux": 92, "macos": 89, "windows": 91}[key_platform], "exact-output96-platform-union")
+              record = {"revision": engine_record["revision"], "tree": engine_record["tree"], "head": engine_record["head"], "native_host": host, "ledger_sha256": engine_record["ledger_sha256"], "completed_keys": sorted(union), "modules": details}
+              (ROOT / "output96-receipt.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("output96-receipt PASS keys=" + str(len(union)) + " drivers=" + str({"linux": 16, "macos": 14, "windows": 15}[key_platform]))
+
+
           def main():
               global PHASE, ACTUAL_TEST_STATUS
               ROOT.mkdir()
@@ -242,6 +515,7 @@ jobs:
               executable = pathlib.Path(artifact["executable"]).resolve(strict=True)
               target = pathlib.Path(metadata["target_directory"]).resolve(strict=True)
               relative = executable.relative_to(target)
+              retained_engine_facts = retained_artifact_facts(pathlib.Path(artifact["executable"]), expected_host)
               facts = executable_facts(executable, expected_host)
               ledger_bytes = bounded(pathlib.Path("docs/planning/OUTPUT_REPAIR_QUALIFICATION_ROWS.json"), 128 * 1024)
               ledger_sha = hashlib.sha256(ledger_bytes).hexdigest()
@@ -298,8 +572,11 @@ jobs:
                   "actual_test_status": status, "actual_test_totals": {"passed": passed, "failed": failed, "ignored": ignored, "measured": measured},
                   "stdout_sha256": hashlib.sha256(raw).hexdigest(), "stderr_sha256": hashlib.sha256(bounded(ROOT / "tests.stderr")).hexdigest(),
               }
+              require(retained_artifact_facts(pathlib.Path(artifact["executable"]), expected_host) == retained_engine_facts, "output-engine-artifact-conserved")
+              record["retained_executable"] = retained_engine_facts
               (ROOT / "receipt.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
               print("engine-output-receipt PASS keys=" + str(len(counter)) + " selectors=" + str(passed))
+              complete_output_union(metadata, expected_host, key_platform, ledger, record)
 
 
           try:
@@ -307,6 +584,225 @@ jobs:
           except Exception as error:
               print("engine-output-receipt FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
               sys.exit(ACTUAL_TEST_STATUS if ACTUAL_TEST_STATUS not in (None, 0) else 1)
+          '@
+          $program | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Qualify explicit output prune and same-pending recovery receipts
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRUNE_QUALIFICATION_STAGE: prune-receiver
+        shell: pwsh
+        run: |
+          $program = @'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("prune-qualification")
+          PHASE = "initial"
+          ACTUAL_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed prune qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              with pathlib.Path(path).open("rb") as stream:
+                  value = stream.read(cap + 1)
+              require(len(value) <= cap, "capture-cap")
+              return value
+
+
+          def invoke(command, name, environment=None):
+              global ACTUAL_STATUS
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr, env=environment).returncode
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name.endswith("tests"):
+                  ACTUAL_STATUS = status
+                  # Raw owned captures stay in the artifact; public output uses fixed receipts only.
+              return status, out, err
+
+
+          def git(*arguments):
+              name = "git-" + str(len(list(ROOT.glob("git-*.stdout"))))
+              status, out, _ = invoke(["git", *arguments], name)
+              require(status == 0, "git-status")
+              return out.decode("ascii").strip()
+
+
+          def native_host():
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["PRUNE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "closed-platform")
+              key, system, host = systems[selected]
+              require(platform.system() == system, "actual-system")
+              status, out, _ = invoke(["rustc", "-vV"], "toolchain-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              matches = re.findall(rb"^host: ([^\r\n]+)\r?$", out, re.MULTILINE)
+              require(status == 0 and len(matches) == 1 and matches[0].decode("ascii") == host, "actual-host")
+              return key, host
+
+
+          def revision():
+              checkout = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              head = os.environ["PRUNE_QUALIFICATION_HEAD"]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (checkout, tree, head, os.environ["GITHUB_SHA"])), "revision-shapes")
+              require(checkout == os.environ["GITHUB_SHA"], "actual-checkout")
+              status, commit, _ = invoke(["git", "cat-file", "-p", checkout], "commit-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(status == 0 and all(re.fullmatch(r"[0-9a-f]{40}", parent) for parent in parents) and len(parents) == len(set(parents)), "closed-parents")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "closed-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and checkout != head) if event == "pull_request" else checkout == head, "head-parent-binding")
+              return {"head": head, "tree": tree}, {"checkout": checkout, "parents": parents, "event": event}
+
+
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          facts = artifact_reader.facts
+          binding_json_facts = artifact_reader.binding_json_facts
+
+
+          def metadata(name, environment=None):
+              status, out, _ = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], name, environment)
+              require(status == 0, "metadata-status")
+              return json.loads(out)
+
+
+          def artifact(messages, package_id, name, kind, test):
+              values = []
+              for line in messages.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == name and message["target"]["kind"] == [kind] and message.get("profile", {}).get("test") is test and message.get("executable"):
+                      values.append(message)
+              require(len(values) == 1, "one-actual-artifact")
+              return values[0]
+
+
+          def package(data, name):
+              matches = [value for value in data["packages"] if value["name"] == name]
+              require(len(matches) == 1, "one-package")
+              return matches[0]["id"]
+
+
+          def totals(text, expected):
+              matches = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(matches) == 1 and tuple(map(int, matches[0][:4])) == (expected, 0, 0, 0), "actual-nonzero-summary")
+
+
+          def checked_records(data):
+              require(set(data) == {"version", "revision", "production", "recovery"} and data["version"] == 1, "closed-binding")
+              require(set(data["revision"]) == {"head", "tree"} and all(re.fullmatch(r"[0-9a-f]{40}", value) for value in data["revision"].values()), "closed-revision")
+              for name, test in (("production", False), ("recovery", True)):
+                  record = data[name]
+                  require(set(record) == {"path", "sha256", "size", "profile_test"} and record["profile_test"] is test and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) and type(record["size"]) is int and 0 < record["size"] <= 512 * 1024 * 1024, "closed-artifact-record")
+              require(data["production"]["path"] != data["recovery"]["path"], "distinct-artifacts")
+
+
+          def bind_again(binding, host):
+              for name in ("production", "recovery"):
+                  actual, _ = facts(binding[name]["path"], host)
+                  require(all(actual[field] == binding[name][field] for field in ("path", "sha256", "size")), "independent-binding-recheck")
+          def main():
+              require(ROOT.is_dir(), "actual-producer-receipt-directory")
+              key, host = native_host()
+              selected_revision, checkout = revision()
+              production_path = pathlib.Path(os.environ["LOCRON_PRUNE_TEST_BINARY"])
+              recovery_path = pathlib.Path(os.environ["LOCRON_PRUNE_RECOVERY_TEST_BINARY"])
+              require(production_path.parent.name == "debug", "default-production-binding-locator")
+              locator = production_path.parent.parent / "prune-artifact-binding.json"
+              binding, binding_bytes, binding_id, binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              checked_records(binding)
+              require(binding["revision"] == selected_revision and binding["production"]["path"] == str(production_path) and binding["recovery"]["path"] == str(recovery_path), "actual-binding-revision")
+              prod, prod_id = facts(production_path, host)
+              rec, rec_id = facts(recovery_path, host)
+              bind_again(binding, host)
+              data = metadata("scoped-metadata")
+              target = pathlib.Path(data["target_directory"]).resolve(strict=True)
+              recovery_path.resolve(strict=True).relative_to(target)
+              status, messages, _ = invoke(["cargo", "test", "-p", "locron-server", "--lib", "--locked", "--no-run", "--message-format=json"], "server-build")
+              require(status == 0, "server-build-status")
+              server = artifact(messages, package(data, "locron-server"), "locron_server", "lib", True)
+              server_path = pathlib.Path(server["executable"])
+              server_path.resolve(strict=True).relative_to(target)
+              server_facts, server_id = facts(server_path, host)
+              ledger_bytes = bounded(pathlib.Path("docs/planning/GROUP_B_PRUNE_QUALIFICATION_ROWS_2026-10-05.json"), 128 * 1024)
+              require(hashlib.sha256(ledger_bytes).hexdigest() == "2f3e1e88f4cb1bc954993287d726a3b442d3fad922f60ce0462f88211557d3a5", "frozen-prune94")
+              ledger = json.loads(ledger_bytes)
+              captures = {}
+              completed = []
+              for surface, path, selector in (("api", server_path, "api::prune_output::qualification::contracts"), ("cli", recovery_path, "prune_qualification::contracts")):
+                  bind_again(binding, host)
+                  status, out, err = invoke([str(path), "--exact", selector, "--nocapture"], surface + "-tests")
+                  text = out.decode("utf-8")
+                  totals(text, 1)
+                  require(status == 0, "actual-prune-driver-status")
+                  rows = [row for row in ledger["rows"] if row["surface"] == surface and row["platforms"] in ("all", "windows" if key == "windows" else "unix")]
+                  expected = {row["id"] for row in rows}
+                  observed = collections.Counter(re.findall(r"prune-qualification PASS ([A-Za-z0-9_-]+)", text))
+                  require(set(observed) == expected and len(expected) == len(rows) and all(value == 1 for value in observed.values()), "exact-prune-key-union")
+                  require(text.count("prune-qualification FI07-RECEIPT " + surface + " passed=1 failed=0 ignored=0 measured=0 actions=1 outputs_pruned=1 cleanup=1") == 1, "actual-one-test-recovery-proof")
+                  if key == "windows":
+                      require(text.count("prune-qualification CONTROL " + surface + " N07 helper-finish-positive") == 1, "actual-N07-helper-positive")
+                  captures[surface] = {"selector": selector, "actual_status": status, "keys": sorted(observed), "stdout_sha256": hashlib.sha256(out).hexdigest(), "stderr_sha256": hashlib.sha256(err).hexdigest(), "recovery_support": {"passed": 1, "failed": 0, "ignored": 0, "measured": 0}}
+                  completed.extend(observed)
+                  bind_again(binding, host)
+              require(len(completed) == {"linux": 86, "macos": 86, "windows": 88}[key] and len(set(completed)) == len(completed), "exact-platform94-subset")
+              prod_after, prod_id_after = facts(production_path, host)
+              rec_after, rec_id_after = facts(recovery_path, host)
+              server_after, server_id_after = facts(server_path, host)
+              after_binding, after_binding_bytes, after_binding_id, after_binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              require((prod, prod_id, rec, rec_id, server_facts, server_id) == (prod_after, prod_id_after, rec_after, rec_id_after, server_after, server_id_after), "whole-artifacts-conserved")
+              require(binding == after_binding and binding_id == after_binding_id and binding_bytes == after_binding_bytes and binding_sha == after_binding_sha, "binding-identity-bytes-conserved")
+              receipt = {"revision": selected_revision, "checkout": checkout, "native_host": host, "production": prod, "recovery": rec, "server": server_facts, "production_identity": prod_id, "recovery_identity": rec_id, "server_identity": server_id, "server_artifact": server, "binding_sha256": binding_sha, "binding_identity": binding_id, "ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(), "drivers": captures, "completed_keys": sorted(completed)}
+              (ROOT / "prune94.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("prune94-receipt PASS keys=" + str(len(completed)) + " drivers=2 recovery_support=2")
+
+
+          try:
+              main()
+          except Exception as error:
+              print("prune94-receipt FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(ACTUAL_STATUS if ACTUAL_STATUS not in (None, 0) else 1)
           '@
           $program | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -427,6 +923,15 @@ jobs:
             engine-output-qualification/
             windows-native-sha256.txt
 
+      - name: Upload actual prune and state qualification receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: prune-foundation-${{ matrix.platform }}-rust-${{ matrix.rust }}
+          if-no-files-found: error
+          retention-days: 14
+          path: prune-qualification/
+
   windows-lint-foundation:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
     name: Windows lint foundation / Rust 1.98.0
@@ -488,8 +993,443 @@ jobs:
           $requestedRelease = @($requestedCompiler | Where-Object { $_ -clike 'release: *' })
           if ($requestedRelease.Count -ne 1 -or $compiler -cnotcontains $requestedRelease[0]) { throw 'actual compiler must match requested toolchain release' }
           if ($compiler -cnotcontains 'host: ${{ matrix.platform }}') { throw 'test target must equal native rustc host' }
+      - name: Bind actual production and recovery prune artifacts
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRUNE_QUALIFICATION_STAGE: prune-producer
+        shell: pwsh
+        run: |
+          $program = @'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("prune-qualification")
+          PHASE = "initial"
+          ACTUAL_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed prune qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              with pathlib.Path(path).open("rb") as stream:
+                  value = stream.read(cap + 1)
+              require(len(value) <= cap, "capture-cap")
+              return value
+
+
+          def invoke(command, name, environment=None):
+              global ACTUAL_STATUS
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr, env=environment).returncode
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name.endswith("tests"):
+                  ACTUAL_STATUS = status
+                  # Raw owned captures stay in the artifact; public output uses fixed receipts only.
+              return status, out, err
+
+
+          def git(*arguments):
+              name = "git-" + str(len(list(ROOT.glob("git-*.stdout"))))
+              status, out, _ = invoke(["git", *arguments], name)
+              require(status == 0, "git-status")
+              return out.decode("ascii").strip()
+
+
+          def native_host():
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["PRUNE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "closed-platform")
+              key, system, host = systems[selected]
+              require(platform.system() == system, "actual-system")
+              status, out, _ = invoke(["rustc", "-vV"], "toolchain-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              matches = re.findall(rb"^host: ([^\r\n]+)\r?$", out, re.MULTILINE)
+              require(status == 0 and len(matches) == 1 and matches[0].decode("ascii") == host, "actual-host")
+              return key, host
+
+
+          def revision():
+              checkout = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              head = os.environ["PRUNE_QUALIFICATION_HEAD"]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (checkout, tree, head, os.environ["GITHUB_SHA"])), "revision-shapes")
+              require(checkout == os.environ["GITHUB_SHA"], "actual-checkout")
+              status, commit, _ = invoke(["git", "cat-file", "-p", checkout], "commit-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(status == 0 and all(re.fullmatch(r"[0-9a-f]{40}", parent) for parent in parents) and len(parents) == len(set(parents)), "closed-parents")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "closed-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and checkout != head) if event == "pull_request" else checkout == head, "head-parent-binding")
+              return {"head": head, "tree": tree}, {"checkout": checkout, "parents": parents, "event": event}
+
+
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          facts = artifact_reader.facts
+          binding_json_facts = artifact_reader.binding_json_facts
+
+
+          def metadata(name, environment=None):
+              status, out, _ = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], name, environment)
+              require(status == 0, "metadata-status")
+              return json.loads(out)
+
+
+          def artifact(messages, package_id, name, kind, test):
+              values = []
+              for line in messages.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == name and message["target"]["kind"] == [kind] and message.get("profile", {}).get("test") is test and message.get("executable"):
+                      values.append(message)
+              require(len(values) == 1, "one-actual-artifact")
+              return values[0]
+
+
+          def package(data, name):
+              matches = [value for value in data["packages"] if value["name"] == name]
+              require(len(matches) == 1, "one-package")
+              return matches[0]["id"]
+
+
+          def totals(text, expected):
+              matches = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(matches) == 1 and tuple(map(int, matches[0][:4])) == (expected, 0, 0, 0), "actual-nonzero-summary")
+
+
+          def checked_records(data):
+              require(set(data) == {"version", "revision", "production", "recovery"} and data["version"] == 1, "closed-binding")
+              require(set(data["revision"]) == {"head", "tree"} and all(re.fullmatch(r"[0-9a-f]{40}", value) for value in data["revision"].values()), "closed-revision")
+              for name, test in (("production", False), ("recovery", True)):
+                  record = data[name]
+                  require(set(record) == {"path", "sha256", "size", "profile_test"} and record["profile_test"] is test and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) and type(record["size"]) is int and 0 < record["size"] <= 512 * 1024 * 1024, "closed-artifact-record")
+              require(data["production"]["path"] != data["recovery"]["path"], "distinct-artifacts")
+
+
+          def bind_again(binding, host):
+              for name in ("production", "recovery"):
+                  actual, _ = facts(binding[name]["path"], host)
+                  require(all(actual[field] == binding[name][field] for field in ("path", "sha256", "size")), "independent-binding-recheck")
+          def main():
+              ROOT.mkdir()
+              _, host = native_host()
+              selected_revision, checkout = revision()
+              production_target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "locron-prune-production-target"
+              require(production_target.is_absolute() and not production_target.exists(), "fresh-production-target")
+              production_target.mkdir()
+              copied = os.environ.copy()
+              copied["CARGO_TARGET_DIR"] = str(production_target)
+              production_metadata = metadata("production-metadata", copied)
+              require(pathlib.Path(production_metadata["target_directory"]).resolve(strict=True) == production_target.resolve(strict=True), "production-target-binding")
+              status, messages, _ = invoke(["cargo", "build", "-p", "locron", "--bin", "locron", "--locked", "--message-format=json", "--target-dir", str(production_target)], "production-build", copied)
+              require(status == 0, "production-build-status")
+              production = artifact(messages, package(production_metadata, "locron"), "locron", "bin", False)
+              production_path = pathlib.Path(production["executable"])
+              require(production_path.parent.name == "debug" and production_path.parent.parent.resolve(strict=True) == production_target.resolve(strict=True), "default-production-placement")
+              tests_metadata = metadata("recovery-metadata")
+              test_target = pathlib.Path(tests_metadata["target_directory"]).resolve()
+              require(test_target != production_target.resolve(strict=True), "separate-test-target")
+              status, messages, _ = invoke(["cargo", "test", "-p", "locron", "--bin", "locron", "--locked", "--no-run", "--message-format=json"], "recovery-build")
+              require(status == 0, "recovery-build-status")
+              recovery = artifact(messages, package(tests_metadata, "locron"), "locron", "bin", True)
+              recovery_path = pathlib.Path(recovery["executable"])
+              recovery_path.resolve(strict=True).relative_to(test_target.resolve(strict=True))
+              prod, prod_id = facts(production_path, host)
+              rec, rec_id = facts(recovery_path, host)
+              require(prod_id != rec_id, "distinct-full-artifact-identities")
+              binding = {"version": 1, "revision": selected_revision, "production": dict(prod, profile_test=False), "recovery": dict(rec, profile_test=True)}
+              checked_records(binding)
+              locator = production_target / "prune-artifact-binding.json"
+              encoded = (json.dumps(binding, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+              require(len(encoded) <= 32768, "binding-cap")
+              with locator.open("xb") as stream:
+                  stream.write(encoded)
+                  stream.flush()
+                  os.fsync(stream.fileno())
+              actual_binding, actual_encoded, binding_id, binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              require(actual_binding == binding and actual_encoded == encoded, "binding-write-readback")
+              bind_again(binding, host)
+              with pathlib.Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as stream:
+                  stream.write("LOCRON_PRUNE_TEST_BINARY=" + prod["path"] + "\n")
+                  stream.write("LOCRON_PRUNE_RECOVERY_TEST_BINARY=" + rec["path"] + "\n")
+              receipt = {"revision": selected_revision, "checkout": checkout, "native_host": host, "production_artifact": production, "recovery_artifact": recovery, "production_identity": prod_id, "recovery_identity": rec_id, "production_target": str(production_target), "test_target": str(test_target), "binding_sha256": binding_sha, "binding_identity": binding_id}
+              (ROOT / "producer.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("prune-artifact-binding PASS production=1 recovery=1")
+
+
+          try:
+              main()
+          except Exception as error:
+              print("prune-artifact-binding FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(1)
+          '@
+          $program | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run full native workspace tests
         run: cargo test --workspace --all-targets --locked
+      - name: Qualify explicit output prune and same-pending recovery receipts
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRUNE_QUALIFICATION_STAGE: prune-receiver
+        shell: pwsh
+        run: |
+          $program = @'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("prune-qualification")
+          PHASE = "initial"
+          ACTUAL_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed prune qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              with pathlib.Path(path).open("rb") as stream:
+                  value = stream.read(cap + 1)
+              require(len(value) <= cap, "capture-cap")
+              return value
+
+
+          def invoke(command, name, environment=None):
+              global ACTUAL_STATUS
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr, env=environment).returncode
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name.endswith("tests"):
+                  ACTUAL_STATUS = status
+                  # Raw owned captures stay in the artifact; public output uses fixed receipts only.
+              return status, out, err
+
+
+          def git(*arguments):
+              name = "git-" + str(len(list(ROOT.glob("git-*.stdout"))))
+              status, out, _ = invoke(["git", *arguments], name)
+              require(status == 0, "git-status")
+              return out.decode("ascii").strip()
+
+
+          def native_host():
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["PRUNE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "closed-platform")
+              key, system, host = systems[selected]
+              require(platform.system() == system, "actual-system")
+              status, out, _ = invoke(["rustc", "-vV"], "toolchain-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              matches = re.findall(rb"^host: ([^\r\n]+)\r?$", out, re.MULTILINE)
+              require(status == 0 and len(matches) == 1 and matches[0].decode("ascii") == host, "actual-host")
+              return key, host
+
+
+          def revision():
+              checkout = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              head = os.environ["PRUNE_QUALIFICATION_HEAD"]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (checkout, tree, head, os.environ["GITHUB_SHA"])), "revision-shapes")
+              require(checkout == os.environ["GITHUB_SHA"], "actual-checkout")
+              status, commit, _ = invoke(["git", "cat-file", "-p", checkout], "commit-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(status == 0 and all(re.fullmatch(r"[0-9a-f]{40}", parent) for parent in parents) and len(parents) == len(set(parents)), "closed-parents")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "closed-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and checkout != head) if event == "pull_request" else checkout == head, "head-parent-binding")
+              return {"head": head, "tree": tree}, {"checkout": checkout, "parents": parents, "event": event}
+
+
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          facts = artifact_reader.facts
+          binding_json_facts = artifact_reader.binding_json_facts
+
+
+          def metadata(name, environment=None):
+              status, out, _ = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], name, environment)
+              require(status == 0, "metadata-status")
+              return json.loads(out)
+
+
+          def artifact(messages, package_id, name, kind, test):
+              values = []
+              for line in messages.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == name and message["target"]["kind"] == [kind] and message.get("profile", {}).get("test") is test and message.get("executable"):
+                      values.append(message)
+              require(len(values) == 1, "one-actual-artifact")
+              return values[0]
+
+
+          def package(data, name):
+              matches = [value for value in data["packages"] if value["name"] == name]
+              require(len(matches) == 1, "one-package")
+              return matches[0]["id"]
+
+
+          def totals(text, expected):
+              matches = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(matches) == 1 and tuple(map(int, matches[0][:4])) == (expected, 0, 0, 0), "actual-nonzero-summary")
+
+
+          def checked_records(data):
+              require(set(data) == {"version", "revision", "production", "recovery"} and data["version"] == 1, "closed-binding")
+              require(set(data["revision"]) == {"head", "tree"} and all(re.fullmatch(r"[0-9a-f]{40}", value) for value in data["revision"].values()), "closed-revision")
+              for name, test in (("production", False), ("recovery", True)):
+                  record = data[name]
+                  require(set(record) == {"path", "sha256", "size", "profile_test"} and record["profile_test"] is test and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) and type(record["size"]) is int and 0 < record["size"] <= 512 * 1024 * 1024, "closed-artifact-record")
+              require(data["production"]["path"] != data["recovery"]["path"], "distinct-artifacts")
+
+
+          def bind_again(binding, host):
+              for name in ("production", "recovery"):
+                  actual, _ = facts(binding[name]["path"], host)
+                  require(all(actual[field] == binding[name][field] for field in ("path", "sha256", "size")), "independent-binding-recheck")
+          def main():
+              require(ROOT.is_dir(), "actual-producer-receipt-directory")
+              key, host = native_host()
+              selected_revision, checkout = revision()
+              production_path = pathlib.Path(os.environ["LOCRON_PRUNE_TEST_BINARY"])
+              recovery_path = pathlib.Path(os.environ["LOCRON_PRUNE_RECOVERY_TEST_BINARY"])
+              require(production_path.parent.name == "debug", "default-production-binding-locator")
+              locator = production_path.parent.parent / "prune-artifact-binding.json"
+              binding, binding_bytes, binding_id, binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              checked_records(binding)
+              require(binding["revision"] == selected_revision and binding["production"]["path"] == str(production_path) and binding["recovery"]["path"] == str(recovery_path), "actual-binding-revision")
+              prod, prod_id = facts(production_path, host)
+              rec, rec_id = facts(recovery_path, host)
+              bind_again(binding, host)
+              data = metadata("scoped-metadata")
+              target = pathlib.Path(data["target_directory"]).resolve(strict=True)
+              recovery_path.resolve(strict=True).relative_to(target)
+              status, messages, _ = invoke(["cargo", "test", "-p", "locron-server", "--lib", "--locked", "--no-run", "--message-format=json"], "server-build")
+              require(status == 0, "server-build-status")
+              server = artifact(messages, package(data, "locron-server"), "locron_server", "lib", True)
+              server_path = pathlib.Path(server["executable"])
+              server_path.resolve(strict=True).relative_to(target)
+              server_facts, server_id = facts(server_path, host)
+              ledger_bytes = bounded(pathlib.Path("docs/planning/GROUP_B_PRUNE_QUALIFICATION_ROWS_2026-10-05.json"), 128 * 1024)
+              require(hashlib.sha256(ledger_bytes).hexdigest() == "2f3e1e88f4cb1bc954993287d726a3b442d3fad922f60ce0462f88211557d3a5", "frozen-prune94")
+              ledger = json.loads(ledger_bytes)
+              captures = {}
+              completed = []
+              for surface, path, selector in (("api", server_path, "api::prune_output::qualification::contracts"), ("cli", recovery_path, "prune_qualification::contracts")):
+                  bind_again(binding, host)
+                  status, out, err = invoke([str(path), "--exact", selector, "--nocapture"], surface + "-tests")
+                  text = out.decode("utf-8")
+                  totals(text, 1)
+                  require(status == 0, "actual-prune-driver-status")
+                  rows = [row for row in ledger["rows"] if row["surface"] == surface and row["platforms"] in ("all", "windows" if key == "windows" else "unix")]
+                  expected = {row["id"] for row in rows}
+                  observed = collections.Counter(re.findall(r"prune-qualification PASS ([A-Za-z0-9_-]+)", text))
+                  require(set(observed) == expected and len(expected) == len(rows) and all(value == 1 for value in observed.values()), "exact-prune-key-union")
+                  require(text.count("prune-qualification FI07-RECEIPT " + surface + " passed=1 failed=0 ignored=0 measured=0 actions=1 outputs_pruned=1 cleanup=1") == 1, "actual-one-test-recovery-proof")
+                  if key == "windows":
+                      require(text.count("prune-qualification CONTROL " + surface + " N07 helper-finish-positive") == 1, "actual-N07-helper-positive")
+                  captures[surface] = {"selector": selector, "actual_status": status, "keys": sorted(observed), "stdout_sha256": hashlib.sha256(out).hexdigest(), "stderr_sha256": hashlib.sha256(err).hexdigest(), "recovery_support": {"passed": 1, "failed": 0, "ignored": 0, "measured": 0}}
+                  completed.extend(observed)
+                  bind_again(binding, host)
+              require(len(completed) == {"linux": 86, "macos": 86, "windows": 88}[key] and len(set(completed)) == len(completed), "exact-platform94-subset")
+              prod_after, prod_id_after = facts(production_path, host)
+              rec_after, rec_id_after = facts(recovery_path, host)
+              server_after, server_id_after = facts(server_path, host)
+              after_binding, after_binding_bytes, after_binding_id, after_binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              require((prod, prod_id, rec, rec_id, server_facts, server_id) == (prod_after, prod_id_after, rec_after, rec_id_after, server_after, server_id_after), "whole-artifacts-conserved")
+              require(binding == after_binding and binding_id == after_binding_id and binding_bytes == after_binding_bytes and binding_sha == after_binding_sha, "binding-identity-bytes-conserved")
+              receipt = {"revision": selected_revision, "checkout": checkout, "native_host": host, "production": prod, "recovery": rec, "server": server_facts, "production_identity": prod_id, "recovery_identity": rec_id, "server_identity": server_id, "server_artifact": server, "binding_sha256": binding_sha, "binding_identity": binding_id, "ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(), "drivers": captures, "completed_keys": sorted(completed)}
+              (ROOT / "prune94.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("prune94-receipt PASS keys=" + str(len(completed)) + " drivers=2 recovery_support=2")
+
+
+          try:
+              main()
+          except Exception as error:
+              print("prune94-receipt FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(ACTUAL_STATUS if ACTUAL_STATUS not in (None, 0) else 1)
+          '@
+          $program | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload actual prune and state qualification receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: prune-full-${{ matrix.platform }}-rust-${{ matrix.rust }}
+          if-no-files-found: error
+          retention-days: 14
+          path: prune-qualification/
 
   windows-full-clippy:
     name: Windows exploratory Clippy / ${{ matrix.platform }} / Rust 1.98.0
@@ -570,6 +1510,213 @@ jobs:
           uname -a
           rustc -vV
           test "$(rustup which rustc)" = "$(rustup which --toolchain "$RUSTUP_TOOLCHAIN" rustc)"
+      - name: Bind actual production and recovery prune artifacts
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.runner.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRUNE_QUALIFICATION_STAGE: prune-producer
+        shell: bash
+        run: |
+          python3 - <<'PY_PRUNE_PRODUCER'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("prune-qualification")
+          PHASE = "initial"
+          ACTUAL_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed prune qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              with pathlib.Path(path).open("rb") as stream:
+                  value = stream.read(cap + 1)
+              require(len(value) <= cap, "capture-cap")
+              return value
+
+
+          def invoke(command, name, environment=None):
+              global ACTUAL_STATUS
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr, env=environment).returncode
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name.endswith("tests"):
+                  ACTUAL_STATUS = status
+                  # Raw owned captures stay in the artifact; public output uses fixed receipts only.
+              return status, out, err
+
+
+          def git(*arguments):
+              name = "git-" + str(len(list(ROOT.glob("git-*.stdout"))))
+              status, out, _ = invoke(["git", *arguments], name)
+              require(status == 0, "git-status")
+              return out.decode("ascii").strip()
+
+
+          def native_host():
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["PRUNE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "closed-platform")
+              key, system, host = systems[selected]
+              require(platform.system() == system, "actual-system")
+              status, out, _ = invoke(["rustc", "-vV"], "toolchain-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              matches = re.findall(rb"^host: ([^\r\n]+)\r?$", out, re.MULTILINE)
+              require(status == 0 and len(matches) == 1 and matches[0].decode("ascii") == host, "actual-host")
+              return key, host
+
+
+          def revision():
+              checkout = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              head = os.environ["PRUNE_QUALIFICATION_HEAD"]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (checkout, tree, head, os.environ["GITHUB_SHA"])), "revision-shapes")
+              require(checkout == os.environ["GITHUB_SHA"], "actual-checkout")
+              status, commit, _ = invoke(["git", "cat-file", "-p", checkout], "commit-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(status == 0 and all(re.fullmatch(r"[0-9a-f]{40}", parent) for parent in parents) and len(parents) == len(set(parents)), "closed-parents")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "closed-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and checkout != head) if event == "pull_request" else checkout == head, "head-parent-binding")
+              return {"head": head, "tree": tree}, {"checkout": checkout, "parents": parents, "event": event}
+
+
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          facts = artifact_reader.facts
+          binding_json_facts = artifact_reader.binding_json_facts
+
+
+          def metadata(name, environment=None):
+              status, out, _ = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], name, environment)
+              require(status == 0, "metadata-status")
+              return json.loads(out)
+
+
+          def artifact(messages, package_id, name, kind, test):
+              values = []
+              for line in messages.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == name and message["target"]["kind"] == [kind] and message.get("profile", {}).get("test") is test and message.get("executable"):
+                      values.append(message)
+              require(len(values) == 1, "one-actual-artifact")
+              return values[0]
+
+
+          def package(data, name):
+              matches = [value for value in data["packages"] if value["name"] == name]
+              require(len(matches) == 1, "one-package")
+              return matches[0]["id"]
+
+
+          def totals(text, expected):
+              matches = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(matches) == 1 and tuple(map(int, matches[0][:4])) == (expected, 0, 0, 0), "actual-nonzero-summary")
+
+
+          def checked_records(data):
+              require(set(data) == {"version", "revision", "production", "recovery"} and data["version"] == 1, "closed-binding")
+              require(set(data["revision"]) == {"head", "tree"} and all(re.fullmatch(r"[0-9a-f]{40}", value) for value in data["revision"].values()), "closed-revision")
+              for name, test in (("production", False), ("recovery", True)):
+                  record = data[name]
+                  require(set(record) == {"path", "sha256", "size", "profile_test"} and record["profile_test"] is test and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) and type(record["size"]) is int and 0 < record["size"] <= 512 * 1024 * 1024, "closed-artifact-record")
+              require(data["production"]["path"] != data["recovery"]["path"], "distinct-artifacts")
+
+
+          def bind_again(binding, host):
+              for name in ("production", "recovery"):
+                  actual, _ = facts(binding[name]["path"], host)
+                  require(all(actual[field] == binding[name][field] for field in ("path", "sha256", "size")), "independent-binding-recheck")
+          def main():
+              ROOT.mkdir()
+              _, host = native_host()
+              selected_revision, checkout = revision()
+              production_target = pathlib.Path(os.environ["RUNNER_TEMP"]) / "locron-prune-production-target"
+              require(production_target.is_absolute() and not production_target.exists(), "fresh-production-target")
+              production_target.mkdir()
+              copied = os.environ.copy()
+              copied["CARGO_TARGET_DIR"] = str(production_target)
+              production_metadata = metadata("production-metadata", copied)
+              require(pathlib.Path(production_metadata["target_directory"]).resolve(strict=True) == production_target.resolve(strict=True), "production-target-binding")
+              status, messages, _ = invoke(["cargo", "build", "-p", "locron", "--bin", "locron", "--locked", "--message-format=json", "--target-dir", str(production_target)], "production-build", copied)
+              require(status == 0, "production-build-status")
+              production = artifact(messages, package(production_metadata, "locron"), "locron", "bin", False)
+              production_path = pathlib.Path(production["executable"])
+              require(production_path.parent.name == "debug" and production_path.parent.parent.resolve(strict=True) == production_target.resolve(strict=True), "default-production-placement")
+              tests_metadata = metadata("recovery-metadata")
+              test_target = pathlib.Path(tests_metadata["target_directory"]).resolve()
+              require(test_target != production_target.resolve(strict=True), "separate-test-target")
+              status, messages, _ = invoke(["cargo", "test", "-p", "locron", "--bin", "locron", "--locked", "--no-run", "--message-format=json"], "recovery-build")
+              require(status == 0, "recovery-build-status")
+              recovery = artifact(messages, package(tests_metadata, "locron"), "locron", "bin", True)
+              recovery_path = pathlib.Path(recovery["executable"])
+              recovery_path.resolve(strict=True).relative_to(test_target.resolve(strict=True))
+              prod, prod_id = facts(production_path, host)
+              rec, rec_id = facts(recovery_path, host)
+              require(prod_id != rec_id, "distinct-full-artifact-identities")
+              binding = {"version": 1, "revision": selected_revision, "production": dict(prod, profile_test=False), "recovery": dict(rec, profile_test=True)}
+              checked_records(binding)
+              locator = production_target / "prune-artifact-binding.json"
+              encoded = (json.dumps(binding, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+              require(len(encoded) <= 32768, "binding-cap")
+              with locator.open("xb") as stream:
+                  stream.write(encoded)
+                  stream.flush()
+                  os.fsync(stream.fileno())
+              actual_binding, actual_encoded, binding_id, binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              require(actual_binding == binding and actual_encoded == encoded, "binding-write-readback")
+              bind_again(binding, host)
+              with pathlib.Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as stream:
+                  stream.write("LOCRON_PRUNE_TEST_BINARY=" + prod["path"] + "\n")
+                  stream.write("LOCRON_PRUNE_RECOVERY_TEST_BINARY=" + rec["path"] + "\n")
+              receipt = {"revision": selected_revision, "checkout": checkout, "native_host": host, "production_artifact": production, "recovery_artifact": recovery, "production_identity": prod_id, "recovery_identity": rec_id, "production_target": str(production_target), "test_target": str(test_target), "binding_sha256": binding_sha, "binding_identity": binding_id}
+              (ROOT / "producer.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("prune-artifact-binding PASS production=1 recovery=1")
+
+
+          try:
+              main()
+          except Exception as error:
+              print("prune-artifact-binding FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(1)
+          PY_PRUNE_PRODUCER
       - run: cargo test --workspace --all-targets
       - name: Qualify retained Engine output and bounded repair receipts
         env:
@@ -667,6 +1814,69 @@ jobs:
               return {"sha256": digest.hexdigest(), "bytes": total, "native_host": host}
 
 
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          retained_artifact_facts = artifact_reader.facts
+
+
+          def complete_output_union(metadata, host, key_platform, ledger, engine_record):
+              global ACTUAL_TEST_STATUS
+              union = set(engine_record["completed_keys"])
+              details = {"engine": engine_record}
+              target_root = pathlib.Path(metadata["target_directory"]).resolve(strict=True)
+              for module, package_name, target_name, target_kind, build_arguments, test_arguments, test_count in (
+                  ("store", "locron-store", "locron_store", "lib", ["--lib"], ["output::qualification::", "--nocapture"], 5),
+                  ("caller", "locron", "locron", "bin", ["--bin", "locron"], ["--exact", "maintenance::tests::output_repair_qualification::caller_contracts", "--nocapture"], 1),
+              ):
+                  packages = [package for package in metadata["packages"] if package["name"] == package_name]
+                  require(len(packages) == 1, "output-one-actual-" + module + "-package")
+                  status, messages = invoke(["cargo", "test", "-p", package_name, *build_arguments, "--locked", "--no-run", "--message-format=json"], module + "-build")
+                  require(status == 0, "output-actual-" + module + "-build")
+                  artifacts = []
+                  for line in messages.splitlines():
+                      message = json.loads(line)
+                      if message.get("reason") == "compiler-artifact" and message.get("package_id") == packages[0]["id"] and message.get("target", {}).get("name") == target_name and message["target"]["kind"] == [target_kind] and message.get("profile", {}).get("test") is True and message.get("executable"):
+                          artifacts.append(message)
+                  require(len(artifacts) == 1, "output-one-actual-" + module + "-artifact")
+                  artifact = artifacts[0]
+                  executable = pathlib.Path(artifact["executable"]).resolve(strict=True)
+                  executable.relative_to(target_root)
+                  before = retained_artifact_facts(executable, host)
+                  expected_rows = [row for row in ledger["rows"] if row["module"] == module and row["platform"] in ("all", "windows" if key_platform == "windows" else "unix")]
+                  expected = {row["key"] for row in expected_rows}
+                  require(len(expected) == (6 if module == "caller" else 42 if key_platform == "windows" else 41), "output-platform-count")
+                  status, raw = invoke([str(executable), *test_arguments], module + "-tests")
+                  ACTUAL_TEST_STATUS = status
+                  text = raw.decode("utf-8")
+                  observed = collections.Counter(re.findall(r"output-qualification PASS ([A-Za-z0-9:_-]+)", text))
+                  require(set(observed) == expected and all(value == 1 for value in observed.values()), "output-exact-" + module + "-keys")
+                  totals = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+                  require(status == 0 and len(totals) == 1 and tuple(map(int, totals[0][:4])) == (test_count, 0, 0, 0), "output-actual-" + module + "-status-total")
+                  require(retained_artifact_facts(executable, host) == before, "output-artifact-conserved")
+                  require(not union.intersection(observed), "output-disjoint-key-domains")
+                  union.update(observed)
+                  details[module] = {"package_id": packages[0]["id"], "target": artifact["target"], "profile": artifact["profile"], "executable": before, "completed_keys": sorted(observed), "actual_test_status": status, "actual_test_totals": {"passed": test_count, "failed": 0, "ignored": 0, "measured": 0}, "stdout_sha256": hashlib.sha256(raw).hexdigest(), "stderr_sha256": hashlib.sha256(bounded(ROOT / (module + "-tests.stderr"))).hexdigest()}
+              all_rows = [row for row in ledger["rows"] if row["platform"] in ("all", "windows" if key_platform == "windows" else "unix", key_platform)]
+              require(union == {row["key"] for row in all_rows} and len(union) == {"linux": 92, "macos": 89, "windows": 91}[key_platform], "exact-output96-platform-union")
+              record = {"revision": engine_record["revision"], "tree": engine_record["tree"], "head": engine_record["head"], "native_host": host, "ledger_sha256": engine_record["ledger_sha256"], "completed_keys": sorted(union), "modules": details}
+              (ROOT / "output96-receipt.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("output96-receipt PASS keys=" + str(len(union)) + " drivers=" + str({"linux": 16, "macos": 14, "windows": 15}[key_platform]))
+
+
           def main():
               global PHASE, ACTUAL_TEST_STATUS
               ROOT.mkdir()
@@ -718,6 +1928,7 @@ jobs:
               executable = pathlib.Path(artifact["executable"]).resolve(strict=True)
               target = pathlib.Path(metadata["target_directory"]).resolve(strict=True)
               relative = executable.relative_to(target)
+              retained_engine_facts = retained_artifact_facts(pathlib.Path(artifact["executable"]), expected_host)
               facts = executable_facts(executable, expected_host)
               ledger_bytes = bounded(pathlib.Path("docs/planning/OUTPUT_REPAIR_QUALIFICATION_ROWS.json"), 128 * 1024)
               ledger_sha = hashlib.sha256(ledger_bytes).hexdigest()
@@ -774,8 +1985,11 @@ jobs:
                   "actual_test_status": status, "actual_test_totals": {"passed": passed, "failed": failed, "ignored": ignored, "measured": measured},
                   "stdout_sha256": hashlib.sha256(raw).hexdigest(), "stderr_sha256": hashlib.sha256(bounded(ROOT / "tests.stderr")).hexdigest(),
               }
+              require(retained_artifact_facts(pathlib.Path(artifact["executable"]), expected_host) == retained_engine_facts, "output-engine-artifact-conserved")
+              record["retained_executable"] = retained_engine_facts
               (ROOT / "receipt.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
               print("engine-output-receipt PASS keys=" + str(len(counter)) + " selectors=" + str(passed))
+              complete_output_union(metadata, expected_host, key_platform, ledger, record)
 
 
           try:
@@ -784,6 +1998,407 @@ jobs:
               print("engine-output-receipt FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
               sys.exit(ACTUAL_TEST_STATUS if ACTUAL_TEST_STATUS not in (None, 0) else 1)
           PY_ENGINE_RECEIPT
+      - name: Qualify explicit output prune and same-pending recovery receipts
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.runner.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRUNE_QUALIFICATION_STAGE: prune-receiver
+        shell: bash
+        run: |
+          python3 - <<'PY_PRUNE_RECEIVER'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("prune-qualification")
+          PHASE = "initial"
+          ACTUAL_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed prune qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              with pathlib.Path(path).open("rb") as stream:
+                  value = stream.read(cap + 1)
+              require(len(value) <= cap, "capture-cap")
+              return value
+
+
+          def invoke(command, name, environment=None):
+              global ACTUAL_STATUS
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr, env=environment).returncode
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name.endswith("tests"):
+                  ACTUAL_STATUS = status
+                  # Raw owned captures stay in the artifact; public output uses fixed receipts only.
+              return status, out, err
+
+
+          def git(*arguments):
+              name = "git-" + str(len(list(ROOT.glob("git-*.stdout"))))
+              status, out, _ = invoke(["git", *arguments], name)
+              require(status == 0, "git-status")
+              return out.decode("ascii").strip()
+
+
+          def native_host():
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["PRUNE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "closed-platform")
+              key, system, host = systems[selected]
+              require(platform.system() == system, "actual-system")
+              status, out, _ = invoke(["rustc", "-vV"], "toolchain-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              matches = re.findall(rb"^host: ([^\r\n]+)\r?$", out, re.MULTILINE)
+              require(status == 0 and len(matches) == 1 and matches[0].decode("ascii") == host, "actual-host")
+              return key, host
+
+
+          def revision():
+              checkout = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              head = os.environ["PRUNE_QUALIFICATION_HEAD"]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (checkout, tree, head, os.environ["GITHUB_SHA"])), "revision-shapes")
+              require(checkout == os.environ["GITHUB_SHA"], "actual-checkout")
+              status, commit, _ = invoke(["git", "cat-file", "-p", checkout], "commit-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(status == 0 and all(re.fullmatch(r"[0-9a-f]{40}", parent) for parent in parents) and len(parents) == len(set(parents)), "closed-parents")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "closed-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and checkout != head) if event == "pull_request" else checkout == head, "head-parent-binding")
+              return {"head": head, "tree": tree}, {"checkout": checkout, "parents": parents, "event": event}
+
+
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          facts = artifact_reader.facts
+          binding_json_facts = artifact_reader.binding_json_facts
+
+
+          def metadata(name, environment=None):
+              status, out, _ = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], name, environment)
+              require(status == 0, "metadata-status")
+              return json.loads(out)
+
+
+          def artifact(messages, package_id, name, kind, test):
+              values = []
+              for line in messages.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == name and message["target"]["kind"] == [kind] and message.get("profile", {}).get("test") is test and message.get("executable"):
+                      values.append(message)
+              require(len(values) == 1, "one-actual-artifact")
+              return values[0]
+
+
+          def package(data, name):
+              matches = [value for value in data["packages"] if value["name"] == name]
+              require(len(matches) == 1, "one-package")
+              return matches[0]["id"]
+
+
+          def totals(text, expected):
+              matches = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(matches) == 1 and tuple(map(int, matches[0][:4])) == (expected, 0, 0, 0), "actual-nonzero-summary")
+
+
+          def checked_records(data):
+              require(set(data) == {"version", "revision", "production", "recovery"} and data["version"] == 1, "closed-binding")
+              require(set(data["revision"]) == {"head", "tree"} and all(re.fullmatch(r"[0-9a-f]{40}", value) for value in data["revision"].values()), "closed-revision")
+              for name, test in (("production", False), ("recovery", True)):
+                  record = data[name]
+                  require(set(record) == {"path", "sha256", "size", "profile_test"} and record["profile_test"] is test and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) and type(record["size"]) is int and 0 < record["size"] <= 512 * 1024 * 1024, "closed-artifact-record")
+              require(data["production"]["path"] != data["recovery"]["path"], "distinct-artifacts")
+
+
+          def bind_again(binding, host):
+              for name in ("production", "recovery"):
+                  actual, _ = facts(binding[name]["path"], host)
+                  require(all(actual[field] == binding[name][field] for field in ("path", "sha256", "size")), "independent-binding-recheck")
+          def main():
+              require(ROOT.is_dir(), "actual-producer-receipt-directory")
+              key, host = native_host()
+              selected_revision, checkout = revision()
+              production_path = pathlib.Path(os.environ["LOCRON_PRUNE_TEST_BINARY"])
+              recovery_path = pathlib.Path(os.environ["LOCRON_PRUNE_RECOVERY_TEST_BINARY"])
+              require(production_path.parent.name == "debug", "default-production-binding-locator")
+              locator = production_path.parent.parent / "prune-artifact-binding.json"
+              binding, binding_bytes, binding_id, binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              checked_records(binding)
+              require(binding["revision"] == selected_revision and binding["production"]["path"] == str(production_path) and binding["recovery"]["path"] == str(recovery_path), "actual-binding-revision")
+              prod, prod_id = facts(production_path, host)
+              rec, rec_id = facts(recovery_path, host)
+              bind_again(binding, host)
+              data = metadata("scoped-metadata")
+              target = pathlib.Path(data["target_directory"]).resolve(strict=True)
+              recovery_path.resolve(strict=True).relative_to(target)
+              status, messages, _ = invoke(["cargo", "test", "-p", "locron-server", "--lib", "--locked", "--no-run", "--message-format=json"], "server-build")
+              require(status == 0, "server-build-status")
+              server = artifact(messages, package(data, "locron-server"), "locron_server", "lib", True)
+              server_path = pathlib.Path(server["executable"])
+              server_path.resolve(strict=True).relative_to(target)
+              server_facts, server_id = facts(server_path, host)
+              ledger_bytes = bounded(pathlib.Path("docs/planning/GROUP_B_PRUNE_QUALIFICATION_ROWS_2026-10-05.json"), 128 * 1024)
+              require(hashlib.sha256(ledger_bytes).hexdigest() == "2f3e1e88f4cb1bc954993287d726a3b442d3fad922f60ce0462f88211557d3a5", "frozen-prune94")
+              ledger = json.loads(ledger_bytes)
+              captures = {}
+              completed = []
+              for surface, path, selector in (("api", server_path, "api::prune_output::qualification::contracts"), ("cli", recovery_path, "prune_qualification::contracts")):
+                  bind_again(binding, host)
+                  status, out, err = invoke([str(path), "--exact", selector, "--nocapture"], surface + "-tests")
+                  text = out.decode("utf-8")
+                  totals(text, 1)
+                  require(status == 0, "actual-prune-driver-status")
+                  rows = [row for row in ledger["rows"] if row["surface"] == surface and row["platforms"] in ("all", "windows" if key == "windows" else "unix")]
+                  expected = {row["id"] for row in rows}
+                  observed = collections.Counter(re.findall(r"prune-qualification PASS ([A-Za-z0-9_-]+)", text))
+                  require(set(observed) == expected and len(expected) == len(rows) and all(value == 1 for value in observed.values()), "exact-prune-key-union")
+                  require(text.count("prune-qualification FI07-RECEIPT " + surface + " passed=1 failed=0 ignored=0 measured=0 actions=1 outputs_pruned=1 cleanup=1") == 1, "actual-one-test-recovery-proof")
+                  if key == "windows":
+                      require(text.count("prune-qualification CONTROL " + surface + " N07 helper-finish-positive") == 1, "actual-N07-helper-positive")
+                  captures[surface] = {"selector": selector, "actual_status": status, "keys": sorted(observed), "stdout_sha256": hashlib.sha256(out).hexdigest(), "stderr_sha256": hashlib.sha256(err).hexdigest(), "recovery_support": {"passed": 1, "failed": 0, "ignored": 0, "measured": 0}}
+                  completed.extend(observed)
+                  bind_again(binding, host)
+              require(len(completed) == {"linux": 86, "macos": 86, "windows": 88}[key] and len(set(completed)) == len(completed), "exact-platform94-subset")
+              prod_after, prod_id_after = facts(production_path, host)
+              rec_after, rec_id_after = facts(recovery_path, host)
+              server_after, server_id_after = facts(server_path, host)
+              after_binding, after_binding_bytes, after_binding_id, after_binding_sha = binding_json_facts(production_path, recovery_path, host, selected_revision)
+              require((prod, prod_id, rec, rec_id, server_facts, server_id) == (prod_after, prod_id_after, rec_after, rec_id_after, server_after, server_id_after), "whole-artifacts-conserved")
+              require(binding == after_binding and binding_id == after_binding_id and binding_bytes == after_binding_bytes and binding_sha == after_binding_sha, "binding-identity-bytes-conserved")
+              receipt = {"revision": selected_revision, "checkout": checkout, "native_host": host, "production": prod, "recovery": rec, "server": server_facts, "production_identity": prod_id, "recovery_identity": rec_id, "server_identity": server_id, "server_artifact": server, "binding_sha256": binding_sha, "binding_identity": binding_id, "ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(), "drivers": captures, "completed_keys": sorted(completed)}
+              (ROOT / "prune94.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("prune94-receipt PASS keys=" + str(len(completed)) + " drivers=2 recovery_support=2")
+
+
+          try:
+              main()
+          except Exception as error:
+              print("prune94-receipt FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(ACTUAL_STATUS if ACTUAL_STATUS not in (None, 0) else 1)
+          PY_PRUNE_RECEIVER
+      - name: Qualify exact state-discovery receipts
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.runner.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PRUNE_QUALIFICATION_STAGE: state-receiver
+        shell: bash
+        run: |
+          python3 - <<'PY_STATE_RECEIVER'
+          import collections
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import platform
+          import re
+          import struct
+          import subprocess
+          import sys
+
+          CAP = 8 * 1024 * 1024
+          ROOT = pathlib.Path("prune-qualification")
+          PHASE = "initial"
+          ACTUAL_STATUS = None
+
+
+          def require(condition, phase):
+              global PHASE
+              PHASE = phase
+              if not condition:
+                  raise ValueError("fixed prune qualification refusal")
+
+
+          def bounded(path, cap=CAP):
+              with pathlib.Path(path).open("rb") as stream:
+                  value = stream.read(cap + 1)
+              require(len(value) <= cap, "capture-cap")
+              return value
+
+
+          def invoke(command, name, environment=None):
+              global ACTUAL_STATUS
+              with (ROOT / (name + ".stdout")).open("xb") as stdout:
+                  with (ROOT / (name + ".stderr")).open("xb") as stderr:
+                      status = subprocess.run(command, stdout=stdout, stderr=stderr, env=environment).returncode
+              out = bounded(ROOT / (name + ".stdout"))
+              err = bounded(ROOT / (name + ".stderr"))
+              if name.endswith("tests"):
+                  ACTUAL_STATUS = status
+                  # Raw owned captures stay in the artifact; public output uses fixed receipts only.
+              return status, out, err
+
+
+          def git(*arguments):
+              name = "git-" + str(len(list(ROOT.glob("git-*.stdout"))))
+              status, out, _ = invoke(["git", *arguments], name)
+              require(status == 0, "git-status")
+              return out.decode("ascii").strip()
+
+
+          def native_host():
+              systems = {
+                  "linux-x86_64": ("linux", "Linux", "x86_64-unknown-linux-gnu"),
+                  "linux-aarch64": ("linux", "Linux", "aarch64-unknown-linux-gnu"),
+                  "macos-x86_64": ("macos", "Darwin", "x86_64-apple-darwin"),
+                  "macos-aarch64": ("macos", "Darwin", "aarch64-apple-darwin"),
+                  "x86_64-pc-windows-msvc": ("windows", "Windows", "x86_64-pc-windows-msvc"),
+                  "aarch64-pc-windows-msvc": ("windows", "Windows", "aarch64-pc-windows-msvc"),
+              }
+              selected = os.environ["PRUNE_QUALIFICATION_PLATFORM"]
+              require(selected in systems, "closed-platform")
+              key, system, host = systems[selected]
+              require(platform.system() == system, "actual-system")
+              status, out, _ = invoke(["rustc", "-vV"], "toolchain-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              matches = re.findall(rb"^host: ([^\r\n]+)\r?$", out, re.MULTILINE)
+              require(status == 0 and len(matches) == 1 and matches[0].decode("ascii") == host, "actual-host")
+              return key, host
+
+
+          def revision():
+              checkout = git("rev-parse", "HEAD")
+              tree = git("rev-parse", "HEAD^{tree}")
+              head = os.environ["PRUNE_QUALIFICATION_HEAD"]
+              require(all(re.fullmatch(r"[0-9a-f]{40}", value) for value in (checkout, tree, head, os.environ["GITHUB_SHA"])), "revision-shapes")
+              require(checkout == os.environ["GITHUB_SHA"], "actual-checkout")
+              status, commit, _ = invoke(["git", "cat-file", "-p", checkout], "commit-" + os.environ["PRUNE_QUALIFICATION_STAGE"])
+              header = commit.split(b"\n\n", 1)[0]
+              parents = [line[7:].decode("ascii") for line in header.splitlines() if line.startswith(b"parent ")]
+              require(status == 0 and all(re.fullmatch(r"[0-9a-f]{40}", parent) for parent in parents) and len(parents) == len(set(parents)), "closed-parents")
+              event = os.environ["GITHUB_EVENT_NAME"]
+              require(event in ("pull_request", "push", "workflow_dispatch"), "closed-event")
+              require((len(parents) == 2 and parents.count(head) == 1 and checkout != head) if event == "pull_request" else checkout == head, "head-parent-binding")
+              return {"head": head, "tree": tree}, {"checkout": checkout, "parents": parents, "event": event}
+
+
+          import importlib.machinery
+          import importlib.util
+
+
+          def load_artifact_reader():
+              checkout = pathlib.Path(os.environ["GITHUB_WORKSPACE"]).resolve(strict=True)
+              require(pathlib.Path.cwd().resolve(strict=True) == checkout, "fixed-reader-checkout")
+              source = checkout / "scripts" / "ci_prune_artifact_facts.py"
+              selected = importlib.util.spec_from_file_location("locron_ci_prune_artifact_facts", source)
+              require(selected is not None and isinstance(selected.loader, importlib.machinery.SourceFileLoader) and selected.origin == str(source), "fixed-reader-source-loader")
+              module = importlib.util.module_from_spec(selected)
+              selected.loader.exec_module(module)
+              return module
+
+
+          artifact_reader = load_artifact_reader()
+          facts = artifact_reader.facts
+          binding_json_facts = artifact_reader.binding_json_facts
+
+
+          def metadata(name, environment=None):
+              status, out, _ = invoke(["cargo", "metadata", "--locked", "--no-deps", "--format-version", "1"], name, environment)
+              require(status == 0, "metadata-status")
+              return json.loads(out)
+
+
+          def artifact(messages, package_id, name, kind, test):
+              values = []
+              for line in messages.splitlines():
+                  message = json.loads(line)
+                  if message.get("reason") == "compiler-artifact" and message.get("package_id") == package_id and message.get("target", {}).get("name") == name and message["target"]["kind"] == [kind] and message.get("profile", {}).get("test") is test and message.get("executable"):
+                      values.append(message)
+              require(len(values) == 1, "one-actual-artifact")
+              return values[0]
+
+
+          def package(data, name):
+              matches = [value for value in data["packages"] if value["name"] == name]
+              require(len(matches) == 1, "one-package")
+              return matches[0]["id"]
+
+
+          def totals(text, expected):
+              matches = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored; (\d+) measured; (\d+) filtered out", text)
+              require(len(matches) == 1 and tuple(map(int, matches[0][:4])) == (expected, 0, 0, 0), "actual-nonzero-summary")
+
+
+          def checked_records(data):
+              require(set(data) == {"version", "revision", "production", "recovery"} and data["version"] == 1, "closed-binding")
+              require(set(data["revision"]) == {"head", "tree"} and all(re.fullmatch(r"[0-9a-f]{40}", value) for value in data["revision"].values()), "closed-revision")
+              for name, test in (("production", False), ("recovery", True)):
+                  record = data[name]
+                  require(set(record) == {"path", "sha256", "size", "profile_test"} and record["profile_test"] is test and re.fullmatch(r"[0-9a-f]{64}", record["sha256"]) and type(record["size"]) is int and 0 < record["size"] <= 512 * 1024 * 1024, "closed-artifact-record")
+              require(data["production"]["path"] != data["recovery"]["path"], "distinct-artifacts")
+
+
+          def bind_again(binding, host):
+              for name in ("production", "recovery"):
+                  actual, _ = facts(binding[name]["path"], host)
+                  require(all(actual[field] == binding[name][field] for field in ("path", "sha256", "size")), "independent-binding-recheck")
+          STATE_EXPECTED = {'linux': ['state_discovery::unavailable_default_has_actionable_human_error', 'state_discovery::unavailable_default_preserves_json_and_stream_error_contracts', 'state_discovery::explicit_overrides_recover_without_home_and_preserve_precedence', 'state_discovery::linux_home_xdg_matrix_preserves_selection_and_preview', 'state_discovery::linux_empty_xdg_without_home_preserves_discovery_error', 'state_discovery::linux_relative_xdg_uses_the_actual_child_cwd', 'state_discovery::linux_non_utf8_xdg_preserves_actual_path_bytes', 'state_discovery::linux_non_utf8_home_fallback_preserves_actual_path_bytes', 'state_discovery::non_utf8_cli_override_wins_over_actual_environment_override', 'state_discovery::non_utf8_environment_override_preserves_actual_path_bytes'], 'macos': ['state_discovery::unavailable_default_has_actionable_human_error', 'state_discovery::unavailable_default_preserves_json_and_stream_error_contracts', 'state_discovery::explicit_overrides_recover_without_home_and_preserve_precedence', 'state_discovery::non_utf8_cli_override_wins_over_actual_environment_override', 'state_discovery::non_utf8_environment_override_preserves_actual_path_bytes', 'state_discovery::macos_home_default_ignores_absent_empty_and_competing_xdg', 'state_discovery::macos_non_utf8_home_default_preserves_actual_path_bytes', 'state_discovery::macos_home_absence_with_present_xdg_preserves_discovery_error', 'state_discovery::macos_empty_home_retains_its_cwd_relative_default']}
+
+          def main():
+              key, host = native_host()
+              require(key in ("linux", "macos"), "Unix-only-state-receipt")
+              selected_revision, checkout = revision()
+              data = metadata("state-metadata")
+              status, messages, _ = invoke(["cargo", "test", "-p", "locron", "--test", "cli", "--locked", "--no-run", "--message-format=json"], "state-build")
+              require(status == 0, "state-build-status")
+              selected = artifact(messages, package(data, "locron"), "cli", "test", True)
+              path = pathlib.Path(selected["executable"])
+              path.resolve(strict=True).relative_to(pathlib.Path(data["target_directory"]).resolve(strict=True))
+              before, identity = facts(path, host)
+              status, out, err = invoke([str(path), "state_discovery::", "--nocapture"], "state-tests")
+              text = out.decode("utf-8")
+              expected = STATE_EXPECTED[key]
+              totals(text, len(expected))
+              names = re.findall(r"test (state_discovery::[a-z0-9_]+) \.\.\. ok", text)
+              require(status == 0 and set(names) == set(expected) and len(names) == len(expected), "exact-state-functions-no-skips")
+              require(facts(path, host) == (before, identity), "state-artifact-conserved")
+              record = {"revision": selected_revision, "checkout": checkout, "native_host": host, "artifact": selected, "executable": before, "identity": identity, "actual_status": status, "completed_functions": sorted(names), "passed": len(names), "failed": 0, "ignored": 0, "measured": 0, "stdout_sha256": hashlib.sha256(out).hexdigest(), "stderr_sha256": hashlib.sha256(err).hexdigest()}
+              (ROOT / "state14.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+              print("state14-receipt PASS functions=" + str(len(names)))
+
+
+          try:
+              main()
+          except Exception as error:
+              print("state14-receipt FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
+              sys.exit(ACTUAL_STATUS if ACTUAL_STATUS not in (None, 0) else 1)
+          PY_STATE_RECEIVER
       - name: Upload actual Engine output qualification receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -792,6 +2407,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: engine-output-qualification/
+
+      - name: Upload actual prune and state qualification receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: prune-state-${{ matrix.runner.platform }}-rust-${{ matrix.rust }}
+          if-no-files-found: error
+          retention-days: 14
+          path: prune-qualification/
 
   lint:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}

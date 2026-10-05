@@ -14,6 +14,14 @@ const MAX_CANDIDATES: usize = 100;
 const MAX_AGE_US: i64 = 30 * 24 * 60 * 60 * 1_000_000;
 
 pub(super) fn run(store: Option<&Store>, dry_run: bool) -> Result<Value, ApiError> {
+    run_with_remover(store, dry_run, remove_output)
+}
+
+fn run_with_remover(
+    store: Option<&Store>,
+    dry_run: bool,
+    mut remove: impl FnMut(&StatePaths, &Path) -> Result<(), ApiError>,
+) -> Result<Value, ApiError> {
     let Some(store) = store else {
         return Ok(json!({"dry_run": true, "candidate_count": 0, "bytes": 0}));
     };
@@ -33,7 +41,7 @@ pub(super) fn run(store: Option<&Store>, dry_run: bool) -> Result<Value, ApiErro
             // All selected database paths were validated before the first intent.
             // A later removal/sync/commit failure leaves the durable intent pending.
             store.mark_output_prune_pending(candidate, now_us())?;
-            remove_output(store.paths(), path)?;
+            remove(store.paths(), path)?;
             store.finish_output_prune(candidate, now_us())?;
         }
     }
@@ -52,14 +60,18 @@ fn select(
     cutoff: i64,
 ) -> Result<(Vec<(RetentionCandidate, PathBuf)>, i64), ApiError> {
     if projected < 0 || limit < 0 {
-        return Err(invalid_metadata("output retention byte totals must be non-negative"));
+        return Err(invalid_metadata(
+            "output retention byte totals must be non-negative",
+        ));
     }
     let mut selected = Vec::new();
     let mut bytes = 0_i64;
     // Store supplies oldest-first terminal artifacts under the existing batch cap.
     for candidate in candidates {
         if candidate.physical_bytes < 0 {
-            return Err(invalid_metadata("output artifact byte count must be non-negative"));
+            return Err(invalid_metadata(
+                "output artifact byte count must be non-negative",
+            ));
         }
         if candidate.finalized_at_us >= cutoff && projected <= limit {
             continue;
@@ -69,7 +81,9 @@ fn select(
         let path = paths.final_output(&candidate.run_id, attempt)?;
         let expected = format!("{}/{attempt}.log", candidate.run_id);
         if candidate.relative_path != expected {
-            return Err(invalid_metadata("database output path is not the canonical final path"));
+            return Err(invalid_metadata(
+                "database output path is not the canonical final path",
+            ));
         }
         bytes = bytes
             .checked_add(candidate.physical_bytes)
@@ -112,6 +126,23 @@ fn existing_directory(path: &Path) -> Result<Option<DirectoryGuard>, ApiError> {
 }
 
 fn remove_output(paths: &StatePaths, path: &Path) -> Result<(), ApiError> {
+    #[cfg(unix)]
+    {
+        remove_output_with_sync(paths, path, |directory| {
+            std::fs::File::open(directory).and_then(|file| file.sync_all())
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        remove_output_with_sync(paths, path)
+    }
+}
+
+fn remove_output_with_sync(
+    paths: &StatePaths,
+    path: &Path,
+    #[cfg(unix)] sync_directory: impl FnOnce(&Path) -> io::Result<()>,
+) -> Result<(), ApiError> {
     let _root = existing_directory(&paths.root)?
         .ok_or_else(|| invalid_metadata("state directory disappeared during output pruning"))?;
     let Some(_outputs) = existing_directory(&paths.outputs)? else {
@@ -146,8 +177,10 @@ fn remove_output(paths: &StatePaths, path: &Path) -> Result<(), ApiError> {
     // Preserve the existing Unix maintenance durability order. Windows has no
     // inferred directory-fsync guarantee; its retained guarded adapter owns removal.
     #[cfg(unix)]
-    std::fs::File::open(directory)
-        .and_then(|file| file.sync_all())
-        .map_err(StoreError::Io)?;
+    sync_directory(directory).map_err(StoreError::Io)?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "api_prune/qualification.rs"]
+mod qualification;
