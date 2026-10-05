@@ -155,3 +155,12 @@ Issue31 remains open:7343/run37196440237 has one actual ARM History expiry and u
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+## Native SID common repair Verify handoff (2026-10-05)
+
+Existing privacy#27, CI#31 and coordination#163 own the four ordered concrete Verify in
+planning/WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md. Root whole-plan exact issue GET ALL and
+final committed-plan/new-Docs reread precede separate two-file implementation. Preserve
+original issue bodies/history and every native clock, guard, creation, counter-stop and
+cleanup requirement. Common main-based publication and each representative's qualification
+are distinct phases; source/static/API success cannot close broad Windows acceptance.

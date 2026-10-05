@@ -5631,3 +5631,19 @@ Current7343/run37196440237 completed16 ordinary PASS/1 ARM failure. Actual origi
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+## Native process-token SID research before separate Source (2026-10-05)
+
+Separate59-artifact research report SHAa413614f30336a560cf097e8da24b4a0ad4193fc495924c55f12628d31a6c2d7
+binds the complete two Core files at171==mainf90, the checksum-qualified existing
+windows-permissions0.2.4 safe process-token/fallible conversion APIs and the explicit-state
+existing History caller route. A fresh CLI's SID query is the sole fixed-worker startup
+dependency when every state/SQLite leaf already exists and passes its native guard; missing
+leaves and default KnownFolder discovery retain their distinct stock adapter costs.
+Actual MSRV leaves9.464ms for a mandatory25ms stop pause, but whole History costs do not
+isolate a native phase or prove the sole cause. Select an original-deadline native owner
+retaining the existing initializer permit through actual disposal; no late cache, extra pool,
+unsafe/dependency, guessed identity or fallback. Explicit fixed SID request preserves the
+coupled phase fixture's original cold-worker proof. Actual type/native timing and unchanged
+acceptance remain pending. Full decision and Verify are in
+[WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md](planning/WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md).

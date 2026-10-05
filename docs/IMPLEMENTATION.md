@@ -5410,3 +5410,19 @@ A separate developer leases only the private Windows CLI control helper after Is
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+## Native process-token SID common repair before separate Source (2026-10-05)
+
+Frozen SPEC/ARCHITECTURE stay unchanged. Follow the complete
+[WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md](planning/WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md)
+against exactmainf90 before separate two-file development. Use the already locked safe
+process-token query and fallible SID conversion in one original-deadline native owner;
+transfer the existing initializer permit through native disposal, return only a String/error
+and let only the on-time caller cache success. Preserve bounded waiting, late-owner
+admission refusal, cache-only IPC and every unrelated adapter/creation/guard/grace/clock.
+Make only the coupled cold phase fixture's SID dispatch explicit and add genuine identity/
+owner controls. Root Docs/#27/#31/#163 exact whole-plan GET ALL and final complete reread
+precede Source; permitted static conservation precedes changed-head disposable native
+MSRV/ARM/x64/full required/paired qualification. Publish this common repair first so other
+representatives integrate reviewed main without unrelated feature code. Failed/missing
+native behavior and wider release/account/logon/reboot acceptance remain open.
