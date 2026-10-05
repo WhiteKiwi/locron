@@ -5483,3 +5483,30 @@ GETs and Root whole final reread precede the two-path follow-up. Require complet
 and314 protected entries of the actual316-entry Docs parent, pinned static checks, then
 fresh hosted warnings-denied lint/three-row required gates. Snapshot2's pending native/
 packages and historical failures cannot supply acceptance or a Cancel-fix claim.
+
+### Reviewed Group D before common joined qualification (2026-10-06)
+
+Follow the newest ordering amendment in WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md. Root
+performs only a normal Git merge of exact reviewed D17133aa1917fc50d2801bf58c33552e20f978d30
+into the gated common SID/style head before its next ordinary qualification and merge.
+Preserve all four native Source and all nine disjoint D Source mode/blobs, complete
+reviewed Docs histories and current frozen SPEC/ARCHITECTURE. Other guard groups stay
+later; no new diagnostics, APIs, tests, runtime repair or workflow/algorithm adaptation.
+Source conflict or a noncontext decision returns to separate developer/Docs before work.
+
+Reuse D's actual private two-file Stdio owner at the same daemon spawn, original8s and
+entry-born30s. Keep first work frozen before cleanup, optional reads only after confirmed
+reap/within normal admission, exact full IDs/cursor0/no-follow64KiB+sentinel, closed Store
+summary only, and every counter/peer/child/drop/quarantine bound. Preserve5s/8s/200ms/30s/
+25ms pause/production5s grace. Missing/late/unrecognized data remains unknown and cannot
+waive failure, expose raw output or authorize replacement work. Existing Store emitters
+and error precedence remain literal; no separate new seam is needed for this selection.
+
+Owning#27/#31/#163 whole-plan exact GETs and Root actual final complete reread precede
+Root's Git-only integration. Whole joined-tree/ordered-parent/contribution proof precedes
+one ordinary changed-head publication. Fresh three-row original controls plus all D
+controls/required downstream/lint/Unix/Guardian/current package provenance qualify only
+that joined head. Preserve actual d8923/24, ARM ChildExited/Run/application5/unknown
+cause and skipped16/4/3/11/4/21, plus d89 package168 each, as historical facts. Retain
+166/167 until actual required Verify and selected main contribution succeed; ancestry
+alone does not close work. The complete newest plan carries five concrete Verify steps.

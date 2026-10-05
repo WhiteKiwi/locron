@@ -215,3 +215,22 @@ issue closure is implied. Other Source, including fixed worker/crash host, stays
 Root's later metadata-only snapshot3 ARM cancellation step failure is cause UNKNOWN;
 completed raw native counts/Cancel outcomes remain unqualified. This syntax selection
 makes no runtime repair or all-gates-PASS claim.
+
+### Joined native SID/Group D Verify order (2026-10-06)
+
+Existing privacy#27, CI#31 and integration#163 own the complete latest
+WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md ordering amendment. Exact whole-plan POST/GET ALL
+and Root actual whole committed-plan/new-Docs reread precede the normal exact reviewed
+D17133 merge into the common line. No new issue, public API, diagnostic seam, test or
+clock/security/oracle change is selected; other guard groups remain later.
+
+Preserve actual d89 Core137/new six/stock-parent proofs and23PASS/1FAIL original CLI
+matrix: ARM ChildExited/Run then cleanup application5 has no captured daemon cause;
+its16/4/3/11/4/21 downstreams are skipped. Original first work/private owners and the
+already reviewed D bounded closed capture remain exact. d89 package168 each/provenance/
+Guardian cannot transfer. Root qualifies one genuinely joined changed head with full
+required actual native/lint/downstream/package evidence and source/ordered-tree binding.
+Keep166/167 open until required Verify plus actual main contribution prove verified
+subsumption; no ancestry-only closure. Broader privacy/CI/integration/release/account/
+logon/reboot/signing criteria remain at their actual state. Five concrete Verify steps
+in the complete plan govern this integration and publication handoff.

@@ -295,3 +295,112 @@ API, workflow, fallback, skip, retry, clock growth or unchanged-head rerun is se
    fresh warnings-denied Windows lint and all three original/new SID, cold/PID/containment,
    unchanged downstream and required gates qualify actual results. Preserve failed/optional/
    pending/unrun scope explicitly; no old PASS/count, Cancel repair or support claim.
+
+## Join reviewed Group D before the next common qualification (2026-10-06)
+
+This amendment supersedes ONLY the earlier native-alone qualification/merge-first order
+for already reviewed Group D. Integrate exact PR166/D
+`17133aa1917fc50d2801bf58c33552e20f978d30` into the gated common SID/style line before
+its next qualification and merge. Other guard groups A/B/C/E remain later. Frozen SPEC
+and ARCHITECTURE stay unchanged. No new observation seam, product repair, raw output,
+public API, test, clock, fallback or security waiver is selected by this amendment.
+
+The current clean Source head is `6164815869a02942d6bb348b93b2d407282c6759`, tree
+`78f7439ce0901119718e443dc8eebd312677fb97`. Root reviewed the complete two-style patch,
+46-artifact packet, raw/canonical inverses and314 protected entries of316 without a
+finding. Its static fit is not hosted lint/native acceptance. Exact D17133 has tree
+`0af46c07a6b32730f23d4da9ccba1992dbdd7e37`; mainf90 is its ancestor. D's complete
+mainf90 delta is26 paths, nine Source and17 Docs. All nine Source paths are disjoint from
+this common repair's four cumulative Core Source paths. Root's complete prior D review
+is reused only for those immutable bytes, not a current runtime result. A separate
+read-only D audit reports no concrete new SID-to-stock-PID fixture coupling; original
+cold/stock controls stay unchanged. No additional coupling repair is selected.
+
+Completed d89cd3e1 CI37346840859/attempt1 remains FAILURE:15 ordinary metadataPASS,
+2FAIL and2 optionalSKIP. All three rows actually pass Core137, all six new SID selectors,
+the forwarded cold deadline and isolated EOF/restricted/parent-exit proofs. Engine69,
+Server42, Store96, doctor6, service64 and GUI12 pass in all three rows. The original
+8x3 native CLI matrix is23PASS/1FAIL, with zero ignored: both x64 rows pass all eight;
+ARM fails only original Cancel. Both x64 downstream rows pass lifecycle16/dashboard4/
+prune3/maintenance11/MCP4/HTTP21; those six ARM commands are skipped after Cancel fails.
+Windows test-Clippy separately fails manual_assert_eq and elidable_lifetime_names;
+616481 contains only the already reviewed syntax correction, not a runtime repair.
+
+ARM's first work is ChildExited/Run at1,580,445us after the actual Run CLI returns0,
+before the first successful History observation or any Cancel dispatch. A later cleanup
+observation reports the daemon's application exit5; its stdout/stderr are null. Store
+stage, category, native error, SQLite code and daemon error text are UNKNOWN. Helper
+flags97 attest its owned root reap/private-state cleanup checks, not target Job emptiness
+or descendant absence. Do not infer a cause from application5, architecture or the last
+independent observation. The frozen read-only packet
+`windows-native-sid-d89-37346840859-readonly-20261006` report SHA256
+`1fe81c525ab53932a7c09f604ebddc5c6da94ca9cb3eef07523be8cc27335175` establishes this
+missing-daemon-output boundary. Its historical needless_lifetimes wording is superseded
+by the actual raw elidable_lifetime_names diagnostic; do not rewrite the frozen packet.
+
+At d89, both native package jobs actually pass168 named tests each, with zero failed/
+ignored and133 filtered, and the complete four-archive/provenance/PE/coherence proof
+passes. GitGuardian passes for d89. Package report SHA256
+`1d1dcc14ff605ea89bb04a094bf0401fbc3c29acb7a27c15b4235303f7b68cec` binds that exact
+head; no test, package, Guardian or earlier D result transfers to the joined head.
+
+### Existing D capability and unchanged ownership
+
+D's existing cancellation_daemon prepares two CreateNew guarded private output files
+and retained exact Stdio duplicates, then performs the same actual daemon spawn with
+the original8s post-spawn clock. complete freezes first work before cleanup. Only after
+confirmed root reap can observe_pair_after_reap admit an optional read under the original
+entry-born30s normal clock. Unfinished/uncertain cleanup retains the same owner; no new
+observation work is admitted after expiry and late returns never become timely success.
+
+The existing reader verifies full original identity, independent cursor0 and no-follow
+ownership, and keeps the64KiB plus one sentinel cap. PairSummary publishes only fixed
+stream/capture/count and recognized closed Store stage/category/Io kind+returned raw or
+SQLite primary/extended codes. No SID, private path, PID, SQL, argv, environment, raw
+stderr or arbitrary message is exposed. Existing Store debug emitter bytes are equal in
+mainf90/d89/D. A missing, unrecognized, ambiguous, late or refused record remains unknown;
+this capability does not guarantee classification or fix the historical daemon exit.
+
+Keep original first-work/error priority, counters/progress-stop, actual children/Jobs,
+peer PID/frame/ACK, same-owner disposal/drop/reap/quarantine and all existing D capture/
+producer controls. Preserve5s Wake,8s Cancel,200ms probe,30s outer,25ms stop pause,
+production5s grace,64KiB sentinel and all other selected bounds. No additional readiness,
+retry, warm-up, timeout growth, oracle waiver or raw dump is selected here.
+[Microsoft GetExitCodeProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getexitcodeprocess)
+and [Rust Child](https://doc.rust-lang.org/std/process/struct.Child.html)/
+[process pipes](https://doc.rust-lang.org/std/process/index.html) were read by Root as
+exit-value/explicit ownership/blocking guidance only, not proof of the daemon cause,
+current native completion, library compilation or interruptibility.
+
+### Ordered integration and concrete Verify
+
+1. Root selects the complete amended plan before Git integration. **Verify:** only these
+   four Docs append; all earlier raw/canonical prefixes and616481 Source remain exact.
+   Existing privacy#27/CI#31/integration#163 receive the whole plan by exact POST/GET,
+   preserving bodies/state/history. AFTER ALL GETs Root actually rereads the whole final
+   committed plan and every new Docs block before granting its Git-only integration lease.
+2. Root performs a normal merge of EXACT D17133 into that gated common head. **Verify:**
+   clean preflight, named backup, ordered parents [gated common head,D17133], mainf90
+   ancestry, whole mode/blob union and every native four/D nine Source blob retained.
+   Retain both complete reviewed Docs append histories once. No force/rebase/cherry-pick,
+   newer incoming head, guard A/B/C/E, algorithm adaptation or test/workflow rewrite.
+   A Source conflict or noncontext decision stops for developer research/Docs first.
+3. Root reviews the complete joined tree and ordinarily publishes it once. **Verify:**
+   clean exact head/base/ref, complete contribution/inverse ledger and truthful PR scope;
+   fresh automatic attempt1 binds synthetic ordered parents and the complete joined tree.
+   Acquire each completed raw job/artifact only once, retaining raw/declared projection;
+   reuse historical bytes without reGET. No unchanged-head rerun or manual dispatch.
+4. Qualify this joined head's actual behavior and packages. **Verify:** all three original
+   eight-selector rows and existing D output/producer/publication positive/refusal controls,
+   original SID six/cache/cold/EOF/policy/parent-exit, doctor/service/GUI and all required
+   downstreams, fmt/warnings-denied lint/MSRV/Unix/Guardian pass. Bind actually triggered
+   paired/snapshot/package gates and complete current-head ZIP/PE/ABI/provenance/coherence;
+   mark absent/skipped/unrun explicitly, never import d89/D counts. Preserve first work,
+   actual returned status and closed timely capture facts separately; missing/late/error
+   records cannot waive failure or authorize a guessed runtime repair.
+5. Root merges only the qualified exact joined tree and verifies contribution to main.
+   **Verify:** actual merge/head/tree and complete selected member-source conservation;
+   PR166/167 remain open until their required Verify/qualification AND main contribution
+   are proved. Only then may they close as verified subsumed work. Ancestry alone, static
+   success or a diagnostic record is not closure; broad#27/#31/#163 and release/account/
+   logon/reboot/signing acceptance retain their actual remaining scope.

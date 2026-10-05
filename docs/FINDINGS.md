@@ -5722,3 +5722,33 @@ failed step at that snapshot. Completed raw actual137/native-selector/Cancel fac
 unqualified and ARM cause UNKNOWN. Metadata advancement does not qualify runtime gates.
 No native/cancellation/package outcome follows from the measured lint. Complete amended
 owning plan readbacks and final whole reread precede the two-path syntax Source correction.
+
+### Completed d89 cancellation gap and reviewed D reuse (2026-10-06)
+
+CI37346840859/1 exact d89cd3e1 completes with15 ordinary metadataPASS/2FAIL/2 optional
+SKIP. All three native Core137/new SID six/cold/EOF/restricted/parent-exit proofs pass;
+the original8x3 CLI matrix is23PASS/1FAIL. Both x64 rows pass their full downstream
+16/4/3/11/4/21 commands; ARM skips those commands after original Cancel fails.
+ARM first work is ChildExited/Run at1,580,445us after actual Run code0, before first
+successful History or Cancel dispatch. Cleanup later observes daemon application5 and
+helper flags97, with null daemon stdout/stderr. The failing Store/native/category cause
+is UNKNOWN; application5 is not Win32 raw5 and helper cleanup is not target Job emptiness.
+The sealed read-only report SHA2561fe81c525ab53932a7c09f604ebddc5c6da94ca9cb3eef07523be8cc27335175
+binds those observations; its needless_lifetimes wording is corrected by the retained
+actual elidable_lifetime_names diagnostic, without altering historical evidence.
+
+Exact reviewed D17133aa1917fc50d2801bf58c33552e20f978d30 already retains private daemon
+stdout/stderr at the same actual spawn/original8s. Its first-work freeze precedes cleanup;
+optional original-clock64KiB+sentinel observation follows actual root reap, with full-ID/
+cursor/no-follow checks. Only closed recognized stage/category/numeric facts can leave
+that owner. No raw stderr/SID/path/PID or guaranteed classification is promised. Store
+emitter bytes are already identical in mainf90/d89/D. Root-read Microsoft exit-code and
+Rust Child/process guidance describe interpretation/ownership, not the measured cause.
+
+Root now selects normal exact D integration BEFORE the next common SID/style joined
+qualification, superseding only the former native-alone-first order for reviewed D.
+All nine D Source paths are disjoint from the four native Core paths; whole reviewed
+contributions and both Docs histories must be conserved. Other guard groups remain later.
+At d89, actual168 package PASS each/complete provenance and genuine Guardian PASS are
+separate exact-head evidence and cannot qualify the joined tree. New joined native/lint/
+package results and actual main contribution precede any verified-subsumed166/167 closure.
