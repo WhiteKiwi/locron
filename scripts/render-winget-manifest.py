@@ -61,6 +61,10 @@ def _write_documents(output, documents):
                 if directory is None or not _same_object(output, directory):
                     problems.append("output directory changed; retained remaining files")
                     break
+            except OSError as cleanup_error:
+                problems.append(f"output directory identity is unavailable; cleanup not confirmed: {cleanup_error}")
+                break
+            try:
                 if not _same_object(path, identity):
                     problems.append(f"retained replaced manifest: {path}")
                     continue
@@ -74,8 +78,8 @@ def _write_documents(output, documents):
                 output.rmdir()  # Fails rather than removing unrelated entries.
             else:
                 problems.append("output directory identity is unavailable; retained output")
-        except FileNotFoundError:
-            pass
+        except FileNotFoundError as cleanup_error:
+            problems.append(f"output directory is missing; cleanup not confirmed: {cleanup_error}")
         except OSError as cleanup_error:
             problems.append(f"retained output directory {output}: {cleanup_error}")
         add_note = getattr(error, "add_note", None)

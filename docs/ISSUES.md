@@ -189,6 +189,132 @@ Root final entire plan/new-Docs review precede separate common/A/B Source. Measu
 refusal observation leaves the actual native bugs and member qualification open;
 only successful owning Verify plus required merges can close them. Signing37 is deferred.
 
+## Native SID common repair Verify handoff (2026-10-05)
+
+Existing privacy#27, CI#31 and coordination#163 own the four ordered concrete Verify in
+planning/WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md. Root whole-plan exact issue GET ALL and
+final committed-plan/new-Docs reread precede separate two-file implementation. Preserve
+original issue bodies/history and every native clock, guard, creation, counter-stop and
+cleanup requirement. Common main-based publication and each representative's qualification
+are distinct phases; source/static/API success cannot close broad Windows acceptance.
+
+The same plan's before-Source scalar permit-return refinement preserves on-time once-sharing.
+All three owning exact amended-plan GETs and Root whole final reread precede the paused
+developer; no Source draft was applied before this corrected ownership selection.
+
+### Native SID cache Verify precision (2026-10-06)
+
+For #27/#31/#163, no-late-cache Verify concerns an initially empty cache before verified
+publication. Preserve refusal without clearing a prior verified entry, and report the
+existing post-publication/outer-return expiry limit without promising rollback or atomic
+clock/publication. The complete precise plan and owning exact readbacks/final reread
+precede the Source commit; all genuine hosted identity/ownership/native gates remain open.
+
+### Native SID hosted lint Verify handoff (2026-10-06)
+
+#27/#31/#163 continue the same common repair: b4c422's actual Windows1.98 lint is FAIL,
+not completed native acceptance. The complete plan now selects one explicit scalar
+Receiver drop while preserving the owned lifetime, early-error RAII, SAME returned permit,
+all original gates/clocks. Actual all-three Core136P/1F additionally requires the existing
+sid-deadline coupling repair: native API first, explicit genuine stock SID under that SAME
+deadline, then original elapsed/PID/marker. All six new SID selectors passed, but the cold
+gate failed and CLI downstream/Cancel acceptance is unrun. Exact whole-plan POST/GET and
+Root whole committed-plan/new-Docs reread precede all selected scoped corrections; full
+selected-region inverses and fresh lint/native Verify follow. No closure or prior
+PASS transfer is implied; all other Source and filesystem-worker bytes remain unchanged.
+The completed run has13 ordinary metadataPASS/4FAIL/2optionalSKIP; package/coherence
+metadata lacks Root ZIP proof and original8x3 CLI/Wake/Cancel acceptance is unrun.
+
+The complete amended plan also covers the unrun parent-exit-host's direct native-SID-to-
+stock-PID coupling. Capture original30s at fixed-thread entry, native bounded API/grammar
+first, same-deadline genuine stock SID/Boolean identity, then old positive PID/publication;
+no SID output or deadline reset. Generic deadline/Child/Job/handles/heartbeat/capture/
+disposal/guard-release assertions and45/30/3s stay exact. This latest amendment supersedes
+the three-file boundary: cumulative four paths, follow-up three, filesystem_worker.rs
+unchanged. Verify actual316-entry Docs parent and313 protected modes/blobs, all original
+selectors and three full-file inverses. Fresh hosted parent-exit remains required; an
+unrun gate is not PASS. The same owning whole-plan POST/GET/final reread precedes Source.
+
+### Native SID lib-test syntax Verify (2026-10-06)
+
+Continue #27/#31/#163 under the complete latest plan: actual d89cd3e1 Windows lib-test lint
+has two errors, with native/package jobs pending at snapshot2. Select only integer
+assert_eq! for zero PID and the test-helper's single-input lifetime elision; preserve the
+returned SAME borrowed permit/body, all original clocks/owners/positive PID/privacy and
+parent-exit controls. Complete owning whole-plan POST/GET and Root actual final reread
+precede Source; two full-file inverses and314 protected modes/blobs of316 precede fresh
+lint/native/downstream qualification. No allowances/new tests/skips/old PASS transfer or
+issue closure is implied. Other Source, including fixed worker/crash host, stays d89cd3e1.
+Root's later metadata-only snapshot3 ARM cancellation step failure is cause UNKNOWN;
+completed raw native counts/Cancel outcomes remain unqualified. This syntax selection
+makes no runtime repair or all-gates-PASS claim.
+
+### Joined native SID/Group D Verify order (2026-10-06)
+
+Existing privacy#27, CI#31 and integration#163 own the complete latest
+WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md ordering amendment. Exact whole-plan POST/GET ALL
+and Root actual whole committed-plan/new-Docs reread precede the normal exact reviewed
+D17133 merge into the common line. No new issue, public API, diagnostic seam, test or
+clock/security/oracle change is selected; other guard groups remain later.
+
+Preserve actual d89 Core137/new six/stock-parent proofs and23PASS/1FAIL original CLI
+matrix: ARM ChildExited/Run then cleanup application5 has no captured daemon cause;
+its16/4/3/11/4/21 downstreams are skipped. Original first work/private owners and the
+already reviewed D bounded closed capture remain exact. d89 package168 each/provenance/
+Guardian cannot transfer. Root qualifies one genuinely joined changed head with full
+required actual native/lint/downstream/package evidence and source/ordered-tree binding.
+Keep166/167 open until required Verify plus actual main contribution prove verified
+subsumption; no ancestry-only closure. Broader privacy/CI/integration/release/account/
+logon/reboot/signing criteria remain at their actual state. Five concrete Verify steps
+in the complete plan govern this integration and publication handoff.
+
+
+## Group D representative166 integration and private observation (2026-10-05)
+
+Group D continues existing35/31/coordination163 with five explicit Verify steps in planning/GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md. Integration, private observation and hosted acceptance are separate phases. Preserve broader release/WinGet/Windows requirements and actual unknown causes; no premature issue/member closure.
+
+
+### PR166 current-main output-recovery continuation (2026-10-05)
+
+Issue35 owns the exact b5f/f90 Git-only integration and current-head Verify in planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md. Preserve old Source and actual evidence separately, record exact plan GET and final reread before the separate developer, and keep native/public-release/installed-channel acceptance open. Signing37 remains deferred; Project-only historical instructions stay superseded.
+
+
+## Issue31 producer/attempt observation continuation, 2026-10-05
+
+Issue31 remains active/open after e9d MSRV Wake and1f5 ARM Cancel failures. Actual HTTP235 PASS belongs to Issue143/1f5, not native completion. Follow the four concrete Verify in planning/WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md; Root committed plan/exact Issue31 GET/final reread must precede separate five-path Source. Record actual changed-head controls/records and unknowns in Issue31. Signing37 and broad public release/catalog/installation/account/task/logon/reboot remain separately open.
+
+
+## Windows producer Run stderr boundary (2026-10-05)
+
+Issue31 / draftPR167 owns the before-Source narrow initial Run stderr refinement. Preserve the four incomplete Source drafts during this Docs-only amendment. Record the complete amended plan and its Verify, exact Issue GET/body/state readback, then Root whole final committed-plan reread before the separate developer resumes. Native delivery/types/control fit and first work/cleanup acceptance remain pending.
+
+
+## Issue31 hosted producer lint continuation, 2026-10-05
+
+Issue31 and draftPR167 remain open. Record the complete four-step Verify from planning/WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md with exact comment GET and unchanged original Issue state/body; parent whole final committed-plan reread then separate development. Only two Source paths/four literal syntax sites are selected. Current71a10 actual queued/cancellation controls PASSall3, old x64/ARM Wake and Windows lint FAIL; changed-head acceptance is pending. Preserve signing37 deferred and separate release/account/task/logon/reboot/WinGet work.
+
+
+## Before-Source producer lint formatter reconciliation, 2026-10-05
+
+Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
+
+
+## Group D strict helper lint Verify continuation — 2026-10-05
+
+Owning35/31 and coordination163 retain native/publication acceptance, including unresolved actual22 ARM Wake. planning/GROUP_D_WINDOWS_HELPER_STRICT_LINT_2026-10-05.md selects only the closed21 private lint repairs after Docs/owning readback. Verify unchanged Source/old plans/full inverses and all owning exact GETs before Root entire final reread; then separate helper-only clean development, full Root review and genuine changed-head required lint/native/package/paired evidence. Positive producer scalars or static proofs do not qualify failed native selectors or unknown allocation/fault classes.
+
+## Group D cancellation initialization Verify continuation — 2026-10-05
+
+Continue owning35/31 and coordination163 with the four concrete Verify steps in planning/GROUP_D_CANCEL_INITIALIZATION_WITNESS_2026-10-05.md. Actual9078 lint/paired success and3 distinct native failures remain revision-bound. Verify whole-plan exact owning GET ALL and Root final complete new-plan/Docs review before one-call separate Source; then clean inverse/protected/clock/selector evidence, Root ordinary publication and all exact changed-head native/producer/paired/required gates. Both cancellation owners must obtain genuine same-daemon initialization witness before first Add and retain every original deadline and state/cleanup assertion. No issue/member closure or wider acceptance follows from static proof or this stronger private readiness gate.
+
+## Group D role-before-probe Verify continuation — 2026-10-05
+
+Owning35/31 and coordination163 continue the four concrete Verify steps in planning/GROUP_D_ROLE_BEFORE_INITIAL_PROBE_2026-10-05.md. Exact full-plan owning GET ALL and Root entire final new-plan/Docs review precede helper-only separate Source. Preserve one-call inverse, protected bytes, actual PID/Held/metadata owner, original 8s/200ms/30s and every selector/capture/cleanup assertion. All current-head ordinary/native/GitGuardian/fullpaired gates remain required; role ownership is not Store/bind readiness and unknown native/raw32/capture causes remain failed/open. Latest user direction defers141/Group A; eligible remaining groups proceed against current main with full member contribution verification.
+
+## Group D first-signal Verify continuation — 2026-10-05
+
+Owning35/31 and coordination163 continue four concrete Verify steps in planning/GROUP_D_FIRST_CANCELLATION_SIGNAL_2026-10-05.md: exact entire plan POST/GET ALL then Root final full reread; separate helper-only metadata with full inverse/protected/clock/grammar evidence; independent current-head publication/ordered synthetic tree; all17 ordinary/native/GitGuardian/complete paired gates. Daemon-local first signal is an observation, not native termination or completed acceptance. Actual MSRV Queued, separate late-positive capture refusal and all native failures remain open. #141 is deferred; other eligible groups proceed independently against fresh main.
+
 ## Early A/B diagnostic draft qualification Verify order (2026-10-06)
 
 Existing #27/#31/#162/#146/#149/#163 retain every original body/state/history/contribution.

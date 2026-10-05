@@ -1354,8 +1354,14 @@ pub(super) fn host() {
     let directory = directory();
     let fixed_directory = directory.clone();
     let fixed = std::thread::spawn(move || {
-        let sid = super::current_user_sid().unwrap();
+        let deadline = Instant::now() + ADAPTER_TIMEOUT;
+        let sid = super::current_user_sid_until(deadline).unwrap();
         assert!(sid.starts_with("S-1-"));
+        let stock = super::filesystem_worker::request("sid", None, deadline).unwrap();
+        assert!(
+            stock.as_str().is_some_and(|stock| stock == sid),
+            "native and fixed-worker SID identities differed"
+        );
         let pid = super::filesystem_worker::observed_pid();
         assert!(pid > 0);
         publish(&fixed_directory, "fixed-pid", pid.to_string().as_bytes());

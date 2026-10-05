@@ -5,6 +5,8 @@ mod maintenance;
 mod mcp;
 mod self_update;
 mod service;
+#[cfg(all(windows, debug_assertions))]
+mod windows_wake_diagnostics;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
@@ -54,6 +56,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use service::ServiceError;
 use tokio_util::sync::CancellationToken;
+#[cfg(not(all(windows, debug_assertions)))]
 use tracing_subscriber::EnvFilter;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use uuid::Uuid;
@@ -951,10 +954,45 @@ async fn main() {
             Err(_) => std::process::exit(70),
         }
     }
+    #[cfg(not(all(windows, debug_assertions)))]
     init_tracing(verbose, debug);
+    #[cfg(all(windows, debug_assertions))]
+    let diagnostic_run = {
+        let role = match &command {
+            Command::Run { dry_run: false, .. } => Some(windows_wake_diagnostics::Role::Run),
+            Command::Daemon {
+                command:
+                    DaemonCommand::Run {
+                        service_mode: false,
+                        supervisor_lifetime: None,
+                        worker_lifetime: None,
+                    },
+            } => Some(windows_wake_diagnostics::Role::Daemon),
+            _ => None,
+        };
+        windows_wake_diagnostics::init(verbose, debug, role);
+        role == Some(windows_wake_diagnostics::Role::Run)
+    };
     let command_name = command_name(&command);
     let streaming = format == Format::Json && command_uses_stream(&command);
-    if let Err(error) = execute(state_dir, command, format).await {
+    if let Err(error) = {
+        #[cfg(not(all(windows, debug_assertions)))]
+        {
+            execute(state_dir, command, format).await
+        }
+        #[cfg(all(windows, debug_assertions))]
+        {
+            let result = execute(state_dir, command, format).await;
+            if diagnostic_run {
+                windows_wake_diagnostics::emit(
+                    "run_return",
+                    if result.is_ok() { "ok" } else { "err" },
+                    None,
+                );
+            }
+            result
+        }
+    } {
         if streaming {
             render_stream_error(command_name, &error);
         } else {
@@ -1984,7 +2022,15 @@ async fn run_job(
         return Ok(());
     }
     let run_id = Uuid::now_v7().to_string();
+    #[cfg(not(all(windows, debug_assertions)))]
     let run = store.enqueue_manual(name, &run_id, now_us())?;
+    #[cfg(all(windows, debug_assertions))]
+    let run = {
+        windows_wake_diagnostics::emit("enqueue", "enter", None);
+        let result = store.enqueue_manual(name, &run_id, now_us());
+        windows_wake_diagnostics::emit("enqueue", if result.is_ok() { "ok" } else { "err" }, None);
+        result?
+    };
     send_wake(paths);
     let warnings = if daemon_lock_free(paths) {
         vec!["daemon is not running; run remains durably queued"]
@@ -3697,8 +3743,19 @@ async fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {
         activation.close().await;
         return result;
     }
-    #[cfg(windows)]
+    #[cfg(all(windows, not(debug_assertions)))]
     let lock = Some(acquire_daemon_role_lock(&paths, &lifetime, false)?);
+    #[cfg(all(windows, debug_assertions))]
+    let lock = {
+        windows_wake_diagnostics::emit("role_lock", "enter", None);
+        let result = acquire_daemon_role_lock(&paths, &lifetime, false);
+        windows_wake_diagnostics::emit(
+            "role_lock",
+            if result.is_ok() { "ok" } else { "err" },
+            None,
+        );
+        Some(result?)
+    };
     #[cfg(not(windows))]
     let lock = None;
     daemon_with_lock(paths, service_mode, lifetime, cancellation, lock).await
@@ -3749,12 +3806,32 @@ async fn daemon_with_lock(
     if cancellation.is_cancelled() {
         return Ok(());
     }
+    #[cfg(not(all(windows, debug_assertions)))]
     let store = Arc::new(Store::open(
         paths.clone(),
         env!("CARGO_PKG_VERSION"),
         now_us(),
     )?);
+    #[cfg(all(windows, debug_assertions))]
+    let store = {
+        windows_wake_diagnostics::emit("store_open", "enter", None);
+        let result = Store::open(paths.clone(), env!("CARGO_PKG_VERSION"), now_us());
+        windows_wake_diagnostics::emit(
+            "store_open",
+            if result.is_ok() { "ok" } else { "err" },
+            None,
+        );
+        Arc::new(result?)
+    };
+    #[cfg(not(all(windows, debug_assertions)))]
     let global_concurrency = usize::try_from(store.settings()?.global_concurrency)?;
+    #[cfg(all(windows, debug_assertions))]
+    let global_concurrency = {
+        windows_wake_diagnostics::emit("settings", "enter", None);
+        let result = store.settings();
+        windows_wake_diagnostics::emit("settings", if result.is_ok() { "ok" } else { "err" }, None);
+        usize::try_from(result?.global_concurrency)?
+    };
     let adapter = Arc::new(StoreAdapter {
         store,
         lifetime,
@@ -3971,8 +4048,18 @@ fn bind_wake_socket(
 }
 
 pub(crate) fn send_wake(paths: &StatePaths) {
+    #[cfg(not(all(windows, debug_assertions)))]
     if let Err(error) = locron_core::notification::send_wake(&paths.root) {
         tracing::debug!(%error, "wake notification unavailable; command is already durable");
+    }
+    #[cfg(all(windows, debug_assertions))]
+    {
+        windows_wake_diagnostics::emit("hint", "enter", None);
+        let result = locron_core::notification::send_wake(&paths.root);
+        windows_wake_diagnostics::hint(result.as_ref().err());
+        if let Err(error) = result {
+            tracing::debug!(%error, "wake notification unavailable; command is already durable");
+        }
     }
 }
 
@@ -4824,6 +4911,7 @@ impl TimeZoneResolver for SystemTimeZoneResolver {
 pub(crate) fn daemon_lock_free(paths: &StatePaths) -> bool {
     locron_store::DaemonLock::try_prove_free(&paths.daemon_lock).is_ok()
 }
+#[cfg(not(all(windows, debug_assertions)))]
 fn init_tracing(verbose: u8, debug: bool) {
     let level = if debug {
         "trace"
