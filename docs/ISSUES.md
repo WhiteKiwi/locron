@@ -234,3 +234,50 @@ Keep166/167 open until required Verify plus actual main contribution prove verif
 subsumption; no ancestry-only closure. Broader privacy/CI/integration/release/account/
 logon/reboot/signing criteria remain at their actual state. Five concrete Verify steps
 in the complete plan govern this integration and publication handoff.
+
+
+## Group D representative166 integration and private observation (2026-10-05)
+
+Group D continues existing35/31/coordination163 with five explicit Verify steps in planning/GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md. Integration, private observation and hosted acceptance are separate phases. Preserve broader release/WinGet/Windows requirements and actual unknown causes; no premature issue/member closure.
+
+
+### PR166 current-main output-recovery continuation (2026-10-05)
+
+Issue35 owns the exact b5f/f90 Git-only integration and current-head Verify in planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md. Preserve old Source and actual evidence separately, record exact plan GET and final reread before the separate developer, and keep native/public-release/installed-channel acceptance open. Signing37 remains deferred; Project-only historical instructions stay superseded.
+
+
+## Issue31 producer/attempt observation continuation, 2026-10-05
+
+Issue31 remains active/open after e9d MSRV Wake and1f5 ARM Cancel failures. Actual HTTP235 PASS belongs to Issue143/1f5, not native completion. Follow the four concrete Verify in planning/WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md; Root committed plan/exact Issue31 GET/final reread must precede separate five-path Source. Record actual changed-head controls/records and unknowns in Issue31. Signing37 and broad public release/catalog/installation/account/task/logon/reboot remain separately open.
+
+
+## Windows producer Run stderr boundary (2026-10-05)
+
+Issue31 / draftPR167 owns the before-Source narrow initial Run stderr refinement. Preserve the four incomplete Source drafts during this Docs-only amendment. Record the complete amended plan and its Verify, exact Issue GET/body/state readback, then Root whole final committed-plan reread before the separate developer resumes. Native delivery/types/control fit and first work/cleanup acceptance remain pending.
+
+
+## Issue31 hosted producer lint continuation, 2026-10-05
+
+Issue31 and draftPR167 remain open. Record the complete four-step Verify from planning/WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md with exact comment GET and unchanged original Issue state/body; parent whole final committed-plan reread then separate development. Only two Source paths/four literal syntax sites are selected. Current71a10 actual queued/cancellation controls PASSall3, old x64/ARM Wake and Windows lint FAIL; changed-head acceptance is pending. Preserve signing37 deferred and separate release/account/task/logon/reboot/WinGet work.
+
+
+## Before-Source producer lint formatter reconciliation, 2026-10-05
+
+Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
+
+
+## Group D strict helper lint Verify continuation — 2026-10-05
+
+Owning35/31 and coordination163 retain native/publication acceptance, including unresolved actual22 ARM Wake. planning/GROUP_D_WINDOWS_HELPER_STRICT_LINT_2026-10-05.md selects only the closed21 private lint repairs after Docs/owning readback. Verify unchanged Source/old plans/full inverses and all owning exact GETs before Root entire final reread; then separate helper-only clean development, full Root review and genuine changed-head required lint/native/package/paired evidence. Positive producer scalars or static proofs do not qualify failed native selectors or unknown allocation/fault classes.
+
+## Group D cancellation initialization Verify continuation — 2026-10-05
+
+Continue owning35/31 and coordination163 with the four concrete Verify steps in planning/GROUP_D_CANCEL_INITIALIZATION_WITNESS_2026-10-05.md. Actual9078 lint/paired success and3 distinct native failures remain revision-bound. Verify whole-plan exact owning GET ALL and Root final complete new-plan/Docs review before one-call separate Source; then clean inverse/protected/clock/selector evidence, Root ordinary publication and all exact changed-head native/producer/paired/required gates. Both cancellation owners must obtain genuine same-daemon initialization witness before first Add and retain every original deadline and state/cleanup assertion. No issue/member closure or wider acceptance follows from static proof or this stronger private readiness gate.
+
+## Group D role-before-probe Verify continuation — 2026-10-05
+
+Owning35/31 and coordination163 continue the four concrete Verify steps in planning/GROUP_D_ROLE_BEFORE_INITIAL_PROBE_2026-10-05.md. Exact full-plan owning GET ALL and Root entire final new-plan/Docs review precede helper-only separate Source. Preserve one-call inverse, protected bytes, actual PID/Held/metadata owner, original 8s/200ms/30s and every selector/capture/cleanup assertion. All current-head ordinary/native/GitGuardian/fullpaired gates remain required; role ownership is not Store/bind readiness and unknown native/raw32/capture causes remain failed/open. Latest user direction defers141/Group A; eligible remaining groups proceed against current main with full member contribution verification.
+
+## Group D first-signal Verify continuation — 2026-10-05
+
+Owning35/31 and coordination163 continue four concrete Verify steps in planning/GROUP_D_FIRST_CANCELLATION_SIGNAL_2026-10-05.md: exact entire plan POST/GET ALL then Root final full reread; separate helper-only metadata with full inverse/protected/clock/grammar evidence; independent current-head publication/ordered synthetic tree; all17 ordinary/native/GitGuardian/complete paired gates. Daemon-local first signal is an observation, not native termination or completed acceptance. Actual MSRV Queued, separate late-positive capture refusal and all native failures remain open. #141 is deferred; other eligible groups proceed independently against fresh main.
