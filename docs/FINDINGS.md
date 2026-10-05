@@ -5671,3 +5671,42 @@ The separate Group D next-diagnostic research binds current167 actual15P/2native
 ## PR166 exact mainf90 composition before Source (2026-10-05)
 
 Separate frozen130-artifact research and Root proof f82efca7788bd061732259e0c513986626776a8095cde5e12d1914f3ec01a21a independently check all919 original canonical blobs and three trees. Whole b5f renderer/test/paired-workflow have no bilateral incoming Source edit; only FINDINGS/IMPLEMENTATION require full canonical f90 plus complete own b5f-beyond-c4 suffix. Root selects Git-only normal integration and new actual current-base qualification in planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md. Old-base b5f raw logs and actual a840b2e tree are separate historical evidence, never mainf90 acceptance. No new writer/test/behavior or owner-PC execution is selected.
+
+
+## PR136 actual cancellation-daemon capture research before further Source (2026-10-04)
+
+Actual6e98 CI37205423514 executed24 original parent selectors with23 pass/one x64 cancellation failure: first ChildExited/Run, later daemon application5, ControlCLI0/192 stdout bytes, but no daemon output or typed Store error. Cause/instruction/holder/native errno remain unknown. Root actual246/causal66 proofb0f506e8 and grammar50 proof23dcba54 pin18 stages,44 Rust1.94/actual1.99 I/O labels,24 SQLite labels and the complete ordered configuration/fallback grammar. Select only owned optional post-reap dual-file observation and genuine Human/JSON/stderr/collision controls in planning/WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md. Preserve all original clocks/first-work/cancel assertions and historical failures; typed diagnostics are reports, not cause/permission evidence.
+
+
+## Native stderr companion libtest stdout before dependent Source (2026-10-04)
+
+The genuine existing target runs under libtest --exact/--nocapture, whose own stdout prevents the planned stderr-only oversized case from having an empty actual counterpart. The selected plan now captures both real streams: stderr must reach the sentinel cap, stdout must be genuine complete bounded harness output; live streams are never read before exact root exit. No null/synthetic empty-file substitution is selected. Human/JSON retain exact empty opposite streams. Follow the complete amended WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md before dependent Source.
+
+
+## Actual merged PR136 main and paired diagnostic compatibility (2026-10-05)
+
+Actual mainf90 failed its native matrix22PASS2FAIL: x64 early cancellation daemon application5 remains unknown; ARM Wake eighth History expired and remains separate. The complete f90 observer is the only Source delta from6e98; 31 whole helper hunks invert exactly,309 common mode/blob entries and original clocks/owners/producer grammar remain exact. Root actual proof f5bca22d and76-artifact research proof f79d7a0f select entire incoming f90 Source/Docs plus retained own literal append components. Follow WINDOWS_DAEMON_MAIN_F90_2026-10-05.md for the paired cancellation-only diagnostic, actual harness streams and CLEANED-only/no-child collision exception. PR136 is merged; Issue31 remains open.
+
+
+## Separate Windows producer/attempt research before Source, 2026-10-05
+
+Root read the complete separate frozen50 startup/capture proposal, frozen25 cancellation applicability and frozen31 concrete attempt contract, all canonical Source/primary callback anchors and full actual e9d/1f5 reports. Root proofs f90b4843,bcad69cf,f0b4f8ac establish all50/25/31 artifacts and their separate actual bindings. Library Visit defaults route primitives to Debug, so explicit primitive overrides and permanently excluded fmt are required; pinned Layer facilities support a proposed per-layer facility but real type compatibility is unqualified. CLI sha2 is already locked; no new dependency or Engine API is needed for the private digest.
+
+Actual e9d MSRV Wake and1f5 ARM cancellation fail their original History oracle; status codes1 and later cleanup snapshot do not identify cause or complete cleanup. Actual1f5 stage4 follows successful Cancel CLI, while Engine's existing200ms durable poll is independent of wake; a missing hint alone is insufficient. Tick-only logging cannot bind interleaved attempt callbacks. The selected private borrowed UUID+ordinal visitor emits only domain-separated digest/nonreused epoch and original mark/poll/runner/completion Result facts. Original UUID never reaches persisted/public diagnostics. First result remains immutable; post-reap reads use only original outer30s and cannot promote late normal work.
+
+Root selects the complete [WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md](planning/WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md): exact e9d base, five Source paths, two carriers,21ops/256records including binding+terminal,241LF phase/203LF binding and61696LF conservative ceiling under65536. New positive Run and actual Cancel/attempt controls share the existing selector30s with explicit control normal admission; ordinary successes get no added read/wait. Native/type/delivery/fit/cause and original regression remain unqualified, all prior failure evidence preserved. No owner-PC native/compiler/parser/fixture/policy effect is authorized by this research.
+
+
+## Windows initial Run stderr seam research (2026-10-05)
+
+Separate read-only research establishes that original capture-body stderr(null) discards the selected prepared initial Run carrier at its sole spawn. The incomplete four-path draft is frozen. Root reviewed all37 artifacts and complete194739-byte three-replacement inverse at proof3decb1c4c66cc72119eb559e718462a4249cbbbe1540ae7f3cafc9d1b27ed794. Typed fixed Owner slot/private entry is selected in the complete producer-attempt plan; NORMAL collector, stdout/JSON, observer, first work and clocks remain exact. This is a static incompatibility, not a native cause or a compiled implementation.
+
+
+## Windows producer hosted lint research, 2026-10-05
+
+The completed Windows1.98 workspace Clippy job on71a10 prints two errors (constant width2 chunks and Fields passed by value); later test Clippy is skipped. Separate frozen55 research establishes safe as_chunks sinceRust1.88 under pinned1.94, equal-length/empty-remainder semantics and the private synchronous resource-free Fields borrow. Both whole-file inverses and317 mode/blob protections are exact; analogous support iterator is not a printed third diagnostic. Root selected all four replacements after full research/API/Source review; no type/runtime/native/cause PASS is implied. Follow the complete WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md before separate Source.
+
+
+## Before-Source producer lint formatter reconciliation, 2026-10-05
+
+Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.

@@ -5447,3 +5447,40 @@ Follow planning/GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md for representati
 ## PR166 exact mainf90 integration before separate development (2026-10-05)
 
 Follow planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md under Issue35. Preserve complete b5f three Source blobs; normal-merge only exact f90 with original histories, whole incoming Source and literal selected Docs components. Commit this full four-step Verify plan, get exact Issue GET and Root final whole committed-plan reread before separate developer. Root reviews clean316-path handback and ordinary-publishes existing PR166; fresh actual42 portable/49 per-native key receipts, architecture facts and all required ordinary gates precede merge. Static inverses/API success/old-base CI do not qualify current-main. Broader unsigned public bytes, real schema/WinGet/catalog/clean-account lifecycle remain OPEN.
+
+
+## PR136 bounded daemon-output diagnostics before separate Source (2026-10-04)
+
+Follow planning/WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md after Issue31 exact readback and final committed Root review. Only windows_cli_control.rs and cli.rs selected test glue may adapt; attach two independently owned CreateNew guarded files to the actual cancellation daemon, read only after exact root reap under original NORMAL admission, retain partial/late resources/quarantine, and publish at most two fixed safe scalar lines after complete closed grammar. Preserve old Display/withheld notice/publication/three output controls/selectors/CI/clocks. Append genuine held-DaemonLock Human/JSON routes, real stderr oversize/live and second-leaf collision under the original30s horizon. Full inverses/static checks precede actual unchanged three-row cancellation/native matrix. Optional unobserved data does not replace acceptance; unchanged filtered standalone workflows are honestly NOT RUN with exact qualified-main dependency binding, and original24 assertions/all required gates remain mandatory before merge.
+
+
+## Native stderr harness expectation amendment before dependent Source (2026-10-04)
+
+The complete amended WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md replaces only the new stderr companion empty-stdout expectation with genuine captured bounded libtest stdout; both actual stream attachments, normal-admission-only reads and existing live refusal remain selected. All other scoped Source/ownership/grammar/clocks/Verify stay intact. Root Docs/Issue/readback/final reread precede this dependent Source choice.
+
+
+## Current f90 daemon diagnostic selection before separate Source (2026-10-05)
+
+The complete WINDOWS_DAEMON_MAIN_F90_2026-10-05.md supersedes the older baseline/formatter/PR136-open and all-controls reap assumptions. Ordinary exactmainf90 integration must preserve its entire observer/formatter and incoming Docs before a separate two-file additive paired cancellation collector. Four genuine children require actual status and REAPED|CLEANED; second-leaf collision requires no child and CLEANED only. Same actual command/owner/clocks/normal-only post-reap reads, two bounded safe lines, complete closed grammar and all original/current controls remain required. Root full committed plan review and Issue31 exact Verify readback precede development; fresh hosted failures cannot be carried forward as success.
+
+
+## Windows private producer/attempt observation before separate Source, 2026-10-05
+
+Frozen SPEC remains unchanged. The complete current plan is [WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md](planning/WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md), selected on e9d only. It replaces the unapplied frozen50 Wake-only/version1/14phase/128record proposal with Windows-debug command-local version2, separate fmt/private layer, two guarded stderr carriers and exact21phase opaque attempt binding/256record grammar. Borrow original futures without changing construction/evaluation/select/Result/drop; preserve old production/capture/observer/clocks/formatter/control regions through full inverses.
+
+The failure-only wrapper freezes original CaseResult and waits solely for a separate typed diagnostic slot within original outer30s; it never reopens normal work, accepts queued late results, reads live roots or broadens cleanup_gate. Two NEW genuine positive controls have explicit post-reap normal-read admission within the same existing selector30s; ordinary successes remain unchanged. Parent committed Docs/Issue exact GET/final whole-plan reread precede separate development. Four ordered concrete Verify cover producing Source/privacy, actual carrier/control/correlation/cleanup, Root full review/recoverable FF publication and exact changed-head hosted original+new actual gates. Type/native/fit/delivery/cause remain pending; no Source-first reconciliation or timeout/retry waiver.
+
+
+## Windows prepared initial Run stderr refinement (2026-10-05)
+
+The complete WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md now explicitly selects the private typed PreparedInitialRunCommand/fixed-owner entry and sole internal spawn-stdio exception. Generic/default capture signatures keep null stderr; original stdout duplicate/one spawn/immediate Child anchor/JSON and NORMAL collection remain literal. Missing/partial/used preparation returns original Code::Native before native work, without fallback or take/reinsert loans. The original four ordered steps retain concrete Verify for full Source inverses, actual ownership/delivery and unchanged hosted clocks. Separate Source resumes only after committed Docs, exact Issue31 GET and Root whole final-plan reread.
+
+
+## Windows private producer hosted lint continuation, 2026-10-05
+
+Frozen SPEC/prior164-line producer plan remain exact. The complete [WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md](planning/WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md) selects only two Source paths/four syntax replacements: guarded width2 fixed-array iteration in emitter/support and private borrowed Fields plus sole caller. Preserve all original producers/owners/Future/Result/drop/stdio/opaque grammar/control/clocks through whole-file inverses. Four ordered steps each have concrete Verify, including exact Issue31 GET and parent whole final committed-plan reread before separate development,318 protected Docs-baseline entries, Root full review/ordinaryFF and fresh hosted1.94/1.98/whole matrices. Prior71a10 positive controls pass but old x64/ARM Wake and Windows lint fail; no waiver, behavior repair or owner-PC native/compiler/parser/security effect is selected.
+
+
+## Before-Source producer lint formatter reconciliation, 2026-10-05
+
+Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
