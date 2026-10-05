@@ -5800,6 +5800,223 @@ Independent complete CRLF models are A214/B192/generic158 bytes within256; this 
 zero type/native/timing acceptance. The shared complete plan records scope and Verify:
 [WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
 
+## Native process-token SID research before separate Source (2026-10-05)
+
+Separate59-artifact research report SHAa413614f30336a560cf097e8da24b4a0ad4193fc495924c55f12628d31a6c2d7
+binds the complete two Core files at171==mainf90, the checksum-qualified existing
+windows-permissions0.2.4 safe process-token/fallible conversion APIs and the explicit-state
+existing History caller route. A fresh CLI's SID query is the sole fixed-worker startup
+dependency when every state/SQLite leaf already exists and passes its native guard; missing
+leaves and default KnownFolder discovery retain their distinct stock adapter costs.
+Actual MSRV leaves9.464ms for a mandatory25ms stop pause, but whole History costs do not
+isolate a native phase or prove the sole cause. Select an original-deadline native owner
+retaining the existing initializer permit through actual disposal; no late cache, extra pool,
+unsafe/dependency, guessed identity or fallback. Explicit fixed SID request preserves the
+coupled phase fixture's original cold-worker proof. Actual type/native timing and unchanged
+acceptance remain pending. Full decision and Verify are in
+[WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md](planning/WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md).
+
+### Before-Source SID cache-publication ownership refinement (2026-10-06)
+
+Separate development found a source-level duplicate window if the native thread releases
+its initializer permit after sending a String but before the caller caches it. Source
+remained unchanged. Root selects returning that SAME scalar permit with the native Result
+only after all native objects are disposed; the reply/caller retains admission through
+cache/refusal/return. Receiver-drop or nonblocking-send refusal disposes only already-clean
+scalar state. This preserves once-sharing without a new pool, atomic handshake or polling.
+The complete amended plan and exact owning readback/final reread precede development.
+
+### SID cache deadline precision before Source commit (2026-10-06)
+
+The existing bounded cache wrapper refuses an expired caller without clearing a prior
+verified entry. In the selected draft, owner/receiver/caller pre-publication gates reject
+a late native reply before it can initialize an empty cache. A pre-set deadline check
+admits publication; time may cross the deadline before set or a later post-check, leaving
+the verified entry intact while the caller is refused. There is no clock/publication
+transaction or rollback. [OnceLock](https://doc.rust-lang.org/std/sync/struct.OnceLock.html)
+documents nonblocking get and one-time publication, not atomicity with a clock. This is
+the existing semantic limit, not a native timing or Rust1.94 compilation result.
+
+### Hosted SID owned-receiver lint finding (2026-10-06)
+
+Actual PR171/b4c422 CI37340588591/1 Windows lint111866362894 fails Rust1.98
+needless_pass_by_value at windows.rs722; retained raw SHA256c59cd588606cfb64fd69926d3ce8ef46c7afeeee5addd6ed2ab058f46e36a804
+and CSI-only SHA25675de252383d17f285b078c849dbbad28d2df4def822dfbcb91b8ded7639b2d7c
+bind lines405–419 and one lib error. The method owns its receiver, borrows it for the
+existing receive and implicitly disposes it on exit. Select explicit drop(receiver)
+only after the original post-deadline gate and before final reply; early-error RAII and
+reply-held permit remain unchanged. Root read the stable Clippy manual, not the log's
+versioned1.98 page; no native-row outcome or runtime cause follows from this lint.
+Completed ARM111866362649/stable111866362684/MSRV111866362789 each report Core136P/1F
+and all six new SID selectors PASS. Existing sid-deadline's original pid>0 assertion fails
+after the native SID/grammar/elapsed checks; the native query no longer creates its implicit
+stock worker. Preserve that native API, add a zero-stock-PID Boolean plus explicit stock
+SID/Boolean identity under the SAME deadline before original elapsed/PID/marker checks.
+The cold marker/downstream CLI acceptance is unrun; Cancel is not qualified. The complete
+combined plan/owning readbacks/final reread precede the selected narrow Source corrections.
+Completed run metadata totals19 jobs:13PASS/4FAIL/2optionalSKIP; Root retains17 one-GET
+raw jobs. Package/coherence PASS is metadata only without ZIP proof; original8x3 CLI
+controls/Wake/Cancel remain unrun, so no cancellation or release repair is qualified.
+
+The same read-only audit finds loader_crash.rs host()'s fixed thread calls native SID and
+then requires observed_pid()>0/fixed-pid publication without an actual stock request.
+The parent-exit-host route therefore has the same Source-backed prospective coupling;
+its driver was skipped after b4c422's cold-gate failure, so this is not an observed second
+failure or qualified containment. Select a fixed-thread entry30s absolute deadline,
+current_user_sid_until(deadline) first, original grammar, genuine fixed request("sid", None,
+SAME deadline) and fixed Boolean identity before the unchanged positive PID/publication.
+No SID values are printed. Preserve the generic owner's separate deadline and all actual
+parent/observer Child/Job/handle/heartbeat/reader/capture/disposal/guard-release proofs,
+original45/30/3s clocks and assertions. This latest scope supersedes the earlier three-file
+boundary: cumulative four paths, follow-up three, filesystem_worker.rs literal b4c422;
+313 other modes/blobs follow from an independently verified316-entry Docs-parent tree.
+
+### Hosted SID lib-test syntax findings (2026-10-06)
+
+Actual d89cd3e1 CI37346840859/1 Windows lint111887419929 CSI-only422-459 reports ONLY
+manual_assert_eq on the new zero-PID assertion and elidable_lifetime_names on the existing
+cfg(test) immediate_sid_reply signature. Production receiver lint is not repeated in the
+checked lib stage419-421. Raw SHA256cf1660737a05e9d5fba7f4a049624eb4b6ab087ddfafc2f86f4870eb34ac416a;
+CSI-only SHA256e23573a6b5e040add78cf1aee878caf6af7d80b843fc244c6c2d6576ac55b2ec.
+Select assert_eq!(observed_pid(),0), exposing only integer PID on failure, and helper
+lifetime elision retaining the SAME single-input borrowed permit in its result. Helper
+body/callers, SID comparisons and original clocks/positive PID/containment remain literal.
+Root read stable Clippy's two manual sections and Rust Reference elision; versioned1.98
+pages/type/runtime are not qualified by those references. Snapshot2 has10 metadataPASS/
+1FAIL/2optionalSKIP/5pending, including all three native/two package jobs pending then.
+Later Root snapshot3 metadata shows all three rows advanced into service after Core/stock,
+with ARM cancellation-ownership step failure while still running; stable/MSRV have no
+failed step at that snapshot. Completed raw actual137/native-selector/Cancel facts remain
+unqualified and ARM cause UNKNOWN. Metadata advancement does not qualify runtime gates.
+No native/cancellation/package outcome follows from the measured lint. Complete amended
+owning plan readbacks and final whole reread precede the two-path syntax Source correction.
+
+### Completed d89 cancellation gap and reviewed D reuse (2026-10-06)
+
+CI37346840859/1 exact d89cd3e1 completes with15 ordinary metadataPASS/2FAIL/2 optional
+SKIP. All three native Core137/new SID six/cold/EOF/restricted/parent-exit proofs pass;
+the original8x3 CLI matrix is23PASS/1FAIL. Both x64 rows pass their full downstream
+16/4/3/11/4/21 commands; ARM skips those commands after original Cancel fails.
+ARM first work is ChildExited/Run at1,580,445us after actual Run code0, before first
+successful History or Cancel dispatch. Cleanup later observes daemon application5 and
+helper flags97, with null daemon stdout/stderr. The failing Store/native/category cause
+is UNKNOWN; application5 is not Win32 raw5 and helper cleanup is not target Job emptiness.
+The sealed read-only report SHA2561fe81c525ab53932a7c09f604ebddc5c6da94ca9cb3eef07523be8cc27335175
+binds those observations; its needless_lifetimes wording is corrected by the retained
+actual elidable_lifetime_names diagnostic, without altering historical evidence.
+
+Exact reviewed D17133aa1917fc50d2801bf58c33552e20f978d30 already retains private daemon
+stdout/stderr at the same actual spawn/original8s. Its first-work freeze precedes cleanup;
+optional original-clock64KiB+sentinel observation follows actual root reap, with full-ID/
+cursor/no-follow checks. Only closed recognized stage/category/numeric facts can leave
+that owner. No raw stderr/SID/path/PID or guaranteed classification is promised. Store
+emitter bytes are already identical in mainf90/d89/D. Root-read Microsoft exit-code and
+Rust Child/process guidance describe interpretation/ownership, not the measured cause.
+
+Root now selects normal exact D integration BEFORE the next common SID/style joined
+qualification, superseding only the former native-alone-first order for reviewed D.
+All nine D Source paths are disjoint from the four native Core paths; whole reviewed
+contributions and both Docs histories must be conserved. Other guard groups remain later.
+At d89, actual168 package PASS each/complete provenance and genuine Guardian PASS are
+separate exact-head evidence and cannot qualify the joined tree. New joined native/lint/
+package results and actual main contribution precede any verified-subsumed166/167 closure.
+
+## PR140 incomplete directory cleanup diagnosis (2026-10-04)
+
+Parent and separate reviewer fully read original renderer70c9. A renamed-away output directory can make directory lstat raise FileNotFoundError inside the leaf-absence handler and final cleanup handler, leaving moved manifests without a cleanup note. This is a source-backed missing diagnosis, not observed foreign deletion or a complete sandbox guarantee. Existing paired tests do not cover the selected fault/recovery paths. Separate research defines actual-fd portable32 and Windows6 controls with object identities/guarded readonly restoration and no fake native error values. Unavailable unpublished Docs9038 is not treated as read; the verified current Source/15-line plan/Issue35 comment5977693549 ground the selected control plan.
+
+
+Official [setup-python architecture inputs](https://github.com/actions/setup-python/blob/main/action.yml) and the [Python distribution manifest](https://github.com/actions/python-versions/blob/main/versions-manifest.json) were read before Source on2026-10-04. Stable3.14 Windows x64 and ARM64 artifacts are listed. Select setup-python@v6 with3.14 and explicit x64/arm64 inputs for the new fixture job, then require actual interpreter architecture observations; installer selection alone is not native test evidence. No freethreaded interpreter, owner-PC installation or emulation is selected.
+
+
+### PR140 concurrent existing recovery suite reconciliation
+
+Parent fully reviewed remote4a Source741/92/156 and Docs245, plus independent research4c66eb7f: renderer remains exact55f4 with missing-directory cleanup-note gap; remote tests cover32 portable/6 native but use TemporaryDirectory recursive/finalizer cleanup, restore readonly mode before root check and only print interpreter architecture. Select existing suite expansion to42/49 exact controls, an actual ID-ledger/nonrecursive/saved-mode fixture owner, checked native CPython3.14 ABI and minimal writer diagnosis. Preserve all old selectors/assertions, including actual readonly WinError5 documented by Microsoft DeleteFileW; no broader guessed error allowance. Final selection and five Verify steps are appended to WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md before new Source.
+
+## WinGet output recovery follow-up after concurrent merge (2026-10-04)
+
+PR 140 merged as c4ef8b9 with reviewed 4a tree. The separate developer's2d6a1c4d follow-up adds missing-directory cleanup diagnostics and extends the existing suite to 42 portable/49 native controls with checked identity-ledger teardown. Parent read all three Source files and independently verified299 protected paths and149 preserved assertion calls. These controls remain unexecuted; original PR 140 success is not their qualification. Follow the publication appendix under Issue 35 before normal main reconciliation and a separate follow-up Draft.
+
+### PR166 measured A03 Windows path representation (2026-10-04)
+
+Paired-writer37198110854 executes portable42/42 but both native rows48/49: A03 compares actual extended-namespace readlink text with a drive-path target. Select only that method: retain actual pre-call readlink and compare exact post-call text, plus real samefile(target) assertions before/after the writer. Preserve no-follow link ID, target bytes/tree, all zero-operation/parent/checked-cleanup assertions and fixed42/49 keys. Root Docs/Issue35 readback precede separate Source; fresh changed-head native/portable/ordinary evidence stays required. Pythonprimary readlink/samefile contracts are linked in the plan.
+
+
+## PR166 reviewed qualification and exact main138 integration
+
+The [completed integration plan](planning/WINGET_OUTPUT_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
+
+
+## PR166 exact main136 integration selection
+
+PR136 is merged as f90a9d5 with exact reviewed/tested tree and actual ordinary/native/paired acceptance. Follow [the selected integration plan](planning/WINGET_OUTPUT_MAIN136_2026-10-04.md) to preserve the reviewed own Source and complete historical document blocks before fresh combined-head qualification. Prior successes do not qualify the new tree.
+
+
+## Group D representative166 integration and private observation (2026-10-05)
+
+The separate Group D next-diagnostic research binds current167 actual15P/2nativeF and distinct166/E16P/1ARMF. Select only the primitive positive-control scalar and directly required Windows CLI-test Clippy gap in GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md. Missing first_work is an observation gap; current cause and broader native fault classes remain unknown. The19 new controls remain unselected.
+
+
+## PR166 exact mainf90 composition before Source (2026-10-05)
+
+Separate frozen130-artifact research and Root proof f82efca7788bd061732259e0c513986626776a8095cde5e12d1914f3ec01a21a independently check all919 original canonical blobs and three trees. Whole b5f renderer/test/paired-workflow have no bilateral incoming Source edit; only FINDINGS/IMPLEMENTATION require full canonical f90 plus complete own b5f-beyond-c4 suffix. Root selects Git-only normal integration and new actual current-base qualification in planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md. Old-base b5f raw logs and actual a840b2e tree are separate historical evidence, never mainf90 acceptance. No new writer/test/behavior or owner-PC execution is selected.
+
+
+## PR136 actual cancellation-daemon capture research before further Source (2026-10-04)
+
+Actual6e98 CI37205423514 executed24 original parent selectors with23 pass/one x64 cancellation failure: first ChildExited/Run, later daemon application5, ControlCLI0/192 stdout bytes, but no daemon output or typed Store error. Cause/instruction/holder/native errno remain unknown. Root actual246/causal66 proofb0f506e8 and grammar50 proof23dcba54 pin18 stages,44 Rust1.94/actual1.99 I/O labels,24 SQLite labels and the complete ordered configuration/fallback grammar. Select only owned optional post-reap dual-file observation and genuine Human/JSON/stderr/collision controls in planning/WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md. Preserve all original clocks/first-work/cancel assertions and historical failures; typed diagnostics are reports, not cause/permission evidence.
+
+
+## Native stderr companion libtest stdout before dependent Source (2026-10-04)
+
+The genuine existing target runs under libtest --exact/--nocapture, whose own stdout prevents the planned stderr-only oversized case from having an empty actual counterpart. The selected plan now captures both real streams: stderr must reach the sentinel cap, stdout must be genuine complete bounded harness output; live streams are never read before exact root exit. No null/synthetic empty-file substitution is selected. Human/JSON retain exact empty opposite streams. Follow the complete amended WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md before dependent Source.
+
+
+## Actual merged PR136 main and paired diagnostic compatibility (2026-10-05)
+
+Actual mainf90 failed its native matrix22PASS2FAIL: x64 early cancellation daemon application5 remains unknown; ARM Wake eighth History expired and remains separate. The complete f90 observer is the only Source delta from6e98; 31 whole helper hunks invert exactly,309 common mode/blob entries and original clocks/owners/producer grammar remain exact. Root actual proof f5bca22d and76-artifact research proof f79d7a0f select entire incoming f90 Source/Docs plus retained own literal append components. Follow WINDOWS_DAEMON_MAIN_F90_2026-10-05.md for the paired cancellation-only diagnostic, actual harness streams and CLEANED-only/no-child collision exception. PR136 is merged; Issue31 remains open.
+
+
+## Separate Windows producer/attempt research before Source, 2026-10-05
+
+Root read the complete separate frozen50 startup/capture proposal, frozen25 cancellation applicability and frozen31 concrete attempt contract, all canonical Source/primary callback anchors and full actual e9d/1f5 reports. Root proofs f90b4843,bcad69cf,f0b4f8ac establish all50/25/31 artifacts and their separate actual bindings. Library Visit defaults route primitives to Debug, so explicit primitive overrides and permanently excluded fmt are required; pinned Layer facilities support a proposed per-layer facility but real type compatibility is unqualified. CLI sha2 is already locked; no new dependency or Engine API is needed for the private digest.
+
+Actual e9d MSRV Wake and1f5 ARM cancellation fail their original History oracle; status codes1 and later cleanup snapshot do not identify cause or complete cleanup. Actual1f5 stage4 follows successful Cancel CLI, while Engine's existing200ms durable poll is independent of wake; a missing hint alone is insufficient. Tick-only logging cannot bind interleaved attempt callbacks. The selected private borrowed UUID+ordinal visitor emits only domain-separated digest/nonreused epoch and original mark/poll/runner/completion Result facts. Original UUID never reaches persisted/public diagnostics. First result remains immutable; post-reap reads use only original outer30s and cannot promote late normal work.
+
+Root selects the complete [WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md](planning/WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md): exact e9d base, five Source paths, two carriers,21ops/256records including binding+terminal,241LF phase/203LF binding and61696LF conservative ceiling under65536. New positive Run and actual Cancel/attempt controls share the existing selector30s with explicit control normal admission; ordinary successes get no added read/wait. Native/type/delivery/fit/cause and original regression remain unqualified, all prior failure evidence preserved. No owner-PC native/compiler/parser/fixture/policy effect is authorized by this research.
+
+
+## Windows initial Run stderr seam research (2026-10-05)
+
+Separate read-only research establishes that original capture-body stderr(null) discards the selected prepared initial Run carrier at its sole spawn. The incomplete four-path draft is frozen. Root reviewed all37 artifacts and complete194739-byte three-replacement inverse at proof3decb1c4c66cc72119eb559e718462a4249cbbbe1540ae7f3cafc9d1b27ed794. Typed fixed Owner slot/private entry is selected in the complete producer-attempt plan; NORMAL collector, stdout/JSON, observer, first work and clocks remain exact. This is a static incompatibility, not a native cause or a compiled implementation.
+
+
+## Windows producer hosted lint research, 2026-10-05
+
+The completed Windows1.98 workspace Clippy job on71a10 prints two errors (constant width2 chunks and Fields passed by value); later test Clippy is skipped. Separate frozen55 research establishes safe as_chunks sinceRust1.88 under pinned1.94, equal-length/empty-remainder semantics and the private synchronous resource-free Fields borrow. Both whole-file inverses and317 mode/blob protections are exact; analogous support iterator is not a printed third diagnostic. Root selected all four replacements after full research/API/Source review; no type/runtime/native/cause PASS is implied. Follow the complete WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md before separate Source.
+
+
+## Before-Source producer lint formatter reconciliation, 2026-10-05
+
+Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
+
+
+## Group D actual CLI helper lint21 admission — 2026-10-05
+
+The new required Windows1.98 CLI-test Clippy exposes21 private helper diagnostics at actual22; overall15PASS/2FAIL and ARM Wake cause UNKNOWN remain. Root reviewed the entire530-line candidate/closed finite proof and independently restored original whole helper/324-entry tree. Select only equivalent private syntax/domain/Copy/witness wiring plus the disclosed primitive error-only Box after actual thread-spawn refusal. Native behavior and allocation cost are unmeasured. Full exact scope and Verify are in planning/GROUP_D_WINDOWS_HELPER_STRICT_LINT_2026-10-05.md.
+
+## Group D cancellation initialization witness — 2026-10-05
+
+Actual9078 has14 ordinary PASS/3 native FAIL; strict lint and complete same-head paired evidence PASS. Cancellation begins Add after child-live without initial Store preparation evidence, while Wake already completes actual same-daemon PID/frame/ACK/receipt. Bind follows Store open/settings and precedes lifetime admission. Select that existing effectful probe once before Cancel Add, including its native reads,5ms bounded polls,Wake/Notify and200ms acceptance within unchanged8s/30s. DatabaseOpen raw32 does not locate its path/holder/inner primitive; History is writable and ARM/MSRV/capture failures remain separate. The whole467B private proposal/inverse and complete probe were reviewed without execution; concrete limits and Verify are in planning/GROUP_D_CANCEL_INITIALIZATION_WITNESS_2026-10-05.md.
+
+## Group D role before initial cancellation probe — 2026-10-05
+
+Actual a64 cancellation fails Connect before Add/Run on all three Windows rows. The selected probe starts before the same-child PID/Held/repeated metadata stage already used by Wake. Select that existing role stage first, within unchanged 8s/200ms/30s limits. Its native I/O and bounded polling remain effectful; role ownership does not establish Store/settings/bind readiness or explain unobserved native latency. ARM raw32, MSRV Wake and later capture quarantine remain separate failed acceptance. Full Root paired verification passes on a64; all original native rows remain required. The one-call whole inverse and concrete Verify are in planning/GROUP_D_ROLE_BEFORE_INITIAL_PROBE_2026-10-05.md.
+
+## Group D first accepted cancellation signal — 2026-10-05
+
+Actual81f stable/ARM cancellation reaches matched cancel_signal/ok and Running but expires in History; MSRV stays Queued with no matched attempt. Successful History costs do not locate first cancellation time. Default native grace5s plus original whole fixture8s is a source-backed relationship, not the sole cause. Select only the existing parser retaining the first accepted sequence/daemon-local t_us and bounded matched summary; native token consumption, grace start, Job-empty and completion remain unobserved. The complete sealed research, 1207B three-span whole inverse, fixed64 metadata and ≤50 ASCII-byte report addition are reviewed without Source execution. Scope and concrete Verify are in planning/GROUP_D_FIRST_CANCELLATION_SIGNAL_2026-10-05.md.
+
 ## Early A/B diagnostic integration research and selected order (2026-10-06)
 
 The sealed76-artifact manifest SHA614c7d7c194bc615866b199eb0eba8837b9967d6f404c45b88cebcda4d4623b5
