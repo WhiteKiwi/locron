@@ -6080,3 +6080,22 @@ pins current clean A88cd/B163e and the narrow step-scoped target/facts/readback
 composition; B alone adds one track_caller location hint, with cost/cause unknown.
 Every old failed result and every historical Doc byte remain preserved. Source
 waits for Root commits/all owning exact GETs/final entire reread and separate lease.
+
+
+## A matched-library creation-context experiment (2026-10-06)
+
+Actual A577 CI37378453034/1 remains14 required PASS/three Windows FAIL/two optional
+SKIP, original24 native19PASS/5FAIL; each Server library is73PASS/1 original195 FAIL.
+The fixed server_artifact owned_owner_mismatch follows successful guarded Store/
+controller binding in the immutable case; actual owner class/TokenOwner/cause is unknown.
+The sealed five-payload/13-Source/10-official-body Cargo1.94 research and Root proof4e229e96
+support controller-first then one matched Store/Engine/Server lib no-run compilation
+inside the existing Windows Python producer, with the unchanged Store selector/hash
+AFTER aggregate and later real three-package test argv literal. Matched compile intent/
+features/profile/target is Source proof, not unconditional cache reuse or owner success.
+All predicates/fullIDs/hash/private195/cleanup/clocks and Unix bytes stay exact; no token/
+ACL/owner/copy/adoption/cache/profile/feature/fixture/retry change or cause guarantee.
+The complete four-Verify plan is
+[WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md](planning/WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md).
+Root whole-plan owning POST/GET ALL then actual full committed-plan/new-tail reread
+must precede separate workflow-only Source; actual changed-head acceptance remains pending.

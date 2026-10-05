@@ -359,3 +359,18 @@ and protection, fresh three Windows foundation/full A/B real guard/row/cleanup
 outcomes plus B original Unix fence, and all required/paired/package/secret gates
 and actual member/main contribution before closure. Old failures/unobserved facts
 stay open; placement/build/static metadata or a location hint is no acceptance.
+
+
+## A matched-library four-step Verify before Source (2026-10-06)
+
+Owning #27/#31/#162/#146/#163 plus PR141 retain all original bodies/state/history and
+required acceptance. Follow the complete four concrete Verify in
+planning/WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md: Root four-Docs review/commit,
+WHOLE plan POST/exact GET ALL then actual entire committed-plan/new-tail reread AFTER
+ALL GETs; separate workflow-only full inverse/protected handback; fresh three native
+rows with aggregate compilation distinct from actual libraries/guard/private195/
+receipt/cleanup success; every original required/paired gate and member/main contribution.
+Current A14 required PASS/threeWindows FAIL/two optionalSKIP,24native19PASS/5FAIL and
+all older failures stay open. Source/cache/metadata or a creation-context hypothesis
+cannot close work or infer owner/cause/support. Root alone commits/publishes/updates
+Issues; no token/ACL/clock/oracle/fixture/Unix/security change or unchanged rerun is selected.

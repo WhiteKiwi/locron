@@ -5823,3 +5823,18 @@ Unrelated default targets/evidence and every Unix producer byte stay literal. B
 only marks CLI check, not checked; all29 calls/body/clock/oracles remain exact.
 Root entire after-GET plan review precedes separate development, full static
 inverses/protection and fresh unchanged actual required matrices; no cause repair.
+
+
+## A matched-library build handoff before separate Source (2026-10-06)
+
+Follow the entire WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md after Root Docs-only
+commit, owning #27/#31/#162/#146/#163 plus PR141 whole-plan POST/exact GET ALL and
+actual final whole committed-plan/new-Docs reread AFTER ALL GETs. Separate development
+changes only A's Windows Python producer: original controller first, then ONE matched
+Store/Engine/Server --lib --no-run --locked JSON command, unchanged Store selector and
+full hash AFTER aggregate; later original real three-package test remains literal.
+Fresh namespace/facts/metadata/guard/fullID/private195/owner/cleanup/oracle/clock/Unix
+and all other Source/Cargo/CI bytes remain exact. Full workflow inverse/protected
+handback and Root review precede fresh hosted actual rows/all original required gates.
+Cache reuse/owner success/cause is unqualified; no token mutation/repair/adoption/copy/
+profile/feature/fixture/prewarm/retry/security waiver or B/native Source import.
