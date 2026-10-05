@@ -330,12 +330,14 @@ fn signed_payload(value: Option<i32>) -> u64 {
     })
 }
 
-fn decode_signed(payload: u64) -> Option<Option<i32>> {
-    let bits = u32::try_from(payload & RAW_MASK).ok()?;
+struct InvalidScalar;
+
+fn decode_signed(payload: u64) -> Result<Option<i32>, InvalidScalar> {
+    let bits = u32::try_from(payload & RAW_MASK).map_err(|_| InvalidScalar)?;
     if payload & PRESENT == 0 {
-        return (bits == 0).then_some(None);
+        return (bits == 0).then_some(None).ok_or(InvalidScalar);
     }
-    Some(Some(i32::from_ne_bytes(bits.to_ne_bytes())))
+    Ok(Some(i32::from_ne_bytes(bits.to_ne_bytes())))
 }
 
 const KIND_NAMES: [&str; 18] = [
@@ -421,7 +423,7 @@ impl Observations {
         }
     }
 
-    fn status(&self, operation: Operation, role: ChildRole, status: &std::process::ExitStatus) {
+    fn status(&self, operation: Operation, role: ChildRole, status: std::process::ExitStatus) {
         let slot = match role {
             ChildRole::Daemon => &self.daemon_status,
             ChildRole::NegativePeer => &self.peer_status,
@@ -434,11 +436,11 @@ impl Observations {
         );
     }
 
-    fn work(&self, work: &Result<(), Code>, phase: u8) {
+    fn work(&self, work: Result<(), Code>, phase: u8) {
         self.intent(Operation::WorkOutcome);
         let code = match work {
             Ok(()) => Code::Success,
-            Err(code) => *code,
+            Err(code) => code,
         };
         let word = if phase <= 14 {
             event_word(
@@ -544,7 +546,7 @@ impl fmt::Display for EventDisplay {
                 let Some(kind) = kind.and_then(|kind| KIND_NAMES.get(kind)) else {
                     return formatter.write_str("invalid");
                 };
-                let Some(raw) = decode_signed(payload) else {
+                let Ok(raw) = decode_signed(payload) else {
                     return formatter.write_str("invalid");
                 };
                 write!(formatter, "{{op={op},role={},kind={kind},raw=", role.name())?;
@@ -561,7 +563,7 @@ impl fmt::Display for EventDisplay {
                 {
                     return formatter.write_str("invalid");
                 }
-                let Some(code) = decode_signed(payload) else {
+                let Ok(code) = decode_signed(payload) else {
                     return formatter.write_str("invalid");
                 };
                 write!(formatter, "{{op={op},role={},code=", role.name())?;
@@ -895,13 +897,13 @@ impl CallSnapshot {
         let entered = call_fields(CallWordKind::NativeEnter, self.native_enter);
         let native = call_fields(CallWordKind::NativeReturn, self.native_return);
         matches!((current, waited, returned, read, entered, native),
-            (Some(c), Some(w), Some(r), Some(b), Some(e), Some(n))
-                if c[0] == epoch && c[1] == 0 && c[2] == 14
-                    && w[2] == epoch && w[4] == 2 && w[1] == 1 && w[0] == 0
-                    && r[1] == epoch && r[2] == 0 && r[0] == u64::from(code.slot())
-                    && b[1] == epoch && b[0] == bytes
-                    && e[1] == epoch && n[1] == epoch && e[2] == n[2]
-                    && b[2] == n[2] && n[3] == 58 && n[6] == 1)
+            (Some(current), Some(waited), Some(returned), Some(read), Some(entered), Some(native))
+                if current[0] == epoch && current[1] == 0 && current[2] == 14
+                    && waited[2] == epoch && waited[4] == 2 && waited[1] == 1 && waited[0] == 0
+                    && returned[1] == epoch && returned[2] == 0 && returned[0] == u64::from(code.slot())
+                    && read[1] == epoch && read[0] == bytes
+                    && entered[1] == epoch && native[1] == epoch && entered[2] == native[2]
+                    && read[2] == native[2] && native[3] == 58 && native[6] == 1)
     }
 
     fn collision_returned(&self) -> bool {
@@ -927,12 +929,12 @@ impl CallSnapshot {
         let native = call_fields(CallWordKind::NativeReturn, self.native_return);
         self.capture_read == 0
             && matches!((current, waited, returned, entered, native),
-                (Some(c), Some(w), Some(r), Some(e), Some(n))
-                    if c[0] == 1 && c[1] == 0 && c[2] == 14
-                        && w[2] == 1 && w[4] == 1 && w[1] == 0 && w[0] == 0
-                        && r[1] == 1 && r[0] == 1 && r[2] == 0
-                        && e[1] == 1 && n[1] == 1 && e[2] == n[2] && w[3] == n[2]
-                        && n[3] == 59 && n[6] == 3)
+                (Some(current), Some(waited), Some(returned), Some(entered), Some(native))
+                    if current[0] == 1 && current[1] == 0 && current[2] == 14
+                        && waited[2] == 1 && waited[4] == 1 && waited[1] == 0 && waited[0] == 0
+                        && returned[1] == 1 && returned[0] == 1 && returned[2] == 0
+                        && entered[1] == 1 && native[1] == 1 && entered[2] == native[2] && waited[3] == native[2]
+                        && native[3] == 59 && native[6] == 3)
     }
 
     fn relation(&self, kind: CallWordKind, word: u64) -> &'static str {
@@ -1589,6 +1591,12 @@ impl PairFact {
 }
 
 #[derive(Clone, Copy, Default)]
+struct PairCollisionProof {
+    no_child: bool,
+    collision_preserved: bool,
+}
+
+#[derive(Clone, Copy, Default)]
 struct PairProof {
     // Private fixed-size scalars for the four-original-object test, never rendered.
     identities: [Option<locron_core::filesystem::FileIdentity>; 2],
@@ -1596,8 +1604,7 @@ struct PairProof {
     root_status: Option<i32>,
     duplicates_held: bool,
     live_seen: bool,
-    no_child: bool,
-    collision_preserved: bool,
+    collision: PairCollisionProof,
 }
 
 #[derive(Clone, Copy)]
@@ -2236,33 +2243,39 @@ fn wake_unsigned(text: &str, maximum: u64) -> Option<u64> {
     text.parse::<u64>().ok().filter(|value| *value <= maximum)
 }
 #[cfg(debug_assertions)]
-fn wake_value(text: &str) -> Option<Option<u64>> {
+fn wake_value(text: &str) -> Result<Option<u64>, InvalidScalar> {
     if text == "None" {
-        Some(None)
+        Ok(None)
     } else {
-        Some(Some(wake_unsigned(
-            text.strip_prefix("Some(")?.strip_suffix(')')?,
-            u64::MAX,
-        )?))
+        let number = text
+            .strip_prefix("Some(")
+            .ok_or(InvalidScalar)?
+            .strip_suffix(')')
+            .ok_or(InvalidScalar)?;
+        Ok(Some(wake_unsigned(number, u64::MAX).ok_or(InvalidScalar)?))
     }
 }
 #[cfg(debug_assertions)]
-fn wake_signed(text: &str) -> Option<Option<i32>> {
+fn wake_signed(text: &str) -> Result<Option<i32>, InvalidScalar> {
     if text == "None" {
-        return Some(None);
+        return Ok(None);
     }
-    let number = text.strip_prefix("Some(")?.strip_suffix(')')?;
+    let number = text
+        .strip_prefix("Some(")
+        .ok_or(InvalidScalar)?
+        .strip_suffix(')')
+        .ok_or(InvalidScalar)?;
     let absolute = number.strip_prefix('-').unwrap_or(number);
-    let value = wake_unsigned(absolute, 2_147_483_648)?;
+    let value = wake_unsigned(absolute, 2_147_483_648).ok_or(InvalidScalar)?;
     if number == "-0" {
-        return None;
+        return Err(InvalidScalar);
     }
     let signed = if number.starts_with('-') {
-        -i64::try_from(value).ok()?
+        -i64::try_from(value).map_err(|_| InvalidScalar)?
     } else {
-        i64::try_from(value).ok()?
+        i64::try_from(value).map_err(|_| InvalidScalar)?
     };
-    Some(Some(i32::try_from(signed).ok()?))
+    Ok(Some(i32::try_from(signed).map_err(|_| InvalidScalar)?))
 }
 #[cfg(debug_assertions)]
 fn wake_hex<const N: usize>(text: &str) -> Option<[u8; N]> {
@@ -2483,7 +2496,7 @@ fn decode_wake(bytes: &[u8], context: [u8; 16], run: bool) -> Result<WakeLedger,
                     .ok_or(ProducerCapture::Malformed)?,
             )
             .map_err(|_| ProducerCapture::Malformed)?,
-            value: wake_value(fields[7]).ok_or(ProducerCapture::Malformed)?,
+            value: wake_value(fields[7]).map_err(|_| ProducerCapture::Malformed)?,
             kind: if ["none", "unknown"].contains(&fields[8]) {
                 if fields[8] == "none" {
                     "none"
@@ -2497,7 +2510,7 @@ fn decode_wake(bytes: &[u8], context: [u8; 16], run: bool) -> Result<WakeLedger,
                     .find(|kind| *kind == fields[8])
                     .ok_or(ProducerCapture::Malformed)?
             },
-            raw: wake_signed(fields[9]).ok_or(ProducerCapture::Malformed)?,
+            raw: wake_signed(fields[9]).map_err(|_| ProducerCapture::Malformed)?,
             time: wake_unsigned(fields[10], u64::MAX).ok_or(ProducerCapture::Malformed)?,
         };
         if !wake_shape(row) || !ledger.sequence(row.sequence, row.time) {
@@ -3225,10 +3238,9 @@ impl CaseAdmission {
             .thread
             .as_ref()
             .is_some_and(thread::JoinHandle::is_finished)
+            && let Some(thread) = self.thread.take()
         {
-            if let Some(thread) = self.thread.take() {
-                let _ = thread.join();
-            }
+            let _ = thread.join();
         }
         // Otherwise detach: the same worker still owns its exact native context.
     }
@@ -3452,22 +3464,19 @@ impl Owner {
                     .as_ref()
                     .ok_or(Code::Native)?
                     .try_clone();
-                match duplicate {
-                    Ok(duplicate) => {
-                        let command = if index == 0 {
-                            self.producers.commands[0].as_mut()
-                        } else {
-                            self.initial_run
-                                .as_mut()
-                                .map(|prepared| &mut prepared.command)
-                        }
-                        .ok_or(Code::Native)?;
-                        command.stderr(Stdio::from(duplicate));
+                if let Ok(duplicate) = duplicate {
+                    let command = if index == 0 {
+                        self.producers.commands[0].as_mut()
+                    } else {
+                        self.initial_run
+                            .as_mut()
+                            .map(|prepared| &mut prepared.command)
                     }
-                    Err(_) => {
-                        self.control.check(self.control.deadline)?;
-                        return Err(Code::Cli);
-                    }
+                    .ok_or(Code::Native)?;
+                    command.stderr(Stdio::from(duplicate));
+                } else {
+                    self.control.check(self.control.deadline)?;
+                    return Err(Code::Cli);
                 }
                 self.control.check(self.control.deadline)?;
             }
@@ -3476,12 +3485,11 @@ impl Owner {
                 &path,
                 std::fs::OpenOptions::new().read(true),
             );
-            match opened {
-                Ok(reader) => self.producers.readers[index] = Some(reader),
-                Err(_) => {
-                    self.control.check(self.control.deadline)?;
-                    return Err(Code::Cli);
-                }
+            if let Ok(reader) = opened {
+                self.producers.readers[index] = Some(reader);
+            } else {
+                self.control.check(self.control.deadline)?;
+                return Err(Code::Cli);
             }
             self.control.check(self.control.deadline)?;
             let reader_id =
@@ -3723,20 +3731,17 @@ impl Owner {
                 .as_ref()
                 .ok_or(Code::Cli)?
                 .try_clone();
-            match cloned {
-                Ok(duplicate) => {
-                    let command = self.paired.command.as_mut().ok_or(Code::Cli)?;
-                    if index == 0 {
-                        command.stdout(Stdio::from(duplicate));
-                    } else {
-                        command.stderr(Stdio::from(duplicate));
-                    }
-                    self.paired.attached |= 1 << index;
+            if let Ok(duplicate) = cloned {
+                let command = self.paired.command.as_mut().ok_or(Code::Cli)?;
+                if index == 0 {
+                    command.stdout(Stdio::from(duplicate));
+                } else {
+                    command.stderr(Stdio::from(duplicate));
                 }
-                Err(_) => {
-                    self.control.check(self.control.deadline)?;
-                    return Err(Code::Cli);
-                }
+                self.paired.attached |= 1 << index;
+            } else {
+                self.control.check(self.control.deadline)?;
+                return Err(Code::Cli);
             }
             self.control.check(self.control.deadline)?;
         }
@@ -3780,7 +3785,7 @@ impl Owner {
 
     fn pair_read(&mut self, index: usize, sentinel: bool) -> Result<(PairFact, Vec<u8>), Code> {
         self.control.check(self.control.deadline)?;
-        if (!self.paired.root_exited && !(sentinel && self.paired.proof.no_child))
+        if !(self.paired.root_exited || sentinel && self.paired.proof.collision.no_child)
             || self.paired.reader.is_some()
         {
             return Err(Code::Cli);
@@ -3918,7 +3923,7 @@ impl Owner {
             if let Some((_, ChildRole::Daemon, payload)) =
                 event_header(self.control.observations.snapshot().statuses[0], 2)
             {
-                self.paired.proof.root_status = decode_signed(payload).flatten();
+                self.paired.proof.root_status = decode_signed(payload).ok().flatten();
             }
         }
         if self.paired.root_exited
@@ -4381,7 +4386,7 @@ impl Owner {
                 Ok(Some(status)) => {
                     self.control
                         .observations
-                        .status(wait, ChildRole::ControlCli, status)
+                        .status(wait, ChildRole::ControlCli, *status)
                 }
                 Ok(None) => self.control.cli_live_seen.store(true, Ordering::Release),
                 Err(_) => {}
@@ -4669,7 +4674,7 @@ impl Owner {
             if let Ok(Some(status)) = &exited {
                 self.control
                     .observations
-                    .status(Operation::CleanupTryWait, role, status);
+                    .status(Operation::CleanupTryWait, role, *status);
             }
             cleanup_gate(&self.control)?;
             let exited = exited.map_err(|_| Code::Cleanup)?.is_some();
@@ -4690,7 +4695,7 @@ impl Owner {
                 if let Ok(status) = &waited {
                     self.control
                         .observations
-                        .status(Operation::CleanupWait, role, status);
+                        .status(Operation::CleanupWait, role, *status);
                 }
                 cleanup_gate(&self.control)?;
                 waited.map_err(|_| Code::Cleanup)?;
@@ -4779,7 +4784,7 @@ impl Owner {
             .get()
             .then(|| self.control.calls.snapshot());
         let previous_phase = self.control.phase.load(Ordering::Acquire);
-        self.control.observations.work(&work, previous_phase);
+        self.control.observations.work(work, previous_phase);
         self.control
             .phase
             .store(Phase::Cleanup as u8, Ordering::Release);
@@ -4866,7 +4871,7 @@ impl Drop for Owner {
         }
         // Includes empty/partial setup. An unfinished native context stays here,
         // never on an admission/error/channel/driver path.
-        if self.state.is_some()
+        if (self.state.is_some()
             || self.guard.is_some()
             || self.runtime.is_some()
             || self.client.is_some()
@@ -4885,11 +4890,10 @@ impl Drop for Owner {
                 {
                     false
                 }
-            }
+            })
+            && self.release().is_err()
         {
-            if self.release().is_err() {
-                self.quarantine();
-            }
+            self.quarantine();
         }
     }
 }
@@ -4974,7 +4978,7 @@ fn child_live(
         if let Ok(Some(status)) = &result {
             control
                 .observations
-                .status(Operation::ChildLiveness, role, status);
+                .status(Operation::ChildLiveness, role, *status);
         }
         result
     })?
@@ -5056,7 +5060,7 @@ enum ProducerControl {
     Cancellation,
 }
 
-fn admit(hook: Option<ReturnGate>) -> Result<CaseAdmission, CaseResult> {
+fn admit(hook: Option<ReturnGate>) -> Result<CaseAdmission, Box<CaseResult>> {
     // The only origin/outer horizon is born before even empty OS admission.
     let entered = Instant::now();
     let control = Control::new(entered, entered + Duration::from_secs(30));
@@ -5066,7 +5070,7 @@ fn admit(hook: Option<ReturnGate>) -> Result<CaseAdmission, CaseResult> {
 fn admit_control(
     control: Arc<Control>,
     hook: Option<ReturnGate>,
-) -> Result<CaseAdmission, CaseResult> {
+) -> Result<CaseAdmission, Box<CaseResult>> {
     let (command, commands) = mpsc::sync_channel(1);
     let (sender, result) = mpsc::sync_channel(1);
     let worker_control = Arc::clone(&control);
@@ -5133,9 +5137,8 @@ fn admit_control(
             let completed = owner.complete(work);
             let _ = sender.try_send(completed);
         });
-    let thread = match admitted {
-        Ok(thread) => thread,
-        Err(_) => return Err(control.snapshot(control.refuse(Code::Native))),
+    let Ok(thread) = admitted else {
+        return Err(Box::new(control.snapshot(control.refuse(Code::Native))));
     };
     Ok(CaseAdmission {
         control,
@@ -5149,7 +5152,7 @@ fn admit_control(
 fn drive(kind: CaseKind) -> CaseResult {
     let mut driver = match admit(None) {
         Ok(driver) => driver,
-        Err(result) => return result,
+        Err(result) => return *result,
     };
     if let Err(code) = driver.dispatch(kind) {
         let result = driver.control.snapshot(code);
@@ -5228,7 +5231,7 @@ fn drive_producer(kind: CaseKind, cancel: bool) -> ProducerCaseResult {
         Ok(driver) => driver,
         Err(result) => {
             return ProducerCaseResult {
-                first: result,
+                first: *result,
                 diagnostic: ProducerSnapshot::UNOBSERVED,
                 cancel,
             };
@@ -5471,7 +5474,7 @@ fn read_progress_body(
         return Err(Code::Progress);
     }
     let mut counters = Vec::new();
-    for record in bytes.chunks_exact(17) {
+    for record in bytes.as_chunks::<17>().0 {
         if record[16] != b'\n' || !record[..16].iter().all(u8::is_ascii_hexdigit) {
             return Err(Code::Progress);
         }
@@ -5721,12 +5724,11 @@ fn held_lock_pair_work(owner: &mut Owner, json: bool) -> Result<(), Code> {
     let path = owner.root()?.join("daemon.lock");
     owner.control.check(owner.control.deadline)?;
     let held = DaemonLock::acquire_role(&path, &metadata, false);
-    match held {
-        Ok(lock) => owner.paired.lock = Some(lock),
-        Err(_) => {
-            owner.control.check(owner.control.deadline)?;
-            return Err(Code::Role);
-        }
+    if let Ok(lock) = held {
+        owner.paired.lock = Some(lock);
+    } else {
+        owner.control.check(owner.control.deadline)?;
+        return Err(Code::Role);
     }
     owner.control.check(owner.control.deadline)?;
     let mut command = owner.command()?;
@@ -5750,7 +5752,7 @@ fn held_lock_pair_work(owner: &mut Owner, json: bool) -> Result<(), Code> {
         return Err(Code::Cli);
     }
     if json {
-        if !stderr.is_empty() || stdout.iter().filter(|byte| **byte == b'\n').count() != 1 {
+        if !stderr.is_empty() || stdout.split(|byte| *byte == b'\n').count() != 2 {
             return Err(Code::Cli);
         }
         let body = stdout.strip_suffix(b"\n").ok_or(Code::Cli)?;
@@ -5819,12 +5821,11 @@ fn pair_collision_work(owner: &mut Owner) -> Result<(), Code> {
     owner.control.check(owner.control.deadline)?;
     let path = owner.pair_path(1)?;
     let sentinel = create_private_new(&path);
-    match sentinel {
-        Ok(sentinel) => owner.paired.sentinel = Some(sentinel),
-        Err(_) => {
-            owner.control.check(owner.control.deadline)?;
-            return Err(Code::Cli);
-        }
+    if let Ok(sentinel) = sentinel {
+        owner.paired.sentinel = Some(sentinel);
+    } else {
+        owner.control.check(owner.control.deadline)?;
+        return Err(Code::Cli);
     }
     owner.control.check(owner.control.deadline)?;
     let before = file_identity(owner.paired.sentinel.as_ref().ok_or(Code::Cli)?);
@@ -5854,7 +5855,7 @@ fn pair_collision_work(owner: &mut Owner) -> Result<(), Code> {
         return Err(Code::Cli);
     }
     // This is no-child proof, not a fabricated root-exit/reap fact.
-    owner.paired.proof.no_child = true;
+    owner.paired.proof.collision.no_child = true;
     let (fact, bytes) = owner.pair_read(1, true)?;
     if fact.state != PairReadState::Complete || bytes != b"0" {
         return Err(Code::Cli);
@@ -5865,7 +5866,7 @@ fn pair_collision_work(owner: &mut Owner) -> Result<(), Code> {
     if after.map_err(|_| Code::Cli)? != before {
         return Err(Code::Cli);
     }
-    owner.paired.proof.collision_preserved = true;
+    owner.paired.proof.collision.collision_preserved = true;
     Err(Code::CaptureCollision)
 }
 
@@ -6230,7 +6231,7 @@ fn native_cli_output_capture_contract() {
             matches!(role, ChildRole::ControlCli),
             "wrong capture producer role"
         );
-        let actual_code = decode_signed(payload).flatten();
+        let actual_code = decode_signed(payload).ok().flatten();
         match case {
             CaptureCase::Version => {
                 assert!(
@@ -6358,7 +6359,8 @@ fn native_cli_output_capture_contract() {
                 "second-leaf collision refused incorrectly: {completed}"
             );
             assert!(
-                completed.paired.proof.no_child && completed.paired.proof.collision_preserved,
+                completed.paired.proof.collision.no_child
+                    && completed.paired.proof.collision.collision_preserved,
                 "actual no-child/sentinel proof missing: {completed}"
             );
             assert_eq!(
@@ -6666,7 +6668,7 @@ fn producer_controls(entered: Instant, deadline: Instant) {
                 let (_, role, payload) = event_header(completed.observations.statuses[0], 2)
                     .expect("actual daemon returned status is unobserved");
                 assert!(
-                    role == ChildRole::Daemon && decode_signed(payload).flatten().is_some(),
+                    role == ChildRole::Daemon && decode_signed(payload).ok().flatten().is_some(),
                     "actual daemon reap/status proof missing"
                 );
                 assert!(
