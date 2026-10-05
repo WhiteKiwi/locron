@@ -38,6 +38,8 @@ pub(super) enum Operation {
     Hold,
     #[cfg(windows)]
     ConstructorFinal,
+    #[cfg(windows)]
+    Destination,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -646,6 +648,13 @@ pub(super) fn fixture(config: &Config) {
         Operation::Regenerate => super::regenerate(&paths).map(Some),
         Operation::Remove => super::remove(&paths).map(|()| None),
         Operation::Hold => super::lock_token(&paths, true).map(|_lock| None),
+        #[cfg(windows)]
+        Operation::Destination => {
+            let deadline = controlled(&config.root, |control| control.protocol)
+                .expect("native destination requires the actual fixture control");
+            super::qualification::native_destination_controls(&paths, deadline);
+            Ok(None)
+        }
         #[cfg(windows)]
         Operation::ConstructorFinal => {
             let deadline = Instant::now() + super::TOKEN_LOCK_TIMEOUT;

@@ -677,6 +677,173 @@ fn atomic_success_has_private_token_and_no_scratch() {
 }
 
 #[cfg(windows)]
+fn native_destination_io<T>(
+    deadline: std::time::Instant,
+    key: &str,
+    phase: &str,
+    operation: impl FnOnce() -> std::io::Result<T>,
+) -> T {
+    assert!(
+        std::time::Instant::now() < deadline,
+        "native-destination key={key} phase={phase} deadline"
+    );
+    let result = operation();
+    assert!(
+        std::time::Instant::now() < deadline,
+        "native-destination key={key} phase={phase} deadline"
+    );
+    result.unwrap_or_else(|error| {
+        panic!(
+            "native-destination key={key} phase={phase} kind={:?} raw={:?}",
+            error.kind(),
+            error.raw_os_error()
+        )
+    })
+}
+
+#[cfg(windows)]
+fn native_destination_bytes(
+    deadline: std::time::Instant,
+    key: &str,
+    path: &Path,
+    expected: &[u8],
+) -> locron_core::filesystem::FileIdentity {
+    let mut reader = native_destination_io(deadline, key, "read-open", || {
+        open_private(path, fs::OpenOptions::new().read(true))
+    });
+    let identity = native_destination_io(deadline, key, "read-identity", || {
+        locron_core::filesystem::file_identity(&reader)
+    });
+    let mut bytes = Vec::new();
+    native_destination_io(deadline, key, "read-bytes", || {
+        (&mut *reader).take(4098).read_to_end(&mut bytes)
+    });
+    let unchanged = bytes == expected;
+    assert!(unchanged, "native destination fixed bytes changed");
+    native_destination_io(deadline, key, "reader-close", || {
+        drop(reader);
+        Ok(())
+    });
+    identity
+}
+
+#[cfg(windows)]
+fn native_destination_candidate(
+    deadline: std::time::Instant,
+    key: &str,
+    path: &Path,
+    bytes: &[u8],
+) -> (DirectoryGuard, locron_core::filesystem::FileIdentity) {
+    let mut writer =
+        native_destination_io(deadline, key, "create-new", || create_private_new(path));
+    let identity = native_destination_io(deadline, key, "creator-identity", || {
+        locron_core::filesystem::file_identity(&writer)
+    });
+    native_destination_io(deadline, key, "write", || writer.write_all(bytes));
+    native_destination_io(deadline, key, "sync", || writer.sync_all());
+    let (writer, parent) = writer.into_parts();
+    native_destination_io(deadline, key, "writer-close", || {
+        drop(writer);
+        Ok(())
+    });
+    (parent, identity)
+}
+
+#[cfg(windows)]
+pub(super) fn native_destination_controls(
+    paths: &locron_store::StatePaths,
+    deadline: std::time::Instant,
+) {
+    for (core, key, source_name, destination_name) in [
+        (
+            false,
+            "ND-STD-HELD-RELEASE",
+            "native-std-source",
+            "native-std-destination",
+        ),
+        (
+            true,
+            "ND-CORE-HELD-RELEASE",
+            "native-core-source",
+            "native-core-destination",
+        ),
+    ] {
+        let root = native_destination_io(deadline, key, "private-parent", || {
+            DirectoryGuard::existing_private(&paths.root)
+        });
+        let source = root.normalized_path().join(source_name);
+        let destination = root.normalized_path().join(destination_name);
+        let (_source_parent, source_id) =
+            native_destination_candidate(deadline, key, &source, b"source");
+        let (_destination_parent, destination_id) =
+            native_destination_candidate(deadline, key, &destination, b"destination");
+        let distinct_creators = source_id != destination_id;
+        assert!(distinct_creators, "native destination creator IDs coincide");
+        let held = native_destination_io(deadline, key, "blocker-open", || {
+            open_private(&destination, fs::OpenOptions::new().read(true))
+        });
+        let held_id = native_destination_io(deadline, key, "blocker-identity", || {
+            locron_core::filesystem::file_identity(&held)
+        });
+        let same_blocker = held_id == destination_id;
+        assert!(same_blocker, "native destination blocker changed identity");
+        let admitted = native_destination_io(deadline, key, "held-parent-admission", || {
+            DirectoryGuard::existing_private(root.normalized_path())
+        });
+        native_destination_io(deadline, key, "admitted-parent-close", || {
+            drop(admitted);
+            Ok(())
+        });
+        let before_source = native_destination_bytes(deadline, key, &source, b"source");
+        let before_destination =
+            native_destination_bytes(deadline, key, &destination, b"destination");
+        let original_creators = before_source == source_id && before_destination == destination_id;
+        assert!(
+            original_creators,
+            "native destination admission changed IDs"
+        );
+        let rename = |from: &Path, to: &Path| {
+            if core {
+                locron_core::filesystem::rename_private(from, to)
+            } else {
+                fs::rename(from, to)
+            }
+        };
+        let Err(refusal) = native_destination_io(deadline, key, "held-rename", || {
+            Ok(rename(&source, &destination))
+        }) else {
+            panic!("native destination held rename became success");
+        };
+        assert_eq!(refusal.kind(), ErrorKind::PermissionDenied);
+        assert_eq!(refusal.raw_os_error(), Some(5));
+        let after_source = native_destination_bytes(deadline, key, &source, b"source");
+        let after_destination =
+            native_destination_bytes(deadline, key, &destination, b"destination");
+        let unchanged_ids = after_source == source_id && after_destination == destination_id;
+        assert!(unchanged_ids, "native destination refusal changed IDs");
+        native_destination_io(deadline, key, "blocker-release", || {
+            drop(held);
+            Ok(())
+        });
+        native_destination_io(deadline, key, "same-candidate-rename", || {
+            rename(&source, &destination)
+        });
+        let published_id = native_destination_bytes(deadline, key, &destination, b"source");
+        let same_candidate = published_id == source_id;
+        assert!(
+            same_candidate,
+            "native destination changed the released candidate"
+        );
+        let Err(absent) = native_destination_io(deadline, key, "source-absent", || {
+            Ok(open_private(&source, fs::OpenOptions::new().read(true)))
+        }) else {
+            panic!("native destination published candidate still exists at source");
+        };
+        assert_eq!(absent.kind(), ErrorKind::NotFound);
+    }
+}
+
+#[cfg(windows)]
 fn sharing(frame: &Frame) {
     assert!(!frame.ok, "actual held handle did not refuse");
     assert!(
@@ -710,20 +877,64 @@ fn windows_actual_sharing_failures_are_owned() {
     )
     .expect("actual no-delete destination handle");
     let result = run(&mut destination, Operation::Regenerate);
-    sharing(&result);
-    assert!(
-        result.elapsed_ms >= 5000,
-        "actual rename did not retain its existing retry clock"
-    );
+    assert!(!result.ok, "actual held handle did not refuse");
+    refused(&result, ErrorKind::PermissionDenied);
+    assert_eq!(result.raw, Some(5));
     assert_eq!(result.fault, None);
     assert_eq!(result.stats.renames, 1);
     assert_eq!(result.stats.cleanup, 1);
-    drop(held);
+    let deadline = destination.deadline();
+    let key = "ND-TOKEN-REFUSAL-ROTATE";
+    let lock_path = destination.paths.root.join(super::TOKEN_LOCK_FILE_NAME);
+    let lock_id = native_destination_bytes(deadline, key, &lock_path, b"");
+    let controls = run(&mut destination, Operation::Destination);
+    success(&controls);
     assert!(scratch(&destination).is_empty());
     same_bytes(&super::token_path(&destination.paths), SEED);
     check_sentinels(&destination);
     permanent(&destination);
+    native_destination_io(deadline, key, "token-blocker-release", || {
+        drop(held);
+        Ok(())
+    });
+    let rotated = run(&mut destination, Operation::Regenerate);
+    let actual = native_destination_io(deadline, key, "persisted-token", || {
+        Ok(persisted(&destination, &rotated))
+    });
+    let changed_token = actual != support::digest(SEED);
+    assert!(
+        changed_token,
+        "released token rotation did not change the old token"
+    );
+    assert_eq!(rotated.fault, None);
+    assert_eq!(rotated.stats.scratch, 1);
+    assert_eq!(rotated.stats.writes, 1);
+    assert_eq!(rotated.stats.syncs, 1);
+    assert_eq!(rotated.stats.closed, 1);
+    assert_eq!(rotated.stats.renames, 1);
+    assert_eq!(rotated.stats.cleanup, 0);
+    native_destination_io(deadline, key, "released-scratch-inventory", || {
+        assert!(scratch(&destination).is_empty());
+        Ok(())
+    });
+    native_destination_io(deadline, key, "released-sentinels", || {
+        check_sentinels(&destination);
+        Ok(())
+    });
+    let current_lock_id = native_destination_bytes(deadline, key, &lock_path, b"");
+    let unchanged_lock = current_lock_id == lock_id;
+    assert!(
+        unchanged_lock,
+        "released token rotation changed the permanent lock ID"
+    );
     destination.complete();
+    for key in [
+        "ND-STD-HELD-RELEASE",
+        "ND-CORE-HELD-RELEASE",
+        "ND-TOKEN-REFUSAL-ROTATE",
+    ] {
+        println!("token-qualification:{key}:complete");
+    }
     let mut cleanup = Harness::new();
     seed(&cleanup, SEED);
     sentinels(&cleanup);
