@@ -5465,3 +5465,7 @@ Follow planning/XDG_MACOS_RAW_STATE_REFUSAL_2026-10-04.md after exact Issue152 r
 ## PR153 exact-main Git-only handoff (2026-10-05)
 
 Follow the complete docs/planning/PR153_MAIN_F90_INTEGRATION_2026-10-05.md after exact owning Issue Verify readback and final committed Root reread. One ordinary merge of the selected Docs tip and exactf90 preserves whole incoming native Source/CI and reviewed own Source/plans. Full tree/Source/Doc inverses and permitted static checks precede ordinary publication and actual changed-head qualification; skipped/unreached/failed native or own tests cannot be counted as PASS. No Source adaptation, unrelated PR import, rerun or permission waiver is selected.
+
+## Group B guarded same-pending recovery continuation — 2026-10-05
+
+Follow GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md after exact146/149/152/163 GET and Root entire original49/94 plus supplement reread. Separate development retains the9-path scope and every old94/96/state set, selects existing contracts support/actual bin-libtest artifact/fixed existing maintain once, and uses only existing Core native ownership with closed independent descriptor/capture/SQL facts. No production maintenance command/dependency/clock/gate/API change is selected. Parent reviews full handback, fresh provenance and ordered same-head qualification; unknown cleanup preserves owners/failure.
