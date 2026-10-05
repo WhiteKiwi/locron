@@ -160,3 +160,7 @@ Root selects the exact disjoint observer4639 and concurrent6e98 contributions in
 ## Windows token destination evidence routing (2026-10-05)
 
 Issue162 / draftPR141 owns the selected held/released destination fixture amendment and its four concrete Verify steps in planning/DASHBOARD_TOKEN_DESTINATION_CONTROL_2026-10-05.md. Native CLI wake/cancel/unknown owner cleanup remains Issue31; wider account/logon/install/lifecycle acceptance remains Issue30. Exact full-plan Issue comment GET and Root whole committed-plan reread precede separate Source development; fresh actual controls and original required merges/gates precede closure. Execution status lives in Issues; the retired Project remains historical.
+
+## Group A fixture admission continuation — 2026-10-05
+
+Owning162/143 and coordination163 remain open for the selected four-path initial fixture/lint/closed-facts continuation. Follow GROUP_A_FIXTURE_ADMISSION_2026-10-05.md and its four concrete Verify steps; full old finite/runtime/native/paired acceptance and exact ordered publication/member contribution must succeed before closure.

@@ -5767,3 +5767,7 @@ The complete groupA read-only handoff8dbdaeef establishes a52-path source/doc un
 ## Group A measured compile/type admission failures — 2026-10-05
 
 Changed-head3f741 fresh CI37255108990/1 fails before fixture/native execution: borrowed temporary Cookie/Set-Cookie GetAll, moved cleanup String, two strict lint expressions and DOM RenderResult generic mismatch. Actual synthetic550baf8a has ordered f90/3f741 parents and equal tree. Source-backed owned iteration/borrow/empty-unit/literal-delimiter/test-only Pick corrections preserve full policy/oracles; constructor and Windows lifecycle causes remain UNKNOWN. See GROUP_A_COMPILE_ADMISSION_2026-10-05.md.
+
+## Group A initial fixture admission evidence — 2026-10-05
+
+Actual1e0 fresh CI separates three strict lint sites, Unix populated-preview horizon, Windows13cookie fresh-root privacy refusals, PR144 facts no-follow input refusal and Constructor Done-before-event. Full native read-only handoff18a0f794 and locked SQLite/tempfile Source support initial private Unix DB creation, two-directory owned Windows fixture roots, existing-base canonicalization and a closed facts diagnostic; actual causal primitives remain unknown. Complete scope, count correction and Verify are in GROUP_A_FIXTURE_ADMISSION_2026-10-05.md.
