@@ -809,10 +809,10 @@ fn adapter_path(path: &std::path::Path) -> io::Result<&str> {
 mod tests {
     use super::*;
 
-    fn immediate_sid_reply<'a>(
-        permit: WorkerPermit<'a>,
+    fn immediate_sid_reply(
+        permit: WorkerPermit<'_>,
         query: impl FnOnce() -> io::Result<String>,
-    ) -> SidReply<'a> {
+    ) -> SidReply<'_> {
         (query(), permit)
     }
 

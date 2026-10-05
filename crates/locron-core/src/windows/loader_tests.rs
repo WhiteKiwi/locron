@@ -176,7 +176,7 @@ fn owned_loader_fixture_child() {
             std::thread::sleep(Duration::from_millis(20));
             let sid = super::current_user_sid_until(deadline).unwrap();
             assert!(sid.starts_with("S-1-"));
-            assert!(super::filesystem_worker::observed_pid() == 0);
+            assert_eq!(super::filesystem_worker::observed_pid(), 0);
             let stock = super::filesystem_worker::request("sid", None, deadline).unwrap();
             assert!(
                 stock.as_str().is_some_and(|stock| stock == sid),
