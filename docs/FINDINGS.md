@@ -5653,3 +5653,7 @@ CI37217661880/1 completed12PASS/5FAIL/2optional. All3Clippy diagnostics select a
 ## Measured caller branch lint (2026-10-05)
 
 Completed fresh hosted Linux/macOS Rust1.98 Clippy jobs111490407950/111490407940 on Sourcee50106ac038937877776c9cafdbec834d54e095c expose clippy::if_not_else at the caller fixture outer condition maintenance.rs1324; the previous receiver warning is absent, and Windows lint111490407874 passed. The original &str case condition can be inverted to equality while exchanging its two complete literal bodies without changing any case operation. This does not establish or repair the still-pending native wake/cancellation failures. Preserve raw logs and actual partial-run scope.
+
+## Grouped arrivals and exact contributor boundaries (2026-10-05)
+
+Fresh inventory has19 open PRs at unchangedmainf90. Git ancestry confirms newer141946 and1673a descend from selected652/e9d; newer1667429 diverges from localdf30 with only Docs differences and identical whole WinGet Source/CI. New168/169 are two distinct one-line action updates in ci.yml,170 is one Engine dev-dependency plus its exact lock package. The initial16-member/four-group checkpoint remains historical; a fifth dependency group168/169/170 is selected only for read-only research. Preserve all contributions and review new producer diagnostics and action/dependency Sources before new final integration decisions, per GROUPED_PR_ARRIVALS_2026-10-05.md.

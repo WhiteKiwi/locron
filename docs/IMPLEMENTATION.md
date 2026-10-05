@@ -5432,3 +5432,7 @@ Apply only the actual Clippy receiver autoref suggestion under planning/OUTPUT_R
 ## Measured caller branch lint (2026-10-05)
 
 Follow OUTPUT_CALLER_BRANCH_ORDER_2026-10-05.md under Issue146: Docs/Issue exact readback and whole final-plan reread before a separate one-block maintenance.rs test-only branch exchange; whole parent inverse and both literal branch bodies, protected mode/blob inventory,47/48 ledger, all clocks/assertions/cleanup and static fmt/diff evidence; then Root full review, normal publication and actual changed-head hosted/Guardian/native/paired qualification. All other Source and broad acceptance remain unchanged.
+
+## Current grouped processing with arrivals
+
+Follow GROUPED_PR_ARRIVALS_2026-10-05.md under Issue163 after the initialda7 grouped research plan. Preserve nineteen current open PRs in five groups and both parallel local/published contributions; retain all old actual evidence at its measured head. Research the newer141/166/167 and dependency168/169/170 before group-specific final Docs/Issue/GET/parent reread and separate Source. Complete composed-head/current-base regression, strict ordinary/Guardian/native/paired qualification plus exact squash/main/member-contribution proof precede member completion. This arrival update selects no Source, product behavior or expanded clock.
