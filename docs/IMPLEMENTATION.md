@@ -5433,3 +5433,13 @@ admission. The one-result reply owns no native resource; blocked native work sti
 the actual permit, while receiver-drop/send refusal can drop only already-disposed scalar
 state. No extra pool/atomic/polling is selected. Root amended complete plan/owning GET ALL
 and whole final reread precede the paused separate developer's Source continuation.
+
+### SID verified-cache deadline precision (2026-10-06)
+
+Preserve the original OnceLock behavior: query/transport errors and pre-publication
+expiry do not initialize an empty cache; existing verified entries are not cleared.
+The pre-set check admits publication, while a later post-set or outer-return check can
+refuse with that verified entry retained. Check and publication are not an atomic clock
+transaction. Keep the same permit through publication/refusal, all original gates and
+clocks, and no cache rollback. Root's complete amended owning readbacks and final plan
+reread precede continuation; static conservation does not qualify native behavior.

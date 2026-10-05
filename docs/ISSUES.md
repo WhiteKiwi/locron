@@ -168,3 +168,11 @@ are distinct phases; source/static/API success cannot close broad Windows accept
 The same plan's before-Source scalar permit-return refinement preserves on-time once-sharing.
 All three owning exact amended-plan GETs and Root whole final reread precede the paused
 developer; no Source draft was applied before this corrected ownership selection.
+
+### Native SID cache Verify precision (2026-10-06)
+
+For #27/#31/#163, no-late-cache Verify concerns an initially empty cache before verified
+publication. Preserve refusal without clearing a prior verified entry, and report the
+existing post-publication/outer-return expiry limit without promising rollback or atomic
+clock/publication. The complete precise plan and owning exact readbacks/final reread
+precede the Source commit; all genuine hosted identity/ownership/native gates remain open.

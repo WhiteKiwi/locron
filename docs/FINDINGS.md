@@ -5657,3 +5657,14 @@ only after all native objects are disposed; the reply/caller retains admission t
 cache/refusal/return. Receiver-drop or nonblocking-send refusal disposes only already-clean
 scalar state. This preserves once-sharing without a new pool, atomic handshake or polling.
 The complete amended plan and exact owning readback/final reread precede development.
+
+### SID cache deadline precision before Source commit (2026-10-06)
+
+The existing bounded cache wrapper refuses an expired caller without clearing a prior
+verified entry. In the selected draft, owner/receiver/caller pre-publication gates reject
+a late native reply before it can initialize an empty cache. A pre-set deadline check
+admits publication; time may cross the deadline before set or a later post-check, leaving
+the verified entry intact while the caller is refused. There is no clock/publication
+transaction or rollback. [OnceLock](https://doc.rust-lang.org/std/sync/struct.OnceLock.html)
+documents nonblocking get and one-time publication, not atomicity with a clock. This is
+the existing semantic limit, not a native timing or Rust1.94 compilation result.

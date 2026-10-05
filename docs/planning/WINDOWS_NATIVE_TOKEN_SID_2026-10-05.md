@@ -72,8 +72,13 @@ Subsequent admission remains bounded. No child
 is spawned for SID; stock filesystem plus generic/COM child ceilings stay unchanged.
 
 Native query/conversion failure, invalid UTF-8/grammar, thread creation failure, panic/
-disconnect or expiry refuses explicitly and leaves the cache empty. A later independent
-call can retry after actual owner release; no automatic replay or PowerShell fallback.
+disconnect or pre-publication expiry refuses explicitly without initializing an empty
+cache. Owner, receiver and caller deadline gates reject a late reply before publication.
+A verified entry already present or published after the pre-set admission check remains
+if a later post-publication or outer-return check refuses. The clock check and OnceLock
+publication are not atomic; expiry between them can refuse with a verified entry retained.
+No rollback or clearing of a verified entry is selected. A later independent call can
+retry after actual owner release; no automatic replay or PowerShell fallback.
 Thread-creation refusal drops only scalar/channel/permit state, with no acquired token.
 Keep native errors without printing SID/path/username or the failed OsString. Library
 internal allocation/retry/CloseHandle/LocalFree and panic/OOM are not interruptibility
