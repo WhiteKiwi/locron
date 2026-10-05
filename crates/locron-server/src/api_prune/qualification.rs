@@ -531,10 +531,13 @@ struct Owner {
 
 impl Owner {
     fn new(deadline: Instant) -> Self {
-        let container = need(
-            checked(deadline, tempfile::tempdir),
-            "owned-container-create",
-        );
+        check(deadline);
+        let mut created = tempfile::tempdir();
+        if let Ok(container) = &mut created {
+            container.disable_cleanup(true);
+        }
+        check(deadline);
+        let container = need(created, "owned-container-create");
         #[cfg(windows)]
         let plan = need(
             locron_core::filesystem::PrivateDirectoryPlan::inspect_until(
