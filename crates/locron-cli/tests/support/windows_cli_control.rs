@@ -2926,6 +2926,491 @@ impl ProducerPermit {
 }
 // END independent producer domains.
 
+// BEGIN first-owner cleanup scalar observations, never release authority.
+const CLEANUP_MASK: u64 = (1 << 25) - 1;
+const CLEANUP_UNKNOWN_DURATION: u64 = CLEANUP_MASK;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+#[repr(u8)]
+enum CleanupEvent {
+    Entry = 1,
+    Return = 2,
+    RootReturn = 3,
+    Cleaned = 4,
+}
+
+impl CleanupEvent {
+    fn index(self) -> usize {
+        usize::from(self as u8 - 1)
+    }
+    fn operation(self) -> u64 {
+        match self {
+            Self::Entry | Self::Return => 50,
+            Self::RootReturn | Self::Cleaned => 51,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Entry => "entry",
+            Self::Return => "return",
+            Self::RootReturn => "root_return",
+            Self::Cleaned => "cleaned",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CleanupRecord {
+    sample_us: u64,
+    duration_us: u64,
+    clock: u64,
+    value: u64,
+}
+
+impl CleanupRecord {
+    fn valid(self, event: CleanupEvent) -> bool {
+        let value_valid = match event {
+            CleanupEvent::Entry | CleanupEvent::Return => self.value <= 1,
+            CleanupEvent::RootReturn => self.value <= 2,
+            CleanupEvent::Cleaned => self.value == 0,
+        };
+        let sample_valid = match self.clock {
+            1 => self.sample_us <= CALL_TIME_US,
+            2 | 3 => self.sample_us == 0,
+            _ => false,
+        };
+        let duration_valid = if event == CleanupEvent::Return {
+            (self.duration_us <= CALL_TIME_US || self.duration_us == CLEANUP_UNKNOWN_DURATION)
+                && (self.clock == 1 || self.duration_us == CLEANUP_UNKNOWN_DURATION)
+        } else {
+            self.duration_us == 0
+        };
+        value_valid && sample_valid && duration_valid
+    }
+    fn encode(self, event: CleanupEvent) -> u64 {
+        if !self.valid(event) {
+            return 1;
+        } // Nonzero invalid, never a decision/panic.
+        self.sample_us
+            | (self.duration_us << 25)
+            | (self.clock << 50)
+            | (self.value << 52)
+            | (event.operation() << 54)
+            | (u64::from(event as u8) << 60)
+            | (1 << 63)
+    }
+    fn decode(event: CleanupEvent, word: u64) -> Option<Self> {
+        if word & (1 << 63) == 0
+            || (word >> 60) & 7 != u64::from(event as u8)
+            || (word >> 54) & 63 != event.operation()
+        {
+            return None;
+        }
+        let record = Self {
+            sample_us: word & CLEANUP_MASK,
+            duration_us: (word >> 25) & CLEANUP_MASK,
+            clock: (word >> 50) & 3,
+            value: (word >> 52) & 3,
+        };
+        record.valid(event).then_some(record)
+    }
+}
+
+fn cleanup_sample(origin: Instant, sample: Instant) -> (u64, u64) {
+    let Some(duration) = sample.checked_duration_since(origin) else {
+        return (3, 0);
+    };
+    match u64::try_from(duration.as_micros()) {
+        Ok(micros) if micros <= CALL_TIME_US => (1, micros),
+        _ => (2, 0),
+    }
+}
+
+struct CleanupObservations {
+    words: [AtomicU64; 4],
+}
+impl CleanupObservations {
+    fn new() -> Self {
+        Self {
+            words: std::array::from_fn(|_| AtomicU64::new(0)),
+        }
+    }
+    fn publish(&self, event: CleanupEvent, record: CleanupRecord) {
+        self.words[event.index()].store(record.encode(event), Ordering::Release);
+    }
+    fn entry(&self, origin: Instant, entered: Instant, state_present: bool) {
+        let (clock, sample_us) = cleanup_sample(origin, entered);
+        self.publish(
+            CleanupEvent::Entry,
+            CleanupRecord {
+                sample_us,
+                duration_us: 0,
+                clock,
+                value: u64::from(state_present),
+            },
+        );
+    }
+    fn returned(&self, origin: Instant, entered: Instant, returned: Instant, state_present: bool) {
+        let (clock, sample_us) = cleanup_sample(origin, returned);
+        let duration_us = if clock == 1 && cleanup_sample(origin, entered).0 == 1 {
+            returned
+                .checked_duration_since(entered)
+                .and_then(|duration| u64::try_from(duration.as_micros()).ok())
+                .filter(|micros| *micros <= CALL_TIME_US)
+                .unwrap_or(CLEANUP_UNKNOWN_DURATION)
+        } else {
+            CLEANUP_UNKNOWN_DURATION
+        };
+        self.publish(
+            CleanupEvent::Return,
+            CleanupRecord {
+                sample_us,
+                duration_us,
+                clock,
+                value: u64::from(state_present),
+            },
+        );
+    }
+    fn root_returned(&self, origin: Instant, returned: Instant, result: &io::Result<bool>) {
+        let (clock, sample_us) = cleanup_sample(origin, returned);
+        let value = match result {
+            Ok(false) => 0,
+            Ok(true) => 1,
+            Err(_) => 2,
+        };
+        self.publish(
+            CleanupEvent::RootReturn,
+            CleanupRecord {
+                sample_us,
+                duration_us: 0,
+                clock,
+                value,
+            },
+        );
+    }
+    fn cleaned(&self, origin: Instant, observed: Instant) {
+        let (clock, sample_us) = cleanup_sample(origin, observed);
+        self.publish(
+            CleanupEvent::Cleaned,
+            CleanupRecord {
+                sample_us,
+                duration_us: 0,
+                clock,
+                value: 0,
+            },
+        );
+    }
+    fn snapshot(&self) -> CleanupSnapshot {
+        CleanupSnapshot {
+            words: std::array::from_fn(|index| self.words[index].load(Ordering::Acquire)),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CleanupSnapshot {
+    words: [u64; 4],
+}
+impl CleanupSnapshot {
+    const UNOBSERVED: Self = Self { words: [0; 4] };
+    fn matched_duration(self) -> Option<u64> {
+        let entry = CleanupRecord::decode(CleanupEvent::Entry, self.words[0])?;
+        let returned = CleanupRecord::decode(CleanupEvent::Return, self.words[1])?;
+        (entry.clock == 1
+            && returned.clock == 1
+            && entry.value == returned.value
+            && returned.sample_us >= entry.sample_us
+            && returned.duration_us != CLEANUP_UNKNOWN_DURATION)
+            .then_some(returned.duration_us)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CleanupScope {
+    First,
+    CompletionSnapshot,
+    AfterExistingWait,
+}
+impl CleanupScope {
+    fn label(self) -> &'static str {
+        match self {
+            Self::First => "first",
+            Self::CompletionSnapshot => "completion_snapshot",
+            Self::AfterExistingWait => "after_existing_wait",
+        }
+    }
+}
+#[derive(Clone, Copy)]
+enum CleanupCase {
+    Queued,
+    Cancel,
+    Wake,
+}
+impl CleanupCase {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Cancel => "cancel",
+            Self::Wake => "wake",
+        }
+    }
+}
+
+struct CleanupWordDisplay {
+    event: CleanupEvent,
+    word: u64,
+}
+impl fmt::Display for CleanupWordDisplay {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.word == 0 {
+            return formatter.write_str("unobserved");
+        }
+        let Some(record) = CleanupRecord::decode(self.event, self.word) else {
+            return formatter.write_str("invalid");
+        };
+        let clock = match record.clock {
+            1 => "representable",
+            2 => "outside_range",
+            _ => "invalid_clock",
+        };
+        let value = match (self.event, record.value) {
+            (CleanupEvent::Entry | CleanupEvent::Return, 0) => "none",
+            (CleanupEvent::Entry | CleanupEvent::Return, _) => "present",
+            (CleanupEvent::RootReturn, 0) => "absent",
+            (CleanupEvent::RootReturn, 1) => "present",
+            (CleanupEvent::RootReturn, _) => "io_error",
+            (CleanupEvent::Cleaned, _) => "confirmed",
+        };
+        write!(
+            formatter,
+            "{{op={},role=NoChild,group=first,clock={clock},t_us=",
+            self.event.operation()
+        )?;
+        if record.clock == 1 {
+            write!(formatter, "{}", record.sample_us)?;
+        } else {
+            formatter.write_str("unobserved")?;
+        }
+        write!(formatter, ",value={value}}}")
+    }
+}
+struct CleanupSummary {
+    snapshot: CleanupSnapshot,
+    scope: CleanupScope,
+    case: CleanupCase,
+}
+impl fmt::Display for CleanupSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for event in [
+            CleanupEvent::Entry,
+            CleanupEvent::Return,
+            CleanupEvent::RootReturn,
+            CleanupEvent::Cleaned,
+        ] {
+            if event != CleanupEvent::Entry {
+                formatter.write_str("\n")?;
+            }
+            write!(
+                formatter,
+                "cleanup_state/v1 scope={} case={} event={} fact={}",
+                self.scope.label(),
+                self.case.label(),
+                event.label(),
+                CleanupWordDisplay {
+                    event,
+                    word: self.snapshot.words[event.index()]
+                }
+            )?;
+            if event == CleanupEvent::Return {
+                formatter.write_str(" drop_wall_us=")?;
+                match self.snapshot.matched_duration() {
+                    Some(duration) => write!(formatter, "{duration}")?,
+                    None => formatter.write_str("unobserved")?,
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(debug_assertions)]
+struct ProducerFirstSummary<'a> {
+    first: &'a CaseResult,
+    case: CleanupCase,
+}
+#[cfg(debug_assertions)]
+impl ProducerFirstSummary<'_> {
+    fn first_lines(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let first = self.first;
+        let case = self.case.label();
+        write!(
+            formatter,
+            "producer_first/v1 case={case} code={:?} phase={:?} flags={} frame_bytes={} elapsed_us={} stdout_bytes=",
+            first.code, first.phase, first.flags, first.frame_bytes, first.elapsed_us
+        )?;
+        if first.stdout_bytes == UNOBSERVED_BYTES {
+            formatter.write_str("unobserved")?;
+        } else {
+            write!(formatter, "{}", first.stdout_bytes)?;
+        }
+        writeln!(
+            formatter,
+            " cli_live_seen={} capture_proof={}",
+            if first.cli_live_seen {
+                "true"
+            } else {
+                "unobserved"
+            },
+            first.capture_proof
+        )?;
+        let intent = OP_NAMES
+            .get(usize::from(first.observations.intent))
+            .copied()
+            .unwrap_or("invalid");
+        writeln!(
+            formatter,
+            "producer_first/v1 case={case} intent={intent} first_work={}",
+            EventDisplay {
+                word: first.observations.first_work,
+                tag: 3,
+                expected_role: Some(ChildRole::NoChild)
+            }
+        )?;
+        writeln!(
+            formatter,
+            "producer_first/v1 case={case} last_io={}",
+            EventDisplay {
+                word: first.observations.io_error,
+                tag: 1,
+                expected_role: None
+            }
+        )?;
+        writeln!(
+            formatter,
+            "producer_first/v1 case={case} daemon_status={} peer_status={} cli_status={}",
+            EventDisplay {
+                word: first.observations.statuses[0],
+                tag: 2,
+                expected_role: Some(ChildRole::Daemon)
+            },
+            EventDisplay {
+                word: first.observations.statuses[1],
+                tag: 2,
+                expected_role: Some(ChildRole::NegativePeer)
+            },
+            EventDisplay {
+                word: first.observations.statuses[2],
+                tag: 2,
+                expected_role: Some(ChildRole::ControlCli)
+            }
+        )
+    }
+
+    fn call_lines(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let first = self.first;
+        let case = self.case.label();
+        writeln!(
+            formatter,
+            "producer_first/v1 case={case} cli={} wait={} native_enter={}",
+            CallWordDisplay {
+                kind: CallWordKind::Cli,
+                word: first.calls.current_cli
+            },
+            CallWordDisplay {
+                kind: CallWordKind::Wait,
+                word: first.calls.current_wait
+            },
+            CallWordDisplay {
+                kind: CallWordKind::NativeEnter,
+                word: first.calls.native_enter
+            }
+        )?;
+        writeln!(
+            formatter,
+            "producer_first/v1 case={case} native_return={} wrapper_return={} capture_read={}",
+            CallWordDisplay {
+                kind: CallWordKind::NativeReturn,
+                word: first.calls.native_return
+            },
+            CallWordDisplay {
+                kind: CallWordKind::Wrapper,
+                word: first.calls.wrapper_return
+            },
+            CallWordDisplay {
+                kind: CallWordKind::Read,
+                word: first.calls.capture_read
+            }
+        )?;
+        writeln!(
+            formatter,
+            "producer_first/v1 case={case} last_history={} history_cost={} last_progress={}",
+            CallWordDisplay {
+                kind: CallWordKind::History,
+                word: first.calls.last_history
+            },
+            CallWordDisplay {
+                kind: CallWordKind::Cost,
+                word: first.calls.history_cost
+            },
+            CallWordDisplay {
+                kind: CallWordKind::Progress,
+                word: first.calls.last_progress
+            }
+        )?;
+        write!(
+            formatter,
+            "producer_first/v1 case={case} daemon_spawn_us={} history_rel={} progress_rel={}",
+            CallWordDisplay {
+                kind: CallWordKind::Daemon,
+                word: first.calls.daemon_spawn
+            },
+            first
+                .calls
+                .relation(CallWordKind::History, first.calls.last_history),
+            first
+                .calls
+                .relation(CallWordKind::Progress, first.calls.last_progress)
+        )
+    }
+}
+
+#[cfg(debug_assertions)]
+impl fmt::Display for ProducerFirstSummary<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.first_lines(formatter)?;
+        self.call_lines(formatter)
+    }
+}
+
+#[cfg(debug_assertions)]
+struct ProducerFailureSummary {
+    original: ProducerSummary,
+    first_cleanup: CleanupSnapshot,
+    later_cleanup: CleanupSnapshot,
+    case: CleanupCase,
+}
+#[cfg(debug_assertions)]
+impl fmt::Display for ProducerFailureSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.original, formatter)?;
+        write!(
+            formatter,
+            "\n{}\n{}",
+            CleanupSummary {
+                snapshot: self.first_cleanup,
+                scope: CleanupScope::First,
+                case: self.case
+            },
+            CleanupSummary {
+                snapshot: self.later_cleanup,
+                scope: CleanupScope::AfterExistingWait,
+                case: self.case
+            }
+        )
+    }
+}
+// END first-owner cleanup scalar observations.
+
 /// Fixed non-sensitive result; a late result cannot qualify successful cleanup.
 pub struct CaseResult {
     code: Code,
@@ -2939,6 +3424,7 @@ pub struct CaseResult {
     calls: CallSnapshot,
     capture_proof: u8,
     paired: PairSnapshot,
+    cleanup: CleanupSnapshot,
 }
 
 impl CaseResult {
@@ -3004,6 +3490,7 @@ struct Control {
     calls: CallObservations,
     paired_facts: [OnceLock<PairFact>; 2],
     paired_proof: OnceLock<PairProof>,
+    cleanup: CleanupObservations,
     #[cfg(debug_assertions)]
     producer_diagnostic: OnceLock<ProducerSnapshot>,
 }
@@ -3026,6 +3513,7 @@ impl Control {
             calls: CallObservations::new(),
             paired_facts: [OnceLock::new(), OnceLock::new()],
             paired_proof: OnceLock::new(),
+            cleanup: CleanupObservations::new(),
             #[cfg(debug_assertions)]
             producer_diagnostic: OnceLock::new(),
         })
@@ -3161,6 +3649,7 @@ impl Control {
                 }),
                 proof: self.paired_proof.get().copied().unwrap_or_default(),
             },
+            cleanup: self.cleanup.snapshot(),
         }
     }
 }
@@ -3280,6 +3769,7 @@ struct Owner {
     uncertain_cleanup: bool,
     call_context: CallContext,
     paired: PairedCapture,
+    cleanup_observed: bool,
     #[cfg(debug_assertions)]
     producers: Producers,
     #[cfg(debug_assertions)]
@@ -3309,6 +3799,7 @@ impl Owner {
             uncertain_cleanup: false,
             call_context: CallContext::new(),
             paired: PairedCapture::empty(),
+            cleanup_observed: false,
             #[cfg(debug_assertions)]
             producers: Producers::empty(),
             #[cfg(debug_assertions)]
@@ -4754,7 +5245,25 @@ impl Owner {
         drop(self.guard.take());
         cleanup_gate(&self.control)?;
         self.control.observations.intent(Operation::DropState);
+        let cleanup_entry = if self.cleanup_observed {
+            None
+        } else {
+            self.cleanup_observed = true;
+            let entered = Instant::now();
+            self.control
+                .cleanup
+                .entry(self.control.entered, entered, root.is_some());
+            Some(entered)
+        };
         drop(self.state.take());
+        if let Some(entered) = cleanup_entry {
+            self.control.cleanup.returned(
+                self.control.entered,
+                entered,
+                Instant::now(),
+                root.is_some(),
+            );
+        }
         // Cleanup of an already reaped exact owner may follow a refused probe.
         // It still has the helper/caller ORIGINAL clock, never a new duration.
         cleanup_gate(&self.control)?;
@@ -4768,11 +5277,21 @@ impl Owner {
                 ChildRole::NoChild,
                 &remains,
             );
+            if cleanup_entry.is_some() {
+                self.control
+                    .cleanup
+                    .root_returned(self.control.entered, Instant::now(), &remains);
+            }
             cleanup_gate(&self.control)?;
             if remains.map_err(|_| Code::Cleanup)? {
                 return Err(Code::Cleanup);
             }
             self.control.flag(CLEANED);
+            if cleanup_entry.is_some() {
+                self.control
+                    .cleanup
+                    .cleaned(self.control.entered, Instant::now());
+            }
         }
         Ok(())
     }
@@ -5181,6 +5700,7 @@ fn drive(kind: CaseKind) -> CaseResult {
 pub struct ProducerCaseResult {
     first: CaseResult,
     diagnostic: ProducerSnapshot,
+    later_cleanup: CleanupSnapshot,
     cancel: bool,
 }
 #[cfg(debug_assertions)]
@@ -5195,12 +5715,21 @@ impl ProducerCaseResult {
     pub fn daemon_output(&self) -> impl fmt::Display {
         self.first.daemon_output()
     }
-    /// Two closed lines; private context, UUID, digest and logger bytes are absent.
+    /// Original producer lines followed by separate bounded cleanup facts.
     #[must_use]
     pub fn producer_output(&self) -> impl fmt::Display {
-        ProducerSummary {
-            snapshot: self.diagnostic,
-            cancel: self.cancel,
+        ProducerFailureSummary {
+            original: ProducerSummary {
+                snapshot: self.diagnostic,
+                cancel: self.cancel,
+            },
+            first_cleanup: self.first.cleanup,
+            later_cleanup: self.later_cleanup,
+            case: if self.cancel {
+                CleanupCase::Cancel
+            } else {
+                CleanupCase::Wake
+            },
         }
     }
 }
@@ -5241,6 +5770,7 @@ fn drive_producer(kind: CaseKind, cancel: bool) -> ProducerCaseResult {
             return ProducerCaseResult {
                 first: *result,
                 diagnostic: ProducerSnapshot::UNOBSERVED,
+                later_cleanup: CleanupSnapshot::UNOBSERVED,
                 cancel,
             };
         }
@@ -5253,6 +5783,7 @@ fn drive_producer(kind: CaseKind, cancel: bool) -> ProducerCaseResult {
         return ProducerCaseResult {
             first: result,
             diagnostic: ProducerSnapshot::UNOBSERVED,
+            later_cleanup: CleanupSnapshot::UNOBSERVED,
             cancel,
         };
     }
@@ -5264,14 +5795,16 @@ fn drive_producer(kind: CaseKind, cancel: bool) -> ProducerCaseResult {
     }
     // Freeze before any diagnostic wait; never substitute a late normal result.
     let first = result;
-    let diagnostic = if first.succeeded() {
-        ProducerSnapshot::UNOBSERVED
+    let (diagnostic, later_cleanup) = if first.succeeded() {
+        (ProducerSnapshot::UNOBSERVED, CleanupSnapshot::UNOBSERVED)
     } else {
-        wait_producer_until(&control)
+        let diagnostic = wait_producer_until(&control);
+        (diagnostic, control.cleanup.snapshot())
     };
     ProducerCaseResult {
         first,
         diagnostic,
+        later_cleanup,
         cancel,
     }
 }
@@ -6567,11 +7100,12 @@ fn producer_controls(entered: Instant, deadline: Instant) {
         );
         let observed = driver.receive_until(deadline);
         let first_observation = ProducerControlScalar::from_result(&observed);
-        let completed = if observed.flags & CLEANED == 0 {
-            driver.wait_cleanup_until(deadline)
+        let completion = if observed.flags & CLEANED == 0 {
+            Some(driver.wait_cleanup_until(deadline))
         } else {
-            observed
+            None
         };
+        let completed = completion.as_ref().unwrap_or(&observed);
         let snapshot = driver
             .control
             .producer_diagnostic
@@ -6586,8 +7120,32 @@ fn producer_controls(entered: Instant, deadline: Instant) {
                 ProducerControl::Cancellation => "cancel",
             },
             first_observation,
-            ProducerControlScalar::from_result(&completed),
+            ProducerControlScalar::from_result(completed),
             snapshot.released,
+        );
+        let cleanup_case = match case {
+            ProducerControl::Queued => CleanupCase::Queued,
+            ProducerControl::Cancellation => CleanupCase::Cancel,
+        };
+        eprintln!(
+            "{}",
+            ProducerFirstSummary {
+                first: &observed,
+                case: cleanup_case
+            }
+        );
+        eprintln!(
+            "{}\n{}",
+            CleanupSummary {
+                snapshot: observed.cleanup,
+                scope: CleanupScope::First,
+                case: cleanup_case
+            },
+            CleanupSummary {
+                snapshot: completed.cleanup,
+                scope: CleanupScope::CompletionSnapshot,
+                case: cleanup_case
+            }
         );
         if !completed.succeeded() {
             eprintln!(
