@@ -5779,3 +5779,8 @@ Before dependent Boolean Source, actual fresh_root/callers and Core APIs show no
 ## Group A Unix-only selector scope (2026-10-05)
 
 Actual04c Windows1.98 raw39817B/SHA2c03536e613126d0d88d74303e803d9bf609154ab30ed8c211e71ae7d4d8f827 contains exactly two dead-code constants, not a measured fixture/native cause. Separate HANDOFF31/27manifest proves all eight identifier references: two Server declarations and two uses inside existing cfg(unix) run_owned, plus four independent Windows native-example references. Select exactly matching cfg(unix) declaration attributes; preserve values, complete bodies, independent controller/example and all other bytes. No allow/expect/remove/new clock or broader preparation is selected. See GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md; hosted acceptance remains pending.
+
+
+## Group A actual facts-refusal observation — 2026-10-05
+
+Actual f97 CI14ordinaryPASS/3WindowsFAIL records first facts PermissionDenied/rawNone before193195 controls; strict Windows lint now passes. Core normal managed-file admission does not directly require private-leaf DACL on this path. Existing managed/stock custom Error spellings can identify a class and a bounded lexical ancestor index without another native query; they do not identify actual native object/security predicate. Select only the one-file118-line class/index alternative with private stack2048, fixed labels, index0..63/unknown and104CRLF diagnostic cap. Original refusal/Error/Unix/facts read/body/root/clock remain whole. Arbitrary Error formatter work and real current failure cause remain unknown/unmeasured. Full scope and concrete Verify: planning/GROUP_A_FACTS_REFUSAL_OBSERVATION_2026-10-05.md.

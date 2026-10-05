@@ -5552,3 +5552,8 @@ Preserve all independent four-path WIP and resume only after amended plan/exact1
 ## Group A Unix-only selector scope (2026-10-05)
 
 Follow GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md and its three concrete Verify steps. Docs→owning162/143/163 exact POSTGET ALL→Root entire34/23/42/new plan reread precedes separate one-file/two-attribute development. Preserve complete original Unix/Windows bodies and all selectors, row sets, deadlines, owners, product/CI/frontend bytes. Root reviews whole inverse/protected physical/10literal symlink proof, publishes a genuinely changed head and obtains same-head/current-base17ordinary/Guardian/native-lint/fullpaired proof before ordered squash or closure. Runtime/type/native outcomes remain unmeasured.
+
+
+## Group A facts-refusal message continuation — 2026-10-05
+
+After all162/143/163 exact GETs and Root full changed-plan review, separate development leases only dashboard_boolean_qualification.rs for the selected existing-error class/index observer. Use capped stack storage and purely lexical complete local-drive component comparison; never add native parent probe, expose original messages/paths, retry admission or invent ownership/deadline. Whole inverses conserve Error/refusal/Unix/read-to-EOF193195/old owners/clocks and all protected Source. Exact old complete reviews are reused by whole hash; changed authority is reread. Root reviews/publishes and interprets fresh actual fixed scalars as spelling evidence before any separate causal repair; original full qualification and ordered merge/contribution gates remain.
