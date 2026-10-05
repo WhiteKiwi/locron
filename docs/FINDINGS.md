@@ -5866,3 +5866,33 @@ Actual CI37367154610/1 Windows1.98 job111954962586 refuses CLI-test compilation 
 ARM111954962954 remains seven original native PASS/one Wake Expired/History failure. Its first cleanup snapshot is unobserved; only after the existing wait is the same-owner matched Drop wall27331us, actual child-root absence and post-gated CLEANED observed. RootReturn precedes its unchanged post-gate and is only a returned fact; unit return cannot prove hidden deletion success or whole container removal. Queued/cancel producer positives pass without rewriting the failed first result. Root's retained x64stable111954962906/MSRV111954963303 foundations pass, but full qualification is pending/strict lint failed and cancelled/skipped/unrun jobs are not passes. Frozen read-only16-file packet/complete manifest e5ab2284 and its precision supplement preserve all observations/unknowns.
 
 Follow the complete native SID plan's newest three concrete Verify steps: four-Docs/protected prefixes and all owning exact whole-plan GETs before Root full final reread; separate helper-only six-span inverse/static checks; fresh changed-head required native/lint/member/main qualification. Wider acceptance and every historical failure remain open.
+
+
+### Returned Windows Wake pipe stage boundary (2026-10-06)
+
+At exact ef9693e3d05c959abc5893b6e9f3e1dca377bea5, locked interprocess2.4.4
+accept allocates replacement before connected-instance handoff. Engine's maximum2
+and terminal non-WouldBlock branch create a conditional capacity concern if an
+older instance is still counted, not a measured fatal accept/quota cause. Pinned
+Tokio1.53.1/interprocess/mio1.2.2 expose no proved small safe secured instance-reuse
+repair. Wrapper Drop/cancellation/assume_flushed do not confirm native closure.
+The probe and Run hint share wake/None identity; role-control/launchgate are distinct.
+
+Root reviewed the complete immutable lifecycle report SHA256
+d46e46a800ad19f80387b13563c88e404a9d0e5db232cfd74b2e8a1d29464d06 and selected
+only the [returned-stage plan](planning/WINDOWS_WAKE_RETURNED_PIPE_STAGE_2026-10-06.md).
+Actual returned pipe_name/open/exchange/infra and terminal wake-only pipe_accept
+are distinguished; missing records and aggregate accept stage remain unknown.
+Same Result/calls/owners/ACK/receipt/clocks survive; no lifecycle repair is selected.
+The symbolic211-byte carrier maximum is not actual native serialization or count.
+
+Root's current ef969 ordinary37372878811/1 completed FAILED:10 required successes,
+7 cancellations. Five Linux jobs stopped before steps during provider assignment;
+ARM/MSRV35-minute timeout annotations and MSRV Wake metadataFAIL have no retained
+cancelled raw (GET1=404; the once-acquired attempt ZIP has only10 successful logs).
+Actual cause/unprinted native outcomes remain UNKNOWN. Paired37372878741/1 passes
+native21methods/49controls each and portable16methods/42controls, zero skips;
+Root completed four current ZIP Source/PE/provenance/coherence inspection
+at22:10:20Z and reports336 named package cases passed in total. No all-CI/main/
+release success or old PASS transfers; all20 PRs remain open, with no closure
+from this observation.

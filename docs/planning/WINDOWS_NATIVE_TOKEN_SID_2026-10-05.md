@@ -637,3 +637,34 @@ frozen SPEC/ARCHITECTURE, all Core/Store/Engine/CLI/Unix/CI/Cargo and other byte
    transfer. Every member keeps its full required Verify and actual main contribution
    before merge/closure; PR166/167 and broad Windows/privacy/release owners stay open
    until those proofs. This syntax correction is not a Wake or causal runtime repair.
+
+
+## Returned Wake pipe stages before any lifecycle repair (2026-10-06)
+
+Select the complete [Windows Wake returned-stage plan](WINDOWS_WAKE_RETURNED_PIPE_STAGE_2026-10-06.md)
+at ef9693e3d05c959abc5893b6e9f3e1dca377bea5. This extends only future debug
+observation to five paths: Core notification.rs, Engine ipc.rs, CLI main.rs,
+CLI windows_wake_diagnostics.rs and the existing native helper decoder. All
+previous639 lines/history remain exact. Normal/release public send_wake/Unix,
+SID Source, guards/descriptors/full identity/actual PID/ACK/receipt, first results,
+capture/collector, reap/quarantine and all5s/8s/200ms/30s/25ms/grace stay unchanged.
+Only actual returned Run name/open/exchange/infrastructure errors and terminal
+wake/None Action::Wake pipe_accept may produce closed failure records. Accept
+substage/native quota and missing records remain unknown; no lifecycle repair,
+cap/default-security/reuse/retry/warm-up/readiness/clock/oracle change is selected.
+
+Current ordinary37372878811/1 failed with10 required successful jobs/7cancelled;
+absent cancelled raws and timeout/outage annotations do not establish a Wake
+cause. Current paired37372878741/1 actual native21methods/49controls each and
+portable16methods/42controls pass. Root completed four current ZIP Source/PE/
+provenance/coherence inspection at22:10:20Z and reports336 named package cases
+passed in total. These do not transfer old results, qualify all CI/main/release
+or close any PR.
+
+Concrete Verify follows the complete dedicated plan: Root four-Docs prefix/tree
+proof and whole BOTH plans owning27/31/35/163/171/166/167 exact POST/GET preserving
+bodies/state/history; actual whole final committed-plan/new-Docs reread AFTER ALL
+GETs; then separate five-path Source/inverses/release-erasure/strict domain and
+symbolic width checks; then Root changed-head actual hosted three rows/original
+controls/all required gates and true package/tree provenance. No Source starts
+before that gate; each member retains its own Verify and main contribution.

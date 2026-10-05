@@ -5615,3 +5615,28 @@ Five concrete Verify steps cover four-Docs/prefix/source conservation and owning
 Follow the appended WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md after owning27/31/35/163/171/166/167 WHOLE-plan exact GET ALL and Root actual final entire committed-plan/new-Docs reread. Only windows_cli_control.rs may later change through patch73c6e1e's six spans: U||(A&&B) for the existing pure duration predicate, and CleanupObservation Unclaimed/Claimed at the same four owner-member sites plus enum insertion. Preserve the first-only local claim, every packed/wire/domain/slot/renderer, old Code/phase/Result/drop/collector/owner/quarantine/assertion/selector and clock. No new observation, Copy/lifetime, fetch_update, warning allowance or production repair.
 
 Reverse all six literals to restore the whole3905 helper; protect every other Docs-parent mode/blob. Local work is pinned scoped rustfmt1.94/1.98/full locked offline metadata/Git/text only, with type/native NOT RUN. Root alone stages Docs, commits, posts/readbacks owning plans, grants later Source, reviews clean full inverses and ordinarily publishes for genuinely changed-head all-three native/strict-lint/required/member/main qualification. Current ARM Wake failure stays failed even though later matched Drop/child-root absence/CLEANED is observed; RootReturn precedes the unchanged post-gate. Never replace Drop by close, infer deletion success or waive broader unresolved acceptance.
+
+
+### Windows Wake returned-error stage bridge (2026-10-06)
+
+Select the complete [returned-stage plan](planning/WINDOWS_WAKE_RETURNED_PIPE_STAGE_2026-10-06.md)
+at ef969. Future Source is exactly Core notification.rs, Engine ipc.rs, CLI main.rs,
+CLI windows_wake_diagnostics.rs and existing tests/support/windows_cli_control.rs.
+Core's explicit Windows debug-only crate-crossing entry shares original calls and
+returns the same owned Result plus a closed optional returned-error stage; normal/
+release public send_wake and Unix stay literal. No Core tracing/Cargo dependency.
+Engine observes only terminal non-WouldBlock wake/None Action::Wake Err as
+pipe_accept, without claiming the private replacement/native API substage.
+CLI forwards the same error once; strict writer/decoder add Run name/open/exchange/
+infra versus Daemon accept, edgeerr/valueNone/attempt0/closed kind+rawi32 only.
+Preserve attempt domains/old indices, original summaries/caps/ownership/collector
+and all5s/8s/200ms/30s/25ms/5sgrace oracles. Missing stage remains unobserved.
+
+Root must commit four Docs, complete whole-plan exact owning27/31/35/163/171/166/167
+POST/GET and actually reread both final plans/new blocks AFTER ALL GETs before
+Source. Separate five-file development proves inverses/release erasure/privacy/
+role/error bounds, static checks only locally. Root then qualifies the genuinely
+changed head's actual three native rows/positives/downstreams/lint/Unix/package
+and triggered paired/snapshot gates. Current ordinary outage/timeouts remain
+failed/unqualified; no old PASS/count transfer, cap/reuse/retry/warm-up/clock/oracle
+change, diagnosis-as-PASS, member closure or installation/release acceptance.
