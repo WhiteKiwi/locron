@@ -98,10 +98,10 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import hashlib, json, os, pathlib, subprocess, sys, tempfile, zlib
+          import hashlib, json, os, pathlib, re, subprocess, sys, tempfile, zlib
 
-          def command(args):
-              result = subprocess.run(args, check=False, text=True, encoding="utf-8", capture_output=True)
+          def command(args, environment=None):
+              result = subprocess.run(args, check=False, text=True, encoding="utf-8", capture_output=True, env=environment)
               if result.returncode:
                   sys.stderr.write(result.stderr)
                   raise SystemExit(result.returncode)
@@ -113,7 +113,29 @@ jobs:
           host = hosts[0]
           target = os.environ.get("CARGO_BUILD_TARGET") or host
           assert target == host
-          metadata = json.loads(command(["cargo", "metadata", "--locked", "--no-deps", "--format-version=1"]))
+          build_environment = None
+          build_target = None
+          build_parent = None
+          if os.name == "nt":
+              local = os.environ.get("LOCALAPPDATA", "")
+              if not local or not pathlib.Path(local).is_absolute() or any(char in local for char in "\r\n\0"):
+                  raise ValueError("missing or relative local build root")
+              identifiers = [os.environ.get(name, "") for name in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_JOB")]
+              row = "${{ matrix.platform }}-${{ matrix.rust }}"
+              patterns = (r"[0-9]+", r"[0-9]+", r"[A-Za-z0-9_-]+", r"[A-Za-z0-9_.-]+")
+              if any(re.fullmatch(pattern, value) is None for pattern, value in zip(patterns, [*identifiers, row])):
+                  raise ValueError("invalid local build identifier")
+              namespace = pathlib.Path(local) / ("locron-guard-a-" + "-".join([*identifiers, row]))
+              namespace.mkdir()
+              build_target = namespace / "target"
+              build_target.mkdir()
+              build_parent = namespace / "build-facts"
+              build_parent.mkdir()
+              build_environment = os.environ.copy()
+              build_environment["CARGO_TARGET_DIR"] = str(build_target)
+          metadata = json.loads(command(["cargo", "metadata", "--locked", "--no-deps", "--format-version=1"], build_environment))
+          if os.name == "nt":
+              assert pathlib.Path(metadata["target_directory"]).resolve(strict=True) == build_target.resolve(strict=True)
 
           def package(name):
               matches = [item["id"] for item in metadata["packages"] if item["name"] == name]
@@ -121,7 +143,7 @@ jobs:
               return matches[0]
 
           def artifact(args, package_id, kind, target_name, test):
-              messages = [json.loads(line) for line in command(args).splitlines() if line]
+              messages = [json.loads(line) for line in command(args, build_environment).splitlines() if line]
               matches = [item for item in messages if item.get("reason") == "compiler-artifact"
                          and item.get("package_id") == package_id and item["target"]["kind"] == [kind]
                          and item["target"]["name"] == target_name and item["profile"]["test"] is test
@@ -150,7 +172,7 @@ jobs:
                                     package("locron"), "example", "dashboard_pr144_wake_fixture", False)
           checkout = command(["git", "rev-parse", "HEAD"]).strip()
           assert len(checkout) == 40
-          parent = pathlib.Path(tempfile.mkdtemp(prefix="locron-pr144-build-", dir=os.environ["RUNNER_TEMP"]))
+          parent = build_parent if os.name == "nt" else pathlib.Path(tempfile.mkdtemp(prefix="locron-pr144-build-", dir=os.environ["RUNNER_TEMP"]))
           if os.name != "nt":
               parent.chmod(0o700)
           facts = {"schema":"locron.pr144-build/v1", "checkout":checkout,
@@ -168,11 +190,18 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
               env.write(f"LOCRON_PR144_BUILD_FACTS={facts_path}\n")
               env.write(f"LOCRON_PR144_EVIDENCE_DIR={evidence}\n")
+              if os.name == "nt":
+                  env.write(f"LOCRON_PR144_CARGO_TARGET_DIR={build_target}\n")
           print("PR144 exact compiler artifacts pinned; native target=" + target)
           PY
       - name: Verify durable store and runtime library contracts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
-        run: cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
+        env:
+          CARGO_TARGET_DIR: ${{ env.LOCRON_PR144_CARGO_TARGET_DIR }}
+        run: |
+          python -c "import os, pathlib, sys; value = os.environ.get('CARGO_TARGET_DIR', ''); sys.exit(0 if value and pathlib.Path(value).is_absolute() else 'missing or relative qualification target')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p locron-store -p locron-engine -p locron-server --lib --locked
       - name: Upload redacted PR144 row completion evidence
         if: ${{ always() && steps.pr144_helpers.outcome == 'success' }}
         uses: actions/upload-artifact@v7
