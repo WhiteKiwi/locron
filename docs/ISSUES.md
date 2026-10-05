@@ -168,3 +168,7 @@ Owning162/143 and coordination163 remain open for the selected four-path initial
 ## Group A narrowed fixture owner continuation — 2026-10-05
 
 Owning162/143 and coordination163 continue the amended fixture plan with cookie-only WROOT and unchanged Boolean preparation. Preserve independent WIP; exact PATCH/GET and entire final-plan review precede dependent Source. Implementation/static checks do not close original complete native/paired/merge acceptance.
+
+## Group A Unix selector scope execution pointer (2026-10-05)
+
+Continue owning162/143 and grouped163 with the three concrete Verify steps in GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md. Exactly two unused Server constants receive existing Unix boundary attributes; no fixture, native, clock or acceptance waiver. Exact owning POSTGET ALL and Root entire final plans review precede separate Source lease. Keep all member/owning and wider native/install/release acceptance open until actual current-head criteria and ordered squash/contribution verification.

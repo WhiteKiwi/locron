@@ -5548,3 +5548,7 @@ After162/143/163 exact GET ALL and Root entire34/23/new final plan reread, separ
 ## Group A cookie-only directory admission continuation — 2026-10-05
 
 Preserve all independent four-path WIP and resume only after amended plan/exact162/143/163 GETs/Root entire final reread. Use cookie's existing deadline/absent-suffix full-ID protocol and selected two-scope cleanup; keep Boolean FreshRoot/fresh_root/cleanup/callers whole1e0 and parser30 origin literal. New deadline/worker/public Core API remains unselected. All original four Verify steps and native acceptance remain.
+
+## Group A Unix-only selector scope (2026-10-05)
+
+Follow GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md and its three concrete Verify steps. Docs→owning162/143/163 exact POSTGET ALL→Root entire34/23/42/new plan reread precedes separate one-file/two-attribute development. Preserve complete original Unix/Windows bodies and all selectors, row sets, deadlines, owners, product/CI/frontend bytes. Root reviews whole inverse/protected physical/10literal symlink proof, publishes a genuinely changed head and obtains same-head/current-base17ordinary/Guardian/native-lint/fullpaired proof before ordered squash or closure. Runtime/type/native outcomes remain unmeasured.

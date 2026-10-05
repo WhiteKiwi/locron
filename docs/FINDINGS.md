@@ -5775,3 +5775,7 @@ Actual1e0 fresh CI separates three strict lint sites, Unix populated-preview hor
 ## Group A Boolean preparation API boundary — 2026-10-05
 
 Before dependent Boolean Source, actual fresh_root/callers and Core APIs show no parser preparation deadline/finite worker or public directory-handle identity shortcut. Preserve original Boolean root/callers and parser30 origin; narrow WROOT to cookie's existing deadline/full-ID boundary. Empty child removal followed by outer failure retains surviving outer without rollback. Full selected authority is the amended GROUP_A_FIXTURE_ADMISSION_2026-10-05.md.
+
+## Group A Unix-only selector scope (2026-10-05)
+
+Actual04c Windows1.98 raw39817B/SHA2c03536e613126d0d88d74303e803d9bf609154ab30ed8c211e71ae7d4d8f827 contains exactly two dead-code constants, not a measured fixture/native cause. Separate HANDOFF31/27manifest proves all eight identifier references: two Server declarations and two uses inside existing cfg(unix) run_owned, plus four independent Windows native-example references. Select exactly matching cfg(unix) declaration attributes; preserve values, complete bodies, independent controller/example and all other bytes. No allow/expect/remove/new clock or broader preparation is selected. See GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md; hosted acceptance remains pending.
