@@ -6495,6 +6495,49 @@ fn native_cli_output_capture_contract() {
     producer_controls(entered, deadline);
 }
 
+// Selected report-only projection: all fields below are fixed scalar facts.
+#[cfg(debug_assertions)]
+#[derive(Clone, Copy)]
+struct ProducerControlScalar {
+    code: Code,
+    phase: Phase,
+    flags: u8,
+    elapsed_us: u128,
+    first_work: u64,
+}
+
+#[cfg(debug_assertions)]
+impl ProducerControlScalar {
+    fn from_result(result: &CaseResult) -> Self {
+        Self {
+            code: result.code,
+            phase: result.phase,
+            flags: result.flags,
+            elapsed_us: result.elapsed_us,
+            first_work: result.observations.first_work,
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+impl fmt::Display for ProducerControlScalar {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{{code={:?} phase={:?} flags={} elapsed_us={} first_work={}}}",
+            self.code,
+            self.phase,
+            self.flags,
+            self.elapsed_us,
+            EventDisplay {
+                word: self.first_work,
+                tag: 3,
+                expected_role: Some(ChildRole::NoChild),
+            }
+        )
+    }
+}
+
 // BEGIN selected producer controls, after all original capture/pair cases.
 #[cfg(debug_assertions)]
 fn producer_controls(entered: Instant, deadline: Instant) {
@@ -6511,6 +6554,7 @@ fn producer_controls(entered: Instant, deadline: Instant) {
             "producer dispatch refused"
         );
         let observed = driver.receive_until(deadline);
+        let first_observation = ProducerControlScalar::from_result(&observed);
         let completed = if observed.flags & CLEANED == 0 {
             driver.wait_cleanup_until(deadline)
         } else {
@@ -6523,6 +6567,16 @@ fn producer_controls(entered: Instant, deadline: Instant) {
             .copied()
             .unwrap_or(ProducerSnapshot::UNOBSERVED);
         driver.finish_if_returned();
+        eprintln!(
+            "wake_producer_case/v1 case={} first={} completion_snapshot={} released={}",
+            match case {
+                ProducerControl::Queued => "queued",
+                ProducerControl::Cancellation => "cancel",
+            },
+            first_observation,
+            ProducerControlScalar::from_result(&completed),
+            snapshot.released,
+        );
         if !completed.succeeded() {
             eprintln!(
                 "{}",

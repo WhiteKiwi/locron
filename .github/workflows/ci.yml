@@ -232,6 +232,7 @@ jobs:
       - run: cargo clippy -p locron-core -p locron-store -p locron-engine -p locron-server --lib --tests --locked -- -D warnings
       - run: cargo clippy -p locron --bin locron --test windows_lifecycle --test mcp --locked -- -D warnings
       - run: cargo clippy -p locron --bin locron-service-launcher --test windows_service_launcher --features windows-service-launcher --locked -- -D warnings
+      - run: cargo clippy -p locron --test cli --locked -- -D warnings
 
   windows-full-test:
     name: Windows exploratory tests / ${{ matrix.platform }} / Rust ${{ matrix.rust }}
