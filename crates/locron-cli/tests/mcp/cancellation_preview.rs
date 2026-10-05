@@ -693,6 +693,12 @@ fn history_active_mcp_update_releases_readonly_owner_in_both_modes() {
             drop(creator);
             creator_id
         };
+        #[cfg(unix)]
+        drop(checked(Store::open(
+            paths.clone(),
+            env!("CARGO_PKG_VERSION"),
+            1,
+        )));
         let mut client = McpClient::spawn(&paths.root);
         client.call_tool("locron_add_job", add_job_arguments("owner"));
         let writer = populated_wal
