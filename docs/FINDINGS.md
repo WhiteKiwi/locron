@@ -5720,3 +5720,18 @@ Official workflow syntax limits each run body to21000 characters; four unsaved r
 ## Group B hosted qualification conformance — 2026-10-05
 
 Actual f664 strict lint exposes21 fatal union sites and Windows frozen-ledger failure before94 rows; the observed hash equals exact LF→CRLF projection. Returned-success ownership must precede original post-clock checks. Root verified the complete125-payload read-only candidate and whole five-file inverse. SEL02/SEL05/FI07 phase, binary-size cost and native causes remain UNKNOWN. Full evidence/effects/Verify: [selected plan](planning/GROUP_B_HOSTED_QUALIFICATION_CONFORMANCE_2026-10-05.md).
+
+## Actual guarded-input refusal research before Source (2026-10-06)
+
+The sealed67-artifact research manifest SHA98f218b5a2bd037b54a09c7c434a75734ec34402141d2ec9b19fba72d182f491
+and independent Root full hash/mode/blob verification bind Core mainf90 == A154 == B875.
+A's custom facts refusal does not measure which original metadata/owner/DACL/ACE
+predicate rejected; B's first SEL02 failure occurs among production/recovery/binding
+opens before Store seed. B's exact caller is Server api_prune/qualification.rs, blob
+3b42e4b8c4583519969816314469419468b3e5a2, not a similarly named Store module.
+Select an error-bound closed tag only on the already-returned custom rejection and a
+debug-only pure projection for these dependency-facing Server fixtures. No native error
+wrapping, duplicate native query, permission change or assumed layout/holder repair.
+Independent complete CRLF models are A214/B192/generic158 bytes within256; this is
+zero type/native/timing acceptance. The shared complete plan records scope and Verify:
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).

@@ -5497,3 +5497,19 @@ The run-length supplement in GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md a
 ## Group B hosted qualification conformance — 2026-10-05
 
 Select the closed four-test-Rust-path lint/returned-owner candidate and one ledger-specific LF attribute, preserving full frozen94 bytes, native ownership, SQL/oracles, original horizons and failure admission. Stack8192/read cost, borrowed Copy and cached-wait refusal effects are explicit in the [complete plan](planning/GROUP_B_HOSTED_QUALIFICATION_CONFORMANCE_2026-10-05.md). Docs/owning ALL GET/Root final review precede a separate Source child; fresh actual gates remain mandatory. Latest user direction defers #141 and qualifies remaining groups independently.
+
+## Actual guarded-input refusal observation before separate Source (2026-10-06)
+
+Follow the shared complete
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+Keep frozen SPEC/ARCHITECTURE and all original predicates, native error values, custom
+kind/raw/Display, owner/creation/case/clock/cleanup invariants. One private closed tag
+records only the actual existing rejection; one Windows debug-only pure accessor lets
+the two Server fixtures attach role/kind/raw/optional predicate at original failing calls.
+Root prepares three Docs-only worktrees and owning exact whole-plan GET ALL/final full
+review before one separate developer implements common Core, normally cherry-picks
+that exact Source-only commit into A/B and changes only each selected caller file.
+Root ordinarily integrates the independent native-SID common fix before new A/B CI.
+Complete source conservation and byte proofs precede disposable hosted qualification;
+actual predicate/holder evidence and a later Docs-first repair remain necessary.
+No source/static observation or successful API update closes remaining acceptance.
