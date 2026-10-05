@@ -21,6 +21,8 @@ use uuid::Uuid;
 use crate::migration::migrate;
 use crate::{DaemonLock, LockMetadata, StatePaths};
 
+mod activity;
+
 type AdmissionRow = (String, String, String, i64, String, Option<i64>);
 const MAINTENANCE_BATCH_LIMIT: usize = 100;
 

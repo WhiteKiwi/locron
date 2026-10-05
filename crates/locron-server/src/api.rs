@@ -815,16 +815,7 @@ pub(crate) async fn jobs_run(
                 ));
             };
             let job = store.job(&reference)?;
-            let active = store
-                .history(Some(&reference), 100)?
-                .into_iter()
-                .filter(|run| {
-                    matches!(
-                        run.state.as_str(),
-                        "queued" | "starting" | "running" | "retry_wait"
-                    )
-                })
-                .count();
+            let (active, _) = store.active_runs_for_job(&job.id, 0)?;
             let definition: JobDefinition =
                 serde_json::from_str(&job.definition_json).map_err(StoreError::Json)?;
             let decision = if active == 0 {
@@ -979,14 +970,9 @@ pub(crate) async fn jobs_why(
             .first()
             .map(ToString::to_string);
         let active = store
-            .history(Some(&reference), 100)?
+            .active_runs_for_job(&job.id, 100)?
+            .1
             .into_iter()
-            .filter(|run| {
-                matches!(
-                    run.state.as_str(),
-                    "queued" | "starting" | "running" | "retry_wait"
-                )
-            })
             .map(|run| {
                 locron_core::redact::redacted_run_document(
                     serde_json::to_value(&run).map_err(StoreError::Json)?,

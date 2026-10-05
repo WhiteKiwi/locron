@@ -1314,16 +1314,7 @@ async fn tool_run_job(paths: &StatePaths, args: Value) -> Result<Value> {
 
     if dry_run {
         let def: JobDefinition = serde_json::from_str(&job_rec.definition_json)?;
-        let active = store
-            .history(Some(&job_rec.name), 100)?
-            .into_iter()
-            .filter(|r| {
-                matches!(
-                    r.state.as_str(),
-                    "queued" | "starting" | "running" | "retry_wait"
-                )
-            })
-            .count();
+        let (active, _) = store.active_runs_for_job(&job_rec.id, 0)?;
         let decision = if active == 0 {
             "eligible"
         } else {
@@ -1492,14 +1483,9 @@ fn tool_why(paths: &StatePaths, args: &Value) -> Result<Value> {
             .first()
             .map(ToString::to_string);
         let active = store
-            .history(Some(&job.name), 100)?
+            .active_runs_for_job(&job.id, 100)?
+            .1
             .into_iter()
-            .filter(|run| {
-                matches!(
-                    run.state.as_str(),
-                    "queued" | "starting" | "running" | "retry_wait"
-                )
-            })
             .map(redacted_run)
             .collect::<Result<Vec<_>>>()?;
         let job_val = redacted_job(job)?;
