@@ -404,3 +404,29 @@ and all earlier failed/unrun receipts stay failed/unqualified; localx64 is notAR
 PR159/164/165 may be delivered via157,167 via166,169/170 via168 only after actualmain
 contribution proof. Unfulfilled Verify Issues remainOPEN even after PR delivery; no
 complete feature/support/release status is fabricated. Root owns rule/API/Git/publication.
+
+
+## Local profile-fixture Verify selection (2026-10-06)
+
+Continue #172 hosted residuals, #31 actual CI and #163 integration under the whole
+[WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md](planning/WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md).
+Root must publish the WHOLE committed four-Docs plan/Verify, obtain exact full GET ALL,
+then actually reread the entire final plan/tails before separate local execution. Preserve
+both original daemon5/AppData-refusal FAIL receipts and the later readonly ACE snapshot;
+new-leaf correctness is not trusted-ancestor success. Only a fresh profile UUID parent+
+read-only validation is selected; existing ACLs/security and all5s/8s/30s/25ms/owner/caps
+stay fixed. Real one-shot results/captures and independent cleanup must be recorded with
+actual Source/package/current-main bindings, no ARM/Rust/hosted PASS transfer or failed
+product-as-CI assumption. Root reviews meaningful outcomes before selected policy/merge;
+all unfulfilled acceptance/Issue172 criteria remain OPEN. No live duplicate checklist,
+API/Issue mutation, current-main import, Source change or runtime occurs in this Docs lease.
+
+For the selected one-final-PR171 route, Root publishes the COMPLETE appended plan/Verify
+to all12 owners172/31/163/27/162/146/149/156/158/160/161/35, exact GET ALL then ACTUAL whole
+committed plan/new-tail reread before separate effects. Verify all20 selected historical
+heads through final-assembly ancestry, one normal FF publication and same-final-head11
+contexts/Guardian/package/paired facts; actual GitHub squash main needs sole premerge-main
+parent plus complete tree/contribution/Docs equality. Record exact delivered siblings via
+PR171/main link only after that proof; unfulfilled owning Verify, hosted172, security/
+platform/install criteria stay OPEN. Prior sequential routing remains historical; Source,
+clocks/security/oracles and failed/unrun evidence are unchanged, with no acceptance now.

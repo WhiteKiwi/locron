@@ -5875,3 +5875,34 @@ DocsFIRST. MemberPR delivery requires actualmain contribution; unsatisfied Verif
 stayOPEN. Restore three runtime requirements only after172 genuine exact-head hosted
 acceptance/full readback. This supersedes earlier deferred141/all-runtime-green merge
 sequencing solely; frozen SPEC/product acceptance and failed/unrun receipts remain fixed.
+
+
+## Local profile-root admission before separate Verify (2026-10-06)
+
+Follow the whole WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md after Root four-Docs commit,
+whole owning172/31/163 POST/exact GET ALL and actual entire final committed-plan/new-tail
+reread AFTER ALL GETs. A separate external Verify lease may change only the first sealed
+controller's parent to observed profile and add read-only exact chain/private-leaf checks
+before original spawn. Use absent UUID/current-SYSTEM protected atomic creation, same
+verified bd86 x64 release, literal genuine Wake/Cancel operations/oracles and original
+5s/8s/30s/200ms/25ms/target1201frames/64KiB+sentinel/5sgrace. Explicitly dispose/close native
+query owners, retain unknown bundle/no fresh work, freeze first result before real-owned
+reap and one private state teardown, keep complete private evidence. No existing ACL/
+account/policy/PATH/task/install/app Source/clock/security change or automatic retry.
+Original two local FAILs and hosted22P2F remain; profile snapshots do not establish future
+authority or original Rust probe/guard/TempDir/ARM/support acceptance. This A Docs template
+imports no Native Source. Bind actual latest main8423a8ba and strict-base ordinary Native
+changed-head gates separately; preserve historical f90 pins and every existing Doc byte.
+
+Select the appended one-final-PR171 route before any integration: actual reviewed Native
+bd86, ordinary exactmain842 merge, finalized A/profile Docs, B72, C18, D already-carried
+ancestry/contribution proof without Source replay, then Ebc. Preserve BOTH A/B CI consumer
+flows, Native test-threads=2, C selector gates, one identical rusqlite entry at B's position,
+equal Server dependency entries and E's exact TLS/action pins. Require every selected20
+head ancestor of the final assembly and complete Source/Docs/mode/blob conservation.
+Root owns one final normal FF publication, same-head11 checks/Guardian/package reviews,
+then GitHub squash with sole actual premerge-main parent and complete final-tree equality.
+Sibling commits are not squash-main ancestors; close delivered PRs only through exact
+contribution/PR171/main proof, retaining all remaining Verify Issues. All12 whole-plan
+POST/exact GET ALL and Root entire committed reread precede separate leases. No Source,
+Git/policy/runtime effect or repository merge-setting change occurs under this Docs lease.

@@ -6140,3 +6140,36 @@ The complete five-Verify plan is
 Only three runtime required contexts are selected for temporary removal; exact11
 other requirements/manualGuardian remain, ordinary jobs/failures visible. Root backup/
 readback and after-GET full plan review precede effects;172 and unfulfilled owners stayOPEN.
+
+
+## Local profile fixture after actual ancestor refusal (2026-10-06)
+
+The two original bd86 release CLI smoke cases remain FAIL: actual daemon5 before any
+Add/Run/Cancel/target, with identical54-byte unsafe-managed-path stderr. Subsequent
+read-only held-handle inspection identifies existing AppData other Allow ACE1/flags0/
+FullControl0x1f01ff/mutation0xd0150, matching Core's unchanged trust refusal. This is a
+later descriptor snapshot, not same-instruction trace or effective-account analysis.
+The new protected containers match the private descriptor; volume/users/profile pass
+observed trust, while Local/workspace do not. No ACL repair or app repeat occurred.
+First14-payload manifest38593aec1f934b37d378dcdfc2bf62dad0f71a52c225074d323234725ec483bb
+and readonly8-payload manifestea620bfc21f1d7c12d2a52ecdc0bac6b72fd26828cb59b396e8d6ea38a6455bd
+stay frozen. Select only new absent UUID fixtures directly under observed profile plus
+read-only chain/private-leaf validation before original spawn, same Source-bound x64
+release/commands/5s/8s/30s/25ms/caps/owners/quarantine. This does not explain hosted ARM
+Role or stable Cancel cleanup, transfer PASS, or qualify default unsafe ancestors.
+Complete scope, exact hashes and four concrete Verify are in
+[WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md](planning/WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md).
+Root four-Docs commit, whole172/31/163 POST/exact GET ALL and ACTUAL entire final plan/
+tails reread precede a separate one-shot Verify lease; no runtime effect is selected here.
+
+Root also selects one final unpublished Nativebd86->exactmain842->finalA/profile Docs->
+B72->C18->D ancestry/conservation->Ebc assembly, one PR171 normal FF publication and one
+GitHub squash main merge. This replaces only historical sequential representative
+publication/main routing, preserving all failed receipts, Source/security/clocks/Verify.
+Root's20-head snapshot is bound in the new plan and requires fresh prepublication reads;
+all20 must be final-integration ancestors, while squash main requires COMPLETE tree/Source/
+Docs equality and sole actual premerge-main parent, not sibling ancestry. Repository
+allow_merge_commit=false/rebase=false/squash=true is observed configuration, not an edit.
+All12 owning whole-plan GETs/Root after-ALL reread precede separate effects; all11 genuine
+same-final-head contexts plus Guardian/package/paired reviews remain. Verified delivered
+sibling PR closure does not close unsatisfied Issues or convert unrun/local/hosted FAILs.
