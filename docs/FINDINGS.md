@@ -5756,6 +5756,28 @@ Refs #162 / PR145. Root reviewed clean Source0c0086445f98ce8498fdf0ae670deb6a51a
 
 Current652 ordinary37231275837/1 fails14PASS/3nativeFAIL/2optional at actual PermissionDenied/raw5 (378/371/418ms; wrapper renames1/cleanup1), followed by constructor mutex poison. Root proofc91cab51f7ba4fb5f5c2955f7c89e316223d417ff52bedfd854684c87444f989 binds284 research artifacts,968 canonical inputs, all325 tested mode/blobs and17 original logs. The destination predicate mismatches this returned error; native instruction/ACL/holder/cause and checked failed-root teardown remain unknown. Select destination-only failed-PermissionDenied preservation plus actual same-root released regeneration/full destination and permanent-lock identity witnesses under unchanged clocks. Preserve the shared32/33 and complete unreached scratch/constructor criteria. Independent x64 wake failures and skipped downstream gates remain open.
 
+## Output repair qualification selected after full review (2026-10-04)
+
+Issue #146 continues the retained-file Store and streaming Engine corrections under the frozen SPEC/STORAGE contract. Complete original Source, callers and the 96-key proposal were read. The original CI establishes only existing test results: #147 has 14 passes/three formatting failures/two optional skips; #148 has 17 passes/two optional skips. Parser-versus-I/O, actual retained identity/drift, terminal/stale eligibility and Linux memory qualification remain unexecuted. See planning/OUTPUT_REPAIR_QUALIFICATION.md for the selected private shared-algorithm seam, exact row ledger and empirical RSS limits. Native sharing remains actual OS proof and post-truncation sync failure remains an error after mutation.
+
+
+## PR147 reviewed owner Drop-order conservation
+
+Root found the shared repair wrapper destructures File and DirectoryGuard into reverse-dropped local bindings. Keep the exact returned pair as one tuple owner and borrow field0 so File still drops before its parent guards. The completed appendix in planning/OUTPUT_REPAIR_QUALIFICATION.md confines the separate two-statement correction; all functional controls, clocks, API and native claims remain unchanged.
+
+## PR147 exact main136 integration selection
+
+PR136 is merged as f90a9d5 with exact reviewed/tested tree and actual ordinary/native/paired acceptance. Follow [the selected integration plan](planning/OUTPUT_REPAIR_MAIN136_2026-10-04.md) to preserve the reviewed own Source and complete historical document blocks before fresh combined-head qualification. Prior successes do not qualify the new tree.
+
+## Store147 actual receiver lint and separate failures (2026-10-05)
+
+CI37217661880/1 completed12PASS/5FAIL/2optional. All3Clippy diagnostics select a single needless-borrow receiver correction in the private real-file adapter; Source/store policy remains unchanged. Windows Store42 rows passed all3drivers, caller6 passed MSRV and were skipped x64/ARM after separate wake failures; do not claim48 on those two. Native History/Ack expiry and later x64 GUI retaining-handle cause remain UNKNOWN. planning/OUTPUT_REPAIR_READ_RECEIVER_2026-10-05.md binds the sole expression/Verify before Source.
+
+
+## Measured caller branch lint (2026-10-05)
+
+Completed fresh hosted Linux/macOS Rust1.98 Clippy jobs111490407950/111490407940 on Sourcee50106ac038937877776c9cafdbec834d54e095c expose clippy::if_not_else at the caller fixture outer condition maintenance.rs1324; the previous receiver warning is absent, and Windows lint111490407874 passed. The original &str case condition can be inverted to equality while exchanging its two complete literal bodies without changing any case operation. This does not establish or repair the still-pending native wake/cancellation failures. Preserve raw logs and actual partial-run scope.
+
 ## Grouped arrivals and exact contributor boundaries (2026-10-05)
 
 Fresh inventory has19 open PRs at unchangedmainf90. Git ancestry confirms newer141946 and1673a descend from selected652/e9d; newer1667429 diverges from localdf30 with only Docs differences and identical whole WinGet Source/CI. New168/169 are two distinct one-line action updates in ci.yml,170 is one Engine dev-dependency plus its exact lock package. The initial16-member/four-group checkpoint remains historical; a fifth dependency group168/169/170 is selected only for read-only research. Preserve all contributions and review new producer diagnostics and action/dependency Sources before new final integration decisions, per GROUPED_PR_ARRIVALS_2026-10-05.md.
@@ -5784,6 +5806,69 @@ Actual04c Windows1.98 raw39817B/SHA2c03536e613126d0d88d74303e803d9bf609154ab30ed
 ## Group A actual facts-refusal observation — 2026-10-05
 
 Actual f97 CI14ordinaryPASS/3WindowsFAIL records first facts PermissionDenied/rawNone before193195 controls; strict Windows lint now passes. Core normal managed-file admission does not directly require private-leaf DACL on this path. Existing managed/stock custom Error spellings can identify a class and a bounded lexical ancestor index without another native query; they do not identify actual native object/security predicate. Select only the one-file118-line class/index alternative with private stack2048, fixed labels, index0..63/unknown and104CRLF diagnostic cap. Original refusal/Error/Unix/facts read/body/root/clock remain whole. Arbitrary Error formatter work and real current failure cause remain unknown/unmeasured. Full scope and concrete Verify: planning/GROUP_A_FACTS_REFUSAL_OBSERVATION_2026-10-05.md.
+
+## Group B concrete integration and qualification findings — 2026-10-05
+
+Source-backed147/148/150/151/153/154 projection preserves whole contributions but historical Engine-only/output totals and native3 do not qualify combined96 or prune. Root selects complete94 prune contracts (Unix86/Windows88), full96 receipt bindings, corrected state10Linux/9mac names, typed private13table oracles, original-body-inverse FI04 seams and early separate production CargoJSON/env admission. Public config cannot admit negative cap; corrupt settings/junction-self and native ownership limits remain explicit. See GROUP_B_OUTPUT_PRUNE_STATE_INTEGRATION_2026-10-05.md and exact rows ledger.
+
+
+## Engine output qualification on reviewed main (2026-10-05)
+
+Refs #146 / PR148. Root reread the complete original411-line Engine module and separate read-only pre-development handoff. The unchanged96-key ledger selects Engine common41 plus Unix1/Windows2, yielding42/43 functional controls; the three Linux memory rows produce45Linux/42macOS/43Windows and Engine47 union. Earlier43/44 wording was a handoff count error, not a new case. The File-typed collector wrapper is necessary to retain GuardedFile deref coercion while the private generic collector shares the literal scanner. Default libtest success output is captured, so ordinary suite totals alone cannot establish fixed keys or real VmHWM numbers. The new committed ENGINE_OUTPUT_QUALIFICATION_2026-10-05.md selects an additive hosted CI receipt step and preserved native/Unix artifact outputs before Source; this supersedes the prep's no-CI lease only for that bounded addition. All new controls and memory metrics remain unmeasured, and separate Store success is not Engine acceptance.
+
+
+### Root isolated XDG/HOME discovery research (2026-10-04)
+
+Separate104-artifact Source research and Root proof15d9ba7a establish that
+head6a26 selects nonempty Linux XDG before HOME fallback, while the complete
+macOS/Windows branches, override policies and old tests remain exact. Existing
+three CLI discovery cases do not qualify the HOME/XDG matrix or invalid-byte
+path selection. Actual ServiceContext still has separate HOME requirements.
+Select only genuine child-command discovery regressions and exact actual main9de
+in planning/XDG_STATE_WITHOUT_HOME.md before separate development; no old CI
+metadata is new acceptance.
+
+
+## PR153 actual macOS raw-state refusal before further Source (2026-10-04)
+
+Actual CI37207052645 at1ba658 ran Linux10/10 on all three rows but macOS6/9 on both rows: three raw-byte live config calls returned exit5/EILSEQ92 after dry-run, then their success assertions failed. Post-refusal state checks were unexecuted. Unix lint separately rejects only a new Debug-path assertion message. Root327-artifact actual proof21b8e38e and separate105-artifact refinement proof96953e16 preserve the observed facts and unknown native primitive/filesystem. The original6a26 macOS semantics are unchanged but its refactored raw block differs from incoming main. Follow planning/XDG_MACOS_RAW_STATE_REFUSAL_2026-10-04.md; use actual JSON refusal and successful valid-parent empty enumeration, keeping Linux successful placement and whole production Source unchanged.
+
+
+## PR153 full incoming f90 compatibility before Git integration (2026-10-05)
+
+Separate read-only research and independent Root proof 05a6e83fc5554d0da7c349eb9db8ae4556fee4ba09093b88987d444d8b56798a select normal exactf90 integration with no Source adaptation. Preserve complete incoming FINDINGS/IMPLEMENTATION as authoritative prefixes and append only reviewed own/new components once; incoming native histories are not a guessed common9de suffix. Actual mainf90 native22PASS2FAIL remains failed, while the selected own HTTP/macOS Source has not gained new hosted acceptance. Full scope and every Verify are in docs/planning/PR153_MAIN_F90_INTEGRATION_2026-10-05.md.
+
+## Group B same-pending FI07 proof correction — 2026-10-05
+
+Actual production daemon entry changes lifetime/reconciliation; its executable alone is not an existing maintenance command. The read-only FI07 packet binds original CLI maintain and existing Core true root/Job/I/O/deadline success. Select strict existing-libtest support with distinct actual CargoJSON production/recovery bindings, independently guarded same-pending state and full13-table/file oracle. Existing Core-owned fixed PS5.1 adapter avoids the forbidden Server→Engine edge; descriptor hash is external, Framework Arguments is literal, captures and true support status are separate from Core Job evidence. New APIs/extra cold costs/native facts remain unmeasured. Full finite caps/ownership/clocks and Verify are in GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md.
+
+## Group B actual qualification module name — 2026-10-05
+
+Actual Server lib.rs13/api.rs47 module declarations yield api::prune_output::qualification::contracts, rather than the original plan’s filename-based selector. Correct the selected CI/receipt name before dependent Source; preserve module declarations/paths and original49/94 bytes. Zero matched tests remain failure.
+
+## Group B creator, writer and production-child proof admission — 2026-10-05
+
+Actual Store open takes StatePaths/version/now; tempfile ownership does not imply Core privacy. The read-only proposal c12f3540f4b0a8ebc404fa6c10d1ac8cc3a05078748c9de91213266687e883ac selects an absent canonical state child with retained prefix admission before the real Store creator, retained actual initializing writer/no-CREATE raw oracle, and a strict fixed CI artifact record. Production CLI root reap alone is not Job-empty; use the same existing Core-owned fixed adapter with closed production/recovery operations and original genuine completion/capture clocks. Full finite schema, ownership and Verify are in GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md. New APIs/native/SQLite behavior and costs remain unmeasured.
+
+
+## Group B CI full native identity admission — 2026-10-05
+
+Actual CPython3.12.7 can report successful Windows stat after FileIdInfo failure with lower-resolution fallback. Root reviewed the nonexecuted ten-entry packet and exact Core/locked SDK/CPython ranges. Select only the fixed CI artifact reader's successful full FileIdInfo/regular no-reparse retained handle, two complete hashes and exact owner-transfer/close proof; a version floor is insufficient. All native/layout/timing behavior remains unmeasured. Full scope, finite bounds and Verify are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.
+
+
+## Group B retained binding JSON observation — 2026-10-05
+
+The fixed binding record is JSON and cannot pass an executable ABI decoder. The nonexecuted candidate preserves all five artifact reader bodies, reuses their genuine retained native owners, and independently caps JSON at32768 bytes before parsing with duplicate-key/closed-schema checks and two full observations. Root checked the five-entry packet and frozen Source/CI bytes; native/layout/cost remains unmeasured. The explicit selected bounds and exact unchanged-evidence reuse are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.
+
+
+## Group B GitHub run-body length boundary — 2026-10-05
+
+Official workflow syntax limits each run body to21000 characters; four unsaved repeated-reader candidates exceed it. The selected single private CI module retains all five native reader bodies and three JSON routines, with explicit strictUTF8 decode and no import-time native work. Root read the complete helper and verified all seven packet hashes/ASTs; fixed checkout-file loading avoids namespace-package shadow resolution. Full selected exception, Source limits and Verify are in planning/GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md.
+
+
+## Group B hosted qualification conformance — 2026-10-05
+
+Actual f664 strict lint exposes21 fatal union sites and Windows frozen-ledger failure before94 rows; the observed hash equals exact LF→CRLF projection. Returned-success ownership must precede original post-clock checks. Root verified the complete125-payload read-only candidate and whole five-file inverse. SEL02/SEL05/FI07 phase, binary-size cost and native causes remain UNKNOWN. Full evidence/effects/Verify: [selected plan](planning/GROUP_B_HOSTED_QUALIFICATION_CONFORMANCE_2026-10-05.md).
 
 ## Actual guarded-input refusal research before Source (2026-10-06)
 
@@ -6105,6 +6190,7 @@ Four concrete Verify steps require Root four-Docs commit, new whole-plan exact o
 AFTER ALL before separate development. Failed/unrun scope and all issue/member criteria
 remain open; all20 PRs are open, signing37 deferred and no release/main merge is implied.
 
+
 ## Early A/B diagnostic integration research and selected order (2026-10-06)
 
 The sealed76-artifact manifest SHA614c7d7c194bc615866b199eb0eba8837b9967d6f404c45b88cebcda4d4623b5
@@ -6261,6 +6347,79 @@ allow_merge_commit=false/rebase=false/squash=true is observed configuration, not
 All12 owning whole-plan GETs/Root after-ALL reread precede separate effects; all11 genuine
 same-final-head contexts plus Guardian/package/paired reviews remain. Verified delivered
 sibling PR closure does not close unsatisfied Issues or convert unrun/local/hosted FAILs.
+## Guard per-user direct-build hypothesis (2026-10-06)
+
+B production/recovery locator and original CLI fence remains an actual failed/unqualified scope. The frozen seven-payload
+placement-owner-policy research establishes no false owner/ACL rejection and no
+actual host path/SID/full mask/cost. Direct LOCALAPPDATA placement is a selected
+experiment; existing ancestor/leaf/private/identity guards decide, with no fallback,
+ACL repair, copy or private-target guarantee.
+A image guard requires TokenUser leaf-owner equality; Admin/SYSTEM write ACEs
+do not broaden it. A facts/B images/locator keep their four-owner ancestry
+guard without A's leaf equality; actual TokenOwner/TokenUser/leaf owners unknown.
+The concise identical
+[WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md](planning/WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md)
+pins current clean A88cd/B163e and the narrow step-scoped target/facts/readback
+composition; B alone adds one track_caller location hint, with cost/cause unknown.
+Every old failed result and every historical Doc byte remain preserved. Source
+waits for Root commits/all owning exact GETs/final entire reread and separate lease.
+
+
+## B returned-refusal and caller/profile research selection (2026-10-06)
+
+At exact d094, CI37378467273/1 remains FAILURE (9 success/6 failure/2 macOS30-minute
+cancellations/2 optional skips); original24 native20PASS/4FAIL. Each Windows Server
+job passes28 prior rows/FI07 then N072591 refuses, kind/raw/tag UNKNOWN. N07 helper_remove
+returns a local Rust Err projection; earlier guards/private checks may refuse before
+delete, so no native instruction/holder/code5 is inferred. The selected same-error
+failure suffix retains original PermissionDenied && raw32|33 and bounds payload239CRLF.
+Linux181 is checked PRE,182 operation,183 POST; caller propagation does not measure cost.
+The conventional test-only sha2 opt-level3 package experiment preserves real full hashes
+and inherited checks; generic wrappers may retain caller optimization, benefit unmeasured.
+The sealed fence/N07 packets and every old failure remain frozen. The complete B-only
+[WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md](planning/WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md)
+selects only three later Source scopes after Root whole-owning GETs/final actual reread.
+SPEC/security/owners/oracles/clocks stay frozen; no Source implementation is authorized here.
+
+
+## B actual Windows map_unwrap_or boundary (2026-10-06)
+
+B2cf84 CI37390581174/1 snapshot1 is in_progress; completed lint112034420912
+lines425-441 reports the sole reached map_unwrap_or at API2600. Select only equivalent
+map_or in the existing N07 failure suffix: same returned Error, closed labels/message
+bytes/239CRLF and original PermissionDenied AND raw32|33/owners/clocks remain.
+No native outcome, cause or performance is inferred. The complete amended
+WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md governs append-only Docs,
+ALL owning whole-plan GETs and Root actual final after-ALL reread BEFORE Source.
+
+
+## B N07 returned raw and platform-kind evidence (2026-10-06)
+
+Final B2cf84 CI37390581174/1 failed with13 required successes/four failures/two optional skips;
+original24 native21PASS/3FAIL. All three Windows API N07 failures return store_io/unrecognized/
+raw32 after28 preceding rows/FI07; foundation compilers are1.94/1.99, lint1.98. Tagged decoders
+leave32/33 to Uncategorized, distinct from the printed closed label. CLI actual row/kind/raw
+remain UNKNOWN behind ValueError. API raw32 locates no holder/path/native instruction and proves
+no later released-positive or completed cleanup. Root's unpublished02bc map_or is a separate fix.
+The complete [WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md](planning/WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md)
+supersedes ONLY the two historical Windows N07 PermissionDenied expectations with exactraw32|33
+AND same-returned-kind/platform-decoder equality. Product guards/error projection/closed239,
+CLI context/holders/positive controls/clocks/Unix and every historical document/receipt stay literal.
+Whole owning-plan GETs and Root final committed after-ALL reread precede separate Source authority.
+
+
+## B prewrite formatter STOP and local-Verify scope (2026-10-06)
+
+The sealed17-payload e11cc4b STOP proves both Source files/all362 entries/index unchanged.
+Actual API1.94 output differs only by internal wrapping of the selected decoder equality;
+CLI/1.98/metadata remain unrun. Root verified the full output inverse; no native cause is inferred.
+The amended WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md permits only equivalent whitespace
+inside those same two predicates, with normalized-expression/full-file physical+canonical inverses.
+Human authorizes isolated owned local Windows Verify under a later runtime lease, with original
+clocks/oracles and no account/task/logon/reboot/install/globalPATH/admin effects. Within that scope
+the older blanket no-local-runtime/all-Windows-green-before-merge clauses are superseded only;
+residual CI stays explicit in Issues, local x64 proves no ARM/remote pass, and old failures remain.
+All owning whole-plan GETs/final entire committed after-ALL reread precede separate Source authority.
 
 
 ## Combined Windows library evidence absence collision (2026-10-06)

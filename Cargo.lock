@@ -1388,6 +1388,7 @@ dependencies = [
  "locron-core",
  "locron-store",
  "reqwest",
+ "rusqlite",
  "rust-embed",
  "serde",
  "serde_json",

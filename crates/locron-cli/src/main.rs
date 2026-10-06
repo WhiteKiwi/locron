@@ -1,5 +1,6 @@
 //! `locron` command-line composition root.
 
+mod explicit_prune;
 mod maintenance;
 mod mcp;
 mod self_update;
@@ -3639,6 +3640,15 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
 }
 
 fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
+    prune_with_remover(paths, dry_run, format, explicit_prune::remove_output)
+}
+
+fn prune_with_remover(
+    paths: &StatePaths,
+    dry_run: bool,
+    format: Format,
+    mut remove: impl FnMut(&StatePaths, &Path) -> Result<()>,
+) -> Result<()> {
     if dry_run && !paths.database.is_file() {
         if format == Format::Human {
             println!("dry run: would prune 0 runs, 0 outputs (0 bytes)");
@@ -3658,45 +3668,37 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         open(paths)?
     };
     let settings = store.settings()?;
-    let mut retained = store.retained_output_bytes()?;
+    let mut projected = store.retained_output_bytes()?;
+    if projected < 0 || settings.output_limit_bytes < 0 {
+        return Err(
+            StoreError::Conflict("output byte accounting must be non-negative".into()).into(),
+        );
+    }
     let age_cutoff = now_us().saturating_sub(30_i64 * 24 * 60 * 60 * 1_000_000);
-    let candidates = store
-        .output_retention_candidates(100)?
-        .into_iter()
-        .filter(|candidate| {
-            candidate.finalized_at_us < age_cutoff || retained > settings.output_limit_bytes
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut bytes = 0_i64;
+    for candidate in store.output_retention_candidates(100)? {
+        if candidate.physical_bytes < 0 {
+            return Err(StoreError::Conflict(
+                "output artifact byte count must be non-negative".into(),
+            )
+            .into());
+        }
+        if candidate.finalized_at_us >= age_cutoff && projected <= settings.output_limit_bytes {
+            continue;
+        }
+        bytes = bytes.checked_add(candidate.physical_bytes).ok_or_else(|| {
+            StoreError::Conflict("selected output byte count exceeds supported range".into())
+        })?;
+        projected = projected.saturating_sub(candidate.physical_bytes).max(0);
+        candidates.push(candidate);
+    }
+    let planned_paths = explicit_prune::validated_paths(paths, &candidates)?;
     if !dry_run {
-        for candidate in &candidates {
-            #[cfg(windows)]
-            let path = {
-                let attempt = u16::try_from(candidate.attempt_number)?;
-                let path = paths.final_output(&candidate.run_id, attempt)?;
-                if candidate.relative_path != format!("{}/{attempt}.log", candidate.run_id) {
-                    return Err(anyhow!(
-                        "database output path is not the canonical final path"
-                    ));
-                }
-                path
-            };
+        for (candidate, path) in candidates.iter().zip(&planned_paths) {
             store.mark_output_prune_pending(candidate, now_us())?;
-            #[cfg(not(windows))]
-            let path = paths.outputs.join(&candidate.relative_path);
-            #[cfg(windows)]
-            locron_core::filesystem::remove_private_file(&path)?;
-            #[cfg(not(windows))]
-            match std::fs::symlink_metadata(&path) {
-                Ok(metadata) if metadata.file_type().is_symlink() => {
-                    return Err(anyhow!("refusing to prune symbolic-link output"));
-                }
-                Ok(metadata) if metadata.is_file() => std::fs::remove_file(&path)?,
-                Ok(_) => return Err(anyhow!("refusing to prune non-file output")),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
+            remove(paths, path)?;
             store.finish_output_prune(candidate, now_us())?;
-            retained = retained.saturating_sub(candidate.physical_bytes);
         }
     }
     let outputs = candidates.len();
@@ -3705,10 +3707,6 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         .map(|candidate| candidate.run_id.as_str())
         .collect::<BTreeSet<_>>()
         .len();
-    let bytes: i64 = candidates
-        .iter()
-        .map(|candidate| candidate.physical_bytes)
-        .sum();
     if format == Format::Human {
         if dry_run {
             println!("dry run: would prune {runs} runs, {outputs} outputs ({bytes} bytes)");
@@ -7499,3 +7497,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "explicit_prune/qualification.rs"]
+mod prune_qualification;

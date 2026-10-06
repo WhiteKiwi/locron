@@ -44,6 +44,9 @@ use crate::middleware::{CSRF_COOKIE, SESSION_COOKIE, constant_time_eq};
 use crate::token;
 use crate::transfer::{self, ApiTransferError};
 
+#[path = "api_prune.rs"]
+mod prune_output;
+
 /// Default history limit when `limit` is absent.
 const DEFAULT_HISTORY_LIMIT: usize = 20;
 /// Largest run-history page accepted by the API.
@@ -1783,58 +1786,7 @@ pub(crate) async fn prune(
     Query(query): Query<PruneQuery>,
 ) -> Response {
     let result = with_store_for(&state, query.dry_run, move |store| {
-        let Some(store) = store else {
-            return Ok(json!({"dry_run": true, "candidate_count": 0, "bytes": 0}));
-        };
-        let settings = store.settings()?;
-        let mut retained = store.retained_output_bytes()?;
-        let age_cutoff = now_us().saturating_sub(30_i64 * 24 * 60 * 60 * 1_000_000);
-        let candidates = store
-            .output_retention_candidates(100)?
-            .into_iter()
-            .filter(|candidate| {
-                candidate.finalized_at_us < age_cutoff || retained > settings.output_limit_bytes
-            })
-            .collect::<Vec<_>>();
-        if query.dry_run {
-            return Ok(json!({
-                "dry_run": true,
-                "candidate_count": candidates.len(),
-                "bytes": candidates.iter().map(|candidate| candidate.physical_bytes).sum::<i64>(),
-            }));
-        }
-        for candidate in &candidates {
-            store.mark_output_prune_pending(candidate, now_us())?;
-            let path = store.paths().outputs.join(&candidate.relative_path);
-            match std::fs::symlink_metadata(&path) {
-                Ok(metadata) if metadata.file_type().is_symlink() => {
-                    return Err(ApiError::Message(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_request",
-                        "refusing to prune symbolic-link output".to_owned(),
-                    ));
-                }
-                Ok(metadata) if metadata.is_file() => {
-                    std::fs::remove_file(&path).map_err(StoreError::Io)?
-                }
-                Ok(_) => {
-                    return Err(ApiError::Message(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_request",
-                        "refusing to prune non-file output".to_owned(),
-                    ));
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(ApiError::Store(StoreError::Io(error))),
-            }
-            store.finish_output_prune(candidate, now_us())?;
-            retained = retained.saturating_sub(candidate.physical_bytes);
-        }
-        Ok(json!({
-            "dry_run": false,
-            "candidate_count": candidates.len(),
-            "bytes": candidates.iter().map(|candidate| candidate.physical_bytes).sum::<i64>(),
-        }))
+        prune_output::run(store, query.dry_run)
     })
     .await;
     respond(result, &[])

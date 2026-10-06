@@ -1,0 +1,20 @@
+# Bounded and path-safe dashboard pruning
+
+Base: main `46445881e320f440c02d94d7e9e5838033933fea`. This continues the frozen SPEC/IMPLEMENTATION output-retention and dashboard/CLI parity requirements. STORAGE.md requires canonical identifier-derived paths, no symlink traversal, durable prune intent before removal, and completion only after removal. No retention age, byte allowance, batch limit or run-state policy changes.
+
+## Source-established gaps
+
+The dashboard prune handler filters all candidates against the initial retained-byte total, collecting the entire selection before reducing that total. If usage begins over the limit, every candidate in the batch is selected even when removing the first artifact would already meet the limit. Dry-run reports that same excessive selection. The API also joins the stored relative_path directly and checks only the final leaf before a plain remove_file, unlike the canonical-path and guarded Windows removal used by automatic CLI maintenance.
+
+## Implementation and Verify
+
+1. Plan the existing oldest-first batch using a decreasing projected retained-byte count. Always include age-expired candidates; include younger candidates only while the projected count exceeds the configured limit. Reject negative byte facts and checked-sum overflow rather than producing misleading totals. **Verify:** 110 retained bytes, limit 100 and three fresh 10-byte artifacts selects one, not three; already-under-limit, exact-limit, zero-byte, age-only, mixed-age and batch-cap cases preserve deterministic order. Dry-run and execution use exactly the same selected identities and byte total.
+2. Validate every selected run UUID, positive in-range attempt number and exact `{run_id}/{attempt}.log` stored path before writing any prune intent. Derive filesystem paths through StatePaths rather than joining persisted text. **Verify:** absolute, parent traversal, backslash, noncanonical UUID, alternate attempt spelling, partial-file and identity/path mismatch entries fail before any selected artifact is marked or removed; valid stored records keep the existing response shape.
+3. Remove only canonical finalized leaves under existing private managed directories. Retain root/output/run-directory guards through removal; refuse symlink/non-directory parents and symlink/non-file leaves; use the existing Windows remove_private_file adapter and Unix directory synchronization. Missing artifacts remain reconcilable without recreating missing directories. Keep intent -> removal -> completion ordering and stop on errors, leaving a pending intent when an effect/commit fails. **Verify:** symlinked parents/leaves, missing directories, Windows reparse/sharing/ACL refusal, I/O and sync failures never delete unrelated files or report completed cleanup. Successful removal preserves job/run history and current active outputs.
+4. Keep the handler thin and put selection/removal in a private API child module. **Verify:** only the prune endpoint changes; existing authentication, query parsing, dry-run handling, error envelopes, caller Store boundary and 100-candidate bound remain. Add focused regression tests and run server contracts, formatting, Clippy and native x64/ARM64/Unix acceptance before merge.
+
+The explicit CLI prune selection contains the same initial-total filtering pattern and needs a separate coordinated follow-up; this Draft does not claim to fix that caller or change automatic maintenance, which already decreases its counter after successful removal.
+
+## Handoff boundaries
+
+The requested deliverable is an implementation Draft. Test additions, Rust compilation, independent review and native qualification are pending handoff requirements, not completed results. This environment has no Rust toolchain or separate development sub-session. Guarding uses the repository's existing platform guarantees; it is not a new hostile-same-account sandbox or a transaction across filesystem and SQLite. No user logs, live jobs, installation, release, merge or issue closure are performed here.

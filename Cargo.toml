@@ -78,3 +78,6 @@ too_many_lines = "allow"
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
+
+[profile.test.package.sha2]
+opt-level = 3
