@@ -5857,3 +5857,21 @@ Full-file inverse/other-mode+physical protection and Root whole scoped review pr
 fresh actual195/193 and every original required gate. Current21/24 native and Server
 refusal remain failed/unqualified; missing JSON, type/static success or a guarded-base
 selection cannot establish actual owner/privacy/cleanup or Windows product support.
+
+
+## Merge sequencing and selective Windows-CI deferral (2026-10-06)
+
+Follow the whole WINDOWS_MERGE_AND_CI_DEFERRAL_2026-10-06.md after Root four-Docs
+commit, owning172/31/163 whole-plan POST/exact GET ALL and ACTUAL entire final committed
+plan/new-tail reread AFTER ALL GETs. Separate leases own narrow local x64 releaseCLI
+Verify, selective ruleset21282730 backup/edit/readback and normal exact-main integrations.
+Remove only three Windows runtime requirements; preserve strict/deletion/noactors and
+require exact11 remaining contexts plus manualGuardian, all ordinary jobs unchanged.
+Native171→A141→sealedB147→C157→D166 contribution disposition→E168 binds each actualmain.
+CI conservation retains Native test-threads=2/BOTH distinct A/B producers+targets/gates/C
+selector checks; equal B/C dev rusqlite once atBposition, Eexactpins/TLSlocktable only.
+All uniqueDocs/native owners/security/clocks/oracles survive; broader conflict returns
+DocsFIRST. MemberPR delivery requires actualmain contribution; unsatisfied Verify Issues
+stayOPEN. Restore three runtime requirements only after172 genuine exact-head hosted
+acceptance/full readback. This supersedes earlier deferred141/all-runtime-green merge
+sequencing solely; frozen SPEC/product acceptance and failed/unrun receipts remain fixed.

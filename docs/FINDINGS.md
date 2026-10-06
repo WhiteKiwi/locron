@@ -6121,3 +6121,22 @@ The complete new four-Verify plan is
 [WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md](planning/WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md).
 Root all-six WHOLE NEW-plan POST/exact GETs and ACTUAL entire committed new-plan/new-tail
 reread AFTER ALL GETs precede separate Source. No Source or hosted success is claimed.
+
+
+## Selected merge order with explicit hosted-Windows residuals (2026-10-06)
+
+The owner selects meaningful isolated local x64 Windows Verify, unresolved hosted CI
+in Issue172, then reviewed merges. Nativebd86 original24 remains22PASS/2FAIL, with
+ARM firstRole/Role before probe/Run distinct from stable first-work success→ExpiredCleanup.
+Daemon StoreOpen/enter was observed; code1 is CleanupWait AFTER teardown, not a proven prior
+fatal exit or failed Store operation. Exact Role cause UNKNOWN, late cleanup notPASS.
+D166/167 already enter Native/A/B ancestry.
+The sealed C/D/E source audit binds real contributor paths and separate C/B rusqlite
+positions: preserve ONE equal common dev edge, every native/A/B producer/gate and
+C selector. E changes production TLS lock resolution as well as its test declaration.
+This is merge/protection sequencing, not a new runtime or feature acceptance claim.
+The complete five-Verify plan is
+[WINDOWS_MERGE_AND_CI_DEFERRAL_2026-10-06.md](planning/WINDOWS_MERGE_AND_CI_DEFERRAL_2026-10-06.md).
+Only three runtime required contexts are selected for temporary removal; exact11
+other requirements/manualGuardian remain, ordinary jobs/failures visible. Root backup/
+readback and after-GET full plan review precede effects;172 and unfulfilled owners stayOPEN.

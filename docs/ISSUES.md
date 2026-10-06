@@ -390,3 +390,17 @@ threeWindowsF/twooptionalSKIP and21nativeP/3F stay frozen; ZERO Windows PR144JSO
 UNAVAILABLE, not completed controls or a private error tag. Old cause/new-child/type/
 privacy/native acceptance remains unqualified. No retry/clock/security/Unix relaxation;
 Root alone commits/publishes/updates Issues/memory. Source waits for the completed gate.
+
+
+## Local Windows Verify, residual CI and member delivery (2026-10-06)
+
+Owning172/31/163 and existing feature/platform owners retain all bodies/history/Verify.
+Follow five concrete Verify in planning/WINDOWS_MERGE_AND_CI_DEFERRAL_2026-10-06.md:
+Root whole-plan POST/exact GET ALL and entire final after-GET reread; actual narrow x64
+releaseCLI results plus exact selective ruleset backup/readback; separately owned normal
+integrations/current checks/residual recording; actualmain contribution and member links;
+then genuine hosted acceptance before restoring three runtime requirements. Native22P2F
+and all earlier failed/unrun receipts stay failed/unqualified; localx64 is notARM/CI proof.
+PR159/164/165 may be delivered via157,167 via166,169/170 via168 only after actualmain
+contribution proof. Unfulfilled Verify Issues remainOPEN even after PR delivery; no
+complete feature/support/release status is fabricated. Root owns rule/API/Git/publication.
