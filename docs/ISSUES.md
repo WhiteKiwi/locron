@@ -576,3 +576,14 @@ at their actual scope. Root alone owns staging/commits/Issues/publication/memory
 The selected new final-source Wake/Cancel pair requires actual verified package bindings,
 literal fb8 controller/progress inverse and Root prepare review before separate execution.
 Keep old bd86 PASS/FAIL history; final product failure is not CI-only and blocks merge.
+
+## Combined Store close-pattern four-step Verify (2026-10-06)
+
+Continue #172/#31/#163/#162/#156 through the four concrete Verify steps in
+[the complete plan](planning/WINDOWS_STORE_FIXTURE_HISTORY_FIELD_2026-10-06.md).
+All five WHOLE plan POST/exact GETs and Root ACTUAL entire FINAL COMMITTED plan/
+tails reread AFTER ALL GETs precede separate one-file Source development.
+Verify literal two-line inverse/protected bytes, current Unix/Windows test
+compilation and original close/snapshot/history ownership/oracles, then final
+required/paired/package/main/member scope. Keep current E0027 and all unrun/
+failed Windows criteria recorded in #172; no cancel/rerun or false PASS/closure.

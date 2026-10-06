@@ -6483,3 +6483,15 @@ After final Source publication and genuine current-head package verification, se
 NEW same Wake/Cancel pair with fb8 controller/progress/profile checks literally preserved;
 only explicit source/archive/artifact/EXE bindings change after full Root prepare review.
 Old bd86 PASS and earlier FAIL stay unchanged; final product failure stops merge for diagnosis.
+
+## Combined Store fixture missing test observation (2026-10-06)
+
+At published fa948, retained Root GET1 Unix112111548836 and Windows112111548779
+lint actually report E0027 in the A snapshot close_store pattern. C's
+history_observation and both default initializers are cfg(test), as is the A
+fixture module. The one actual Store destructuring omitted the new field.
+Select only explicit matching cfg(test) history_observation: _; no broad ..,
+guard/resource/oracle/clock or production change. Counters/optional barrier have
+no custom Drop; no hidden release timing or runtime PASS is established.
+The [complete plan](planning/WINDOWS_STORE_FIXTURE_HISTORY_FIELD_2026-10-06.md)
+retains published/failed evidence and the ongoing run; Source is separately gated.

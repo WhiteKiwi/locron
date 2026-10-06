@@ -6189,3 +6189,14 @@ After Source/tree/ZIP/PE/hash verification of the final x64 package, separately 
 one NEW final-source pair with fb8 controller/progress/profile validator/commands/oracles/
 clocks/owners literal except explicit package bindings. Root full script/diff/inverse
 review precedes a separate one-shot lease; no current-installed substitute or retry.
+
+## Explicit ignored history observation in the private close helper (2026-10-06)
+
+Follow [the complete plan](planning/WINDOWS_STORE_FIXTURE_HISTORY_FIELD_2026-10-06.md)
+after all five owning whole-plan GETs and Root actual final committed reread.
+Separate one-path development adds only the conditional ignored field after
+paths: _. Preserve the whole connection close/error sequence and Windows
+read-guard then state-guard drops, all constructors/history counters/rows/clocks
+and every other field. Full canonical/physical two-line inverse and protected
+bytes precede Root staged/unstaged review; fresh changed-head type/runtime
+evidence stays distinct from existing failure/history and deferred Windows CI.
