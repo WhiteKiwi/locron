@@ -2597,7 +2597,7 @@ fn native_case(
                 } else {
                     "non_io"
                 },
-                error.kind.map(admission_kind).unwrap_or("unobserved"),
+                error.kind.map_or("unobserved", admission_kind),
                 OptionalNumber(error.raw),
                 error.guard.0,
                 error.guard.1,
