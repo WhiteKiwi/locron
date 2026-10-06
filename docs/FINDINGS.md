@@ -6099,3 +6099,25 @@ The complete four-Verify plan is
 [WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md](planning/WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md).
 Root whole-plan owning POST/GET ALL then actual full committed-plan/new-tail reread
 must precede separate workflow-only Source; actual changed-head acceptance remains pending.
+
+
+## A guarded private fixture-parent selection (2026-10-06)
+
+Current A f018 CI37389944356/1 is14 required PASS/three Windows FAIL/two optional
+SKIP; original24 native21PASS/3FAIL. All three Server73PASS/one original195 FAIL
+report fixture parent chain refused before that fresh_root invocation allocates a
+unique directory. Actual kind/raw/guard predicate/owner/ACE/mask/cause is UNKNOWN.
+Three actual upload errors and completed metadata confirm ZERO Windows PR144JSON
+among nine archives (fourpackage/fiveUnixJSON), archiveGET0; no hidden tag or156/195
+receipt is inferred. The first call precedes all JSON; invocation index is unprinted.
+The sealed17-payload f018 research binds both calls, the whole constructor/cleanup
+and live evidence_guard chain. Its successfully admitted normalized parent is held
+by existing no-delete ancestry handles, so Windows can select that guarded parent
+for unique private SIBLINGS outside redacted-evidence while re-running canonicalization/
+ancestors and all original child/privacy/ID/keep/cleanup checks. This removes a separate
+fixture-base dependency; it proves neither an old RUNNER_TEMP false rejection nor
+new-child owner/type/native acceptance. All Unix bytes, owners/oracles/clocks stay frozen.
+The complete new four-Verify plan is
+[WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md](planning/WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md).
+Root all-six WHOLE NEW-plan POST/exact GETs and ACTUAL entire committed new-plan/new-tail
+reread AFTER ALL GETs precede separate Source. No Source or hosted success is claimed.

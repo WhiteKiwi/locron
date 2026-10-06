@@ -374,3 +374,19 @@ Current A14 required PASS/threeWindows FAIL/two optionalSKIP,24native19PASS/5FAI
 all older failures stay open. Source/cache/metadata or a creation-context hypothesis
 cannot close work or infer owner/cause/support. Root alone commits/publishes/updates
 Issues; no token/ACL/clock/oracle/fixture/Unix/security change or unchanged rerun is selected.
+
+
+## A guarded fixture-parent four-step Verify gate (2026-10-06)
+
+Owning #27/#31/#162/#146/#163 plus PR141 preserve bodies/state/history and all old
+acceptance. Follow the complete new WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md:
+Root four-Docs review/commit, WHOLE NEW-plan POST/exact whole GET ALL six owners,
+ACTUAL entire final committed new-plan/each tail reread AFTER ALL GETs, then separate
+one-Source Windows argument/base/two-call handoff with whole inverse/protected bytes.
+Fresh all-three Windows original195/156 authentic receipts/IDs/owner/cleanup, every
+original eight native selector plus required gates, genuine Unix193 and actual
+member/main contribution must pass before Root merge/closure. Current A14requiredP/
+threeWindowsF/twooptionalSKIP and21nativeP/3F stay frozen; ZERO Windows PR144JSON is
+UNAVAILABLE, not completed controls or a private error tag. Old cause/new-child/type/
+privacy/native acceptance remains unqualified. No retry/clock/security/Unix relaxation;
+Root alone commits/publishes/updates Issues/memory. Source waits for the completed gate.

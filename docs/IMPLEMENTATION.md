@@ -5838,3 +5838,22 @@ and all other Source/Cargo/CI bytes remain exact. Full workflow inverse/protecte
 handback and Root review precede fresh hosted actual rows/all original required gates.
 Cache reuse/owner success/cause is unqualified; no token mutation/repair/adoption/copy/
 profile/feature/fixture/prewarm/retry/security waiver or B/native Source import.
+
+
+## A dashboard guarded fixture-parent handoff (2026-10-06)
+
+Follow the whole WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md after Root
+four-Docs commit, WHOLE NEW-plan POST/exact GET ALL to #27/#31/#162/#146/#163/PR141,
+then ACTUAL full final committed new-plan and each new-tail reread AFTER ALL GETs.
+Separate development changes only Server's Windows fresh_root borrowed evidence_guard
+argument/base and both calls: take its live normalized parent, fail closed without
+RUNNER_TEMP fallback, preserve canonicalization+ancestors and create unique private
+siblings OUTSIDE redacted-evidence. Existing constructor2102–2152/cleanup2154–2431,
+private guards/full file IDs/anchors/keep/owners/strict removal/child proofs and all
+Unix bodies/calls/schemas/provenance/image hashes/30/90/600s clocks stay literal.
+This narrow fixture-base amendment alone supersedes earlier Windows fixture/call
+preservation; no production/Core/workflow/dependency/security/owner/token/ACL changes.
+Full-file inverse/other-mode+physical protection and Root whole scoped review precede
+fresh actual195/193 and every original required gate. Current21/24 native and Server
+refusal remain failed/unqualified; missing JSON, type/static success or a guarded-base
+selection cannot establish actual owner/privacy/cleanup or Windows product support.
