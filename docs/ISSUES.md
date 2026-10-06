@@ -385,3 +385,18 @@ separate one-expression Source/full inverses/static conservation; fresh strict
 Windows lint/N07/Linux caller/original rows plus required native/paired/package/
 secret/main/member gates before completion. Snapshot1 is in_progress; no native PASS,
 clock/oracle waiver, cost/cause claim or wider Source authority follows from lint.
+
+
+## B platform-kind four concrete Verify gates (2026-10-06)
+
+Owning #27/#31/#162/#146/#149/#163 and PR147 continue the WHOLE new
+WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md with original bodies/state/history preserved.
+Root four append-only Docs/361 baseline entries/358 protected existing entries; ALL seven whole
+NEW-plan POST/exact GETs and actual FINAL COMMITTED plan/new-tail reread AFTER ALL GETs precede
+separate two-predicate Source authority. Verify whole canonical+physical inverses/protection and
+allowed static checks, fresh three-Windows API+CLI genuine held/refused/exact-holder-released/
+same-pending positive finish/all later rows/Done/cleanup, then every original required Unix/lint/
+native24/paired/package/secret/main/member criterion before closure. Supersede ONLY historical
+PermissionDenied expectations in these two N07 tests; raw32|33/error projection/output/clocks stay.
+Current final21P3F, CLI actual row/kind UNKNOWN and API holder/instruction/positive unobserved remain
+failed/unqualified. No native cause, cost/benefit, accepted extra errno or old-PASS transfer is implied.

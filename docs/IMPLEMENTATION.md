@@ -5792,3 +5792,18 @@ error.kind.map_or("unobserved", admission_kind). Preserve same-error evaluation/
 closed message/239CRLF/strict32|33, all owners/cleanup/clocks/profile/Unix and inverses.
 Permitted static checks then fresh full required qualification precede closure;
 no warning allowance, new control or Source-first cause/performance repair.
+
+
+## B two-test platform-kind continuation gate (2026-10-06)
+
+Follow the entire [WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md](planning/WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md).
+After Root four-Docs commit, ALL seven whole-plan POST/exactGETs and actual entire committed-plan/
+new-tail reread AFTER ALL GETs, a separate developer may change only API and CLI Windows N07
+predicates: exact returnedraw32|33 first, then same returned kind equals the public platform
+decoder of the same raw scalar. ONLY these tests supersede historical PermissionDenied clauses.
+Keep extraction/order/product projection/closed239/CLI message and held-ID/negative/pending/
+exact-holder-drop/same-pending remove+durable finish/cleanup/Unix/clocks literal. No unstable kind
+name, raw5, dictionary widening, extra native query/retry/owner or production/performance repair.
+Full canonical+physical two-file inverses/protected entries and allowed static checks precede fresh
+three-foundation genuine controls and every required native/paired/package/secret/main/member gate.
+Actual CLI row/kind and API holder/instruction/released-positive remain unproved until real evidence.

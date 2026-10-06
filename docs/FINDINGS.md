@@ -6044,3 +6044,18 @@ bytes/239CRLF and original PermissionDenied AND raw32|33/owners/clocks remain.
 No native outcome, cause or performance is inferred. The complete amended
 WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md governs append-only Docs,
 ALL owning whole-plan GETs and Root actual final after-ALL reread BEFORE Source.
+
+
+## B N07 returned raw and platform-kind evidence (2026-10-06)
+
+Final B2cf84 CI37390581174/1 failed with13 required successes/four failures/two optional skips;
+original24 native21PASS/3FAIL. All three Windows API N07 failures return store_io/unrecognized/
+raw32 after28 preceding rows/FI07; foundation compilers are1.94/1.99, lint1.98. Tagged decoders
+leave32/33 to Uncategorized, distinct from the printed closed label. CLI actual row/kind/raw
+remain UNKNOWN behind ValueError. API raw32 locates no holder/path/native instruction and proves
+no later released-positive or completed cleanup. Root's unpublished02bc map_or is a separate fix.
+The complete [WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md](planning/WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md)
+supersedes ONLY the two historical Windows N07 PermissionDenied expectations with exactraw32|33
+AND same-returned-kind/platform-decoder equality. Product guards/error projection/closed239,
+CLI context/holders/positive controls/clocks/Unix and every historical document/receipt stay literal.
+Whole owning-plan GETs and Root final committed after-ALL reread precede separate Source authority.
