@@ -156,6 +156,37 @@ Issue31 remains open:7343/run37196440237 has one actual ARM History expiry and u
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
 
+
+## Windows token destination evidence routing (2026-10-05)
+
+Issue162 / draftPR141 owns the selected held/released destination fixture amendment and its four concrete Verify steps in planning/DASHBOARD_TOKEN_DESTINATION_CONTROL_2026-10-05.md. Native CLI wake/cancel/unknown owner cleanup remains Issue31; wider account/logon/install/lifecycle acceptance remains Issue30. Exact full-plan Issue comment GET and Root whole committed-plan reread precede separate Source development; fresh actual controls and original required merges/gates precede closure. Execution status lives in Issues; the retired Project remains historical.
+
+## Group A fixture admission continuation — 2026-10-05
+
+Owning162/143 and coordination163 remain open for the selected four-path initial fixture/lint/closed-facts continuation. Follow GROUP_A_FIXTURE_ADMISSION_2026-10-05.md and its four concrete Verify steps; full old finite/runtime/native/paired acceptance and exact ordered publication/member contribution must succeed before closure.
+
+## Group A narrowed fixture owner continuation — 2026-10-05
+
+Owning162/143 and coordination163 continue the amended fixture plan with cookie-only WROOT and unchanged Boolean preparation. Preserve independent WIP; exact PATCH/GET and entire final-plan review precede dependent Source. Implementation/static checks do not close original complete native/paired/merge acceptance.
+
+## Group A Unix selector scope execution pointer (2026-10-05)
+
+Continue owning162/143 and grouped163 with the three concrete Verify steps in GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md. Exactly two unused Server constants receive existing Unix boundary attributes; no fixture, native, clock or acceptance waiver. Exact owning POSTGET ALL and Root entire final plans review precede separate Source lease. Keep all member/owning and wider native/install/release acceptance open until actual current-head criteria and ordered squash/contribution verification.
+
+
+## Group A facts-refusal execution pointer — 2026-10-05
+
+Owning162/143 and coordination163 continue GROUP_A_FACTS_REFUSAL_OBSERVATION_2026-10-05.md with three concrete Verify steps. One private existing-error observer is selected; actual facts admission and separate native failures remain unresolved. Keep full193195/other-member/ordinary/GitGuardian/paired/current-base/ordered-squash acceptance open, record unknown scalars and do not close on diagnostics or static proof.
+
+## Guarded-input refusal observation Verify handoff (2026-10-06)
+
+Existing #27/#31/#162/#146/#149/#163 own all four concrete Verify in
+planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md. Preserve original bodies,
+history/state and every contribution/criterion. All owning complete-plan exact GETs and
+Root final entire plan/new-Docs review precede separate common/A/B Source. Measured
+refusal observation leaves the actual native bugs and member qualification open;
+only successful owning Verify plus required merges can close them. Signing37 is deferred.
+
 ## Native SID common repair Verify handoff (2026-10-05)
 
 Existing privacy#27, CI#31 and coordination#163 own the four ordered concrete Verify in
@@ -314,3 +345,121 @@ WAL internal concurrency, new owner-safe5s/200ms/1s test, full current-head Engi
 stock3/Store96/Server42/native24 and every required lint/downstream/delivery gate. Issues/
 members stay open until full Verify plus required main/publication contribution; signing37
 and Win11/two-user/account/task/logon/reboot/install/public WinGet/release remain separate.
+
+## Early A/B diagnostic draft qualification Verify order (2026-10-06)
+
+Existing #27/#31/#162/#146/#149/#163 retain every original body/state/history/contribution.
+The complete shared guard-plan amendment selects only exact-c39 normal integration and
+early independent DIAGNOSTIC draft qualification before common main merge. Matching
+native-SID Docs, all owning exact whole-plan GETs and Root final full reread precede a
+separate Git-only handoff. Actual Source/mode/input ambiguity stops for Docs FIRST;
+all original required Verify/oracles/clocks/security/ownership and member/main acceptance
+remain necessary. Current c39 MSRV FAIL is not waived; diagnostic artifacts cannot close
+bugs or qualify main/support. Root handles commits, issue updates and publication.
+
+
+## Guard hosted lint concrete Verify continuation (2026-10-06)
+
+Owning #27/#31/#162/#146/#149/#163 and PR141/147 keep original bodies/state/history and
+complete acceptance. The three ordered concrete Verify in
+planning/WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md require append-only bilateral Docs and
+Source protection; whole-plan exact POST/GET ALL then Root final complete committed
+plan/new-Docs reread before separate eight-plus-two-site Source; full inverse/strict
+static conservation; Root genuine changed-head required lint/native/representative gates.
+Separate actual SEL02-cli original60s timeout and prior c39 failure are not waived or
+repaired. Root owns commit/publication/Issue evidence; member/main contribution and
+every original Verify remain required. Diagnostics or lint alone cannot close work.
+
+
+## Guard formatter amendment Verify before Source (2026-10-06)
+
+Owning #27/#31/#162/#146/#149/#163 plus PR141/147 retain original state/body/history
+and complete acceptance. The whole amended WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md
+requires three concrete Verify with all eight whole-plan exact GETs and Root entire
+final after-GET reread BEFORE separate Source; exact two-closure/five-hunk/eight-value/
+B-two-attribute inverses, independent1.98 and all protected Source; and fresh strict
+lint/native/full member/main contribution. The14-payload Source-zero stop and old
+failures stay frozen; no formatter/static/diagnostic result waives or closes work.
+
+
+## Per-user guard build four-step Verify gate (2026-10-06)
+
+For #27/#31/#162/#146/#149/#163 plus PR141/147, continue the whole concise
+WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md. Root owns Docs commits/all whole owning
+POST/exact GETs with bodies/state/history retained and actual final entire reread
+AFTER ALL GETs. Separate Source must prove exact workflow/marker-only inverses
+and protection, fresh three Windows foundation/full A/B real guard/row/cleanup
+outcomes plus B original Unix fence, and all required/paired/package/secret gates
+and actual member/main contribution before closure. Old failures/unobserved facts
+stay open; placement/build/static metadata or a location hint is no acceptance.
+
+
+## A matched-library four-step Verify before Source (2026-10-06)
+
+Owning #27/#31/#162/#146/#163 plus PR141 retain all original bodies/state/history and
+required acceptance. Follow the complete four concrete Verify in
+planning/WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md: Root four-Docs review/commit,
+WHOLE plan POST/exact GET ALL then actual entire committed-plan/new-tail reread AFTER
+ALL GETs; separate workflow-only full inverse/protected handback; fresh three native
+rows with aggregate compilation distinct from actual libraries/guard/private195/
+receipt/cleanup success; every original required/paired gate and member/main contribution.
+Current A14 required PASS/threeWindows FAIL/two optionalSKIP,24native19PASS/5FAIL and
+all older failures stay open. Source/cache/metadata or a creation-context hypothesis
+cannot close work or infer owner/cause/support. Root alone commits/publishes/updates
+Issues; no token/ACL/clock/oracle/fixture/Unix/security change or unchanged rerun is selected.
+
+
+## A guarded fixture-parent four-step Verify gate (2026-10-06)
+
+Owning #27/#31/#162/#146/#163 plus PR141 preserve bodies/state/history and all old
+acceptance. Follow the complete new WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md:
+Root four-Docs review/commit, WHOLE NEW-plan POST/exact whole GET ALL six owners,
+ACTUAL entire final committed new-plan/each tail reread AFTER ALL GETs, then separate
+one-Source Windows argument/base/two-call handoff with whole inverse/protected bytes.
+Fresh all-three Windows original195/156 authentic receipts/IDs/owner/cleanup, every
+original eight native selector plus required gates, genuine Unix193 and actual
+member/main contribution must pass before Root merge/closure. Current A14requiredP/
+threeWindowsF/twooptionalSKIP and21nativeP/3F stay frozen; ZERO Windows PR144JSON is
+UNAVAILABLE, not completed controls or a private error tag. Old cause/new-child/type/
+privacy/native acceptance remains unqualified. No retry/clock/security/Unix relaxation;
+Root alone commits/publishes/updates Issues/memory. Source waits for the completed gate.
+
+
+## Local Windows Verify, residual CI and member delivery (2026-10-06)
+
+Owning172/31/163 and existing feature/platform owners retain all bodies/history/Verify.
+Follow five concrete Verify in planning/WINDOWS_MERGE_AND_CI_DEFERRAL_2026-10-06.md:
+Root whole-plan POST/exact GET ALL and entire final after-GET reread; actual narrow x64
+releaseCLI results plus exact selective ruleset backup/readback; separately owned normal
+integrations/current checks/residual recording; actualmain contribution and member links;
+then genuine hosted acceptance before restoring three runtime requirements. Native22P2F
+and all earlier failed/unrun receipts stay failed/unqualified; localx64 is notARM/CI proof.
+PR159/164/165 may be delivered via157,167 via166,169/170 via168 only after actualmain
+contribution proof. Unfulfilled Verify Issues remainOPEN even after PR delivery; no
+complete feature/support/release status is fabricated. Root owns rule/API/Git/publication.
+
+
+## Local profile-fixture Verify selection (2026-10-06)
+
+Continue #172 hosted residuals, #31 actual CI and #163 integration under the whole
+[WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md](planning/WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md).
+Root must publish the WHOLE committed four-Docs plan/Verify, obtain exact full GET ALL,
+then actually reread the entire final plan/tails before separate local execution. Preserve
+both original daemon5/AppData-refusal FAIL receipts and the later readonly ACE snapshot;
+new-leaf correctness is not trusted-ancestor success. Only a fresh profile UUID parent+
+read-only validation is selected; existing ACLs/security and all5s/8s/30s/25ms/owner/caps
+stay fixed. Real one-shot results/captures and independent cleanup must be recorded with
+actual Source/package/current-main bindings, no ARM/Rust/hosted PASS transfer or failed
+product-as-CI assumption. Root reviews meaningful outcomes before selected policy/merge;
+all unfulfilled acceptance/Issue172 criteria remain OPEN. No live duplicate checklist,
+API/Issue mutation, current-main import, Source change or runtime occurs in this Docs lease.
+
+For the selected one-final-PR171 route, Root publishes the COMPLETE appended plan/Verify
+to all12 owners172/31/163/27/162/146/149/156/158/160/161/35, exact GET ALL then ACTUAL whole
+committed plan/new-tail reread before separate effects. Verify all20 selected historical
+heads through final-assembly ancestry, one normal FF publication and same-final-head11
+contexts/Guardian/package/paired facts; actual GitHub squash main needs sole premerge-main
+parent plus complete tree/contribution/Docs equality. Record exact delivered siblings via
+PR171/main link only after that proof; unfulfilled owning Verify, hosted172, security/
+platform/install criteria stay OPEN. Prior sequential routing remains historical; Source,
+clocks/security/oracles and failed/unrun evidence are unchanged, with no acceptance now.

@@ -179,6 +179,9 @@ fn now_us() -> i64 {
 /// Best-effort wake hint to a running daemon; the command is already durable
 /// when the endpoint is unavailable, so failures preserve durable reconciliation.
 fn send_wake(paths: &StatePaths) {
+    #[cfg(test)]
+    let _ = dashboard_boolean_qualification::wake(&paths.root);
+    #[cfg(not(test))]
     let _ = locron_core::notification::send_wake(&paths.root);
 }
 
@@ -248,6 +251,8 @@ where
 {
     let paths = state.paths.clone();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _completion = dashboard_boolean_qualification::worker(&paths.root);
         let store = Store::open(paths, env!("CARGO_PKG_VERSION"), now_us())?;
         f(&store)
     })
@@ -262,7 +267,7 @@ where
 }
 
 /// Runs `f` on the blocking pool with the dry-run store: read-only when the
-/// state database exists, `None` (defaults) when it does not.
+/// state database exists, `None` (defaults) when it is not.
 async fn with_dry_store<T>(
     state: &AppState,
     f: impl FnOnce(Option<&Store>) -> Result<T, ApiError> + Send + 'static,
@@ -272,6 +277,8 @@ where
 {
     let paths = state.paths.clone();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _completion = dashboard_boolean_qualification::worker(&paths.root);
         let store = if paths.database.is_file() {
             Some(Store::open_read_only(&paths.database)?)
         } else {
@@ -310,19 +317,29 @@ where
 // Query and body shapes
 // ---------------------------------------------------------------------------
 
-/// Deserializes bare query flags (`?wait`), empty flags (`?wait=`), and
-/// explicit booleans.
+/// Deserializes native JSON booleans and the existing textual query flags
+/// (`?wait`, `?wait=`, `?wait=true`). Explicit null retains the legacy true value.
 fn deserialize_flag<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let raw = Option::<String>::deserialize(deserializer)?;
-    match raw.as_deref() {
-        None | Some("" | "true" | "1") => Ok(true),
-        Some("false" | "0") => Ok(false),
-        Some(other) => Err(serde::de::Error::custom(format!(
-            "invalid boolean flag {other:?}"
-        ))),
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Flag {
+        Boolean(bool),
+        Text(String),
+    }
+
+    match Option::<Flag>::deserialize(deserializer)? {
+        Some(Flag::Boolean(value)) => Ok(value),
+        None => Ok(true),
+        Some(Flag::Text(value)) => match value.as_str() {
+            "" | "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            other => Err(serde::de::Error::custom(format!(
+                "invalid boolean flag {other:?}"
+            ))),
+        },
     }
 }
 
@@ -1472,7 +1489,8 @@ pub(crate) async fn settings_put(
                 } else {
                     "created"
                 };
-            if let Some(store) = store {
+            if !body.dry_run {
+                let store = store.expect("live store");
                 store.set_environment(name, Some(&body.value), now_us())?;
                 send_wake(store.paths());
             }
@@ -1987,3 +2005,6 @@ fn environment_warnings(environment: &locron_core::target::Environment) -> Vec<S
     }
     Vec::new()
 }
+
+#[cfg(test)]
+mod dashboard_boolean_qualification;

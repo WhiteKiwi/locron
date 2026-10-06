@@ -4,7 +4,11 @@ function cookie(name: string) { return document.cookie.split(";").map((part) => 
 async function request<T>(method: string, path: string, body?: unknown, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   if (body !== undefined) headers.set("Content-Type", "application/json");
-  if (method !== "GET" && method !== "HEAD") { const csrf = cookie("csrf_token"); if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf)); }
+  if (method !== "GET" && method !== "HEAD") {
+    const csrf = cookie("csrf_token");
+    const literalPaste = method === "POST" && path === "/api/v1/session";
+    if (csrf && (!literalPaste || /^[0-9a-fA-F]{64}$/.test(csrf))) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
+  }
   const response = await fetch(path, { ...init, method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const text = await response.text(); let payload: Envelope<T> | null = null;
   try { payload = JSON.parse(text) as Envelope<T>; } catch { /* handled below */ }

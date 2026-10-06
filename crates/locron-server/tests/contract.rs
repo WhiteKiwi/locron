@@ -270,7 +270,7 @@ async fn token_refusal() {
     let body: Value = response.json().await.expect("json");
     assert_eq!(
         error(&body, "unauthenticated"),
-        "a valid access token or session cookie is required for /api/v1/jobs"
+        "a valid access token or session cookie is required"
     );
 
     let response = server
@@ -287,7 +287,7 @@ async fn token_refusal() {
     let body: Value = response.json().await.expect("json");
     assert_eq!(
         error(&body, "unauthenticated"),
-        "a valid access token or session cookie is required for /api/v1/jobs"
+        "a valid access token or session cookie is required"
     );
 }
 
@@ -2253,4 +2253,1115 @@ async fn sse_stream_disconnect_never_cancels() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(data(&body)["cancelled"], json!(true), "{body}");
+}
+
+// ---------------------------------------------------------------------------
+// PR144: real HTTP body/query flags and closed-writer dry-run conservation
+// ---------------------------------------------------------------------------
+
+mod dry_run_http_qualification {
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::io::Read;
+    use std::net::SocketAddr;
+    use std::path::{Path, PathBuf};
+
+    use locron_core::filesystem;
+    use locron_server::{AppState, router};
+    use locron_store::{StatePaths, Store};
+    use reqwest::StatusCode;
+    use serde_json::{Value, json};
+    use sha2::{Digest, Sha256};
+
+    use super::{TestServer, body_text, create_body, data, definition, error, spawn_server};
+
+    fn body_flags() -> [(&'static str, Option<Value>, bool); 9] {
+        [
+            ("boolean-true", Some(json!(true)), true),
+            ("boolean-false", Some(json!(false)), false),
+            ("text-empty", Some(json!("")), true),
+            ("text-true", Some(json!("true")), true),
+            ("text-one", Some(json!("1")), true),
+            ("text-false", Some(json!("false")), false),
+            ("text-zero", Some(json!("0")), false),
+            ("null", Some(Value::Null), true),
+            ("omitted", None, false),
+        ]
+    }
+
+    fn invalid_body_flags() -> [(&'static str, Value); 6] {
+        [
+            ("number-zero", json!(0)),
+            ("number-one", json!(1)),
+            ("array", json!([])),
+            ("object", json!({})),
+            ("uppercase", json!("TRUE")),
+            ("unsupported-text", json!("yes")),
+        ]
+    }
+
+    fn with_body_flag(mut body: Value, flag: Option<&Value>) -> Value {
+        if let Some(flag) = flag {
+            body["dry_run"] = flag.clone();
+        }
+        body
+    }
+
+    fn query_flags() -> [(&'static str, Option<&'static str>, bool); 7] {
+        [
+            ("omitted", None, false),
+            ("bare", Some(""), true),
+            ("empty", Some("="), true),
+            ("true", Some("=true"), true),
+            ("one", Some("=1"), true),
+            ("false", Some("=false"), false),
+            ("zero", Some("=0"), false),
+        ]
+    }
+
+    fn query_path(base: &str, key: &str, suffix: Option<&str>) -> String {
+        match suffix {
+            Some(suffix) => {
+                let separator = if base.contains('?') { '&' } else { '?' };
+                format!("{base}{separator}{key}{suffix}")
+            }
+            None => base.to_owned(),
+        }
+    }
+
+    impl TestServer {
+        async fn raw_response(
+            &self,
+            method: &str,
+            path: &str,
+            body: Option<&Value>,
+        ) -> (StatusCode, String) {
+            let mut request = self
+                .client
+                .request(
+                    reqwest::Method::from_bytes(method.as_bytes()).expect("method"),
+                    format!("{}{path}", self.base),
+                )
+                .header(
+                    reqwest::header::AUTHORIZATION,
+                    format!("token {}", self.token),
+                );
+            if let Some(body) = body {
+                request = request.json(body);
+            }
+            let response = request.send().await.expect("selected HTTP request");
+            let status = response.status();
+            let text = response.text().await.expect("selected HTTP response");
+            (status, text)
+        }
+
+        async fn stop_and_join(&mut self) {
+            self.task.abort();
+            if let Err(error) = (&mut self.task).await {
+                assert!(error.is_cancelled(), "HTTP fixture server failed to join");
+            }
+        }
+    }
+
+    // Deliberately does not call ensure/token::ensure: this proves only the
+    // handlers' absent-state behavior, not production bootstrap or token safety.
+    fn spawn_missing_root() -> TestServer {
+        let temp = tempfile::tempdir().expect("missing-state fixture parent");
+        let paths = StatePaths::new(temp.path().join("absent"));
+        assert!(!paths.root.exists());
+        let token = "a".repeat(64);
+        let listener = std::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .expect("bind missing-state fixture");
+        listener.set_nonblocking(true).expect("nonblocking");
+        let listener = tokio::net::TcpListener::from_std(listener).expect("tokio listener");
+        let port = listener.local_addr().expect("local addr").port();
+        let app = router(AppState {
+            paths: paths.clone(),
+            token: token.clone(),
+            bound_port: port,
+        });
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .await
+                .expect("missing-state fixture server");
+        });
+        TestServer {
+            base: format!("http://127.0.0.1:{port}"),
+            token,
+            client: reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("loopback client"),
+            paths,
+            task,
+            _temp: temp,
+        }
+    }
+
+    #[derive(PartialEq, Eq)]
+    enum ManagedEntry {
+        Directory,
+        File { length: u64, sha256: [u8; 32] },
+    }
+
+    // Fixed fixture bounds, not an application retention or path policy.
+    fn managed_files(root: &Path) -> BTreeMap<PathBuf, ManagedEntry> {
+        const MAX_ENTRIES: usize = 64;
+        const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
+        const MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024;
+        let mut entries = BTreeMap::new();
+        let mut pending = vec![PathBuf::new()];
+        let mut total = 0_u64;
+        while let Some(relative) = pending.pop() {
+            let path = root.join(&relative);
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        && relative.as_os_str().is_empty() =>
+                {
+                    continue;
+                }
+                Err(error) => panic!("cannot inspect managed fixture entry: {:?}", error.kind()),
+            };
+            assert!(
+                !metadata.file_type().is_symlink(),
+                "unexpected managed symlink"
+            );
+            assert!(entries.len() < MAX_ENTRIES, "managed fixture entry cap");
+            let entry = if metadata.is_dir() {
+                for child in fs::read_dir(&path).expect("managed fixture directory") {
+                    let child = child.expect("managed fixture directory entry");
+                    pending.push(relative.join(child.file_name()));
+                    assert!(
+                        pending.len() + entries.len() <= MAX_ENTRIES,
+                        "managed fixture traversal cap"
+                    );
+                }
+                ManagedEntry::Directory
+            } else {
+                assert!(metadata.is_file(), "unexpected managed entry type");
+                assert!(metadata.len() <= MAX_FILE_BYTES, "managed fixture file cap");
+                let mut file = filesystem::open_private(&path, fs::OpenOptions::new().read(true))
+                    .expect("managed fixture private read");
+                let mut bytes = Vec::new();
+                (&mut *file)
+                    .take(MAX_FILE_BYTES + 1)
+                    .read_to_end(&mut bytes)
+                    .expect("managed fixture bounded read");
+                let length = u64::try_from(bytes.len()).expect("fixture byte length");
+                assert_eq!(
+                    length,
+                    metadata.len(),
+                    "managed fixture changed during snapshot"
+                );
+                total += length;
+                assert!(total <= MAX_TOTAL_BYTES, "managed fixture total cap");
+                ManagedEntry::File {
+                    length,
+                    sha256: Sha256::digest(&bytes).into(),
+                }
+            };
+            assert!(
+                entries.insert(relative, entry).is_none(),
+                "duplicate managed fixture entry"
+            );
+        }
+        entries
+    }
+
+    struct DurableSnapshot {
+        records: Value,
+        files: BTreeMap<PathBuf, ManagedEntry>,
+    }
+
+    fn durable_snapshot(paths: &StatePaths) -> DurableSnapshot {
+        // All setup/API writers have already returned and closed. This reader
+        // also closes before byte hashing, and is never retained over a request.
+        let records = {
+            let store = Store::open_read_only(&paths.database).expect("read-only fixture state");
+            json!({
+                "settings": store.settings().expect("fixture settings"),
+                "jobs": store.list_jobs(true).expect("fixture jobs and current revisions"),
+                "history": store.history(None, 100).expect("fixture history"),
+            })
+        };
+        DurableSnapshot {
+            records,
+            files: managed_files(&paths.root),
+        }
+    }
+
+    fn assert_preserved(before: &DurableSnapshot, paths: &StatePaths, label: &str) {
+        let after = durable_snapshot(paths);
+        // Equality deliberately never renders plaintext settings, definitions,
+        // tokens, managed paths or bytes in a failed assertion.
+        assert!(
+            before.records == after.records,
+            "{label}: durable records changed"
+        );
+        assert!(
+            before.files == after.files,
+            "{label}: managed files changed"
+        );
+    }
+
+    async fn seed_existing_state(server: &TestServer) {
+        let (status, body) = server
+            .post(
+                "/api/v1/jobs",
+                Some(create_body(
+                    "original",
+                    &definition("/bin/echo", true, false, false),
+                )),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "fixture job creation");
+        let id = data(&body)["id"].as_str().expect("fixture id");
+        let (status, body) = server.post(&format!("/api/v1/jobs/{id}/run"), None).await;
+        assert_eq!(status, StatusCode::OK, "fixture queued history");
+        assert_eq!(data(&body)["state"], "queued");
+        {
+            let store =
+                Store::open(server.paths.clone(), "contract", 2).expect("seed private store");
+            store
+                .set_environment("EXISTING", Some("original-private-value"), 3)
+                .expect("seed existing environment");
+            store
+                .set_environment("UNCHANGED", Some("untouched-private-value"), 4)
+                .expect("seed unrelated environment");
+        }
+    }
+
+    fn assert_redacted(body: &Value) {
+        let rendered = body_text(body);
+        for value in [
+            "original-private-value",
+            "untouched-private-value",
+            "replacement-private-value",
+            "second-private-value",
+            "super-secret-value",
+        ] {
+            assert!(
+                !rendered.contains(value),
+                "private value escaped selected response"
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn accepted_json_body_flags_select_real_preview_or_live_mutation() {
+        let mut server = spawn_server();
+        seed_existing_state(&server).await;
+        for (label, flag, preview) in body_flags() {
+            let mut request = create_body(
+                &format!("create-{label}"),
+                &definition("/bin/echo", true, false, false),
+            );
+            request["enabled"] = json!(false);
+            request["description"] = Value::Null;
+            let before = durable_snapshot(&server.paths);
+            let (status, body) = server
+                .post("/api/v1/jobs", Some(with_body_flag(request, flag.as_ref())))
+                .await;
+            assert_eq!(status, StatusCode::OK, "create {label}");
+            assert_redacted(&body);
+            assert_eq!(data(&body)["enabled"], false);
+            assert_eq!(data(&body)["description"], Value::Null);
+            if preview {
+                assert_eq!(data(&body)["dry_run"], true);
+                assert_eq!(data(&body)["id"], "<non-durable>");
+                assert_preserved(&before, &server.paths, label);
+            } else {
+                assert!(data(&body).get("dry_run").is_none());
+                let store = Store::open_read_only(&server.paths.database).expect("created state");
+                let job = store
+                    .job(&format!("create-{label}"))
+                    .expect("actual created job");
+                assert_eq!(job.current_revision, 1);
+                assert!(!job.enabled);
+                assert!(job.description.is_none());
+            }
+
+            let update_name = format!("update-{label}");
+            let (status, body) = server
+                .post(
+                    "/api/v1/jobs",
+                    Some(create_body(
+                        &update_name,
+                        &definition("/bin/echo", true, false, false),
+                    )),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "update fixture {label}");
+            let id = data(&body)["id"].as_str().expect("update id").to_owned();
+            let mut request = json!({"name": format!("changed-{label}"), "enabled": false});
+            match label {
+                "boolean-true" | "boolean-false" | "omitted" => {}
+                "text-empty" | "text-true" | "text-false" => request["description"] = Value::Null,
+                _ => request["description"] = json!("changed description"),
+            }
+            let expected_description = request
+                .get("description")
+                .cloned()
+                .unwrap_or_else(|| json!("contract fixture"));
+            let before = durable_snapshot(&server.paths);
+            let (status, body) = server
+                .put(
+                    &format!("/api/v1/jobs/{id}"),
+                    Some(with_body_flag(request, flag.as_ref())),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "update {label}");
+            assert_redacted(&body);
+            if preview {
+                assert_eq!(data(&body)["dry_run"], true);
+                assert_eq!(data(&body)["revision"], 2);
+                assert_eq!(data(&body)["after"]["description"], expected_description);
+                assert_eq!(data(&body)["after"]["enabled"], false);
+                assert!(
+                    data(&body)["changed_fields"]
+                        .as_array()
+                        .expect("changed fields")
+                        .contains(&json!("name"))
+                );
+                assert_preserved(&before, &server.paths, label);
+            } else {
+                assert!(data(&body).get("dry_run").is_none());
+                let store = Store::open_read_only(&server.paths.database).expect("updated state");
+                let job = store.job(&id).expect("actual updated job");
+                assert_eq!(job.name, format!("changed-{label}"));
+                assert_eq!(job.current_revision, 2);
+                assert!(!job.enabled);
+                assert!(
+                    serde_json::to_value(job.description).expect("description")
+                        == expected_description,
+                    "update description {label}"
+                );
+            }
+
+            // Reset through a completed live request so every selected scalar
+            // request would change the existing value, then close that writer.
+            let (status, _) = server
+                .put(
+                    "/api/v1/settings/global_concurrency",
+                    Some(json!({"value": "16"})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK);
+            let before = durable_snapshot(&server.paths);
+            let (status, body) = server
+                .put(
+                    "/api/v1/settings/global_concurrency",
+                    Some(with_body_flag(json!({"value": "4"}), flag.as_ref())),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "scalar {label}");
+            if preview {
+                assert_eq!(
+                    data(&body),
+                    &json!({"key": "global_concurrency", "value": "4", "dry_run": true})
+                );
+                assert_preserved(&before, &server.paths, label);
+            } else {
+                assert_eq!(data(&body)["global_concurrency"], 4);
+                let store = Store::open_read_only(&server.paths.database).expect("scalar state");
+                assert_eq!(
+                    store
+                        .settings()
+                        .expect("actual scalar value")
+                        .global_concurrency,
+                    4
+                );
+            }
+        }
+        server.stop_and_join().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn environment_body_flags_preserve_complete_closed_state_or_persist_values() {
+        let mut server = spawn_server();
+        seed_existing_state(&server).await;
+        for (label, flag, preview) in body_flags() {
+            for name in ["EXISTING", "NEW_VALUE"] {
+                {
+                    let store = Store::open(server.paths.clone(), "contract", 5)
+                        .expect("environment fixture reset");
+                    store
+                        .set_environment("EXISTING", Some("original-private-value"), 6)
+                        .expect("restore original map");
+                    store
+                        .set_environment("NEW_VALUE", None, 7)
+                        .expect("clear new fixture name");
+                }
+                let before = durable_snapshot(&server.paths);
+                let (status, body) = server
+                    .put(
+                        &format!("/api/v1/settings/environment.{name}"),
+                        Some(with_body_flag(
+                            json!({"value": "replacement-private-value"}),
+                            flag.as_ref(),
+                        )),
+                    )
+                    .await;
+                assert_eq!(status, StatusCode::OK, "environment {name} {label}");
+                assert_eq!(
+                    data(&body),
+                    &json!({"key": format!("environment.{name}"), "action": if name == "EXISTING" { "replaced" } else { "created" }, "configured": true, "value_redacted": true, "dry_run": preview})
+                );
+                assert_redacted(&body);
+                if preview {
+                    assert_preserved(&before, &server.paths, label);
+                } else {
+                    let store =
+                        Store::open_read_only(&server.paths.database).expect("environment state");
+                    let mut expected = BTreeMap::from([
+                        ("EXISTING".to_owned(), "original-private-value".to_owned()),
+                        ("UNCHANGED".to_owned(), "untouched-private-value".to_owned()),
+                    ]);
+                    expected.insert(name.to_owned(), "replacement-private-value".to_owned());
+                    assert!(
+                        store.settings().expect("actual environment").environment == expected,
+                        "live complete environment {label}"
+                    );
+                    drop(store);
+                    let (status, body) = server
+                        .put(
+                            &format!("/api/v1/settings/environment.{name}"),
+                            Some(with_body_flag(
+                                json!({"value": "second-private-value"}),
+                                flag.as_ref(),
+                            )),
+                        )
+                        .await;
+                    assert_eq!(status, StatusCode::OK, "live replacement {label}");
+                    assert_eq!(data(&body)["action"], "replaced");
+                    assert_eq!(data(&body)["dry_run"], false);
+                    assert_redacted(&body);
+                    expected.insert(name.to_owned(), "second-private-value".to_owned());
+                    let store =
+                        Store::open_read_only(&server.paths.database).expect("replacement state");
+                    assert!(
+                        store.settings().expect("actual replacement").environment == expected,
+                        "replacement complete environment {label}"
+                    );
+                }
+            }
+        }
+        server.stop_and_join().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn invalid_json_flags_and_other_body_types_refuse_before_durable_changes() {
+        let mut server = spawn_server();
+        seed_existing_state(&server).await;
+        for (label, flag) in invalid_body_flags() {
+            for (method, path, request) in [
+                (
+                    "POST",
+                    "/api/v1/jobs",
+                    create_body(
+                        "invalid-create",
+                        &definition("/bin/echo", false, false, false),
+                    ),
+                ),
+                (
+                    "PUT",
+                    "/api/v1/jobs/original",
+                    json!({"description": "a real change"}),
+                ),
+                (
+                    "PUT",
+                    "/api/v1/settings/global_concurrency",
+                    json!({"value": "4"}),
+                ),
+                (
+                    "PUT",
+                    "/api/v1/settings/environment.EXISTING",
+                    json!({"value": "replacement-private-value"}),
+                ),
+            ] {
+                let before = durable_snapshot(&server.paths);
+                let request = with_body_flag(request, Some(&flag));
+                let (status, text) = server.raw_response(method, path, Some(&request)).await;
+                assert_eq!(
+                    status,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "{label} extractor refusal"
+                );
+                assert!(
+                    !text.contains("replacement-private-value"),
+                    "extractor leaked value"
+                );
+                assert_preserved(&before, &server.paths, label);
+            }
+        }
+        let mut bad_enabled = create_body(
+            "invalid-enabled",
+            &definition("/bin/echo", false, false, false),
+        );
+        bad_enabled["enabled"] = json!("true");
+        for (method, path, request) in [
+            ("POST", "/api/v1/jobs", bad_enabled),
+            ("PUT", "/api/v1/jobs/original", json!({"enabled": "false"})),
+            ("PUT", "/api/v1/jobs/original", json!({"description": 1})),
+            (
+                "PUT",
+                "/api/v1/settings/global_concurrency",
+                json!({"value": 4}),
+            ),
+            (
+                "PUT",
+                "/api/v1/settings/environment.EXISTING",
+                json!({"value": true}),
+            ),
+        ] {
+            let before = durable_snapshot(&server.paths);
+            let (status, _) = server.raw_response(method, path, Some(&request)).await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "nonflag body type refusal"
+            );
+            assert_preserved(&before, &server.paths, "nonflag body type");
+        }
+        for (key, value, message) in [
+            (
+                "environment.1INVALID",
+                "replacement-private-value",
+                "invalid or reserved environment name 1INVALID",
+            ),
+            (
+                "environment.LOCRON_X",
+                "replacement-private-value",
+                "invalid or reserved environment name LOCRON_X",
+            ),
+            (
+                "environment.EXISTING",
+                "contains\0nul",
+                "environment value for EXISTING contains NUL",
+            ),
+        ] {
+            for preview in [true, false] {
+                let before = durable_snapshot(&server.paths);
+                let (status, body) = server
+                    .put(
+                        &format!("/api/v1/settings/{key}"),
+                        Some(json!({"value": value, "dry_run": preview})),
+                    )
+                    .await;
+                assert_eq!(status, StatusCode::BAD_REQUEST);
+                assert_eq!(error(&body, "invalid_request"), message);
+                assert!(
+                    !body_text(&body).contains(value),
+                    "invalid environment value leaked"
+                );
+                assert_preserved(&before, &server.paths, "invalid environment");
+            }
+        }
+        server.stop_and_join().await;
+    }
+
+    async fn assert_absent_previews(server: &TestServer) {
+        assert!(!server.paths.database.exists());
+        for (label, flag, preview) in body_flags() {
+            if !preview {
+                continue;
+            }
+            for (method, path, request) in [
+                (
+                    "POST",
+                    "/api/v1/jobs",
+                    create_body(
+                        "absent-preview",
+                        &definition("/bin/echo", true, false, false),
+                    ),
+                ),
+                (
+                    "PUT",
+                    "/api/v1/settings/global_concurrency",
+                    json!({"value": "4"}),
+                ),
+                (
+                    "PUT",
+                    "/api/v1/settings/environment.NEW_VALUE",
+                    json!({"value": "replacement-private-value"}),
+                ),
+            ] {
+                let before = managed_files(&server.paths.root);
+                let (status, body) = server
+                    .send(method, path, Some(with_body_flag(request, flag.as_ref())))
+                    .await;
+                assert_eq!(status, StatusCode::OK, "absent {label}");
+                assert_eq!(data(&body)["dry_run"], true);
+                assert_redacted(&body);
+                assert!(
+                    before == managed_files(&server.paths.root),
+                    "absent preview changed managed entries"
+                );
+                assert!(!server.paths.database.exists());
+            }
+            let before = managed_files(&server.paths.root);
+            let (status, body) = server
+                .put(
+                    "/api/v1/jobs/missing",
+                    Some(with_body_flag(
+                        json!({"description": "changed"}),
+                        flag.as_ref(),
+                    )),
+                )
+                .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "absent update {label}");
+            assert_eq!(
+                error(&body, "invalid_request"),
+                "state database does not exist"
+            );
+            assert!(
+                before == managed_files(&server.paths.root),
+                "absent update changed managed entries"
+            );
+            assert!(!server.paths.database.exists());
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn all_true_body_forms_leave_an_absent_database_uninitialized() {
+        let mut server = spawn_server();
+        assert_absent_previews(&server).await;
+        server.stop_and_join().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn all_true_body_forms_leave_an_absent_state_root_uncreated() {
+        let mut server = spawn_missing_root();
+        assert_absent_previews(&server).await;
+        assert!(!server.paths.root.exists());
+        server.stop_and_join().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn body_dry_run_is_independent_of_the_query_spelling() {
+        let mut server = spawn_server();
+        seed_existing_state(&server).await;
+        let before = durable_snapshot(&server.paths);
+        let request = with_body_flag(
+            create_body(
+                "body-preview",
+                &definition("/bin/echo", false, false, false),
+            ),
+            Some(&json!(true)),
+        );
+        let (status, body) = server
+            .post("/api/v1/jobs?dry-run=false", Some(request))
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(data(&body)["id"], "<non-durable>");
+        assert_preserved(&before, &server.paths, "body takes its own dry_run");
+        let (status, body) = server
+            .post(
+                "/api/v1/jobs?dry-run=true",
+                Some(create_body(
+                    "query-does-not-preview",
+                    &definition("/bin/echo", false, false, false),
+                )),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(data(&body).get("dry_run").is_none());
+        {
+            let store =
+                Store::open_read_only(&server.paths.database).expect("body versus query state");
+            assert_eq!(
+                store
+                    .job("query-does-not-preview")
+                    .expect("live body mutation")
+                    .current_revision,
+                1
+            );
+        }
+        server.stop_and_join().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn query_flags_reach_jobs_run_cancel_and_prune_handlers() {
+        let mut server = spawn_server();
+        seed_existing_state(&server).await;
+        let mut disabled = create_body("disabled", &definition("/bin/echo", false, false, false));
+        disabled["enabled"] = json!(false);
+        let (status, _) = server.post("/api/v1/jobs", Some(disabled)).await;
+        assert_eq!(status, StatusCode::OK);
+        for (label, suffix, selected) in query_flags() {
+            let (status, body) = server.get(&query_path("/api/v1/jobs", "all", suffix)).await;
+            assert_eq!(status, StatusCode::OK, "jobs all {label}");
+            let names: Vec<&str> = data(&body)
+                .as_array()
+                .expect("jobs")
+                .iter()
+                .map(|job| job["name"].as_str().expect("job name"))
+                .collect();
+            let expected = if selected {
+                vec!["disabled", "original"]
+            } else {
+                vec!["original"]
+            };
+            assert_eq!(names, expected, "jobs all {label}");
+
+            // All wait=true syntax stays in preview; no live wait, runnable
+            // child, daemon or new outbound network fixture is admitted.
+            let before = durable_snapshot(&server.paths);
+            let (status, body) = server
+                .post(
+                    &query_path("/api/v1/jobs/original/run?dry-run=1", "wait", suffix),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "run wait {label}");
+            assert_eq!(
+                data(&body),
+                &json!({"dry_run": true, "durable": false, "decision": "would_skip_overlap", "capacity_reserved": false})
+            );
+            assert_preserved(&before, &server.paths, label);
+
+            // Valid syntax reaches the UUID validator. This does not claim
+            // acknowledgement of a running/unconfirmed process.
+            let (status, body) = server
+                .post(
+                    &query_path(
+                        "/api/v1/runs/not-a-uuid/cancel",
+                        "acknowledge-unconfirmed",
+                        suffix,
+                    ),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(error(&body, "invalid_request"), "invalid run UUID");
+            assert_preserved(&before, &server.paths, label);
+
+            let (status, body) = server
+                .post(&query_path("/api/v1/prune", "dry-run", suffix), None)
+                .await;
+            assert_eq!(status, StatusCode::OK, "prune {label}");
+            assert_eq!(
+                data(&body),
+                &json!({"dry_run": selected, "candidate_count": 0, "bytes": 0})
+            );
+            if selected {
+                assert_preserved(&before, &server.paths, label);
+            }
+        }
+        for (label, suffix, preview) in query_flags() {
+            let reference = format!("run-{label}");
+            let (status, _) = server
+                .post(
+                    "/api/v1/jobs",
+                    Some(create_body(
+                        &reference,
+                        &definition("/bin/echo", true, false, false),
+                    )),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "run fixture {label}");
+            let before = durable_snapshot(&server.paths);
+            let count = before.records["history"].as_array().expect("history").len();
+            let (status, body) = server
+                .post(
+                    &query_path(&format!("/api/v1/jobs/{reference}/run"), "dry-run", suffix),
+                    None,
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "run dry-run {label}");
+            if preview {
+                assert_eq!(data(&body)["dry_run"], true);
+                assert_eq!(data(&body)["durable"], false);
+                assert_eq!(data(&body)["capacity_reserved"], false);
+                assert_preserved(&before, &server.paths, label);
+            } else {
+                assert_eq!(data(&body)["state"], "queued");
+                let run_id = data(&body)["run_id"]
+                    .as_str()
+                    .expect("live queued identity");
+                let store = Store::open_read_only(&server.paths.database).expect("queued state");
+                assert_eq!(
+                    store.count_runs(None).expect("actual count"),
+                    i64::try_from(count + 1).expect("count")
+                );
+                assert_eq!(
+                    store.run(run_id).expect("actual queued run").state,
+                    "queued"
+                );
+                assert!(
+                    store
+                        .attempts_for_run(run_id)
+                        .expect("not executed")
+                        .is_empty()
+                );
+            }
+        }
+        server.stop_and_join().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn export_and_import_query_forms_enforce_plaintext_acknowledgement_and_preview() {
+        let mut server = spawn_server();
+        seed_existing_state(&server).await;
+        for key in ["include-values", "acknowledge-plaintext"] {
+            let other = if key == "include-values" {
+                "acknowledge-plaintext"
+            } else {
+                "include-values"
+            };
+            for (label, suffix, selected) in query_flags() {
+                let (status, body) = server
+                    .get(&query_path(
+                        &format!("/api/v1/export?{other}=1"),
+                        key,
+                        suffix,
+                    ))
+                    .await;
+                if selected {
+                    assert_eq!(status, StatusCode::OK, "export {key} {label}");
+                    assert_eq!(body["schema"], "locron.export/v1");
+                    assert_eq!(body["values_mode"], "plaintext");
+                    assert!(
+                        body["settings"]["environment"]["EXISTING"] == "original-private-value",
+                        "explicit plaintext export value"
+                    );
+                } else {
+                    assert_eq!(status, StatusCode::BAD_REQUEST);
+                    assert_eq!(
+                        error(&body, "invalid_request"),
+                        "plaintext export requires both --include-values and --acknowledge-plaintext"
+                    );
+                    assert_redacted(&body);
+                }
+            }
+        }
+        for query in ["", "?include-values=false&acknowledge-plaintext=0"] {
+            let document = server.export_document(query).await;
+            assert_eq!(document["values_mode"], "redacted");
+            assert_redacted(&document);
+        }
+        let document = server
+            .export_document("?include-values=1&acknowledge-plaintext=1")
+            .await;
+        for (label, suffix, accepted) in query_flags() {
+            let before = durable_snapshot(&server.paths);
+            let (status, body) = server
+                .post(
+                    &query_path(
+                        "/api/v1/import?dry-run=1",
+                        "accept-plaintext-values",
+                        suffix,
+                    ),
+                    Some(document.clone()),
+                )
+                .await;
+            if accepted {
+                assert_eq!(status, StatusCode::OK, "import acknowledgement {label}");
+                assert_eq!(data(&body)["dry_run"], true);
+                assert_eq!(data(&body)["actions"][0]["action"], "no_op");
+            } else {
+                assert_eq!(status, StatusCode::BAD_REQUEST);
+                assert_eq!(
+                    error(&body, "invalid_request"),
+                    "plaintext values require --accept-plaintext-values"
+                );
+            }
+            assert_preserved(&before, &server.paths, label);
+        }
+        for (label, suffix, preview) in query_flags() {
+            let mut request = document.clone();
+            request["jobs"][0]["id"] = json!(uuid::Uuid::now_v7().to_string());
+            request["jobs"][0]["name"] = json!(format!("import-{label}"));
+            let before = durable_snapshot(&server.paths);
+            let count = before.records["jobs"].as_array().expect("jobs").len();
+            let (status, body) = server
+                .post(
+                    &query_path(
+                        "/api/v1/import?accept-plaintext-values=1",
+                        "dry-run",
+                        suffix,
+                    ),
+                    Some(request),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK, "import dry-run {label}");
+            if preview {
+                assert_eq!(data(&body)["dry_run"], true);
+                assert_eq!(data(&body)["actions"][0]["action"], "create");
+                assert_preserved(&before, &server.paths, label);
+            } else {
+                assert_eq!(data(&body)["created"], 1);
+                let store = Store::open_read_only(&server.paths.database).expect("imported state");
+                assert_eq!(
+                    store.list_jobs(true).expect("actual imported jobs").len(),
+                    count + 1
+                );
+                assert_eq!(
+                    store
+                        .job(&format!("import-{label}"))
+                        .expect("actual imported job")
+                        .current_revision,
+                    1
+                );
+            }
+            assert_redacted(&body);
+        }
+        server.stop_and_join().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn invalid_query_text_refuses_all_nine_fields_before_handler_mutation() {
+        let mut server = spawn_server();
+        seed_existing_state(&server).await;
+        let document = server
+            .export_document("?include-values=1&acknowledge-plaintext=1")
+            .await;
+        for (method, base, key, request) in [
+            ("GET", "/api/v1/jobs", "all", None),
+            ("POST", "/api/v1/jobs/original/run?dry-run=1", "wait", None),
+            ("POST", "/api/v1/jobs/original/run", "dry-run", None),
+            (
+                "POST",
+                "/api/v1/runs/not-a-uuid/cancel",
+                "acknowledge-unconfirmed",
+                None,
+            ),
+            ("GET", "/api/v1/export", "include-values", None),
+            ("GET", "/api/v1/export", "acknowledge-plaintext", None),
+            (
+                "POST",
+                "/api/v1/import?dry-run=1",
+                "accept-plaintext-values",
+                Some(&document),
+            ),
+            (
+                "POST",
+                "/api/v1/import?accept-plaintext-values=1",
+                "dry-run",
+                Some(&document),
+            ),
+            ("POST", "/api/v1/prune", "dry-run", None),
+        ] {
+            for text in ["TRUE", "yes", "2"] {
+                let before = durable_snapshot(&server.paths);
+                let path = query_path(base, key, Some(&format!("={text}")));
+                let (status, raw) = server.raw_response(method, &path, request).await;
+                assert_eq!(
+                    status,
+                    StatusCode::BAD_REQUEST,
+                    "query extractor {key} {text}"
+                );
+                assert!(
+                    serde_json::from_str::<Value>(&raw).is_err(),
+                    "invalid query unexpectedly reached managed envelope"
+                );
+                assert!(
+                    !raw.contains("original-private-value"),
+                    "query refusal leaked value"
+                );
+                assert_preserved(&before, &server.paths, "invalid query text");
+            }
+        }
+        server.stop_and_join().await;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Actual HTTP security refusal privacy
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn http_security_refusals_hide_token_path_query_and_header_canaries() {
+    let server = spawn_server();
+    let protected_url = format!(
+        "{}/api/v1/PATHCANARY?token={}&query=QUERYCANARY",
+        server.base, server.token
+    );
+    let paste_url = format!(
+        "{}/api/v1/session?path=PATHCANARY&query=QUERYCANARY&token={}",
+        server.base, server.token
+    );
+    let cases = [
+        (
+            "http-query",
+            server.client.get(&protected_url),
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            "a valid access token or session cookie is required",
+        ),
+        (
+            "http-host",
+            server
+                .client
+                .get(&protected_url)
+                .header(reqwest::header::HOST, "[::1]HEADERCANARY"),
+            StatusCode::FORBIDDEN,
+            "refused",
+            "request requires one valid loopback Host header",
+        ),
+        (
+            "http-origin",
+            server
+                .client
+                .post(&paste_url)
+                .header(
+                    reqwest::header::ORIGIN,
+                    format!("{}/HEADERCANARY/PATHCANARY?QUERYCANARY", server.base),
+                )
+                .json(&json!({"token": server.token})),
+            StatusCode::FORBIDDEN,
+            "refused",
+            "Origin must be one valid origin of this loopback server",
+        ),
+    ];
+    assert_eq!(cases.len(), 3);
+    let mut seen = std::collections::BTreeSet::new();
+    for (id, request, status, code, message) in cases {
+        let response = request
+            .header("x-admission-canary", "HEADERCANARY")
+            .send()
+            .await
+            .unwrap_or_else(|error| panic!("{id}: actual HTTP request failed: {error}"));
+        assert_eq!(response.status(), status, "{id}");
+        assert_eq!(
+            response.headers().get("referrer-policy").expect("policy"),
+            "no-referrer",
+            "{id}"
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get_all(reqwest::header::SET_COOKIE)
+                .iter()
+                .count(),
+            0,
+            "{id}: refusal emitted a cookie"
+        );
+        let text = response.text().await.expect("HTTP response body");
+        for canary in [
+            server.token.as_str(),
+            "PATHCANARY",
+            "QUERYCANARY",
+            "HEADERCANARY",
+        ] {
+            assert!(!text.contains(canary), "{id}: response contains {canary}");
+        }
+        assert_eq!(
+            serde_json::from_str::<Value>(&text).expect("error JSON"),
+            json!({
+                "schema": "locron.api/v1",
+                "ok": false,
+                "error": {"code": code, "message": message}
+            }),
+            "{id}"
+        );
+        assert!(seen.insert(id), "duplicate HTTP completion: {id}");
+    }
+    assert_eq!(
+        seen,
+        std::collections::BTreeSet::from(["http-query", "http-host", "http-origin"]),
+        "all three actual HTTP canary rows must complete"
+    );
 }

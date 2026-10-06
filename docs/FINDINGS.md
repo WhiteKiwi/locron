@@ -5632,6 +5632,174 @@ Current7343/run37196440237 completed16 ordinary PASS/1 ARM failure. Actual origi
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
 
+## PR 141 Windows first-lock publication and qualification review (2026-10-04)
+
+At original head 1e0c19a82d9efd4f67135d32f16617b2e41adcae, token.rs opens the permanent lock with Core open_private_or_create. Core filesystem_worker.ps1:46–47 exposes CreateNew's final name while its FullControl/FileShare.ReadWrite constructor remains live; filesystem.rs:574–583's concurrent guarded open omits delete sharing. The access/share combination can produce raw32 before try_lock; occurrence and holder in actual PR 141 are unmeasured. Select Windows-only closed private candidate/no-clobber publication with exact deadline and ownership/error precedence, preserving Unix and the permanent final. Locked tempfile 3.27.0 archive/API checksum matches Cargo.lock and is already a Server dev edge; a target-Windows usage introduces no new package/version. Original sequential CI success does not qualify concurrency/failure/publication. docs/planning/DASHBOARD_TOKEN_SERIALIZATION.md defines 11 portable and 2 native drivers, real OS and injected-fault evidence separately, under Issue 162; main PR 139 and Issue 30 remain intact.
+
+## PR141 pre-publication qualification suffix review (2026-10-04)
+
+Full parent Source review at9534372 found the newly introduced scratch-name .tmp ends_with predicate risks the same primary Clippy rule observed in PR142. This is unexecuted Source inference. The selected direct last-dot/lowercase-tmp comparison preserves the exact generated-name oracle, all13 functional drivers and production behavior; see planning/DASHBOARD_TOKEN_SERIALIZATION.md.
+
+## PR141 full Source review and publication selection (2026-10-04)
+
+Root full review of9534372 and exact suffix b8acdfe conserves allfive selected Source files/old3 tests/Unix literal/Core constructor/Cargo.lock and original295 protected modes-blobs. Static checks pass;13 actual functional drivers and type/lint remain hosted-unmeasured. Select normal exactc4 repository publication only, with full Source/Docs union proof and fresh original gates per planning/DASHBOARD_TOKEN_SERIALIZATION.md. Temporary receipt loss was recovered from conserved Git objects and Issue GET; no runtime acceptance is inferred.
+
+## PR141 returned-error lint prediction (2026-10-04)
+
+Three new support Err(_) panic arms match the previously observed PR139 warnings-denied lint. Select only binding the existing io::Error and printing kind()/raw_os_error() after each fixed message, preserving privacy and all operation/clock/ownership behavior. This is Source prediction, not runtime failure; see the three-step Verify in planning/DASHBOARD_TOKEN_SERIALIZATION.md.
+
+## Token qualification publication after release snapshot merge (2026-10-04)
+
+PR #138 was merged externally as main commit 9de596f8ffe48e8036f775ad1fddbea9302915a1. Its tree matches reviewed head 886e24a and ordinary synthetic commit 97b8d03. The 17 ordinary gates, Guardian, 16 snapshot tests and paired x64/ARM package provenance passed. Integrating these reviewed sources changes no token behavior. PR #141 Source commit 654d5a4 retains the full 9534372 implementation, b8acdfe suffix edit and exactly three scalar-only returned-error arms. Root read the full Source and independently proved each later inverse. New token runtime qualification remains unmeasured.
+
+1. Integrate exact main commit 9de596f by a normal Git merge. **Verify:** incoming Source, CI and Cargo plus all five selected token Source paths retain their reviewed modes and blobs. Reject any Source conflict or adaptation. Preserve both complete planning histories after the common prefix; only shared planning documents may be reconciled.
+2. Publish by normal fast-forward to the unchanged original PR #141 remote head 1e0c19a. **Verify:** fresh REST head and main binding match; the original remote is an ancestor; staged and unstaged scope is clean. The PR body states actual evidence and remaining qualification. No forced push or retry of an unchanged failed head.
+3. Qualify the published head against the current base before ordered merge. **Verify:** all 13 new Windows drivers, 11 portable drivers and the original three tests pass on their actual hosted platforms. Require x64/ARM/MSRV native tests, Unix tests, warnings-denied lint, all ordinary gates, Guardian and paired package provenance. Final synthetic, head and squash trees must agree. Keep broad native acceptance open; static receipts do not establish runtime results.
+
+## PR141 actual failed-head review and terminal peer gap (2026-10-04)
+
+Exact4fa ordinary37204722580/1 is completed11SUCCESS/6FAIL/2optionalSKIP. Linux Clippy observes unchecked_time_subtraction and needless_pass_by_value in test_support; Windows non-test token Clippy observes two question_mark arms. All three Windows token suites first fail with ConnectionReset/raw10054 in atomic_failures, then twelve driver-mutex poison failures; each43PASS/13FAIL, old3PASS. Source confirms a read after fully validated Done and later polls of completed peers, but actual reset phase, first child exit/capture/subcase and native cause remain UNKNOWN. Separate x64 supervisor1687 native-boundary failure remains unqualified; ARM/MSRV same64 service cases PASS. Preserve the full actual/unknown distinction and select only the three-path terminal/lint repair with actual C1/C2/C3 read-retention assertions in planning/DASHBOARD_TOKEN_TERMINAL_2026-10-04.md.
+
+## PR141 terminal Source review and qualified-main136 integration
+
+Root reviewed complete704709e terminal patch/contexts and independent whole3 inverses/309protected entries; lint/terminal/C1-C3 scope is preserved, runtime acceptance pending. Historical4fa RST phase/child/capture/native cause and separate x64 supervisor cause remain UNKNOWN. Follow planning/DASHBOARD_TOKEN_MAIN136_2026-10-04.md for exact reviewed main136 integration before fresh original gates.
+
+## Token141 actual reset observation selection (2026-10-05)
+
+Fresh621 CI37217720691/1 passed14 gates including all3lint and5Unix but failed all3Windows token libraries43PASS/13FAIL. First atomic-fault read reset10054 lacks actual owner/last-frame/pre-kill Child/capture/subcase/cause; ARM has one prior Write/cleanup_false completion only. The separate support-only plan DASHBOARD_TOKEN_READ_FAILURE_2026-10-05.md selects safe bounded actual pre-cleanup observation while preserving failure, all terminal/ownership/privacy checks and original clocks. Existing wake/cancel and historical4fa causes remain UNKNOWN; no production repair is inferred.
+
+
+## Measured token observer lint (2026-10-05)
+
+Fresh observer CI37222583220/1 exposes only measured private observer syntax in all three completed strict Rust1.98 lint jobs: comparison_to_empty at support831 and manual_assert at997/1108. Root read each actual raw diagnostic. Preserve the same safe location parse and all failure-observation operations while returning a report from a private builder to one unconditional fatal panic boundary. Current native/runtime results remain pending; no child/reset/capture cause or production repair is inferred.
+
+## Actual normal producer exit before validated prefix receipt (2026-10-05)
+
+Completed f8 CI37222583220/1 is11PASS/6FAIL/2optional: every first native atomic-fault read failure now actually observes pre-kill Child exit0, stdout161/stderr0, active assigned peer and partial framing. x64/ARM lastBeforeCleanup8/next9 has288/101 bytes; MSRV lastLeafClosed7/next8 has254. The next event/payload and exact TCP mechanism remain UNKNOWN. Root verified actual synthetic37d836ce9d2578a0923e2c1e251131ed3a9dcd1f whole tree equalsf8. A separate full Source/lifetime investigation confirms the known producer sends Done then immediately closes its streams without parent receipt, and its six atomic cases have no unread Release command. Successful send is not recipient receipt under the official Winsock contract. Select a bounded existing-clock receipt for the validated prefix through Done and six actual held/live/released controls; preserve every original failure and product/native/cleanup boundary. This is a private protocol correction candidate, not a measured RST cause or production token defect. Rust1.94/1.99 normal Winsock cleanup is empty; WSACleanup attribution would be unsupported.
+
+## Actual token destination refusal without printed error scalars (2026-10-05)
+
+Published321 CI37226872791/1 completed14PASS/3nativeFAIL/2optional with all3 strict Clippy/all5 Unix/Guardian passing and whole actual checkout8930690 tree equal321. All three Server suites improved to54PASS/2FAIL:11 portable functional token selectors and support pass; destination sharing first refuses with a raw value outside the unchanged32/33 predicate, then the constructor selector fails from mutex poison. The actual kind/raw/elapsed/rename/cleanup values and Core failing phase remain UNKNOWN; the second cleanup case was not reached. Source links the destination assertion to validated Done and unchanged successful finish. Separate ARM wake/cancel and MSRV wake causes remain UNKNOWN. Select only the <=256ASCII existing-frame scalar failure message in planning/DASHBOARD_TOKEN_SHARING_OBSERVATION_2026-10-05.md; no accepted-error, ownership, clock or gate change follows.
+
+## Observed destination raw5 and strict real controls (2026-10-05)
+
+Changed652 CI37231275837/1 completed14PASS/3nativeFAIL/2optional. Exact three-row values are PermissionDenied/Some(5), renames1/cleanup1, producer elapsed378/371/418ms; original token/Core clocks and other32/33 callers remain literal. Whole actual checkoutad128398 has parentsmainf90/head652 and equal head tree. Allthree Core131/Engine69/Service64/GUI12 passed; fullStore is unqualified after earlierServer failure, and oldCLI22/24 has separate twoWake failures of unknown cause. These observations belong to652 and do not retroactively measure321's unknown raw values.
+
+Root reviewed [Rust1.94 Windows rename](https://github.com/rust-lang/rust/blob/4a4ef493e3a1488c6e321570238084b38948f6db/library/std/src/sys/fs/windows.rs#L1311) and [Rust1.99 Windows rename](https://github.com/rust-lang/rust/blob/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/sys/fs/windows.rs#L1321): the byte-identical3258-byte functions may preserve originalMoveFileExW raw5 after a failed secondary DELETE-open/FileRenameInfoEx attempt. Exact Core stage/secondary errno/cause is unknown, and POSIX semantics prevent a universal open-target refusal promise. The unchanged Core held-source tests passed3×3 and differ from held-destination. Select only the scenario-specific exact raw5 plus real std/Core same-candidate identity/nonmutation/release positives and token new-scratch rotation positive in DASHBOARD_NATIVE_DESTINATION_2026-10-05.md; all new controls remain unmeasured pending actual hosted qualification.
+
+## PR144 HTTP qualification continuation (2026-10-04)
+
+Root independently reviewed exacta5e7 with125 immutable artifacts/63 Source snapshots, full API inverse,34 test paths and5 checksum-qualified primary members (proof6dcfb572a514dd74c5a488649552108efd5d460629115a3941a7e3d2c09ce72c). The actual bool/text/null DTO grammar and existing-environment read-only preview fix have no complete new HTTP regression matrix. Select only contract.rs genuine authenticated router controls, absent-state checks and closed-writer durable snapshots against actualmain9de. Source-proven wake exclusion is recorded; actual native wake observation/dev edge is not selected in this tranche. SPEC/runtime/API/UI/old helpers/tests/manifests/workflow remain protected.
+
+
+## PR144 full incoming f90 compatibility before Git integration (2026-10-05)
+
+Separate read-only research and independent Root proof 4c13f900da8ca5702f6b143e0b15532b1831fd12a3a12caa0f715c2524ae72ae select normal exactf90 integration with no Source adaptation. Preserve complete incoming FINDINGS/IMPLEMENTATION as authoritative prefixes and append only reviewed own/new components once; incoming native histories are not a guessed common9de suffix. Actual mainf90 native22PASS2FAIL remains failed, while the selected own HTTP/macOS Source has not gained new hosted acceptance. Full scope and every Verify are in docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md.
+
+
+## Exact HTTP query fixture failure and independent Windows collection (2026-10-05)
+
+CI37221831243/1 has seven actual skipped_overlap-versus-queued failures in the new query test; seeded original was already active under the unchanged skip policy. Root489-artifact/17raw/319 Source proof4dd970d7 binds the full synthetic checkout. Select per-job unqueued fixtures only in that second matrix. Server/Core/Store test dependencies and private router fixtures permit independently collecting native HTTP after cold Core success, retaining the earlier failed job and unknown native causes. See planning/HTTP_QUERY_FIXTURE_ISOLATION_2026-10-05.md before Source.
+
+## Dashboard144 readonly qualification selection (2026-10-05)
+
+Source review and the separate 195-row research distinguish actual Axum422 JSON type refusal from API400 validation, readonly SQLite logical state from WAL/SHM coordination, and API wake attempts from delivered hints. Windows mixed-case previews need a fixed raw legacy seed before measurement because the production setter canonicalizes keys. New controls remain UNMEASURED. The whole selected ledger and independent inputs are in planning/DASHBOARD_BOOLEAN_QUALIFICATION_ROWS.md and DASHBOARD_BOOLEAN_FIXTURE_INPUTS.json; ownership/build/clocks are fixed in DASHBOARD_BOOLEAN_QUALIFICATION_2026-10-05.md. Original CI37178272278/1 passed17 jobs with2 optional skips and does not qualify these new controls.
+
+
+## Dashboard144 private stage retention review (2026-10-05)
+
+Independent review of unpublished5ec finds that discarded TempPath::keep failures can leave implicit stage deletion enabled in locked tempfile3.27.0. The pure cleanup flag must be disabled before the existing no-clobber publication. No actual deletion or native failure was observed. The three-helper scope, Source conservation and current published1f5 ancestry boundary are frozen in [the supplemental retention plan](planning/DASHBOARD_BOOLEAN_STAGE_RETENTION_2026-10-05.md).
+## PR 142 generic refusal review and missing admission qualification (2026-10-04)
+
+Head507777cedd5bd02b162d9b347c2770cdf4585bc0 removes URI interpolation from authentication errors. Both contract.rs token_refusal expectations still contain /api/v1/jobs; ordinary run 37177628448 fails those assertions on eight platform jobs, while existing Server library tests and the other contract cases pass. Preserve the generic response and update those two expectations. Source review also confirms that single_header distinguishes actual absence, multiple fields and undecodable bytes, loopback_port refuses unsupported suffixes and malformed decimal ports, and unsafe Origin requires the actual bound port. Existing tests do not establish the adversarial matrix. Add actual-router admission/body-poll and real HTTP canary controls in PR 142 under Issue 162; PR 145 retains the separate cookie/CSRF slice. The selected tests use synthetic tokens and private ephemeral fixtures only; no installed dashboard credentials or live service are involved.
+
+### PR142 reviewed admission Source/current-main handoff (2026-10-04)
+
+Source4d229e61 preserves the full production middleware prefix and original contract except the two selected generic messages; parent-reviewed tests statically inventory152 rows. Format/locked metadata/diff pass; all new runtime/type/Clippy/native qualification remains pending. A normal current-main c4ef8b90 integration must preserve both Docs histories and the reviewed Source union, followed by fresh candidate/current-base CI and paired provenance. Refs #162; #163.
+### PR142 measured embedded URL suffix lint (2026-10-04)
+
+Changed-head37198413636 has14 ordinary successes/three lint failures. Raw Windows/Linux lint identifies middleware831 ends_with(.js) case-sensitive-file-extension lint. Keep the exact lowercase embedded URL rule through rsplit_once plus exact suffix js; preserve all152 rows and other Source. No case relaxation/allow/gate waiver. Root Docs/Issue162 readback precede separate one-assertion Source repair and fresh changed-head qualification.
+
+
+## PR142 reviewed qualification and exact main138 integration
+
+The [completed integration plan](planning/DASHBOARD_HEADERS_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
+
+
+## PR142 exact main136 integration selection
+
+PR136 is merged as f90a9d5 with exact reviewed/tested tree and actual ordinary/native/paired acceptance. Follow [the selected integration plan](planning/DASHBOARD_HEADERS_MAIN136_2026-10-04.md) to preserve the reviewed own Source and complete historical document blocks before fresh combined-head qualification. Prior successes do not qualify the new tree.
+
+## Dashboard145 strict cookie/recovery research and selection (2026-10-05)
+
+The complete original198 control research distinguishes missing cookies from malformed and duplicate/unreadable states, actual body polls from delivery, real issuer headers from DOM storage, and plaintext Axum rejections from API envelopes. Original public GET admitted malformed cookies as unauthenticated; preserving that load boundary adds six real entry/script controls without dropping any original key. Selected204=190 backend+14 client controls remain UNMEASURED. Source/CI evidence, primary request/asset code and pin reads establish the narrow recovery route and the need to generate the actually shipped RustEmbed dist. See planning/DASHBOARD_COOKIE_RECOVERY_2026-10-05.md and its complete original/public ledgers. Historical CI37178548023/1 failures remain evidence, not a claim about the future composed candidate.
+
+## Dashboard145 public predicate clarification before Source (2026-10-05)
+
+Both original cc0aaa and reviewed incoming b1d843 actually use GET and !uri.path().starts_with("/api/") for public entry. The initial selection's “outside /api/v1/” wording was incorrect. Preserve that whole existing /api/ predicate and reuse it solely to allow bad-session public loading; /api/other and /api/v2 remain protected. This corrects Docs before integration or Source; all original198 and newPUBLIC6 wires/keys remain unchanged.
+
+## Dashboard145 pinned generation environment before Source (2026-10-05)
+
+The developer observed default Node26.7.0 and pnpm10.34.6 without installing/building. The existing mise Node24.21.0 binary is present and Root directly read its exact version. Select that existing bin directory only in the copied child-command environment for the one isolated frozen install/build and verify both exact pins there. No global PATH/config/shim/tool installation/upgrade is selected. No generation, Source or runtime proof is claimed by these version reads.
+
+## Dashboard145 sentinel handle compatibility before dependent Source (2026-10-05)
+
+Preserved Core create_private_new returns a read/write GuardedFile; Windows open_private_read_stable uses FILE_SHARE_READ. The draft fixture cannot retain that writer while opening a stable reader. The actual API contract selects a same-full-ID handoff after initial sync: capture writer identity, release writer, reopen the known no-follow existing leaf read-only, compare its complete identity and retain that guard. This is Source-backed static compatibility, not a native result. No Core, 204-row ledger, old assertion, generation or deadline changes are selected; the full supplement is planning/DASHBOARD_COOKIE_SENTINEL_HANDOFF_2026-10-05.md.
+
+
+## Independent Unix sentinel readers (2026-10-05)
+
+Refs #162 / PR145. Root reviewed clean Source0c0086445f98ce8498fdf0ae670deb6a51ac2ce4 and its whole inverses/single generated build. Initial sentinel handoff is no-follow and read-only, but two independent Unix readers still use File::open between symlink_metadata checks. Those calls can follow a leaf link. DASHBOARD_COOKIE_UNIX_NOFOLLOW_2026-10-05.md selects only existing Core no-follow GuardedFile substitutions, the corresponding bounded reader borrow and unused import removal. All204 keys, Windows/production/frontend/generated bytes, clocks and quarantine policy remain frozen; this mismatch is static, not measured native failure.
+
+
+## Actual Windows token destination raw5 and release-success qualification (2026-10-05)
+
+Current652 ordinary37231275837/1 fails14PASS/3nativeFAIL/2optional at actual PermissionDenied/raw5 (378/371/418ms; wrapper renames1/cleanup1), followed by constructor mutex poison. Root proofc91cab51f7ba4fb5f5c2955f7c89e316223d417ff52bedfd854684c87444f989 binds284 research artifacts,968 canonical inputs, all325 tested mode/blobs and17 original logs. The destination predicate mismatches this returned error; native instruction/ACL/holder/cause and checked failed-root teardown remain unknown. Select destination-only failed-PermissionDenied preservation plus actual same-root released regeneration/full destination and permanent-lock identity witnesses under unchanged clocks. Preserve the shared32/33 and complete unreached scratch/constructor criteria. Independent x64 wake failures and skipped downstream gates remain open.
+
+## Grouped arrivals and exact contributor boundaries (2026-10-05)
+
+Fresh inventory has19 open PRs at unchangedmainf90. Git ancestry confirms newer141946 and1673a descend from selected652/e9d; newer1667429 diverges from localdf30 with only Docs differences and identical whole WinGet Source/CI. New168/169 are two distinct one-line action updates in ci.yml,170 is one Engine dev-dependency plus its exact lock package. The initial16-member/four-group checkpoint remains historical; a fifth dependency group168/169/170 is selected only for read-only research. Preserve all contributions and review new producer diagnostics and action/dependency Sources before new final integration decisions, per GROUPED_PR_ARRIVALS_2026-10-05.md.
+
+## Group A combined ownership and current native boundary (2026-10-05)
+
+The complete groupA read-only handoff8dbdaeef establishes a52-path source/doc union with both divergent144 contributions and actual newer946. Existing parent-owned CreateNew preparation can support193/195 boolean rows without token/Core adapters;145 remains state-missing. All946 held/replacement identity witnesses must be preserved with strict f559 finite native controls. Current946 actual constructor failure follows the first hidden=true loop but its event/Done/native cause is unknown; existing validated scalar reporting can locate it without new reads or changing failure/deadline. GROUP_A_DASHBOARD_INTEGRATION_2026-10-05.md selects the precise union, creator-ID/absence and reporting adaptations; all composed outcomes remain unmeasured.
+
+## Group A measured compile/type admission failures — 2026-10-05
+
+Changed-head3f741 fresh CI37255108990/1 fails before fixture/native execution: borrowed temporary Cookie/Set-Cookie GetAll, moved cleanup String, two strict lint expressions and DOM RenderResult generic mismatch. Actual synthetic550baf8a has ordered f90/3f741 parents and equal tree. Source-backed owned iteration/borrow/empty-unit/literal-delimiter/test-only Pick corrections preserve full policy/oracles; constructor and Windows lifecycle causes remain UNKNOWN. See GROUP_A_COMPILE_ADMISSION_2026-10-05.md.
+
+## Group A initial fixture admission evidence — 2026-10-05
+
+Actual1e0 fresh CI separates three strict lint sites, Unix populated-preview horizon, Windows13cookie fresh-root privacy refusals, PR144 facts no-follow input refusal and Constructor Done-before-event. Full native read-only handoff18a0f794 and locked SQLite/tempfile Source support initial private Unix DB creation, two-directory owned Windows fixture roots, existing-base canonicalization and a closed facts diagnostic; actual causal primitives remain unknown. Complete scope, count correction and Verify are in GROUP_A_FIXTURE_ADMISSION_2026-10-05.md.
+
+## Group A Boolean preparation API boundary — 2026-10-05
+
+Before dependent Boolean Source, actual fresh_root/callers and Core APIs show no parser preparation deadline/finite worker or public directory-handle identity shortcut. Preserve original Boolean root/callers and parser30 origin; narrow WROOT to cookie's existing deadline/full-ID boundary. Empty child removal followed by outer failure retains surviving outer without rollback. Full selected authority is the amended GROUP_A_FIXTURE_ADMISSION_2026-10-05.md.
+
+## Group A Unix-only selector scope (2026-10-05)
+
+Actual04c Windows1.98 raw39817B/SHA2c03536e613126d0d88d74303e803d9bf609154ab30ed8c211e71ae7d4d8f827 contains exactly two dead-code constants, not a measured fixture/native cause. Separate HANDOFF31/27manifest proves all eight identifier references: two Server declarations and two uses inside existing cfg(unix) run_owned, plus four independent Windows native-example references. Select exactly matching cfg(unix) declaration attributes; preserve values, complete bodies, independent controller/example and all other bytes. No allow/expect/remove/new clock or broader preparation is selected. See GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md; hosted acceptance remains pending.
+
+
+## Group A actual facts-refusal observation — 2026-10-05
+
+Actual f97 CI14ordinaryPASS/3WindowsFAIL records first facts PermissionDenied/rawNone before193195 controls; strict Windows lint now passes. Core normal managed-file admission does not directly require private-leaf DACL on this path. Existing managed/stock custom Error spellings can identify a class and a bounded lexical ancestor index without another native query; they do not identify actual native object/security predicate. Select only the one-file118-line class/index alternative with private stack2048, fixed labels, index0..63/unknown and104CRLF diagnostic cap. Original refusal/Error/Unix/facts read/body/root/clock remain whole. Arbitrary Error formatter work and real current failure cause remain unknown/unmeasured. Full scope and concrete Verify: planning/GROUP_A_FACTS_REFUSAL_OBSERVATION_2026-10-05.md.
+
+## Actual guarded-input refusal research before Source (2026-10-06)
+
+The sealed67-artifact research manifest SHA98f218b5a2bd037b54a09c7c434a75734ec34402141d2ec9b19fba72d182f491
+and independent Root full hash/mode/blob verification bind Core mainf90 == A154 == B875.
+A's custom facts refusal does not measure which original metadata/owner/DACL/ACE
+predicate rejected; B's first SEL02 failure occurs among production/recovery/binding
+opens before Store seed. B's exact caller is Server api_prune/qualification.rs, blob
+3b42e4b8c4583519969816314469419468b3e5a2, not a similarly named Store module.
+Select an error-bound closed tag only on the already-returned custom rejection and a
+debug-only pure projection for these dependency-facing Server fixtures. No native error
+wrapping, duplicate native query, permission change or assumed layout/holder repair.
+Independent complete CRLF models are A214/B192/generic158 bytes within256; this is
+zero type/native/timing acceptance. The shared complete plan records scope and Verify:
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+
 ## Native process-token SID research before separate Source (2026-10-05)
 
 Separate59-artifact research report SHAa413614f30336a560cf097e8da24b4a0ad4193fc495924c55f12628d31a6c2d7
@@ -5936,3 +6104,160 @@ Four concrete Verify steps require Root four-Docs commit, new whole-plan exact o
 25/27/31/35/163/171/166/167 POST/GET ALL and full final committed new-plan/tails reread
 AFTER ALL before separate development. Failed/unrun scope and all issue/member criteria
 remain open; all20 PRs are open, signing37 deferred and no release/main merge is implied.
+
+## Early A/B diagnostic integration research and selected order (2026-10-06)
+
+The sealed76-artifact manifest SHA614c7d7c194bc615866b199eb0eba8837b9967d6f404c45b88cebcda4d4623b5
+binds exact c39/tree9cec and guard A d24a2a65/B b6c9d1ec to common f90. Whole common
+filesystem/callers and native SID/Engine/helper contributions are disjoint; bilateral
+A ci.yml and B ci.yml/main.rs/tests/cli.rs have exact two-contributor whole inverses in
+pure byte models. This is not an actual Git merge, type/native proof or cause measurement.
+Both full Docs histories have exact f90 prefixes and complete separate suffixes.
+Select only early independent A/B DIAGNOSTIC draft qualification before common main
+merge, after exact-c39 normal integration and matching native-SID order amendment.
+Current c39 CI37355065492/1 remains16 ordinary PASS/1 MSRV FAIL/2 optional SKIP;
+package proof cannot waive that failure. Any actual Source/mode/input ambiguity stops
+for Docs FIRST. No path/ACL/holder/trust/clock repair or main/member acceptance follows.
+The complete shared plan amendment preserves all historical evidence and owning Verify:
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+
+
+## Actual guard hosted lint and independent CLI horizon (2026-10-06)
+
+Current A346 CI37365084437 Windows1.98 job111948190639 measures eight same-u32
+conversion errors in Core ACE diagnostic slots. Pinned permissions0.2.4 len/get_ace
+signatures prove those original loop indices are u32; Some(index) preserves their
+optional values, while separate usize ancestry conversions stay checked/literal.
+Ba29 CI37365095813 Linux1.98 job111948225647 measures SharingControl never constructed;
+its sole actual N07 caller is cfg(windows), so BOTH variant and matching label arm are
+selected for cfg(windows). Seven Windows/six Unix actual roles remain unchanged.
+Separate Linux ARMstable job111948225655 measures original first CLI SEL02 deadline at
+173 then false row755,89P/1F/60.22s. Its current call/path/holder/cause remains unknown;
+no timeout repair is selected. Full narrow plan and three concrete Verify are in
+[WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md](planning/WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md).
+Source is paused; no lint/type/native/whole-run or member/main acceptance is inferred.
+
+
+## Before-Source pinned guard formatter normalization (2026-10-06)
+
+The exact eight-projection candidate's pinned1.94 preview produced five local hunks:
+two AceMissing sole-expression ok_or_else closures lose redundant braces; remaining
+selected macro calls wrap/collapse. The pre-write gate stopped with zero Source writes,
+CLEAN A11d/Bf8ef and complete parent inverse;14-payload stop manifest4d5ca010 remains
+frozen. Root selected only those two enclosure removals and exact five hunks through
+the complete appended WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md amendment. No extra
+call/evaluation/predicate/Result/error/owner/clock change or native-cause repair is
+selected. Original125-line plan and every historical Doc byte remain preserved.
+Source stays paused for Root commits/all eight whole owning GETs/final entire reread;
+independent1.98/full inverses and fresh actual native/strict lint Verify remain pending.
+
+
+## Guard per-user direct-build hypothesis (2026-10-06)
+
+A dashboard facts-first Store/controller/Server remains an actual failed/unqualified scope. The frozen seven-payload
+placement-owner-policy research establishes no false owner/ACL rejection and no
+actual host path/SID/full mask/cost. Direct LOCALAPPDATA placement is a selected
+experiment; existing ancestor/leaf/private/identity guards decide, with no fallback,
+ACL repair, copy or private-target guarantee.
+A image guard requires TokenUser leaf-owner equality; Admin/SYSTEM write ACEs
+do not broaden it. A facts/B images/locator keep their four-owner ancestry
+guard without A's leaf equality; actual TokenOwner/TokenUser/leaf owners unknown.
+The concise identical
+[WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md](planning/WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md)
+pins current clean A88cd/B163e and the narrow step-scoped target/facts/readback
+composition; B alone adds one track_caller location hint, with cost/cause unknown.
+Every old failed result and every historical Doc byte remain preserved. Source
+waits for Root commits/all owning exact GETs/final entire reread and separate lease.
+
+
+## A matched-library creation-context experiment (2026-10-06)
+
+Actual A577 CI37378453034/1 remains14 required PASS/three Windows FAIL/two optional
+SKIP, original24 native19PASS/5FAIL; each Server library is73PASS/1 original195 FAIL.
+The fixed server_artifact owned_owner_mismatch follows successful guarded Store/
+controller binding in the immutable case; actual owner class/TokenOwner/cause is unknown.
+The sealed five-payload/13-Source/10-official-body Cargo1.94 research and Root proof4e229e96
+support controller-first then one matched Store/Engine/Server lib no-run compilation
+inside the existing Windows Python producer, with the unchanged Store selector/hash
+AFTER aggregate and later real three-package test argv literal. Matched compile intent/
+features/profile/target is Source proof, not unconditional cache reuse or owner success.
+All predicates/fullIDs/hash/private195/cleanup/clocks and Unix bytes stay exact; no token/
+ACL/owner/copy/adoption/cache/profile/feature/fixture/retry change or cause guarantee.
+The complete four-Verify plan is
+[WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md](planning/WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md).
+Root whole-plan owning POST/GET ALL then actual full committed-plan/new-tail reread
+must precede separate workflow-only Source; actual changed-head acceptance remains pending.
+
+
+## A guarded private fixture-parent selection (2026-10-06)
+
+Current A f018 CI37389944356/1 is14 required PASS/three Windows FAIL/two optional
+SKIP; original24 native21PASS/3FAIL. All three Server73PASS/one original195 FAIL
+report fixture parent chain refused before that fresh_root invocation allocates a
+unique directory. Actual kind/raw/guard predicate/owner/ACE/mask/cause is UNKNOWN.
+Three actual upload errors and completed metadata confirm ZERO Windows PR144JSON
+among nine archives (fourpackage/fiveUnixJSON), archiveGET0; no hidden tag or156/195
+receipt is inferred. The first call precedes all JSON; invocation index is unprinted.
+The sealed17-payload f018 research binds both calls, the whole constructor/cleanup
+and live evidence_guard chain. Its successfully admitted normalized parent is held
+by existing no-delete ancestry handles, so Windows can select that guarded parent
+for unique private SIBLINGS outside redacted-evidence while re-running canonicalization/
+ancestors and all original child/privacy/ID/keep/cleanup checks. This removes a separate
+fixture-base dependency; it proves neither an old RUNNER_TEMP false rejection nor
+new-child owner/type/native acceptance. All Unix bytes, owners/oracles/clocks stay frozen.
+The complete new four-Verify plan is
+[WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md](planning/WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md).
+Root all-six WHOLE NEW-plan POST/exact GETs and ACTUAL entire committed new-plan/new-tail
+reread AFTER ALL GETs precede separate Source. No Source or hosted success is claimed.
+
+
+## Selected merge order with explicit hosted-Windows residuals (2026-10-06)
+
+The owner selects meaningful isolated local x64 Windows Verify, unresolved hosted CI
+in Issue172, then reviewed merges. Nativebd86 original24 remains22PASS/2FAIL, with
+ARM firstRole/Role before probe/Run distinct from stable first-work success→ExpiredCleanup.
+Daemon StoreOpen/enter was observed; code1 is CleanupWait AFTER teardown, not a proven prior
+fatal exit or failed Store operation. Exact Role cause UNKNOWN, late cleanup notPASS.
+D166/167 already enter Native/A/B ancestry.
+The sealed C/D/E source audit binds real contributor paths and separate C/B rusqlite
+positions: preserve ONE equal common dev edge, every native/A/B producer/gate and
+C selector. E changes production TLS lock resolution as well as its test declaration.
+This is merge/protection sequencing, not a new runtime or feature acceptance claim.
+The complete five-Verify plan is
+[WINDOWS_MERGE_AND_CI_DEFERRAL_2026-10-06.md](planning/WINDOWS_MERGE_AND_CI_DEFERRAL_2026-10-06.md).
+Only three runtime required contexts are selected for temporary removal; exact11
+other requirements/manualGuardian remain, ordinary jobs/failures visible. Root backup/
+readback and after-GET full plan review precede effects;172 and unfulfilled owners stayOPEN.
+
+
+## Local profile fixture after actual ancestor refusal (2026-10-06)
+
+The two original bd86 release CLI smoke cases remain FAIL: actual daemon5 before any
+Add/Run/Cancel/target, with identical54-byte unsafe-managed-path stderr. Subsequent
+read-only held-handle inspection identifies existing AppData other Allow ACE1/flags0/
+FullControl0x1f01ff/mutation0xd0150, matching Core's unchanged trust refusal. This is a
+later descriptor snapshot, not same-instruction trace or effective-account analysis.
+The new protected containers match the private descriptor; volume/users/profile pass
+observed trust, while Local/workspace do not. No ACL repair or app repeat occurred.
+First14-payload manifest38593aec1f934b37d378dcdfc2bf62dad0f71a52c225074d323234725ec483bb
+and readonly8-payload manifestea620bfc21f1d7c12d2a52ecdc0bac6b72fd26828cb59b396e8d6ea38a6455bd
+stay frozen. Select only new absent UUID fixtures directly under observed profile plus
+read-only chain/private-leaf validation before original spawn, same Source-bound x64
+release/commands/5s/8s/30s/25ms/caps/owners/quarantine. This does not explain hosted ARM
+Role or stable Cancel cleanup, transfer PASS, or qualify default unsafe ancestors.
+Complete scope, exact hashes and four concrete Verify are in
+[WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md](planning/WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md).
+Root four-Docs commit, whole172/31/163 POST/exact GET ALL and ACTUAL entire final plan/
+tails reread precede a separate one-shot Verify lease; no runtime effect is selected here.
+
+Root also selects one final unpublished Nativebd86->exactmain842->finalA/profile Docs->
+B72->C18->D ancestry/conservation->Ebc assembly, one PR171 normal FF publication and one
+GitHub squash main merge. This replaces only historical sequential representative
+publication/main routing, preserving all failed receipts, Source/security/clocks/Verify.
+Root's20-head snapshot is bound in the new plan and requires fresh prepublication reads;
+all20 must be final-integration ancestors, while squash main requires COMPLETE tree/Source/
+Docs equality and sole actual premerge-main parent, not sibling ancestry. Repository
+allow_merge_commit=false/rebase=false/squash=true is observed configuration, not an edit.
+All12 owning whole-plan GETs/Root after-ALL reread precede separate effects; all11 genuine
+same-final-head contexts plus Guardian/package/paired reviews remain. Verified delivered
+sibling PR closure does not close unsatisfied Issues or convert unrun/local/hosted FAILs.
