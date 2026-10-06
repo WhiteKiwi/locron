@@ -147,6 +147,9 @@ fn invoke_json(state: &PrivateState, arguments: &[&str]) -> serde_json::Value {
 
 #[cfg(unix)]
 mod state_discovery {
+    use std::ffi::{OsStr, OsString};
+    use std::os::unix::ffi::OsStringExt;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
 
     fn without_default() -> Command {
@@ -245,6 +248,431 @@ mod state_discovery {
             .success()
             .stdout("global_concurrency=16\n");
         assert!(environment_root.join("state.db").is_file());
+    }
+
+    fn assert_no_state(root: &Path) {
+        assert!(!root.exists(), "unexpected state root");
+        for file in ["state.db", "state.db-wal", "state.db-shm"] {
+            assert!(!root.join(file).exists(), "unexpected state file: {file}");
+        }
+    }
+
+    fn assert_dry_run_then_config(
+        mut command: impl FnMut() -> Command,
+        working: &Path,
+        expected: &Path,
+        candidates: &[PathBuf],
+    ) {
+        assert!(expected.is_absolute());
+        assert_eq!(std::fs::read_dir(working).unwrap().count(), 0);
+        let preview = command().args(["prune", "--dry-run"]).output().unwrap();
+        assert_cmd::assert::Assert::new(preview)
+            .success()
+            .stdout("dry run: would prune 0 runs, 0 outputs (0 bytes)\n");
+        assert_no_state(expected);
+        for candidate in candidates {
+            assert_no_state(candidate);
+        }
+        assert_eq!(std::fs::read_dir(working).unwrap().count(), 0);
+
+        let live = command()
+            .args(["config", "get", "global_concurrency"])
+            .output()
+            .unwrap();
+        assert_cmd::assert::Assert::new(live)
+            .success()
+            .stdout("global_concurrency=16\n");
+        assert!(expected.join("state.db").is_file());
+        for candidate in candidates {
+            if candidate != expected {
+                assert_no_state(candidate);
+            }
+        }
+    }
+
+    fn assert_non_utf8_discovery_contract(
+        command: impl FnMut() -> Command,
+        working: &Path,
+        expected: &Path,
+        candidates: &[PathBuf],
+    ) {
+        #[cfg(not(target_os = "macos"))]
+        assert_dry_run_then_config(command, working, expected, candidates);
+
+        #[cfg(target_os = "macos")]
+        {
+            use std::path::Component;
+
+            let mut command = command;
+            assert!(working.is_absolute(), "fixture parent must be absolute");
+            assert!(
+                expected.is_absolute(),
+                "fixture state path must be absolute"
+            );
+            assert!(
+                expected.to_str().is_none(),
+                "fixture must retain raw path bytes"
+            );
+            for root in std::iter::once(expected).chain(candidates.iter().map(PathBuf::as_path)) {
+                let Ok(relative) = root.strip_prefix(working) else {
+                    panic!("fixture state path must remain inside its owned parent");
+                };
+                assert!(
+                    !relative.as_os_str().is_empty()
+                        && relative
+                            .components()
+                            .all(|component| matches!(component, Component::Normal(_))),
+                    "fixture state path must be a descendant without escape"
+                );
+            }
+            let assert_empty_parent = || {
+                let Ok(mut entries) = std::fs::read_dir(working) else {
+                    panic!("fixture parent enumeration failed");
+                };
+                assert!(
+                    entries.next().is_none(),
+                    "fixture parent contains an entry or cannot be enumerated"
+                );
+            };
+            assert_empty_parent();
+            let Ok(preview) = command().args(["prune", "--dry-run"]).output() else {
+                panic!("fixture preview invocation failed");
+            };
+            assert!(preview.status.success(), "unexpected state preview status");
+            assert!(
+                preview.stdout.as_slice() == b"dry run: would prune 0 runs, 0 outputs (0 bytes)\n",
+                "unexpected state preview output"
+            );
+            assert_no_state(expected);
+            for candidate in candidates {
+                assert_no_state(candidate);
+            }
+            assert_empty_parent();
+
+            let Ok(live) = command()
+                .args(["--json", "config", "get", "global_concurrency"])
+                .output()
+            else {
+                panic!("fixture native config invocation failed");
+            };
+            assert!(
+                live.status.code() == Some(5),
+                "unexpected native state refusal status"
+            );
+            assert!(
+                live.stderr.is_empty(),
+                "unexpected native state refusal stderr"
+            );
+            assert!(
+                live.stdout.len() <= 1024,
+                "native state refusal exceeded its output bound"
+            );
+            let Ok(error) = serde_json::from_slice::<serde_json::Value>(&live.stdout) else {
+                panic!("native state refusal was not JSON");
+            };
+            assert!(
+                error
+                    == serde_json::json!({
+                        "schema": "locron.cli/v1",
+                        "ok": false,
+                        "command": "config",
+                        "error": {
+                            "code": "state_error",
+                            "message": "Illegal byte sequence (os error 92)"
+                        },
+                        "warnings": []
+                    }),
+                "unexpected native state refusal envelope"
+            );
+            assert_empty_parent();
+        }
+    }
+
+    fn assert_preview_discovery_error(mut command: Command, working: &Path) {
+        let output = command
+            .args(["--json", "prune", "--dry-run"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(5));
+        assert!(output.stderr.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(error["schema"], "locron.cli/v1");
+        assert_eq!(error["command"], "prune");
+        assert_eq!(error["ok"], false);
+        assert_eq!(error["error"]["code"], "state_error");
+        assert_recovery_guidance(error["error"]["message"].as_str().unwrap());
+        assert_eq!(std::fs::read_dir(working).unwrap().count(), 0);
+    }
+
+    fn non_utf8_component(label: &str) -> OsString {
+        let mut bytes = label.as_bytes().to_vec();
+        bytes.push(0xff);
+        OsString::from_vec(bytes)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_home_xdg_matrix_preserves_selection_and_preview() {
+        // Absent/absent retains the three original error/override controls above.
+        for (home, xdg, expected) in [
+            (None, Some("XDG state 한글"), "XDG state 한글/locron"),
+            (Some(""), None, ".local/state/locron"),
+            (Some(""), Some(""), ".local/state/locron"),
+            (Some(""), Some("XDG state 한글"), "XDG state 한글/locron"),
+            (
+                Some("HOME state 한글"),
+                None,
+                "HOME state 한글/.local/state/locron",
+            ),
+            (
+                Some("HOME state 한글"),
+                Some(""),
+                "HOME state 한글/.local/state/locron",
+            ),
+            (
+                Some("HOME state 한글"),
+                Some("XDG state 한글"),
+                "XDG state 한글/locron",
+            ),
+        ] {
+            let working = tempfile::tempdir().unwrap();
+            let value = |name: &str| {
+                if name.is_empty() {
+                    OsString::new()
+                } else {
+                    working.path().join(name).into_os_string()
+                }
+            };
+            let home = home.map(value);
+            let xdg = xdg.map(value);
+            let candidates = [
+                working.path().join("HOME state 한글/.local/state/locron"),
+                working.path().join(".local/state/locron"),
+                working.path().join("XDG state 한글/locron"),
+            ];
+            assert_dry_run_then_config(
+                || {
+                    let mut command = without_default();
+                    command.current_dir(working.path());
+                    if let Some(home) = &home {
+                        command.env("HOME", home);
+                    }
+                    if let Some(xdg) = &xdg {
+                        command.env("XDG_STATE_HOME", xdg);
+                    }
+                    command
+                },
+                working.path(),
+                &working.path().join(expected),
+                &candidates,
+            );
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_empty_xdg_without_home_preserves_discovery_error() {
+        let working = tempfile::tempdir().unwrap();
+        let mut command = without_default();
+        command
+            .current_dir(working.path())
+            .env("XDG_STATE_HOME", OsStr::new(""));
+        assert_preview_discovery_error(command, working.path());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_relative_xdg_uses_the_actual_child_cwd() {
+        let working = tempfile::tempdir().unwrap();
+        let home = working.path().join("HOME state 한글");
+        let expected = working.path().join("relative XDG 한글/locron");
+        assert_dry_run_then_config(
+            || {
+                let mut command = without_default();
+                command
+                    .current_dir(working.path())
+                    .env("HOME", &home)
+                    .env("XDG_STATE_HOME", "relative XDG 한글");
+                command
+            },
+            working.path(),
+            &expected,
+            &[home.join(".local/state/locron")],
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_non_utf8_xdg_preserves_actual_path_bytes() {
+        let working = tempfile::tempdir().unwrap();
+        let home = working.path().join("HOME state 한글");
+        let xdg = working.path().join(non_utf8_component("XDG state 한글 "));
+        assert_dry_run_then_config(
+            || {
+                let mut command = without_default();
+                command
+                    .current_dir(working.path())
+                    .env("HOME", &home)
+                    .env("XDG_STATE_HOME", &xdg);
+                command
+            },
+            working.path(),
+            &xdg.join("locron"),
+            &[home.join(".local/state/locron")],
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_non_utf8_home_fallback_preserves_actual_path_bytes() {
+        let working = tempfile::tempdir().unwrap();
+        let home = working.path().join(non_utf8_component("HOME state 한글 "));
+        let xdg = working.path().join("unselected XDG 한글/locron");
+        assert_dry_run_then_config(
+            || {
+                let mut command = without_default();
+                command
+                    .current_dir(working.path())
+                    .env("HOME", &home)
+                    .env("XDG_STATE_HOME", OsStr::new(""));
+                command
+            },
+            working.path(),
+            &home.join(".local/state/locron"),
+            &[xdg],
+        );
+    }
+
+    #[test]
+    fn non_utf8_cli_override_wins_over_actual_environment_override() {
+        let working = tempfile::tempdir().unwrap();
+        let cli_root = working.path().join(non_utf8_component("CLI state 한글 "));
+        let environment_root = working
+            .path()
+            .join(non_utf8_component("environment state 한글 "));
+        assert_non_utf8_discovery_contract(
+            || {
+                let mut command = without_default();
+                command
+                    .current_dir(working.path())
+                    .env("LOCRON_STATE_DIR", &environment_root)
+                    .arg("--state-dir")
+                    .arg(&cli_root);
+                command
+            },
+            working.path(),
+            &cli_root,
+            std::slice::from_ref(&environment_root),
+        );
+    }
+
+    #[test]
+    fn non_utf8_environment_override_preserves_actual_path_bytes() {
+        let working = tempfile::tempdir().unwrap();
+        let environment_root = working
+            .path()
+            .join(non_utf8_component("environment state 한글 "));
+        let unselected = working
+            .path()
+            .join(non_utf8_component("unselected CLI state 한글 "));
+        assert_non_utf8_discovery_contract(
+            || {
+                let mut command = without_default();
+                command
+                    .current_dir(working.path())
+                    .env("LOCRON_STATE_DIR", &environment_root);
+                command
+            },
+            working.path(),
+            &environment_root,
+            &[unselected],
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_home_default_ignores_absent_empty_and_competing_xdg() {
+        for xdg_value in [
+            None,
+            Some(OsStr::new("")),
+            Some(OsStr::new("XDG state 한글")),
+        ] {
+            let working = tempfile::tempdir().unwrap();
+            let home = working.path().join("HOME state 한글");
+            let xdg = working.path().join("XDG state 한글");
+            assert_dry_run_then_config(
+                || {
+                    let mut command = without_default();
+                    command.current_dir(working.path()).env("HOME", &home);
+                    if let Some(value) = xdg_value {
+                        if value.is_empty() {
+                            command.env("XDG_STATE_HOME", value);
+                        } else {
+                            command.env("XDG_STATE_HOME", &xdg);
+                        }
+                    }
+                    command
+                },
+                working.path(),
+                &home.join("Library/Application Support/locron"),
+                &[xdg.join("locron"), home.join(".local/state/locron")],
+            );
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_non_utf8_home_default_preserves_actual_path_bytes() {
+        let working = tempfile::tempdir().unwrap();
+        let home = working.path().join(non_utf8_component("HOME state 한글 "));
+        let xdg = working.path().join("XDG state 한글");
+        assert_non_utf8_discovery_contract(
+            || {
+                let mut command = without_default();
+                command
+                    .current_dir(working.path())
+                    .env("HOME", &home)
+                    .env("XDG_STATE_HOME", &xdg);
+                command
+            },
+            working.path(),
+            &home.join("Library/Application Support/locron"),
+            &[xdg.join("locron"), home.join(".local/state/locron")],
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_home_absence_with_present_xdg_preserves_discovery_error() {
+        let working = tempfile::tempdir().unwrap();
+        let mut command = without_default();
+        command
+            .current_dir(working.path())
+            .env("XDG_STATE_HOME", working.path().join("XDG state 한글"));
+        assert_preview_discovery_error(command, working.path());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_empty_home_retains_its_cwd_relative_default() {
+        let working = tempfile::tempdir().unwrap();
+        let xdg = working.path().join("XDG state 한글");
+        assert_dry_run_then_config(
+            || {
+                let mut command = without_default();
+                command
+                    .current_dir(working.path())
+                    .env("HOME", OsStr::new(""))
+                    .env("XDG_STATE_HOME", &xdg);
+                command
+            },
+            working.path(),
+            &working.path().join("Library/Application Support/locron"),
+            &[
+                xdg.join("locron"),
+                working.path().join(".local/state/locron"),
+            ],
+        );
     }
 }
 
@@ -1135,6 +1563,10 @@ fn wake_socket_makes_new_manual_run_promptly_visible_to_daemon() {
     #[cfg(windows)]
     {
         let result = windows_cli_control::run_wake_case();
+        #[cfg(debug_assertions)]
+        if !result.succeeded() {
+            eprintln!("{}", result.producer_output());
+        }
         assert!(
             result.succeeded(),
             "wake notification did not prompt daemon admission: {result}"
@@ -1192,9 +1624,14 @@ fn durable_cancel_terminates_a_running_process() {
     #[cfg(windows)]
     {
         let result = windows_cli_control::run_cancel_case();
+        #[cfg(debug_assertions)]
+        if !result.succeeded() {
+            eprintln!("{}", result.producer_output());
+        }
         assert!(
             result.succeeded(),
-            "durable cancellation did not terminate the process: {result}"
+            "durable cancellation did not terminate the process: {result}\n{}",
+            result.daemon_output()
         );
     }
 

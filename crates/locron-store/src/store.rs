@@ -21,6 +21,25 @@ use uuid::Uuid;
 use crate::migration::migrate;
 use crate::{DaemonLock, LockMetadata, StatePaths};
 
+mod activity;
+mod cancellation;
+#[cfg(test)]
+mod history_qualification;
+pub use cancellation::CancellationPreview;
+
+#[cfg(test)]
+macro_rules! history_lowercase {
+    ($store:expr, $value:expr) => {
+        history_qualification::observe_lowercase($store, $value)
+    };
+}
+#[cfg(not(test))]
+macro_rules! history_lowercase {
+    ($store:expr, $value:expr) => {
+        $value
+    };
+}
+
 type AdmissionRow = (String, String, String, i64, String, Option<i64>);
 const MAINTENANCE_BATCH_LIMIT: usize = 100;
 
@@ -997,6 +1016,8 @@ pub struct ImportSummary {
 pub struct Store {
     paths: StatePaths,
     connection: Mutex<Connection>,
+    #[cfg(test)]
+    history_observation: Mutex<history_qualification::Observation>,
     // SQLite must close before retained read-only DB/WAL/SHM leaves and their parent guards.
     #[cfg(windows)]
     _read_guards: Vec<locron_core::filesystem::GuardedFile>,
@@ -1048,6 +1069,8 @@ impl Store {
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
+            #[cfg(test)]
+            history_observation: Mutex::new(history_qualification::Observation::default()),
             #[cfg(windows)]
             _read_guards: Vec::new(),
             #[cfg(windows)]
@@ -1078,6 +1101,8 @@ impl Store {
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
+            #[cfg(test)]
+            history_observation: Mutex::new(history_qualification::Observation::default()),
             #[cfg(windows)]
             _read_guards: read_guards,
             #[cfg(windows)]
@@ -1778,9 +1803,63 @@ impl Store {
         )?)
     }
 
+    /// Returns a newest-first page and its total from one read transaction.
+    /// A supplied reference must identify a live job, matching the dashboard's
+    /// existing job filter. Pages are capped at 100 rows, but offsets are not
+    /// limited by the presentation cap of [`Store::history`].
+    pub fn history_page(
+        &self,
+        job: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> StoreResult<RunHistoryPage> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let job_id: Option<String> = match job {
+            Some(reference) => Some(
+                tx.query_row(
+                    "SELECT id FROM jobs WHERE (id=?1 OR name=?1) AND removed_at_us IS NULL",
+                    [reference],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| StoreError::NotFound(reference.into()))?,
+            ),
+            None => None,
+        };
+        let count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM runs WHERE (?1 IS NULL OR job_id=?1)",
+            params![job_id],
+            |row| row.get(0),
+        )?;
+        let total = usize::try_from(count).map_err(|_| {
+            StoreError::Conflict("run history total is outside supported range".into())
+        })?;
+        #[cfg(test)]
+        history_qualification::after_count(self)?;
+        // A huge offset is an empty page, not a wrapped SQLite integer. No
+        // offset conversion is needed after the end of this transaction's data.
+        let runs = if limit == 0 || offset >= total {
+            Vec::new()
+        } else {
+            let sql_offset = i64::try_from(offset).map_err(|_| {
+                StoreError::Conflict("run history offset is outside supported range".into())
+            })?;
+            let mut statement = tx.prepare(
+                "SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE (?1 IS NULL OR job_id=?1) ORDER BY requested_at_us DESC,id DESC LIMIT ?2 OFFSET ?3",
+            )?;
+            statement
+                .query_map(params![job_id, limit.min(100) as i64, sql_offset], map_run)?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        tx.commit()?;
+        Ok(RunHistoryPage { total, runs })
+    }
+
     /// Searches the complete run history by literal Unicode-lowercased run id
     /// or current durable job name and returns a stable page and total from one
-    /// read transaction. An empty query matches every run.
+    /// read transaction. An empty query uses SQL pagination. Nonempty searches
+    /// retain only the requested page and the current row while counting matches.
     pub fn search_history(
         &self,
         query: &str,
@@ -1788,30 +1867,38 @@ impl Store {
         offset: usize,
     ) -> StoreResult<RunHistoryPage> {
         let normalized = query.trim().to_lowercase();
+        #[cfg(test)]
+        history_qualification::start_search(self, &normalized);
+        if normalized.is_empty() {
+            return self.history_page(None, limit, offset);
+        }
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let mut statement = tx.prepare(
             "SELECT r.id,r.job_id,r.revision,r.trigger,r.nominal_us,r.requested_at_us,r.eligible_at_us,r.state,r.reason,r.snapshot_json,r.finished_at_us,j.name FROM runs r JOIN jobs j ON j.id=r.job_id ORDER BY r.requested_at_us DESC,r.id DESC",
         )?;
-        let rows = statement
-            .query_map([], |row| Ok((map_run(row)?, row.get::<_, String>(11)?)))?
-            .collect::<Result<Vec<_>, _>>()?;
-        drop(statement);
-
-        let matching = rows.into_iter().filter(|(run, job_name)| {
-            normalized.is_empty()
-                || run.id.to_lowercase().contains(&normalized)
-                || job_name.to_lowercase().contains(&normalized)
-        });
         let mut runs = Vec::new();
-        let mut total = 0;
+        let mut total = 0_usize;
         let page_end = offset.saturating_add(limit.min(100));
-        for (run, _) in matching {
+        for row in statement.query_map([], |row| Ok((map_run(row)?, row.get::<_, String>(11)?)))? {
+            let (run, job_name) = row?;
+            #[cfg(test)]
+            history_qualification::observe_row(self, &runs, &run, &job_name, &normalized);
+            if !history_lowercase!(self, run.id.to_lowercase()).contains(&normalized)
+                && !history_lowercase!(self, job_name.to_lowercase()).contains(&normalized)
+            {
+                continue;
+            }
             if total >= offset && total < page_end {
                 runs.push(run);
+                #[cfg(test)]
+                history_qualification::observe_retained(self, &runs);
             }
-            total += 1;
+            total = total.checked_add(1).ok_or_else(|| {
+                StoreError::Conflict("run history total is outside supported range".into())
+            })?;
         }
+        drop(statement);
         tx.commit()?;
         Ok(RunHistoryPage { total, runs })
     }
@@ -1876,43 +1963,31 @@ impl Store {
         let Some((state, job_id, cancellation_requested_at_us, reason)) = current else {
             return Err(StoreError::NotFound(id.into()));
         };
-        let quarantined =
-            state == "running" && reason.as_deref() == Some("termination_unconfirmed");
-        if acknowledge_unconfirmed {
-            if !quarantined {
-                return Err(StoreError::Conflict(format!(
-                    "run {id} is not an active termination-unconfirmed quarantine"
-                )));
-            }
-            let changed = tx.execute(
+        let outcome =
+            cancellation::decision(id, &state, reason.as_deref(), acknowledge_unconfirmed)?;
+        match outcome {
+            CancelOutcome::AcknowledgedUnconfirmed => {
+                let changed = tx.execute(
                 "UPDATE runs SET state='interrupted_unknown',reason='termination unconfirmed; risk acknowledged by operator',finished_at_us=?2,replacement_candidate=0 WHERE id=?1 AND state='running' AND reason='termination_unconfirmed'",
                 params![id, now_us],
             )?;
-            if changed != 1 {
-                return Err(StoreError::Conflict(format!(
-                    "run {id} quarantine changed before acknowledgement"
-                )));
+                if changed != 1 {
+                    return Err(StoreError::Conflict(format!(
+                        "run {id} quarantine changed before acknowledgement"
+                    )));
+                }
+                tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [id])?;
+                event(
+                    &tx,
+                    now_us,
+                    "termination_unconfirmed_acknowledged",
+                    Some(&job_id),
+                    Some(id),
+                    r#"{"source":"user","risk":"process_liveness_unconfirmed"}"#,
+                )?;
+                soft_remove_after_one_time_completion(&tx, id, now_us)?;
             }
-            tx.execute("DELETE FROM retry_intents WHERE run_id=?1", [id])?;
-            event(
-                &tx,
-                now_us,
-                "termination_unconfirmed_acknowledged",
-                Some(&job_id),
-                Some(id),
-                r#"{"source":"user","risk":"process_liveness_unconfirmed"}"#,
-            )?;
-            soft_remove_after_one_time_completion(&tx, id, now_us)?;
-            tx.commit()?;
-            return Ok(CancelOutcome::AcknowledgedUnconfirmed);
-        }
-        if quarantined {
-            return Err(StoreError::Conflict(format!(
-                "run {id} termination is unconfirmed; repeat cancel with --acknowledge-unconfirmed to accept the risk and release the quarantine"
-            )));
-        }
-        let outcome = match state.as_str() {
-            "queued" | "retry_wait" => {
+            CancelOutcome::CancelledBeforeExecution => {
                 tx.execute(
                     "UPDATE runs SET state='cancelled',reason='cancelled by user before execution',finished_at_us=?2,cancellation_requested_at_us=?2,cancellation_reason='user',replacement_candidate=0 WHERE id=?1",
                     params![id, now_us],
@@ -1927,9 +2002,8 @@ impl Store {
                     r#"{"source":"user","before_execution":true}"#,
                 )?;
                 soft_remove_after_one_time_completion(&tx, id, now_us)?;
-                CancelOutcome::CancelledBeforeExecution
             }
-            "starting" | "running" => {
+            CancelOutcome::CancellationRequested => {
                 if cancellation_requested_at_us.is_none() {
                     tx.execute(
                         "UPDATE runs SET cancellation_requested_at_us=?2,cancellation_reason='user' WHERE id=?1",
@@ -1944,14 +2018,8 @@ impl Store {
                         r#"{"source":"user"}"#,
                     )?;
                 }
-                CancelOutcome::CancellationRequested
             }
-            terminal => {
-                return Err(StoreError::Conflict(format!(
-                    "run {id} is already terminal ({terminal})"
-                )));
-            }
-        };
+        }
         tx.commit()?;
         Ok(outcome)
     }
@@ -7500,3 +7568,6 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod dashboard_pr144_snapshot_fixture;

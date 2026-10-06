@@ -30,7 +30,11 @@ tracing.workspace = true
 tokio-stream = "0.1.19"
 uuid.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+tempfile.workspace = true
+
 [dev-dependencies]
+rusqlite.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 tower = { version = "0.5", features = ["util"] }

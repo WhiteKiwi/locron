@@ -44,6 +44,9 @@ use crate::middleware::{CSRF_COOKIE, SESSION_COOKIE, constant_time_eq};
 use crate::token;
 use crate::transfer::{self, ApiTransferError};
 
+#[path = "api_prune.rs"]
+mod prune_output;
+
 /// Default history limit when `limit` is absent.
 const DEFAULT_HISTORY_LIMIT: usize = 20;
 /// Largest run-history page accepted by the API.
@@ -179,6 +182,9 @@ fn now_us() -> i64 {
 /// Best-effort wake hint to a running daemon; the command is already durable
 /// when the endpoint is unavailable, so failures preserve durable reconciliation.
 fn send_wake(paths: &StatePaths) {
+    #[cfg(test)]
+    let _ = dashboard_boolean_qualification::wake(&paths.root);
+    #[cfg(not(test))]
     let _ = locron_core::notification::send_wake(&paths.root);
 }
 
@@ -248,6 +254,8 @@ where
 {
     let paths = state.paths.clone();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _completion = dashboard_boolean_qualification::worker(&paths.root);
         let store = Store::open(paths, env!("CARGO_PKG_VERSION"), now_us())?;
         f(&store)
     })
@@ -262,7 +270,7 @@ where
 }
 
 /// Runs `f` on the blocking pool with the dry-run store: read-only when the
-/// state database exists, `None` (defaults) when it does not.
+/// state database exists, `None` (defaults) when it is not.
 async fn with_dry_store<T>(
     state: &AppState,
     f: impl FnOnce(Option<&Store>) -> Result<T, ApiError> + Send + 'static,
@@ -272,6 +280,8 @@ where
 {
     let paths = state.paths.clone();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _completion = dashboard_boolean_qualification::worker(&paths.root);
         let store = if paths.database.is_file() {
             Some(Store::open_read_only(&paths.database)?)
         } else {
@@ -310,19 +320,29 @@ where
 // Query and body shapes
 // ---------------------------------------------------------------------------
 
-/// Deserializes bare query flags (`?wait`), empty flags (`?wait=`), and
-/// explicit booleans.
+/// Deserializes native JSON booleans and the existing textual query flags
+/// (`?wait`, `?wait=`, `?wait=true`). Explicit null retains the legacy true value.
 fn deserialize_flag<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let raw = Option::<String>::deserialize(deserializer)?;
-    match raw.as_deref() {
-        None | Some("" | "true" | "1") => Ok(true),
-        Some("false" | "0") => Ok(false),
-        Some(other) => Err(serde::de::Error::custom(format!(
-            "invalid boolean flag {other:?}"
-        ))),
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Flag {
+        Boolean(bool),
+        Text(String),
+    }
+
+    match Option::<Flag>::deserialize(deserializer)? {
+        Some(Flag::Boolean(value)) => Ok(value),
+        None => Ok(true),
+        Some(Flag::Text(value)) => match value.as_str() {
+            "" | "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            other => Err(serde::de::Error::custom(format!(
+                "invalid boolean flag {other:?}"
+            ))),
+        },
     }
 }
 
@@ -815,16 +835,7 @@ pub(crate) async fn jobs_run(
                 ));
             };
             let job = store.job(&reference)?;
-            let active = store
-                .history(Some(&reference), 100)?
-                .into_iter()
-                .filter(|run| {
-                    matches!(
-                        run.state.as_str(),
-                        "queued" | "starting" | "running" | "retry_wait"
-                    )
-                })
-                .count();
+            let (active, _) = store.active_runs_for_job(&job.id, 0)?;
             let definition: JobDefinition =
                 serde_json::from_str(&job.definition_json).map_err(StoreError::Json)?;
             let decision = if active == 0 {
@@ -979,14 +990,9 @@ pub(crate) async fn jobs_why(
             .first()
             .map(ToString::to_string);
         let active = store
-            .history(Some(&reference), 100)?
+            .active_runs_for_job(&job.id, 100)?
+            .1
             .into_iter()
-            .filter(|run| {
-                matches!(
-                    run.state.as_str(),
-                    "queued" | "starting" | "running" | "retry_wait"
-                )
-            })
             .map(|run| {
                 locron_core::redact::redacted_run_document(
                     serde_json::to_value(&run).map_err(StoreError::Json)?,
@@ -1033,16 +1039,8 @@ pub(crate) async fn runs_history(
     }
     let result = with_store(&state, move |store| {
         let (total, fetched) = if let Some(job) = query.job.as_deref() {
-            let total = usize::try_from(store.count_runs(Some(job))?).map_err(|_| {
-                StoreError::Conflict("run history total is outside supported range".into())
-            })?;
-            let runs = store
-                .history(Some(job), query.limit.saturating_add(query.offset))?
-                .into_iter()
-                .skip(query.offset)
-                .take(query.limit)
-                .collect();
-            (total, runs)
+            let page = store.history_page(Some(job), query.limit, query.offset)?;
+            (page.total, page.runs)
         } else {
             let page = store.search_history(
                 query.q.as_deref().unwrap_or(""),
@@ -1472,7 +1470,8 @@ pub(crate) async fn settings_put(
                 } else {
                     "created"
                 };
-            if let Some(store) = store {
+            if !body.dry_run {
+                let store = store.expect("live store");
                 store.set_environment(name, Some(&body.value), now_us())?;
                 send_wake(store.paths());
             }
@@ -1765,58 +1764,7 @@ pub(crate) async fn prune(
     Query(query): Query<PruneQuery>,
 ) -> Response {
     let result = with_store_for(&state, query.dry_run, move |store| {
-        let Some(store) = store else {
-            return Ok(json!({"dry_run": true, "candidate_count": 0, "bytes": 0}));
-        };
-        let settings = store.settings()?;
-        let mut retained = store.retained_output_bytes()?;
-        let age_cutoff = now_us().saturating_sub(30_i64 * 24 * 60 * 60 * 1_000_000);
-        let candidates = store
-            .output_retention_candidates(100)?
-            .into_iter()
-            .filter(|candidate| {
-                candidate.finalized_at_us < age_cutoff || retained > settings.output_limit_bytes
-            })
-            .collect::<Vec<_>>();
-        if query.dry_run {
-            return Ok(json!({
-                "dry_run": true,
-                "candidate_count": candidates.len(),
-                "bytes": candidates.iter().map(|candidate| candidate.physical_bytes).sum::<i64>(),
-            }));
-        }
-        for candidate in &candidates {
-            store.mark_output_prune_pending(candidate, now_us())?;
-            let path = store.paths().outputs.join(&candidate.relative_path);
-            match std::fs::symlink_metadata(&path) {
-                Ok(metadata) if metadata.file_type().is_symlink() => {
-                    return Err(ApiError::Message(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_request",
-                        "refusing to prune symbolic-link output".to_owned(),
-                    ));
-                }
-                Ok(metadata) if metadata.is_file() => {
-                    std::fs::remove_file(&path).map_err(StoreError::Io)?
-                }
-                Ok(_) => {
-                    return Err(ApiError::Message(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_request",
-                        "refusing to prune non-file output".to_owned(),
-                    ));
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(ApiError::Store(StoreError::Io(error))),
-            }
-            store.finish_output_prune(candidate, now_us())?;
-            retained = retained.saturating_sub(candidate.physical_bytes);
-        }
-        Ok(json!({
-            "dry_run": false,
-            "candidate_count": candidates.len(),
-            "bytes": candidates.iter().map(|candidate| candidate.physical_bytes).sum::<i64>(),
-        }))
+        prune_output::run(store, query.dry_run)
     })
     .await;
     respond(result, &[])
@@ -1987,3 +1935,6 @@ fn environment_warnings(environment: &locron_core::target::Environment) -> Vec<S
     }
     Vec::new()
 }
+
+#[cfg(test)]
+mod dashboard_boolean_qualification;

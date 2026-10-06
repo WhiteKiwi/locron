@@ -585,10 +585,11 @@ async fn capture_output(stream: impl tokio::io::AsyncRead + Unpin) -> io::Result
     Ok(bytes)
 }
 
-/// Returns the actual current token's SID, independent of username environment text.
+/// Returns the actual current process token's SID, independent of username environment text.
 pub fn current_user_sid() -> io::Result<String> {
     let deadline = Instant::now() + ADAPTER_TIMEOUT;
     if let Ok(sid) = cached_current_user_sid() {
+        remaining(deadline)?;
         return Ok(sid);
     }
     cached_sid(&USER_SID, &SID_INITIALIZER, deadline, query_sid)
@@ -609,51 +610,164 @@ fn cached_verified_sid(cache: &OnceLock<String>) -> io::Result<String> {
 }
 
 /// Returns the verified token SID within an existing caller deadline, capped at thirty seconds.
-/// Owned fixed-worker cleanup may add its separate three-second allowance after refusal.
+/// An unfinished native query retains its initializer permit after caller refusal.
 pub fn current_user_sid_until(deadline: Instant) -> io::Result<String> {
     let deadline = deadline.min(Instant::now() + ADAPTER_TIMEOUT);
     bounded_cached_sid(&USER_SID, &SID_INITIALIZER, deadline, query_sid)
 }
 
-fn bounded_cached_sid(
+type SidReply<'a> = (io::Result<String>, WorkerPermit<'a>);
+
+fn bounded_cached_sid<'a>(
     cache: &OnceLock<String>,
-    initializer: &WorkerPermits,
+    initializer: &'a WorkerPermits,
     deadline: Instant,
-    query: impl FnOnce(Instant) -> io::Result<String>,
+    query: impl FnOnce(Instant, WorkerPermit<'a>) -> io::Result<SidReply<'a>>,
 ) -> io::Result<String> {
     remaining(deadline)?;
-    let result = cached_sid(cache, initializer, deadline, |deadline| {
+    let result = cached_sid(cache, initializer, deadline, |deadline, permit| {
         remaining(deadline)?;
-        let sid = query(deadline)?;
+        let reply = query(deadline, permit);
         remaining(deadline)?;
-        Ok(sid)
+        reply
     })?;
     remaining(deadline)?;
     Ok(result)
 }
 
-fn cached_sid(
+fn cached_sid<'a>(
     cache: &OnceLock<String>,
-    initializer: &WorkerPermits,
+    initializer: &'a WorkerPermits,
     deadline: Instant,
-    query: impl FnOnce(Instant) -> io::Result<String>,
+    query: impl FnOnce(Instant, WorkerPermit<'a>) -> io::Result<SidReply<'a>>,
 ) -> io::Result<String> {
+    remaining(deadline)?;
     if let Some(sid) = cache.get() {
-        return Ok(sid.clone());
+        let sid = sid.clone();
+        remaining(deadline)?;
+        return Ok(sid);
     }
-    let _permit = initializer.acquire(deadline)?;
+    let permit = initializer.acquire(deadline)?;
+    remaining(deadline)?;
     if let Some(sid) = cache.get() {
-        return Ok(sid.clone());
+        let sid = sid.clone();
+        remaining(deadline)?;
+        return Ok(sid);
     }
-    let sid = query(deadline)?;
-    let _ = cache.set(sid.clone());
+    let reply = query(deadline, permit);
+    remaining(deadline)?;
+    let (result, _permit) = reply?;
+    let sid = result?;
+    let cached = sid.clone();
+    remaining(deadline)?;
+    let _ = cache.set(cached);
+    remaining(deadline)?;
     Ok(sid)
 }
 
-fn query_sid(deadline: Instant) -> io::Result<String> {
-    let result = filesystem_worker::request("sid", None, deadline)?;
-    let sid = result
-        .as_str()
+struct SidQueryOwner<Q> {
+    deadline: Instant,
+    permit: WorkerPermit<'static>,
+    query: Q,
+    reply: std::sync::mpsc::SyncSender<SidReply<'static>>,
+}
+
+impl<Q: FnOnce(Instant) -> io::Result<String>> SidQueryOwner<Q> {
+    fn run(self) {
+        let result = remaining(self.deadline).and_then(|_| (self.query)(self.deadline));
+        let result = match remaining(self.deadline) {
+            Ok(_) => result,
+            Err(error) => Err(error),
+        };
+        // The query has disposed its native objects. Only scalar state leaves this owner.
+        let _ = self.reply.try_send((result, self.permit));
+    }
+}
+
+fn spawn_sid_owner<Q>(owner: SidQueryOwner<Q>) -> io::Result<()>
+where
+    Q: FnOnce(Instant) -> io::Result<String> + Send + 'static,
+{
+    let worker = std::thread::Builder::new()
+        .name("locron-sid".to_owned())
+        .spawn(move || owner.run())?;
+    // The query owns its permit independently of the receiving caller's deadline.
+    drop(worker);
+    Ok(())
+}
+
+fn start_sid_query<Q>(
+    deadline: Instant,
+    permit: WorkerPermit<'static>,
+    query: Q,
+    spawn: impl FnOnce(SidQueryOwner<Q>) -> io::Result<()>,
+) -> io::Result<std::sync::mpsc::Receiver<SidReply<'static>>>
+where
+    Q: FnOnce(Instant) -> io::Result<String> + Send + 'static,
+{
+    remaining(deadline)?;
+    let (reply, receiver) = std::sync::mpsc::sync_channel(1);
+    spawn(SidQueryOwner {
+        deadline,
+        permit,
+        query,
+        reply,
+    })?;
+    remaining(deadline)?;
+    Ok(receiver)
+}
+
+fn receive_sid_reply(
+    deadline: Instant,
+    receiver: std::sync::mpsc::Receiver<SidReply<'static>>,
+) -> io::Result<SidReply<'static>> {
+    let reply = receiver
+        .recv_timeout(remaining(deadline)?)
+        .map_err(|error| match error {
+            std::sync::mpsc::RecvTimeoutError::Timeout => io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Windows identity query deadline elapsed",
+            ),
+            std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                io::Error::other("Windows identity query owner disconnected")
+            }
+        });
+    remaining(deadline)?;
+    drop(receiver);
+    reply
+}
+
+fn query_sid(deadline: Instant, permit: WorkerPermit<'static>) -> io::Result<SidReply<'static>> {
+    let receiver = start_sid_query(deadline, permit, native_sid, spawn_sid_owner)?;
+    receive_sid_reply(deadline, receiver)
+}
+
+fn native_sid(deadline: Instant) -> io::Result<String> {
+    let result = (|| {
+        remaining(deadline)?;
+        let sid = windows_permissions::utilities::current_process_sid();
+        remaining(deadline)?;
+        let sid = sid?;
+        let text = windows_permissions::wrappers::ConvertSidToStringSid(&sid);
+        remaining(deadline)?;
+        let text = text?;
+        let result = sid_text(text);
+        remaining(deadline)?;
+        result
+    })();
+    // LocalBox disposal occurs on this thread before either result or permit is sent.
+    remaining(deadline)?;
+    result
+}
+
+fn sid_text(text: std::ffi::OsString) -> io::Result<String> {
+    let sid = text.into_string().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Windows identity query returned a non-Unicode SID",
+        )
+    })?;
+    Some(sid)
         .filter(|sid| {
             sid.starts_with("S-1-")
                 && sid
@@ -661,9 +775,7 @@ fn query_sid(deadline: Instant) -> io::Result<String> {
                     .skip(1)
                     .all(|part| part.parse::<u64>().is_ok())
         })
-        .ok_or_else(|| io::Error::other("Windows identity adapter returned an invalid SID"))?
-        .to_owned();
-    Ok(sid)
+        .ok_or_else(|| io::Error::other("Windows identity adapter returned an invalid SID"))
 }
 
 pub(crate) fn create_private_directory(path: &std::path::Path) -> io::Result<()> {
@@ -697,6 +809,300 @@ fn adapter_path(path: &std::path::Path) -> io::Result<&str> {
 mod tests {
     use super::*;
 
+    fn immediate_sid_reply(
+        permit: WorkerPermit<'_>,
+        query: impl FnOnce() -> io::Result<String>,
+    ) -> SidReply<'_> {
+        (query(), permit)
+    }
+
+    fn finish_sid_fixture(
+        worker: std::thread::JoinHandle<()>,
+        deadline: Instant,
+    ) -> std::thread::Result<()> {
+        while !worker.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "SID fixture owner did not finish"
+            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        worker.join()
+    }
+
+    #[test]
+    fn native_sid_owner_retains_admission_through_late_query_and_disposal() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+
+        static INITIALIZER: WorkerPermits = WorkerPermits::new(1);
+        struct Disposal {
+            entered: SyncSender<()>,
+            release: Receiver<()>,
+            finished: Arc<AtomicBool>,
+        }
+        impl Drop for Disposal {
+            fn drop(&mut self) {
+                let _ = self.entered.try_send(());
+                let _ = self.release.recv_timeout(Duration::from_secs(1));
+                self.finished.store(true, Ordering::Release);
+            }
+        }
+
+        let cache = OnceLock::new();
+        let disposed = Arc::new(AtomicBool::new(false));
+        let (entered, entry) = sync_channel(1);
+        let (release, released) = sync_channel(1);
+        let (disposing, disposal_entry) = sync_channel(1);
+        let (dispose, disposal_release) = sync_channel(1);
+        let finished = Arc::clone(&disposed);
+        let mut worker = None;
+        let start = Instant::now();
+        let deadline = start + Duration::from_millis(100);
+        let error = bounded_cached_sid(&cache, &INITIALIZER, deadline, |actual, permit| {
+            let receiver = start_sid_query(
+                actual,
+                permit,
+                move |forwarded| {
+                    assert_eq!(forwarded, deadline);
+                    let _resource = Disposal {
+                        entered: disposing,
+                        release: disposal_release,
+                        finished,
+                    };
+                    entered.try_send(()).unwrap();
+                    released.recv_timeout(Duration::from_secs(1)).unwrap();
+                    Ok("S-1-5-18".to_owned())
+                },
+                |owner| {
+                    worker = Some(std::thread::spawn(move || owner.run()));
+                    Ok(())
+                },
+            )?;
+            entry.recv_timeout(remaining(actual)?).unwrap();
+            receive_sid_reply(actual, receiver)
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(cache.get().is_none());
+        assert!(!disposed.load(Ordering::Acquire));
+        let second = bounded_cached_sid(
+            &cache,
+            &INITIALIZER,
+            Instant::now() + Duration::from_millis(30),
+            |_, _permit| panic!("a pending SID owner must refuse another query"),
+        );
+        assert_eq!(second.unwrap_err().kind(), io::ErrorKind::TimedOut);
+        release.try_send(()).unwrap();
+        disposal_entry.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(!disposed.load(Ordering::Acquire));
+        assert!(
+            INITIALIZER
+                .acquire(Instant::now() + Duration::from_millis(30))
+                .is_err_and(|error| error.kind() == io::ErrorKind::TimedOut)
+        );
+        dispose.try_send(()).unwrap();
+        finish_sid_fixture(worker.unwrap(), Instant::now() + Duration::from_secs(1)).unwrap();
+        assert!(disposed.load(Ordering::Acquire));
+        assert!(cache.get().is_none());
+        let sid = bounded_cached_sid(
+            &cache,
+            &INITIALIZER,
+            Instant::now() + Duration::from_secs(1),
+            |_, permit| Ok(immediate_sid_reply(permit, || Ok("S-1-5-18".to_owned()))),
+        )
+        .unwrap();
+        assert_eq!(sid, "S-1-5-18");
+    }
+
+    #[test]
+    fn native_sid_reply_retains_admission_through_queue_and_cache_publication() {
+        static INITIALIZER: WorkerPermits = WorkerPermits::new(1);
+        let cache = OnceLock::new();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let sid = bounded_cached_sid(&cache, &INITIALIZER, deadline, |actual, permit| {
+            let mut worker = None;
+            let receiver = start_sid_query(
+                actual,
+                permit,
+                |_| Ok("S-1-5-18".to_owned()),
+                |owner| {
+                    worker = Some(std::thread::spawn(move || owner.run()));
+                    Ok(())
+                },
+            )?;
+            finish_sid_fixture(worker.unwrap(), actual).unwrap();
+            assert!(
+                INITIALIZER
+                    .acquire(Instant::now() + Duration::from_millis(30))
+                    .is_err_and(|error| error.kind() == io::ErrorKind::TimedOut)
+            );
+            let reply = receive_sid_reply(actual, receiver)?;
+            assert!(cache.get().is_none());
+            assert!(
+                INITIALIZER
+                    .acquire(Instant::now() + Duration::from_millis(30))
+                    .is_err_and(|error| error.kind() == io::ErrorKind::TimedOut)
+            );
+            Ok(reply)
+        })
+        .unwrap();
+        assert_eq!(cache.get(), Some(&sid));
+        drop(INITIALIZER.acquire(deadline).unwrap());
+
+        let mut worker = None;
+        let receiver = start_sid_query(
+            deadline,
+            INITIALIZER.acquire(deadline).unwrap(),
+            |_| Ok("S-1-5-18".to_owned()),
+            |owner| {
+                worker = Some(std::thread::spawn(move || owner.run()));
+                Ok(())
+            },
+        )
+        .unwrap();
+        finish_sid_fixture(worker.unwrap(), deadline).unwrap();
+        assert!(
+            INITIALIZER
+                .acquire(Instant::now() + Duration::from_millis(30))
+                .is_err_and(|error| error.kind() == io::ErrorKind::TimedOut)
+        );
+        drop(receiver);
+        drop(INITIALIZER.acquire(deadline).unwrap());
+    }
+
+    #[test]
+    fn native_sid_owner_shares_one_on_time_result_between_callers() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static INITIALIZER: WorkerPermits = WorkerPermits::new(1);
+        let cache = OnceLock::new();
+        let queries = Arc::new(AtomicUsize::new(0));
+        let barrier = std::sync::Barrier::new(4);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        std::thread::scope(|scope| {
+            let callers: Vec<_> = (0..4)
+                .map(|_| {
+                    let queries = Arc::clone(&queries);
+                    let cache = &cache;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        bounded_cached_sid(cache, &INITIALIZER, deadline, |actual, permit| {
+                            let receiver = start_sid_query(
+                                actual,
+                                permit,
+                                move |_| {
+                                    queries.fetch_add(1, Ordering::SeqCst);
+                                    Ok("S-1-5-18".to_owned())
+                                },
+                                spawn_sid_owner,
+                            )?;
+                            receive_sid_reply(actual, receiver)
+                        })
+                        .unwrap()
+                    })
+                })
+                .collect();
+            for caller in callers {
+                assert_eq!(caller.join().unwrap(), "S-1-5-18");
+            }
+        });
+        assert_eq!(queries.load(Ordering::SeqCst), 1);
+        assert_eq!(cache.get().map(String::as_str), Some("S-1-5-18"));
+    }
+
+    #[test]
+    fn native_sid_query_and_conversion_errors_never_publish_cache() {
+        use std::os::windows::ffi::OsStringExt;
+
+        static INITIALIZER: WorkerPermits = WorkerPermits::new(1);
+        let queries: [fn(Instant) -> io::Result<String>; 3] = [
+            |_| Err(io::Error::from_raw_os_error(5)),
+            |_| sid_text(std::ffi::OsString::from_wide(&[0xd800])),
+            |_| sid_text("S-1-invalid".into()),
+        ];
+        let expected = [
+            (io::ErrorKind::PermissionDenied, Some(5)),
+            (io::ErrorKind::InvalidData, None),
+            (io::ErrorKind::Other, None),
+        ];
+        for (query, (kind, raw)) in queries.into_iter().zip(expected) {
+            let cache = OnceLock::new();
+            let deadline = Instant::now() + Duration::from_secs(1);
+            let error = bounded_cached_sid(&cache, &INITIALIZER, deadline, |actual, permit| {
+                let receiver = start_sid_query(actual, permit, query, spawn_sid_owner)?;
+                receive_sid_reply(actual, receiver)
+            })
+            .unwrap_err();
+            assert_eq!(error.kind(), kind);
+            assert_eq!(error.raw_os_error(), raw);
+            assert!(cache.get().is_none());
+            drop(INITIALIZER.acquire(deadline).unwrap());
+        }
+    }
+
+    #[test]
+    fn native_sid_spawn_refusal_disconnect_and_panic_keep_cache_empty() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        static INITIALIZER: WorkerPermits = WorkerPermits::new(1);
+        for mode in 0..3 {
+            let cache = OnceLock::new();
+            let called = Arc::new(AtomicBool::new(false));
+            let query_called = Arc::clone(&called);
+            let mut worker = None;
+            let deadline = Instant::now() + Duration::from_secs(1);
+            let error = bounded_cached_sid(&cache, &INITIALIZER, deadline, |actual, permit| {
+                let receiver = start_sid_query(
+                    actual,
+                    permit,
+                    move |_| {
+                        query_called.store(true, Ordering::Release);
+                        panic!("fixed SID query fixture panic")
+                    },
+                    |owner| match mode {
+                        0 => {
+                            drop(owner);
+                            Err(io::Error::new(
+                                io::ErrorKind::WouldBlock,
+                                "SID spawn refused",
+                            ))
+                        }
+                        1 => {
+                            drop(owner);
+                            Ok(())
+                        }
+                        _ => {
+                            worker = Some(std::thread::spawn(move || owner.run()));
+                            Ok(())
+                        }
+                    },
+                )?;
+                receive_sid_reply(actual, receiver)
+            })
+            .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                if mode == 0 {
+                    io::ErrorKind::WouldBlock
+                } else {
+                    io::ErrorKind::Other
+                }
+            );
+            if let Some(worker) = worker {
+                assert!(finish_sid_fixture(worker, deadline).is_err());
+            }
+            assert_eq!(called.load(Ordering::Acquire), mode == 2);
+            assert!(cache.get().is_none());
+            drop(INITIALIZER.acquire(deadline).unwrap());
+        }
+    }
+
     #[test]
     fn bounded_sid_refuses_expired_cache_and_initializer_wait_without_query() {
         let cache = OnceLock::new();
@@ -705,7 +1111,7 @@ mod tests {
         let expired = Instant::now()
             .checked_sub(Duration::from_millis(1))
             .unwrap();
-        let error = bounded_cached_sid(&cache, &initializer, expired, |_| {
+        let error = bounded_cached_sid(&cache, &initializer, expired, |_, _permit| {
             panic!("an expired verified cache must perform no query")
         })
         .unwrap_err();
@@ -716,7 +1122,7 @@ mod tests {
             .unwrap();
         let start = Instant::now();
         let deadline = start + Duration::from_millis(30);
-        let error = bounded_cached_sid(&empty, &initializer, deadline, |_| {
+        let error = bounded_cached_sid(&empty, &initializer, deadline, |_, _permit| {
             panic!("a saturated initializer must not start a fresh query budget")
         })
         .unwrap_err();
@@ -737,11 +1143,13 @@ mod tests {
             let initializer = std::sync::Arc::clone(&initializer);
             move || {
                 let deadline = Instant::now() + Duration::from_millis(30);
-                bounded_cached_sid(&cache, &initializer, deadline, |actual| {
-                    assert_eq!(actual, deadline);
-                    entered.send(actual).unwrap();
-                    released.recv_timeout(Duration::from_secs(1)).unwrap();
-                    Ok("S-1-5-21-1234".to_owned())
+                bounded_cached_sid(&cache, &initializer, deadline, |actual, permit| {
+                    Ok(immediate_sid_reply(permit, || {
+                        assert_eq!(actual, deadline);
+                        entered.send(actual).unwrap();
+                        released.recv_timeout(Duration::from_secs(1)).unwrap();
+                        Ok("S-1-5-21-1234".to_owned())
+                    }))
                 })
             }
         });
@@ -770,10 +1178,12 @@ mod tests {
                 .map(|_| {
                     scope.spawn(|| {
                         barrier.wait();
-                        bounded_cached_sid(&cache, &initializer, deadline, |actual| {
-                            assert_eq!(actual, deadline);
-                            queries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            Ok("S-1-5-21-1234".to_owned())
+                        bounded_cached_sid(&cache, &initializer, deadline, |actual, permit| {
+                            Ok(immediate_sid_reply(permit, || {
+                                assert_eq!(actual, deadline);
+                                queries.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                Ok("S-1-5-21-1234".to_owned())
+                            }))
                         })
                         .unwrap()
                     })
@@ -904,10 +1314,12 @@ mod tests {
                         &cache,
                         &initializer,
                         Instant::now() + Duration::from_secs(2),
-                        |_| {
-                            queries.fetch_add(1, Ordering::SeqCst);
-                            std::thread::sleep(Duration::from_millis(25));
-                            Ok("S-1-5-18".to_owned())
+                        |_, permit| {
+                            Ok(immediate_sid_reply(permit, || {
+                                queries.fetch_add(1, Ordering::SeqCst);
+                                std::thread::sleep(Duration::from_millis(25));
+                                Ok("S-1-5-18".to_owned())
+                            }))
                         },
                     )
                     .unwrap();
@@ -929,18 +1341,22 @@ mod tests {
                     &cache,
                     &initializer,
                     Instant::now() + Duration::from_secs(1),
-                    |_| {
-                        started.send(()).unwrap();
-                        std::thread::sleep(Duration::from_millis(50));
-                        Err(io::Error::other("owned query failure"))
+                    |_, permit| {
+                        Ok(immediate_sid_reply(permit, || {
+                            started.send(()).unwrap();
+                            std::thread::sleep(Duration::from_millis(50));
+                            Err(io::Error::other("owned query failure"))
+                        }))
                     },
                 )
             });
             ready.recv_timeout(Duration::from_secs(1)).unwrap();
             let deadline = Instant::now() + Duration::from_secs(1);
-            let sid = cached_sid(&cache, &initializer, deadline, |forwarded| {
-                assert_eq!(forwarded, deadline);
-                Ok("S-1-5-18".to_owned())
+            let sid = cached_sid(&cache, &initializer, deadline, |forwarded, permit| {
+                Ok(immediate_sid_reply(permit, || {
+                    assert_eq!(forwarded, deadline);
+                    Ok("S-1-5-18".to_owned())
+                }))
             })
             .unwrap();
             assert_eq!(sid, "S-1-5-18");
@@ -960,7 +1376,7 @@ mod tests {
             &cache,
             &initializer,
             start + Duration::from_millis(50),
-            |_| panic!("a saturated initializer must not start another query"),
+            |_, _permit| panic!("a saturated initializer must not start another query"),
         )
         .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);

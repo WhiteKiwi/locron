@@ -1,9 +1,12 @@
 //! `locron` command-line composition root.
 
+mod explicit_prune;
 mod maintenance;
 mod mcp;
 mod self_update;
 mod service;
+#[cfg(all(windows, debug_assertions))]
+mod windows_wake_diagnostics;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
@@ -53,6 +56,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use service::ServiceError;
 use tokio_util::sync::CancellationToken;
+#[cfg(not(all(windows, debug_assertions)))]
 use tracing_subscriber::EnvFilter;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use uuid::Uuid;
@@ -950,10 +954,45 @@ async fn main() {
             Err(_) => std::process::exit(70),
         }
     }
+    #[cfg(not(all(windows, debug_assertions)))]
     init_tracing(verbose, debug);
+    #[cfg(all(windows, debug_assertions))]
+    let diagnostic_run = {
+        let role = match &command {
+            Command::Run { dry_run: false, .. } => Some(windows_wake_diagnostics::Role::Run),
+            Command::Daemon {
+                command:
+                    DaemonCommand::Run {
+                        service_mode: false,
+                        supervisor_lifetime: None,
+                        worker_lifetime: None,
+                    },
+            } => Some(windows_wake_diagnostics::Role::Daemon),
+            _ => None,
+        };
+        windows_wake_diagnostics::init(verbose, debug, role);
+        role == Some(windows_wake_diagnostics::Role::Run)
+    };
     let command_name = command_name(&command);
     let streaming = format == Format::Json && command_uses_stream(&command);
-    if let Err(error) = execute(state_dir, command, format).await {
+    if let Err(error) = {
+        #[cfg(not(all(windows, debug_assertions)))]
+        {
+            execute(state_dir, command, format).await
+        }
+        #[cfg(all(windows, debug_assertions))]
+        {
+            let result = execute(state_dir, command, format).await;
+            if diagnostic_run {
+                windows_wake_diagnostics::emit(
+                    "run_return",
+                    if result.is_ok() { "ok" } else { "err" },
+                    None,
+                );
+            }
+            result
+        }
+    } {
         if streaming {
             render_stream_error(command_name, &error);
         } else {
@@ -1943,16 +1982,7 @@ async fn run_job(
     };
     let job = store.job(name)?;
     if dry_run {
-        let active = store
-            .history(Some(name), 100)?
-            .into_iter()
-            .filter(|run| {
-                matches!(
-                    run.state.as_str(),
-                    "queued" | "starting" | "running" | "retry_wait"
-                )
-            })
-            .count();
+        let (active, _) = store.active_runs_for_job(&job.id, 0)?;
         let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
         let decision = if active == 0 {
             "eligible"
@@ -1983,7 +2013,15 @@ async fn run_job(
         return Ok(());
     }
     let run_id = Uuid::now_v7().to_string();
+    #[cfg(not(all(windows, debug_assertions)))]
     let run = store.enqueue_manual(name, &run_id, now_us())?;
+    #[cfg(all(windows, debug_assertions))]
+    let run = {
+        windows_wake_diagnostics::emit("enqueue", "enter", None);
+        let result = store.enqueue_manual(name, &run_id, now_us());
+        windows_wake_diagnostics::emit("enqueue", if result.is_ok() { "ok" } else { "err" }, None);
+        result?
+    };
     send_wake(paths);
     let warnings = if daemon_lock_free(paths) {
         vec!["daemon is not running; run remains durably queued"]
@@ -2214,6 +2252,7 @@ struct CurrentJobExplanation {
     job: Value,
     definition: JobDefinition,
     next_occurrence: Option<String>,
+    active_run_count: usize,
     runs: Vec<RunRecord>,
     daemon_running: bool,
     global_concurrency: u8,
@@ -2232,11 +2271,12 @@ fn current_job_explanation(
         .next(Timestamp::from_epoch_micros(now_us), 1)?
         .first()
         .map(ToString::to_string);
-    let runs = store.history(Some(&job.id), 1_000)?;
+    let (active_run_count, runs) = store.active_runs_for_job(&job.id, 100)?;
     Ok(CurrentJobExplanation {
         job: redacted_job(job)?,
         definition,
         next_occurrence,
+        active_run_count,
         runs,
         daemon_running: !daemon_lock_free(paths),
         global_concurrency: configured_global_concurrency(paths)?,
@@ -2338,11 +2378,7 @@ fn explain(paths: &StatePaths, name: &str, format: Format) -> Result<()> {
 
 fn explain_report(store: &Store, facts: &CurrentJobExplanation) -> Result<Value> {
     let enabled = facts.job["enabled"].as_bool().unwrap_or(false);
-    let active_runs = facts
-        .runs
-        .iter()
-        .filter(|run| active_run_state(&run.state))
-        .count();
+    let active_runs = facts.active_run_count;
     let job_id = facts.job["id"].as_str().context("job record lacks id")?;
     let (latest_run, latest_anomaly) = store.latest_and_anomalous_runs(job_id)?;
     let latest_run = latest_run
@@ -3593,6 +3629,15 @@ fn doctor(paths: &StatePaths, format: Format) -> Result<()> {
 }
 
 fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
+    prune_with_remover(paths, dry_run, format, explicit_prune::remove_output)
+}
+
+fn prune_with_remover(
+    paths: &StatePaths,
+    dry_run: bool,
+    format: Format,
+    mut remove: impl FnMut(&StatePaths, &Path) -> Result<()>,
+) -> Result<()> {
     if dry_run && !paths.database.is_file() {
         if format == Format::Human {
             println!("dry run: would prune 0 runs, 0 outputs (0 bytes)");
@@ -3612,45 +3657,37 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         open(paths)?
     };
     let settings = store.settings()?;
-    let mut retained = store.retained_output_bytes()?;
+    let mut projected = store.retained_output_bytes()?;
+    if projected < 0 || settings.output_limit_bytes < 0 {
+        return Err(
+            StoreError::Conflict("output byte accounting must be non-negative".into()).into(),
+        );
+    }
     let age_cutoff = now_us().saturating_sub(30_i64 * 24 * 60 * 60 * 1_000_000);
-    let candidates = store
-        .output_retention_candidates(100)?
-        .into_iter()
-        .filter(|candidate| {
-            candidate.finalized_at_us < age_cutoff || retained > settings.output_limit_bytes
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    let mut bytes = 0_i64;
+    for candidate in store.output_retention_candidates(100)? {
+        if candidate.physical_bytes < 0 {
+            return Err(StoreError::Conflict(
+                "output artifact byte count must be non-negative".into(),
+            )
+            .into());
+        }
+        if candidate.finalized_at_us >= age_cutoff && projected <= settings.output_limit_bytes {
+            continue;
+        }
+        bytes = bytes.checked_add(candidate.physical_bytes).ok_or_else(|| {
+            StoreError::Conflict("selected output byte count exceeds supported range".into())
+        })?;
+        projected = projected.saturating_sub(candidate.physical_bytes).max(0);
+        candidates.push(candidate);
+    }
+    let planned_paths = explicit_prune::validated_paths(paths, &candidates)?;
     if !dry_run {
-        for candidate in &candidates {
-            #[cfg(windows)]
-            let path = {
-                let attempt = u16::try_from(candidate.attempt_number)?;
-                let path = paths.final_output(&candidate.run_id, attempt)?;
-                if candidate.relative_path != format!("{}/{attempt}.log", candidate.run_id) {
-                    return Err(anyhow!(
-                        "database output path is not the canonical final path"
-                    ));
-                }
-                path
-            };
+        for (candidate, path) in candidates.iter().zip(&planned_paths) {
             store.mark_output_prune_pending(candidate, now_us())?;
-            #[cfg(not(windows))]
-            let path = paths.outputs.join(&candidate.relative_path);
-            #[cfg(windows)]
-            locron_core::filesystem::remove_private_file(&path)?;
-            #[cfg(not(windows))]
-            match std::fs::symlink_metadata(&path) {
-                Ok(metadata) if metadata.file_type().is_symlink() => {
-                    return Err(anyhow!("refusing to prune symbolic-link output"));
-                }
-                Ok(metadata) if metadata.is_file() => std::fs::remove_file(&path)?,
-                Ok(_) => return Err(anyhow!("refusing to prune non-file output")),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
+            remove(paths, path)?;
             store.finish_output_prune(candidate, now_us())?;
-            retained = retained.saturating_sub(candidate.physical_bytes);
         }
     }
     let outputs = candidates.len();
@@ -3659,10 +3696,6 @@ fn prune(paths: &StatePaths, dry_run: bool, format: Format) -> Result<()> {
         .map(|candidate| candidate.run_id.as_str())
         .collect::<BTreeSet<_>>()
         .len();
-    let bytes: i64 = candidates
-        .iter()
-        .map(|candidate| candidate.physical_bytes)
-        .sum();
     if format == Format::Human {
         if dry_run {
             println!("dry run: would prune {runs} runs, {outputs} outputs ({bytes} bytes)");
@@ -3699,8 +3732,19 @@ async fn daemon(paths: StatePaths, service_mode: bool) -> Result<()> {
         activation.close().await;
         return result;
     }
-    #[cfg(windows)]
+    #[cfg(all(windows, not(debug_assertions)))]
     let lock = Some(acquire_daemon_role_lock(&paths, &lifetime, false)?);
+    #[cfg(all(windows, debug_assertions))]
+    let lock = {
+        windows_wake_diagnostics::emit("role_lock", "enter", None);
+        let result = acquire_daemon_role_lock(&paths, &lifetime, false);
+        windows_wake_diagnostics::emit(
+            "role_lock",
+            if result.is_ok() { "ok" } else { "err" },
+            None,
+        );
+        Some(result?)
+    };
     #[cfg(not(windows))]
     let lock = None;
     daemon_with_lock(paths, service_mode, lifetime, cancellation, lock).await
@@ -3751,12 +3795,32 @@ async fn daemon_with_lock(
     if cancellation.is_cancelled() {
         return Ok(());
     }
+    #[cfg(not(all(windows, debug_assertions)))]
     let store = Arc::new(Store::open(
         paths.clone(),
         env!("CARGO_PKG_VERSION"),
         now_us(),
     )?);
+    #[cfg(all(windows, debug_assertions))]
+    let store = {
+        windows_wake_diagnostics::emit("store_open", "enter", None);
+        let result = Store::open(paths.clone(), env!("CARGO_PKG_VERSION"), now_us());
+        windows_wake_diagnostics::emit(
+            "store_open",
+            if result.is_ok() { "ok" } else { "err" },
+            None,
+        );
+        Arc::new(result?)
+    };
+    #[cfg(not(all(windows, debug_assertions)))]
     let global_concurrency = usize::try_from(store.settings()?.global_concurrency)?;
+    #[cfg(all(windows, debug_assertions))]
+    let global_concurrency = {
+        windows_wake_diagnostics::emit("settings", "enter", None);
+        let result = store.settings();
+        windows_wake_diagnostics::emit("settings", if result.is_ok() { "ok" } else { "err" }, None);
+        usize::try_from(result?.global_concurrency)?
+    };
     let adapter = Arc::new(StoreAdapter {
         store,
         lifetime,
@@ -3973,8 +4037,27 @@ fn bind_wake_socket(
 }
 
 pub(crate) fn send_wake(paths: &StatePaths) {
+    #[cfg(not(all(windows, debug_assertions)))]
     if let Err(error) = locron_core::notification::send_wake(&paths.root) {
         tracing::debug!(%error, "wake notification unavailable; command is already durable");
+    }
+    #[cfg(all(windows, debug_assertions))]
+    {
+        windows_wake_diagnostics::emit("hint", "enter", None);
+        let (result, stage) = locron_core::notification::send_wake_with_stage(&paths.root);
+        if let (Some(stage), Some(error)) = (stage, result.as_ref().err()) {
+            let op = match stage {
+                locron_core::notification::WakePipeFailureStage::Name => "pipe_name",
+                locron_core::notification::WakePipeFailureStage::Open => "pipe_open",
+                locron_core::notification::WakePipeFailureStage::Exchange => "pipe_exchange",
+                locron_core::notification::WakePipeFailureStage::Infrastructure => "pipe_infra",
+            };
+            windows_wake_diagnostics::pipe_failure(op, error);
+        }
+        windows_wake_diagnostics::hint(result.as_ref().err());
+        if let Err(error) = result {
+            tracing::debug!(%error, "wake notification unavailable; command is already durable");
+        }
     }
 }
 
@@ -4826,6 +4909,7 @@ impl TimeZoneResolver for SystemTimeZoneResolver {
 pub(crate) fn daemon_lock_free(paths: &StatePaths) -> bool {
     locron_store::DaemonLock::try_prove_free(&paths.daemon_lock).is_ok()
 }
+#[cfg(not(all(windows, debug_assertions)))]
 fn init_tracing(verbose: u8, debug: bool) {
     let level = if debug {
         "trace"
@@ -7402,3 +7486,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "explicit_prune/qualification.rs"]
+mod prune_qualification;

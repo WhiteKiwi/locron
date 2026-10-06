@@ -5410,3 +5410,793 @@ A separate developer leases only the private Windows CLI control helper after Is
 ## Current PR136 observer and concurrent publication integration
 
 Root selects the exact disjoint observer4639 and concurrent6e98 contributions in [the completed integration plan](planning/WINDOWS_NATIVE_OBSERVER_CONCURRENT_2026-10-04.md). Preserve current main9de and all original gates; actual new observer qualification is pending and the concurrent x64 ChildExited/Run failure remains unexplained.
+
+## PR 141 closed lock publication and separate development handoff (2026-10-04)
+
+Follow docs/planning/DASHBOARD_TOKEN_SERIALIZATION.md's reviewed handoff. Windows publishes a known-owned empty private candidate only after actual constructor/leaf closure, using one disabled-cleanup TempPath.persist_noclobber and original five-second clock. Existing final remains permanent; timely collision cleans only the loser then opens the winner, non-collision errors preserve their primary error, late success never rolls the final back, and unknown disposal remains a private empty candidate. Unix and all original tests/constants stay conserved. Add the finite cfg(test) actual-process/fault/publication/sharing controls with actual Child ownership, fixed protocol/capture/reap bounds and separately counted support entry. The Source lease is five paths, with only already-locked target-Windows tempfile usage and byte-exact Cargo.lock; no workflow, Core, Store, router or CLI change. Issue 162 holds concrete Verify before the separate developer starts; parent reviews/publishes and fresh exact-head hosted regression/native/lint/paired evidence remains mandatory.
+
+## PR141 scratch-name predicate handoff (2026-10-04)
+
+Retain the reviewed Windows closed candidate publication and cross-process controls. Before fresh hosted qualification, a separate developer changes only the new scratch inventory suffix to exact rsplit_once last-dot/tmp semantics after Issue162 exact readback. Parent reviews the full inverse and current-main integration; production clocks, original tests, finite controls and warnings-denied CI stay selected. Detailed three-step Verify remains in planning/DASHBOARD_TOKEN_SERIALIZATION.md.
+
+## PR141 reviewed Source to current-main publication (2026-10-04)
+
+Follow the three-step exactc4/current-common464 publication appendix in planning/DASHBOARD_TOKEN_SERIALIZATION.md. Root conserves every reviewed Source blob during normal repository merge, preserves both Docs histories, performs fresh remote ancestry readback and normal FF, then qualifies actual13 drivers/original tests/strict hosted gates and paired provenance before merge. Source adaptation, clock/security relaxation and live token/service effects remain outside this publication choice.
+
+## PR141 scalar failure diagnostics before qualification (2026-10-04)
+
+A separate developer changes only three support panic arms after Issue162 exact readback. Fixed-prefix ErrorKind/optional-i32 metadata uses already-returned errors; no arbitrary error Display/Debug or new I/O is introduced. Parent inverses all three arms and conserves all other Source before normal FF and fresh actual hosted acceptance per planning/DASHBOARD_TOKEN_SERIALIZATION.md.
+
+## Token qualification publication after release snapshot merge (2026-10-04)
+
+PR #138 was merged externally as main commit 9de596f8ffe48e8036f775ad1fddbea9302915a1. Its tree matches reviewed head 886e24a and ordinary synthetic commit 97b8d03. The 17 ordinary gates, Guardian, 16 snapshot tests and paired x64/ARM package provenance passed. Integrating these reviewed sources changes no token behavior. PR #141 Source commit 654d5a4 retains the full 9534372 implementation, b8acdfe suffix edit and exactly three scalar-only returned-error arms. Root read the full Source and independently proved each later inverse. New token runtime qualification remains unmeasured.
+
+1. Integrate exact main commit 9de596f by a normal Git merge. **Verify:** incoming Source, CI and Cargo plus all five selected token Source paths retain their reviewed modes and blobs. Reject any Source conflict or adaptation. Preserve both complete planning histories after the common prefix; only shared planning documents may be reconciled.
+2. Publish by normal fast-forward to the unchanged original PR #141 remote head 1e0c19a. **Verify:** fresh REST head and main binding match; the original remote is an ancestor; staged and unstaged scope is clean. The PR body states actual evidence and remaining qualification. No forced push or retry of an unchanged failed head.
+3. Qualify the published head against the current base before ordered merge. **Verify:** all 13 new Windows drivers, 11 portable drivers and the original three tests pass on their actual hosted platforms. Require x64/ARM/MSRV native tests, Unix tests, warnings-denied lint, all ordinary gates, Guardian and paired package provenance. Final synthetic, head and squash trees must agree. Keep broad native acceptance open; static receipts do not establish runtime results.
+
+## PR141 selected terminal peer and measured lint repair (2026-10-04)
+
+SPEC remains frozen. Follow the complete four-step Verify plan in [DASHBOARD_TOKEN_TERMINAL_2026-10-04.md](planning/DASHBOARD_TOKEN_TERMINAL_2026-10-04.md) after exact Issue162 readback and Root final reread. A separate developer owns only token.rs/test_support.rs/qualification.rs: preserve each original lock_remaining error through cfg(test) inspect_err, checked_sub from the same production deadline, payload-free Instruction Copy, and private Active/fully-validated-Done/actually-killed-and-nonzero-reaped-Stopped state. Keep real Child/channel/nonce/frame/status ownership; count only actual TCP read admissions. Stop reads only at validated terminal state and verify frozen observed counts in existing atomic6/permanent3/killed+waiter groups, retaining every original assertion/marker/clock and pre-Done rejection. Root reviews full Source/inverses/protected modes-blobs then qualifies the fresh changed head under original strict native/Unix/ordinary/Guardian/paired gates. Historical RST cause and separate supervisor failure stay open; no error swallowing, diagnostic extension, clock/service/CI/dependency change or local runtime is selected.
+
+## PR141 separate terminal-candidate Git integration with main136
+
+SPEC remains frozen. Complete five-step Verify in [DASHBOARD_TOKEN_MAIN136_2026-10-04.md](planning/DASHBOARD_TOKEN_MAIN136_2026-10-04.md) selects only normal Source union, whole incoming Docs plus exact own insertions/two whole inverses, followed by original native/lint/ordinary/Guardian/fullpaired qualification. Root Issue162 exactGET/final reread precedes separate Git development; no Source hand adaptation or old failure-cause promotion.
+
+## Token141 support-only failure observation (2026-10-05)
+
+Under planning/DASHBOARD_TOKEN_READ_FAILURE_2026-10-05.md, return original read Err to validated Harness owner context and record only fixed phase/config/status facts. Actual pre-kill TryWait Some under the original deadline is required before retained-handle bounded capture length/hash/allowlisted numeric-location reading. Preserve original final failure, all success/terminal paths, finish/Drop and common cleanup3s. The three concrete Verify steps require Docs/Issue/fullfinalreview before separate Source, complete inverses/bounds/Rootreview, then fresh unchanged gates and observed evidence before any later repair.
+
+
+## Measured token observer lint (2026-10-05)
+
+Follow DASHBOARD_TOKEN_OBSERVER_LINT_2026-10-05.md under Issue162 before Source: exact Docs/Issue GET and full final-plan reread, separate support-only is_empty/report-builder/unconditional-panic implementation, whole parent inverse and literal original observation/context/guards/cleanup/clocks, all protected mode/blob entries and static grammar/fmt/diff receipts, then Root full review/normal publication/fresh strict hosted acceptance. Original kind/raw,4096ASCII and65536+1 caps and all old tests/gates remain unchanged.
+
+## Token fixture validated-prefix receipt (2026-10-05)
+
+Follow planning/DASHBOARD_TOKEN_DONE_RECEIPT_2026-10-05.md under Issue162. Preserve the whole original frame/nonce/actualPID/sequence/native-link checks and Done storage/read freeze, then issue one exact assigned-channel receipt within the existing parent15s. The known child waits on the same retained stream and existing child15s for its actual PID/sent Done sequence before normal producer teardown. Parent-local deferred receipts in the existing six atomic cases measure genuine live-before-receipt and unchanged exit0/error/privacy/cleanup afterwards; five fixed predicate controls provide only validation evidence. Whole C2/C3/finish/complete/Drop/production/Core/PS/dependencies/CI remain exact. Docs/Issue/full final Root review precede separate two-path development, full inverses/protected modes and Root publication, then all original hosted controls/gates/provenance before ordered merge. Partial events and native TCP/wake/cancel causes remain unknown until actual evidence; no clock/error/assertion waiver is selected.
+
+## Actual token sharing refusal scalar observation (2026-10-05)
+
+Follow the four concrete Verify steps in planning/DASHBOARD_TOKEN_SHARING_OBSERVATION_2026-10-05.md under Issue162. Exact Docs/Issue GET and Root full final-plan/receipt/lint reread precede separate development. Only the existing sharing helper's second assertion failure message may report bounded producer ErrorKind/raw/elapsed_ms/renames/cleanup metadata, with a <=32 ASCII-alphabetic kind guard and whole-message maximum<=256ASCII. Preserve both predicates, first message, every caller, full frame/protocol/receipt/finish/cleanup/clock/privacy and all other mode/blobs. Root reviews full Source/inverse/provenance/bounds, publishes a changed head normally and requires actual native values plus every original hosted gate before any repair or merge. Unknown errno/Core phase and separate wake/cancel failures remain unknown.
+
+## Related PR integration groups (2026-10-05)
+
+Follow [GROUPED_PR_INTEGRATION_2026-10-05.md](planning/GROUPED_PR_INTEGRATION_2026-10-05.md) under coordination issue #163. The owner's grouped-processing request selects four representatives: #141 dashboard/auth/API, #147 output/prune/state paths, #157 queries/MCP, and #166 Windows verification/delivery. Preserve every existing contribution and owning acceptance, including the divergent published #144. Research full combined changes in separate read-only sub-sessions, then complete each group's Docs/Issue/final-review before a separate Source lease. Fresh composed-head qualification and exact squash/main tree verification precede completion of member PRs. Product scope, strict gates, original native clocks and wider Windows acceptance remain unchanged.
+
+## Strict native destination controls before grouped dashboard qualification
+
+Follow [DASHBOARD_NATIVE_DESTINATION_2026-10-05.md](planning/DASHBOARD_NATIVE_DESTINATION_2026-10-05.md) under #162. After exact Docs/Issue GET and parent entire final reread, a separate developer leases only two cfg(test) files for three real fixed proofs: held/released std and unchanged Core same-candidate full-ID migration, plus actual token refusal and new-scratch released rotation. One Windows Operation variant is additive; framing/13 selectors/support/old3/other32/33 callers/production/Core/CI and original15/5/4/30/3s clocks stay literal. Only the destination expectation becomes exact PermissionDenied/raw5 and loses its unsupported five-second minimum. Parent whole inverses/protected-tree review and later group-specific union precede one fresh composed-head native/strict ordinary/Guardian/fullpaired qualification. The current raw5/Core stage and separate native Wake/cancel cause remain unknown.
+
+## Selected dashboard HTTP verification (2026-10-04)
+
+Follow planning/DASHBOARD_DRY_RUN_HTTP_QUALIFICATION_2026-10-04.md for PR144/Issue143: Root Docs/Issue4Verify/finalreread first; separate developer integrates exactmain9de with complete Docs ancestry and adapts only server tests/contract.rs; add real body-type/env/no-state/query controls; preserve original API/tests/helper bodies and all other Source; Root entire-inverse/protected-tree review then fresh actual hosted Windows3/Unix/fullrequiredCI qualification. Additional native listener, dependency/workflow or timing/owner wrapper choices need a Root amendment first. No Source/native/merge/Issue closure is claimed by this planning commit.
+
+
+## PR144 exact-main Git-only handoff (2026-10-05)
+
+Follow the complete docs/planning/PR144_MAIN_F90_INTEGRATION_2026-10-05.md after exact owning Issue Verify readback and final committed Root reread. One ordinary merge of the selected Docs tip and exactf90 preserves whole incoming native Source/CI and reviewed own Source/plans. Full tree/Source/Doc inverses and permitted static checks precede ordinary publication and actual changed-head qualification; skipped/unreached/failed native or own tests cannot be counted as PASS. No Source adaptation, unrelated PR import, rerun or permission waiver is selected.
+
+
+## Preserve overlap while qualifying each HTTP query form (2026-10-05)
+
+Under Issue143 follow the four-step Verify plan in planning/HTTP_QUERY_FIXTURE_ISOLATION_2026-10-05.md. Root Docs/Issue exact readback and final whole-plan reread precede the separate two-path developer: unique unqueued run-{label} jobs only inside the existing query test second loop, plus one existing cold-Core/noncancelled condition on native HTTP. Preserve all strict assertions, whole inverses, original tests/commands/conditions/clocks and unrelated Source; then Root review/ordinary publication and actual changed-head HTTP/native/lint/package qualification. Native failures and broader acceptance stay open.
+
+## Dashboard144 selected implementation and Verify (2026-10-05)
+
+Use the six-path private fixture/build lease in planning/DASHBOARD_BOOLEAN_QUALIFICATION_2026-10-05.md. Preserve the actual API/Store/core paths, dependency direction and existing gates. The Store libtest child owns real readonly typed snapshots; the Windows CLI example reuses Engine Job/child and secured wake ownership. A real scoped wake delegate distinguishes attempt0/delivery0 from live SendOk. Frozen193 Unix/195 Windows rows require actual identity, state/redaction, termination and nonrecursive cleanup evidence. The selected four steps each contain concrete Verify; Docs/Issue exact GET and final reread precede Source in a separate development sub-session. Hosted execution and full actual paired/tree proof remain required before Root merges.
+
+
+## Dashboard144 private stage retention implementation (2026-10-05)
+
+Apply only the separate developer's three-helper retention lease in [the supplemental plan](planning/DASHBOARD_BOOLEAN_STAGE_RETENTION_2026-10-05.md), after Issue143 exact GET and complete final-plan reread. Disable the TempPath cleanup flag before one publication and preserve the original fixed Err, success identity path, all193/195 assertions and every other Source byte. Root reviews full inverses and handles later normal integration/publication with current published1f5 preserved. Existing hosted/Guardian/paired gates and uncertainty boundaries remain.
+## PR 142 reviewed security-admission test handoff (2026-10-04)
+
+Follow docs/planning/DASHBOARD_STRICT_SECURITY_HEADERS.md's review handoff before Source: keep the complete production middleware/router/handlers and dependencies unchanged, correct only two stale URI-bearing contract messages, and add the finite actual-router Host 36/Origin 96/authentication-public17 rows plus three real HTTP canary cases. An actual one-item streamed JSON body proves that refusal precedes paste-handler consumption; exact envelope/no-referrer/no-Set-Cookie and canary absence accompany each refusal. Issue 162 owns Verify and Issue 163 routes the work to existing PR 142; PR 145 owns CSRF/cookie qualification. The separate development sub-session implements Source after the exact issue-comment readback. Parent reviews whole blobs/inverses and publishes only after fresh current-head hosted regression, lint, native Windows and paired provenance; the owner's installed Locron/service is outside this test-only scope.
+
+### PR142 reviewed admission Source/current-main handoff (2026-10-04)
+
+Source4d229e61 preserves the full production middleware prefix and original contract except the two selected generic messages; parent-reviewed tests statically inventory152 rows. Format/locked metadata/diff pass; all new runtime/type/Clippy/native qualification remains pending. A normal current-main c4ef8b90 integration must preserve both Docs histories and the reviewed Source union, followed by fresh candidate/current-base CI and paired provenance. Refs #162; #163.
+### PR142 measured embedded URL suffix lint (2026-10-04)
+
+Changed-head37198413636 has14 ordinary successes/three lint failures. Raw Windows/Linux lint identifies middleware831 ends_with(.js) case-sensitive-file-extension lint. Keep the exact lowercase embedded URL rule through rsplit_once plus exact suffix js; preserve all152 rows and other Source. No case relaxation/allow/gate waiver. Root Docs/Issue162 readback precede separate one-assertion Source repair and fresh changed-head qualification.
+
+
+## PR142 reviewed qualification and exact main138 integration
+
+The [completed integration plan](planning/DASHBOARD_HEADERS_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
+
+
+## PR142 separate Git integration with reviewed main136
+
+SPEC remains frozen. [The complete five-step plan](planning/DASHBOARD_HEADERS_MAIN136_2026-10-04.md) selects exact normal Source union and whole incoming Docs plus all ordered byte-exact own insertion blocks; whole own/incoming inverses are required. Root exact Issue162 GET/final reread precede separate development; full original gates and actual functional/paired provenance qualify the combined head.
+
+## Dashboard145 selected production and qualification (2026-10-05)
+
+Use typed all-field Cookie scanning with strict Authorization first, scoped protected-session refusal, preserved public entry, narrow session-status401 and exact POST/unique-readable-malformed/no-echo recovery. Delegate actual body/issuer/API paths and limit the client echo omission to exact POST session. planning/DASHBOARD_COOKIE_RECOVERY_2026-10-05.md freezes the four Source paths, actual generated dist lease, all204 fixed controls, ownership/caps/clocks and four concrete Verify steps. A separate developer may generate the pinned bundle once with frozen ignored-scripts installation/build, while runtime/DOM/native/Rust qualification stays hosted. Preserve the full reviewed142 appendix/generic production contracts and all old assertions; Root independently reviews Source/dist and actual latest-base17/Guardian/paired/tree evidence before ordered merge.
+
+## Dashboard145 sentinel same-identity handoff (2026-10-05)
+
+The dependent private fixture correction follows planning/DASHBOARD_COOKIE_SENTINEL_HANDOFF_2026-10-05.md. Preserve the actual owned root/parent guard, sync the genuine created sentinel, capture its complete writer identity, release the writer before the incompatible Windows stable-reader open, and retain the exact-ID-equal read-only no-follow leaf. Independent later checks and cleanup retain all existing identity/digest/ownership/cap/clock refusal rules. This clarifies the four-path fixture implementation while leaving the complete original204 selection and actual once-generated dist bytes unchanged. Exact Issue162 readback and full final Root plan reread precede separate development; Source compatibility remains distinct from hosted native acceptance.
+
+
+## Independent Unix sentinel readers (2026-10-05)
+
+Follow DASHBOARD_COOKIE_UNIX_NOFOLLOW_2026-10-05.md after exact Issue162 GET/body equality and Root whole final15/40/13 plan reread. Separate developer corrects only private qualification.rs Unix independent opens with existing Core open_read_no_follow, retains real guards/full identity/digest and nonrecursive cleanup, and returns a clean one-file Source commit with full0c inverse/all324 other protected entries. Root independently reviews original9dd conservation/generated receipts and publishes in order. No repeated generation or local compiler/runtime; all actual190/99 and17/Guardian/paired Verify gates remain required.
+
+
+## Windows token held/released destination fixture amendment (2026-10-05)
+
+Follow planning/DASHBOARD_TOKEN_DESTINATION_CONTROL_2026-10-05.md under Issue162. Only the existing destination segment in qualification.rs may adopt failed raw5/PermissionDenied and require genuine preservation plus same-Harness released regeneration, full guarded object/lock identity, valid returned/persisted digest, counters/privacy/sentinels and checked completion. Shared helper, owned-scratch, whole constructor, production, support/receipt, all selectors/C1/C2/C3, other Source and clocks remain literal. Four ordered Verify steps require Root Docs/Issue exact GET/final whole reread, separate one-file implementation/full inverses, independent normal publication/fresh actual native controls, then every required current-tree gate before merge. No cause inference, global allowance, poison reset or deadline relaxation.
+
+## Separate output repair qualification development (2026-10-04)
+
+Follow planning/OUTPUT_REPAIR_QUALIFICATION.md in Store-then-Engine slices, with concrete Verify on all four selected steps and the original five-step research plan. Root freezes the private shared parser/opened-file seam and finite 96-key union before Issue #146 exact GET and complete plan reread. Separate Source development preserves public signatures, all writer and old-test bytes, native guards, policy differences and original clocks. Root handles full review, exact current-main Source union, normal publication and actual hosted qualification. No new public test API, dependency or workflow is selected.
+
+
+## PR147 reviewed owner Drop-order conservation
+
+Root found the shared repair wrapper destructures File and DirectoryGuard into reverse-dropped local bindings. Keep the exact returned pair as one tuple owner and borrow field0 so File still drops before its parent guards. The completed appendix in planning/OUTPUT_REPAIR_QUALIFICATION.md confines the separate two-statement correction; all functional controls, clocks, API and native claims remain unchanged.
+
+## PR147 separate Git integration with reviewed main136
+
+SPEC remains frozen. [The complete five-step plan](planning/OUTPUT_REPAIR_MAIN136_2026-10-04.md) selects exact normal Source union and whole incoming Docs plus all ordered byte-exact own insertion blocks; whole own/incoming inverses are required. Root exact Issue146 GET/final reread precede separate development; full original gates and actual functional/paired provenance qualify the combined head.
+
+## Store147 selected receiver correction (2026-10-05)
+
+Apply only the actual Clippy receiver autoref suggestion under planning/OUTPUT_REPAIR_READ_RECEIVER_2026-10-05.md after exact Issue146 readback and Root final reread. Preserve complete parent inverse, fixed47/48 controls, errors, guards and every old gate/clock; separate Source implementation and Root review precede normal publication/fresh hosted acceptance. This syntax change supplies no repair claim for unrelated Windows wake/Ack/GUI failures.
+
+
+## Measured caller branch lint (2026-10-05)
+
+Follow OUTPUT_CALLER_BRANCH_ORDER_2026-10-05.md under Issue146: Docs/Issue exact readback and whole final-plan reread before a separate one-block maintenance.rs test-only branch exchange; whole parent inverse and both literal branch bodies, protected mode/blob inventory,47/48 ledger, all clocks/assertions/cleanup and static fmt/diff evidence; then Root full review, normal publication and actual changed-head hosted/Guardian/native/paired qualification. All other Source and broad acceptance remain unchanged.
+
+## Current grouped processing with arrivals
+
+Follow GROUPED_PR_ARRIVALS_2026-10-05.md under Issue163 after the initialda7 grouped research plan. Preserve nineteen current open PRs in five groups and both parallel local/published contributions; retain all old actual evidence at its measured head. Research the newer141/166/167 and dependency168/169/170 before group-specific final Docs/Issue/GET/parent reread and separate Source. Complete composed-head/current-base regression, strict ordinary/Guardian/native/paired qualification plus exact squash/main/member-contribution proof precede member completion. This arrival update selects no Source, product behavior or expanded clock.
+
+## Group A combined dashboard development
+
+Follow GROUP_A_DASHBOARD_INTEGRATION_2026-10-05.md after owning162/143/163 exact readback and Root entire final reread. A separate developer preserves exact946/f559/both144/033/once142 plus exact arrival Doc components, applies only selected parent-created empty-lock preparation, identity/absence checks and bounded existing-Done failure reporting, then returns complete Source/inverse/protected/static proofs. Original clocks/gates/finite oracles and generated assets remain conserved. Root owns fresh composed qualification and ordinary publication/squash/member completion; unknown constructor/Wake/SQLite causes are not waived.
+
+## Group A narrowly selected compiler/type corrections — 2026-10-05
+
+After162/143/163 exact readbacks and Root entire original/supplement after-GET reread, use a separate developer for only six literal corrections in four selected files. Require whole3f741 function/payload/Source inverses, all original assertions/keys/owners/clocks/generated bytes and protected physical inventory; local static-only handback precedes Root review and a changed-head fresh full CI qualification. No unchanged-head retry, suppression, frontend generation or guessed native repair.
+
+## Group A minimum fixture admission handoff — 2026-10-05
+
+After162/143/163 exact GET ALL and Root entire34/23/new final plan reread, separate development changes only the four selected fixture/support files. Preserve all production/frontend/CI/lock/native script/finite keys/assertions/clocks; initial exclusive DB creator is recorded once, Windows outer/child ownership cleans bottom-up, canonical existing base precedes child exposure, and facts observation stays closed≤74ASCII. Complete inverses/protected bytes/static handback precede Root review and fresh changed-head qualification.
+
+## Group A cookie-only directory admission continuation — 2026-10-05
+
+Preserve all independent four-path WIP and resume only after amended plan/exact162/143/163 GETs/Root entire final reread. Use cookie's existing deadline/absent-suffix full-ID protocol and selected two-scope cleanup; keep Boolean FreshRoot/fresh_root/cleanup/callers whole1e0 and parser30 origin literal. New deadline/worker/public Core API remains unselected. All original four Verify steps and native acceptance remain.
+
+## Group A Unix-only selector scope (2026-10-05)
+
+Follow GROUP_A_UNIX_SELECTOR_SCOPE_2026-10-05.md and its three concrete Verify steps. Docs→owning162/143/163 exact POSTGET ALL→Root entire34/23/42/new plan reread precedes separate one-file/two-attribute development. Preserve complete original Unix/Windows bodies and all selectors, row sets, deadlines, owners, product/CI/frontend bytes. Root reviews whole inverse/protected physical/10literal symlink proof, publishes a genuinely changed head and obtains same-head/current-base17ordinary/Guardian/native-lint/fullpaired proof before ordered squash or closure. Runtime/type/native outcomes remain unmeasured.
+
+
+## Group A facts-refusal message continuation — 2026-10-05
+
+After all162/143/163 exact GETs and Root full changed-plan review, separate development leases only dashboard_boolean_qualification.rs for the selected existing-error class/index observer. Use capped stack storage and purely lexical complete local-drive component comparison; never add native parent probe, expose original messages/paths, retry admission or invent ownership/deadline. Whole inverses conserve Error/refusal/Unix/read-to-EOF193195/old owners/clocks and all protected Source. Exact old complete reviews are reused by whole hash; changed authority is reread. Root reviews/publishes and interprets fresh actual fixed scalars as spelling evidence before any separate causal repair; original full qualification and ordered merge/contribution gates remain.
+
+## Group B selected output/prune/state composition — 2026-10-05
+
+After owning146/149/152/163 exact readbacks and Root entire final plan/ledger after-GET reread, use a separate developer to normally conserve all six contributions and adapt only the nine selected paths/actual formatting sites. Return complete original-body/contributor/Docs/key/physical/static proofs and leave fresh hosted94/96/state/native17/Guardian/full paired/current-base/squash/member proof to Root. Preserve every original policy/clock/owner/first error; no local runtime or old-head success promotion.
+
+
+## Engine output qualification on reviewed main (2026-10-05)
+
+Continue the frozen SPEC/STORAGE and original streaming-repair plan under Issue146. Follow the complete ENGINE_OUTPUT_QUALIFICATION_2026-10-05.md and byte-exact shared96-key JSON ledger: normally integrate reviewed main f90a9d5dc2e6bafbc163567b333c398777647402 before Source with whole document-component inverses, preserve GuardedFile ownership and the literal scanner, add the three private Engine seams/modules and an additive hosted CI receipt step only. The six steps include concrete Verify for fixed42/43 functional controls, three owned-child Linux memory rows with immutable180/30/5/3-second clocks and fixed16/96MiB thresholds, actual Cargo JSON artifact identity and bounded uncaptured key/metric evidence, full Source/inverse/protected-mode review, fresh strict hosted/native/paired gates and oldest-first publication. Exact Issue readback and whole final-plan reread precede the separate development lease. Compiler/runtime/native execution stays hosted, original commands/conditions/clocks/Cargo/source policies remain, and both output PR merges plus all Verify criteria are required before closing146.
+
+
+### Root XDG child-command regression continuation before Source (2026-10-04)
+
+Follow planning/XDG_STATE_WITHOUT_HOME.md after exact Issue152 readback and final
+Root review. Integrate actual main9de and preserve paths.rs6a26 exactly. Adapt
+only the existing Unix state_discovery test module: isolated child env, independent
+byte-preserving expected paths, dry-run no-state before actual live DB placement,
+Linux matrix and real macOS/override policies. No global env/dependency/workflow
+change; actual new head Linux/macOS and unchanged Windows required gates qualify.
+
+
+## PR153 measured macOS/lint amendment before separate Source (2026-10-04)
+
+Follow planning/XDG_MACOS_RAW_STATE_REFUSAL_2026-10-04.md after exact Issue152 readback and final committed Root review. Only new cli.rs state_discovery additions adapt: one private platform helper at three raw-byte call sites, genuine macOS JSON refusal and valid owned-parent empty enumeration; Linux retains successful original helper/DB placement. Fix only the measured new assertion message while preserving its predicate. Preserve original tests, whole paths.rs6a26, all other production/Windows/dependency/workflow Source. Full inverses and permitted static checks precede fresh actual Linux/macOS/native Windows/strict required CI; unchanged filtered standalone workflows are honestly NOT RUN with exact qualified-main dependency binding.
+
+
+## PR153 exact-main Git-only handoff (2026-10-05)
+
+Follow the complete docs/planning/PR153_MAIN_F90_INTEGRATION_2026-10-05.md after exact owning Issue Verify readback and final committed Root reread. One ordinary merge of the selected Docs tip and exactf90 preserves whole incoming native Source/CI and reviewed own Source/plans. Full tree/Source/Doc inverses and permitted static checks precede ordinary publication and actual changed-head qualification; skipped/unreached/failed native or own tests cannot be counted as PASS. No Source adaptation, unrelated PR import, rerun or permission waiver is selected.
+
+## Group B guarded same-pending recovery continuation — 2026-10-05
+
+Follow GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md after exact146/149/152/163 GET and Root entire original49/94 plus supplement reread. Separate development retains the9-path scope and every old94/96/state set, selects existing contracts support/actual bin-libtest artifact/fixed existing maintain once, and uses only existing Core native ownership with closed independent descriptor/capture/SQL facts. No production maintenance command/dependency/clock/gate/API change is selected. Parent reviews full handback, fresh provenance and ordered same-head qualification; unknown cleanup preserves owners/failure.
+
+## Group B actual selector handoff correction — 2026-10-05
+
+Use the actual api::prune_output::qualification::contracts name under the GROUP_B_SAME_PENDING_RECOVERY_2026-10-05.md correction after exact owning GET and Root complete final reread. No Source scope or clock/gate/test count changes; retain CLI prune_qualification::contracts and all original qualification.
+
+## Group B dependent admission handoff — 2026-10-05
+
+Follow the selected creator/writer/artifact/production-child supplement only after all four owning exact GETs and Root full final reread. Preserve six Source WIP blobs and all original49/94/96/state/native3. Use actual three-argument Store creator on the genuinely absent normalized child, retain its writer through raw oracle, independently bind the fixed CI record, and use only existing Core-owned closed Windows production/recovery invocations before capture reads. The9-path/API/dependency/clock/gate scope is unchanged; complete branch union size and full ownership inverses precede publication. Unsupported or material choices return to Docs first.
+
+
+## Group B runner artifact reader continuation — 2026-10-05
+
+After all owning146/149/152/163 exact GETs and Root entire final amended-plan review with exact original49/58/all94 proof reuse, resume the original nine-path developer with the narrow inline CI ctypes/msvcrt read-only metadata exception. Preserve the fixture parent's no-FFI policy, original descriptor fields/CargoJSON/managed-path admission, same-pending FI07 and N07 recovery, full old96/state/native3 and every clock/gate. No new helper file, dependency, Python floor, public API or local native execution is selected. Full Source/ownership/old CI inverses and actual same-head acceptance remain required.
+
+
+## Group B fixed binding JSON continuation — 2026-10-05
+
+Follow the amended GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md only after all146/149/152/163 exact GETs and Root entire amended-plan review. Reuse the completed full49/58/94 review only when every original byte remains exact; any drift requires a full changed review. The original nine-path developer uses a distinct fixed32768-byte JSON observation with two retained full-identity owners, strict closed fields, complete bytes/hash and known closure, while preserving all executable ABI checks, old qualification and clocks. No arbitrary reader mode, new helper/dependency/public API or local execution is selected.
+
+
+## Group B single CI reader module handoff — 2026-10-05
+
+The run-length supplement in GROUP_B_CI_NATIVE_ARTIFACT_IDENTITY_2026-10-05.md admits exactly the original nine Source paths plus scripts/ci_prune_artifact_facts.py. After all four exact owning GETs and full final changed-plan review with frozen-byte reuse, the same developer loads only that fixed checkout file at existing CI call sites, preserves original native function/Engine inverses, implements selected strictUTF8, and verifies all decoded run bodies<=21000. This is the sole no-helper exception; product APIs/runtime/dependencies/rows/clocks/gates remain unchanged.
+
+
+## Group B hosted qualification conformance — 2026-10-05
+
+Select the closed four-test-Rust-path lint/returned-owner candidate and one ledger-specific LF attribute, preserving full frozen94 bytes, native ownership, SQL/oracles, original horizons and failure admission. Stack8192/read cost, borrowed Copy and cached-wait refusal effects are explicit in the [complete plan](planning/GROUP_B_HOSTED_QUALIFICATION_CONFORMANCE_2026-10-05.md). Docs/owning ALL GET/Root final review precede a separate Source child; fresh actual gates remain mandatory. Latest user direction defers #141 and qualifies remaining groups independently.
+
+## Actual guarded-input refusal observation before separate Source (2026-10-06)
+
+Follow the shared complete
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+Keep frozen SPEC/ARCHITECTURE and all original predicates, native error values, custom
+kind/raw/Display, owner/creation/case/clock/cleanup invariants. One private closed tag
+records only the actual existing rejection; one Windows debug-only pure accessor lets
+the two Server fixtures attach role/kind/raw/optional predicate at original failing calls.
+Root prepares three Docs-only worktrees and owning exact whole-plan GET ALL/final full
+review before one separate developer implements common Core, normally cherry-picks
+that exact Source-only commit into A/B and changes only each selected caller file.
+Root ordinarily integrates the independent native-SID common fix before new A/B CI.
+Complete source conservation and byte proofs precede disposable hosted qualification;
+actual predicate/holder evidence and a later Docs-first repair remain necessary.
+No source/static observation or successful API update closes remaining acceptance.
+
+## Native process-token SID common repair before separate Source (2026-10-05)
+
+Frozen SPEC/ARCHITECTURE stay unchanged. Follow the complete
+[WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md](planning/WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md)
+against exactmainf90 before separate two-file development. Use the already locked safe
+process-token query and fallible SID conversion in one original-deadline native owner;
+transfer the existing initializer permit through native disposal, then return String/error
+WITH that same scalar permit and retain it through caller cache/refusal/return. Only the
+on-time caller caches success. Preserve bounded waiting, late-owner
+admission refusal, cache-only IPC and every unrelated adapter/creation/guard/grace/clock.
+Make only the coupled cold phase fixture's SID dispatch explicit and add genuine identity/
+owner controls. Root Docs/#27/#31/#163 exact whole-plan GET ALL and final complete reread
+precede Source; permitted static conservation precedes changed-head disposable native
+MSRV/ARM/x64/full required/paired qualification. Publish this common repair first so other
+representatives integrate reviewed main without unrelated feature code. Failed/missing
+native behavior and wider release/account/logon/reboot acceptance remain open.
+
+The before-Source permit-return refinement closes worker-exit-before-cache duplicate
+admission. The one-result reply owns no native resource; blocked native work still holds
+the actual permit, while receiver-drop/send refusal can drop only already-disposed scalar
+state. No extra pool/atomic/polling is selected. Root amended complete plan/owning GET ALL
+and whole final reread precede the paused separate developer's Source continuation.
+
+### SID verified-cache deadline precision (2026-10-06)
+
+Preserve the original OnceLock behavior: query/transport errors and pre-publication
+expiry do not initialize an empty cache; existing verified entries are not cleared.
+The pre-set check admits publication, while a later post-set or outer-return check can
+refuse with that verified entry retained. Check and publication are not an atomic clock
+transaction. Keep the same permit through publication/refusal, all original gates and
+clocks, and no cache rollback. Root's complete amended owning readbacks and final plan
+reread precede continuation; static conservation does not qualify native behavior.
+
+### Hosted SID receiver-consumption handoff (2026-10-06)
+
+Follow the final owned-receiver correction in WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md.
+Preserve receive_sid_reply's owned Receiver and actual receive/post-deadline/error flow;
+explicitly drop only that receiver after the original remaining gate immediately before
+final reply. The SAME permit stays in the returned scalar reply; early-error RAII and
+all other ownership/cache/clock behavior remain literal. Extend only the existing cfg(test)
+loader sid-deadline branch: native SID/grammar stays first, zero-stock-PID and genuine
+explicit stock SID/Boolean equality use the SAME original deadline, then all original
+elapsed/PID/marker oracles remain. All other loader_tests modes and filesystem-worker bytes stay literal.
+Root four-Docs review, complete owning #27/#31/#163 amended-plan GETs and whole final
+reread precede the selected follow-up. Full selected-region inverses and pinned static checks precede
+fresh lint/cold-deadline/three-row qualification; no allowance or Cancel-fix claim.
+Preserve completed b4c422's13 metadataPASS/4FAIL/2optionalSKIP and unrun8x3 CLI scope;
+package/coherence metadata does not replace original-byte provenance or install acceptance.
+
+Additionally select only loader_crash.rs host()'s existing fixed thread: capture its native
+entry30s deadline, use current_user_sid_until(deadline) first, keep grammar, then genuine
+fixed request("sid", None, SAME deadline)/Boolean identity before the old PID/publish.
+Keep the generic separate deadline, all other host/driver/observer/publication bytes and
+original45/30/3s containment/capture/disposal/cleanup oracles unchanged. Parent-exit was
+unrun at b4c422; this repairs a Source-backed coupling without inventing a runtime result.
+The latest scope supersedes the prior cumulative three-file boundary: four cumulative
+paths, only windows.rs/loader_tests.rs/loader_crash.rs follow-up edits, filesystem_worker.rs
+literal b4c422. Require all313 protected mode/blob entries of the actual316-entry Docs
+parent and three full-file inverses before fresh lint/cold/parent-exit/three-row gates.
+
+### SID lib-test syntax-only continuation (2026-10-06)
+
+Follow the complete latest WINDOWS_NATIVE_TOKEN_SID plan: replace only the new zero-PID
+assert with assert_eq! on integer values, and elide only immediate_sid_reply's named
+lifetime into WorkerPermit<'_>/SidReply<'_>. Its literal body/callers return the SAME
+borrowed permit; no lifetime widening/'static, production owner/query/gate or clock change.
+All native-first/stock/PID/privacy and original containment/capture/disposal remain exact;
+filesystem_worker.rs and loader_crash.rs stay d89cd3e1. Owning #27/#31/#163 complete-plan
+GETs and Root whole final reread precede the two-path follow-up. Require complete inverses
+and314 protected entries of the actual316-entry Docs parent, pinned static checks, then
+fresh hosted warnings-denied lint/three-row required gates. Snapshot2's pending native/
+packages and historical failures cannot supply acceptance or a Cancel-fix claim.
+
+### Reviewed Group D before common joined qualification (2026-10-06)
+
+Follow the newest ordering amendment in WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md. Root
+performs only a normal Git merge of exact reviewed D17133aa1917fc50d2801bf58c33552e20f978d30
+into the gated common SID/style head before its next ordinary qualification and merge.
+Preserve all four native Source and all nine disjoint D Source mode/blobs, complete
+reviewed Docs histories and current frozen SPEC/ARCHITECTURE. Other guard groups stay
+later; no new diagnostics, APIs, tests, runtime repair or workflow/algorithm adaptation.
+Source conflict or a noncontext decision returns to separate developer/Docs before work.
+
+Reuse D's actual private two-file Stdio owner at the same daemon spawn, original8s and
+entry-born30s. Keep first work frozen before cleanup, optional reads only after confirmed
+reap/within normal admission, exact full IDs/cursor0/no-follow64KiB+sentinel, closed Store
+summary only, and every counter/peer/child/drop/quarantine bound. Preserve5s/8s/200ms/30s/
+25ms pause/production5s grace. Missing/late/unrecognized data remains unknown and cannot
+waive failure, expose raw output or authorize replacement work. Existing Store emitters
+and error precedence remain literal; no separate new seam is needed for this selection.
+
+Owning#27/#31/#163 whole-plan exact GETs and Root actual final complete reread precede
+Root's Git-only integration. Whole joined-tree/ordered-parent/contribution proof precedes
+one ordinary changed-head publication. Fresh three-row original controls plus all D
+controls/required downstream/lint/Unix/Guardian/current package provenance qualify only
+that joined head. Preserve actual d8923/24, ARM ChildExited/Run/application5/unknown
+cause and skipped16/4/3/11/4/21, plus d89 package168 each, as historical facts. Retain
+166/167 until actual required Verify and selected main contribution succeed; ancestry
+alone does not close work. The complete newest plan carries five concrete Verify steps.
+
+## PR140 guarded output recovery verification before separate Source (2026-10-04)
+
+Freeze SPEC and follow planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md. Normal reviewed main814 union first preserves old140 pre-main + main137 paired-default main(). Separate developer then splits directory identity handling from individual leaf absence so unconfirmed cleanup annotates the same primary exception; preserve nonrecursive/exclusive identity-based recovery and all successful bytes. Add one finite real-file/fd-backed portable32/native6 fixture module plus only the selected existing-workflow filters/portable step/two native rows. Root Docs/Issue35 readback precedes Source; full inverses/other mode-blobs/workflow/Source review and fresh hosted exact-head evidence precede merge. Owner-PC native/compiler/effectful acceptance and wider release/catalog/install acceptance remain unexecuted/open.
+
+
+### PR140 continuation: expand the existing recovered-output suite
+
+Integrate reviewed remote4a normally and preserve its exact main139/old32+6 tests; archive our uncommitted alternative suite privately and use only existing test-winget-output.py. Add ten portable/one native controls and freeze42/49 exact keys; actual owned mkdtemp/identity-ledger teardown and original mode restoration replace automatic recursive repair. Separate missing-directory cleanup diagnostics without changing successful writer/validator bytes. Keep old readonly WinError5 assertion; qualify actual native CPython3.14 x64/arm64 using setup-python@v6 and hard architecture/ABI checks. Parent plans/reviews/publishes, separate developer leases only renderer/existingtest/workflow after exact Issue35 readback; effectful tests execute hosted, wider release acceptance remains open.
+
+## Publish reviewed WinGet recovery follow-up (2026-10-04)
+
+PR 140 is already merged. Follow the publication appendix in planning/WINGET_OUTPUT_RECOVERY_CONTROLS_2026-10-04.md: normal-compose published c4ef8b9 with reviewed 2d6a1c4d, preserve the exact three leased Source blobs and every other main Source, keep canonical Docs plus unique literal planning appendices, then publish a follow-up Draft linked to Issue 35/PR 140. New 42/49 controls and native CPython3.14/ABI facts require fresh exact-head hosted evidence; no prior result, local fixture execution, real WinGet installation or public release is adopted.
+
+### PR166 measured A03 Windows path representation (2026-10-04)
+
+Paired-writer37198110854 executes portable42/42 but both native rows48/49: A03 compares actual extended-namespace readlink text with a drive-path target. Select only that method: retain actual pre-call readlink and compare exact post-call text, plus real samefile(target) assertions before/after the writer. Preserve no-follow link ID, target bytes/tree, all zero-operation/parent/checked-cleanup assertions and fixed42/49 keys. Root Docs/Issue35 readback precede separate Source; fresh changed-head native/portable/ordinary evidence stays required. Pythonprimary readlink/samefile contracts are linked in the plan.
+
+
+## PR166 reviewed qualification and exact main138 integration
+
+The [completed integration plan](planning/WINGET_OUTPUT_MAIN138_2026-10-04.md) retains actual prior qualification at C4 and selects only the exact main9de Source/Docs union before fresh final-head acceptance. No Source adaptation or prior-result promotion is selected.
+
+
+## PR166 separate Git integration with reviewed main136
+
+SPEC remains frozen. [The complete five-step plan](planning/WINGET_OUTPUT_MAIN136_2026-10-04.md) selects exact normal Source union and whole incoming Docs plus all ordered byte-exact own insertion blocks; whole own/incoming inverses are required. Root exact Issue35 GET/final reread precede separate development; full original gates and actual functional/paired provenance qualify the combined head.
+
+
+## Group D representative166 integration and private observation (2026-10-05)
+
+Follow planning/GROUP_D_WINGET_NATIVE_INTEGRATION_2026-10-05.md for representative166 normal integration of exact7429/3a, literal contributor/Docs conservation, helper-only closed scalar and one required lint command. All old production/privacy/ownership/5s/8s/30s/control/gate boundaries stay literal. Root Docs/Issues/final whole reread precede separate Source and Root whole publication review.
+
+
+## PR166 exact mainf90 integration before separate development (2026-10-05)
+
+Follow planning/WINGET_OUTPUT_MAIN_F90_INTEGRATION_2026-10-05.md under Issue35. Preserve complete b5f three Source blobs; normal-merge only exact f90 with original histories, whole incoming Source and literal selected Docs components. Commit this full four-step Verify plan, get exact Issue GET and Root final whole committed-plan reread before separate developer. Root reviews clean316-path handback and ordinary-publishes existing PR166; fresh actual42 portable/49 per-native key receipts, architecture facts and all required ordinary gates precede merge. Static inverses/API success/old-base CI do not qualify current-main. Broader unsigned public bytes, real schema/WinGet/catalog/clean-account lifecycle remain OPEN.
+
+
+## PR136 bounded daemon-output diagnostics before separate Source (2026-10-04)
+
+Follow planning/WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md after Issue31 exact readback and final committed Root review. Only windows_cli_control.rs and cli.rs selected test glue may adapt; attach two independently owned CreateNew guarded files to the actual cancellation daemon, read only after exact root reap under original NORMAL admission, retain partial/late resources/quarantine, and publish at most two fixed safe scalar lines after complete closed grammar. Preserve old Display/withheld notice/publication/three output controls/selectors/CI/clocks. Append genuine held-DaemonLock Human/JSON routes, real stderr oversize/live and second-leaf collision under the original30s horizon. Full inverses/static checks precede actual unchanged three-row cancellation/native matrix. Optional unobserved data does not replace acceptance; unchanged filtered standalone workflows are honestly NOT RUN with exact qualified-main dependency binding, and original24 assertions/all required gates remain mandatory before merge.
+
+
+## Native stderr harness expectation amendment before dependent Source (2026-10-04)
+
+The complete amended WINDOWS_DAEMON_OUTPUT_DIAGNOSTICS_2026-10-04.md replaces only the new stderr companion empty-stdout expectation with genuine captured bounded libtest stdout; both actual stream attachments, normal-admission-only reads and existing live refusal remain selected. All other scoped Source/ownership/grammar/clocks/Verify stay intact. Root Docs/Issue/readback/final reread precede this dependent Source choice.
+
+
+## Current f90 daemon diagnostic selection before separate Source (2026-10-05)
+
+The complete WINDOWS_DAEMON_MAIN_F90_2026-10-05.md supersedes the older baseline/formatter/PR136-open and all-controls reap assumptions. Ordinary exactmainf90 integration must preserve its entire observer/formatter and incoming Docs before a separate two-file additive paired cancellation collector. Four genuine children require actual status and REAPED|CLEANED; second-leaf collision requires no child and CLEANED only. Same actual command/owner/clocks/normal-only post-reap reads, two bounded safe lines, complete closed grammar and all original/current controls remain required. Root full committed plan review and Issue31 exact Verify readback precede development; fresh hosted failures cannot be carried forward as success.
+
+
+## Windows private producer/attempt observation before separate Source, 2026-10-05
+
+Frozen SPEC remains unchanged. The complete current plan is [WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md](planning/WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md), selected on e9d only. It replaces the unapplied frozen50 Wake-only/version1/14phase/128record proposal with Windows-debug command-local version2, separate fmt/private layer, two guarded stderr carriers and exact21phase opaque attempt binding/256record grammar. Borrow original futures without changing construction/evaluation/select/Result/drop; preserve old production/capture/observer/clocks/formatter/control regions through full inverses.
+
+The failure-only wrapper freezes original CaseResult and waits solely for a separate typed diagnostic slot within original outer30s; it never reopens normal work, accepts queued late results, reads live roots or broadens cleanup_gate. Two NEW genuine positive controls have explicit post-reap normal-read admission within the same existing selector30s; ordinary successes remain unchanged. Parent committed Docs/Issue exact GET/final whole-plan reread precede separate development. Four ordered concrete Verify cover producing Source/privacy, actual carrier/control/correlation/cleanup, Root full review/recoverable FF publication and exact changed-head hosted original+new actual gates. Type/native/fit/delivery/cause remain pending; no Source-first reconciliation or timeout/retry waiver.
+
+
+## Windows prepared initial Run stderr refinement (2026-10-05)
+
+The complete WINDOWS_PRODUCER_ATTEMPT_DIAGNOSTICS_2026-10-05.md now explicitly selects the private typed PreparedInitialRunCommand/fixed-owner entry and sole internal spawn-stdio exception. Generic/default capture signatures keep null stderr; original stdout duplicate/one spawn/immediate Child anchor/JSON and NORMAL collection remain literal. Missing/partial/used preparation returns original Code::Native before native work, without fallback or take/reinsert loans. The original four ordered steps retain concrete Verify for full Source inverses, actual ownership/delivery and unchanged hosted clocks. Separate Source resumes only after committed Docs, exact Issue31 GET and Root whole final-plan reread.
+
+
+## Windows private producer hosted lint continuation, 2026-10-05
+
+Frozen SPEC/prior164-line producer plan remain exact. The complete [WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md](planning/WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md) selects only two Source paths/four syntax replacements: guarded width2 fixed-array iteration in emitter/support and private borrowed Fields plus sole caller. Preserve all original producers/owners/Future/Result/drop/stdio/opaque grammar/control/clocks through whole-file inverses. Four ordered steps each have concrete Verify, including exact Issue31 GET and parent whole final committed-plan reread before separate development,318 protected Docs-baseline entries, Root full review/ordinaryFF and fresh hosted1.94/1.98/whole matrices. Prior71a10 positive controls pass but old x64/ARM Wake and Windows lint fail; no waiver, behavior repair or owner-PC native/compiler/parser/security effect is selected.
+
+
+## Before-Source producer lint formatter reconciliation, 2026-10-05
+
+Scoped Rustfmt1.94 returned0 but expanded only the two new iterator heads by22 bytes/three lines each. Separate development paused before staging/commit and returned its mutation lease. Root preserved both dirty Source drafts, reviewed both complete drift patches and independently inverted both wraps plus the complete research change. The whole WINDOWS_PRODUCER_HOSTED_LINT_2026-10-05.md now selects those exact formatted19554/f25da689 and267889/0b0c2ebc bytes before separate continuation, with unchanged four concrete Verify/grammar/owners/clocks, exact Issue31 GET and Root whole final amended-plan reread. Root changes only Docs; no native/type/cause PASS or workflow/assertion repair is implied.
+
+
+## Group D helper-only strict lint handoff — 2026-10-05
+
+After owning35/31/163 exact GET ALL and Root entire37/164/36/new plan reread, separate development changes only windows_cli_control.rs's selected21 diagnostics/private necessary callers. Preserve genuine invalid/None/value, independent collision witnesses, original owner/error/deadline order and literal successful worker; error-only Box has no native owner and unmeasured cost. Only new-expression formatter wrapping with full inverse is selected. No native-cause/control/selector/production/CI/dependency/clock/gate change or local runtime is authorized. Full clean handback and actual changed-head gates precede Root publication/completion.
+
+## Group D cancellation fixture initialization handoff — 2026-10-05
+
+Follow planning/GROUP_D_CANCEL_INITIALIZATION_WITNESS_2026-10-05.md. Root completes owning35/31/163 whole-plan exact GET ALL and final entire new-plan/Docs review before separate helper-only development adds the existing probe after guard/live and before first Add. Its actual native PID/Wake/ACK/receipt/Notify and bounded polling are selected effects;200ms/8s/30s expressions, original remainder, producer controls and cleanup remain literal. Frozen SPEC/old37/164/36/28 plans reuse saved complete review only with whole exact hashes. Full one-call inverse/protected handback, Root independent review and changed-head required qualification precede completion; no historical raw32 or timing cause is inferred.
+
+## Group D role preparation handoff — 2026-10-05
+
+Follow planning/GROUP_D_ROLE_BEFORE_INITIAL_PROBE_2026-10-05.md after all three exact owning GETs and Root full final new-plan/Docs review. Separate development inserts only existing expected_role before cancellation's existing probe. Preserve original owner, every strict deadline, actual liveness/PID/Held/repeated metadata checks, probe and all remainder/cleanup/capture bodies. Reuse complete frozen authority reviews only with whole matching hashes. Root independently reviews the clean complete inverse/protected handback and handles changed-head publication and required qualification. Latest user direction defers141/Group A; eligible remaining groups proceed against current main.
+
+## Group D first-signal metadata handoff — 2026-10-05
+
+Follow planning/GROUP_D_FIRST_CANCELLATION_SIGNAL_2026-10-05.md after all35/31/163 whole-plan exact GETs and Root entire final plan/Docs review. Separate development changes only three additive helper spans: fixed64 per-attempt first_signal, get_or_insert after existing op18 admission, and explicit daemon-local first metadata in the admitted matched summary. Four extra proposed controls are unselected. Original accepted grammar, latest signal/poll assignments, real CLI/native/owner/cleanup/assertions and8s/200ms/30s remain literal. Whole inverse/protected clean handback and independent Root review precede normal changed-head publication and all unchanged required qualification.
+
+
+## Joined c39 test-only cleanup and first-result handoff (2026-10-06)
+
+Follow the complete appended WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md after all27/31/163 whole-plan POST/exact GET and Root full final committed reread. Only windows_cli_control.rs is a future Source path: first-only worker claim, four self-contained numeric cleanup records, coherent owner-computed actual-return duration, and unchanged actual root query/CLEANED flag. At most four Instant/QPC samples count against original clocks; no process/FS/security/IPC query, worker/admission/clock growth, native-owner transfer, collector-order or quarantine change. Preserve the literal CaseResult/old summaries and all Source oracles. Full first positive data stays immutable through the existing conditional cleanup result; separate checked lines cap at225 CRLF bytes/2718 aggregate, not an unbounded CaseResult dump. Failure-only later scalar copy uses only the already-existing diagnostic wait; late facts never replace first work or grant success.
+
+Five concrete Verify steps cover four-Docs/prefix/source conservation and owning exact readback/final reread; helper inverse/domain/line bounds and pending hosted fit; genuinely changed-head24/control/required gates; independent exact-c39+A/B diagnostic unions and each own acceptance; actual common-main/member contribution before closure. A/B diagnostic qualification may precede common main merge using original d24a2a65/b6c9d1ec only (Docs-only descendants allowed), superseding schedule alone. Current c39 failures, all required oracles and C/E later order remain; no integration/publication/runtime effect is performed by this documentation amendment.
+
+
+## Native3905 equivalent cleanup-observation lint handoff (2026-10-06)
+
+Follow the appended WINDOWS_NATIVE_TOKEN_SID_2026-10-05.md after owning27/31/35/163/171/166/167 WHOLE-plan exact GET ALL and Root actual final entire committed-plan/new-Docs reread. Only windows_cli_control.rs may later change through patch73c6e1e's six spans: U||(A&&B) for the existing pure duration predicate, and CleanupObservation Unclaimed/Claimed at the same four owner-member sites plus enum insertion. Preserve the first-only local claim, every packed/wire/domain/slot/renderer, old Code/phase/Result/drop/collector/owner/quarantine/assertion/selector and clock. No new observation, Copy/lifetime, fetch_update, warning allowance or production repair.
+
+Reverse all six literals to restore the whole3905 helper; protect every other Docs-parent mode/blob. Local work is pinned scoped rustfmt1.94/1.98/full locked offline metadata/Git/text only, with type/native NOT RUN. Root alone stages Docs, commits, posts/readbacks owning plans, grants later Source, reviews clean full inverses and ordinarily publishes for genuinely changed-head all-three native/strict-lint/required/member/main qualification. Current ARM Wake failure stays failed even though later matched Drop/child-root absence/CLEANED is observed; RootReturn precedes the unchanged post-gate. Never replace Drop by close, infer deletion success or waive broader unresolved acceptance.
+
+
+### Windows Wake returned-error stage bridge (2026-10-06)
+
+Select the complete [returned-stage plan](planning/WINDOWS_WAKE_RETURNED_PIPE_STAGE_2026-10-06.md)
+at ef969. Future Source is exactly Core notification.rs, Engine ipc.rs, CLI main.rs,
+CLI windows_wake_diagnostics.rs and existing tests/support/windows_cli_control.rs.
+Core's explicit Windows debug-only crate-crossing entry shares original calls and
+returns the same owned Result plus a closed optional returned-error stage; normal/
+release public send_wake and Unix stay literal. No Core tracing/Cargo dependency.
+Engine observes only terminal non-WouldBlock wake/None Action::Wake Err as
+pipe_accept, without claiming the private replacement/native API substage.
+CLI forwards the same error once; strict writer/decoder add Run name/open/exchange/
+infra versus Daemon accept, edgeerr/valueNone/attempt0/closed kind+rawi32 only.
+Preserve attempt domains/old indices, original summaries/caps/ownership/collector
+and all5s/8s/200ms/30s/25ms/5sgrace oracles. Missing stage remains unobserved.
+
+Root must commit four Docs, complete whole-plan exact owning27/31/35/163/171/166/167
+POST/GET and actually reread both final plans/new blocks AFTER ALL GETs before
+Source. Separate five-file development proves inverses/release erasure/privacy/
+role/error bounds, static checks only locally. Root then qualifies the genuinely
+changed head's actual three native rows/positives/downstreams/lint/Unix/package
+and triggered paired/snapshot gates. Current ordinary outage/timeouts remain
+failed/unqualified; no old PASS/count transfer, cap/reuse/retry/warm-up/clock/oracle
+change, diagnosis-as-PASS, member closure or installation/release acceptance.
+
+
+## Finite Wake headroom and Windows library harness continuation — 2026-10-06
+
+Follow the complete [WINDOWS_WAKE_INSTANCE_HEADROOM_AND_LIBTEST_2026-10-06.md](planning/WINDOWS_WAKE_INSTANCE_HEADROOM_AND_LIBTEST_2026-10-06.md).
+Select only ipc.rs's literal exact wake/None/ActionWake limit3 versus unchanged2 elsewhere,
+one additive genuine Windows IPC regression, and ci.yml's existing Windows Store/Engine/
+Server --lib --locked command suffix -- --test-threads=2. Protect all other Source and
+all previous plans/prefixes. This narrowly supersedes the old Wake no-cap-change/max2/
+observation-only clauses and unspecified/default composition preservation for that one
+Windows argv; no other security, API, deadline, helper or product change is selected.
+
+Keep the actual private fixture/root guard, secured bind_wake listener, original client,
+safe duplicate typed metadata/PID proof, Notify and current sequential client in one
+owner bundle outside catch_unwind. Start whole5s only after root/listener admission;
+first true probe plus four sequential strict frame/ACK/0xff/consumed Notify exchanges use
+min remaining/entry200ms with original return post-gates and live-listener/collision refusal.
+Retain the original/metadata through all exchanges and actual listener abort+join. No
+retrying old client helper, early peer drop, fabricated Notify or synchronous-native
+preemption claim. Existing public query/disposal adapters only; no dependency or unsafe API.
+
+Catch the operation outcome/panic without private payload output, unconditionally abort
+and await the same borrowed JoinHandle under separate1s cleanup, and preserve first
+operation failure. Only confirmed on-time join permits normal client/metadata/root release;
+failed/expired/unknown join retains/quarantines the one bundle for test-process lifetime.
+No unfinished blocking join, new registry, cleanup-as-success or unbounded panic rethrow.
+Failure-only output after collection/cleanup is closed phase/kind/raw/fixed Boolean;
+no Error Debug/Display, descriptor/SID/path/PID/native-query telemetry. Old tests stay literal.
+
+The one libtest suffix limits ordinary case composition to2 only in the existing Windows
+three-library command. Core137/three stock invocations, old Engine69+one=70, Store96,
+Server42, original24 native selectors, service/GUI and all required gates remain. Original
+inside-test concurrency and5s/8s/200ms/30s/25ms/5sgrace stay unchanged; Unix argv, filters,
+conditions, jobs/resources/profile/global environment stay exact. No measured resource
+cause/default composition or completed repair claim follows from static Source selection.
+
+Root must commit exactly four Docs, complete whole NEW-plan exact owning25/27/31/35/163/
+171/166/167 POST/GET ALL, then actually reread the entire final committed new plan and new
+tails AFTER ALL GETs. Existing reviewed670/200 plans remain frozen by hash, not newly
+post-read claims. The four concrete Verify steps govern separate two-path development,
+whole-file inverses/old-body protection, Root full Source review and one changed-head
+required hosted native/lint/downstream/package qualification. Root owns all commits/API/
+memory/publication; no owner-PC compiler/native/parser/test/fixture/security effect.
+
+
+## Early A/B diagnostic qualification order before separate Git-only development (2026-10-06)
+
+Follow the complete early-order amendment in
+[WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md](planning/WINDOWS_GUARD_REFUSAL_OBSERVATION_2026-10-06.md).
+After matching native-SID Docs selection, all owning whole-plan exact GETs and Root final
+whole committed-plan/new-Docs reread, a separate developer may ordinarily merge ONLY
+published c39/tree9cec into exact guard A d24a2a65/B b6c9d1ec or Source-identical Docs-only
+descendants for independent DIAGNOSTIC draft qualification before common merges main.
+Keep f90 pinned, common319a exact, original154/875 and whole A/B/c39 contributions;
+preserve complete Docs suffixes once. Any actual Source conflict/mode/input ambiguity
+returns for Docs FIRST with no adaptation. All original predicates/errors/guards/privacy/
+owners/cleanup/5s/8s/30s/25ms/200ms/native5s grace and every required owning/member Verify
+remain literal. Current c39 MSRV failure remains failed. Root owns commit/publication and
+fresh actual qualification; this order change selects no cause repair, main merge,
+acceptance waiver or closure without each complete Verify and required main contribution.
+
+
+## Guard hosted lint before separate Source (2026-10-06)
+
+Follow the complete shared
+[WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md](planning/WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md).
+After Root commits Docs, all owning whole-plan exact GETs and full final after-GET
+reread, separate development may change ONLY eight proven-u32 ACE optional projections
+in A/B Core and B's SharingControl variant/matching arm cfg attributes. Preserve checked
+usize ancestry conversions, whole original Source/operation/predicate/error/owner/oracle/
+clock/cleanup regions through exact inverse; no Source/CI/Cargo/Core-SID adaptation or
+lint allowance. Permit standalone1.94/1.98 format checks and full locked offline metadata
+only. Root owns changed-head ordinary publication/actual fresh strict lint and native
+qualification. Separate SEL02-cli60s failure stays failed/unknown and unchanged; complete
+owning/member Verify and required main contribution remain necessary before closure.
+
+
+## Exact guard formatter amendment before Source continuation (2026-10-06)
+
+Use the entire amended WINDOWS_GUARD_HOSTED_LINT_2026-10-06.md after Root commits,
+all eight whole-plan exact owning GETs and final whole committed-plan/new-Docs reread.
+Only two existing AceMissing pure closure enclosures plus exact five pinned1.94 local
+formatting hunks supplement the original eight ACE projections and B two cfg lines.
+Preserve original calls/lazy evaluation/Results/errors/guards/owners/oracles/clocks.
+Full inverse restores the eight expressions, two braces/whole whitespace and B two
+attributes; A/B complete Core final bytes must match. Independent1.98/full offline
+metadata/static protection precede Root actual required changed-head qualification.
+No surrounding clause adaptation, allowance, extra guard query or Source-first repair;
+the unmeasured native failures and independent SEL02 timeout remain outside this scope.
+
+
+## Selected per-user build before separate Source (2026-10-06)
+
+Use the whole concise WINDOWS_GUARD_PER_USER_BUILD_2026-10-06.md plan: one fresh
+absolute LOCALAPPDATA namespace per A/B/run/attempt/job/native row, no repair/copy/
+fallback/adoption/trust promise. A moves target AND facts/absent-evidence container
+and limits its target to producer/library. B separately binds production/recovery
+metadata/environments/direct images and its original adjacent durable locator;
+recovery target reaches only library/Engine-output/explicit-prune Windows steps.
+Unrelated default targets/evidence and every Unix producer byte stay literal. B
+only marks CLI check, not checked; all29 calls/body/clock/oracles remain exact.
+Root entire after-GET plan review precedes separate development, full static
+inverses/protection and fresh unchanged actual required matrices; no cause repair.
+
+
+## A matched-library build handoff before separate Source (2026-10-06)
+
+Follow the entire WINDOWS_A_MATCHED_LIBRARY_BUILD_2026-10-06.md after Root Docs-only
+commit, owning #27/#31/#162/#146/#163 plus PR141 whole-plan POST/exact GET ALL and
+actual final whole committed-plan/new-Docs reread AFTER ALL GETs. Separate development
+changes only A's Windows Python producer: original controller first, then ONE matched
+Store/Engine/Server --lib --no-run --locked JSON command, unchanged Store selector and
+full hash AFTER aggregate; later original real three-package test remains literal.
+Fresh namespace/facts/metadata/guard/fullID/private195/owner/cleanup/oracle/clock/Unix
+and all other Source/Cargo/CI bytes remain exact. Full workflow inverse/protected
+handback and Root review precede fresh hosted actual rows/all original required gates.
+Cache reuse/owner success/cause is unqualified; no token mutation/repair/adoption/copy/
+profile/feature/fixture/prewarm/retry/security waiver or B/native Source import.
+
+
+## A dashboard guarded fixture-parent handoff (2026-10-06)
+
+Follow the whole WINDOWS_DASHBOARD_GUARDED_FIXTURE_PARENT_2026-10-06.md after Root
+four-Docs commit, WHOLE NEW-plan POST/exact GET ALL to #27/#31/#162/#146/#163/PR141,
+then ACTUAL full final committed new-plan and each new-tail reread AFTER ALL GETs.
+Separate development changes only Server's Windows fresh_root borrowed evidence_guard
+argument/base and both calls: take its live normalized parent, fail closed without
+RUNNER_TEMP fallback, preserve canonicalization+ancestors and create unique private
+siblings OUTSIDE redacted-evidence. Existing constructor2102–2152/cleanup2154–2431,
+private guards/full file IDs/anchors/keep/owners/strict removal/child proofs and all
+Unix bodies/calls/schemas/provenance/image hashes/30/90/600s clocks stay literal.
+This narrow fixture-base amendment alone supersedes earlier Windows fixture/call
+preservation; no production/Core/workflow/dependency/security/owner/token/ACL changes.
+Full-file inverse/other-mode+physical protection and Root whole scoped review precede
+fresh actual195/193 and every original required gate. Current21/24 native and Server
+refusal remain failed/unqualified; missing JSON, type/static success or a guarded-base
+selection cannot establish actual owner/privacy/cleanup or Windows product support.
+
+
+## Merge sequencing and selective Windows-CI deferral (2026-10-06)
+
+Follow the whole WINDOWS_MERGE_AND_CI_DEFERRAL_2026-10-06.md after Root four-Docs
+commit, owning172/31/163 whole-plan POST/exact GET ALL and ACTUAL entire final committed
+plan/new-tail reread AFTER ALL GETs. Separate leases own narrow local x64 releaseCLI
+Verify, selective ruleset21282730 backup/edit/readback and normal exact-main integrations.
+Remove only three Windows runtime requirements; preserve strict/deletion/noactors and
+require exact11 remaining contexts plus manualGuardian, all ordinary jobs unchanged.
+Native171→A141→sealedB147→C157→D166 contribution disposition→E168 binds each actualmain.
+CI conservation retains Native test-threads=2/BOTH distinct A/B producers+targets/gates/C
+selector checks; equal B/C dev rusqlite once atBposition, Eexactpins/TLSlocktable only.
+All uniqueDocs/native owners/security/clocks/oracles survive; broader conflict returns
+DocsFIRST. MemberPR delivery requires actualmain contribution; unsatisfied Verify Issues
+stayOPEN. Restore three runtime requirements only after172 genuine exact-head hosted
+acceptance/full readback. This supersedes earlier deferred141/all-runtime-green merge
+sequencing solely; frozen SPEC/product acceptance and failed/unrun receipts remain fixed.
+
+
+## Local profile-root admission before separate Verify (2026-10-06)
+
+Follow the whole WINDOWS_LOCAL_PROFILE_FIXTURE_2026-10-06.md after Root four-Docs commit,
+whole owning172/31/163 POST/exact GET ALL and actual entire final committed-plan/new-tail
+reread AFTER ALL GETs. A separate external Verify lease may change only the first sealed
+controller's parent to observed profile and add read-only exact chain/private-leaf checks
+before original spawn. Use absent UUID/current-SYSTEM protected atomic creation, same
+verified bd86 x64 release, literal genuine Wake/Cancel operations/oracles and original
+5s/8s/30s/200ms/25ms/target1201frames/64KiB+sentinel/5sgrace. Explicitly dispose/close native
+query owners, retain unknown bundle/no fresh work, freeze first result before real-owned
+reap and one private state teardown, keep complete private evidence. No existing ACL/
+account/policy/PATH/task/install/app Source/clock/security change or automatic retry.
+Original two local FAILs and hosted22P2F remain; profile snapshots do not establish future
+authority or original Rust probe/guard/TempDir/ARM/support acceptance. This A Docs template
+imports no Native Source. Bind actual latest main8423a8ba and strict-base ordinary Native
+changed-head gates separately; preserve historical f90 pins and every existing Doc byte.
+
+Select the appended one-final-PR171 route before any integration: actual reviewed Native
+bd86, ordinary exactmain842 merge, finalized A/profile Docs, B72, C18, D already-carried
+ancestry/contribution proof without Source replay, then Ebc. Preserve BOTH A/B CI consumer
+flows, Native test-threads=2, C selector gates, one identical rusqlite entry at B's position,
+equal Server dependency entries and E's exact TLS/action pins. Require every selected20
+head ancestor of the final assembly and complete Source/Docs/mode/blob conservation.
+Root owns one final normal FF publication, same-head11 checks/Guardian/package reviews,
+then GitHub squash with sole actual premerge-main parent and complete final-tree equality.
+Sibling commits are not squash-main ancestors; close delivered PRs only through exact
+contribution/PR171/main proof, retaining all remaining Verify Issues. All12 whole-plan
+POST/exact GET ALL and Root entire committed reread precede separate leases. No Source,
+Git/policy/runtime effect or repository merge-setting change occurs under this Docs lease.
+## B narrow caller/refusal and test-profile implementation gate (2026-10-06)
+
+Follow the complete B-only
+[WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md](planning/WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md).
+After Root commits Docs, ALL owning whole-plan POST/exact GETs and actual final entire
+committed-plan/new-tail reread, separate development may only mark CLI checked,
+extend API N07's same-returned-error pure closed projection/failure suffix, and append
+[profile.test.package.sha2] opt-level=3. Preserve original assertion32|33, extraction
+order, all29/92 CLI call bodies, Unix branches, guards/full IDs/bytes/locator/receipts,
+8192 chunks/512MiB caps/60-90-3s horizons and genuine ownership/cleanup. No extra log
+write/query/retry;239CRLF payload excludes unchanged harness envelope. Other profiles,
+debug_assertions/overflow checks/dependencies/features/algorithms stay unchanged.
+The optimization is reversible and benefit unknown, with generic monomorphization limits.
+Full file/protected inverses, permitted static checks and fresh unchanged actual
+required matrices precede any closure; Root owns publication and causal decisions.
+
+
+## B one-expression strict-lint continuation gate (2026-10-06)
+
+Follow the WHOLE amended WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md.
+After four Docs commit/ALL owning whole-plan POST-exactGET and Root actual entire
+committed-plan/new-tail reread AFTER ALL GETs, separate development may replace only
+error.kind.map(admission_kind).unwrap_or("unobserved") with
+error.kind.map_or("unobserved", admission_kind). Preserve same-error evaluation/order,
+closed message/239CRLF/strict32|33, all owners/cleanup/clocks/profile/Unix and inverses.
+Permitted static checks then fresh full required qualification precede closure;
+no warning allowance, new control or Source-first cause/performance repair.
+
+
+## B two-test platform-kind continuation gate (2026-10-06)
+
+Follow the entire [WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md](planning/WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md).
+After Root four-Docs commit, ALL seven whole-plan POST/exactGETs and actual entire committed-plan/
+new-tail reread AFTER ALL GETs, a separate developer may change only API and CLI Windows N07
+predicates: exact returnedraw32|33 first, then same returned kind equals the public platform
+decoder of the same raw scalar. ONLY these tests supersede historical PermissionDenied clauses.
+Keep extraction/order/product projection/closed239/CLI message and held-ID/negative/pending/
+exact-holder-drop/same-pending remove+durable finish/cleanup/Unix/clocks literal. No unstable kind
+name, raw5, dictionary widening, extra native query/retry/owner or production/performance repair.
+Full canonical+physical two-file inverses/protected entries and allowed static checks precede fresh
+three-foundation genuine controls and every required native/paired/package/secret/main/member gate.
+Actual CLI row/kind and API holder/instruction/released-positive remain unproved until real evidence.
+
+
+## B predicate-only wrapping and separate runtime gate (2026-10-06)
+
+Follow the WHOLE amended WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md after Root commits,
+ALL seven whole-plan POST/exactGETs and actual final entire committed-plan/new-tail reread.
+Separate Source may only add the two selected expressions plus pinned1.94/1.98 required internal
+whitespace; complete normalized-expression/physical+canonical inverses preserve every other byte.
+Token/operation/neighbor/message/Unix drift stops for Docs FIRST. Preserve map_or/closed239 and
+all actual Error/holder/drop/same-pending finish/owner/cleanup/oracle/clock/profile semantics.
+Meaningful local Windows Verify needs its own isolated fixture/runtime lease and honest actual
+results; no account/task/logon/reboot/install/globalPATH/admin or host-wide security effects.
+Root may merge after that verification/required other checks with residual Windows CI retained
+in Issues; no old/local/ARM result transfer, green fabrication or unfulfilled Verify closure.
+
+## Group C reconciled history and MCP development
+
+Follow GROUP_C_HISTORY_MCP_INTEGRATION_2026-10-05.md under156/158/160/161/163 after exact readback and Root entire final reread. Separate development normally conserves157/159/once164-in165 plus currentmain, corrects only Source-backed owner/format/setup/oracle gaps, and adds selected meaningful original deep/public/snapshot/representation/native helper qualification. Complete independent logical tables/schema and old live deltas replace invalid all-raw-file invariance; physical observations retain their real boundaries. Existing SQL, policies, production dependencies, clocks/gates and all original tests remain. Root reviews full handback and owns fresh composed qualification/publication/squash/member completion, preserving unknown native causes and partial acceptance.
+
+## Group C shared private oracle continuation — 2026-10-05
+
+Follow GROUP_C_SHARED_TEST_ORACLE_2026-10-05.md after exact156/158/160/161/163 readback and Root entire original-plus-supplement reread. Lease adds only CLI tests/support/history_logical.rs and private includes; preserve the original independent oracle, all required real public controls, sole bare CLI test dependency, old MCP prefix and all clocks/gates. Separate developer handback and same-head hosted/native/paired acceptance precede completion.
+
+## Group C finite private test admission continuation — 2026-10-05
+
+Follow GROUP_C_PRIVATE_TEST_ADMISSION_2026-10-05.md after exact156/158/160/161/163 readback and Root entire41/14/supplement/new blocks after all GETs. Separate developer applies only13 closed literals in the four new private test files, preserving every production/SQL/Cargo/CI/native behavior, clock/assertion/owner and all12/current32/older controls. Root independently reviews full whole inverses and publishes fresh composed qualification; native/WAL cause/repair are outside this lease and require separate Docs-first evidence.
+
+## Group C genuine writer and closed oracle handoff — 2026-10-05
+
+After exact five owning GETs and Root entire41/14/18/new plan reread, separate development uses only the three selected private test files. Preserve basic13 and all production/SQL/keysets/assertions/clocks; express seven actual-writer/conditional calls while closed6 remain literal, close every guard before original writers/cleanup, precreate only Unix update fixture DB before MCP and conserve creator ID, and apply equivalent five lint sites with fixed scalar privacy. Full inverses/protected physical/static handback precede Root review and fresh qualification.
+
+
+## Group C actual fixture-preparation continuation — 2026-10-05
+
+Follow GROUP_C_ACTUAL_FIXTURE_PREPARATION_2026-10-05.md after all five owning exact GETs and Root full changed-plan review. A separate developer owns only the two existing fixture files and Server dev/local-lock edge, preserving the unchanged shared helper and product. Actual initialization precedes MCP settings access; Server query preparation preserves default policy and all original manual events while complete typed equality restricts the113-row/339-cell delta. Keep genuine root/writer guards, no-CREATE/no-follow/full-ID admission, known close order and physical-before/immediate-after/post-logical request boundaries. Reuse saved complete byte-identical old authority reviews; drift triggers full review. Root independently verifies the whole handback and fresh hosted acceptance before publication/merge/member completion.
+
+## Group C existing-lock fixture handoff — 2026-10-05
+
+Follow planning/GROUP_C_PERMANENT_LOCK_PREPARATION_2026-10-05.md after all five whole-plan exact owning GETs and Root complete final new-plan/Docs review. Separate development changes only the selected Server preparation comment/try_prove_free call. Retain the real initialized writer/root guard and original writer drop; include the actual existing lock in unchanged full logical/physical request boundaries. No API/sidecar/mask/clock/diagnostic/worker or writer-lifetime change is selected. Frozen SPEC/five previous whole plans reuse saved complete review only with exact hashes; independent clean handback, Root publication review and current-head required evidence precede merge.
+
+
+## Group C private WAL fixture preparation — 2026-10-05
+
+Select the sole private history qualification file: Unix shared constructor creates a genuinely absent private0-byte database, closes creator, runs original Store initializer, independently verifies full same-ID/private metadata and closes that guard. This applies to all7 Unix fixture instances; the two existing snapshots additionally read real journal_mode==wal without setting or reflecting it. Preserve all original reader/barrier/concurrent-write/full old+new totals,50 assertions and clocks. The [complete plan](planning/GROUP_C_PRIVATE_WAL_FIXTURE_PREPARATION_2026-10-05.md) governs Docs/ALL five owning GET/Root final review before separate-child Source, and new-head acceptance. #141 remains deferred.
+
+## Group E grouped dependency integration — 2026-10-05
+
+Follow GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md under163 after exact readback and Root entire final reread. A separate developer normally conserves all three exact contributions in only CI/Engine manifest/single-lock-package bytes, returns full inverses/protected physical/static proofs, and leaves publication/current-base17ordinary/Guardian/full paired qualification and oldest-first squash/member closure to Root. No local runtime/install/frontend generation or old-head success transfer.
+
+## Group E shared lock scope correction — 2026-10-05
+
+Before integration, reread the corrected entire GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md and this Findings/Implementation correction after exact coordination163 readback. Preserve the originally selected three Source paths/five literal replacements and every other package/manifest/feature; qualify the shared production TLS resolution with fresh whole Engine/HTTP/native gates. No application repair, dependency expansion or local runtime execution is authorized.
+
+
+## Separate evidence leaves for combined Windows libraries (2026-10-06)
+
+Follow the whole WINDOWS_COMBINED_LIBRARY_EVIDENCE_2026-10-06.md before B Source.
+Root commits only four prefix-preserving Docs, publishes WHOLE plan/Verify to owning
+172/31/163/162/146/149, obtains exact full GET ALL, then actually rereads the entire
+committed plan/new tails AFTER ALL GETs before separate development. Future Source is
+only the Windows-foundation composition in .github/workflows/ci.yml: both complete
+original producers before first full-lib; A checks a second distinct absent sibling
+without creating/repairing it and exports LOCRON_PR144_SECOND_EVIDENCE_DIR. Keep first
+consumer/upload literal. Second B-target full-lib overrides only LOCRON_PR144_EVIDENCE_DIR
+in step env, preserving B target and both Native test-threads=2 commands; add independent
+second upload with the same original condition/action/retention/caps/no-files policy,
+distinct name/path. Facts/hashes/targets/guards/production/tests/Unix/clocks stay literal.
+Whole workflow inverse/protected bytes and genuinely changed-head rows/evidence precede
+Root disposition. No second-run retry, existing evidence removal or absence waiver.
+Only d2's no-additional-A-env/upload restriction is superseded for this collision;
+one finalPR171/all20 conservation/11 same-head gates/squash/residual172 remain unchanged.
+After Source/tree/ZIP/PE/hash verification of the final x64 package, separately prepare
+one NEW final-source pair with fb8 controller/progress/profile validator/commands/oracles/
+clocks/owners literal except explicit package bindings. Root full script/diff/inverse
+review precedes a separate one-shot lease; no current-installed substitute or retry.
+
+## Explicit ignored history observation in the private close helper (2026-10-06)
+
+Follow [the complete plan](planning/WINDOWS_STORE_FIXTURE_HISTORY_FIELD_2026-10-06.md)
+after all five owning whole-plan GETs and Root actual final committed reread.
+Separate one-path development adds only the conditional ignored field after
+paths: _. Preserve the whole connection close/error sequence and Windows
+read-guard then state-guard drops, all constructors/history counters/rows/clocks
+and every other field. Full canonical/physical two-line inverse and protected
+bytes precede Root staged/unstaged review; fresh changed-head type/runtime
+evidence stays distinct from existing failure/history and deferred Windows CI.

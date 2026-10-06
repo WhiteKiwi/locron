@@ -59,12 +59,18 @@ jobs:
         include:
           - runner: windows-2025
             arch: X64
+            python_arch: x64
           - runner: windows-11-arm
             arch: ARM64
+            python_arch: arm64
     env:
       EXPECTED_RUNNER_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          architecture: ${{ matrix.python_arch }}
       - name: Verify the actual Windows host and Python prerequisite
         shell: python {0}
         run: |

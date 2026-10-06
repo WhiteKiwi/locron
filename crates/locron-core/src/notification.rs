@@ -69,6 +69,84 @@ pub fn send_wake(root: &Path) -> io::Result<()> {
     }
 }
 
+/// Closed stage of an actually returned Windows debug wake error.
+#[cfg(all(windows, debug_assertions))]
+#[derive(Clone, Copy)]
+pub enum WakePipeFailureStage {
+    /// Guarded endpoint derivation returned an error.
+    Name,
+    /// Native client open returned a terminal error.
+    Open,
+    /// The frame exchange returned an error.
+    Exchange,
+    /// Existing worker, runtime or deadline infrastructure returned an error.
+    Infrastructure,
+}
+
+/// Observes one best-effort wake call without repeating any operation.
+///
+/// The original owned result is returned with a stage only when it failed.
+#[cfg(all(windows, debug_assertions))]
+pub fn send_wake_with_stage(root: &Path) -> (io::Result<()>, Option<WakePipeFailureStage>) {
+    let name = match endpoint_name(root, "wake", None) {
+        Ok(name) => name,
+        Err(error) => return (Err(error), Some(WakePipeFailureStage::Name)),
+    };
+    match send_message_reply(&name, WAKE_MESSAGE, None, client_runtime) {
+        Ok(()) => (Ok(()), None),
+        Err(error) => (Err(error.error), Some(error.stage)),
+    }
+}
+
+#[cfg(all(windows, debug_assertions))]
+struct MessageError {
+    error: io::Error,
+    stage: WakePipeFailureStage,
+}
+
+#[cfg(all(windows, debug_assertions))]
+impl From<io::Error> for MessageError {
+    fn from(error: io::Error) -> Self {
+        Self {
+            error,
+            stage: WakePipeFailureStage::Infrastructure,
+        }
+    }
+}
+
+#[cfg(all(windows, not(debug_assertions)))]
+type MessageError = io::Error;
+
+#[cfg(windows)]
+fn pipe_open_error(error: io::Error) -> MessageError {
+    #[cfg(debug_assertions)]
+    {
+        MessageError {
+            error,
+            stage: WakePipeFailureStage::Open,
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        error
+    }
+}
+
+#[cfg(windows)]
+fn pipe_exchange_error(error: io::Error) -> MessageError {
+    #[cfg(debug_assertions)]
+    {
+        MessageError {
+            error,
+            stage: WakePipeFailureStage::Exchange,
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        error
+    }
+}
+
 /// Requests graceful shutdown of one registered role's exact lock lifetime.
 ///
 /// Success acknowledges delivery only. The caller must confirm actual lock/lifetime exit.
@@ -310,6 +388,24 @@ fn send_message_with_runtime(
     deadline: Option<Instant>,
     initialize: impl FnOnce() -> io::Result<tokio::runtime::Runtime> + Send + 'static,
 ) -> io::Result<()> {
+    let result = send_message_reply(name, message, deadline, initialize);
+    #[cfg(debug_assertions)]
+    {
+        result.map_err(|error| error.error)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        result
+    }
+}
+
+#[cfg(windows)]
+fn send_message_reply(
+    name: &str,
+    message: &'static [u8],
+    deadline: Option<Instant>,
+    initialize: impl FnOnce() -> io::Result<tokio::runtime::Runtime> + Send + 'static,
+) -> Result<(), MessageError> {
     ensure_deadline(deadline)?;
     let name = name.to_owned();
     ensure_deadline(deadline)?;
@@ -332,10 +428,12 @@ fn send_message_with_runtime(
                             Err(error) if error.raw_os_error() == Some(231) => {
                                 tokio::time::sleep(Duration::from_millis(5)).await;
                             }
-                            Err(error) => return Err(error),
+                            Err(error) => return Err(pipe_open_error(error)),
                         }
                     };
-                    exchange_frame(&mut stream, message, deadline).await
+                    exchange_frame(&mut stream, message, deadline)
+                        .await
+                        .map_err(pipe_exchange_error)
                 };
                 match deadline {
                     Some(deadline) => {

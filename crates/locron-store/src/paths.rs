@@ -141,15 +141,19 @@ fn platform_default() -> Result<PathBuf, StoreError> {
     }
     #[cfg(not(windows))]
     {
-        let home = env::var_os("HOME").ok_or(StoreError::StateDirectoryUnavailable)?;
         #[cfg(target_os = "macos")]
-        return Ok(PathBuf::from(home).join("Library/Application Support/locron"));
+        {
+            let home = env::var_os("HOME").ok_or(StoreError::StateDirectoryUnavailable)?;
+            Ok(PathBuf::from(home).join("Library/Application Support/locron"))
+        }
 
         #[cfg(not(target_os = "macos"))]
         {
             if let Some(path) = env::var_os("XDG_STATE_HOME").filter(|p| !p.is_empty()) {
                 Ok(PathBuf::from(path).join("locron"))
             } else {
+                // HOME is required only when the selected XDG location is unavailable.
+                let home = env::var_os("HOME").ok_or(StoreError::StateDirectoryUnavailable)?;
                 Ok(PathBuf::from(home).join(".local/state/locron"))
             }
         }
