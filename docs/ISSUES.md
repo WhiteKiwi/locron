@@ -463,3 +463,22 @@ parent plus complete tree/contribution/Docs equality. Record exact delivered sib
 PR171/main link only after that proof; unfulfilled owning Verify, hosted172, security/
 platform/install criteria stay OPEN. Prior sequential routing remains historical; Source,
 clocks/security/oracles and failed/unrun evidence are unchanged, with no acceptance now.
+
+
+## Combined-library evidence Verify gate (2026-10-06)
+
+Continue owning #172/#31/#163/#162/#146/#149 under the complete
+[WINDOWS_COMBINED_LIBRARY_EVIDENCE_2026-10-06.md](planning/WINDOWS_COMBINED_LIBRARY_EVIDENCE_2026-10-06.md).
+Root four-Docs commit, WHOLE-plan exact POST/GET ALL and ACTUAL entire committed plan/
+tails reread AFTER ALL GETs precede separate workflow-only Source. Verify whole inverse,
+protected mode/blob/physical bytes, literal facts/targets/first consumer/upload/Unix and
+both Native thread2 commands. Qualify both original consumer flows on genuinely changed
+x64 stable/ARM64 stable/x64 MSRV with distinct absent leaves and separate bounded uploads;
+record actual completion, refusals, failures, skips/unreached or unknown owners honestly.
+Original historical failures stay frozen; no hosted cause/PASS, repaired evidence or
+support/installation acceptance is inferred. Residual172/matching owners and all20
+contribution/one finalPR171/11 same-head checks/GitHub squash/remaining Verify stay open
+at their actual scope. Root alone owns staging/commits/Issues/publication/memory.
+The selected new final-source Wake/Cancel pair requires actual verified package bindings,
+literal fb8 controller/progress inverse and Root prepare review before separate execution.
+Keep old bd86 PASS/FAIL history; final product failure is not CI-only and blocks merge.

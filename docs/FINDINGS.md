@@ -6261,3 +6261,28 @@ allow_merge_commit=false/rebase=false/squash=true is observed configuration, not
 All12 owning whole-plan GETs/Root after-ALL reread precede separate effects; all11 genuine
 same-final-head contexts plus Guardian/package/paired reviews remain. Verified delivered
 sibling PR closure does not close unsatisfied Issues or convert unrun/local/hosted FAILs.
+
+
+## Combined Windows library evidence absence collision (2026-10-06)
+
+At unpublished Native+A+main7635cef4, A BuildFacts has no evidence-path field; each
+Server independently binds its current executable/fullID/SHA. The producer exports
+one absent redacted-evidence path, and the A consumer requires NotFound before private
+creation, then retains completed.json. A second full-library consumer using that same
+environment therefore violates the unchanged absence contract after the first creates
+it. This is a Source-established fixture collision, not a measured hosted cause or PASS.
+Root's independent B audit found per-row fresh TempDir/captures/CREATE_NEW rather than
+a matching fixed global collision; this finding does not qualify B runtime controls.
+Select only a second absent sibling under A's admitted parent, a separate scalar export,
+second-consumer step-only evidence override and distinct independent upload. Both complete
+A/B producers precede the first full-library run. Keep facts, targets, live image/privacy
+guards, original first consumer/upload, all clocks/oracles and failed history literal.
+The complete Verify steps and exact scope are in
+[WINDOWS_COMBINED_LIBRARY_EVIDENCE_2026-10-06.md](planning/WINDOWS_COMBINED_LIBRARY_EVIDENCE_2026-10-06.md).
+GitHub's documented step-env precedence/artifact mechanics are not native acceptance.
+This narrowly supersedes only d2's no-additional-A-env/upload adaptation; one finalPR171,
+all20 contribution proof, same-head11 checks/squash and residual172/owners remain.
+After final Source publication and genuine current-head package verification, select one
+NEW same Wake/Cancel pair with fb8 controller/progress/profile checks literally preserved;
+only explicit source/archive/artifact/EXE bindings change after full Root prepare review.
+Old bd86 PASS and earlier FAIL stay unchanged; final product failure stops merge for diagnosis.

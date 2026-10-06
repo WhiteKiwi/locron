@@ -5988,3 +5988,26 @@ Sibling commits are not squash-main ancestors; close delivered PRs only through 
 contribution/PR171/main proof, retaining all remaining Verify Issues. All12 whole-plan
 POST/exact GET ALL and Root entire committed reread precede separate leases. No Source,
 Git/policy/runtime effect or repository merge-setting change occurs under this Docs lease.
+
+
+## Separate evidence leaves for combined Windows libraries (2026-10-06)
+
+Follow the whole WINDOWS_COMBINED_LIBRARY_EVIDENCE_2026-10-06.md before B Source.
+Root commits only four prefix-preserving Docs, publishes WHOLE plan/Verify to owning
+172/31/163/162/146/149, obtains exact full GET ALL, then actually rereads the entire
+committed plan/new tails AFTER ALL GETs before separate development. Future Source is
+only the Windows-foundation composition in .github/workflows/ci.yml: both complete
+original producers before first full-lib; A checks a second distinct absent sibling
+without creating/repairing it and exports LOCRON_PR144_SECOND_EVIDENCE_DIR. Keep first
+consumer/upload literal. Second B-target full-lib overrides only LOCRON_PR144_EVIDENCE_DIR
+in step env, preserving B target and both Native test-threads=2 commands; add independent
+second upload with the same original condition/action/retention/caps/no-files policy,
+distinct name/path. Facts/hashes/targets/guards/production/tests/Unix/clocks stay literal.
+Whole workflow inverse/protected bytes and genuinely changed-head rows/evidence precede
+Root disposition. No second-run retry, existing evidence removal or absence waiver.
+Only d2's no-additional-A-env/upload restriction is superseded for this collision;
+one finalPR171/all20 conservation/11 same-head gates/squash/residual172 remain unchanged.
+After Source/tree/ZIP/PE/hash verification of the final x64 package, separately prepare
+one NEW final-source pair with fb8 controller/progress/profile validator/commands/oracles/
+clocks/owners literal except explicit package bindings. Root full script/diff/inverse
+review precedes a separate one-shot lease; no current-installed substitute or retry.
