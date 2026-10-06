@@ -141,7 +141,13 @@ where
         .accept_remote(false)
         .inheritable(false)
         .nonblocking(true)
-        .instance_limit(std::num::NonZeroU8::new(2))
+        .instance_limit(std::num::NonZeroU8::new(
+            if role == "wake" && lifetime.is_none() && matches!(&action, Action::Wake(_)) {
+                3
+            } else {
+                2
+            },
+        ))
         .create_duplex::<pipe_mode::Bytes>()?;
     let message = match &action {
         Action::Wake(_) => WAKE_MESSAGE,
@@ -819,5 +825,395 @@ mod tests {
         )).await.unwrap().unwrap();
         assert_eq!(result["rejected"], true, "remote pipe view connected");
         close(listener).await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn retained_authenticated_wake_probe_allows_four_handoffs_and_owned_teardown() {
+        use futures_util::FutureExt;
+        use interprocess::os::windows::named_pipe::PipeStream;
+        use std::os::windows::io::AsHandle;
+        use std::panic::AssertUnwindSafe;
+
+        #[derive(Clone, Copy)]
+        enum Phase {
+            Setup,
+            Exchange,
+            Open,
+            Clone,
+            Convert,
+            Direction,
+            Peer,
+            Frame,
+            Ack,
+            Receipt,
+            Notify,
+            Collision,
+            Listener,
+            Join,
+            Panic,
+        }
+        impl Phase {
+            fn name(self) -> &'static str {
+                match self {
+                    Self::Setup => "setup",
+                    Self::Exchange => "exchange",
+                    Self::Open => "open",
+                    Self::Clone => "clone",
+                    Self::Convert => "convert",
+                    Self::Direction => "direction",
+                    Self::Peer => "peer",
+                    Self::Frame => "frame",
+                    Self::Ack => "ack",
+                    Self::Receipt => "receipt",
+                    Self::Notify => "notify",
+                    Self::Collision => "collision",
+                    Self::Listener => "listener",
+                    Self::Join => "join",
+                    Self::Panic => "panic",
+                }
+            }
+        }
+        #[derive(Clone, Copy)]
+        enum Kind {
+            Native,
+            Expired,
+            Protocol,
+            Ownership,
+            Panic,
+            NotFound,
+            PermissionDenied,
+            WouldBlock,
+            BrokenPipe,
+            InvalidData,
+            Other,
+        }
+        impl Kind {
+            fn name(self) -> &'static str {
+                match self {
+                    Self::Native => "native",
+                    Self::Expired => "expired",
+                    Self::Protocol => "protocol",
+                    Self::Ownership => "ownership",
+                    Self::Panic => "panic",
+                    Self::NotFound => "NotFound",
+                    Self::PermissionDenied => "PermissionDenied",
+                    Self::WouldBlock => "WouldBlock",
+                    Self::BrokenPipe => "BrokenPipe",
+                    Self::InvalidData => "InvalidData",
+                    Self::Other => "other",
+                }
+            }
+        }
+        #[derive(Clone, Copy)]
+        struct Failure {
+            phase: Phase,
+            kind: Kind,
+            raw: Option<i32>,
+        }
+        impl Failure {
+            fn fixed(phase: Phase, kind: Kind) -> Self {
+                Self {
+                    phase,
+                    kind,
+                    raw: None,
+                }
+            }
+            fn io(phase: Phase, error: &io::Error) -> Self {
+                let kind = match error.kind() {
+                    io::ErrorKind::NotFound => Kind::NotFound,
+                    io::ErrorKind::PermissionDenied => Kind::PermissionDenied,
+                    io::ErrorKind::WouldBlock => Kind::WouldBlock,
+                    io::ErrorKind::BrokenPipe => Kind::BrokenPipe,
+                    io::ErrorKind::InvalidData => Kind::InvalidData,
+                    io::ErrorKind::TimedOut => Kind::Expired,
+                    _ => Kind::Other,
+                };
+                Self {
+                    phase,
+                    kind,
+                    raw: error.raw_os_error(),
+                }
+            }
+        }
+        struct Metadata(Option<PipeStream<pipe_mode::Bytes, pipe_mode::Bytes>>);
+        impl Drop for Metadata {
+            fn drop(&mut self) {
+                if let Some(pipe) = self.0.take() {
+                    pipe.evade_limbo();
+                }
+            }
+        }
+        struct Owner {
+            current: Option<NamedPipeClient>,
+            metadata: Option<Metadata>,
+            query_handle: Option<OwnedHandle>,
+            probe: Option<NamedPipeClient>,
+            collision: Option<PipeListener<pipe_mode::Bytes, pipe_mode::Bytes>>,
+            listener: Option<tokio::task::JoinHandle<()>>,
+            wake: Arc<Notify>,
+            completed: u8,
+            guard: Option<DirectoryGuard>,
+            temporary: Option<tempfile::TempDir>,
+        }
+        fn check(deadline: Instant, phase: Phase) -> Result<(), Failure> {
+            if Instant::now() >= deadline {
+                Err(Failure::fixed(phase, Kind::Expired))
+            } else {
+                Ok(())
+            }
+        }
+        fn returned<T>(
+            result: io::Result<T>,
+            deadline: Instant,
+            phase: Phase,
+        ) -> Result<T, Failure> {
+            check(deadline, phase)?;
+            result.map_err(|error| Failure::io(phase, &error))
+        }
+        fn live(owner: &Owner, deadline: Instant) -> Result<(), Failure> {
+            check(deadline, Phase::Listener)?;
+            if owner
+                .listener
+                .as_ref()
+                .is_some_and(|listener| !listener.is_finished())
+            {
+                Ok(())
+            } else {
+                Err(Failure::fixed(Phase::Listener, Kind::Ownership))
+            }
+        }
+        async fn exchange(
+            client: &mut NamedPipeClient,
+            wake: &Notify,
+            deadline: Instant,
+        ) -> Result<(), Failure> {
+            let size = u8::try_from(WAKE_MESSAGE.len())
+                .map_err(|_| Failure::fixed(Phase::Frame, Kind::Protocol))?;
+            check(deadline, Phase::Frame)?;
+            returned(client.write_u8(size).await, deadline, Phase::Frame)?;
+            check(deadline, Phase::Frame)?;
+            returned(client.write_all(WAKE_MESSAGE).await, deadline, Phase::Frame)?;
+            let mut ack = [0_u8; ACK_MESSAGE.len()];
+            check(deadline, Phase::Ack)?;
+            returned(client.read_exact(&mut ack).await, deadline, Phase::Ack)?;
+            if ack.as_slice() != ACK_MESSAGE {
+                return Err(Failure::fixed(Phase::Ack, Kind::Protocol));
+            }
+            check(deadline, Phase::Receipt)?;
+            returned(client.write_u8(0xff).await, deadline, Phase::Receipt)?;
+            check(deadline, Phase::Notify)?;
+            wake.notified().await;
+            check(deadline, Phase::Notify)
+        }
+
+        // The caught operation only borrows this finite bundle, including partially acquired
+        // native resources. It cannot unwind any client/root ahead of the listener join.
+        let mut owner = Owner {
+            current: None,
+            metadata: None,
+            query_handle: None,
+            probe: None,
+            collision: None,
+            listener: None,
+            wake: Arc::new(Notify::new()),
+            completed: 0,
+            guard: None,
+            temporary: None,
+        };
+        let caught = AssertUnwindSafe(async {
+            owner.temporary =
+                Some(tempfile::tempdir().map_err(|error| Failure::io(Phase::Setup, &error))?);
+            let root = owner
+                .temporary
+                .as_ref()
+                .ok_or(Failure::fixed(Phase::Setup, Kind::Ownership))?
+                .path()
+                .join("private");
+            owner.guard = Some(
+                DirectoryGuard::private(&root)
+                    .map_err(|error| Failure::io(Phase::Setup, &error))?,
+            );
+            let guard = owner
+                .guard
+                .as_ref()
+                .ok_or(Failure::fixed(Phase::Setup, Kind::Ownership))?;
+            let name = endpoint_name_guarded(guard, "wake", None)
+                .map_err(|error| Failure::io(Phase::Setup, &error))?;
+            let sid = locron_core::windows::current_user_sid()
+                .map_err(|error| Failure::io(Phase::Setup, &error))?;
+            let sddl =
+                U16CString::from_str(format!("O:{sid}G:{sid}D:P(A;;GA;;;SY)(A;;GA;;;{sid})"))
+                    .map_err(|_| Failure::fixed(Phase::Setup, Kind::Native))?;
+            let owner_pid = std::process::id();
+            owner.listener = Some(
+                bind_wake(&root, Arc::clone(&owner.wake))
+                    .map_err(|error| Failure::io(Phase::Setup, &error))?,
+            );
+            // Admission is complete. Neither this horizon nor an exchange horizon is renewed.
+            let whole_deadline = Instant::now() + Duration::from_secs(5);
+            for index in 0..5 {
+                let deadline = whole_deadline.min(Instant::now() + Duration::from_millis(200));
+                live(&owner, deadline)?;
+                check(deadline, Phase::Open)?;
+                let mut options = ClientOptions::new();
+                options.security_qos_flags(0x0001_0000);
+                match options.open(&name) {
+                    Ok(client) if index == 0 => owner.probe = Some(client),
+                    Ok(client) => owner.current = Some(client),
+                    Err(error) => {
+                        check(deadline, Phase::Open)?;
+                        return Err(Failure::io(Phase::Open, &error));
+                    }
+                }
+                check(deadline, Phase::Open)?;
+                if index == 0 {
+                    let probe = owner
+                        .probe
+                        .as_ref()
+                        .ok_or(Failure::fixed(Phase::Clone, Kind::Ownership))?;
+                    check(deadline, Phase::Clone)?;
+                    match probe.as_handle().try_clone_to_owned() {
+                        Ok(handle) => owner.query_handle = Some(handle),
+                        Err(error) => {
+                            check(deadline, Phase::Clone)?;
+                            return Err(Failure::io(Phase::Clone, &error));
+                        }
+                    }
+                    check(deadline, Phase::Clone)?;
+                    check(deadline, Phase::Convert)?;
+                    let handle = owner
+                        .query_handle
+                        .take()
+                        .ok_or(Failure::fixed(Phase::Convert, Kind::Ownership))?;
+                    match PipeStream::<pipe_mode::Bytes, pipe_mode::Bytes>::try_from(handle) {
+                        Ok(pipe) => owner.metadata = Some(Metadata(Some(pipe))),
+                        Err(error) => {
+                            owner.query_handle = error.source;
+                            check(deadline, Phase::Convert)?;
+                            return Err(Failure::fixed(Phase::Convert, Kind::Native));
+                        }
+                    }
+                    check(deadline, Phase::Convert)?;
+                    let metadata = owner
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.0.as_ref())
+                        .ok_or(Failure::fixed(Phase::Direction, Kind::Ownership))?;
+                    check(deadline, Phase::Direction)?;
+                    let is_client = metadata.is_client();
+                    check(deadline, Phase::Direction)?;
+                    if !is_client {
+                        return Err(Failure::fixed(Phase::Direction, Kind::Ownership));
+                    }
+                    check(deadline, Phase::Peer)?;
+                    let peer = returned(metadata.server_process_id(), deadline, Phase::Peer)?;
+                    if peer == 0 || peer != owner_pid {
+                        return Err(Failure::fixed(Phase::Peer, Kind::Ownership));
+                    }
+                }
+                let client = if index == 0 {
+                    owner.probe.as_mut()
+                } else {
+                    owner.current.as_mut()
+                }
+                .ok_or(Failure::fixed(Phase::Exchange, Kind::Ownership))?;
+                let exchanged = tokio::time::timeout_at(
+                    tokio::time::Instant::from_std(deadline),
+                    exchange(client, &owner.wake, deadline),
+                )
+                .await;
+                check(deadline, Phase::Exchange)?;
+                exchanged.map_err(|_| Failure::fixed(Phase::Exchange, Kind::Expired))??;
+                live(&owner, deadline)?;
+                check(deadline, Phase::Collision)?;
+                let descriptor = returned(
+                    SecurityDescriptor::deserialize(&sddl),
+                    deadline,
+                    Phase::Collision,
+                )?;
+                check(deadline, Phase::Collision)?;
+                // A synchronous secured first-instance probe cannot detach a second task.
+                // Even an unexpected successful construction is anchored before the post-gate.
+                match PipeListenerOptions::new()
+                    .path(Path::new(&name))
+                    .security_descriptor(Some(descriptor))
+                    .accept_remote(false)
+                    .inheritable(false)
+                    .nonblocking(true)
+                    .instance_limit(std::num::NonZeroU8::new(3))
+                    .create_duplex::<pipe_mode::Bytes>()
+                {
+                    Ok(listener) => owner.collision = Some(listener),
+                    Err(error) => {
+                        check(deadline, Phase::Collision)?;
+                        if error.kind() != io::ErrorKind::PermissionDenied
+                            || error.raw_os_error() != Some(5)
+                        {
+                            return Err(Failure::io(Phase::Collision, &error));
+                        }
+                    }
+                }
+                check(deadline, Phase::Collision)?;
+                if owner.collision.is_some() {
+                    return Err(Failure::fixed(Phase::Collision, Kind::Ownership));
+                }
+                live(&owner, deadline)?;
+                owner.completed += 1;
+                // Only this exchange's completed sender is released. Probe and metadata survive.
+                if index != 0 {
+                    drop(owner.current.take());
+                    check(deadline, Phase::Exchange)?;
+                }
+            }
+            check(whole_deadline, Phase::Exchange)
+        })
+        .catch_unwind()
+        .await;
+        let work = match caught {
+            Ok(result) => result,
+            Err(_) => Err(Failure::fixed(Phase::Panic, Kind::Panic)),
+        };
+        let joined = if let Some(listener) = owner.listener.as_mut() {
+            // Every operation outcome aborts this same handle. Timeout only borrows it.
+            listener.abort();
+            let deadline = Instant::now() + Duration::from_secs(1);
+            let returned =
+                tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), &mut *listener)
+                    .await;
+            Instant::now() < deadline && matches!(returned, Ok(Err(error)) if error.is_cancelled())
+        } else {
+            // No listener was admitted; a setup failure has no asynchronous owner to join.
+            false
+        };
+        let completed = owner.completed;
+        if joined || owner.listener.is_none() {
+            drop(owner.current.take());
+            drop(owner.metadata.take());
+            drop(owner.query_handle.take());
+            drop(owner.probe.take());
+            drop(owner.collision.take());
+            drop(owner.listener.take());
+            drop(owner.guard.take());
+            drop(owner.temporary.take());
+        } else {
+            // Uncertain completion retains this one entire finite bundle, not just its task.
+            std::mem::forget(owner);
+        }
+        let failure = match work {
+            Err(failure) => Some(failure),
+            Ok(()) if joined && completed == 5 => None,
+            Ok(()) => Some(Failure::fixed(Phase::Join, Kind::Ownership)),
+        };
+        if let Some(failure) = failure {
+            panic!(
+                "held Wake regression failed phase={} kind={} raw_present={} raw={} completed={} joined={}",
+                failure.phase.name(),
+                failure.kind.name(),
+                failure.raw.is_some(),
+                failure.raw.unwrap_or(0),
+                completed,
+                joined
+            );
+        }
     }
 }
