@@ -2092,9 +2092,18 @@ struct FreshRoot {
     state_anchor: String,
 }
 
-fn fresh_root(nonce: &str) -> Check<FreshRoot> {
+fn fresh_root(nonce: &str, #[cfg(windows)] evidence_guard: &DirectoryGuard) -> Check<FreshRoot> {
+    #[cfg(not(windows))]
     let base = fs::canonicalize(
         std::env::var_os("RUNNER_TEMP").ok_or("required hosted fixture base missing")?,
+    )
+    .map_err(|_| "hosted fixture base canonicalization failed")?;
+    #[cfg(windows)]
+    let base = fs::canonicalize(
+        evidence_guard
+            .normalized_path()
+            .parent()
+            .ok_or("guarded fixture parent missing")?,
     )
     .map_err(|_| "hosted fixture base canonicalization failed")?;
     let base_guard =
@@ -2996,7 +3005,10 @@ async fn qualification() -> Check<()> {
         DirectoryGuard::private(&evidence).map_err(|_| "initial fresh evidence privacy failed")?;
     let evidence = evidence_guard.normalized_path().to_path_buf();
     let nonce = uuid::Uuid::now_v7().to_string();
+    #[cfg(not(windows))]
     let parser_root = fresh_root(&nonce)?;
+    #[cfg(windows)]
+    let parser_root = fresh_root(&nonce, &evidence_guard)?;
     let mut completed = parser_rows(&server.path, &parser_root.state, &nonce)?;
     let parser_ownership = owned_manifest(&parser_root.parent)?;
     cleanup(parser_root, None, None, &parser_ownership)?;
@@ -3029,7 +3041,10 @@ async fn qualification() -> Check<()> {
             CONTROL_CAP,
         )?;
         let nonce = uuid::Uuid::now_v7().to_string();
+        #[cfg(not(windows))]
         let root = fresh_root(&nonce)?;
+        #[cfg(windows)]
+        let root = fresh_root(&nonce, &evidence_guard)?;
         owned_file(&root.state.join("dashboard.token.lock"), b"")?;
         let ticket = Ticket {
             schema: "locron.private.pr144/v1".to_owned(),
