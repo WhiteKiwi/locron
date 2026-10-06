@@ -6059,3 +6059,17 @@ supersedes ONLY the two historical Windows N07 PermissionDenied expectations wit
 AND same-returned-kind/platform-decoder equality. Product guards/error projection/closed239,
 CLI context/holders/positive controls/clocks/Unix and every historical document/receipt stay literal.
 Whole owning-plan GETs and Root final committed after-ALL reread precede separate Source authority.
+
+
+## B prewrite formatter STOP and local-Verify scope (2026-10-06)
+
+The sealed17-payload e11cc4b STOP proves both Source files/all362 entries/index unchanged.
+Actual API1.94 output differs only by internal wrapping of the selected decoder equality;
+CLI/1.98/metadata remain unrun. Root verified the full output inverse; no native cause is inferred.
+The amended WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md permits only equivalent whitespace
+inside those same two predicates, with normalized-expression/full-file physical+canonical inverses.
+Human authorizes isolated owned local Windows Verify under a later runtime lease, with original
+clocks/oracles and no account/task/logon/reboot/install/globalPATH/admin effects. Within that scope
+the older blanket no-local-runtime/all-Windows-green-before-merge clauses are superseded only;
+residual CI stays explicit in Issues, local x64 proves no ARM/remote pass, and old failures remain.
+All owning whole-plan GETs/final entire committed after-ALL reread precede separate Source authority.

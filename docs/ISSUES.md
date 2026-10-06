@@ -400,3 +400,17 @@ native24/paired/package/secret/main/member criterion before closure. Supersede O
 PermissionDenied expectations in these two N07 tests; raw32|33/error projection/output/clocks stay.
 Current final21P3F, CLI actual row/kind UNKNOWN and API holder/instruction/positive unobserved remain
 failed/unqualified. No native cause, cost/benefit, accepted extra errno or old-PASS transfer is implied.
+
+
+## B formatter/local-Verify four-step continuation gate (2026-10-06)
+
+Owners #27/#31/#162/#146/#149/#163+PR147 must receive the WHOLE amended
+WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md. Root commits four literal-prefix Docs,
+POST/exactGETs ALL seven and actually rereads the entire FINAL COMMITTED plan/new tails
+AFTER ALL GETs before separate Source. Verify only predicate-internal formatter whitespace,
+full normalized/canonical/physical inverses/protected362/358 and allowed statics; separate owned
+local Windows genuine held/refused/exact-release-positive/Done/cleanup under unchanged clocks;
+required other checks with residual Windows CI and actual main/member evidence retained in Issues.
+The human's narrow local-Verify/merge scope supersedes only blanket no-runtime/all-Windows-green
+requirements; no account/task/logon/reboot/install/globalPATH/admin effects or false CI/ARM pass.
+Old21P3F/CLI unknowns and unfulfilled owning Verify remain open; Root owns publication/closure.

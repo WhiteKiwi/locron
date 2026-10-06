@@ -5807,3 +5807,17 @@ name, raw5, dictionary widening, extra native query/retry/owner or production/pe
 Full canonical+physical two-file inverses/protected entries and allowed static checks precede fresh
 three-foundation genuine controls and every required native/paired/package/secret/main/member gate.
 Actual CLI row/kind and API holder/instruction/released-positive remain unproved until real evidence.
+
+
+## B predicate-only wrapping and separate runtime gate (2026-10-06)
+
+Follow the WHOLE amended WINDOWS_PRUNE_PLATFORM_ERROR_KIND_2026-10-06.md after Root commits,
+ALL seven whole-plan POST/exactGETs and actual final entire committed-plan/new-tail reread.
+Separate Source may only add the two selected expressions plus pinned1.94/1.98 required internal
+whitespace; complete normalized-expression/physical+canonical inverses preserve every other byte.
+Token/operation/neighbor/message/Unix drift stops for Docs FIRST. Preserve map_or/closed239 and
+all actual Error/holder/drop/same-pending finish/owner/cleanup/oracle/clock/profile semantics.
+Meaningful local Windows Verify needs its own isolated fixture/runtime lease and honest actual
+results; no account/task/logon/reboot/install/globalPATH/admin or host-wide security effects.
+Root may merge after that verification/required other checks with residual Windows CI retained
+in Issues; no old/local/ARM result transfer, green fabrication or unfulfilled Verify closure.
