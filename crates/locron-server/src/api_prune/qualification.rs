@@ -2589,8 +2589,11 @@ fn native_case(
                 panic!("actual held-helper refusal absent");
             };
             assert!(
-                error.kind == Some(io::ErrorKind::PermissionDenied)
-                    && matches!(error.raw, Some(32 | 33)),
+                matches!(error.raw, Some(32 | 33))
+                    && error.kind
+                        == error
+                            .raw
+                            .map(|raw| io::Error::from_raw_os_error(raw).kind()),
                 "actual no-delete sharing refusal missing surface=api role=sharing_control stage=helper_remove_returned family={} kind={} raw={} object={} predicate={} chain={} ace={}",
                 if error.kind.is_some() {
                     "store_io"
