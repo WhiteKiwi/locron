@@ -6159,6 +6159,14 @@ Follow planning/GROUP_C_PERMANENT_LOCK_PREPARATION_2026-10-05.md after all five 
 
 Select the sole private history qualification file: Unix shared constructor creates a genuinely absent private0-byte database, closes creator, runs original Store initializer, independently verifies full same-ID/private metadata and closes that guard. This applies to all7 Unix fixture instances; the two existing snapshots additionally read real journal_mode==wal without setting or reflecting it. Preserve all original reader/barrier/concurrent-write/full old+new totals,50 assertions and clocks. The [complete plan](planning/GROUP_C_PRIVATE_WAL_FIXTURE_PREPARATION_2026-10-05.md) governs Docs/ALL five owning GET/Root final review before separate-child Source, and new-head acceptance. #141 remains deferred.
 
+## Group E grouped dependency integration — 2026-10-05
+
+Follow GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md under163 after exact readback and Root entire final reread. A separate developer normally conserves all three exact contributions in only CI/Engine manifest/single-lock-package bytes, returns full inverses/protected physical/static proofs, and leaves publication/current-base17ordinary/Guardian/full paired qualification and oldest-first squash/member closure to Root. No local runtime/install/frontend generation or old-head success transfer.
+
+## Group E shared lock scope correction — 2026-10-05
+
+Before integration, reread the corrected entire GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md and this Findings/Implementation correction after exact coordination163 readback. Preserve the originally selected three Source paths/five literal replacements and every other package/manifest/feature; qualify the shared production TLS resolution with fresh whole Engine/HTTP/native gates. No application repair, dependency expansion or local runtime execution is authorized.
+
 
 ## Separate evidence leaves for combined Windows libraries (2026-10-06)
 

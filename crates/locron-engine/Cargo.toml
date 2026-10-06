@@ -37,7 +37,7 @@ widestring.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-tokio-rustls = { version = "=0.26.4", default-features = false, features = ["aws_lc_rs", "tls12"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 

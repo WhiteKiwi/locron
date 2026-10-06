@@ -6451,6 +6451,14 @@ Actual6e CI9 ordinary PASS/8 FAIL reaches the same full physical comparison on a
 
 At actual b9d all five Unix lanes pass CLI3/MCP18/HTTP1 and four private Store controls; full HTTP physical AND post-logical comparisons pass. The two Store snapshot controls fail the first -wal privacy boolean before reader/barrier. Actual mode/type/umask and sole cause are UNKNOWN. Locked primary SQLite Source and the actual distinct MCP creator positive support explicit private-main-database preparation; Root verified whole candidate/inverse and exact synthetic parents/tree. Evidence/limits: [selected plan](planning/GROUP_C_PRIVATE_WAL_FIXTURE_PREPARATION_2026-10-05.md).
 
+## Group E dependency composition findings — 2026-10-05
+
+Exact168/169/170 change only two CI action references and Engine’s dev-only TLS version/single lock package. Primary action/vendor Source and checksummed0.26.4/0.26.6 archives preserve current API/MSRV/features while documenting new checksum/minimum-age and batch-read behavior. Completed individual CI is17/0/2,15/2/2,16/1/2; actual mise/frontend and native TLS positives do not qualify a composed head or explain old Wake/Cancel failures. See GROUP_E_DEPENDENCY_INTEGRATION_2026-10-05.md.
+
+## Group E shared production TLS lock boundary — 2026-10-05
+
+The Engine tokio-rustls declaration is dev-only, but the single workspace lock package is referenced by production hyper-rustls/reqwest, and Engine reqwest uses the root rustls feature. The selected0.26.6 lock resolution therefore changes production TLS implementation while every production manifest/feature remains exact. The final Group E plan explicitly retains whole transport/runtime qualification and makes no dev-only-runtime or unchanged-production-behavior claim.
+
 
 ## Combined Windows library evidence absence collision (2026-10-06)
 
