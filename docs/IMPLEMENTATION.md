@@ -6129,6 +6129,36 @@ results; no account/task/logon/reboot/install/globalPATH/admin or host-wide secu
 Root may merge after that verification/required other checks with residual Windows CI retained
 in Issues; no old/local/ARM result transfer, green fabrication or unfulfilled Verify closure.
 
+## Group C reconciled history and MCP development
+
+Follow GROUP_C_HISTORY_MCP_INTEGRATION_2026-10-05.md under156/158/160/161/163 after exact readback and Root entire final reread. Separate development normally conserves157/159/once164-in165 plus currentmain, corrects only Source-backed owner/format/setup/oracle gaps, and adds selected meaningful original deep/public/snapshot/representation/native helper qualification. Complete independent logical tables/schema and old live deltas replace invalid all-raw-file invariance; physical observations retain their real boundaries. Existing SQL, policies, production dependencies, clocks/gates and all original tests remain. Root reviews full handback and owns fresh composed qualification/publication/squash/member completion, preserving unknown native causes and partial acceptance.
+
+## Group C shared private oracle continuation — 2026-10-05
+
+Follow GROUP_C_SHARED_TEST_ORACLE_2026-10-05.md after exact156/158/160/161/163 readback and Root entire original-plus-supplement reread. Lease adds only CLI tests/support/history_logical.rs and private includes; preserve the original independent oracle, all required real public controls, sole bare CLI test dependency, old MCP prefix and all clocks/gates. Separate developer handback and same-head hosted/native/paired acceptance precede completion.
+
+## Group C finite private test admission continuation — 2026-10-05
+
+Follow GROUP_C_PRIVATE_TEST_ADMISSION_2026-10-05.md after exact156/158/160/161/163 readback and Root entire41/14/supplement/new blocks after all GETs. Separate developer applies only13 closed literals in the four new private test files, preserving every production/SQL/Cargo/CI/native behavior, clock/assertion/owner and all12/current32/older controls. Root independently reviews full whole inverses and publishes fresh composed qualification; native/WAL cause/repair are outside this lease and require separate Docs-first evidence.
+
+## Group C genuine writer and closed oracle handoff — 2026-10-05
+
+After exact five owning GETs and Root entire41/14/18/new plan reread, separate development uses only the three selected private test files. Preserve basic13 and all production/SQL/keysets/assertions/clocks; express seven actual-writer/conditional calls while closed6 remain literal, close every guard before original writers/cleanup, precreate only Unix update fixture DB before MCP and conserve creator ID, and apply equivalent five lint sites with fixed scalar privacy. Full inverses/protected physical/static handback precede Root review and fresh qualification.
+
+
+## Group C actual fixture-preparation continuation — 2026-10-05
+
+Follow GROUP_C_ACTUAL_FIXTURE_PREPARATION_2026-10-05.md after all five owning exact GETs and Root full changed-plan review. A separate developer owns only the two existing fixture files and Server dev/local-lock edge, preserving the unchanged shared helper and product. Actual initialization precedes MCP settings access; Server query preparation preserves default policy and all original manual events while complete typed equality restricts the113-row/339-cell delta. Keep genuine root/writer guards, no-CREATE/no-follow/full-ID admission, known close order and physical-before/immediate-after/post-logical request boundaries. Reuse saved complete byte-identical old authority reviews; drift triggers full review. Root independently verifies the whole handback and fresh hosted acceptance before publication/merge/member completion.
+
+## Group C existing-lock fixture handoff — 2026-10-05
+
+Follow planning/GROUP_C_PERMANENT_LOCK_PREPARATION_2026-10-05.md after all five whole-plan exact owning GETs and Root complete final new-plan/Docs review. Separate development changes only the selected Server preparation comment/try_prove_free call. Retain the real initialized writer/root guard and original writer drop; include the actual existing lock in unchanged full logical/physical request boundaries. No API/sidecar/mask/clock/diagnostic/worker or writer-lifetime change is selected. Frozen SPEC/five previous whole plans reuse saved complete review only with exact hashes; independent clean handback, Root publication review and current-head required evidence precede merge.
+
+
+## Group C private WAL fixture preparation — 2026-10-05
+
+Select the sole private history qualification file: Unix shared constructor creates a genuinely absent private0-byte database, closes creator, runs original Store initializer, independently verifies full same-ID/private metadata and closes that guard. This applies to all7 Unix fixture instances; the two existing snapshots additionally read real journal_mode==wal without setting or reflecting it. Preserve all original reader/barrier/concurrent-write/full old+new totals,50 assertions and clocks. The [complete plan](planning/GROUP_C_PRIVATE_WAL_FIXTURE_PREPARATION_2026-10-05.md) governs Docs/ALL five owning GET/Root final review before separate-child Source, and new-head acceptance. #141 remains deferred.
+
 
 ## Separate evidence leaves for combined Windows libraries (2026-10-06)
 

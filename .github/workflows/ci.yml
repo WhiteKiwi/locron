@@ -1041,8 +1041,48 @@ jobs:
         run: cargo test -p locron --bin locron --locked -- tests::windows_prune_tests
       - name: Verify all output maintenance and recovery contracts
         run: cargo test -p locron --bin locron --locked -- maintenance::tests
+      - name: Verify all three native MCP admission helpers
+        shell: pwsh
+        run: |
+          $expected = @(
+            'mcp::arguments::tests::schema_admission_is_strict_and_does_not_reflect_supplied_values',
+            'mcp::arguments::tests::unknown_declared_shapes_and_mixed_string_arrays_refuse',
+            'mcp::arguments::tests::deadline_uses_one_checked_clock_without_an_arbitrary_wait_cap'
+          )
+          $listed = @(cargo test -p locron --bin locron --locked mcp::arguments::tests:: -- --list)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $actual = @($listed | Where-Object { $_ -match '^mcp::arguments::tests::.*: test$' } | ForEach-Object { $_ -replace ': test$', '' })
+          if ($actual.Count -ne $expected.Count) { throw 'Native MCP helper selection is incomplete' }
+          foreach ($name in $expected) {
+            if ($actual -cnotcontains $name) { throw 'Native MCP helper selector is missing' }
+          }
+          cargo test -p locron --bin locron --locked mcp::arguments::tests:: -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native MCP stdio contracts
         run: cargo test -p locron --test mcp --locked
+      - name: Verify focused native public history and active observations
+        shell: pwsh
+        run: |
+          $expectedCli = @(
+            'history_active_cli_dry_why_explain',
+            'history_active_http_deep_page_contract',
+            'history_active_http_dry_why_contract'
+          )
+          $listedCli = @(cargo test -p locron --test history_active --locked -- --list)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $actualCli = @($listedCli | Where-Object { $_ -match '^history_active_.*: test$' } | ForEach-Object { $_ -replace ': test$', '' })
+          if ($actualCli.Count -ne $expectedCli.Count) { throw 'Native public CLI/HTTP selection is incomplete' }
+          foreach ($name in $expectedCli) {
+            if ($actualCli -cnotcontains $name) { throw 'Native public CLI/HTTP selector is missing' }
+          }
+          cargo test -p locron --test history_active --locked -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $listedServer = @(cargo test -p locron-server --test history_active --locked -- --list)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $actualServer = @($listedServer | Where-Object { $_ -match '^history_active_.*: test$' } | ForEach-Object { $_ -replace ': test$', '' })
+          if ($actualServer.Count -ne 1 -or $actualServer[0] -cne 'history_active_public_lifecycle_http') { throw 'Native public lifecycle HTTP selector is missing' }
+          cargo test -p locron-server --test history_active --locked history_active_public_lifecycle_http -- --exact --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native HTTP API and stream contracts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         run: cargo test -p locron-server --test contract --locked

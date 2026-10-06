@@ -540,6 +540,24 @@ The human's narrow local-Verify/merge scope supersedes only blanket no-runtime/a
 requirements; no account/task/logon/reboot/install/globalPATH/admin effects or false CI/ARM pass.
 Old21P3F/CLI unknowns and unfulfilled owning Verify remain open; Root owns publication/closure.
 
+## Group C logical owner admission continuation — 2026-10-05
+
+Owning156/158/160/161 and coordination163 continue GROUP_C_LOGICAL_OWNER_ADMISSION_2026-10-05.md with four concrete Verify steps. All original complete fixed-ledger/native/paired/merge/member acceptance remains open; actual known failures and unknown creator/native causes do not qualify completion.
+
+
+## Group C actual preparation Verify continuation — 2026-10-05
+
+Owning156/158/160/161 and coordination163 continue GROUP_C_ACTUAL_FIXTURE_PREPARATION_2026-10-05.md with three concrete Verify steps. Two real test-preparation failures receive a four-path private correction under unchanged execution policy/old acceptance. Full independent typed/physical/owner proof and fresh same-head ordinary/native/GitGuardian/paired qualification remain required; unknown native failures leave acceptance open. Preserve grouped merge order and close only after original Verify and merge/contribution evidence.
+
+## Group C permanent lock preparation Verify continuation — 2026-10-05
+
+Owning156/158/160/161 and coordination163 continue the four concrete Verify steps in planning/GROUP_C_PERMANENT_LOCK_PREPARATION_2026-10-05.md. The latest user instruction defers141/Group A; remaining groups qualify independently and eligible groups merge first against current main. Exact whole-plan owning GET ALL and Root final complete new-plan/Docs review precede one-path separate Source. Verify whole inverse/protected files/original24 requests/assertions/clocks/drop order, then Root ordinary changed-head publication and unchanged full physical AND postlogical equality plus every required Unix/native/GitGuardian/paired gate. Existing-lock preparation does not qualify fresh absent-lock no-create behavior or unknown native/SQL/file causes; all broader acceptance and member completion remain open.
+
+
+## Group C private WAL fixture preparation — 2026-10-05
+
+Continue #156/#158/#160/#161 and coordination #163 for representative #157. The [four-step plan](planning/GROUP_C_PRIVATE_WAL_FIXTURE_PREPARATION_2026-10-05.md) contains concrete Verify for every step; all five exact whole-plan owning comment bodies and Root full after-GET review precede Source. Two actual WAL controls and unrelated native acceptance remain open. Historical b9d Unix PASS does not qualify a later head; current-head full gates/final main contributions precede member closure.
+
 
 ## Combined-library evidence Verify gate (2026-10-06)
 

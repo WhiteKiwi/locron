@@ -1982,16 +1982,7 @@ async fn run_job(
     };
     let job = store.job(name)?;
     if dry_run {
-        let active = store
-            .history(Some(name), 100)?
-            .into_iter()
-            .filter(|run| {
-                matches!(
-                    run.state.as_str(),
-                    "queued" | "starting" | "running" | "retry_wait"
-                )
-            })
-            .count();
+        let (active, _) = store.active_runs_for_job(&job.id, 0)?;
         let definition: JobDefinition = serde_json::from_str(&job.definition_json)?;
         let decision = if active == 0 {
             "eligible"
@@ -2261,6 +2252,7 @@ struct CurrentJobExplanation {
     job: Value,
     definition: JobDefinition,
     next_occurrence: Option<String>,
+    active_run_count: usize,
     runs: Vec<RunRecord>,
     daemon_running: bool,
     global_concurrency: u8,
@@ -2279,11 +2271,12 @@ fn current_job_explanation(
         .next(Timestamp::from_epoch_micros(now_us), 1)?
         .first()
         .map(ToString::to_string);
-    let runs = store.history(Some(&job.id), 1_000)?;
+    let (active_run_count, runs) = store.active_runs_for_job(&job.id, 100)?;
     Ok(CurrentJobExplanation {
         job: redacted_job(job)?,
         definition,
         next_occurrence,
+        active_run_count,
         runs,
         daemon_running: !daemon_lock_free(paths),
         global_concurrency: configured_global_concurrency(paths)?,
@@ -2385,11 +2378,7 @@ fn explain(paths: &StatePaths, name: &str, format: Format) -> Result<()> {
 
 fn explain_report(store: &Store, facts: &CurrentJobExplanation) -> Result<Value> {
     let enabled = facts.job["enabled"].as_bool().unwrap_or(false);
-    let active_runs = facts
-        .runs
-        .iter()
-        .filter(|run| active_run_state(&run.state))
-        .count();
+    let active_runs = facts.active_run_count;
     let job_id = facts.job["id"].as_str().context("job record lacks id")?;
     let (latest_run, latest_anomaly) = store.latest_and_anomalous_runs(job_id)?;
     let latest_run = latest_run

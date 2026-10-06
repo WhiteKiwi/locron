@@ -6421,6 +6421,36 @@ the older blanket no-local-runtime/all-Windows-green-before-merge clauses are su
 residual CI stays explicit in Issues, local x64 proves no ARM/remote pass, and old failures remain.
 All owning whole-plan GETs/final entire committed after-ALL reread precede separate Source authority.
 
+## Group C source-backed integration gaps (2026-10-05)
+
+Full groupC research binds all four heads/actualCI/synthetic trees and preserves the16-path projection with one literal module conflict. Native164 legitimate update retains its readonly Store through writer admission; owned JobRecord permits immediate drop(store).165 failures are queued-first lint, an incorrect cancelled/false request-state assertion, and Unix readonly coordination sidecars mistaken for logical mutation. Independent complete typed SQL/schema snapshots plus separately timed physical observations preserve strict preview/live semantics. Existing CLI Windows rusqlite serialize/limits/hooks stanza remains; bare common test-only workspace access supports portable oracle without feature/lock changes. Original156/158 require actual deep/public/two-WAL snapshot and Rust-result memory qualification; safe cfg(test) per-instance count barriers and actual field/temporary capacity observations can measure retained representation without heap/RSS or SQLite claims. See GROUP_C_HISTORY_MCP_INTEGRATION_2026-10-05.md; current159 native cause and composed results remain unknown/unmeasured.
+
+## Group C shared test-oracle placement — 2026-10-05
+
+The selected typed logical oracle is needed in two CLI test binaries. A private tests/support/history_logical.rs path include shares its pure admission/snapshot logic without a public Store/Server API or extra dependency. Real all4/all7 HTTP coverage remains in the CLI binary’s actual Server Router; Server’s public-lifecycle-only ledger is a separately identified additional regression. Original final-plan semantics and every lifetime/physical boundary remain.
+
+## Group C actual private test input/lint failures — 2026-10-05
+
+Actual composed677 Linux/Windows strict lint reports four Store private-helper errors; CLI new HTTP dry/why returns500 at its200 assertion. Actual kebab-case query key is dry-run; underscore is ignored/defaultfalse, but500 body/cell/cause/effects are unprinted UNKNOWN. Select13 literal test-only corrections across four new files with fixed error privacy/same cleanup/deadline/strict original assertions. Shared/Server analogous patterns are Source candidates, not reported diagnostics. MSRV WAL private-DACL and ARM old Cancel failures are separate unselected native research. Full scope and Verify: GROUP_C_PRIVATE_TEST_ADMISSION_2026-10-05.md.
+
+## Group C actual owner and initial DB boundaries — 2026-10-05
+
+New04e actual CI separates five lint sites, Unix before-oracle WAL-private refusal, Windows11/6 MCP including a real WAL DACL error, and separate Ack/History native expiry. Full native WAL proposal7234eead and actual existing Core/Store/locked SQLite Source select live actual-writer versus stable closed no-create raw oracle, Unix initial exclusive private DB in the existing update cell, and fixed bounded coordination scalar. Exact creators/modes/other phases/causes remain unknown; full scope/Verify is in GROUP_C_LOGICAL_OWNER_ADMISSION_2026-10-05.md.
+
+
+## Group C measured test-preparation corrections — 2026-10-05
+
+Actual ddcd run37270033159 binds the empty Unix private DB's premature settings read and the Server default Skip/per-job1 active1-versus114 preparation mismatch. Frozen product/SQL/policy remain; the selected real initializer closes before original MCP spawn. The independent existing14-table helper verifies the complete original114×17 run and six-cell manual-event relationships, then only113×3 typed cells change through bounded same-ID/no-CREATE guarded query preparation. Whole schema/settings/events/queue/other rows and writer/close ownership remain. Physical-before/immediate-after/post-logical observation is separately timed. The sole bare Server dev/local-lock rusqlite edge adds no registry/version/feature/public API. The sealed four-path proposal and full scope/Verify are in planning/GROUP_C_ACTUAL_FIXTURE_PREPARATION_2026-10-05.md; native cause and actual new-head acceptance remain unknown/unmeasured.
+
+## Group C permanent lock preparation boundary — 2026-10-05
+
+Actual6e CI9 ordinary PASS/8 FAIL reaches the same full physical comparison on all five Unix rows; changed-file/bytes and postlogical equality are unknown/not reached. Source shows the last why query can first create permanent daemon.lock inside that interval. Select the same real try_prove_free once in existing preparation before old counts/writer drop/baselines, preserving every query/assertion and the full stable map. Temporary lock/file/parent guard closes within the API; same root guard and old close/clock order remain. This does not change or qualify fresh absent-lock public why creation. The531B one-path inverse, full limits and Verify are in planning/GROUP_C_PERMANENT_LOCK_PREPARATION_2026-10-05.md.
+
+
+## Group C private WAL fixture preparation — 2026-10-05
+
+At actual b9d all five Unix lanes pass CLI3/MCP18/HTTP1 and four private Store controls; full HTTP physical AND post-logical comparisons pass. The two Store snapshot controls fail the first -wal privacy boolean before reader/barrier. Actual mode/type/umask and sole cause are UNKNOWN. Locked primary SQLite Source and the actual distinct MCP creator positive support explicit private-main-database preparation; Root verified whole candidate/inverse and exact synthetic parents/tree. Evidence/limits: [selected plan](planning/GROUP_C_PRIVATE_WAL_FIXTURE_PREPARATION_2026-10-05.md).
+
 
 ## Combined Windows library evidence absence collision (2026-10-06)
 
