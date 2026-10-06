@@ -5,9 +5,8 @@ Please read CONTRIBUTING.md first if you have not. The short version: for anythi
 fix, the planning documents change before the code does.
 -->
 
-## What this changes
-
-<!-- One or two sentences. What behavior is different after this pull request? -->
+## TL;DR
+<!-- Summarize the outcome in one or two sentences. -->
 
 <!-- Link the relevant repository issue and summarize its scope. Close an issue only when this PR fulfills all of its Verify and delivery criteria; otherwise report the remaining acceptance work. -->
 
@@ -15,11 +14,15 @@ fix, the planning documents change before the code does.
 
 <!-- The problem being solved. Link the repository issue or planning document where it was agreed. -->
 
-## Verification
+## How / What
+<!-- Describe the key changes and approach, including trade-offs worth reviewing. -->
 
+## Verification
 <!--
-How you know this works — not just that it compiles. Name the test that covers new behavior, or
-describe how you reproduced the bug before fixing it.
+List the exact commands or manual steps you actually ran and their results.
+Separate passed, failed, and unrun checks; explain why any relevant checks were not run and note limitations.
+For bug fixes, include evidence that the issue reproduces before and passes after the change, or explain what could not be verified.
+Include the tested commit and CI links when relevant.
 -->
 
 ```
@@ -41,7 +44,8 @@ describe how you reproduced the bug before fixing it.
 - [ ] Remaining acceptance is recorded before closing any partially implemented task
 - [ ] User-facing docs updated (`docs/CLI.md`, `docs/OPERATOR.md`, `README.md`) if the surface moved
 
-## Notes for the reviewer
+## Additional Context
+<!-- Optional: include UI screenshots, risks, migration or rollback steps, dependent PRs, or follow-ups only when relevant. Remove this section if not needed. -->
 
 <!--
 Anything that would be easy to miss: unhappy-path behavior on daemon crash, clock jumps or DST,
