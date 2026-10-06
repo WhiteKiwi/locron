@@ -5896,3 +5896,43 @@ Root completed four current ZIP Source/PE/provenance/coherence inspection
 at22:10:20Z and reports336 named package cases passed in total. No all-CI/main/
 release success or old PASS transfers; all20 PRs remain open, with no closure
 from this observation.
+
+
+## Native feb1 finite Wake headroom and Windows library composition — 2026-10-06
+
+The complete selected continuation is [WINDOWS_WAKE_INSTANCE_HEADROOM_AND_LIBTEST_2026-10-06.md](planning/WINDOWS_WAKE_INSTANCE_HEADROOM_AND_LIBTEST_2026-10-06.md).
+Exact feb1 ordinary37387422638/1 is FINAL16required SUCCESS/1MSRV FAILURE/2optional SKIP;
+all17 raw logs were obtained once. Original native24 matrix is23PASS/1WakeFAIL, not
+all native acceptance. Run terminal pipe_open/raw2 and daemon aggregate pipe_accept/raw231
+precede Expired/History; later27947us cleanup/root-absence/CLEANED does not waive failure.
+Actual allocation subcall/instance count/holder/scheduling/cause remain UNKNOWN.
+
+Pinned interprocess2.4.4 replenishes before accepted-peer handoff. Conditionally, one
+retained prior instance + one connected instance + one replacement needs3 slots; a safe
+duplicate handle is not another instance by definition. Select finite3 only for exact
+wake/None/ActionWake, retain2 for lifetime/Stop/other roles. Actual231 does not prove that
+inventory, and3 is not an arbitrary concurrent-client/leak guarantee. No authenticated
+peer early drop, unsafe/default DACL, reuse redesign, retry/warmup or telemetry is selected.
+
+One genuine secured Engine regression keeps an authenticated actual probe and safe PID
+metadata duplicate through four later strict frame/ACK/0xff/consumed-Notify/collision
+handoffs, then actual owned listener abort/join. Whole5s begins after private fixture/
+listener admission; every exchange takes min remaining/entry200ms. Catch operation/panic
+before unconditional separate1s cleanup; failed join retains the one listener/root/client/
+metadata bundle. Failure output is closed phase/kind/raw/Boolean only, never private errors
+or panic payload. All old69 cases remain; new Windows Engine expectation is70.
+
+The unrelated MSRV Store test refuses a successful one-attempt WAL query at the original
+5s post-gate after5,834,870us; Store95PASS/1FAIL, Engine69PASS andServer42PASS were actual.
+SQLite BUSY, security failure or host resource cause is not established. Select only the
+existing Windows three-library libtest argv suffix -- --test-threads=2 as an unmeasured
+composition hypothesis; keep all internally concurrent WAL/native controls and clocks.
+No historical default-concurrency claim or test timeout waiver. Paired portable42/16 and
+native49/21 each x64/ARM are separate current evidence, not public WinGet/install support.
+
+Only the two future Source paths and these narrow exclusions supersede prior clauses;
+SPEC/architecture/old670+200-line plans and all other Source/Docs prefixes stay exact.
+Four concrete Verify steps require Root four-Docs commit, new whole-plan exact owning
+25/27/31/35/163/171/166/167 POST/GET ALL and full final committed new-plan/tails reread
+AFTER ALL before separate development. Failed/unrun scope and all issue/member criteria
+remain open; all20 PRs are open, signing37 deferred and no release/main merge is implied.

@@ -295,3 +295,22 @@ Permit independent DIAGNOSTIC exact-c39+A d24a2a65c05ef52eea644723d8f8ea5a11c028
 Continue privacy27/CI31/distribution35/integration163 and PR171/166/167 with the complete native SID plan's three newest Verify steps. Root commits only four prefix-preserving Docs and obtains exact WHOLE-plan POST/GET ALL with original bodies/state/history retained, then actually rereads the entire final committed plan/new blocks before separate helper-only Source. Select only patch73c6e1e's six equivalent Boolean/cleanup-claim spans; full inverse/protected tree and pinned static checks precede Root review/publication and fresh required strict-lint/all-three native plus complete member/main contribution.
 
 Actual3905 ARM Wake remains Expired/History despite later same-owner Drop27331us, child-root absent and post-gated CLEANED; RootReturn is observed before its unchanged post-gate. Current x64 foundations and genuine queued/cancel positives do not waive that failure, lint failure or pending/cancelled/skipped/unrun gates. No owner-PC runtime, Source-first reconciliation, unchanged-head rerun, allowance, clock growth, production repair or ancestry-only PR/Issue closure. Wider privacy/Windows/release/account/logon/reboot scope remains at its actual acceptance.
+
+
+## Wake headroom and Windows library composition Verify — 2026-10-06
+
+Continue owning25/27/31/35/163 and PR171/166/167 under the complete new
+[WINDOWS_WAKE_INSTANCE_HEADROOM_AND_LIBTEST_2026-10-06.md](planning/WINDOWS_WAKE_INSTANCE_HEADROOM_AND_LIBTEST_2026-10-06.md).
+Its four concrete Verify steps select only Wake3/other2 plus one held-authenticated-probe
+Engine control and one Windows library harness suffix2. Root four-Docs commit, WHOLE
+new-plan POST/full exact GET ALL eight and actual entire final committed new-plan/tails
+reread AFTER ALL precede separate two-path Source. Preserve old670/200 plans by reviewed
+hash, without inventing a fresh whole-old-plan readback. No new live checklist/issue closure.
+
+Current feb1 FINAL16requiredP/1MSRVF/2optionalSKIP and native23P/1WakeF remain separate
+from the unrelated Store95P/1post-WAL5sF. No cause/PASS transfer from raw231, cleanup,
+paired metadata or narrow static proof. Keep all original selectors/clocks/owners/security,
+WAL internal concurrency, new owner-safe5s/200ms/1s test, full current-head Engine70/Core137/
+stock3/Store96/Server42/native24 and every required lint/downstream/delivery gate. Issues/
+members stay open until full Verify plus required main/publication contribution; signing37
+and Win11/two-user/account/task/logon/reboot/install/public WinGet/release remain separate.

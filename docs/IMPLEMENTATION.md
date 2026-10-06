@@ -5640,3 +5640,46 @@ changed head's actual three native rows/positives/downstreams/lint/Unix/package
 and triggered paired/snapshot gates. Current ordinary outage/timeouts remain
 failed/unqualified; no old PASS/count transfer, cap/reuse/retry/warm-up/clock/oracle
 change, diagnosis-as-PASS, member closure or installation/release acceptance.
+
+
+## Finite Wake headroom and Windows library harness continuation — 2026-10-06
+
+Follow the complete [WINDOWS_WAKE_INSTANCE_HEADROOM_AND_LIBTEST_2026-10-06.md](planning/WINDOWS_WAKE_INSTANCE_HEADROOM_AND_LIBTEST_2026-10-06.md).
+Select only ipc.rs's literal exact wake/None/ActionWake limit3 versus unchanged2 elsewhere,
+one additive genuine Windows IPC regression, and ci.yml's existing Windows Store/Engine/
+Server --lib --locked command suffix -- --test-threads=2. Protect all other Source and
+all previous plans/prefixes. This narrowly supersedes the old Wake no-cap-change/max2/
+observation-only clauses and unspecified/default composition preservation for that one
+Windows argv; no other security, API, deadline, helper or product change is selected.
+
+Keep the actual private fixture/root guard, secured bind_wake listener, original client,
+safe duplicate typed metadata/PID proof, Notify and current sequential client in one
+owner bundle outside catch_unwind. Start whole5s only after root/listener admission;
+first true probe plus four sequential strict frame/ACK/0xff/consumed Notify exchanges use
+min remaining/entry200ms with original return post-gates and live-listener/collision refusal.
+Retain the original/metadata through all exchanges and actual listener abort+join. No
+retrying old client helper, early peer drop, fabricated Notify or synchronous-native
+preemption claim. Existing public query/disposal adapters only; no dependency or unsafe API.
+
+Catch the operation outcome/panic without private payload output, unconditionally abort
+and await the same borrowed JoinHandle under separate1s cleanup, and preserve first
+operation failure. Only confirmed on-time join permits normal client/metadata/root release;
+failed/expired/unknown join retains/quarantines the one bundle for test-process lifetime.
+No unfinished blocking join, new registry, cleanup-as-success or unbounded panic rethrow.
+Failure-only output after collection/cleanup is closed phase/kind/raw/fixed Boolean;
+no Error Debug/Display, descriptor/SID/path/PID/native-query telemetry. Old tests stay literal.
+
+The one libtest suffix limits ordinary case composition to2 only in the existing Windows
+three-library command. Core137/three stock invocations, old Engine69+one=70, Store96,
+Server42, original24 native selectors, service/GUI and all required gates remain. Original
+inside-test concurrency and5s/8s/200ms/30s/25ms/5sgrace stay unchanged; Unix argv, filters,
+conditions, jobs/resources/profile/global environment stay exact. No measured resource
+cause/default composition or completed repair claim follows from static Source selection.
+
+Root must commit exactly four Docs, complete whole NEW-plan exact owning25/27/31/35/163/
+171/166/167 POST/GET ALL, then actually reread the entire final committed new plan and new
+tails AFTER ALL GETs. Existing reviewed670/200 plans remain frozen by hash, not newly
+post-read claims. The four concrete Verify steps govern separate two-path development,
+whole-file inverses/old-body protection, Root full Source review and one changed-head
+required hosted native/lint/downstream/package qualification. Root owns all commits/API/
+memory/publication; no owner-PC compiler/native/parser/test/fixture/security effect.
