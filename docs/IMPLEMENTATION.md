@@ -5780,3 +5780,15 @@ debug_assertions/overflow checks/dependencies/features/algorithms stay unchanged
 The optimization is reversible and benefit unknown, with generic monomorphization limits.
 Full file/protected inverses, permitted static checks and fresh unchanged actual
 required matrices precede any closure; Root owns publication and causal decisions.
+
+
+## B one-expression strict-lint continuation gate (2026-10-06)
+
+Follow the WHOLE amended WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md.
+After four Docs commit/ALL owning whole-plan POST-exactGET and Root actual entire
+committed-plan/new-tail reread AFTER ALL GETs, separate development may replace only
+error.kind.map(admission_kind).unwrap_or("unobserved") with
+error.kind.map_or("unobserved", admission_kind). Preserve same-error evaluation/order,
+closed message/239CRLF/strict32|33, all owners/cleanup/clocks/profile/Unix and inverses.
+Permitted static checks then fresh full required qualification precede closure;
+no warning allowance, new control or Source-first cause/performance repair.

@@ -6033,3 +6033,14 @@ The sealed fence/N07 packets and every old failure remain frozen. The complete B
 [WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md](planning/WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md)
 selects only three later Source scopes after Root whole-owning GETs/final actual reread.
 SPEC/security/owners/oracles/clocks stay frozen; no Source implementation is authorized here.
+
+
+## B actual Windows map_unwrap_or boundary (2026-10-06)
+
+B2cf84 CI37390581174/1 snapshot1 is in_progress; completed lint112034420912
+lines425-441 reports the sole reached map_unwrap_or at API2600. Select only equivalent
+map_or in the existing N07 failure suffix: same returned Error, closed labels/message
+bytes/239CRLF and original PermissionDenied AND raw32|33/owners/clocks remain.
+No native outcome, cause or performance is inferred. The complete amended
+WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md governs append-only Docs,
+ALL owning whole-plan GETs and Root actual final after-ALL reread BEFORE Source.

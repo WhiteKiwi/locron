@@ -106,3 +106,41 @@ Primary contracts: [Rust track_caller](https://doc.rust-lang.org/reference/attri
 Current official pages were read; inaccessible versioned1.94 web pages are not treated
 as independently pinned primary HTML. Real1.94/1.98 type/lint/native fit remains hosted.
 Root alone owns Issue/publication/memory. This Docs lease authorizes no Source or effects.
+
+
+## Actual Windows lint one-expression continuation (2026-10-06)
+
+Base B2cf84aceb2362a22d1934f3e5494c548f7d6e75e permits a future Docs-only descendant.
+CI37390581174/attempt1 snapshot1 remains in_progress. Completed Windows lint job
+112034420912 lines425-441 reports the sole reached clippy::map_unwrap_or at
+api_prune/qualification.rs2600 under original -D warnings. This does not qualify
+whole CI, native behavior, cause or performance; all earlier evidence stays frozen.
+
+The only later Source span is crates/locron-server/src/api_prune/qualification.rs:
+`error.kind.map(admission_kind).unwrap_or("unobserved")` becomes
+`error.kind.map_or("unobserved", admission_kind)`.
+Same returned Error/Option<ErrorKind>, single evaluation and admission_kind mapping;
+None still yields "unobserved". Preserve all labels/message bytes/239CRLF bound,
+original PermissionDenied AND raw32|33 condition, branch/projection/error order,
+owners/guards/identity/cleanup/Unix/clocks and the selected test-profile experiment.
+No warning allowance, new control/test/filter, profile/algorithm/dependency change,
+retry/repair or inferred cost/cause/native acceptance is selected.
+
+1. Root reviews/commits only four append-only Docs. **Verify:** complete original
+   plan/prefixes,361 baseline entries and357 protected modes/blobs/physical bytes
+   remain exact; Source/index unchanged. Post WHOLE amended plan to #27/#31/#162/
+   #146/#149/#163 and PR147, exact GET ALL preserving bodies/state/history, then
+   Root ACTUALLY rereads entire committed plan/new tails AFTER ALL GETs before Source.
+2. Separate developer changes only the named API expression. **Verify:** whole
+   canonical/physical inverse restores parent and every other Source/mode/byte;
+   renderer/condition/order stay exact. Standalone1.94/1.98 formatting/full locked
+   OFFLINE metadata are static only; wider drift stops for Docs FIRST. No owner-PC
+   compiler/Clippy/tests/native/parser/PowerShell/fixture effects.
+3. Root publishes fresh changed-head ordinary qualification. **Verify:** all strict
+   Windows lint commands, N07 original held-refusal/released-positive controls,
+   Linux caller and every original row/receipt/cleanup come from current full logs.
+   Current snapshot1 is not whole-run completion; unknown/refused facts stay unresolved.
+4. Root qualifies required Unix/native/paired/package/secret-scanning and actual
+   main/member contribution before closure. **Verify:** retain every original owning
+   criterion and failed/unrun gate; no old PASS transfer, oracle/clock waiver or
+   timing/cost/cause promise. The complete original108-line plan remains literal.

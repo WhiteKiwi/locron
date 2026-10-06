@@ -374,3 +374,14 @@ held-plus-released native controls/all rows/cleanup; all required/paired/package
 gates and actual main/member contribution before closure. Current d094 failed CI,
 unmeasured cost/benefit and UNKNOWN N07 facts remain open. No clock/oracle/security
 waiver, no Source-first implementation or old-PASS transfer. Root handles publication.
+
+
+## B map_or continuation four concrete Verify gates (2026-10-06)
+
+Owning #27/#31/#162/#146/#149/#163 and PR147 continue the WHOLE amended
+WINDOWS_PRUNE_CALLER_N07_TEST_PROFILE_2026-10-06.md: four append-only Docs/361 entries/
+357 protected; ALL exact whole-plan GETs and Root actual final after-ALL reread;
+separate one-expression Source/full inverses/static conservation; fresh strict
+Windows lint/N07/Linux caller/original rows plus required native/paired/package/
+secret/main/member gates before completion. Snapshot1 is in_progress; no native PASS,
+clock/oracle waiver, cost/cause claim or wider Source authority follows from lint.
