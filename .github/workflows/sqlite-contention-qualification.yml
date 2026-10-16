@@ -1,0 +1,87 @@
+name: SQLite contention qualification
+
+on:
+  push:
+    branches:
+      - verify/sqlite-contention-d631eef
+
+permissions:
+  contents: read
+
+jobs:
+  native-windows:
+    name: ${{ matrix.platform }} / Rust ${{ matrix.rust }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x86_64-pc-windows-msvc
+            os: windows-2025
+            rust: stable
+          - platform: x86_64-pc-windows-msvc
+            os: windows-2025
+            rust: 1.94.0
+          - platform: aarch64-pc-windows-msvc
+            os: windows-11-arm
+            rust: stable
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
+    steps:
+      - name: Check out fixed product source
+        id: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: d631eefd239e6e5bb8ac3bae64e547130f5e3db0
+      - name: Install native toolchain
+        id: toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: false
+      - name: Verify fixed source and native compiler
+        id: source
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.toolchain.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $actualHead = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $actualTree = git rev-parse 'HEAD^{tree}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $trackedChanges = git status --porcelain=v1 --untracked-files=no
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Output "Workflow event SHA: $env:GITHUB_SHA"
+          Write-Output "Actual source HEAD: $actualHead"
+          Write-Output "Actual source tree: $actualTree"
+          if ($actualHead -cne 'd631eefd239e6e5bb8ac3bae64e547130f5e3db0') { throw 'Unexpected source revision' }
+          if ($actualTree -cne 'c617c26cf13f28ac5b0329f7d3117bc3b0c07f34') { throw 'Unexpected source tree' }
+          if ($trackedChanges) { throw 'Tracked source checkout is not clean' }
+          $compiler = @(rustc -vV)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $compiler | ForEach-Object { Write-Output $_ }
+          $hosts = @($compiler | Where-Object { $_.StartsWith('host: ') })
+          if ($hosts.Count -ne 1 -or $hosts[0].Substring(6) -cne '${{ matrix.platform }}') { throw 'Unexpected native compiler host' }
+      - name: Run Store library contracts directly
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.toolchain.outcome == 'success' && steps.source.outcome == 'success' }}
+        run: cargo test -p locron-store --lib --locked -- --test-threads=2
+      - name: Run CLI storage contention integration
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.toolchain.outcome == 'success' && steps.source.outcome == 'success' }}
+        run: cargo test -p locron --test storage_contention --locked -- --test-threads=2
+      - name: Run API storage contention integration
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.toolchain.outcome == 'success' && steps.source.outcome == 'success' }}
+        run: cargo test -p locron-server --test storage_contention --locked -- --test-threads=2
+      - name: Run MCP storage contention integration
+        if: ${{ !cancelled() && steps.checkout.outcome == 'success' && steps.toolchain.outcome == 'success' && steps.source.outcome == 'success' }}
+        run: cargo test -p locron --test mcp --locked storage_contention::held_writer_tool_failure_keeps_text_and_adds_safe_storage_record -- --exact
+      - name: Verify tracked product source remains unchanged
+        if: ${{ !cancelled() && steps.source.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $trackedChanges = git status --porcelain=v1 --untracked-files=no
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($trackedChanges) { throw 'Selected tests changed tracked source' }
+          git diff --exit-code d631eefd239e6e5bb8ac3bae64e547130f5e3db0 --
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
