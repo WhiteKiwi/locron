@@ -6356,3 +6356,21 @@ matrix and job limits remain exact. Separate file leases and whole-plan Issues
 readback/final Root review precede source. Completion requires same-head all17
 actual CI jobs, original native controls and final upload-copy provenance; skipped
 staging or historical success is never transferred.
+
+## One complete native library context after runtime audit (2026-10-16)
+
+Continue the frozen SPEC with the
+[library deduplication amendment](planning/WINDOWS_FOUNDATION_LIBRARY_DEDUP_2026-10-16.md).
+Actual ea3 CI qualifies readiness/output/Core/library/prune gates, but35-minute
+cancellation leaves the native tail/final copies unqualified. Runtime dominates;
+small query-only build reuse cannot recover the missing MSRV allowance. Retire
+the first A-target complete-library repeat and its first evidence upload while
+preserving both original producers and the entire B-target complete command/
+fresh evidence/second upload. B's real PR144 actors still consume original AStore/
+controller full identities/hashes. The alternate A Server/Engine/full Store
+runtime image and first ledger are explicitly retired, not equated to B bytes.
+Future native evidence is three complete195 ledgers, one per original native host,
+with every unique source assertion and actual helper/ownership/cleanup invariant.
+All other tests/queries/roles, final original binding/GLOBAL cold-Core/copy verifier,
+threads/cache/matrix/35-minute limit remain literal. Source is delegated only
+after final Docs/Issues/readback/independent review; no earlier pass transfers.

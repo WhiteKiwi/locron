@@ -7098,3 +7098,52 @@ The [final-gates amendment](planning/WINDOWS_FOUNDATION_FINAL_GATES_2026-10-16.m
 records primary Git, Microsoft, tempfile and Cargo references, exact source leases,
 closed observations, controls and same-head acceptance. Whole-plan Issue readback
 and final Root review precede separate implementation; frozen SPEC stays unchanged.
+
+### Native runtime duplication after complete fixture qualification (2026-10-16)
+
+Run38886903109 at ea3d986/tree092a105, actual same-tree merge e202e1b, completes
+14 actual jobs but all3 foundations reach35minutes. All5 Unix jobs pass; Macx64
+finishes26m54. All3 Core148, six full Engine75/Server75/Store134+3ignored contexts,
+six PR144195/39cleanup/80-document ledgers, native prune88 and output91 gates pass.
+Original CLI23PASS/0testFAIL/1INCOMPLETE: MSRV capture is interrupted. New readiness/
+withheld/publication passall3. Stable/ARM pass service64(193.38/194.93s), GUI12,
+lifecycle16, dashboard4, guardedprune3, maintenance17 and MCPhelpers3; MCP18 starts
+then is interrupted. MSRV service/tail remain unrun. Final40/41 are skippedall3;
+prepare17 and emitted output PASS do not independently qualify final copies/raw
+Store/caller capture hashes or upload provenance.
+
+Actual MSRV A/B complete-library steps take457/487s, dominated by Server296.03/
+306.07s and Store140.57/114.54s runtime. Stable steps326/351s, ARM375/418s.
+Scoped no-run query reuse has only about60–71s maximum measured compile opportunity,
+insufficient for the remaining MSRV180s service plus tail. Step30 ordinary dev
+graph completes33.63/24.12s; MCP compile finishes3.49/2.78s before actual18tests
+begin. Neither is an observed compile failure or a demonstrated MCP deadlock.
+
+Separate source/actual-ledger/consumer audits compare identical three-package/lib/
+locked/thread1 commands. All3 paired195 ledgers share exact AStore-helper fullID/
+SHA/features and Acontroller fullID/SHA. B retains genuine controller39/Store26
+populated uses (13 absent), own Server tickets/current_exe/fullID/hash/admission,
+fresh evidence and39 cleanups. The own A/B Server fullIDs AND hashes differ.
+Retiring A's full-suite repeat consciously loses that alternate physical image
+context; it does not preserve byte equality, two Server contexts or six future
+ledgers. B retains every unique test assertion per original native host and actual
+original A helper consumption. Native-tail provenance does not consume either
+PR144 ledger/A binary path; both original producers and all B source roles remain.
+
+The [library deduplication amendment](planning/WINDOWS_FOUNDATION_LIBRARY_DEDUP_2026-10-16.md)
+explicitly supersedes only older two-context/six-ledger requirements. It selects
+two-step deletion, preserves the complete B run/second upload and every producer/
+oracle/clock/thread/limit, and requires whole-plan Issues/readback/final Root review
+before separate development. Independent review found no unique A-namespace test
+assertion; changed-head full native/final-copy acceptance is still required.
+
+The independently read complete current CI/CD guideline is now
+rev_fde9dd96cde270be7c997dfd18ee8b69 (newer than the earlier recorded revision),
+SHA256 f4f77ffc4112f5342e90002988bb0f36b30db89ec2b0c60e46da9ed533b1677e;
+verification selection remains rev_787d6b89e8a3bf6d544f599c96c06190,
+SHA256 b12def3cd7a129c0de23a3cc87fbc680086f59046293c2bebd991ab05a17beb1.
+Their duplicate-work/default-one-worker/core-preservation guidance supports this
+explicit repository-specific audit, not silent weakening. A third independent
+comparison finds the exact ordered287(package,test,status) entries identical in
+each actual native A/B pair (284PASS plus the same3ordinaryignored). Complete
+source locators and reports are in the amendment; no future result is inferred.

@@ -80,3 +80,14 @@ GitHub documents [step env precedence](https://docs.github.com/en/actions/refere
 and [artifact names/paths and retention](https://docs.github.com/en/actions/tutorials/store-and-share-data).
 These references establish mechanics only, not actual workflow/native PASS. Root owns
 commits/Issues/API/publication/memory; this Docs phase runs no Source/native/compiler/test.
+
+## Superseding runtime-only consolidation (2026-10-16)
+
+The [library deduplication amendment](WINDOWS_FOUNDATION_LIBRARY_DEDUP_2026-10-16.md)
+explicitly retires this plan's first A-target full-library consumer and first
+upload/two-own-Server-runtime requirement. Original A/B producers, helper facts,
+both absence checks/exports, complete B consumer and its distinct second leaf/
+upload stay literal. New acceptance requires one full B195/39cleanup/80-document
+ledger per native host (three total); it does not preserve both physical Server
+images or six ledgers. All other unique privacy/token/caller/delivery criteria
+remain open and unchanged. Whole-plan Issues/final review precede source.

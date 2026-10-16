@@ -174,3 +174,14 @@ open pending their delivery criteria; no merge/release/install/support claim.
 - [Cargo JSON artifacts](https://doc.rust-lang.org/cargo/reference/external-tools.html#json-messages)
 - [Cargo feature unification](https://doc.rust-lang.org/cargo/reference/features.html#feature-unification)
 - [Cargo cache inputs](https://doc.rust-lang.org/cargo/reference/build-cache.html#cache-internals)
+
+## Superseding duplicate full-library execution (2026-10-16)
+
+Actual ea3 run38886903109 qualifies readiness/output/library/prune gates but
+reaches35minutes on all3 native rows. The
+[library deduplication amendment](WINDOWS_FOUNDATION_LIBRARY_DEDUP_2026-10-16.md)
+supersedes ONLY this plan's two complete contexts/six-ledger acceptance: retain
+one complete B context/PR144195 per original native host and all unique controls,
+original A helpers/producers and actual final binding/copy verification. The
+alternate A runtime image/first ledger is explicitly retired; no physical or byte
+equivalence, native tail success or historical-pass transfer is claimed.
