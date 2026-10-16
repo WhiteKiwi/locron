@@ -3545,7 +3545,9 @@ fn map_store_port_error(error: StorePortError) -> CoreError {
             ))
         }
         StorePortError::Store(error) => CoreError::Persistence(error.to_string()),
-        StorePortError::Json(error) => CoreError::Persistence(error.to_string()),
+        StorePortError::Json(error) => {
+            map_store_port_error(StorePortError::Store(StoreError::Json(error)))
+        }
     }
 }
 

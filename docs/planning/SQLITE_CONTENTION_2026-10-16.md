@@ -306,3 +306,19 @@ five-second test progress deadline. A separate action-dimension control gives th
 production orphan scan a five-second fixture-only deadline and verifies exactly100
 removals, one remaining file and refusal of a101st action. No production allowance,
 platform gate or final filesystem oracle changes.
+
+### PR182 diagnostic review corrections
+
+Cooperative maintenance deferral is represented only by MaintenanceDeferred: the
+background admission and pre-BEGIN BUSY paths already produce this explicit marker.
+Raw BUSY, post-BEGIN failures and uncertain commits remain visible maintenance errors;
+never infer safe deferral from a SQLite code alone. Verify the pass error aggregation
+rejects a real raw BUSY while explicit cooperative deferral returns a partial report.
+
+The standalone StorePortError JSON conversion uses the same safe adapter diagnostic
+as StoreError JSON: serialization, adapter stage, unknown outcome, nonretryable,
+and no raw JSON message. Verify both paths with a secret-bearing decode failure,
+including Display, Debug and serialized diagnostic output. Document committed as a
+possible durable outcome when result readback fails after a successful mutation.
+Existing regression suites and strict formatting/Clippy validate this correction;
+all production deadlines, CI limits and skipped-test policies remain unchanged.

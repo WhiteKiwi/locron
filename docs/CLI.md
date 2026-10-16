@@ -491,7 +491,9 @@ the API envelope. The object contains `operation`, `stage`, `kind`, `elapsed_us`
 codes are `null` when unavailable. Durations use monotonic measured microseconds;
 they describe observed time, including OS operations that cannot be interrupted.
 `kind` distinguishes `busy`, `locked`, `io`, `sqlite`, and `admission_timeout`;
-`durable_outcome` is `not_committed` or `unknown`, and `lock_owner` is `unknown`.
+`durable_outcome` is `not_committed`, `unknown`, or `committed`, and `lock_owner`
+is `unknown`. A `committed` failure means the mutation succeeded but reading its
+result failed; inspect the durable state before retrying.
 Operation/stage/classification values are safe static labels. This object contains
 no SQL, raw adapter messages, paths, job identifiers, arguments, environment values,
 headers, or bodies.

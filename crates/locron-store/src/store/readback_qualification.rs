@@ -312,3 +312,34 @@ fn raw_core_fallback_retains_actual_busy_and_locked_codes_and_unknown_outcome() 
     let locked = connection.execute("DROP TABLE source", []).unwrap_err();
     assert_raw_adapter(locked, "locked", rusqlite::ffi::SQLITE_LOCKED);
 }
+
+#[test]
+fn both_json_adapter_paths_are_structured_and_redacted() {
+    for standalone in [false, true] {
+        let error = serde_json::from_str::<u64>("\"adapter-private-sentinel\"").unwrap_err();
+        assert!(error.to_string().contains("adapter-private-sentinel"));
+        let port_error = if standalone {
+            StorePortError::Json(error)
+        } else {
+            StorePortError::Store(StoreError::Json(error))
+        };
+        let mapped = map_store_port_error(port_error);
+        assert!(!format!("{mapped:#}").contains("adapter-private-sentinel"));
+        assert!(!format!("{mapped:#?}").contains("adapter-private-sentinel"));
+        let CoreError::PersistenceDiagnostic(diagnostic) = mapped else {
+            panic!("JSON adapter fallback discarded structured diagnostic");
+        };
+        assert_eq!(diagnostic.operation, "persistence_port");
+        assert_eq!(diagnostic.stage, "adapter");
+        assert_eq!(diagnostic.kind, "serialization");
+        assert_eq!(diagnostic.durable_outcome, "unknown");
+        assert!(!diagnostic.retryable);
+        assert_eq!(diagnostic.sqlite_primary_code, None);
+        assert_eq!(diagnostic.sqlite_extended_code, None);
+        assert!(
+            !serde_json::to_string(&diagnostic)
+                .unwrap()
+                .contains("adapter-private-sentinel")
+        );
+    }
+}

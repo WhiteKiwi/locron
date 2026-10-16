@@ -81,10 +81,12 @@ struct Pass<'a> {
 }
 
 fn is_deferred(error: &anyhow::Error) -> bool {
-    error.downcast_ref::<StoreError>().is_some_and(|error| {
-        matches!(error, StoreError::MaintenanceDeferred)
-            || matches!(error.original_error(), StoreError::Sqlite(error) if error.sqlite_error().is_some_and(|code| code.extended_code & 0xff == 5))
-    })
+    // Admission and pre-BEGIN contention already produce this explicit marker.
+    // A raw BUSY does not prove that no transaction or commit was attempted.
+    matches!(
+        error.downcast_ref::<StoreError>(),
+        Some(StoreError::MaintenanceDeferred)
+    )
 }
 
 impl<'a> Pass<'a> {
@@ -831,6 +833,40 @@ mod tests {
         let paths = StatePaths::new(temp.path().join("private"));
         let store = Store::open(paths.clone(), "test", 1).unwrap();
         (temp, paths, store)
+    }
+
+    #[test]
+    fn only_explicit_cooperative_deferral_returns_a_successful_partial_pass() {
+        let (_temp, paths, store) = open_store();
+        // Rollback-journal readers allow BEGIN and UPDATE but prevent COMMIT.
+        // Such BUSY is a persistence failure, never an admission deferral.
+        let database = paths.root.join("commit-busy.db");
+        let mut writer = rusqlite::Connection::open(&database).unwrap();
+        writer
+            .execute_batch("CREATE TABLE value (n INTEGER); INSERT INTO value VALUES(1)")
+            .unwrap();
+        writer.busy_timeout(Duration::ZERO).unwrap();
+        let reader = rusqlite::Connection::open(&database).unwrap();
+        reader.execute_batch("BEGIN; SELECT * FROM value").unwrap();
+        let transaction = writer
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        transaction.execute("UPDATE value SET n=2", []).unwrap();
+        let busy = transaction.commit().unwrap_err();
+        assert_eq!(
+            busy.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::DatabaseBusy)
+        );
+        let mut pass = Pass::new(&store, Instant::now() + MAX_ELAPSED);
+        pass.record("persist maintenance", StoreError::Sqlite(busy));
+        assert!(!pass.deferred);
+        assert!(pass.finish().is_err());
+        reader.execute_batch("ROLLBACK").unwrap();
+
+        let mut pass = Pass::new(&store, Instant::now() + MAX_ELAPSED);
+        pass.record("yield maintenance", StoreError::MaintenanceDeferred);
+        assert!(pass.deferred);
+        assert_eq!(pass.finish().unwrap(), MaintenanceReport::default());
     }
 
     fn maintain_until(
