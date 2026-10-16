@@ -6703,3 +6703,42 @@ preserve the exact remaining-file ledger and unexpected directory, and eventuall
 remove all101 within the fixed five-second test progress deadline. An isolated
 production orphan-scan control uses a five-second fixture-only deadline to prove the
 100th action completes and the101st is refused, without changing production budgets.
+
+### Local cancellation qualification requires an orphan reaper (103c)
+
+The unchanged Unix durable-cancellation fixture failed its original shared eight-second
+deadline during both concurrent full suites at103c44f and during a subsequent isolated
+run. A separate owned-state observation of the actual103c production binary (SHA256
+c695e094096acde44e2c84f017b731f9c9548b43f05a31fd1ab61f02b755a45c) captured wake
+readiness at0.041 s, running at0.080 s and successful CLI cancellation plus its durable
+request at0.090 s. By0.297 s the shell was gone and its sleep child was a zombie,
+reparented to PID1 in the original process group. PID1 is tail in this container and
+does not reap adopted children. At the original eight-second boundary (8.087 s observed)
+the run remained running and the same zombie remained visible; at10.353 s Store recorded
+cancelled. This matches the existing Unix runner's two five-second termination graces
+before its successful-KILL zombie fallback. The daemon log contained no persistence
+degradation/lock error; the durable request and process termination were prompt.
+
+The complete monotonic timeline, process-group state, durable run/attempt/event ledgers
+and daemon logs remain in the isolated local receipt
+`/workspace/scratch/locron-contention-evidence/cancel-investigation-103c-b/`.
+The earlier scratch observer setup error is preserved separately; it is not a product
+or fixture result. The extra observation after eight seconds is diagnostic evidence,
+not a relaxed acceptance deadline or a claim the failed original test passed.
+
+A root verification-only PR_SET_CHILD_SUBREAPER wrapper then ran the identical existing
+fixture, unchanged target, original eight-second deadline and original assertions. It
+passed in0.31 s while the wrapper reaped one adopted orphan. This demonstrates a local
+normal-init/reaper prerequisite, not a need to change cancellation, signals, writer
+coordination or the test's timeout. Final complete toolchain qualification uses that
+verification environment and preserves the original failed logs; native results remain
+separate evidence. No cancellation product/test source was changed for this finding.
+
+### Native Windows unused scan-path lint follow-up
+
+Windows strict-lint job116795537236 passed the earlier Store import check, then exposed
+RunScan.directory as unused: its path safety recheck and directory sync uses are Unix-only.
+Gate only that private field and its initializer with cfg(not(windows)); retain the
+Windows ReadDir/guard continuation and all runtime behavior. Linux focused strict CLI
+Clippy passes with this minimal source correction. Native Windows lint must rerun on the
+new head; this local check does not substitute for native qualification.

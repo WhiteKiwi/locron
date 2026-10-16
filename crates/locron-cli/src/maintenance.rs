@@ -38,6 +38,7 @@ struct DirectoryScan {
 }
 
 struct RunScan {
+    #[cfg(not(windows))]
     directory: PathBuf,
     run_id: String,
     entries: fs::ReadDir,
@@ -657,6 +658,7 @@ fn remove_verified_orphans(
                 };
             cursor.current = Some(RunScan {
                 entries: fs::read_dir(&directory_path)?,
+                #[cfg(not(windows))]
                 directory: directory_path,
                 run_id: run_id.to_owned(),
                 pending: None,
