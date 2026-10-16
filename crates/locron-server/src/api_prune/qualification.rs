@@ -674,6 +674,13 @@ impl Owner {
         let created = Store::open(self.paths.clone(), env!("CARGO_PKG_VERSION"), FIXED_NOW);
         let created = created.map(|store| self.store = Some(store));
         check(deadline);
+        #[cfg(windows)]
+        if let Err(error) = &created {
+            eprintln!(
+                "prune-observation {}",
+                json!({"version":1,"surface":SURFACE,"phase":"creator_refusal","storage":error.diagnostic()})
+            );
+        }
         need(created, "actual-store-creator");
         let store = self.store.as_ref().unwrap();
         let guard = need(
@@ -2535,6 +2542,81 @@ const ATTRIBUTE_SCRIPT: &str = r"$p=[string]$request.path; if ($request.action -
 const JUNCTION_SCRIPT: &str = "New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null; @{created=$true} | & $locronToJson -Compress";
 
 #[cfg(windows)]
+fn observe_n08(owner: &Owner, outcome: &Outcome, path: &Path, spec: &Spec, deadline: Instant) {
+    let ok = match outcome.body.get("ok") {
+        Some(Value::Bool(true)) => "true",
+        Some(Value::Bool(false)) => "false",
+        None => "missing",
+        _ => "other",
+    };
+    let error = match outcome.body.get("error") {
+        Some(Value::Object(_)) => "object",
+        None => "missing",
+        _ => "other",
+    };
+    let code = match outcome
+        .body
+        .get("error")
+        .and_then(|error| error.get("code"))
+    {
+        Some(Value::String(code)) if code == "state_error" => "state_error",
+        Some(Value::String(code)) if code == "invalid_request" => "invalid_request",
+        Some(Value::String(code)) if code == "durable_conflict" => "durable_conflict",
+        None => "missing",
+        _ => "other",
+    };
+    // Emit only closed response facts before any additional native observation.
+    eprintln!(
+        "prune-observation {}",
+        json!({"version":1,"surface":SURFACE,"row":"N08","phase":"response",
+            "http_status":outcome.status,"ok":ok,"error":error,"code":code})
+    );
+    let (leaf, readonly) = match checked(deadline, || fs::symlink_metadata(path)) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+            ("present_file", Some(metadata.permissions().readonly()))
+        }
+        Ok(_) => ("other", None),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => ("absent", None),
+        Err(_) => ("error", None),
+    };
+    eprintln!(
+        "prune-observation {}",
+        json!({"version":1,"surface":SURFACE,"row":"N08","phase":"leaf",
+            "leaf":leaf,"readonly":readonly})
+    );
+    // These are the existing two owned N08 candidates. Never emit their keys or data.
+    for (ordinal, selected) in spec.selected.iter().take(2).enumerate() {
+        let seed = &spec.seeds[*selected];
+        let observed = checked(deadline, || {
+            owner.connection.as_ref().unwrap().query_row(
+                "SELECT state,prune_started_at_us,pruned_at_us FROM output_artifacts WHERE run_id=?1 AND attempt_number=?2",
+                params![seed.run, seed.attempt],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?, row.get::<_, Option<i64>>(2)?)),
+            )
+        });
+        let (state, started, pruned) = match observed {
+            Ok((state, started, pruned)) => (
+                match state.as_str() {
+                    "finalized" => "finalized",
+                    "prune_pending" => "prune_pending",
+                    "pruned" => "pruned",
+                    _ => "other",
+                },
+                Some(started.is_some()),
+                Some(pruned.is_some()),
+            ),
+            Err(rusqlite::Error::QueryReturnedNoRows) => ("missing", None, None),
+            Err(_) => ("error", None, None),
+        };
+        eprintln!(
+            "prune-observation {}",
+            json!({"version":1,"surface":SURFACE,"row":"N08","phase":"state",
+                "ordinal":ordinal,"state":state,"started":started,"pruned":pruned})
+        );
+    }
+}
+
+#[cfg(windows)]
 fn native_case(
     owner: &mut Owner,
     case: Case,
@@ -2695,6 +2777,9 @@ fn native_case(
         "native-refusal",
         deadline,
     );
+    if name == "N08" {
+        observe_n08(owner, &failure, &path, spec, deadline);
+    }
     rejected(&failure, name);
     let pending = oracle(owner.connection.as_ref().unwrap(), deadline);
     expect_oracle(before, &pending, &changes(spec, 1, Change::Pending));

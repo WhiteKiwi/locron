@@ -6941,3 +6941,30 @@ preserving private guards, original clocks, native row meanings and required gat
 
 Run38857980733's three existing Windows Core steps have returned success after the
 SID fixture correction; this intermediate step result is not whole-foundation PASS.
+
+### Foundation observation and fixture qualification boundary
+
+The selected phase adds closed ownership diagnostics only in the existing toolchain
+and PR144 producer steps, a fixed query-only PowerShell helper,85 additive API-prune
+observation lines, and the Windows daemon fixture correction. The workflow inverse
+restores every original byte after removing the two inserts and added standard-library
+imports. All original jobs, commands, conditions, matrices, cache policy and artifact
+bindings remain. Unconfirmed diagnostic children retain their exact process and I/O
+owners for the CI step/interpreter lifetime; that lifetime ending is not reported as
+disposal. Query metadata never replaces retained-handle artifact admission.
+
+The daemon helper's full patch inverse restores the planning baseline, with105
+independently compared protected regions. Existing5s/8s/30s origins,200ms authenticated
+probe, negative peers, exact cleanup and post-cancel oracles remain. Startup reads
+apply only to genuine debug cases; Starting's closed classification also applies to
+the existing release fixture paths. A complete successful startup prefix followed
+by an incomplete later row remains pending and can consume the original setup budget.
+No new allowance or readiness authority follows from it.
+
+Root formatting succeeds on Rust1.94/1.98; affected Unix Clippy denies warnings and
+passes. Exact portable parser/classifier controls pass2/2 on each compiler, with
+native-owner fields omitted from the extraction; this is not a full Windows helper
+typecheck. Query-controller checks pass22 Python controls,5 portable PowerShell helper
+protocol cases and9 caller/mock-child controls. Actionlint1.7.12 passes. Linux
+PowerShell7.6.7 and mock identities do not qualify WindowsPowerShell5.1, TokenOwner,
+ACL or actual platform behavior. Native source-matched qualification remains required.
