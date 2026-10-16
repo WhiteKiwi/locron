@@ -265,3 +265,13 @@ transaction independently rechecks current settings, activity, eligibility and
 fairness. If capacity increases or unseen candidates arrive after preparation,
 those candidates may defer to the next pass under the existing prepared-set rule.
 No preliminary count reserves capacity or authorizes an attempt.
+
+### Read-only mutation refusal provenance
+
+A mutation attempted through a Store explicitly opened read-only refuses before
+writer admission or SQL execution with kind=read_only and stage=access_mode.
+Primary/extended SQLite codes are absent because SQLite did not supply an error.
+Never synthesize SQLITE_READONLY8 and describe it as an original driver code.
+The refusal stays state_error (CLI exit5/API500), nonretryable and not_committed,
+and creates no coordination file. A focused read-only regression checks this
+provenance and the unchanged no-create behavior.

@@ -6599,10 +6599,33 @@ before it can yield. Pending prune intent is checked again before filesystem wor
 A deterministic held shared-intent fixture inserted after the intent commit proves
 the file survives and the next pass resumes. Another test admits action100 and
 refuses101 independently of the elapsed dimension; an expired pass preserves pending
-work. On Linux these new controls and the existing maintenance suite passed12/12.
+work. The initial Linux maintenance controls passed12/12; adding the retained
+iterator regression brings the composed maintenance suite to13/13. A scan paused
+after completed referenced entries resumes its two guarded iterators on subsequent
+passes, crosses the slow referenced prefix, removes both later orphans, and preserves
+every referenced artifact. The daemon composition retains this bounded cursor;
+sweep completion, errors and state-path changes close/reset its scan resources.
 The separate-process Store control proves foreground intent, immediate background
 deferral and automatic OS lock recovery after a writer process is killed. The
 single-budget fixture explicitly holds advisory admission and the connection mutex
 before a real external SQLite writer; one total5s failure preserves the disabled,
 unremoved row. Short released contention records successful wait/transaction timing.
 Native Windows/macOS timing and permission behavior remain unmeasured here.
+
+
+The real COMMIT failure control enables deferred foreign keys, executes the body
+once, and receives SQLite19/787 at COMMIT. Even though transaction drop subsequently
+restores autocommit and the independent row ledger proves rollback, its diagnostic
+conservatively retains unknown outcome, retries0 and retryable=false. Separate
+controls exercise actual SQLITE_LOCKED6, invalid database26 and a real guarded writer
+path I/O failure; none becomes retryable BUSY. UUID-shaped-name removal resolves one
+existing live identity inside its transaction and cannot soft-delete two matching
+jobs. The complete writer inventory was rescanned after implementation: all23 mutation
+implementations use shared admission; every production migration begin/commit uses
+the same opening operation. Historical migration files/checksums are unchanged.
+
+On the final development snapshot, `cargo +1.98.0 clippy -p locron-store -p locron
+--bin locron --all-targets -- -D warnings`, formatting and whitespace checks passed.
+Parent-owned full workspace/MSRV qualification, artifact bindings and exact-revision
+publication evidence belong to Issues; these local findings do not assert native
+Windows/macOS or hosted-CI acceptance.

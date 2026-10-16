@@ -423,6 +423,9 @@ pub enum StoreError {
     /// Automatic maintenance yielded at an uncommitted boundary.
     #[error("automatic maintenance yielded to foreground work")]
     MaintenanceDeferred,
+    /// A mutation was refused before admission because this Store is explicitly read-only.
+    #[error("state store was opened read-only")]
+    ReadOnly,
     /// Filesystem or OS-level I/O failure.
     #[error(transparent)]
     Io(#[from] std::io::Error),

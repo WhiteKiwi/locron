@@ -292,6 +292,7 @@ impl Operation {
                 StoreError::Json(_) => facts.kind = "serialization",
                 StoreError::AdmissionTimeout => facts.kind = "admission_timeout",
                 StoreError::MaintenanceDeferred => facts.kind = "deferred",
+                StoreError::ReadOnly => facts.kind = "read_only",
                 _ => facts.kind = "state",
             }
             facts.retryable = matches!(facts.kind, "busy" | "admission_timeout")
@@ -312,7 +313,8 @@ fn observe(error: StoreError, diagnostic: PersistenceDiagnostic) -> StoreError {
         StoreError::Sqlite(_)
         | StoreError::Io(_)
         | StoreError::Json(_)
-        | StoreError::AdmissionTimeout => StoreError::Observed(ObservedFailure {
+        | StoreError::AdmissionTimeout
+        | StoreError::ReadOnly => StoreError::Observed(ObservedFailure {
             diagnostic: Box::new(diagnostic),
             cause: Box::new(error),
         }),
@@ -509,6 +511,10 @@ impl Store {
         prepare: impl FnOnce(&Connection) -> StoreResult<P>,
         action: impl FnOnce(P, &mut Connection, &Operation) -> StoreResult<T>,
     ) -> StoreResult<T> {
+        if !self.writable {
+            operation.stage("access_mode");
+            return operation.observed(Err(StoreError::ReadOnly), true);
+        }
         operation.stage("prepare");
         let mut autocommit = true;
         let prepared = (|| {
@@ -585,13 +591,8 @@ impl Store {
         action: impl FnOnce(&mut Connection, &Operation) -> StoreResult<T>,
     ) -> StoreResult<T> {
         if !self.writable {
-            return operation.observed(
-                Err(StoreError::Sqlite(rusqlite::Error::SqliteFailure(
-                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_READONLY),
-                    None,
-                ))),
-                true,
-            );
+            operation.stage("access_mode");
+            return operation.observed(Err(StoreError::ReadOnly), true);
         }
         let mut admission = match Admission::acquire(self, operation) {
             Ok(admission) => admission,
@@ -959,7 +960,20 @@ mod tests {
         let readonly = Store::open_read_only(&paths.database).unwrap();
         assert!(readonly.job("disabled").is_ok());
         let error = readonly.remove_job("disabled", 2).unwrap_err();
-        assert_eq!(error.diagnostic().unwrap().sqlite_primary_code, Some(8));
+        let facts = error.diagnostic().unwrap();
+        assert_eq!((facts.stage, facts.kind), ("access_mode", "read_only"));
+        assert_eq!(facts.sqlite_primary_code, None);
+        assert_eq!(facts.sqlite_extended_code, None);
+        assert_eq!(facts.durable_outcome, "not_committed");
+        assert!(!facts.retryable);
+        let prepared_error = readonly
+            .enqueue_manual("disabled", &uuid::Uuid::from_u128(182).to_string(), 2)
+            .unwrap_err();
+        assert_eq!(prepared_error.diagnostic().unwrap().kind, "read_only");
+        assert_eq!(
+            prepared_error.diagnostic().unwrap().sqlite_primary_code,
+            None
+        );
         assert!(!paths.root.join("writer.lock").exists());
         assert!(!paths.root.join("writer-intent.lock").exists());
         let absent = other.path().join("absent");

@@ -578,3 +578,9 @@ create/update/no-op actions; prospective collision allocations are shown as non-
 | 130 | The foreground client was interrupted; durable execution is not implicitly cancelled |
 
 Machine output additionally carries the stable error or outcome code, so callers need not infer detail from the numeric category.
+
+A mutation refused by an explicitly read-only Store reports storage.kind=`read_only`
+and stage=`access_mode`, retaining `state_error`/exit5 (API HTTP500). It has no SQLite
+code because the application refuses before SQL execution; original numeric codes
+are emitted only when supplied by the adapter. This refusal creates no writer
+coordination file and is nonretryable without selecting a writable Store.

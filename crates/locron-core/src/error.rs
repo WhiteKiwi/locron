@@ -75,6 +75,8 @@ impl std::fmt::Display for PersistenceDiagnostic {
                 "retry the request after competing work finishes"
             } else if self.kind == "locked" {
                 "a resource is locked; close conflicting readers or restart the affected client before retrying"
+            } else if self.kind == "read_only" {
+                "open a writable state store before attempting a mutation"
             } else {
                 "inspect state and storage diagnostics before retrying"
             }
