@@ -7147,3 +7147,32 @@ explicit repository-specific audit, not silent weakening. A third independent
 comparison finds the exact ordered287(package,test,status) entries identical in
 each actual native A/B pair (284PASS plus the same3ordinaryignored). Complete
 source locators and reports are in the amendment; no future result is inferred.
+
+### Preserve authoritative test-only worker phase receipts (2026-10-16)
+
+Current57e4/tree89f24 run38892570339 MSRV job116945340333 fails Core147/1 in118.07s,
+before library deduplication. Isolated phase-order child times out30.01s at shared
+wait_for_phases1824; parent1610 reports it. Which of3 waits/which phase/actual mutex
+holder or schedule are UNOBSERVED. A preceding native request completed before the
+fixture waited; missing receipt alone does not establish failed native work.
+
+Separate source review finds cfg(test) ChildPhases::observe.try_lock silently
+drops recognized fixed tokens under contention, while the exact-order reader
+takes that mutex. Stderr parsing advances without replay; stdout reply and stderr
+final-phase collection are independent. This is a demonstrated defect consistent
+with the timeout, not a historical-callsite attribution. Independent exact-source
+scratch controls on1.94/1.98 prove9/9 loss under an actually held mutex, exact9 when
+uncontended, and candidate lock retention9 then clear/5 after actual contention/
+release. They are portable synchronization proof, not native qualification.
+
+The holder/reentrancy/poison audit finds bounded data-only critical sections
+(up to16 records), no await/sleep/native I/O/reentrant observe on the success path,
+and no inverse Diagnostic-to-phase lock cycle. record_at does not emit I/O.
+Select only test-only observe.try_lock→lock, preserving poison refusal/atomic/
+fixed tokens/caps and every9/5/5 ordering, real child/PID/30s/90s/ownership assertion.
+Std lock is not a timed/preemptible OS guarantee; failed assertions may retain a
+guard until unwind. Production bytes and best-effort attach/Diagnostic stay exact.
+The [phase receipt plan](planning/WINDOWS_WORKER_PHASE_RECEIPTS_2026-10-16.md)
+requires Docs/whole Issues/readback/final review before separate implementation,
+then all3 native Core and full same-head CI/final-copy acceptance. Existing native
+tests and meaningful scratch controls suffice; no mirrored repository test is added.

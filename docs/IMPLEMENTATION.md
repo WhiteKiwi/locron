@@ -6374,3 +6374,16 @@ with every unique source assertion and actual helper/ownership/cleanup invariant
 All other tests/queries/roles, final original binding/GLOBAL cold-Core/copy verifier,
 threads/cache/matrix/35-minute limit remain literal. Source is delegated only
 after final Docs/Issues/readback/independent review; no earlier pass transfers.
+
+## Test-only fixed worker phase recorder completeness (2026-10-16)
+
+Apply the [phase receipt plan](planning/WINDOWS_WORKER_PHASE_RECEIPTS_2026-10-16.md)
+within frozen SPEC and the existing library-deduplication acceptance. A completed
+native Core fixture's30s receipt timeout exposes a source-level lossy-observer race;
+its exact historical phase/schedule is unknown. Change only cfg(test) observe's
+queue acquisition to lock after auditing all bounded holders; preserve poison/
+parser/atomic/cap and exact real-child9/5/5 phase assertions and original clocks.
+Do not change production worker code or best-effort Diagnostic/attach. Portable
+held-mutex controls show the mechanism; same-head native Core148 on all3 hosts and
+all17 CI jobs with complete final binding/copy/upload remain required. Parent
+planning/Issues/readback review precedes separate one-line development.
