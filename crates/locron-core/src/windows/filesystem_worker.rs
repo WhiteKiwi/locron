@@ -184,7 +184,7 @@ impl ChildPhases {
             b"locron-fs-phase:reply-flushed" => "child-reply-flushed",
             _ => return,
         };
-        if let Ok(mut phases) = self.0.try_lock() {
+        if let Ok(mut phases) = self.0.lock() {
             if phases.len() == 16 {
                 phases.pop_front();
             }
