@@ -6813,3 +6813,111 @@ API fixtures fail during initial Store creation before the external writer exist
 slow native migration/commit exceeds the shared five-second opening allowance.
 Those failed setup receipts remain failed; this Unix fixture correction neither
 widens that product deadline nor claims native MSRV API acceptance.
+
+### Windows SID unwind fixture and deadline research (2026-10-16)
+
+The owner-requested CI review read the complete ObsDog Primary guidelines at exact
+revisions [CI/CD optimization](https://app.obsdog.ai/wiki/?document=doc_01a100b93ce57543afc8e0e282624b26&space=spc_e642627646453ea633d4b0a6da31410c)
+`rev_2d175b8cb99580567a65ea1e06fc2615` and
+[verification selection](https://app.obsdog.ai/wiki/?document=doc_cbb83df8d13683e772063a2a6b8d356c&space=spc_e642627646453ea633d4b0a6da31410c)
+`rev_787d6b89e8a3bf6d544f599c96c06190`. Apply their single-worker diagnosis,
+small deterministic core controls, explicit phase/results and preservation of
+required failures. They do not justify broader duplicate integration runs, retries,
+timeout inflation or increased test concurrency as a repair for this failure.
+
+[Windows MSRV job116810653241](https://github.com/WhiteKiwi/locron/actions/runs/38850575751/job/116810653241)
+ran the existing Core library with test-threads=1:136 passed,1 failed. Its SID
+spawn-refusal/disconnect/unwind fixture reports the expected worker panic at
+windows.rs1066, then the classification assertion at1089 sees TimedOut instead of
+Other. The preceding test-completion and failing-test lines are about1.027 s apart;
+these buffered logs do not measure the worker's individual phases. The panic report
+includes the suggestion to enable RUST_BACKTRACE, not a generated backtrace.
+Neither hook-lock contention, symbol work, unwind latency nor scheduler delay is
+individually established as the native cause. This source file is unchanged between
+baseline a3f43fc and product536671f.
+
+The production bounded_cached_sid, cached_sid and receive_sid_reply paths recheck
+the original absolute deadline after receiving a query result or error. Therefore
+an owner failure observed after expiry correctly becomes TimedOut. The fixture's
+unconditional Other oracle assumes owner unwinding completes before its existing
+one-second deadline. Its panic! also invokes global reporting outside the identity
+contract before dropping the owner's sender and initializer permit.
+
+Rust's official [panic-hook contract](https://doc.rust-lang.org/std/panic/fn.set_hook.html)
+places reporting before the panic runtime; its
+[resume_unwind contract](https://doc.rust-lang.org/std/panic/fn.resume_unwind.html)
+starts real unwinding without invoking that hook. Version-specific
+[Rust1.94 default_hook](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/panicking.rs#L240)
+takes the capture-buffer mutex and a backtrace/output mutex even with backtraces off;
+[libtest](https://github.com/rust-lang/rust/blob/1.94.0/library/test/src/lib.rs#L127)
+propagates output capture to spawned threads. This establishes an uncontrolled
+reporting dependency, not proof that either mutex stalled on the failed host.
+[pytest's own guidance](https://docs.pytest.org/en/stable/explanation/flaky.html)
+also recommends isolating uncontrolled state and joining owned threads. As concrete
+project examples, [Tokio task-local tests](https://github.com/tokio-rs/tokio/blob/master/tokio/tests/task_local.rs#L45)
+observe polling/disposal through channels and propagate actual panics with
+resume_unwind; [Crossbeam channel tests](https://github.com/crossbeam-rs/crossbeam/blob/master/crossbeam-channel/tests/mpsc.rs#L649)
+distinguish timeout from disconnection. These illustrate state/event contracts;
+they do not establish the cause of this repository's Windows failure.
+
+A bounded independent Linux scratch probe extracts the production WorkerPermits,
+permit Drop, remaining and SID reply/cache/owner routines byte-for-byte, without
+Windows native-query dependencies. Its source receipt binds windows.rs SHA256
+`bf6918bc3e39b11d59d83b3f08f55f91b2d9a4e558e283091a5f2983ab5156d7` and probe SHA256
+`fce6877124932be97d7fedbd7392fa3d0991b2fdf7fbb9952d6c329b7cf8417d`.
+The unmodified three-mode fixture and a candidate changing only its panic expression
+both pass on Rust1.94.0 and1.98.0. With an explicitly gated slow panic hook, the same
+one-second production deadline returns TimedOut at1,000,130/1,000,243 us respectively;
+the cache stays empty and the initializer remains unavailable until the gate opens,
+the owner really unwinds, join returns Err and the permit becomes available. Under
+the same installed slow-hook condition, resume_unwind invokes that hook zero times
+and passes every original classification/join/cache/permit assertion in222/259 us.
+All eight probe invocations pass their intended controls. This reproduces a sufficient
+failure mechanism; it is not a native Windows timing reproduction or a speed claim.
+The initial scratch wrapper visibility compile error was corrected before these
+runs; it was not a product result.
+
+Full extraction/source hashes, upstream source receipts, exact compiler/binary facts,
+commands and captured outcomes are retained in
+`/workspace/scratch/locron-contention-evidence/sid-failure-research/` as
+probe-source-receipt.json, rust-source-receipt.json, project-source-receipt.json and
+probe-results.json. Local paths are handoff hints, not repository test dependencies.
+Recommended minimal correction: make only this fixture's injected owner failure use
+resume_unwind with the same static payload, preserving actual thread unwinding,
+the original one-second deadlines and every error/cache/query/permit/join assertion.
+Keep production identity/cache/deadline code unchanged. Fresh native Core execution
+on x64 stable/MSRV and ARM64 stable plus existing deadline/late-owner controls remains
+required; portable probes and Linux compilation cannot qualify Windows runtime.
+
+### CI optimization scope for the SID correction
+
+The same final-source ordinary run38850575751 completed14 jobs successfully, failed
+three Windows foundation rows and intentionally skipped two exploratory rows, with
+30m31s overall elapsed time. The MSRV Core test was already single-worker. Separate
+hosted VMs execute the native matrix rows; serializing that matrix is not evidence
+of a repair for this SID failure. Existing embedded-SQLite/private-file controls
+protect actual storage and permission contracts and are not removed merely because
+their names are integration tests. The selected optimization follows the retrieved
+guideline's earlier step: eliminate obsolete work before changing suite concurrency.
+
+Previous PR run38849681653 overlapped latest run38850575751 by4m51s. During that
+overlap the superseded run occupied four jobs for a summed875 job-wall-seconds
+(Windows MSRV287s, ARM64 290s, x64 stable283s, macOS x64 15s). This is elapsed job
+occupancy, not billed CPU time or a measured counterfactual performance improvement.
+Older d631 run38846298169 did not overlap either run. The workflow currently has
+no cancellation group. A workflow/event/PR-number group with PR-only cancellation
+can remove this class of obsolete execution; unique run IDs for non-PR events keep
+existing main/manual history and avoid cross-workflow or cross-PR cancellation.
+
+The [GitHub concurrency contract](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+documents group isolation and conditional cancellation.
+[Tokio's real CI](https://github.com/tokio-rs/tokio/blob/52ac7816230efabcae6fcc09cbe7ae630a48eddf/.github/workflows/ci.yml#L9)
+uses PR/SHA grouping; its broader matrix is an example, not this repository's policy.
+The [required-check contract](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)
+requires preserving result semantics; no job/path skip is selected here. Existing
+action references mix major tags, historical commit pins and rust-toolchain master.
+This bounded phase selects only the six master references for a major alias. Upstream
+v1 and master both resolve to683b588c487a69d01f6c6ddf40f036ff682cc2c8 at this review;
+using v1 follows the user's guideline without changing that observed implementation
+or the pinned compiler inputs. Repository Actions-permission inspection returned403;
+no permission or branch-protection change is selected or assumed.

@@ -687,3 +687,15 @@ revision checks, cancellation, crash durability, private-state protections, rete
 policy and non-mutating/read-only behavior remain required. Advisory coordination cannot
 control external writers or promise strict FIFO fairness. Qualification uses isolated
 owned state; production jobs, installed binaries and services are outside this change.
+
+## Windows identity failure and deadline clarification (2026-10-16)
+
+A Windows identity request whose existing deadline has elapsed reports a timeout,
+including when its initializer fails concurrently. An on-time initializer refusal,
+disconnect or unwind reports its corresponding failure without publishing a verified
+identity. Unfinished initialization retains its admission until its owned work and
+native resources are disposed; observing a failure must not admit replacement work
+early. Qualification distinguishes these failure conditions while retaining the
+original product deadlines, privacy boundaries and supported-platform requirements.
+CI reliability corrections must preserve these behaviors and report required failures
+truthfully.

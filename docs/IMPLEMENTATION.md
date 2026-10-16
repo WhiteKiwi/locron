@@ -6229,3 +6229,22 @@ between bounded passes. Two guarded directory iterators at most preserve scan pr
 without a schema change, growing queue or observer mutation; current file protection
 is rechecked per entry. This prevents repeated-prefix starvation under the elapsed
 budget and precedes the separate composition/maintenance implementation.
+
+## Windows SID fixture and obsolete PR CI correction (2026-10-16)
+
+Continue owning #172 and parent #31 using
+[the reviewed four-step plan](planning/WINDOWS_SID_CI_RELIABILITY_2026-10-16.md).
+The SPEC identity paragraph clarifies the already implemented deadline/error/cache
+contract; it introduces no product timeout or platform-support change. FINDINGS
+records the actual native failure, primary Rust/project references and controlled
+portable contrast. A fixture-only hookless unwind retains the real worker, original
+one-second deadline and all original failure/cache/permit/join assertions.
+
+CI retains every current job, command, result, artifact binding and required check.
+Only obsolete pull-request executions share a cancellation group; workflow/event/PR
+identity separates their owners, while main and manual executions use unique run IDs.
+The existing single-worker Core command stays unchanged. The verified rust-toolchain
+major alias replaces master without changing its current upstream commit or selected
+Rust versions. No new preflight, retry, suite filtering, cache movement, broad matrix
+serialization or manual/nightly workflow is introduced. Exact-source native Core
+results qualify this correction separately from the remaining foundation failures.
