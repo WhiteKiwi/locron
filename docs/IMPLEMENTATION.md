@@ -6332,3 +6332,27 @@ collision controls without a new selector. Exact historical raw32 holder remains
 unknown. Separate leased developers implement only these three fixture files after
 whole-plan Issues readback/final Root review. Same-head complete native libraries,
 prune/PR144/tail provenance and all other CI gates remain required.
+
+## Complete checksum, readiness and receiver-budget gates (2026-10-16)
+
+Continue the frozen SPEC through the
+[final-gates amendment](planning/WINDOWS_FOUNDATION_FINAL_GATES_2026-10-16.md).
+Current105dcaf qualifies the N06/progress corrections on all3 rows, but actual
+Engine checksums, ARM pre-query readiness and macOS x64 receiver completion leave
+the whole CI unqualified. Pin only the fixed Engine ledger's LF input, preserving
+its blob/hash/checks. Extract the existing negative-peer ready loop and narrowly
+continue only timely actual open32 under the original live child/Control/pause;
+all read/other-open/bad-byte errors retain refusal. Existing publication selection
+adds real release/persistent32 controls with separately labelled closed facts.
+A shortened isolated negative gate retains the same entered and never poisons or
+extends main admission, query, ownership or cleanup clocks. This explicitly amends
+the previous fixture plan's no-reader-retry rule for this read-only setup only.
+
+The shared Unix receiver selects Server via workspace/all-targets no-run CargoJSON,
+reusing the graph already fully tested. It retains the original locked build,
+unique package/lib/test-profile selection, native/identity/hash/source/binding
+checks and complete actual API/CLI oracles. Windows receiver, producers, cache,
+matrix and job limits remain exact. Separate file leases and whole-plan Issues
+readback/final Root review precede source. Completion requires same-head all17
+actual CI jobs, original native controls and final upload-copy provenance; skipped
+staging or historical success is never transferred.

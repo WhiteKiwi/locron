@@ -161,3 +161,16 @@ claim is authorized by this fixture correction. Old evidence stays tied to its h
 - [Microsoft path formats and legacy limits](https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats)
 - [Rust Windows read_link](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs#L723-L770)
 - [Windows file sharing rules](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+
+## Completed qualification and subsequent narrow exception
+
+Run38880152406 on105dcaf qualifies all6 libraries/PR144 ledgers and all3 complete
+API+CLI prune88, including actual N06 same-object/pending/canary/cleanup. Genuine
+cancel/progress/publication/output-capture pass all3. Whole CI remains unqualified:
+Engine frozen-ledger refuses all3 before tests, ARM withheld-return fails at
+ReadyOpen32 before its controlled query, and macOS x64 receiver reaches30minutes.
+The [final-gates amendment](WINDOWS_FOUNDATION_FINAL_GATES_2026-10-16.md) selects
+LF input conformance, narrowly bounded read-only negative-peer ReadyOpen32 polling
+and reuse of the tested Unix workspace graph. ONLY that setup polling supersedes
+this plan's no-reader-retry rule, after its own full Issues/readback/Root review.
+Progress/product readers, publication no-clobber, original oracles and clocks stay.

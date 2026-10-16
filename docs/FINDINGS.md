@@ -7056,3 +7056,45 @@ The [fixture publication amendment](planning/WINDOWS_FOUNDATION_FIXTURE_PUBLICAT
 records complete primary references, strict controls, ownership/error limits,
 source leases and same-head native acceptance. No source implementation precedes
 whole-plan Issues readback and Root final review; no retry or deadline growth.
+
+### Final checksum, readiness and receiver budget boundaries (2026-10-16)
+
+Actual105dcaf/tree973c run38880152406 concludes CANCELLED:13 other jobs pass,
+3 foundations fail and macOS x64 reaches its original30-minute limit. All3 Core148,
+all6 Engine75/Server75/Store134+3ignored contexts, all6 PR144195/39cleanup ledgers
+and all3 complete prune88(API45+CLI43) receivers pass. Actual N06 objects bind
+canonical/fullID with original pending/canary/cleanup intact. Cancel/publication/
+output capture pass all3; original CLI23/24 pass. Service64 passes192.57/192.92/
+194.54s. Final native upload/copy steps are skipped and remain unqualified.
+
+All3 actual Engine failures are frozen-ledger/ValueError BEFORE any output tests.
+The exact Git ledger matches the fixed LF checksum; current unspecified attributes
+allow a locally reproduced Git autocrlf LF-to-CRLF transform that changes raw SHA
+while preserving JSON. Actual native hash/endings remain unobserved. Pinning only
+this ledger to LF, like the existing GroupB ledger, preserves the exact checksum
+and all original oracles; normalization or alternate hashes are rejected.
+
+ARM withheld-return fails Setup0.89s at actual ReadyOpen/raw32 before its controlled
+return gate; holder/lower syscall remains unknown. Its producer already stages,
+closes and publishes without overwrite. Microsoft's rename explanation demonstrates
+name visibility before MoveFileEx closes its DELETE handle; pinned tempfile uses
+that path. This mechanism supports bounded read-only readiness observation, not a
+historical holder claim. Separate review selects ONLY timely negative-peer ReadyOpen32
+continuation under original live-child/Control/5ms/30s checks. Read errors, other
+open errors and bad bytes still refuse. Real held-handle controls must observe32
+before release, later read exact readiness/fullID, and prove persistent contention
+expires under an isolated shortened gate without poisoning the original Control.
+
+The actual bounded macOS prune ZIP contains API44/FI07/1PASS80.09s and CLI29/42
+completed keys before cancellation; SEL03 is merely first unfinished. Server build
+167s rebuilt64 artifacts and selected a different executable from the completed
+full-workspace Server. Current producer359/330s and receiver/runtime costs exceed
+old ed37's225/236s,116s,API52.52s/CLI100.43s. Select one shared Unix receiver argv
+change to workspace/all-targets no-run CargoJSON, matching the already tested
+dependency graph. Preserve package/profile/native/source/binding/conservation and
+all driver/key/status checks. No fresh gate, guaranteed saving or timeout growth.
+
+The [final-gates amendment](planning/WINDOWS_FOUNDATION_FINAL_GATES_2026-10-16.md)
+records primary Git, Microsoft, tempfile and Cargo references, exact source leases,
+closed observations, controls and same-head acceptance. Whole-plan Issue readback
+and final Root review precede separate implementation; frozen SPEC stays unchanged.
