@@ -343,3 +343,12 @@ input is unused; the paired-manifest workflow explicitly requests Python3.14.
 3. Parent publishes and delivers the combined PR182, then records dependency PR
    supersession. **Verify:** all required combined-head checks pass and the squash
    merge contains every reviewed dependency change before closing sibling PRs.
+
+### Combined-head Rustls advisory correction
+
+Combined CI run38915979380, audit job117023435871, failed cargo-deny advisories
+on rustls0.23.45: RUSTSEC-2026-0346,0347,0348,0349 require at least0.23.46.
+Update only the Rustls lockfile resolution to0.23.46 and its checksum, retaining
+the existing advisory policy and full CI matrix. Verify the minimal lock delta,
+HTTP/TLS engine regressions and strict workspace Clippy; a fresh combined-head
+advisory check must pass before delivery. The previous failed audit remains failed.
