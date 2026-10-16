@@ -8200,6 +8200,30 @@ fn native_cli_output_target() {
     }
 }
 
+fn publish_progress_writer(
+    stage: GuardedFile,
+    destination: &Path,
+    control: &Control,
+) -> Result<(GuardedFile, DirectoryGuard), Code> {
+    let original =
+        peer_operation(control, || file_identity(&stage))?.map_err(|_| Code::Progress)?;
+    let (stage, parent) = close_peer_stage(stage, control)?;
+    persist_peer_stage(stage, destination, control)?.map_err(|_| Code::Progress)?;
+    let writer = peer_operation(control, || {
+        locron_core::filesystem::open_private(
+            destination,
+            std::fs::OpenOptions::new().read(true).write(true),
+        )
+    })?
+    .map_err(|_| Code::Progress)?;
+    let published =
+        peer_operation(control, || file_identity(&writer))?.map_err(|_| Code::Progress)?;
+    if published != original {
+        return Err(Code::Progress);
+    }
+    Ok((writer, parent))
+}
+
 #[test]
 fn native_cancel_target() {
     let Some(role) = std::env::var_os("WINDOWS_CLI_CANCEL_ROLE") else {
@@ -8218,9 +8242,10 @@ fn native_cancel_target() {
         control.check(deadline)?;
         let guard = guarded.map_err(|_| Code::Progress)?;
         control.check(deadline)?;
-        let opened = create_private_new(&path);
+        let opened = create_private_new(&parent.join("cancel-progress-pending"));
         control.check(deadline)?;
-        let mut writer = opened.map_err(|_| Code::Progress)?;
+        let stage = opened.map_err(|_| Code::Progress)?;
+        let (mut writer, stage_parent) = publish_progress_writer(stage, &path, &control)?;
         for counter in 0_u64..1201 {
             if Instant::now() >= deadline {
                 break;
@@ -8238,6 +8263,7 @@ fn native_cancel_target() {
             );
         }
         drop(writer);
+        drop(stage_parent);
         drop(guard);
         Ok(())
     })();
@@ -8423,6 +8449,108 @@ fn peer_publication_proof(root: &Path, control: &Control) -> Result<(), Code> {
     Ok(())
 }
 
+fn progress_publication_proof(root: &Path, control: &Control) -> Result<(), Code> {
+    let pending = root.join("progress-proof-pending");
+    let destination = root.join("progress-proof-final");
+    let stage =
+        peer_operation(control, || create_private_new(&pending))?.map_err(|_| Code::Progress)?;
+    let original =
+        peer_operation(control, || file_identity(&stage))?.map_err(|_| Code::Progress)?;
+    let (file, parent) = stage.into_parts();
+    // Close the ordinary RW leaf before recreating the transient constructor's
+    // exact access/share combination. This is not the historical failed holder.
+    peer_operation(control, || drop(file))?;
+    let held = peer_operation(control, || {
+        std::fs::OpenOptions::new()
+            .access_mode(0x001f_01ff)
+            .share_mode(3)
+            .custom_flags(0x0020_0000)
+            .open(&pending)
+    })?
+    .map_err(|_| Code::Progress)?;
+    let metadata = peer_operation(control, || held.metadata())?.map_err(|_| Code::Progress)?;
+    if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
+        return Err(Code::Progress);
+    }
+    peer_final_absent(&destination, control)?;
+    let refused = peer_operation(control, || open_read_no_follow(&pending))?;
+    if refused.err().and_then(|error| error.raw_os_error()) != Some(32) {
+        return Err(Code::Progress);
+    }
+    peer_operation(control, || drop(held))?;
+    let stage = peer_operation(control, || {
+        locron_core::filesystem::open_private(
+            &pending,
+            std::fs::OpenOptions::new().read(true).write(true),
+        )
+    })?
+    .map_err(|_| Code::Progress)?;
+    let reopened =
+        peer_operation(control, || file_identity(&stage))?.map_err(|_| Code::Progress)?;
+    if reopened != original {
+        return Err(Code::Progress);
+    }
+    let (mut writer, published_parent) = publish_progress_writer(stage, &destination, control)?;
+    let published =
+        peer_operation(control, || file_identity(&writer))?.map_err(|_| Code::Progress)?;
+    if published != original {
+        return Err(Code::Progress);
+    }
+    let records = b"0000000000000000\n0000000000000001\n";
+    peer_operation(control, || writer.write_all(records))?.map_err(|_| Code::Progress)?;
+    peer_operation(control, || writer.flush())?.map_err(|_| Code::Progress)?;
+    let mut missing = false;
+    if read_progress_body(control, &destination, &mut missing)? != [0, 1] || missing {
+        return Err(Code::Progress);
+    }
+    // The independent strict reader above ran while the same-ID RW writer lived.
+    peer_operation(control, || drop(writer))?;
+    peer_operation(control, || drop((published_parent, parent)))?;
+
+    let collision_path = root.join("progress-collision");
+    let mut collision = peer_operation(control, || create_private_new(&collision_path))?
+        .map_err(|_| Code::Progress)?;
+    peer_operation(control, || collision.write_all(records))?.map_err(|_| Code::Progress)?;
+    peer_operation(control, || collision.flush())?.map_err(|_| Code::Progress)?;
+    let original =
+        peer_operation(control, || file_identity(&collision))?.map_err(|_| Code::Progress)?;
+    let (file, collision_parent) = collision.into_parts();
+    // A no-DELETE destination leaf must not mask a replacing implementation.
+    peer_operation(control, || drop(file))?;
+    let mut candidate = peer_operation(control, || {
+        create_private_new(&root.join("progress-collision-pending"))
+    })?
+    .map_err(|_| Code::Progress)?;
+    let candidate_bytes = b"0000000000000002\n";
+    peer_operation(control, || candidate.write_all(candidate_bytes))?
+        .map_err(|_| Code::Progress)?;
+    peer_operation(control, || candidate.flush())?.map_err(|_| Code::Progress)?;
+    let (candidate, candidate_parent) = close_peer_stage(candidate, control)?;
+    let Err(refusal) = persist_peer_stage(candidate, &collision_path, control)? else {
+        return Err(Code::Progress);
+    };
+    if refusal.error.kind() != io::ErrorKind::AlreadyExists {
+        return Err(Code::Progress);
+    }
+    let reopened = peer_operation(control, || open_read_no_follow(&collision_path))?
+        .map_err(|_| Code::Progress)?;
+    let unchanged =
+        peer_operation(control, || file_identity(&reopened))?.map_err(|_| Code::Progress)?;
+    if unchanged != original {
+        return Err(Code::Progress);
+    }
+    peer_operation(control, || drop(reopened))?;
+    if peer_file_bytes(&collision_path, 35, control)? != records
+        || peer_file_bytes(refusal.path.as_ref(), 18, control)? != candidate_bytes
+    {
+        return Err(Code::Progress);
+    }
+    // Keep the actual disabled-cleanup error and both parents through readback.
+    peer_operation(control, || drop(refusal))?;
+    peer_operation(control, || drop((candidate_parent, collision_parent)))?;
+    Ok(())
+}
+
 fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
     let deadline = control.deadline;
     control.check(deadline)?;
@@ -8452,6 +8580,7 @@ fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
         control.check(deadline)?;
         if matches!(mode, PeerMode::PublicationProof) {
             peer_publication_proof(&root, control)?;
+            progress_publication_proof(&root, control)?;
         }
         let final_ready = root.join("peer-ready");
         let created = create_private_new(&root.join("peer-ready-pending"));

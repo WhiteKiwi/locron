@@ -2542,6 +2542,201 @@ const ATTRIBUTE_SCRIPT: &str = r"$p=[string]$request.path; if ($request.action -
 const JUNCTION_SCRIPT: &str = "New-Item -ItemType Junction -Path ([string]$request.link) -Target ([string]$request.target) | Out-Null; @{created=$true} | & $locronToJson -Compress";
 
 #[cfg(windows)]
+fn junction_creator_target(path: &Path) -> io::Result<PathBuf> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use std::path::{Component, Prefix};
+
+    let refused = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "known junction creator target representation refused",
+        )
+    };
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return Err(refused());
+    };
+    if !matches!(prefix.kind(), Prefix::VerbatimDisk(_))
+        || components.next() != Some(Component::RootDir)
+    {
+        return Err(refused());
+    }
+    let original = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    let drive = original
+        .get(4)
+        .copied()
+        .and_then(|unit| char::from_u32(u32::from(unit)))
+        .filter(char::is_ascii_alphabetic)
+        .ok_or_else(refused)?;
+    let mut ordinary = PathBuf::from(format!("{drive}:\\"));
+    for component in components {
+        let Component::Normal(value) = component else {
+            return Err(refused());
+        };
+        let name = value.to_str().ok_or_else(refused)?;
+        if name.is_empty()
+            || name.ends_with(['.', ' '])
+            || name.chars().any(|ch| {
+                ch.is_control()
+                    || matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*' | '/' | '\\')
+            })
+        {
+            return Err(refused());
+        }
+        let device = name
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(' ')
+            .to_ascii_uppercase();
+        let port = device
+            .strip_prefix("COM")
+            .or_else(|| device.strip_prefix("LPT"));
+        if matches!(
+            device.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" | "CLOCK$"
+        ) || port.is_some_and(|number| {
+            matches!(
+                number,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        }) {
+            return Err(refused());
+        }
+        ordinary.push(value);
+    }
+    if ordinary.file_name().is_none()
+        || ordinary.as_os_str().encode_wide().count() > 259
+        || !original.into_iter().eq(r"\\?\"
+            .encode_utf16()
+            .chain(ordinary.as_os_str().encode_wide()))
+    {
+        return Err(refused());
+    }
+    Ok(ordinary)
+}
+
+#[cfg(windows)]
+fn junction_creator_controls() {
+    use std::ffi::{OsStr, OsString};
+    use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
+
+    for (native, expected) in [
+        (r"\\?\C:\fixture\target", r"C:\fixture\target"),
+        (r"\\?\c:\fixture\target", r"c:\fixture\target"),
+        (
+            r"\\?\D:\윈도우 日本語\100% # $ & ' [test]\한글😀",
+            r"D:\윈도우 日本語\100% # $ & ' [test]\한글😀",
+        ),
+    ] {
+        let ordinary = junction_creator_target(Path::new(native))
+            .expect("known ordinary junction target must be accepted");
+        let exact = ordinary.as_os_str() == OsStr::new(expected);
+        assert!(exact, "junction target UTF16 component spelling changed");
+    }
+    for rejected in [
+        "",
+        "relative",
+        r"C:\fixture",
+        r"C:fixture",
+        r"\fixture",
+        r"\\server\share\fixture",
+        r"\\?\UNC\server\share\fixture",
+        r"\\.\C:\fixture",
+        r"\\?\Volume{00000000-0000-0000-0000-000000000000}\fixture",
+        r"\??\C:\fixture",
+        r"\\?\\\?\C:\fixture",
+        r"//?/C:/fixture",
+        r"\\?\C:fixture",
+        r"\\?\C:\",
+        r"\\?\C:\fixture\",
+        r"\\?\C:\fixture\\target",
+        r"\\?\C:\fixture\.\target",
+        r"\\?\C:\fixture\..\target",
+        r"\\?\C:\fixture\target.",
+        r"\\?\C:\fixture\target ",
+        r"\\?\C:\fixture\target:stream",
+        r"\\?\C:\fixture\target/other",
+        r"\\?\C:\fixture\tar<get",
+        r"\\?\C:\fixture\tar>get",
+        "\\\\?\\C:\\fixture\\tar\"get",
+        r"\\?\C:\fixture\tar|get",
+        r"\\?\C:\fixture\tar?get",
+        r"\\?\C:\fixture\tar*get",
+        "\\\\?\\C:\\fixture\\tar\0get",
+        "\\\\?\\C:\\fixture\\tar\u{1f}get",
+        "\\\\?\\C:\\fixture\\tar\u{7f}get",
+        "\\\\?\\C:\\fixture\\tar\u{85}get",
+    ] {
+        assert!(
+            junction_creator_target(Path::new(rejected)).is_err(),
+            "unsupported junction target representation was accepted"
+        );
+    }
+    for device in [
+        "CON",
+        "prn.txt",
+        "AUX",
+        "NUL.log",
+        "NUL .log",
+        "CONIN$",
+        "CONOUT$.txt",
+        "CLOCK$",
+    ] {
+        let path = PathBuf::from(format!(r"\\?\C:\fixture\{device}"));
+        assert!(
+            junction_creator_target(&path).is_err(),
+            "reserved junction target component was accepted"
+        );
+    }
+    for family in ["COM", "LPT"] {
+        for number in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³"] {
+            let path = PathBuf::from(format!(r"\\?\C:\fixture\{family}{number}.log"));
+            assert!(
+                junction_creator_target(&path).is_err(),
+                "reserved junction target port component was accepted"
+            );
+        }
+    }
+    let invalid = OsString::from_wide(&[92, 92, 63, 92, 67, 58, 92, 0xd800]);
+    assert!(
+        junction_creator_target(Path::new(&invalid)).is_err(),
+        "non-UTF8 junction target component was accepted"
+    );
+    for tail in ["😀".repeat(126) + "a", "😀".repeat(127)] {
+        let path = PathBuf::from(format!(r"\\?\C:\p\{tail}"));
+        let ordinary = junction_creator_target(&path)
+            .expect("legacy junction target length boundary must be accepted");
+        assert!(
+            matches!(ordinary.as_os_str().encode_wide().count(), 258 | 259),
+            "junction target legacy UTF16 length control changed"
+        );
+    }
+    let overlong = PathBuf::from(format!(r"\\?\C:\p\{}a", "😀".repeat(127)));
+    assert!(
+        junction_creator_target(&overlong).is_err(),
+        "overlong ordinary junction target was accepted"
+    );
+}
+
+#[cfg(windows)]
+fn junction_prefix(path: &Path) -> &'static str {
+    use std::path::{Component, Prefix};
+
+    match path.components().next() {
+        Some(Component::Prefix(prefix)) => match prefix.kind() {
+            Prefix::Disk(_) => "disk",
+            Prefix::VerbatimDisk(_) => "verbatim_disk",
+            Prefix::UNC(..) => "unc",
+            Prefix::VerbatimUNC(..) => "verbatim_unc",
+            Prefix::DeviceNS(_) => "device",
+            Prefix::Verbatim(_) => "verbatim_other",
+        },
+        _ => "none",
+    }
+}
+
+#[cfg(windows)]
 fn observe_n08(owner: &Owner, outcome: &Outcome, path: &Path, spec: &Spec, deadline: Instant) {
     let ok = match outcome.body.get("ok") {
         Some(Value::Bool(true)) => "true",
@@ -2626,6 +2821,7 @@ fn native_case(
     spec: &Spec,
     deadline: Instant,
 ) {
+    use std::os::windows::ffi::OsStrExt as _;
     use std::os::windows::fs::MetadataExt as _;
     let name = case.id();
     let path = selected_paths(owner, spec)[0].clone();
@@ -2735,10 +2931,37 @@ fn native_case(
             let target_id = root_id(&target, deadline);
             let canary_fact = fact(&canary, deadline);
             let parent_id = root_id(&owner.paths.outputs, deadline);
+            checked(deadline, junction_creator_controls);
+            let provider_target = need(
+                checked(deadline, || {
+                    junction_creator_target(
+                        owner
+                            .guards
+                            .last()
+                            .expect("known junction target guard must remain held")
+                            .normalized_path(),
+                    )
+                }),
+                "known-junction-provider-target",
+            );
+            let provider_canonical = need(
+                checked(deadline, || fs::canonicalize(&provider_target)),
+                "known-junction-provider-canonical-target",
+            );
+            let provider_path_equal = provider_canonical.as_path()
+                == owner
+                    .guards
+                    .last()
+                    .expect("known junction target guard must remain held")
+                    .normalized_path();
+            assert!(
+                provider_path_equal && root_id(&provider_target, deadline) == target_id,
+                "known junction provider target binding changed"
+            );
             let created = native_call(
                 owner,
                 JUNCTION_SCRIPT,
-                &json!({"link":path_text(&link),"target":path_text(&target)}),
+                &json!({"link":path_text(&link),"target":path_text(&provider_target)}),
                 deadline,
             );
             assert_eq!(created["created"], true);
@@ -2754,10 +2977,34 @@ fn native_case(
                 checked(deadline, || fs::read_link(&link)),
                 "actual-junction-target",
             );
-            let canonical = need(
-                checked(deadline, || fs::canonicalize(&actual)),
-                "actual-junction-canonical-target",
+            let held_target = owner
+                .guards
+                .last()
+                .expect("known junction target guard must remain held")
+                .normalized_path();
+            let doubled_verbatim_prefix = actual.as_os_str().encode_wide().eq(r"\\?\"
+                .encode_utf16()
+                .chain(held_target.as_os_str().encode_wide()));
+            eprintln!(
+                "prune-observation {}",
+                json!({"version":1,"surface":SURFACE,"row":"N06","phase":"read_link",
+                    "actual_prefix":junction_prefix(&actual),"held_prefix":junction_prefix(held_target),
+                    "provider_prefix":junction_prefix(&provider_target),
+                    "actual_absolute":actual.is_absolute(),"held_absolute":held_target.is_absolute(),
+                    "provider_absolute":provider_target.is_absolute(),"original_path_equal":actual==target,
+                    "doubled_verbatim_prefix":doubled_verbatim_prefix})
             );
+            let canonical = checked(deadline, || fs::canonicalize(&actual));
+            let (result, kind, raw) = match &canonical {
+                Ok(_) => ("ok", "none", None),
+                Err(error) => ("error", admission_kind(error.kind()), error.raw_os_error()),
+            };
+            eprintln!(
+                "prune-observation {}",
+                json!({"version":1,"surface":SURFACE,"row":"N06","phase":"canonical_query",
+                    "result":result,"kind":kind,"raw":raw})
+            );
+            let canonical = need(canonical, "actual-junction-canonical-target");
             let original_path_equal = actual == target;
             let canonical_path_equal = canonical.as_path()
                 == owner
