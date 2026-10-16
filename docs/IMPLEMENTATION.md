@@ -6261,3 +6261,25 @@ Separate development leases preserve artifact authority, full original native ro
 oracles, private-state guards and cleanup ownership. Parent Issue readback and final
 plan review precede source. All current foundation failures remain in scope and any
 later permission/removal/schema repair requires an evidence-led plan amendment.
+
+## Evidence-led Windows foundation completion (2026-10-16)
+
+The [causal repair plan](planning/WINDOWS_FOUNDATION_CAUSAL_REPAIR_2026-10-16.md)
+continues the frozen SPEC and completed observations. Existing Bash standardizes
+the actual producer/test contexts; library thread count follows the serial guideline.
+This acknowledges MSYS security initialization rather than claiming an owner-only
+token change. Original guarded artifact checks, target namespaces and uploads remain.
+
+Genuine exclusive EMPTY roots initialize their private DACL under the existing private
+evidence guard, then move without replacement outside evidence before any caller bytes.
+Shared typed owners and full-ID/private postbinding preserve ancestry and original
+physical lifetime; uncertain outcomes retain one bounded fail-fast owner. Parser
+preparation becomes finite without moving its original parser-phase origin; runtime
+preparation clips its original30s allowance. All original90s/600s/cleanup clocks remain.
+
+Only Windows explicit API/CLI output removers use a new fixed native strict deletion
+selector with actual checked HResult/code. Generic/automatic/token/lock cleanup and
+all Unix expressions remain exact. Request-owned ancestry survives unconfirmed cleanup;
+healthy native refusal keeps the worker warm. Original SQL pending/stop/finish ordering
+and complete native oracles remain. Parent whole-plan Issue readback/final reread precedes
+separate file leases; same-head all3 native/full CI evidence precedes completion claims.

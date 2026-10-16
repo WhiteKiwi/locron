@@ -6968,3 +6968,17 @@ typecheck. Query-controller checks pass22 Python controls,5 portable PowerShell 
 protocol cases and9 caller/mock-child controls. Actionlint1.7.12 passes. Linux
 PowerShell7.6.7 and mock identities do not qualify WindowsPowerShell5.1, TokenOwner,
 ACL or actual platform behavior. Native source-matched qualification remains required.
+
+### Causal foundation facts and selected follow-up (2026-10-16)
+
+Completed c231 CI38860620196 qualifies all3 Core steps and all8 daemon selectors;
+all14 non-foundation jobs pass, while all3 whole foundation jobs still fail.
+Actual x64 default-owner contrasts and all6 API N08 response/absence/SQL outcomes
+are recorded with primary MSYS, Rust, Framework and Microsoft references in
+[the causal findings](planning/WINDOWS_FOUNDATION_CAUSAL_FINDINGS_2026-10-16.md).
+ARM observer timeout remains unknown, not a token measurement. Native retained guards
+and original row ledgers remain authority. No fresh creator failure selects migration.
+Separate research rejects ordinary protected creation as an exclusive receipt and
+Rust rename as no-clobber; empty private staging plus no-replace move/full-ID rebind
+is selected under bounded owner/quarantine controls. The complete repair plan governs
+all later implementation and actual same-head qualification.

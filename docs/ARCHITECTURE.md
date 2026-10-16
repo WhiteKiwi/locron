@@ -299,3 +299,22 @@ commit never replay. Immutable preparation may precede write ownership, but all
 identity, eligibility, revision, capacity and retention decisions remain transactional.
 The concrete inventory, modes, boundaries and Verify criteria are in
 [the reviewed implementation plan](planning/SQLITE_CONTENTION_2026-10-16.md).
+
+### Guarded Windows filesystem effects (2026-10-16)
+
+Fixed destructive filesystem-adapter requests retain their admitted namespace owners
+through actual native return and confirmed tree/I/O disposal. Closing a no-DELETE leaf
+for deletion does not release its parent guard. An uncertain active request remains
+bounded and quarantined; caller timeout or failed reply delivery is not disposal.
+A guarded empty-directory move additionally shares both parent guards and its original
+physical handle with the caller until full-identity/private destination admission.
+Unknown postbinding retains one fail-fast quarantine and permits neither caller bytes
+nor saved-path rollback, deletion or replay. Full identity is an observation while
+guarded; the move remains path-based rather than atomic handle authority.
+
+Explicit output-prune composition preserves native readonly/sharing refusals while
+generic/background cleanup retains its existing behavior. File effects remain outside
+SQLite writer ownership; only confirmed success or a later admitted absence can finish
+the durable pending intent. Closed numeric native diagnostics require an actual checked
+platform result. The [causal repair plan](planning/WINDOWS_FOUNDATION_CAUSAL_REPAIR_2026-10-16.md)
+fixes budgets, typed ownership, scope and native Verify without new dependencies.
