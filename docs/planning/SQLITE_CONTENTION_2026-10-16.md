@@ -224,3 +224,33 @@ Job removal resolves exactly one row inside its admitted transaction, then updat
 that exact identity. A UUID-shaped name can match another job's identity; a bulk
 OR-predicate update must never remove multiple jobs for one request. A collision
 regression preserves the existing single-resource resolution behavior.
+
+## Existing completion recovery and diagnostic privacy details
+
+The daemon's existing completion-recording retries remain idempotent durable recovery:
+the same immutable outcome and completion instant are retried, and Store rechecks
+exact committed identity before acknowledging success. They do not rerun a target or
+replay arbitrary mutation bodies after an uncertain commit. LOCKED/I/O in that existing
+CompletionError::Transient vocabulary means durable storage is unavailable, not that
+the new contention layer labels them BUSY or retries them in the same request. Durable
+conflicts retain their existing stop/fallback path and later retries honor shutdown.
+
+Raw adapter causes remain explicitly inspectable through original_error, while safe
+observed errors do not traverse their raw cause through Error::source. This preserves
+privacy in alternate anyhow/error/debug rendering. Streaming orphan enumeration checks
+before each next unit instead of retaining an unbounded sorted directory snapshot.
+
+## Resumable orphan traversal within the elapsed budget
+
+Automatic maintenance retains one composition-owned traversal cursor between passes
+instead of restarting every filesystem scan at its first entry. The daemon adapter
+owns a mutex-protected cursor containing at most the guarded outputs iterator and
+one guarded run-directory iterator. It keeps no growing work queue or telemetry
+history and adds no schema/mutation. Resume those iterators after budget exhaustion
+or foreground deferral, close guards when their sweep ends, and reset on state-path
+change. Recheck current run/artifact protection per entry; do not cache liveness
+across passes. Check the shared time/foreground budget before each new entry or I/O.
+An already-started I/O remains noninterruptible. Test repeated bounded passes with
+a referenced prefix and later orphan entries, including active-file protection and
+state reset. This prevents a large stable referenced prefix from starving later
+cleanup indefinitely. SQL pending intents retain their existing recovery protocol.

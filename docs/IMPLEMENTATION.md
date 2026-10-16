@@ -6223,3 +6223,9 @@ postcommit result readback after writer release. Such adapter failures are safe
 structured diagnostics with committed outcome; preparation/readback cannot start
 fresh SQLite waits. Removal still resolves and updates exactly one identity even
 when a live name equals another job's UUID. These boundary details precede source.
+
+The contention plan's orphan-traversal cursor is retained by the daemon composition
+between bounded passes. Two guarded directory iterators at most preserve scan progress
+without a schema change, growing queue or observer mutation; current file protection
+is rechecked per entry. This prevents repeated-prefix starvation under the elapsed
+budget and precedes the separate composition/maintenance implementation.
