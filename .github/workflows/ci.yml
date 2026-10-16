@@ -2781,7 +2781,7 @@ jobs:
               data = metadata("scoped-metadata")
               target = pathlib.Path(data["target_directory"]).resolve(strict=True)
               recovery_path.resolve(strict=True).relative_to(target)
-              status, messages, _ = invoke(["cargo", "test", "-p", "locron-server", "--lib", "--locked", "--no-run", "--message-format=json"], "server-build")
+              status, messages, _ = invoke(["cargo", "test", "--workspace", "--all-targets", "--locked", "--no-run", "--message-format=json"], "server-build")
               require(status == 0, "server-build-status")
               server = artifact(messages, package(data, "locron-server"), "locron_server", "lib", True)
               server_path = pathlib.Path(server["executable"])

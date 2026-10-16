@@ -8629,6 +8629,279 @@ fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
     })
 }
 
+#[derive(Clone, Copy)]
+enum ReadyScope {
+    ActualMarker,
+    ControlRelease,
+    ControlPersistent,
+}
+
+impl ReadyScope {
+    fn name(self) -> &'static str {
+        match self {
+            Self::ActualMarker => "actual_marker",
+            Self::ControlRelease => "control_release",
+            Self::ControlPersistent => "control_persistent",
+        }
+    }
+}
+
+fn peer_ready_check(owner: &Owner, gate: &Control) -> Result<(), Code> {
+    owner.control.check(owner.control.deadline)?;
+    gate.check(gate.deadline)
+}
+
+fn wait_peer_ready(
+    owner: &mut Owner,
+    ready: &Path,
+    gate: &Control,
+    scope: ReadyScope,
+    mut on_open32: impl FnMut(),
+) -> Result<(), Code> {
+    let mut sharing_observed = false;
+    loop {
+        peer_ready_check(owner, gate)?;
+        // A shortened proof gate must never poison this original child/control.
+        owner.live(0, owner.control.deadline)?;
+        peer_ready_check(owner, gate)?;
+        gate.observations.intent(Operation::ReadyOpen);
+        let file = open_read_no_follow(ready);
+        gate.observations
+            .io(Operation::ReadyOpen, ChildRole::NegativePeer, &file);
+        peer_ready_check(owner, gate)?;
+        match file {
+            Ok(mut file) => {
+                let mut byte = Vec::new();
+                peer_ready_check(owner, gate)?;
+                gate.observations.intent(Operation::ReadyRead);
+                let read = (&mut *file).take(2).read_to_end(&mut byte);
+                gate.observations
+                    .io(Operation::ReadyRead, ChildRole::NegativePeer, &read);
+                if read.is_ok() {
+                    gate.observations.ready(&byte);
+                }
+                peer_ready_check(owner, gate)?;
+                read.map_err(|_| Code::Native)?;
+                // Empty is not published. It follows the original NotFound
+                // continuation with the same child/liveness/outer clock.
+                if !byte.is_empty() {
+                    if byte != b"1" {
+                        return Err(Code::Native);
+                    }
+                    return Ok(());
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                let Some(raw @ 32) = error.raw_os_error() else {
+                    return Err(Code::Native);
+                };
+                owner.live(0, owner.control.deadline)?;
+                peer_ready_check(owner, gate)?;
+                if !sharing_observed {
+                    eprintln!(
+                        "ready_open_sharing/v1 scope={} kind={} raw={raw}",
+                        scope.name(),
+                        KIND_NAMES[usize::from(kind_bucket(error.kind()))],
+                    );
+                    sharing_observed = true;
+                }
+                peer_ready_check(owner, gate)?;
+                // The control releases its real holder only after actual timely32.
+                // Production never changes ownership or a file in this callback.
+                on_open32();
+                peer_ready_check(owner, gate)?;
+            }
+        }
+        peer_ready_check(owner, gate)?;
+        pause(gate, gate.deadline, Duration::from_millis(5))?;
+        peer_ready_check(owner, gate)?;
+    }
+}
+
+fn peer_ready_fixture(
+    owner: &Owner,
+    name: &str,
+    bytes: &[u8],
+) -> Result<
+    (
+        PathBuf,
+        locron_core::filesystem::FileIdentity,
+        DirectoryGuard,
+    ),
+    Code,
+> {
+    let path = owner.root()?.join(name);
+    let mut marker =
+        peer_operation(&owner.control, || create_private_new(&path))?.map_err(|_| Code::Native)?;
+    peer_operation(&owner.control, || marker.write_all(bytes))?.map_err(|_| Code::Native)?;
+    peer_operation(&owner.control, || marker.flush())?.map_err(|_| Code::Native)?;
+    let identity =
+        peer_operation(&owner.control, || file_identity(&marker))?.map_err(|_| Code::Native)?;
+    if !peer_operation(&owner.control, || is_private(&path, false))?.map_err(|_| Code::Native)? {
+        return Err(Code::Native);
+    }
+    let (file, parent) = marker.into_parts();
+    peer_operation(&owner.control, || drop(file))?;
+    Ok((path, identity, parent))
+}
+
+fn peer_ready_holder(control: &Control, path: &Path) -> Result<File, Code> {
+    let held = peer_operation(control, || {
+        std::fs::OpenOptions::new()
+            .access_mode(0x001f_01ff)
+            .share_mode(3)
+            .custom_flags(0x0020_0000)
+            .open(path)
+    })?
+    .map_err(|_| Code::Native)?;
+    let metadata = peer_operation(control, || held.metadata())?.map_err(|_| Code::Native)?;
+    if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
+        return Err(Code::Native);
+    }
+    Ok(held)
+}
+
+fn peer_ready_readback(
+    control: &Control,
+    path: &Path,
+    expected: locron_core::filesystem::FileIdentity,
+) -> Result<(), Code> {
+    let mut marker =
+        peer_operation(control, || open_read_no_follow(path))?.map_err(|_| Code::Native)?;
+    let identity = peer_operation(control, || file_identity(&marker))?.map_err(|_| Code::Native)?;
+    let private = peer_operation(control, || is_private(path, false))?.map_err(|_| Code::Native)?;
+    let mut bytes = Vec::new();
+    peer_operation(control, || (&mut *marker).take(2).read_to_end(&mut bytes))?
+        .map_err(|_| Code::Native)?;
+    if identity != expected || !private || bytes != b"1" {
+        return Err(Code::Native);
+    }
+    peer_operation(control, || drop(marker))
+}
+
+fn peer_ready_release_control(owner: &mut Owner) -> Result<(), Code> {
+    let (path, identity, parent) = peer_ready_fixture(owner, "ready-control-release", b"1")?;
+    let mut held = Some(peer_ready_holder(&owner.control, &path)?);
+    // Synthetic observations stay separate from the actual marker's facts.
+    let gate = Control::new(owner.control.entered, owner.control.deadline);
+    wait_peer_ready(owner, &path, &gate, ReadyScope::ControlRelease, || {
+        drop(held.take());
+    })?;
+    if held.is_some() {
+        return Err(Code::Native);
+    }
+    peer_ready_readback(&owner.control, &path, identity)?;
+    peer_operation(&owner.control, || drop(parent))
+}
+
+fn peer_ready_persistent_control(owner: &mut Owner) -> Result<(), Code> {
+    let (path, identity, parent) = peer_ready_fixture(owner, "ready-control-persistent", b"1")?;
+    let held = peer_ready_holder(&owner.control, &path)?;
+    owner.live(0, owner.control.deadline)?;
+    let captured = Instant::now();
+    let deadline = owner
+        .control
+        .deadline
+        .min(captured + Duration::from_millis(100));
+    // Only this isolated negative gate expires. The original case is never reset.
+    let gate = Control::new(owner.control.entered, deadline);
+    let mut observed32 = false;
+    let result = wait_peer_ready(owner, &path, &gate, ReadyScope::ControlPersistent, || {
+        observed32 = true;
+    });
+    owner.control.check(owner.control.deadline)?;
+    owner.live(0, owner.control.deadline)?;
+    if !matches!(result, Err(Code::Expired))
+        || !observed32
+        || gate.observations.snapshot().ready_read != 0
+    {
+        return Err(Code::Native);
+    }
+    let refused = peer_operation(&owner.control, || open_read_no_follow(&path))?;
+    if refused.err().and_then(|error| error.raw_os_error()) != Some(32) {
+        return Err(Code::Native);
+    }
+    peer_operation(&owner.control, || drop(held))?;
+    peer_ready_readback(&owner.control, &path, identity)?;
+    peer_operation(&owner.control, || drop(parent))
+}
+
+fn peer_ready_invalid_controls(owner: &mut Owner) -> Result<(), Code> {
+    for (name, bytes) in [
+        ("ready-control-invalid-one", b"0".as_slice()),
+        ("ready-control-invalid-two", b"11".as_slice()),
+    ] {
+        let (path, _, parent) = peer_ready_fixture(owner, name, bytes)?;
+        let gate = Control::new(owner.control.entered, owner.control.deadline);
+        let mut continued32 = false;
+        let result = wait_peer_ready(owner, &path, &gate, ReadyScope::ControlRelease, || {
+            continued32 = true;
+        });
+        peer_ready_check(owner, &gate)?;
+        owner.live(0, owner.control.deadline)?;
+        let expected = 2 | (u64::try_from(bytes.len()).map_err(|_| Code::Native)? << 2);
+        if !matches!(result, Err(Code::Native))
+            || continued32
+            || event_header(gate.observations.snapshot().ready_read, 4)
+                != Some((
+                    Operation::ReadyRead as u8,
+                    ChildRole::NegativePeer,
+                    expected,
+                ))
+        {
+            return Err(Code::Native);
+        }
+        peer_operation(&owner.control, || drop(parent))?;
+    }
+    Ok(())
+}
+
+fn peer_ready_nonfile_control(owner: &mut Owner) -> Result<(), Code> {
+    let path = owner.root()?.to_path_buf();
+    let gate = Control::new(owner.control.entered, owner.control.deadline);
+    let mut continued32 = false;
+    let result = wait_peer_ready(owner, &path, &gate, ReadyScope::ControlRelease, || {
+        continued32 = true;
+    });
+    peer_ready_check(owner, &gate)?;
+    owner.live(0, owner.control.deadline)?;
+    let (operation, role, payload) =
+        event_header(gate.observations.snapshot().io_error, 1).ok_or(Code::Native)?;
+    if !matches!(result, Err(Code::Native))
+        || continued32
+        || operation != Operation::ReadyOpen as u8
+        || role != ChildRole::NegativePeer
+        || decode_signed(payload).map_err(|_| Code::Native)? == Some(32)
+        || (payload >> 33) == u64::from(kind_bucket(io::ErrorKind::NotFound))
+    {
+        return Err(Code::Native);
+    }
+    Ok(())
+}
+
+fn peer_ready_controls(owner: &mut Owner) -> Result<(), Code> {
+    peer_ready_release_control(owner)?;
+    peer_ready_persistent_control(owner)?;
+    peer_ready_invalid_controls(owner)?;
+    peer_ready_nonfile_control(owner)?;
+    let gate = Control::new(owner.control.entered, owner.control.entered);
+    let path = owner.root()?.join("peer-ready");
+    let mut continued32 = false;
+    let result = wait_peer_ready(owner, &path, &gate, ReadyScope::ControlRelease, || {
+        continued32 = true;
+    });
+    owner.control.check(owner.control.deadline)?;
+    owner.live(0, owner.control.deadline)?;
+    if !matches!(result, Err(Code::Expired))
+        || continued32
+        || gate.observations.snapshot().intent != 0
+    {
+        return Err(Code::Native);
+    }
+    Ok(())
+}
+
 fn setup_peer(owner: &mut Owner, mode: PeerMode) -> Result<(), Code> {
     owner.retain_guard()?;
     owner.control.step(Phase::Setup, owner.control.deadline)?;
@@ -8651,51 +8924,12 @@ fn setup_peer(owner: &mut Owner, mode: PeerMode) -> Result<(), Code> {
         None,
         ChildRole::NegativePeer,
     )?;
-    let ready = owner.root()?.join("peer-ready");
-    loop {
-        owner.live(0, owner.control.deadline)?;
-        owner.control.check(owner.control.deadline)?;
-        owner.control.observations.intent(Operation::ReadyOpen);
-        let file = open_read_no_follow(&ready);
-        owner
-            .control
-            .observations
-            .io(Operation::ReadyOpen, ChildRole::NegativePeer, &file);
-        owner.control.check(owner.control.deadline)?;
-        match file {
-            Ok(mut file) => {
-                let mut byte = Vec::new();
-                owner.control.check(owner.control.deadline)?;
-                owner.control.observations.intent(Operation::ReadyRead);
-                let read = (&mut *file).take(2).read_to_end(&mut byte);
-                owner
-                    .control
-                    .observations
-                    .io(Operation::ReadyRead, ChildRole::NegativePeer, &read);
-                if read.is_ok() {
-                    owner.control.observations.ready(&byte);
-                }
-                owner.control.check(owner.control.deadline)?;
-                read.map_err(|_| Code::Native)?;
-                // Empty is not published. It follows the original NotFound
-                // continuation with the same child/liveness/outer clock.
-                if !byte.is_empty() {
-                    if byte != b"1" {
-                        return Err(Code::Native);
-                    }
-                    break;
-                }
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(_) => return Err(Code::Native),
-        }
-        pause(
-            &owner.control,
-            owner.control.deadline,
-            Duration::from_millis(5),
-        )?;
+    if matches!(mode, PeerMode::PublicationProof) {
+        peer_ready_controls(owner)?;
     }
-    Ok(())
+    let ready = owner.root()?.join("peer-ready");
+    let control = Arc::clone(&owner.control);
+    wait_peer_ready(owner, &ready, &control, ReadyScope::ActualMarker, || {})
 }
 
 fn refused_peer(mode: PeerMode, expected: Code) {
