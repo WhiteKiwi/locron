@@ -33,7 +33,7 @@ jobs:
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ff979934a4b4a1aec45c89e17b397c154b959ac6
+          ref: 536671f80b9ea4b17f4fc0362b3fa0ba60e43607
       - name: Install native toolchain
         id: toolchain
         uses: dtolnay/rust-toolchain@master
@@ -56,8 +56,8 @@ jobs:
           Write-Output "Workflow event SHA: $env:GITHUB_SHA"
           Write-Output "Actual source HEAD: $actualHead"
           Write-Output "Actual source tree: $actualTree"
-          if ($actualHead -cne 'ff979934a4b4a1aec45c89e17b397c154b959ac6') { throw 'Unexpected source revision' }
-          if ($actualTree -cne 'a4cadf413a8cba313c95cdfeda37561cbb80f220') { throw 'Unexpected source tree' }
+          if ($actualHead -cne '536671f80b9ea4b17f4fc0362b3fa0ba60e43607') { throw 'Unexpected source revision' }
+          if ($actualTree -cne 'e32739607174f4b8aa959673d1111d21da869779') { throw 'Unexpected source tree' }
           if ($trackedChanges) { throw 'Tracked source checkout is not clean' }
           $compiler = @(rustc -vV)
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -83,5 +83,5 @@ jobs:
           $trackedChanges = git status --porcelain=v1 --untracked-files=no
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($trackedChanges) { throw 'Selected tests changed tracked source' }
-          git diff --exit-code ff979934a4b4a1aec45c89e17b397c154b959ac6 --
+          git diff --exit-code 536671f80b9ea4b17f4fc0362b3fa0ba60e43607 --
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
