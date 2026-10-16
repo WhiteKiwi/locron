@@ -6211,3 +6211,9 @@ background progress and100-action/250 ms maintenance boundaries, and supplies
 concrete Verify criteria for each change phase. FINDINGS records the research and
 measured query-plan evidence. Parent review and issue updates precede source edits;
 the separate development sub-session owns implementation and verification.
+
+The contention plan's preparation clarification explicitly carries one Operation
+through bounded read-only preparation, releases that mutex before writer admission,
+and revalidates manual enqueue's current live revision/definition under BEGIN.
+This is part of the original atomic scheduling invariant; it grants no stale enqueue
+or fresh wait allowance after preparation.

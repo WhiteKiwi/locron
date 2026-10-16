@@ -171,3 +171,37 @@ behind another writer, preserving completion/cancellation responsiveness.
 Research measurements and limitations are in FINDINGS. Repository Issues own phase,
 progress and final exact-revision evidence. Parent plan review and issue updates
 precede source implementation; parent owns commits and PR publication.
+
+### Immutable preparation details (development clarification)
+
+Admission preparation reads at most `min(hard_guard_available,64)*64` eligible
+run IDs and immutable snapshots, without exclusive writer ownership. It carries
+the same operation deadline through bounded connection acquisition, releases the
+read mutex before writer admission, and never starts a fresh five-second budget.
+The immediate transaction retains its original current-capacity-derived scan
+limit and ordering. Prepared decode failures are raised only when the original
+round-robin loop examines that candidate; unseen or snapshot-mismatched candidates
+defer. All eligibility, cancellation, quarantine, replacement, catch-up, capacity
+and fairness facts are reselected inside the transaction.
+
+Manual enqueue similarly prepares its live job snapshot under that deadline,
+then rechecks live identity, current revision and exact definition before changing
+queue state. Materialization validates immutable run/reconciliation-summary inputs
+and encodes summary details before writer admission; its cursor revision/live-job
+check and all overlap facts remain inside the transaction. Deterministic test-only
+barriers after preparation exercise concurrent cancellation, candidate creation,
+job removal/revision and settings changes without timing-dependent sleeps.
+
+## Preparation boundary clarification reviewed before source
+
+`admit` and `enqueue_manual` may first acquire only the connection mutex for
+read-only immutable preparation under the same Operation/deadline used by the
+subsequent write. Release that mutex before acquiring intent/writer admission;
+no read-preparation mutex is held while waiting for another resource. Include its
+wait in connection_wait_us and its elapsed time in the original five-second
+budget; `write_prepared` must never start a fresh allowance. The authoritative
+transaction retains all current capacity/state/fairness checks. `enqueue_manual`
+rechecks the exact live job/current revision/immutable definition after BEGIN and
+returns a conflict on concurrent update/removal rather than enqueueing stale work.
+Admit prepares at most the existing hard guard64 times the existing scan multiplier64;
+its in-transaction scan still uses the original current-capacity-based bound/order.
