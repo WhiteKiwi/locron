@@ -6921,3 +6921,23 @@ v1 and master both resolve to683b588c487a69d01f6c6ddf40f036ff682cc2c8 at this re
 using v1 follows the user's guideline without changing that observed implementation
 or the pinned compiler inputs. Repository Actions-permission inspection returned403;
 no permission or branch-protection change is selected or assumed.
+
+### Complete Windows foundation follow-up (2026-10-16)
+
+The user selected all current foundation failures. Separate research sessions reviewed
+the exact native receipts and primary platform sources in the
+[daemon readiness record](planning/WINDOWS_CI_DAEMON_RESEARCH_2026-10-16.md),
+[default-owner record](planning/WINDOWS_CI_OWNER_RESEARCH_2026-10-16.md) and
+[prune record](planning/WINDOWS_CI_PRUNE_RESEARCH_2026-10-16.md).
+The daemon role lock precedes Store initialization and listener creation; existing
+debug v2 observations can sequence genuine fixture setup but cannot authorize a
+peer. History code5 identifies only other, not a measured terminal or Starting state.
+Windows default TokenOwner may differ from TokenUser; exact native owner classes
+are still unknown. Rust1.94/1.98 deletion may ignore readonly after DeleteFileW refusal;
+N08's actual response/poststate is still unknown. EL07 needs its existing structured
+creator record. These distinctions select closed observations and the bounded fixture
+repair in the [complete plan](planning/WINDOWS_FOUNDATION_REPAIR_2026-10-16.md),
+preserving private guards, original clocks, native row meanings and required gates.
+
+Run38857980733's three existing Windows Core steps have returned success after the
+SID fixture correction; this intermediate step result is not whole-foundation PASS.

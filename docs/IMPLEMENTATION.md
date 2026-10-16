@@ -6248,3 +6248,16 @@ major alias replaces master without changing its current upstream commit or sele
 Rust versions. No new preflight, retry, suite filtering, cache movement, broad matrix
 serialization or manual/nightly workflow is introduced. Exact-source native Core
 results qualify this correction separately from the remaining foundation failures.
+
+## Current Windows foundation repair (2026-10-16)
+
+Continue the frozen SPEC through the
+[complete repair plan](planning/WINDOWS_FOUNDATION_REPAIR_2026-10-16.md).
+Read-only owner/response/persistence observations precede any causal product repair.
+Genuine debug-daemon fixtures may use a separately retained guarded startup hint
+within their original case/outer clocks before the unchanged authenticated probe;
+Starting remains a nonterminal waiting state only at the pre-running boundary.
+Separate development leases preserve artifact authority, full original native row
+oracles, private-state guards and cleanup ownership. Parent Issue readback and final
+plan review precede source. All current foundation failures remain in scope and any
+later permission/removal/schema repair requires an evidence-led plan amendment.
