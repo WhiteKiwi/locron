@@ -70,6 +70,11 @@ pub(crate) struct Operation {
 }
 
 impl Operation {
+    #[cfg(test)]
+    pub(crate) fn committed_steps(&self) -> u32 {
+        self.committed_steps.get()
+    }
+
     pub(crate) fn new(name: &'static str, background: Option<Instant>) -> Self {
         let started = Instant::now();
         Self {
