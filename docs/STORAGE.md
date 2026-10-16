@@ -146,3 +146,31 @@ not weaken plaintext acknowledgement for documents that do contain values.
 ## Backup and direct access
 
 Copying only `state.db` while WAL activity exists is not a supported backup. Versioned export is the portable backup/migration surface. Diagnostic commands may run SQLite integrity and foreign-key checks, but users are not expected to edit the database directly.
+
+## Shared writer contention contract (2026-10-16; #180, #181)
+
+Writable state additionally owns permanent private `writer-intent.lock` and
+`writer.lock`. Never unlink/replace/truncate these coordination files. Each
+operation opens independent guarded descriptors, then obtains foreground shared
+intent (background exclusive try-intent), exclusive writer admission, the connection
+mutex and SQLite immediate write intent in that order. Release intent after writer
+and connection admission so waiting foreground work can advertise itself. Read-only
+opening/queries never create or probe these files. `daemon.lock` remains separate.
+
+One monotonic five-second total contention budget includes admission, connection,
+Windows DB/WAL preparation and SQLite BEGIN waits. Mutation SQLite handlers do not
+start fresh per-statement five-second allowances. Retry BUSY only at proved
+uncommitted boundaries; never replay transaction bodies, commits or external I/O.
+LOCKED remains distinct and nonretryable. Historical migrations/checksums, WAL,
+FULL synchronous durability, foreign keys and transaction rechecks are unchanged.
+All former autocommit mutation families use this common transaction boundary.
+
+Maintenance uses nonwaiting background admission,100 actions and a250 ms soft pass
+budget, checking between recoverable units and before filesystem work. Interrupted
+pending intents resume later. One already-started OS I/O may exceed this elapsed
+budget. Foreground progress is advisory, without strict FIFO or external-writer
+control. Safe scalar operation/stage/code/wait/hold diagnostics pass through Core
+and CLI/API/MCP; original lock owner and uncertain commit outcome stay unknown.
+See [the complete plan](planning/SQLITE_CONTENTION_2026-10-16.md) for inventory,
+compatibility and concrete verification criteria. This supersedes the earlier
+per-connection five-second busy-timeout wording for writable operations.

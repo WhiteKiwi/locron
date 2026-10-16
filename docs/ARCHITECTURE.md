@@ -277,3 +277,25 @@ Only one daemon may own a state directory at a time. The engine uses the permane
 The domain vocabulary, durable migrations, export format, and machine-readable command results become compatibility surfaces at the first stable tag. Future HTTP, MCP, and desktop clients should depend on application commands/results and stable identifiers, not SQLite layout or CLI prose.
 
 The service-manager process remains outside job semantics. Packaging milestones may install launchd/systemd definitions that invoke `locron daemon run`, but they must not introduce another scheduler implementation or executable.
+
+### Cross-process writer admission and safe diagnostics (2026-10-16)
+
+Every Store mutation, including initialization/migrations and former autocommit
+updates, shares guarded permanent intent/writer admission independent of daemon
+ownership. Fixed acquisition order is intent, exclusive writer, connection mutex,
+SQLite immediate transaction, under one five-second contention deadline. Foreground
+holds shared intent while waiting; automatic maintenance tries exclusive intent
+and admission without waiting and yields between recoverable units. Independent
+file descriptors and retained private-path guards preserve OS lock identity. Read-only
+access creates no coordination files. Advisory admission does not control external
+writers or guarantee strict FIFO. No writer lock/transaction spans filesystem cleanup
+or target effects. Automatic maintenance additionally has a monotonic soft elapsed
+budget; already-started OS I/O remains observable rather than forcibly interrupted.
+
+Core carries transport-neutral safe persistence diagnostics; Store supplies measured
+stage/wait/transaction facts and original numeric codes without SQL or user values.
+BUSY before transaction start may retry within remaining time; LOCKED and uncertain
+commit never replay. Immutable preparation may precede write ownership, but all
+identity, eligibility, revision, capacity and retention decisions remain transactional.
+The concrete inventory, modes, boundaries and Verify criteria are in
+[the reviewed implementation plan](planning/SQLITE_CONTENTION_2026-10-16.md).

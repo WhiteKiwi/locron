@@ -6200,3 +6200,14 @@ read-guard then state-guard drops, all constructors/history counters/rows/clocks
 and every other field. Full canonical/physical two-line inverse and protected
 bytes precede Root staged/unstaged review; fresh changed-head type/runtime
 evidence stays distinct from existing failure/history and deferred Windows CI.
+
+## Shared SQLite contention implementation (#180, #181; 2026-10-16)
+
+The SPEC contention amendment and ARCHITECTURE/STORAGE contract are implemented by
+[the concrete contention plan](planning/SQLITE_CONTENTION_2026-10-16.md). It inventories
+every writer and read-only exception, fixes lock order and one deadline, defines
+safe retry/diagnostic compatibility, immutable preparation, retention probes,
+background progress and100-action/250 ms maintenance boundaries, and supplies
+concrete Verify criteria for each change phase. FINDINGS records the research and
+measured query-plan evidence. Parent review and issue updates precede source edits;
+the separate development sub-session owns implementation and verification.

@@ -6495,3 +6495,41 @@ guard/resource/oracle/clock or production change. Counters/optional barrier have
 no custom Drop; no hidden release timing or runtime PASS is established.
 The [complete plan](planning/WINDOWS_STORE_FIXTURE_HISTORY_FIELD_2026-10-06.md)
 retains published/failed evidence and the ongoing run; Source is separately gated.
+
+## SQLite contention research (#180, #181; 2026-10-16)
+
+At base a3f43fc15e1a5db75d811e65e35add59d51c055a all production SQL writes are
+in store.rs and migration.rs. The complete writer/delegate/read-only inventory,
+lock order and safe-retry boundaries are in
+[the contention plan](planning/SQLITE_CONTENTION_2026-10-16.md). remove_job and six
+other mutation families use autocommit rather than the existing immediate
+transaction boundary. Store's mutex is per instance, so it cannot arbitrate CLI,
+API/MCP or daemon processes. Core's StorePort mapping currently merges SQLite
+BUSY and LOCKED into Unavailable("SQLite is busy"), losing primary/extended codes;
+CLI/API direct Store paths return state_error and actual CLI exit5. CLI.md's broad
+busy exit4 wording does not describe that actual removal behavior.
+
+Windows SqlitePreparation::new and windows_configure each establish independent
+five-second allowances before migrations, while Unix configure installs a
+five-second SQLite busy handler. A correct single budget must flow through these
+existing adapters as well as the new advisory admission and connection mutex.
+Windows' current WAL loop already finalizes each fixed PRAGMA before retry; preserve
+that boundary and its diagnostic tests. std::fs File independent-open shared and
+exclusive try-lock APIs fit the existing Rust1.94 foundation and safe-code policy;
+existing guarded permanent-file primitives preserve private no-reparse admission.
+Native Windows/macOS contention behavior is not measured by this Linux inspection.
+
+A controlled Python SQLite3.53.1 in-memory fixture with60000 terminal rows,100 jobs,
+three-way finish-time ties and the exact existing runs_retention(state,finished_at_us,id)
+index measured30 iterations of the existing global newer-row count versus a LIMIT1000
+count. Mean query time was4.816 ms versus0.132 ms; counts were59999 versus1000, which
+produce the same >=1000 decision. Both EXPLAIN QUERY PLAN results use the covering
+runs_retention index (state=? AND finished_at_us>?). This supports bounded threshold
+probes without changing indexes, but is not bundled-SQLite transaction-hold evidence
+or a claim about the unknown original production holder. Composed Store fixture
+measurements and retention-policy regression tests remain required.
+
+Automatic maintenance currently caps100 actions but has no elapsed budget. Some
+SQL mutations already commit separately; output repair/remove occurs outside SQLite
+transactions and must stay there. Its synchronous composition permits scoped
+thread-local background priority without changing concurrent foreground priority.
