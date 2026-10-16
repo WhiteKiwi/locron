@@ -3085,6 +3085,56 @@ fn successful(outcome: &Outcome, data: &Value) {
     assert!(exact, "actual complete API success envelope changed");
 }
 
+fn injected_storage_refusal(error: &Value, case: &str) -> bool {
+    let operation = match case {
+        "FI01" => "mark_output_prune_pending",
+        "FI03" | "FI07" => "finish_output_prune",
+        _ => return false,
+    };
+    let storage = &error["storage"];
+    let Some(elapsed_us) = storage["elapsed_us"].as_u64() else {
+        return false;
+    };
+    let measured = [
+        "admission_wait_us",
+        "connection_wait_us",
+        "sqlite_wait_us",
+        "transaction_us",
+    ]
+    .iter()
+    .all(|field| {
+        storage[field]
+            .as_u64()
+            .is_some_and(|value| value <= elapsed_us)
+    });
+    let expected = json!({
+        "operation":operation,
+        "stage":"execute",
+        "kind":"sqlite",
+        "elapsed_us":elapsed_us,
+        "admission_wait_us":storage["admission_wait_us"],
+        "connection_wait_us":storage["connection_wait_us"],
+        "sqlite_wait_us":storage["sqlite_wait_us"],
+        "transaction_us":storage["transaction_us"],
+        "commit_us":0,
+        "retries":0,
+        "sqlite_primary_code":19,
+        "sqlite_extended_code":1811,
+        "os_error_code":null,
+        "retryable":false,
+        "durable_outcome":"not_committed",
+        "lock_owner":"unknown",
+    });
+    measured
+        && storage == &expected
+        && error["message"].as_str().is_some_and(|message| {
+            message.starts_with(&format!("storage {operation} failed at execute: sqlite;"))
+                && message.contains("SQLite primary 19, extended 1811")
+                && message.contains("durable outcome not_committed")
+                && !message.contains("prune fixture injected refusal")
+        })
+}
+
 fn rejected(outcome: &Outcome, case: &str) {
     let (status, code) = if matches!(case, "FS07" | "FS08" | "FS12" | "FI05" | "N06") {
         (400, "invalid_request")
@@ -3102,7 +3152,11 @@ fn rejected(outcome: &Outcome, case: &str) {
         && object.len() == 3
         && outcome.body["schema"] == "locron.api/v1"
         && outcome.body["ok"] == false
-        && error.len() == 2
+        && if matches!(case, "FI01" | "FI03" | "FI07") {
+            error.len() == 3 && injected_storage_refusal(&outcome.body["error"], case)
+        } else {
+            error.len() == 2
+        }
         && outcome.body["error"]["code"] == code
         && outcome.body["error"]["message"]
             .as_str()
