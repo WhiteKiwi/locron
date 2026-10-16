@@ -7017,3 +7017,42 @@ Primary [CargoJSON](https://doc.rust-lang.org/cargo/reference/external-tools.htm
 [Cargo build-cache inputs](https://doc.rust-lang.org/cargo/reference/build-cache.html#cache-internals)
 and [artifact layout](https://github.com/actions/upload-artifact#upload-using-multiple-paths-and-exclusions)
 explain fresh selection, feature/profile separation and common-root packaging.
+
+### Remaining native fixture input/publication failures (2026-10-16)
+
+Sourceed37/tree9f57 run38874052234 (same-tree merge2bd1b965) completes all14
+other jobs/Core148x3/service64x3 successfully. Service runtime is192.80/196.51/
+194.20s, retaining both real180s wait oracles. All3 foundations fail, not timeout.
+All6 libraries fail only N06-api's checked actual-target canonicalization before
+prune; actual prefix/kind/raw code is unobserved. MSRV alone reports ProgressOpen/
+Other/raw32 in durable_cancel and the output contract's later genuine cancel
+producer, before8s; the exact native holder is unknown. Subsequent cleanup exit1
+does not establish natural daemon death. Native-tail prepare passes all3, but
+skipped default-success tail/copy steps remain unqualified. Both Linux full suites
+pass615/0/3ignored on this head. No prior-head PASS is transferred.
+
+Separate research traced official PowerShell6/7's unconditional NT-prefix plus
+Framework GetFullPath writer, Framework extended-path preservation and Rust's
+single-prefix read_link conversion. This supports a possible double prefix, not
+the unbound deployed5.1 writer or actual historical spelling. Official5.1 Target
+supports a fully qualified path. Strict VerbatimDisk-to-ordinary creator input
+conformance to the SAME held target is selected, with component/reserved-name/
+legacy259UTF16 gates, original-deadline canonical and full private-ID proofs, and
+unmodified actual read_link/postoracles. Rust's internal verbatim promotion means
+those two OS proofs alone cannot replace strict legacy-parser validation. The
+existing private stock converter is a pattern, not a new public Core API.
+
+Source also exposes final progress during transient FullControl(DELETE)/share3
+creation, incompatible with the existing no-SHARE_DELETE reader. Returned generic
+RW/share3 is compatible. Exactflags controls demonstrate the mechanism, not the
+historical MSRV holder. Known private pending creation, close, one no-clobber move,
+privateRW reopen with fullID equality removes that exposure. Independent review
+requires closing the returned RW leaf BEFORE recreating the FullControl holder;
+otherwise the control's own open would fail32. Both narrow corrections can be
+composed in one new-head run without a separate observation-only run, provided
+closed diagnostics precede fallible observations and all actual oracles remain.
+
+The [fixture publication amendment](planning/WINDOWS_FOUNDATION_FIXTURE_PUBLICATION_2026-10-16.md)
+records complete primary references, strict controls, ownership/error limits,
+source leases and same-head native acceptance. No source implementation precedes
+whole-plan Issues readback and Root final review; no retry or deadline growth.

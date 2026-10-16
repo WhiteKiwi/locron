@@ -70,3 +70,15 @@ diagnostic_surfaces owns ONLY
 crates/locron-server/src/api_prune/qualification.rs and
 crates/locron-cli/src/explicit_prune/qualification.rs N06 Windows setup blocks.
 Parent owns planning/review/commits/publication. Other source remains frozen.
+
+## Subsequent completed evidence and narrow creator amendment
+
+Sourceed37 run38874052234 fails all6 N06-api library contexts at the checked
+actual-target canonicalization, before the new closed binding record and actual
+prune. Actual prefix/kind/raw code remains unknown; friendly spelling alone is not
+the established cause. The
+[fixture publication amendment](WINDOWS_FOUNDATION_FIXTURE_PUBLICATION_2026-10-16.md)
+selects strictly validated creator-only ordinary DOS input to the SAME held target,
+plus earlier closed observations, while retaining this plan's original actual-path
+canonical/private/fullID admission and every later oracle. It supersedes the setup
+lease only after its whole-plan Issues/readback/final review, not product policy.

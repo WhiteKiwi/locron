@@ -6310,3 +6310,25 @@ Tail failure scheduling adds an explicit preparation-success prerequisite; the
 always-run diagnostic reports unavailable/nonzero before Cargo when preparation
 fails. Every original diagnostic still executes on the successful B route, and
 no failed admission silently compiles or runs a global-target replacement.
+
+## Remaining Windows fixture input and publication (2026-10-16)
+
+Continue the frozen SPEC through the
+[fixture publication amendment](planning/WINDOWS_FOUNDATION_FIXTURE_PUBLICATION_2026-10-16.md).
+The completed ed37 native run qualifies service64 on two workers and all14 other
+jobs, while all3 foundations still fail. N06 creator input becomes a strictly
+validated ordinary DOS representation of the same live held target, with original
+deadline canonical/private full-ID proofs BEFORE the unchanged creator. Actual
+read_link remains untouched; closed prefix/error facts precede the fallible actual
+target query and all original postconditions remain. This selects input conformance,
+not an asserted historical malformed-prefix cause.
+
+Genuine cancel progress uses a known private sibling stage, closes its leaf,
+publishes once without replacement, then opens compatible private RW and verifies
+the complete creator identity. Original parent/root ownership, error quarantine,
+17-byte progress/cancel/cleanup oracles and clocks remain. The existing selected
+publication proof adds real exactflags, final-absence, sameID/live-reader and
+collision controls without a new selector. Exact historical raw32 holder remains
+unknown. Separate leased developers implement only these three fixture files after
+whole-plan Issues readback/final Root review. Same-head complete native libraries,
+prune/PR144/tail provenance and all other CI gates remain required.
