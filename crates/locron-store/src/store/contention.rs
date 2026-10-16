@@ -955,7 +955,15 @@ mod tests {
                 .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
                 .unwrap();
         }
-        std::fs::copy(&store.paths.database, &paths.database).unwrap();
+        let mut source = locron_core::filesystem::open_private(
+            &store.paths.database,
+            std::fs::OpenOptions::new().read(true),
+        )
+        .unwrap();
+        let mut destination = locron_core::filesystem::create_private_new(&paths.database).unwrap();
+        std::io::copy(&mut *source, &mut *destination).unwrap();
+        destination.sync_all().unwrap();
+        drop((source, destination));
         crate::paths::set_owner_only(&paths.database, false).unwrap();
         let readonly = Store::open_read_only(&paths.database).unwrap();
         assert!(readonly.job("disabled").is_ok());

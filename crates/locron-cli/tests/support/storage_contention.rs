@@ -78,10 +78,34 @@ pub fn seed(paths: &StatePaths) {
     }
 }
 
-pub fn hold_writer(paths: &StatePaths) -> rusqlite::Connection {
-    let writer = rusqlite::Connection::open(&paths.database).unwrap();
-    writer.execute_batch("BEGIN IMMEDIATE").unwrap();
-    writer
+pub struct HeldWriter {
+    // Fields drop in declaration order: raw SQLite closes before the private Store.
+    connection: rusqlite::Connection,
+    _store: Store,
+}
+
+impl HeldWriter {
+    pub fn execute_batch(&self, sql: &str) -> rusqlite::Result<()> {
+        self.connection.execute_batch(sql)
+    }
+}
+
+pub fn hold_writer(paths: &StatePaths) -> HeldWriter {
+    // The idle Store retains its private native WAL/SHM handles, with no writer admission.
+    let store = Store::open(paths.clone(), env!("CARGO_PKG_VERSION"), 1).unwrap();
+    let private_sidecars = || {
+        for name in ["state.db", "state.db-wal", "state.db-shm"] {
+            assert!(locron_core::filesystem::is_private(&paths.root.join(name), false).unwrap());
+        }
+    };
+    private_sidecars();
+    let connection = rusqlite::Connection::open(&paths.database).unwrap();
+    connection.execute_batch("BEGIN IMMEDIATE").unwrap();
+    private_sidecars();
+    HeldWriter {
+        connection,
+        _store: store,
+    }
 }
 
 pub fn reject_private_mutations(paths: &StatePaths) {

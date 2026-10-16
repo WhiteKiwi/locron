@@ -6742,3 +6742,38 @@ Gate only that private field and its initializer with cfg(not(windows)); retain 
 Windows ReadDir/guard continuation and all runtime behavior. Linux focused strict CLI
 Clippy passes with this minimal source correction. Native Windows lint must rerun on the
 new head; this local check does not substitute for native qualification.
+
+### Isolated Windows contention fixtures at fixed source d631eef
+
+The additional native run38848553036 checked out exact product source
+`d631eefd239e6e5bb8ac3bae64e547130f5e3db0` independently of the temporary workflow
+commit. Its x64 stable job116804443256, ARM64 stable job116804443034 and x64 MSRV1.94
+job116804443369 each executed the Store library directly:133 passed,1 failed and3
+intentionally ignored. The shared-deadline, released external writer, real LOCKED,
+failed COMMIT, crash-release, committed-readback and transaction qualification
+controls explicitly passed on all three native rows. Earlier Server-library
+failures had prevented these Store executables from running; these receipts close
+that observation gap without changing the existing foundation gates.
+
+The sole Store failure occurs before read-only opening: the fixture copies its
+checkpointed database with std::fs::copy, then the unchanged private-file validator
+at contention.rs959 returns PermissionDenied/unsafe private permissions for the
+destination. On Windows that validator verifies the native descriptor rather than
+repairing it. Construct the fixture destination with Core's existing guarded
+private-file creator, copy the checkpointed bytes through retained source/destination
+handles, sync the destination and close both handles before the same validator and
+read-only open. Preserve every read-only diagnostic, no-create and refusal assertion;
+this changes fixture construction only, not production permissions or validation.
+
+The same three rows also reached all separate integration executables. Each reports
+CLI1 pass/4 failures, API0 pass/2 failures and MCP0 pass/1 failure; API logs identify
+wal-open/PermissionDenied before the expected SQLite contention. Source trace finds
+the common seed helper drops its Store before the raw held-writer connection opens.
+That connection can recreate WAL/SHM with inherited Windows permissions before the
+tested Store admits them. In contrast, the passing native Store contention controls
+retain their Store while the raw connection holds BEGIN IMMEDIATE. Retain an idle
+Store in the shared held-writer fixture, with the raw connection dropping first;
+assert private database/WAL/SHM before and after raw BEGIN. Keep every real SQLite
+lock, SQL execution, outcome/code/redaction assertion and original deadline. This
+also changes only fixture lifetime/setup. Fresh native runs must confirm both
+fixture corrections; Linux checks alone do not establish native acceptance.
