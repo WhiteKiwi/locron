@@ -254,3 +254,14 @@ An already-started I/O remains noninterruptible. Test repeated bounded passes wi
 a referenced prefix and later orphan entries, including active-file protection and
 state reset. This prevents a large stable referenced prefix from starving later
 cleanup indefinitely. SQL pending intents retain their existing recovery protocol.
+
+## Capacity-sized immutable admission preparation
+
+The preliminary admission read uses the currently observed valid global concurrency
+minus starting/running attempts, capped by available hard-guard permits, to size its
+existing capacity-times64 scan. This avoids fetching/decoding4096 snapshots when
+current capacity would scan only256. It remains a preparation bound only: the write
+transaction independently rechecks current settings, activity, eligibility and
+fairness. If capacity increases or unseen candidates arrive after preparation,
+those candidates may defer to the next pass under the existing prepared-set rule.
+No preliminary count reserves capacity or authorizes an attempt.
