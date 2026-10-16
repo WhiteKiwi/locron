@@ -7176,3 +7176,39 @@ The [phase receipt plan](planning/WINDOWS_WORKER_PHASE_RECEIPTS_2026-10-16.md)
 requires Docs/whole Issues/readback/final review before separate implementation,
 then all3 native Core and full same-head CI/final-copy acceptance. Existing native
 tests and meaningful scratch controls suffice; no mirrored repository test is added.
+
+
+## Atomic pending migration publication research — 2026-10-16
+
+Source8ef6584, CI38916287297 attempt3, MSRV job117043164522: Server74PASS/1FAIL,
+HTTP01 actual-store-creator refuses before the row body. Safe diagnostic reports
+open9.135400s, admission5.069ms, SQLite1.086780s and commit3.663074s, stage begin,
+admission_timeout, retries0, no SQLite codes, unknown/nonretryable outcome. This
+establishes measured commit cost and an expired budget before another migration
+BEGIN, not the identity of a historical lock holder or the cause of all native
+latency. Already-started I/O remains nonpreemptible.
+
+The actual migration implementation applies five ordinary transactional DDL
+steps in five immediate transactions when creating current state. The immutable
+SQL contains no nested transaction commands, VACUUM or transaction-incompatible
+PRAGMA. One transaction can therefore preserve the same SQL bytes, checksums,
+per-step predecessor checks and metadata while removing four COMMIT boundaries.
+This is a source-established reduction in durability barriers, not a promised
+Windows elapsed-time result or a diagnosis of host scheduling. A current schema
+needs no BEGIN/COMMIT. Recheck markers and the complete existing ledger after
+BEGIN because a pre-admission version may be stale. Historical partial schemas
+remain supported; they are upgraded from their verified committed version.
+
+SQLite primary references read for this review:
+- https://www.sqlite.org/lang_transaction.html — an explicit transaction persists
+  through its statements until COMMIT/ROLLBACK; BEGIN IMMEDIATE acquires write
+  intent, and a competing writer can return BUSY.
+- https://www.sqlite.org/atomiccommit.html — all database changes in a transaction
+  become visible together or none do. FULL durability remains selected.
+
+A real late-DDL failure can prove all-pending rollback without synthetic timing:
+start a valid v1 database, precreate the final http_content_type column while
+leaving version1, apply pending2–5 and let final ALTER fail. Verify the original
+version/ledger/defaults and absence of all intermediate changes after rollback.
+Count actual successful Operation commits for fresh/upgrade/current states; no
+new rusqlite feature, OS clock allowance or weakened native oracle is required.

@@ -131,7 +131,7 @@ The per-run payload allowance is shared across attempts. Physical file bytes det
 
 One permanent lock file is opened without replacement and held with a non-blocking exclusive OS lock by the daemon. Its descriptor is not inherited by children. Lock text is diagnostic only; the SQLite lifetime is the durable recovery record.
 
-The daemon locks before migrating. A CLI may migrate an older database only after proving the daemon lock is free. Each migration rechecks the version within its transaction and records its checksum. A database newer than the binary is rejected without mutation. Failed migrations roll back and leave actionable diagnostics.
+The daemon locks before migrating. A CLI may migrate an older database only after proving the daemon lock is free. All pending migrations share one immediate transaction. Application and schema markers plus the existing migration ledger are revalidated after write admission; each pending step rechecks its predecessor and records its original checksum. A database newer than the binary is rejected without mutation. Failed upgrades roll back the entire pending chain to the previously committed schema and leave actionable diagnostics. A current schema receives checksum verification without a write transaction. Historical SQL and records remain immutable.
 
 Migration 2 adds the nullable disabled-since cursor fact. Existing version-1 rows backfill to NULL,
 so upgrade does not invent historical disabled time; a later explicit transition establishes the

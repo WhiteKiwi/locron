@@ -6387,3 +6387,20 @@ Do not change production worker code or best-effort Diagnostic/attach. Portable
 held-mutex controls show the mechanism; same-head native Core148 on all3 hosts and
 all17 CI jobs with complete final binding/copy/upload remain required. Parent
 planning/Issues/readback review precedes separate one-line development.
+
+
+## Atomic pending migration publication — 2026-10-16
+
+The SPEC atomic-upgrade amendment and
+[complete plan](planning/ATOMIC_PENDING_MIGRATIONS_2026-10-16.md) replace only the
+earlier requirement to commit each pending schema step separately. Apply all
+pending steps under one admitted immediate transaction, reread markers and verify
+the complete existing ledger after BEGIN, and preserve immutable SQL/checksums,
+per-step predecessor rechecks, Windows default capture and existing configured
+values. Current-schema verification takes no write transaction. Failed pending
+chains roll back to the last committed supported schema. Preserve the one5s
+deadline, FULL/WAL/privacy, pre-BEGIN BUSY-only retry, unknown COMMIT outcomes,
+read-only behavior and every native gate. Original isolated legacy-step tests
+remain useful recovery fixtures for databases created by earlier binaries.
+Parent planning/issue readback precedes separate development; final same-source
+CI qualification and repository publication follow.

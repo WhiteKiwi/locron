@@ -688,6 +688,16 @@ policy and non-mutating/read-only behavior remain required. Advisory coordinatio
 control external writers or promise strict FIFO fairness. Qualification uses isolated
 owned state; production jobs, installed binaries and services are outside this change.
 
+### Atomic schema upgrade publication (2026-10-16)
+
+Opening older supported state publishes all required schema changes atomically.
+Before a successful commit, readers retain the previously committed schema and
+settings; a failed upgrade leaves that prior state recoverable. Initial defaults
+and all supported schema changes become visible together for new state. Existing
+configured values and the recorded history of completed upgrades are preserved.
+Already-current state is verified without an additional write. The existing total
+five-second admission budget, crash durability and uncertain-commit policy apply.
+
 ## Windows identity failure and deadline clarification (2026-10-16)
 
 A Windows identity request whose existing deadline has elapsed reports a timeout,

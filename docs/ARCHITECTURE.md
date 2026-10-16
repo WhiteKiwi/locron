@@ -217,6 +217,14 @@ Exactly one daemon owns a state directory. Before opening the scheduler lifetime
 
 The daemon acquires ownership before applying migrations. A CLI may migrate an older schema only after proving that no daemon holds the ownership lock; otherwise it requires a daemon restart. A database newer than the running binary is rejected. Schema version checks and migration steps occur under transactional revalidation so concurrent initializers cannot apply the same step twice.
 
+All pending schema steps are published in one immediate transaction under the
+existing writer admission and deadline. The admitted initializer rereads the
+application/version markers and verifies the complete existing ledger before
+applying immutable pending steps. This reduces repeated durability barriers and
+makes a failed upgrade restore the previously committed schema. Current-schema
+verification remains read-only. A concurrent initializer that advanced before
+admission is verified rather than overwritten.
+
 ## Persistence and lifecycle invariants
 
 The following invariants hold regardless of the final schema or library selection:
