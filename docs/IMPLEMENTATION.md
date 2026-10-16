@@ -6217,3 +6217,9 @@ through bounded read-only preparation, releases that mutex before writer admissi
 and revalidates manual enqueue's current live revision/definition under BEGIN.
 This is part of the original atomic scheduling invariant; it grants no stale enqueue
 or fresh wait allowance after preparation.
+
+The contention plan additionally retains the original operation/deadline across
+postcommit result readback after writer release. Such adapter failures are safe
+structured diagnostics with committed outcome; preparation/readback cannot start
+fresh SQLite waits. Removal still resolves and updates exactly one identity even
+when a live name equals another job's UUID. These boundary details precede source.

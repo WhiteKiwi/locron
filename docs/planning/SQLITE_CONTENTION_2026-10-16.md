@@ -205,3 +205,22 @@ rechecks the exact live job/current revision/immutable definition after BEGIN an
 returns a conflict on concurrent update/removal rather than enqueueing stale work.
 Admit prepares at most the existing hard guard64 times the existing scan multiplier64;
 its in-transaction scan still uses the original current-capacity-based bound/order.
+
+## Committed readback diagnostic boundary
+
+Mutations that return a job, run or settings record release writer ownership before
+reading the result. Carry the original Operation and deadline through that readback:
+acquire only the connection mutex within remaining time, use a nonwaiting SQLite
+handler, and report adapter failures at `readback` with a known committed outcome.
+Do not replay the mutation or start another wait allowance. Shared private read
+helpers allow this boundary without changing ordinary public read behavior.
+Preparation reads likewise disable the per-connection five-second handler so a
+late preparatory read cannot stack another allowance. Semantic not-found/conflict
+errors retain their categories. A raw PersistencePort adapter fallback preserves
+primary/extended codes with stage/outcome explicitly unknown rather than merging
+BUSY and LOCKED into a generic busy message.
+
+Job removal resolves exactly one row inside its admitted transaction, then updates
+that exact identity. A UUID-shaped name can match another job's identity; a bulk
+OR-predicate update must never remove multiple jobs for one request. A collision
+regression preserves the existing single-resource resolution behavior.
