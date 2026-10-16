@@ -6629,3 +6629,77 @@ On the final development snapshot, `cargo +1.98.0 clippy -p locron-store -p locr
 Parent-owned full workspace/MSRV qualification, artifact bindings and exact-revision
 publication evidence belong to Issues; these local findings do not assert native
 Windows/macOS or hosted-CI acceptance.
+
+### Linux maintenance one-pass fixture failures at 7fde
+
+Native Linux stable CI job116792218392 returned successful maintenance reports with
+outputs_pruned0 (global-output-limit fixture) and orphans_removed0 (existing-run orphan
+fixture); their original one-pass expected1 assertions failed. The remaining prune
+contract checks passed. Both cases pass without load locally, and source inspection
+shows legitimate elapsed-budget returns between recovery and the later prune/orphan
+phase. The CI output did not capture exact stage elapsed time, so runner load is a
+plausible explanation rather than a measured root cause. The two fixtures must instead
+retain the production cursor and verify the same exact final counts/files/bytes across
+bounded passes, with each pass capped at100 actions and a fixed five-second progress
+deadline. This follows the selected250 ms soft-pass contract; it neither changes the
+production budget nor relaxes the final safety oracles. The deterministic expired-pass,
+post-intent yield and slow referenced-prefix cursor regressions remain authoritative.
+
+### macOS raw-byte state refusal envelope at 7fde
+
+Native macOS aarch64 stable CI job116792218274 at
+`7fde26bc4b10f3adf955ed936ecd0e9fdb175503` passed CLI unit/prune qualification but
+failed the three non-UTF-8 state-discovery controls at their complete-envelope
+comparison. The existing macOS fixture expects native refusal with OS92 and an empty
+owned parent; its retired envelope requires only the raw message `Illegal byte
+sequence (os error 92)`. The reported assertion prints no actual payload, so the
+new diagnostic field values have not yet been independently observed on this host.
+
+Source trace confirms `Store::open` creates operation `open`, sets stage
+`state_preparation`, and calls `paths.ensure()` before admission, connection opening
+or SQLite work. A native path-preparation I/O refusal therefore has the agreed safe
+16-field projection: kind `io`, OS92, null SQLite codes, measured elapsed microseconds,
+zero admission/connection/SQLite waits, transaction/commit time and retries,
+retryable=false, durable_outcome=`not_committed`, and lock_owner=`unknown`. The safe
+message reports those static facts and elapsed time instead of the raw OS text or
+path bytes. Only the macOS expectation is updated to this exact complete envelope;
+the preview result, exit5, empty stderr,1024-byte output bound, raw-byte path
+selection and empty-parent checks remain unchanged. Linux keeps its successful
+raw-byte path controls. Native macOS rerun remains required to establish acceptance;
+Linux compilation/tests do not execute the macOS branch.
+The ten Linux `state_discovery::` tests pass after this expectation change. Compact
+serialization of the fixed expected envelope, including its terminal newline, is739
+bytes at elapsed0 and774 bytes at the largest u64 elapsed value, preserving the
+existing1024-byte bound without depending on native timing.
+
+### PR144 permanent writer-lock ownership inventory at 7fde
+
+Native MSRV CI job116792218513 reached the Server library and reported72 passing
+tests plus `dashboard_boolean_qualification_195_owned` failing with `foreign state
+object retained; private uncompleted roots retained`. Source confirms the populated
+row cleanup allowlist includes the database and sidecars but omits the newly permanent
+`writer-intent.lock` and `writer.lock`; the child ownership manifests also only record
+leaves with explicit fixture creators. Admitting arbitrary discovered files would
+weaken that ownership boundary.
+
+The fixture therefore explicitly creates and records exactly those two empty private
+leaves before starting Store for populated runtime rows. Their guarded identities,
+sizes and hashes join the existing before/after non-SQLite equality oracle; cleanup
+requires the original identity, private regular no-follow leaf and empty contents.
+Only populated rows admit these exact names. Parser/absent rows create neither, and
+the absence oracle explicitly rejects either lock leaf. All195 keys, native ownership
+receipts, full logical/file comparisons, complete cleanup and original deadlines
+remain required. This is a fixture inventory correction, with no production lock
+lifecycle or product behavior change; native reruns remain required.
+
+### macOS x64 partial orphan pass at 7fde
+
+Native macOS x64 CI job116792218435 completed60 actions in the101-orphan fixture,
+then failed its former exact100 one-pass assertion; the other97 checks including
+prune contracts passed. This establishes a successful partial pass, not an elapsed
+measurement or a policy failure. Qualification must independently test both selected
+limits: production250 ms passes retain the cursor, remove at most100 objects each,
+preserve the exact remaining-file ledger and unexpected directory, and eventually
+remove all101 within the fixed five-second test progress deadline. An isolated
+production orphan-scan control uses a five-second fixture-only deadline to prove the
+100th action completes and the101st is refused, without changing production budgets.

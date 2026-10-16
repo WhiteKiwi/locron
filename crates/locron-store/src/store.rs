@@ -1053,12 +1053,13 @@ impl Store {
     /// backed by a configured WAL connection. The daemon lock is acquired
     /// separately via [`Store::acquire_daemon_lock`].
     pub fn open(paths: StatePaths, binary_version: &str, now_us: i64) -> StoreResult<Self> {
+        #[cfg(windows)]
+        use crate::windows_open::{OpenTrace, Stage};
+
         let operation = contention::Operation::new("open", None);
         let autocommit = std::cell::Cell::new(true);
         let result = (|| {
             operation.stage("state_preparation");
-            #[cfg(windows)]
-            use crate::windows_open::{OpenTrace, Stage};
             #[cfg(windows)]
             let trace = OpenTrace::new();
             #[cfg(windows)]

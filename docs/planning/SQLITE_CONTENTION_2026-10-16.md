@@ -275,3 +275,34 @@ Never synthesize SQLITE_READONLY8 and describe it as an original driver code.
 The refusal stays state_error (CLI exit5/API500), nonretryable and not_committed,
 and creates no coordination file. A focused read-only regression checks this
 provenance and the unchanged no-create behavior.
+
+### Bounded maintenance fixture continuation (native Linux CI follow-up)
+
+The 7fde Linux stable run (job116792218392) returned successful partial maintenance
+reports in two existing fixtures: global-output-limit pruning and recovery plus
+orphan removal. Their one-pass exact-count assertions saw0 instead of1. A single
+250 ms pass may finish recovery and defer later pruning/scanning; the selected
+contract requires resumable progress across bounded passes. The original final
+file/state/count oracles remain required.
+
+Update only these two fixtures to retain the same production MaintenanceCursor and
+aggregate all report counts across passes, stopping after the intended actions are
+observed. **Verify:** each pass admits at most100 actions, a fixed five-second test
+progress deadline bounds the sequence, and the original exact count/file/retained-byte
+assertions succeed. Keep the production250 ms allowance unchanged. Existing deterministic
+expired-pass, post-intent foreground-yield and slow-prefix cursor controls remain.
+The observed CI logs do not contain elapsed stage measurements, so they establish
+partial reports and failed one-pass assumptions without measuring exact runner delay.
+
+### Native macOS orphan action-budget fixture follow-up
+
+The 7fde macOS x64 job116792218435 completed60 orphan actions before the existing
+fixture's one-pass expected100 assertion failed; the other97 checks, including prune
+contracts, passed. The250 ms elapsed limit can legitimately precede the100-action
+limit. **Verify:** keep the production pass budget, assert at most100 actions and
+exactly101 minus the measured removals remain after each pass, protect the unexpected
+directory, and finish all101 orphans with the same retained cursor within a fixed
+five-second test progress deadline. A separate action-dimension control gives the
+production orphan scan a five-second fixture-only deadline and verifies exactly100
+removals, one remaining file and refusal of a101st action. No production allowance,
+platform gate or final filesystem oracle changes.

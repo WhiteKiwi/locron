@@ -370,6 +370,13 @@ mod state_discovery {
             let Ok(error) = serde_json::from_slice::<serde_json::Value>(&live.stdout) else {
                 panic!("native state refusal was not JSON");
             };
+            let Some(elapsed_us) = error["error"]["storage"]["elapsed_us"].as_u64() else {
+                panic!("native state refusal elapsed time was not measured");
+            };
+            let message = format!(
+                "storage open failed at state_preparation: io; elapsed {} ms, admission wait 0 ms, connection wait 0 ms, SQLite wait 0 ms, retries 0; OS error 92; transaction 0 us, commit 0 us; durable outcome not_committed, lock owner unknown; inspect state and storage diagnostics before retrying",
+                elapsed_us / 1_000,
+            );
             assert!(
                 error
                     == serde_json::json!({
@@ -378,7 +385,25 @@ mod state_discovery {
                         "command": "config",
                         "error": {
                             "code": "state_error",
-                            "message": "Illegal byte sequence (os error 92)"
+                            "message": message,
+                            "storage": {
+                                "operation": "open",
+                                "stage": "state_preparation",
+                                "kind": "io",
+                                "elapsed_us": elapsed_us,
+                                "admission_wait_us": 0,
+                                "connection_wait_us": 0,
+                                "sqlite_wait_us": 0,
+                                "transaction_us": 0,
+                                "commit_us": 0,
+                                "retries": 0,
+                                "sqlite_primary_code": null,
+                                "sqlite_extended_code": null,
+                                "os_error_code": 92,
+                                "retryable": false,
+                                "durable_outcome": "not_committed",
+                                "lock_owner": "unknown"
+                            }
                         },
                         "warnings": []
                     }),

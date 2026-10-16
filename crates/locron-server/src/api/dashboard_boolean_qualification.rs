@@ -15,6 +15,7 @@ const CONTROL_CAP: usize = 16 * 1024;
 const SNAPSHOT_CAP: usize = 16 * 1024 * 1024;
 const RESPONSE_CAP: usize = 1024 * 1024;
 const CELL_CAP: usize = 1024 * 1024;
+const WRITER_LOCKS: [&str; 2] = ["writer-intent.lock", "writer.lock"];
 #[cfg(unix)]
 const STORE_SELECTOR: &str =
     "store::dashboard_pr144_snapshot_fixture::owned_snapshot_fixture_child";
@@ -1528,10 +1529,13 @@ fn absence(state: &Path) -> Check<()> {
         "state.db-wal",
         "state.db-shm",
         "state.db-journal",
-    ] {
+    ]
+    .into_iter()
+    .chain(WRITER_LOCKS)
+    {
         match fs::symlink_metadata(state.join(name)) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-            _ => return Err("absent database or sidecar created"),
+            _ => return Err("absent database, sidecar or writer lock created"),
         }
     }
     Ok(())
@@ -1563,7 +1567,10 @@ fn non_sqlite(ticket: &Ticket) -> Check<Value> {
         "dashboard.token",
         "dashboard.token.lock",
         "outputs/owned-output",
-    ] {
+    ]
+    .into_iter()
+    .chain(WRITER_LOCKS.into_iter().filter(|_| populated(ticket.row)))
+    {
         let path = ticket.state.join(name);
         let file = private_read(&path)?;
         inventory[name] = json!({"identity":identity(&file)?,"sha256":sha256(&file)?,"size":file.metadata().map_err(|_| "sentinel metadata failed")?.len()});
@@ -2242,6 +2249,7 @@ fn cleanup(
         state_files.insert("dashboard.token.lock".to_owned());
     }
     if row.is_some_and(populated) {
+        state_files.extend(WRITER_LOCKS.map(str::to_owned));
         state_files.extend(
             [
                 "state.db",
@@ -2288,7 +2296,7 @@ fn cleanup(
                     identity(&file)? == expected,
                     "owned state leaf replaced; retained",
                 )?;
-                if name == "dashboard.token.lock" {
+                if name == "dashboard.token.lock" || WRITER_LOCKS.contains(&name.as_str()) {
                     require(
                         file.metadata()
                             .map_err(|_| "cleanup permanent lock metadata failed")?
@@ -3045,6 +3053,11 @@ async fn qualification() -> Check<()> {
         let root = fresh_root(&nonce)?;
         #[cfg(windows)]
         let root = fresh_root(&nonce, &evidence_guard)?;
+        if populated(row) {
+            for name in WRITER_LOCKS {
+                owned_file(&root.state.join(name), b"")?;
+            }
+        }
         owned_file(&root.state.join("dashboard.token.lock"), b"")?;
         let ticket = Ticket {
             schema: "locron.private.pr144/v1".to_owned(),

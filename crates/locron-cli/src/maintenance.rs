@@ -831,6 +831,39 @@ mod tests {
         (temp, paths, store)
     }
 
+    fn maintain_until(
+        store: &Store,
+        paths: &StatePaths,
+        lifetime: &str,
+        now_us: i64,
+        complete: impl Fn(&MaintenanceReport) -> bool,
+    ) -> MaintenanceReport {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut cursor = MaintenanceCursor::default();
+        let mut total = MaintenanceReport::default();
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "bounded maintenance did not complete: {total:?}"
+            );
+            let pass = maintain_with_cursor(store, paths, lifetime, now_us, &mut cursor).unwrap();
+            assert!(
+                Instant::now() < deadline,
+                "bounded maintenance exceeded its progress deadline"
+            );
+            assert!(pass.actions <= MAX_ACTIONS);
+            total.actions += pass.actions;
+            total.outputs_recovered += pass.outputs_recovered;
+            total.outputs_missing += pass.outputs_missing;
+            total.outputs_pruned += pass.outputs_pruned;
+            total.runs_pruned += pass.runs_pruned;
+            total.orphans_removed += pass.orphans_removed;
+            if complete(&total) {
+                return total;
+            }
+        }
+    }
+
     fn write_private(path: &Path, bytes: &[u8]) {
         let mut file = locron_core::filesystem::create_private_new(path).unwrap();
         file.write_all(bytes).unwrap();
@@ -985,9 +1018,10 @@ mod tests {
         terminalize(&store, &run_id, 11);
         store.set_setting("output_limit_bytes", "0", 13).unwrap();
 
-        // The attempt is terminal now, so the pass recovers the partial and
-        // then prunes it under the zero-byte limit.
-        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
+        // Recovery and pruning can occupy separate bounded passes.
+        let report = maintain_until(&store, &paths, &lifetime, 14, |report| {
+            report.outputs_pruned >= 1
+        });
 
         assert_eq!(report.outputs_pruned, 1);
         assert!(!paths.final_output(&run_id, 1).unwrap().exists());
@@ -1236,9 +1270,8 @@ mod tests {
         assert!(!directory.exists());
     }
 
-    #[test]
-    fn orphan_cleanup_is_bounded_and_ignores_unexpected_objects() {
-        let (_temp, paths, store) = open_store();
+    fn orphan_fixture() -> (tempfile::TempDir, StatePaths, Store, PathBuf) {
+        let (temporary, paths, store) = open_store();
         let run_id = uuid::Uuid::from_u128(4).to_string();
         let directory = paths.output_directory(&run_id).unwrap();
         locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
@@ -1246,19 +1279,68 @@ mod tests {
             write_private(&directory.join(format!("{attempt}.log")), b"old");
         }
         fs::create_dir(directory.join("unexpected")).unwrap();
+        (temporary, paths, store, directory)
+    }
 
-        let report = maintain(&store, &paths, "no-lifetime", orphan_pass_time()).unwrap();
+    fn remaining_orphan_files(directory: &Path) -> usize {
+        fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_type().unwrap().is_file())
+            .count()
+    }
 
+    #[test]
+    fn orphan_cleanup_is_bounded_and_ignores_unexpected_objects() {
+        let (_temporary, paths, store, directory) = orphan_fixture();
+        let mut cursor = MaintenanceCursor::default();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let now_us = orphan_pass_time();
+        let mut removed = 0;
+        while removed < 101 {
+            assert!(
+                Instant::now() < deadline,
+                "orphan maintenance did not complete"
+            );
+            let report =
+                maintain_with_cursor(&store, &paths, "no-lifetime", now_us, &mut cursor).unwrap();
+            assert!(
+                Instant::now() < deadline,
+                "orphan maintenance exceeded its progress deadline"
+            );
+            assert!(report.actions <= MAX_ACTIONS);
+            assert_eq!(report.actions, report.orphans_removed);
+            removed += report.orphans_removed;
+            assert_eq!(remaining_orphan_files(&directory), 101 - removed);
+            assert!(directory.join("unexpected").is_dir());
+        }
+        assert_eq!(removed, 101);
+        assert_eq!(remaining_orphan_files(&directory), 0);
+    }
+
+    #[test]
+    fn orphan_action_budget_completes_the_hundredth_and_refuses_the_next() {
+        let (_temporary, paths, store, directory) = orphan_fixture();
+        let mut cursor = MaintenanceCursor {
+            output_guard: Some(
+                locron_core::filesystem::DirectoryGuard::existing_private(&paths.outputs).unwrap(),
+            ),
+            outputs: Some(paths.outputs.clone()),
+            ..MaintenanceCursor::default()
+        };
+        // Isolate action admission from the independently qualified250 ms pass clock.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let report = store.with_background_budget(deadline, || {
+            let mut pass = Pass::new(&store, deadline);
+            remove_verified_orphans(&store, &paths, orphan_pass_time(), &mut pass, &mut cursor)
+                .unwrap();
+            assert!(!pass.take_action());
+            pass.finish().unwrap()
+        });
+        assert!(Instant::now() < deadline);
         assert_eq!(report.actions, MAX_ACTIONS);
         assert_eq!(report.orphans_removed, MAX_ACTIONS);
-        assert_eq!(
-            fs::read_dir(&directory)
-                .unwrap()
-                .filter_map(std::result::Result::ok)
-                .filter(|entry| entry.file_type().unwrap().is_file())
-                .count(),
-            1
-        );
+        assert_eq!(remaining_orphan_files(&directory), 1);
         assert!(directory.join("unexpected").is_dir());
     }
 
@@ -1282,7 +1364,9 @@ mod tests {
         // The owning daemon dies; the restarted daemon recovers the
         // referenced partial and removes the unreferenced 2.log.
         let restarted = restart_lifetime(&store, 9);
-        let report = maintain(&store, &paths, &restarted, orphan_pass_time()).unwrap();
+        let report = maintain_until(&store, &paths, &restarted, orphan_pass_time(), |report| {
+            report.outputs_recovered >= 1 && report.orphans_removed >= 1
+        });
 
         assert_eq!(report.outputs_recovered, 1);
         assert_eq!(report.orphans_removed, 1);
