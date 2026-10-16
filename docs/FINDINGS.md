@@ -6982,3 +6982,38 @@ Separate research rejects ordinary protected creation as an exclusive receipt an
 Rust rename as no-clobber; empty private staging plus no-replace move/full-ID rebind
 is selected under bounded owner/quarantine controls. The complete repair plan governs
 all later implementation and actual same-head qualification.
+
+### Known-junction fixture representation follow-up (2026-10-16)
+
+Native run38867063921 on source9088/tree3edb6b (merge checkout b22cd729) confirms
+Core148 on all3 rows, all6 complete PR144195 ledgers and their39 runtime cleanups,
+and safe N08 readonly/pending outcomes in both library contexts. The common failure
+is N06-api's initial literal target comparison, before prune. Explicit qualification
+stops at API; CLI has not executed. Both x64 jobs additionally reach35 minutes.
+Rust [1.94 readlink](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs#L723-L770)
+and [1.98 friendly conversion](https://github.com/rust-lang/rust/blob/1.98.0/library/std/src/sys/args/windows.rs#L354-L386)
+can remove a short verbatim drive prefix; Core normalized paths retain it. Actual
+prefixes remain unobserved. Preserve retained-target and complete private/full-ID
+checks while comparing canonical representations in the disposable fixture only.
+The [N06 amendment](planning/WINDOWS_FOUNDATION_N06_REPAIR_2026-10-16.md) records
+the narrow decision and closed native observations; no product guard is weakened.
+
+### Measured Windows tail duplication and bounded scheduling (2026-10-16)
+
+Source9088 CI38867063921 recompiles190 crates for doctor in99/139/141s across
+ARM/MSRV/x64stable; service CLI relinking costs24.36/28.33/24.43s. ARM HTTP
+contracts add48 crates/31.96s. B recovery already uses the same default test profile.
+These observed costs bound potential savings; new integration links still cost time.
+Service64 runtime383.45/382.78s includes two intentional three-by60s retry waits.
+Independent source audit finds isolated fixture/Job/ID/child-env ownership for the
+complete64 selection, with no service process-global fault/environment mutation.
+The original100ms/80ms scheduler-sensitive controls and native qualification remain.
+The [tail plan](planning/WINDOWS_FOUNDATION_TAIL_OPTIMIZATION_2026-10-16.md)
+selects coherent B reuse and only this service selection's bounded two-worker
+exception, with unchanged real wait oracles. Upload-only copies preserve original
+cold-Core plus actual B members and record source identities/hashes; they never
+become qualification inputs. Source-matched full native success is still pending.
+Primary [CargoJSON](https://doc.rust-lang.org/cargo/reference/external-tools.html#json-messages),
+[Cargo build-cache inputs](https://doc.rust-lang.org/cargo/reference/build-cache.html#cache-internals)
+and [artifact layout](https://github.com/actions/upload-artifact#upload-using-multiple-paths-and-exclusions)
+explain fresh selection, feature/profile separation and common-root packaging.

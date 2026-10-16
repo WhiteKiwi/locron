@@ -6283,3 +6283,30 @@ all Unix expressions remain exact. Request-owned ancestry survives unconfirmed c
 healthy native refusal keeps the worker warm. Original SQL pending/stop/finish ordering
 and complete native oracles remain. Parent whole-plan Issue readback/final reread precedes
 separate file leases; same-head all3 native/full CI evidence precedes completion claims.
+
+## Known-junction fixture binding follow-up (2026-10-16)
+
+The [N06 amendment](planning/WINDOWS_FOUNDATION_N06_REPAIR_2026-10-16.md)
+continues the frozen SPEC after actual Core/PR144/readonly refusal qualification.
+Only Windows API/CLI N06 setup compares canonical target representation AND an
+independently private-admitted full identity under the original deadline and live
+target guard. Original observed spelling, later nonmutation/durable oracles and
+nonrecursive cleanup remain literal. Native spelling facts stay closed booleans.
+The remaining measured CI budget/duplicate-build work requires a separate plan
+before source; no timeout, test scope or support acceptance is waived.
+
+## Measured foundation tail reuse (2026-10-16)
+
+The [tail optimization plan](planning/WINDOWS_FOUNDATION_TAIL_OPTIMIZATION_2026-10-16.md)
+amends only tail build routing, upload packaging and the measured service scheduling
+exception. Both guarded producer namespaces and both complete library contexts remain.
+A CI-only helper verifies original production/recovery/binding and global cold-Core
+identity/hash before and after coherent B tail execution. Upload-only copies preserve
+all original executable roles with source/copy provenance in one checkout archive root;
+no copied artifact is ever admitted or executed. Only service:: uses two workers,
+retaining both real180s minimum-wait oracles and all64 cases. Other current commands,
+Core/library serialization, cache,35-minute limit and required contexts remain.
+Tail failure scheduling adds an explicit preparation-success prerequisite; the
+always-run diagnostic reports unavailable/nonzero before Cargo when preparation
+fails. Every original diagnostic still executes on the successful B route, and
+no failed admission silently compiles or runs a global-target replacement.
