@@ -2602,7 +2602,28 @@ fn native_case(
                 checked(deadline, || fs::read_link(&link)),
                 "actual-junction-target",
             );
-            assert!(actual == target, "actual known junction target changed");
+            let canonical = need(
+                checked(deadline, || fs::canonicalize(&actual)),
+                "actual-junction-canonical-target",
+            );
+            let original_path_equal = actual == target;
+            let canonical_path_equal = canonical.as_path()
+                == owner
+                    .guards
+                    .last()
+                    .expect("known junction target guard must remain held")
+                    .normalized_path();
+            let full_id_equal = root_id(&actual, deadline) == target_id;
+            eprintln!(
+                "prune-observation {}",
+                json!({"version":1,"surface":SURFACE,"row":"N06","phase":"target_binding",
+                    "original_path_equal":original_path_equal,
+                    "canonical_path_equal":canonical_path_equal,"full_id_equal":full_id_equal})
+            );
+            assert!(
+                canonical_path_equal && full_id_equal,
+                "actual known junction target changed"
+            );
             junction = Some((
                 link,
                 target,

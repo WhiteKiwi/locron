@@ -1200,8 +1200,16 @@ jobs:
           '@
           $program | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify native default doctor facts and output
+      - name: Prepare verified native foundation tail target
+        id: native_tail
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: python scripts/ci_windows_foundation_tail.py prepare
+      - name: Verify native default doctor facts and output
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_default_doctor_
@@ -1211,63 +1219,68 @@ jobs:
           cargo test -p locron --test cli --locked human_forms_leave_the_json_envelope_untouched -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native CLI wake ownership
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked wake_socket_makes_new_manual_run_promptly_visible_to_daemon -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native CLI cancellation ownership
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked durable_cancel_terminates_a_running_process -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Refuse a foreign native wake peer
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::foreign_wake_peer_is_refused_before_frame -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Refuse a malformed native wake acknowledgment
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::malformed_wake_ack_is_refused -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bound an idle native wake peer
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::idle_wake_peer_expires_original_probe_deadline -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain native owners across a withheld return
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::withheld_native_return_retains_case_owner_at_deadline -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify private native peer publication
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::private_peer_publication_preserves_no_clobber_boundary -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify owned bounded native CLI output capture
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::native_cli_output_capture_contract -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native registered service semantics
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
-        run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=1'
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
+        run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=2'
       - name: Verify optional native GUI launcher semantics
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         run: cargo test -p locron --test windows_service_launcher --features windows-service-launcher --locked -- --test-threads=1
       - name: Diagnose the stock Windows adapter after cold contracts
         if: always()
         shell: pwsh
-        run: ./.github/scripts/windows-adapter-diagnostic.ps1
+        run: |
+          if ('${{ steps.native_tail.outcome }}' -ne 'success') {
+            Write-Output 'Windows adapter diagnostics unavailable: tail target preparation failed'
+            exit 1
+          }
+          ./.github/scripts/windows-adapter-diagnostic.ps1
       - name: Build the native CLI for isolated Windows acceptance
         run: cargo build -p locron --locked
       - name: Verify actual registered daemon lifetimes
@@ -1321,7 +1334,7 @@ jobs:
           cargo test -p locron-server --test history_active --locked history_active_public_lifecycle_http -- --exact --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native HTTP API and stream contracts
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         run: cargo test -p locron-server --test contract --locked
       - name: Record native artifact evidence
         shell: pwsh
@@ -1337,26 +1350,19 @@ jobs:
             elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
           }
           $facts | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath windows-native-evidence.json -Encoding utf8
-          Get-FileHash -Algorithm SHA256 -LiteralPath target/debug/locron.exe | Format-List | Out-File -FilePath windows-native-sha256.txt -Encoding utf8
+          Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'debug/locron.exe') | Format-List | Out-File -FilePath windows-native-sha256.txt -Encoding utf8
+      - name: Stage verified native artifact upload copies
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: python scripts/ci_windows_foundation_tail.py stage
       - uses: actions/upload-artifact@v7
         with:
           name: windows-native-${{ matrix.platform }}-rust-${{ matrix.rust }}
           if-no-files-found: error
           retention-days: 14
-          path: |
-            target/debug/locron.exe
-            target/debug/locron-service-launcher.exe
-            target/debug/deps/locron_core-*.exe
-            target/debug/deps/locron_store-*.exe
-            target/debug/deps/locron_engine-*.exe
-            target/debug/deps/locron_server-*.exe
-            target/debug/deps/windows_lifecycle-*.exe
-            target/debug/deps/windows_service_launcher-*.exe
-            target/debug/deps/mcp-*.exe
-            target/debug/deps/contract-*.exe
-            windows-native-evidence.json
-            engine-output-qualification/
-            windows-native-sha256.txt
+          path: windows-native-upload/
 
       - name: Upload actual prune and state qualification receipts
         if: always()
