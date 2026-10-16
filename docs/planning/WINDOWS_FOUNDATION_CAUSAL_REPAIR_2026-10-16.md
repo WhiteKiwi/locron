@@ -117,6 +117,15 @@ facts and destination outcome are resolved while original physical ownership liv
 Original sid/create request entry refuses new selectors; only typed remove/move
 entries can attach the required ownership and submit these destructive selectors.
 
+The helper owns the ENTIRE source-leaf transition: after independently admitting
+the private source parent, acquire source ancestors guard, prove empty, complete
+fresh disposable DACL-only initialization, then admit existing_private/capture ID
+and raw original handle. Server supplies only genuine exclusive TempDir+keep and
+the parent Arcs, never retains a staging LEAF guard across the call. The helper
+therefore can release ALL source-leaf no-DELETE handles before MoveTo. Its documented
+precondition is the caller's fresh disposable creation receipt; it does not authorize
+adopting or repairing an arbitrary existing or already-refused private root.
+
 ## Ordered work and Verify
 
 1. **Complete Docs/Issue review before code.** Parent records native findings,
