@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   frontend:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
@@ -64,7 +68,7 @@ jobs:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
@@ -1139,7 +1143,7 @@ jobs:
       RUSTUP_TOOLCHAIN: 1.98.0
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.98.0
           components: rustfmt, clippy
@@ -1783,7 +1787,7 @@ jobs:
     runs-on: ${{ matrix.runner.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
@@ -2807,7 +2811,7 @@ jobs:
     runs-on: ${{ matrix.runner.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
@@ -2842,7 +2846,7 @@ jobs:
       RUSTUP_TOOLCHAIN: 1.94.0
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
@@ -3076,7 +3080,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2

@@ -1063,7 +1063,8 @@ mod tests {
                     permit,
                     move |_| {
                         query_called.store(true, Ordering::Release);
-                        panic!("fixed SID query fixture panic")
+                        // Exercise owned unwinding without global panic reporting.
+                        std::panic::resume_unwind(Box::new("fixed SID query fixture panic"))
                     },
                     |owner| match mode {
                         0 => {
