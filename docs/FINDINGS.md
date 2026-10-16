@@ -6777,3 +6777,39 @@ assert private database/WAL/SHM before and after raw BEGIN. Keep every real SQLi
 lock, SQL execution, outcome/code/redaction assertion and original deadline. This
 also changes only fixture lifetime/setup. Fresh native runs must confirm both
 fixture corrections; Linux checks alone do not establish native acceptance.
+
+### Unix contention fixture privacy under an ordinary umask at ff97993
+
+After retaining the idle Store in the shared held-writer fixture, ordinary Linux
+x64 stable and MSRV CI reach the new private-file assertion and fail before the
+external-writer BUSY assertion. The root's isolated MCP control reproduces the same
+failure in0.02s with a child-only umask022; the default local umask0077 control passes.
+This occurs without running the rest of the MCP suite and does not require a global
+state or ordering explanation. The failing loop checks the main database first.
+
+The shared seed helper opens an absent database through Unix Store::open, which
+uses ordinary SQLite Connection::open rather than a private leaf creator. SQLite's
+default new main-file mode0644 is narrowed to0600 by0077 but remains0644 under022;
+its WAL/SHM permissions derive from that main database. Earlier private-WAL research
+and the existing MCP cancellation fixture already use an exclusive private empty
+main-file creator for this reason. Retaining a Store fixes native handle lifetime
+but does not change the initial Unix file mode.
+
+Select Unix-only preparation in the shared seed helper: exclusively create the
+absent main database through Core's existing guarded create_private_new, require an
+empty private regular file, record its device/inode, and close its creator before
+the original Store::open. A guarded existing read after real initialization must
+confirm the same device/inode and private file, then close before job seeding. An
+unexpected existing file refuses CreateNew. No chmod, process umask mutation, existing
+file adoption or sidecar manufacture is selected. Windows private Store creation and
+the raw-connection-before-idle-Store drop order remain unchanged. All existing
+privacy, SQL, code/outcome/redaction and original deadline assertions remain exact.
+Qualification must include full MCP plus CLI/HTTP contention controls under child
+umask022, with the077 control retained; native acceptance still requires its own run.
+
+The separate ff97993 isolated Windows run38849740946 passes Store134, CLI5, API2 and
+MCP1 on x64 stable and ARM64. The MSRV row passes Store134, CLI5 and MCP1 but its two
+API fixtures fail during initial Store creation before the external writer exists:
+slow native migration/commit exceeds the shared five-second opening allowance.
+Those failed setup receipts remain failed; this Unix fixture correction neither
+widens that product deadline nor claims native MSRV API acceptance.

@@ -18,7 +18,33 @@ pub const SECRETS: [&str; 4] = [
 ];
 
 pub fn seed(paths: &StatePaths) {
+    #[cfg(unix)]
+    let creator_identity = {
+        use std::os::unix::fs::MetadataExt;
+
+        let creator = locron_core::filesystem::create_private_new(&paths.database).unwrap();
+        let metadata = creator.metadata().unwrap();
+        assert!(metadata.is_file() && metadata.len() == 0);
+        assert!(locron_core::filesystem::is_private(&paths.database, false).unwrap());
+        let identity = (metadata.dev(), metadata.ino());
+        drop(creator);
+        identity
+    };
     let store = Store::open(paths.clone(), env!("CARGO_PKG_VERSION"), 1).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let database = locron_core::filesystem::open_private(
+            &paths.database,
+            std::fs::OpenOptions::new().read(true),
+        )
+        .unwrap();
+        let metadata = database.metadata().unwrap();
+        assert_eq!((metadata.dev(), metadata.ino()), creator_identity);
+        assert!(metadata.is_file());
+        assert!(locron_core::filesystem::is_private(&paths.database, false).unwrap());
+    }
     let targets = [
         (
             "00000000-0000-7000-8000-000000000180",
