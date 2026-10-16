@@ -322,3 +322,24 @@ including Display, Debug and serialized diagnostic output. Document committed as
 possible durable outcome when result readback fails after a successful mutation.
 Existing regression suites and strict formatting/Clippy validate this correction;
 all production deadlines, CI limits and skipped-test policies remain unchanged.
+
+### Consolidated dependency PR qualification
+
+Integrate the exact reviewed heads of dependency PR176–179 into PR182 with ordinary
+merge commits, retaining attribution. The changes are mise-action5.1.1, setup-python7,
+rust-toolchain e2a55d2, and the lockfile's jiff0.2.38, rust-embed8.13.0, tokio1.53.2
+and uuid1.28.0 (the lockfile supersedes stale PR prose). No CI limits or test
+selection changes are included. Mise's default token-export change needs no opt-in:
+the subsequent frontend steps only invoke pnpm. setup-python's removed pip-install
+input is unused; the paired-manifest workflow explicitly requests Python3.14.
+
+1. Inspect each exact diff and merge the original commits after review corrections.
+   **Verify:** only the specified action references and Cargo.lock change, merge
+   ancestry retains all four heads, and any conflict is reviewed explicitly.
+2. Qualify the combined source with focused regressions, formatting, strict Clippy
+   and the existing complete hosted matrix, including MSRV and native platforms.
+   **Verify:** failures remain failures, required checks run unchanged on the final
+   head, and Linux local checks are not represented as Windows/macOS runtime proof.
+3. Parent publishes and delivers the combined PR182, then records dependency PR
+   supersession. **Verify:** all required combined-head checks pass and the squash
+   merge contains every reviewed dependency change before closing sibling PRs.
