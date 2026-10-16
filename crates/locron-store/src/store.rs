@@ -12,17 +12,23 @@ use locron_core::lifecycle::RunState;
 use locron_core::ports::PersistencePort;
 use locron_core::schedule::Schedule;
 use locron_core::{CoreError, DurationMicros, JobId, RevisionNumber};
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 #[cfg(test)]
 use uuid::Uuid;
 
-use crate::migration::migrate;
+use crate::migration::migrate_admitted;
 use crate::{DaemonLock, LockMetadata, StatePaths};
 
 mod activity;
 mod cancellation;
+pub(crate) mod contention;
+#[cfg(test)]
+mod readback_qualification;
+#[cfg(test)]
+mod transaction_qualification;
+pub use contention::ObservedFailure;
 #[cfg(test)]
 mod history_qualification;
 pub use cancellation::CancellationPreview;
@@ -149,7 +155,11 @@ struct SqlitePreparation {
 
 #[cfg(windows)]
 impl SqlitePreparation {
-    fn new(database: &Path, trace: &crate::windows_open::OpenTrace) -> std::io::Result<Self> {
+    fn new(
+        database: &Path,
+        trace: &crate::windows_open::OpenTrace,
+        deadline: std::time::Instant,
+    ) -> std::io::Result<Self> {
         use crate::windows_open::Stage;
         use locron_core::filesystem::create_private_new;
 
@@ -160,9 +170,6 @@ impl SqlitePreparation {
             trace,
             create_private_new,
         )?;
-        let deadline = std::time::Instant::now()
-            .checked_add(std::time::Duration::from_secs(5))
-            .ok_or_else(|| std::io::Error::other("SQLite admission deadline overflow"))?;
         Self::prepare_sidecars(database, trace, deadline)
     }
 
@@ -407,6 +414,15 @@ pub type StoreResult<T> = Result<T, StoreError>;
 /// Errors produced by store operations.
 #[derive(Debug, Error)]
 pub enum StoreError {
+    /// Safe measured persistence failure, retaining its original adapter error explicitly.
+    #[error("{0}")]
+    Observed(contention::ObservedFailure),
+    /// One total writer-admission allowance elapsed.
+    #[error("writer admission deadline elapsed")]
+    AdmissionTimeout,
+    /// Automatic maintenance yielded at an uncommitted boundary.
+    #[error("automatic maintenance yielded to foreground work")]
+    MaintenanceDeferred,
     /// Filesystem or OS-level I/O failure.
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -1016,6 +1032,8 @@ pub struct ImportSummary {
 pub struct Store {
     paths: StatePaths,
     connection: Mutex<Connection>,
+    writable: bool,
+    write_observation: Mutex<Option<locron_core::PersistenceDiagnostic>>,
     #[cfg(test)]
     history_observation: Mutex<history_qualification::Observation>,
     // SQLite must close before retained read-only DB/WAL/SHM leaves and their parent guards.
@@ -1032,50 +1050,79 @@ impl Store {
     /// backed by a configured WAL connection. The daemon lock is acquired
     /// separately via [`Store::acquire_daemon_lock`].
     pub fn open(paths: StatePaths, binary_version: &str, now_us: i64) -> StoreResult<Self> {
-        #[cfg(windows)]
-        use crate::windows_open::{OpenTrace, Stage};
-        #[cfg(windows)]
-        let trace = OpenTrace::new();
-        #[cfg(windows)]
-        paths.ensure_with_trace(&trace)?;
-        #[cfg(not(windows))]
-        paths.ensure()?;
-        #[cfg(windows)]
-        let state_guard = trace.store(Stage::StateGuard, paths.guard())?;
-        #[cfg(windows)]
-        let preparation = SqlitePreparation::new(&paths.database, &trace)?;
-        #[cfg(windows)]
-        let mut connection = preparation.open(&trace)?;
-        #[cfg(not(windows))]
-        let mut connection = Connection::open(&paths.database)?;
-        #[cfg(windows)]
-        crate::windows_configure::configure(&connection, &trace)?;
-        #[cfg(not(windows))]
-        configure(&connection)?;
-        #[cfg(windows)]
-        trace.store(
-            Stage::Migrate,
-            migrate(&mut connection, binary_version, now_us),
-        )?;
-        #[cfg(not(windows))]
-        migrate(&mut connection, binary_version, now_us)?;
-        #[cfg(windows)]
+        let operation = contention::Operation::new("open", None);
+        let autocommit = std::cell::Cell::new(true);
+        let result = (|| {
+            operation.stage("state_preparation");
+            #[cfg(windows)]
+            use crate::windows_open::{OpenTrace, Stage};
+            #[cfg(windows)]
+            let trace = OpenTrace::new();
+            #[cfg(windows)]
+            paths.ensure_with_trace(&trace)?;
+            #[cfg(not(windows))]
+            paths.ensure()?;
+            let mut admission = contention::Admission::for_paths(&paths, &operation)?;
+            operation.stage("database_preparation");
+            #[cfg(windows)]
+            let state_guard = trace.store(Stage::StateGuard, paths.guard())?;
+            #[cfg(windows)]
+            let preparation =
+                SqlitePreparation::new(&paths.database, &trace, operation.deadline())?;
+            operation.stage("connection_open");
+            #[cfg(windows)]
+            let mut connection = preparation.open(&trace)?;
+            #[cfg(not(windows))]
+            let mut connection = Connection::open(&paths.database)?;
+            admission.admitted();
+            operation.stage("configure_wal");
+            #[cfg(windows)]
+            operation.sqlite_stage(|| {
+                crate::windows_configure::configure_until(
+                    &connection,
+                    &trace,
+                    operation.deadline(),
+                    |error| operation.note_busy(error),
+                )
+            })?;
+            #[cfg(not(windows))]
+            configure(&connection, &operation)?;
+            connection.busy_timeout(std::time::Duration::ZERO)?;
+            operation.stage("migration");
+            let migrated = migrate_admitted(&mut connection, binary_version, now_us, &operation);
+            // Observe after migration's transaction destructor, while SQLite is still open.
+            autocommit.set(connection.is_autocommit());
+            #[cfg(windows)]
+            trace.store(Stage::Migrate, migrated)?;
+            #[cfg(not(windows))]
+            migrated?;
+            #[cfg(windows)]
+            {
+                operation.stage("database_confirmation");
+                preparation.confirm(&connection, &trace)?;
+                drop(preparation);
+            }
+            connection.busy_timeout(std::time::Duration::from_secs(5))?;
+            Ok(Self {
+                paths,
+                connection: Mutex::new(connection),
+                writable: true,
+                write_observation: Mutex::new(None),
+                #[cfg(test)]
+                history_observation: Mutex::new(history_qualification::Observation::default()),
+                #[cfg(windows)]
+                _read_guards: Vec::new(),
+                #[cfg(windows)]
+                _state_guard: state_guard,
+            })
+        })();
+        let result = operation.observed(result, autocommit.get());
+        if let Ok(store) = &result
+            && let Ok(mut observation) = store.write_observation.lock()
         {
-            preparation.confirm(&connection, &trace)?;
-            // SQLite now retains its real no-delete DB/WAL/SHM handles. Its final close must
-            // remain free to checkpoint and remove journals after these preparation gates drop.
-            drop(preparation);
+            *observation = Some(operation.finish(&result, true));
         }
-        Ok(Self {
-            paths,
-            connection: Mutex::new(connection),
-            #[cfg(test)]
-            history_observation: Mutex::new(history_qualification::Observation::default()),
-            #[cfg(windows)]
-            _read_guards: Vec::new(),
-            #[cfg(windows)]
-            _state_guard: state_guard,
-        })
+        result
     }
 
     /// Opens an existing `state.db` file read-only from `path`, without
@@ -1101,6 +1148,8 @@ impl Store {
         Ok(Self {
             paths,
             connection: Mutex::new(connection),
+            writable: false,
+            write_observation: Mutex::new(None),
             #[cfg(test)]
             history_observation: Mutex::new(history_qualification::Observation::default()),
             #[cfg(windows)]
@@ -1116,9 +1165,22 @@ impl Store {
         &self.paths
     }
     fn conn(&self) -> StoreResult<MutexGuard<'_, Connection>> {
-        self.connection
-            .lock()
-            .map_err(|_| StoreError::Conflict("store mutex poisoned".into()))
+        let (connection, timeout) = if let Some(deadline) = self.background_deadline() {
+            let operation = contention::Operation::new("maintenance_read", Some(deadline));
+            (
+                self.connection_until(&operation)?,
+                std::time::Duration::ZERO,
+            )
+        } else {
+            (
+                self.connection
+                    .lock()
+                    .map_err(|_| StoreError::Conflict("store mutex poisoned".into()))?,
+                std::time::Duration::from_secs(5),
+            )
+        };
+        connection.busy_timeout(timeout)?;
+        Ok(connection)
     }
 
     /// Acquires the daemon lock for this state directory, writing `metadata`
@@ -1133,8 +1195,8 @@ impl Store {
     /// or live name returns [`StoreError::Conflict`].
     pub fn create_job(&self, job: &CreateJob) -> StoreResult<JobRecord> {
         crate::paths::validate_uuid(&job.id)?;
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write_readback("create_job", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let identity_exists: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1)",
             [&job.id],
@@ -1155,9 +1217,9 @@ impl Store {
         tx.execute("INSERT INTO job_revisions(job_id,revision,definition_json,created_at_us,created_by) VALUES(?1,1,?2,?3,'add')", params![job.id, job.definition_json, job.now_us])?;
         tx.execute("INSERT INTO schedule_cursors(job_id,revision,cursor_us,interval_anchor_us,updated_at_us,disabled_since_us) VALUES(?1,1,?2,NULL,?3,CASE WHEN ?4 THEN NULL ELSE ?3 END)", params![job.id, job.cursor_us, job.now_us, job.enabled])?;
         event(&tx, job.now_us, "job_added", Some(&job.id), None, "{}")?;
-        tx.commit()?;
-        drop(conn);
-        self.job(&job.id)
+        operation.commit(tx)?;
+        Ok(())
+        }, |conn, ()| read_job(conn, &job.id))
     }
 
     /// Applies a full job update in one immediate transaction, bumping the
@@ -1165,8 +1227,8 @@ impl Store {
     /// revision or [`StoreError::Conflict`] is returned; an unknown reference
     /// returns [`StoreError::NotFound`].
     pub fn update_job(&self, job: &UpdateJob) -> StoreResult<JobRecord> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write_readback("update_job", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let current: i64 = tx
             .query_row(
                 "SELECT current_revision FROM jobs WHERE id=?1 AND removed_at_us IS NULL",
@@ -1207,19 +1269,16 @@ impl Store {
             None,
             &format!("{{\"revision\":{revision}}}"),
         )?;
-        tx.commit()?;
-        drop(conn);
-        self.job(&job.id)
+        operation.commit(tx)?;
+        Ok(())
+        }, |conn, ()| read_job(conn, &job.id))
     }
 
     /// Returns the live job matching `reference` by id or name, or
     /// [`StoreError::NotFound`] when no live job matches.
     pub fn job(&self, reference: &str) -> StoreResult<JobRecord> {
         let conn = self.conn()?;
-        conn.query_row(
-            "SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE (j.id=?1 OR j.name=?1) AND j.removed_at_us IS NULL",
-            [reference], map_job,
-        ).optional()?.ok_or_else(|| StoreError::NotFound(reference.into()))
+        read_job(&conn, reference)
     }
 
     /// Lists live jobs ordered by name: always the enabled jobs, plus
@@ -1276,8 +1335,8 @@ impl Store {
     /// optimistic-revision facts are rechecked inside the transaction.
     pub fn apply_import(&self, batch: &ImportBatch) -> StoreResult<ImportSummary> {
         validate_import_settings(&batch.settings)?;
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("apply_import", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let mut summary = ImportSummary::default();
         for import in &batch.jobs {
             let resolution = match import {
@@ -1376,8 +1435,9 @@ impl Store {
             params![batch.settings.global_concurrency,batch.settings.execution_path,batch.settings.run_retention_count,batch.settings.run_retention_age_us,batch.settings.output_limit_bytes,batch.settings.per_run_output_limit_bytes,batch.now_us,environment_json],
         )?;
         event(&tx, batch.now_us, "import_applied", None, None, "{}")?;
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(summary)
+        })
     }
 
     /// Sets the enabled flag of the job identified by `reference`, recording
@@ -1389,8 +1449,8 @@ impl Store {
         enabled: bool,
         now_us: i64,
     ) -> StoreResult<JobRecord> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write_readback("set_enabled", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let current: Option<(String, bool, i64)> = tx
             .query_row(
                 "SELECT id,enabled,current_revision FROM jobs WHERE (id=?1 OR name=?1) AND removed_at_us IS NULL",
@@ -1416,22 +1476,27 @@ impl Store {
                 params![job_id, revision, now_us],
             )?;
         }
-        tx.commit()?;
-        drop(conn);
-        self.job(&job_id)
+        operation.commit(tx)?;
+        Ok(job_id)
+        }, |conn, job_id| read_job(conn, &job_id))
     }
 
     /// Soft-deletes the job identified by `reference`: it is disabled and
     /// stamped with `removed_at_us`, after which its id and name no longer
     /// resolve via [`Store::job`].
     pub fn remove_job(&self, reference: &str, now_us: i64) -> StoreResult<()> {
-        let job = self.job(reference)?;
-        let conn = self.conn()?;
-        conn.execute(
-            "UPDATE jobs SET enabled=0,removed_at_us=?2,updated_at_us=?2 WHERE id=?1",
-            params![job.id, now_us],
-        )?;
-        Ok(())
+        self.write_transaction("remove_job", |conn| {
+            let job_id: String = conn.query_row(
+                "SELECT j.id FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE (j.id=?1 OR j.name=?1) AND j.removed_at_us IS NULL",
+                [reference], |row| row.get(0),
+            ).optional()?.ok_or_else(|| StoreError::NotFound(reference.into()))?;
+            let changed = conn.execute(
+                "UPDATE jobs SET enabled=0,removed_at_us=?2,updated_at_us=?2 WHERE id=?1 AND removed_at_us IS NULL",
+                params![job_id, now_us],
+            )?;
+            if changed != 1 { return Err(StoreError::Conflict("resolved job changed before removal".into())); }
+            Ok(())
+        })
     }
 
     /// Queues a manual run for the job identified by `reference`, applying
@@ -1445,11 +1510,26 @@ impl Store {
         now_us: i64,
     ) -> StoreResult<RunRecord> {
         crate::paths::validate_uuid(run_id)?;
-        let job = self.job(reference)?;
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write_prepared_readback("enqueue_manual", |conn| {
+            let job = conn.query_row(
+                "SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE (j.id=?1 OR j.name=?1) AND j.removed_at_us IS NULL",
+                [reference], map_job,
+            ).optional()?.ok_or_else(|| StoreError::NotFound(reference.into()))?;
+            let policy = snapshot_admission_policy(&job.definition_json)?;
+            Ok((job, policy))
+        }, |(job, policy), conn, operation| {
+        let tx = operation.begin(conn)?;
+        let current: Option<(i64, Option<i64>, String)> = tx.query_row(
+            "SELECT j.current_revision,j.removed_at_us,r.definition_json FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision WHERE j.id=?1",
+            [&job.id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).optional()?;
+        let Some((revision, None, snapshot)) = current else {
+            return Err(StoreError::NotFound(reference.into()));
+        };
+        if revision != job.current_revision || snapshot != job.definition_json {
+            return Err(StoreError::Conflict("job revision changed before manual enqueue".into()));
+        }
         let sequence = next_queue_sequence(&tx)?;
-        let policy = snapshot_admission_policy(&job.definition_json)?;
         let active_count: i64 = tx.query_row(
             "SELECT count(*) FROM runs WHERE job_id=?1 AND state IN ('queued','starting','running','retry_wait')",
             [&job.id],
@@ -1502,9 +1582,9 @@ impl Store {
             Some(run_id),
             "{}",
         )?;
-        tx.commit()?;
-        drop(conn);
-        self.run(run_id)
+        operation.commit(tx)?;
+        Ok(())
+        }, |conn, ()| read_run(conn, run_id))
     }
 
     /// Materializes `runs` for the job while advancing its schedule cursor,
@@ -1535,9 +1615,29 @@ impl Store {
         summaries: &[ReconciliationSummary],
         now_us: i64,
     ) -> StoreResult<MaterializedRun> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute("UPDATE schedule_cursors SET cursor_us=?4,one_time_resolved=CASE WHEN ?6 THEN 1 ELSE one_time_resolved END,updated_at_us=?5,disabled_since_us=NULL WHERE job_id=?1 AND revision=?2 AND revision=(SELECT current_revision FROM jobs WHERE id=?1) AND cursor_us=?3", params![job_id,cursor.expected_revision,cursor.expected_cursor_us,cursor.new_cursor_us,now_us,cursor.resolve_one_time])?;
+        self.write_prepared("materialize_with_summaries", |_| {
+            let policies = runs.iter().map(|run| {
+                if run.job_id != job_id || run.revision != cursor.expected_revision {
+                    return Err(StoreError::Conflict(
+                        "scheduled run does not match reconciled job revision".into(),
+                    ));
+                }
+                snapshot_admission_policy(&run.snapshot_json)
+            }).collect::<StoreResult<Vec<_>>>()?;
+            let summary_details = summaries.iter().map(|summary| {
+                if summary.count == 0 || summary.first_nominal_us > summary.last_nominal_us {
+                    return Err(StoreError::Conflict("invalid reconciliation summary range".into()));
+                }
+                Ok(serde_json::to_string(&serde_json::json!({
+                    "count": summary.count,
+                    "first_nominal_us": summary.first_nominal_us,
+                    "last_nominal_us": summary.last_nominal_us,
+                }))?)
+            }).collect::<StoreResult<Vec<_>>>()?;
+            Ok((policies, summary_details))
+        }, |(policies, summary_details), conn, operation| {
+        let tx = operation.begin(conn)?;
+        let changed = tx.execute("UPDATE schedule_cursors SET cursor_us=?4,one_time_resolved=CASE WHEN ?6 THEN 1 ELSE one_time_resolved END,updated_at_us=?5,disabled_since_us=NULL WHERE job_id=?1 AND revision=?2 AND revision=(SELECT current_revision FROM jobs WHERE id=?1 AND removed_at_us IS NULL) AND cursor_us=?3", params![job_id,cursor.expected_revision,cursor.expected_cursor_us,cursor.new_cursor_us,now_us,cursor.resolve_one_time])?;
         if changed != 1 {
             return Err(StoreError::Conflict("schedule cursor changed".into()));
         }
@@ -1549,14 +1649,8 @@ impl Store {
             event(&tx, now_us, "one_time_resolved", Some(job_id), None, "{}")?;
         }
         let mut result = MaterializedRun::default();
-        for run in runs {
-            if run.job_id != job_id || run.revision != cursor.expected_revision {
-                return Err(StoreError::Conflict(
-                    "scheduled run does not match reconciled job revision".into(),
-                ));
-            }
+        for (run, policy) in runs.iter().zip(policies) {
             let sequence = next_queue_sequence(&tx)?;
-            let policy = snapshot_admission_policy(&run.snapshot_json)?;
             let active_count: i64 = tx.query_row(
                 "SELECT count(*) FROM runs WHERE job_id=?1 AND state IN ('queued','starting','running','retry_wait')",
                 [&run.job_id],
@@ -1604,28 +1698,12 @@ impl Store {
                 result.duplicates += 1
             }
         }
-        for summary in summaries {
-            if summary.count == 0 || summary.first_nominal_us > summary.last_nominal_us {
-                return Err(StoreError::Conflict(
-                    "invalid reconciliation summary range".into(),
-                ));
-            }
-            let details = serde_json::json!({
-                "count": summary.count,
-                "first_nominal_us": summary.first_nominal_us,
-                "last_nominal_us": summary.last_nominal_us,
-            });
-            event(
-                &tx,
-                now_us,
-                &summary.kind,
-                Some(job_id),
-                None,
-                &serde_json::to_string(&details)?,
-            )?;
+        for (summary, details) in summaries.iter().zip(summary_details) {
+            event(&tx, now_us, &summary.kind, Some(job_id), None, &details)?;
         }
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(result)
+        })
     }
 
     /// Returns all events recorded for the job, in insertion order.
@@ -1673,7 +1751,7 @@ impl Store {
     /// Returns the run with the given id, or [`StoreError::NotFound`].
     pub fn run(&self, id: &str) -> StoreResult<RunRecord> {
         let conn = self.conn()?;
-        conn.query_row("SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE id=?1", [id], map_run).optional()?.ok_or_else(|| StoreError::NotFound(id.into()))
+        read_run(&conn, id)
     }
 
     /// Returns the resolved executable recorded for the attempt, if any.
@@ -1951,8 +2029,8 @@ impl Store {
         now_us: i64,
         acknowledge_unconfirmed: bool,
     ) -> StoreResult<CancelOutcome> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("cancel_with_acknowledgement", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let current: Option<(String, String, Option<i64>, Option<String>)> = tx
             .query_row(
                 "SELECT state,job_id,cancellation_requested_at_us,reason FROM runs WHERE id=?1",
@@ -2020,8 +2098,9 @@ impl Store {
                 }
             }
         }
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(outcome)
+        })
     }
 
     /// Returns whether a durable cancellation request has been recorded for
@@ -2049,8 +2128,8 @@ impl Store {
         now_us: i64,
         binary_version: &str,
     ) -> StoreResult<usize> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("begin_lifetime", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let stale_run_ids = {
             let mut statement = tx.prepare(
                 "SELECT id FROM runs WHERE state IN ('starting','running') AND (reason IS NULL OR reason<>'termination_unconfirmed')",
@@ -2070,16 +2149,19 @@ impl Store {
         }
         tx.execute("UPDATE scheduler_lifetimes SET ended_at_us=?1,exit_class='stale' WHERE ended_at_us IS NULL", [now_us])?;
         tx.execute("INSERT INTO scheduler_lifetimes(id,pid,binary_version,started_at_us,heartbeat_at_us) VALUES(?1,?2,?3,?4,?4)", params![id,std::process::id(),binary_version,now_us])?;
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(stale)
+        })
     }
 
     /// Records a clean end for the given scheduler lifetime, stamping
     /// `ended_at_us` and `exit_class='clean'`. A lifetime that is not open is
     /// left untouched.
     pub fn end_lifetime(&self, id: &str, now_us: i64) -> StoreResult<()> {
-        self.conn()?.execute("UPDATE scheduler_lifetimes SET ended_at_us=?2,heartbeat_at_us=?2,exit_class='clean' WHERE id=?1 AND ended_at_us IS NULL", params![id,now_us])?;
-        Ok(())
+        self.write_transaction("end_lifetime", |conn| {
+            conn.execute("UPDATE scheduler_lifetimes SET ended_at_us=?2,heartbeat_at_us=?2,exit_class='clean' WHERE id=?1 AND ended_at_us IS NULL", params![id,now_us])?;
+            Ok(())
+        })
     }
 
     /// Admits up to `hard_guard_available` queued and retry-wait runs that
@@ -2095,11 +2177,34 @@ impl Store {
         now_us: i64,
         hard_guard_available: usize,
     ) -> StoreResult<Admission> {
+        const ELIGIBLE_RUNS: &str = "FROM runs r WHERE r.state IN ('queued','retry_wait') AND r.eligible_at_us<=?1 AND r.cancellation_requested_at_us IS NULL AND NOT EXISTS(SELECT 1 FROM runs quarantine WHERE quarantine.job_id=r.job_id AND quarantine.state='running' AND quarantine.reason='termination_unconfirmed') AND (r.replacement_candidate=0 OR NOT EXISTS(SELECT 1 FROM runs prior WHERE prior.job_id=r.job_id AND prior.id<>r.id AND prior.state IN ('starting','running','retry_wait'))) AND (r.trigger<>'catch_up' OR NOT EXISTS(SELECT 1 FROM runs earlier WHERE earlier.job_id=r.job_id AND earlier.queue_sequence<r.queue_sequence AND earlier.state IN ('queued','starting','running','retry_wait'))) ORDER BY r.eligible_at_us,r.queue_sequence LIMIT ?2";
         if hard_guard_available == 0 {
             return Ok(Admission::default());
         }
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let preparation_query = format!("SELECT r.id,r.snapshot_json {ELIGIBLE_RUNS}");
+        let admission_query = format!(
+            "SELECT r.id,r.job_id,r.snapshot_json,COALESCE((SELECT MAX(attempt_number) FROM attempts a WHERE a.run_id=r.id),0)+1,r.trigger,r.nominal_us {ELIGIBLE_RUNS}"
+        );
+        self.write_prepared("admit", |conn| {
+            // This only sizes immutable preparation. Capacity is reread under write
+            // ownership, and any newly available candidates can enter on the next pass.
+            let configured: i64 = conn.query_row("SELECT global_concurrency FROM settings WHERE singleton=1", [], |row| row.get(0))?;
+            if !(1..=64).contains(&configured) {
+                return Err(StoreError::Conflict("global_concurrency must be from 1 through 64".into()));
+            }
+            let active: i64 = conn.query_row("SELECT count(*) FROM attempts WHERE state IN ('starting','running')", [], |row| row.get(0))?;
+            let preliminary = hard_guard_available.min(usize::try_from(configured.saturating_sub(active).max(0)).unwrap_or(0));
+            let scan_limit = preliminary.saturating_mul(64).max(preliminary);
+            let mut statement = conn.prepare(&preparation_query)?;
+            let snapshots = statement.query_map(params![now_us, scan_limit as i64], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?.collect::<Result<Vec<_>, _>>()?;
+            Ok(snapshots.into_iter().map(|(id, snapshot)| {
+                let policy = snapshot_admission_policy(&snapshot);
+                (id, (snapshot, policy))
+            }).collect::<BTreeMap<_, _>>())
+        }, |mut prepared, conn, operation| {
+        let tx = operation.begin(conn)?;
         let configured_limit: i64 = tx.query_row(
             "SELECT global_concurrency FROM settings WHERE singleton=1",
             [],
@@ -2120,7 +2225,7 @@ impl Store {
         if capacity == 0 {
             return Ok(Admission::default());
         }
-        let mut statement = tx.prepare("SELECT r.id,r.job_id,r.snapshot_json,COALESCE((SELECT MAX(attempt_number) FROM attempts a WHERE a.run_id=r.id),0)+1,r.trigger,r.nominal_us FROM runs r WHERE r.state IN ('queued','retry_wait') AND r.eligible_at_us<=?1 AND r.cancellation_requested_at_us IS NULL AND NOT EXISTS(SELECT 1 FROM runs quarantine WHERE quarantine.job_id=r.job_id AND quarantine.state='running' AND quarantine.reason='termination_unconfirmed') AND (r.replacement_candidate=0 OR NOT EXISTS(SELECT 1 FROM runs prior WHERE prior.job_id=r.job_id AND prior.id<>r.id AND prior.state IN ('starting','running','retry_wait'))) AND (r.trigger<>'catch_up' OR NOT EXISTS(SELECT 1 FROM runs earlier WHERE earlier.job_id=r.job_id AND earlier.queue_sequence<r.queue_sequence AND earlier.state IN ('queued','starting','running','retry_wait'))) ORDER BY r.eligible_at_us,r.queue_sequence LIMIT ?2")?;
+        let mut statement = tx.prepare(&admission_query)?;
         let scan_limit = capacity.saturating_mul(64).max(capacity);
         let rows = statement
             .query_map(params![now_us, scan_limit as i64], |row| {
@@ -2168,7 +2273,13 @@ impl Store {
             for job in &jobs {
                 if let Some(row) = grouped.get_mut(job).and_then(VecDeque::pop_front) {
                     progressed = true;
-                    let policy = snapshot_admission_policy(&row.2)?;
+                    let Some((snapshot, policy)) = prepared.remove(&row.0) else {
+                        continue;
+                    };
+                    if snapshot != row.2 {
+                        continue;
+                    }
+                    let policy = policy?;
                     let limit = if policy.overlap == "allow" {
                         policy.per_job_concurrency.max(1)
                     } else {
@@ -2214,8 +2325,9 @@ impl Store {
                 snapshot_json,
             });
         }
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(Admission { attempts })
+        })
     }
 
     /// Earliest `eligible_at_us` across runs pending admission (queued or
@@ -2255,8 +2367,8 @@ impl Store {
         now_us: i64,
         resolved_executable: Option<&Path>,
     ) -> StoreResult<StartDecision> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("mark_attempt_running_inner", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let current: Option<(String, Option<String>, String)> = tx
             .query_row(
                 "SELECT state,cancellation_reason,job_id FROM runs WHERE id=?1",
@@ -2305,7 +2417,7 @@ impl Store {
                 &serde_json::to_string(&serde_json::json!({"source": source}))?,
             )?;
             soft_remove_after_one_time_completion(&tx, run_id, now_us)?;
-            tx.commit()?;
+            operation.commit(tx)?;
             return Ok(StartDecision::CancelledBeforeSpawn);
         }
         if state == "running" {
@@ -2321,7 +2433,7 @@ impl Store {
                     "running run does not match the admitted attempt".into(),
                 ));
             }
-            tx.commit()?;
+            operation.commit(tx)?;
             return Ok(StartDecision::Ready);
         }
         let resolved_executable =
@@ -2339,8 +2451,9 @@ impl Store {
                 "admitted attempt is no longer starting".into(),
             ));
         }
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(StartDecision::Ready)
+        })
     }
 
     /// Durably records the outcome of an attempt in one immediate
@@ -2350,8 +2463,8 @@ impl Store {
     /// is idempotent; a completion that does not match the durable state
     /// returns [`StoreError::Conflict`].
     pub fn complete_attempt(&self, completion: &AttemptCompletion) -> StoreResult<()> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("complete_attempt", |conn, operation| {
+        let tx = operation.begin(conn)?;
         if completion.state == "termination_unconfirmed" {
             if completion.retry.is_some() {
                 return Err(StoreError::Conflict(
@@ -2401,7 +2514,7 @@ impl Store {
                 Some(&completion.run_id),
                 &serde_json::to_string(&serde_json::json!({"detail": completion.reason}))?,
             )?;
-            tx.commit()?;
+            operation.commit(tx)?;
             return Ok(());
         }
         if completion.retry.is_some()
@@ -2442,8 +2555,9 @@ impl Store {
             )?;
             soft_remove_after_one_time_completion(&tx, &completion.run_id, completion.now_us)?;
         }
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(())
+        })
     }
 
     /// Records a non-retryable failure that happened before execution, in one
@@ -2459,8 +2573,8 @@ impl Store {
         now_us: i64,
         reason: &str,
     ) -> StoreResult<()> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("complete_pre_execution_failure", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let artifact_changed = if let Some(output) = output {
             if output.run_id != run_id || output.attempt_number != attempt_number {
                 return Err(StoreError::Conflict(
@@ -2510,8 +2624,9 @@ impl Store {
             r#"{"retryable":false}"#,
         )?;
         soft_remove_after_one_time_completion(&tx, run_id, now_us)?;
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(())
+        })
     }
 
     /// Records a runner-side infrastructure failure in one immediate
@@ -2528,8 +2643,8 @@ impl Store {
         reason: &str,
         execution_may_have_started: bool,
     ) -> StoreResult<()> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("complete_runner_failure", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let state = if execution_may_have_started {
             "interrupted_unknown"
         } else {
@@ -2584,7 +2699,7 @@ impl Store {
                 }))?,
             )?;
             soft_remove_after_one_time_completion(&tx, run_id, now_us)?;
-            tx.commit()?;
+            operation.commit(tx)?;
             return Ok(());
         }
 
@@ -2609,13 +2724,14 @@ impl Store {
             |row| row.get(0),
         )?;
         if already_committed {
-            tx.commit()?;
+            operation.commit(tx)?;
             Ok(())
         } else {
             Err(StoreError::Conflict(
                 "runner failure is not applicable to this attempt".into(),
             ))
         }
+        })
     }
 
     /// Finalizes the output artifact of an attempt from a completed run. See
@@ -2702,7 +2818,7 @@ impl Store {
         now_us: i64,
     ) -> StoreResult<()> {
         let relative_path = format!("{}/{}.log", output.run_id, output.attempt_number);
-        let conn = self.conn()?;
+        self.write_transaction("reconcile_output_finalized", |conn| {
         let changed = conn.execute(
             "UPDATE output_artifacts SET relative_path=?3,state='finalized',retained_payload_bytes=?4,physical_bytes=?5,discarded_bytes=?6,truncated=?7,truncated_at_us=CASE WHEN ?7 THEN ?8 ELSE NULL END,finalized_at_us=?8 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('pending','active')",
             params![output.run_id,output.attempt_number,relative_path,output.retained_payload_bytes,output.physical_bytes,output.discarded_bytes,output.truncated,now_us],
@@ -2726,6 +2842,7 @@ impl Store {
                 "output artifact is not recoverable for finalization".into(),
             ))
         }
+        })
     }
 
     /// Marks the output artifact of an attempt missing, zeroing its byte
@@ -2737,7 +2854,7 @@ impl Store {
         attempt_number: i64,
         now_us: i64,
     ) -> StoreResult<()> {
-        let conn = self.conn()?;
+        self.write_transaction("reconcile_output_missing", |conn| {
         let changed = conn.execute(
             "UPDATE output_artifacts SET state='missing',retained_payload_bytes=0,physical_bytes=0,discarded_bytes=0,truncated=0,truncated_at_us=NULL,finalized_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state IN ('pending','active')",
             params![run_id, attempt_number, now_us],
@@ -2757,6 +2874,7 @@ impl Store {
                 "output artifact is not recoverable as missing".into(),
             ))
         }
+        })
     }
 
     /// Runs `PRAGMA integrity_check` and a foreign-key violation scan,
@@ -2778,47 +2896,7 @@ impl Store {
     /// predate schema version 4 with their defaults.
     pub fn settings(&self) -> StoreResult<SettingsRecord> {
         let conn = self.conn()?;
-        let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        let (
-            global_concurrency,
-            execution_path,
-            run_retention_count,
-            run_retention_age_us,
-            output_limit_bytes,
-            per_run_output_limit_bytes,
-            environment_json,
-        ): (i64, String, i64, Option<i64>, i64, i64, String) = if version >= 4 {
-            conn.query_row(
-                "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes,environment_json FROM settings WHERE singleton=1",
-                [],
-                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?)),
-            )?
-        } else {
-            let values = conn.query_row(
-                "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes FROM settings WHERE singleton=1",
-                [],
-                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?)),
-            )?;
-            (
-                values.0,
-                values.1,
-                values.2,
-                values.3,
-                values.4,
-                values.5,
-                "{}".into(),
-            )
-        };
-        let environment = parse_environment_json(&environment_json)?;
-        Ok(SettingsRecord {
-            global_concurrency,
-            execution_path,
-            run_retention_count,
-            run_retention_age_us,
-            output_limit_bytes,
-            per_run_output_limit_bytes,
-            environment,
-        })
+        read_settings(&conn)
     }
 
     /// Sets (or removes, when `value` is `None`) one global environment
@@ -2833,29 +2911,33 @@ impl Store {
         now_us: i64,
     ) -> StoreResult<SettingsRecord> {
         validate_environment_entry(name, value)?;
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let source: String = tx.query_row(
-            "SELECT environment_json FROM settings WHERE singleton=1",
-            [],
-            |row| row.get(0),
-        )?;
-        let mut environment = parse_environment_json(&source)?;
-        let canonical_name = locron_core::execution::environment_name(name);
-        environment.retain(|existing, _| {
-            locron_core::execution::environment_name(existing) != canonical_name
-        });
-        if let Some(value) = value {
-            environment.insert(canonical_name, value.to_owned());
-        }
-        let canonical = serde_json::to_string(&environment)?;
-        tx.execute(
-            "UPDATE settings SET environment_json=?1,updated_at_us=?2 WHERE singleton=1",
-            params![canonical, now_us],
-        )?;
-        tx.commit()?;
-        drop(conn);
-        self.settings()
+        self.write_readback(
+            "set_environment",
+            |conn, operation| {
+                let tx = operation.begin(conn)?;
+                let source: String = tx.query_row(
+                    "SELECT environment_json FROM settings WHERE singleton=1",
+                    [],
+                    |row| row.get(0),
+                )?;
+                let mut environment = parse_environment_json(&source)?;
+                let canonical_name = locron_core::execution::environment_name(name);
+                environment.retain(|existing, _| {
+                    locron_core::execution::environment_name(existing) != canonical_name
+                });
+                if let Some(value) = value {
+                    environment.insert(canonical_name, value.to_owned());
+                }
+                let canonical = serde_json::to_string(&environment)?;
+                tx.execute(
+                    "UPDATE settings SET environment_json=?1,updated_at_us=?2 WHERE singleton=1",
+                    params![canonical, now_us],
+                )?;
+                operation.commit(tx)?;
+                Ok(())
+            },
+            |conn, ()| read_settings(conn),
+        )
     }
 
     /// Like [`Store::mark_attempt_running`], additionally committing the
@@ -2918,11 +3000,20 @@ impl Store {
             }
             _ => return Err(StoreError::NotFound(format!("configuration key {key}"))),
         };
-        self.conn()?.execute(
-            &format!("UPDATE settings SET {column}=?1,updated_at_us=?2 WHERE singleton=1"),
-            params![normalized, now_us],
-        )?;
-        self.settings()
+        self.write_readback(
+            "set_setting",
+            |connection, operation| {
+                let tx = operation.begin(connection)?;
+                let conn = &tx;
+                conn.execute(
+                    &format!("UPDATE settings SET {column}=?1,updated_at_us=?2 WHERE singleton=1"),
+                    params![normalized, now_us],
+                )?;
+                operation.commit(tx)?;
+                Ok(())
+            },
+            |conn, ()| read_settings(conn),
+        )
     }
 
     /// Lists the finalized output artifacts of terminal runs that are
@@ -3012,8 +3103,8 @@ impl Store {
         candidate: &RunRetentionCandidate,
         now_us: i64,
     ) -> StoreResult<()> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("mark_run_retention_pending", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let (retention_count, retention_age_us): (i64, Option<i64>) = tx.query_row(
             "SELECT run_retention_count,run_retention_age_us FROM settings WHERE singleton=1",
             [],
@@ -3027,15 +3118,15 @@ impl Store {
                    AND candidate.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
                    AND (
                        (?4 IS NOT NULL AND candidate.finished_at_us < ?4)
-                       OR (SELECT count(*) FROM runs newer
+                       OR (SELECT count(*) FROM (SELECT 1 FROM runs newer
                            WHERE newer.job_id=candidate.job_id
                              AND newer.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
                              AND newer.finished_at_us IS NOT NULL
-                             AND (newer.finished_at_us > candidate.finished_at_us OR (newer.finished_at_us=candidate.finished_at_us AND newer.id > candidate.id))) >= 1000
-                       OR (SELECT count(*) FROM runs newer
+                             AND (newer.finished_at_us > candidate.finished_at_us OR (newer.finished_at_us=candidate.finished_at_us AND newer.id > candidate.id)) LIMIT 1000)) >= 1000
+                       OR (SELECT count(*) FROM (SELECT 1 FROM runs newer
                            WHERE newer.state IN ('succeeded','failed','timed_out','cancelled','skipped_overlap','skipped_concurrency','interrupted_unknown')
                              AND newer.finished_at_us IS NOT NULL
-                             AND (newer.finished_at_us > candidate.finished_at_us OR (newer.finished_at_us=candidate.finished_at_us AND newer.id > candidate.id))) >= ?5
+                             AND (newer.finished_at_us > candidate.finished_at_us OR (newer.finished_at_us=candidate.finished_at_us AND newer.id > candidate.id)) LIMIT ?5)) >= ?5
                    )
              )",
             params![candidate.run_id,candidate.job_id,candidate.finished_at_us,age_cutoff,retention_count],
@@ -3050,8 +3141,9 @@ impl Store {
             "INSERT INTO run_retention_pending(run_id,selected_at_us) VALUES(?1,?2) ON CONFLICT(run_id) DO NOTHING",
             params![candidate.run_id, now_us],
         )?;
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(())
+        })
     }
 
     /// Lists runs reserved for metadata deletion, oldest selection first, up
@@ -3073,8 +3165,8 @@ impl Store {
     /// Deleting an already-deleted run is a no-op; other inapplicable states
     /// return [`StoreError::Conflict`].
     pub fn finish_run_retention(&self, candidate: &RunRetentionCandidate) -> StoreResult<()> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.write("finish_run_retention", |conn, operation| {
+        let tx = operation.begin(conn)?;
         let pending: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM run_retention_pending WHERE run_id=?1)",
             [&candidate.run_id],
@@ -3131,8 +3223,9 @@ impl Store {
                 "run metadata disappeared during retention deletion".into(),
             ));
         }
-        tx.commit()?;
+        operation.commit(tx)?;
         Ok(())
+        })
     }
 
     /// Marks a finalized output artifact `prune_pending` with the current
@@ -3143,13 +3236,15 @@ impl Store {
         candidate: &RetentionCandidate,
         now_us: i64,
     ) -> StoreResult<()> {
-        let changed=self.conn()?.execute("UPDATE output_artifacts SET state='prune_pending',prune_started_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='finalized'",params![candidate.run_id,candidate.attempt_number,now_us])?;
+        self.write_transaction("mark_output_prune_pending", |conn| {
+        let changed=conn.execute("UPDATE output_artifacts SET state='prune_pending',prune_started_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='finalized'",params![candidate.run_id,candidate.attempt_number,now_us])?;
         if changed != 1 {
             return Err(StoreError::Conflict(
                 "output is no longer eligible for pruning".into(),
             ));
         }
         Ok(())
+        })
     }
 
     /// Durably records an output artifact as pruned with zero bytes.
@@ -3160,7 +3255,7 @@ impl Store {
         candidate: &RetentionCandidate,
         now_us: i64,
     ) -> StoreResult<()> {
-        let conn = self.conn()?;
+        self.write_transaction("finish_output_prune", |conn| {
         let changed=conn.execute("UPDATE output_artifacts SET state='pruned',retained_payload_bytes=0,physical_bytes=0,pruned_at_us=?3 WHERE run_id=?1 AND attempt_number=?2 AND state='prune_pending'",params![candidate.run_id,candidate.attempt_number,now_us])?;
         if changed == 1 {
             return Ok(());
@@ -3177,6 +3272,7 @@ impl Store {
                 "output is not pending durable prune completion".into(),
             ))
         }
+        })
     }
 }
 
@@ -3369,6 +3465,61 @@ impl PersistencePort<UpdateConfiguration> for Store {
     }
 }
 
+fn read_job(conn: &Connection, reference: &str) -> StoreResult<JobRecord> {
+    conn.query_row(
+            "SELECT j.id,j.name,j.description,j.tags_json,j.enabled,j.removed_at_us,j.current_revision,r.definition_json,c.cursor_us,j.updated_at_us,c.updated_at_us,c.disabled_since_us FROM jobs j JOIN job_revisions r ON r.job_id=j.id AND r.revision=j.current_revision JOIN schedule_cursors c ON c.job_id=j.id AND c.revision=j.current_revision WHERE (j.id=?1 OR j.name=?1) AND j.removed_at_us IS NULL",
+            [reference], map_job,
+        ).optional()?.ok_or_else(|| StoreError::NotFound(reference.into()))
+}
+
+fn read_run(conn: &Connection, id: &str) -> StoreResult<RunRecord> {
+    conn.query_row("SELECT id,job_id,revision,trigger,nominal_us,requested_at_us,eligible_at_us,state,reason,snapshot_json,finished_at_us FROM runs WHERE id=?1", [id], map_run).optional()?.ok_or_else(|| StoreError::NotFound(id.into()))
+}
+
+fn read_settings(conn: &Connection) -> StoreResult<SettingsRecord> {
+    let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let (
+        global_concurrency,
+        execution_path,
+        run_retention_count,
+        run_retention_age_us,
+        output_limit_bytes,
+        per_run_output_limit_bytes,
+        environment_json,
+    ): (i64, String, i64, Option<i64>, i64, i64, String) = if version >= 4 {
+        conn.query_row(
+                "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes,environment_json FROM settings WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?)),
+            )?
+    } else {
+        let values = conn.query_row(
+                "SELECT global_concurrency,execution_path,run_retention_count,run_retention_age_us,output_limit_bytes,per_run_output_limit_bytes FROM settings WHERE singleton=1",
+                [],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?)),
+            )?;
+        (
+            values.0,
+            values.1,
+            values.2,
+            values.3,
+            values.4,
+            values.5,
+            "{}".into(),
+        )
+    };
+    let environment = parse_environment_json(&environment_json)?;
+    Ok(SettingsRecord {
+        global_concurrency,
+        execution_path,
+        run_retention_count,
+        run_retention_age_us,
+        output_limit_bytes,
+        per_run_output_limit_bytes,
+        environment,
+    })
+}
+
 fn map_store_port_error(error: StorePortError) -> CoreError {
     match error {
         StorePortError::Core(error) => error,
@@ -3377,13 +3528,17 @@ fn map_store_port_error(error: StorePortError) -> CoreError {
         StorePortError::Store(StoreError::DaemonAlreadyRunning) => {
             CoreError::Conflict("another locron daemon owns this state directory".into())
         }
-        StorePortError::Store(StoreError::Sqlite(error))
-            if matches!(
-                error.sqlite_error_code(),
-                Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
-            ) =>
-        {
-            CoreError::Unavailable("SQLite is busy".into())
+        StorePortError::Store(StoreError::Observed(failure)) => {
+            CoreError::PersistenceDiagnostic(failure.diagnostic)
+        }
+        StorePortError::Store(
+            error @ (StoreError::Sqlite(_) | StoreError::Io(_) | StoreError::Json(_)),
+        ) => {
+            let operation = contention::Operation::new("persistence_port", None);
+            operation.stage("adapter");
+            CoreError::PersistenceDiagnostic(Box::new(
+                operation.finish(&Err::<(), _>(error), false),
+            ))
         }
         StorePortError::Store(error) => CoreError::Persistence(error.to_string()),
         StorePortError::Json(error) => CoreError::Persistence(error.to_string()),
@@ -3624,9 +3779,20 @@ fn snapshot_admission_policy(snapshot: &str) -> StoreResult<SnapshotAdmissionPol
 }
 
 #[cfg(not(windows))]
-fn configure(connection: &Connection) -> StoreResult<()> {
-    connection.busy_timeout(std::time::Duration::from_secs(5))?;
-    connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA locking_mode=NORMAL; PRAGMA trusted_schema=OFF;")?;
+fn configure(connection: &Connection, operation: &contention::Operation) -> StoreResult<()> {
+    connection.busy_timeout(std::time::Duration::ZERO)?;
+    operation.retry_sqlite("configure_wal", || {
+        let mut statement = connection.prepare("PRAGMA journal_mode=WAL")?;
+        let result = statement.query_one([], |row| row.get::<_, String>(0));
+        let finalized = statement.finalize();
+        match (result, finalized) {
+            (Ok(mode), Ok(())) if mode.eq_ignore_ascii_case("wal") => Ok(()),
+            (Ok(_), Ok(())) => Err(rusqlite::Error::InvalidQuery),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+        }
+    })?;
+    operation.stage("configure_settings");
+    connection.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA locking_mode=NORMAL; PRAGMA trusted_schema=OFF;")?;
     Ok(())
 }
 
@@ -4181,7 +4347,12 @@ mod tests {
             assert_eq!(sqlite_leaf_identity(path), identity);
             assert!(locron_core::filesystem::is_private(path, false).unwrap());
         }
-        let preparation = SqlitePreparation::new(&paths.database, &OpenTrace::new()).unwrap();
+        let preparation = SqlitePreparation::new(
+            &paths.database,
+            &OpenTrace::new(),
+            std::time::Instant::now() + std::time::Duration::from_secs(5),
+        )
+        .unwrap();
         for (leaf, identity) in preparation.leaves[1..].iter().zip(identities) {
             assert_eq!(
                 locron_core::filesystem::file_identity(leaf).unwrap(),
@@ -4270,9 +4441,13 @@ mod tests {
         let database = create_private_new(&paths.database).unwrap();
         let shm = sqlite_sidecar(&paths.database, "-shm");
         drop(DirectoryGuard::private(&shm).unwrap());
-        let error = SqlitePreparation::new(&paths.database, &crate::windows_open::OpenTrace::new())
-            .err()
-            .unwrap();
+        let error = SqlitePreparation::new(
+            &paths.database,
+            &crate::windows_open::OpenTrace::new(),
+            std::time::Instant::now() + std::time::Duration::from_secs(5),
+        )
+        .err()
+        .unwrap();
         assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
         assert!(shm.is_dir());
         assert!(std::fs::read_dir(&shm).unwrap().next().is_none());
@@ -4409,7 +4584,12 @@ mod tests {
         let paths = store.paths().clone();
         drop(store);
         let trace = OpenTrace::new();
-        let preparation = SqlitePreparation::new(&paths.database, &trace).unwrap();
+        let preparation = SqlitePreparation::new(
+            &paths.database,
+            &trace,
+            std::time::Instant::now() + std::time::Duration::from_secs(5),
+        )
+        .unwrap();
         let normalized = preparation.leaves[0].normalized_path();
         let mut permissions = std::fs::metadata(normalized).unwrap().permissions();
         permissions.set_readonly(true);
@@ -7307,10 +7487,14 @@ mod tests {
         let error = second
             .set_setting("global_concurrency", "17", 2)
             .unwrap_err();
-        let StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, _)) = error else {
+        let StoreError::Sqlite(rusqlite::Error::SqliteFailure(code, _)) = error.original_error()
+        else {
             panic!("expected SQLite busy failure, got {error}");
         };
         assert_eq!(code.code, rusqlite::ErrorCode::DatabaseBusy);
+        let diagnostic = error.diagnostic().unwrap();
+        assert_eq!((diagnostic.stage, diagnostic.kind), ("begin", "busy"));
+        assert_eq!(diagnostic.durable_outcome, "not_committed");
         assert_eq!(second.settings().unwrap().global_concurrency, 16);
 
         first_connection.execute_batch("ROLLBACK").unwrap();

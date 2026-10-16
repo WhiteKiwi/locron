@@ -6533,3 +6533,76 @@ Automatic maintenance currently caps100 actions but has no elapsed budget. Some
 SQL mutations already commit separately; output repair/remove occurs outside SQLite
 transactions and must stay there. Its synchronous composition permits scoped
 thread-local background priority without changing concurrent foreground priority.
+
+### Bundled-SQLite transaction-hold qualification (2026-10-16)
+
+The composed development build was measured against base
+`a3f43fc15e1a5db75d811e65e35add59d51c055a` with Rust1.98 debug test binaries and
+bundled SQLite3.53.2 on Linux. The baseline changes only add test-only monotonic
+timing immediately after successful BEGIN IMMEDIATE through successful COMMIT.
+The new build uses its latest-write observation with the same boundary. Both use
+isolated temporary state, existing schema/indexes, full synchronous durability and
+the same independently checked result ledgers. The ignored qualification fixtures
+were explicitly executed; they are not counted as passed merely because ignored.
+
+| Fixed fixture,20 rounds | Baseline median hold | New median hold | Median reduction |
+| --- | ---: | ---: | ---: |
+|128 scheduled occurrences,16 KiB immutable target payload each |39,069 µs |25,678 µs |34.28% |
+|60,000 terminal rows across100 jobs,three-way finish ties,global count1000 |11,183.5 µs |1,954.5 µs |82.52% |
+
+Every materialization round inserted128 distinct occurrences with64 queued and64
+skipped-concurrency rows, no duplicates and nominal-time sum20,928. Every retention
+round preserved60,000 run rows and reserved exactly the same oldest run. The
+materialization hold ranges were33,434–91,242 µs versus22,634–63,777 µs; retention
+ranges were10,797–13,577 µs versus1,848–2,693 µs. Wall-time medians were39,107 versus
+35,729.5 µs and11,211.5 versus2,016.5 µs respectively.
+
+An earlier alternating run during MSRV compilation measured33.51% and82.67% median
+hold reductions; the reported run reversed baseline/new order after that build
+completed. These fixed debug/Linux fixtures demonstrate about34% and83% shorter
+writer hold; host scheduling outliers remain, and this is no universal latency or
+native-platform guarantee. Per-round timings, full result ledgers, binary hashes,
+ordering/load observations and baseline instrumentation are preserved in
+[the measurement receipt](planning/SQLITE_CONTENTION_MEASUREMENTS_2026-10-16.json).
+The measured new binaries bind a composed uncommitted development snapshot;
+repository-head regression qualification is recorded separately in Issues.
+
+### Composed storage boundaries and recovery review
+
+The implementation preserves the original adapter error through explicit
+`StoreError::original_error()` inspection. Its safe wrapper excludes that cause
+from Display, Debug and standard Error::source traversal: SQLite/JSON/OS messages
+may contain configured values, and an anyhow alternate chain must not reveal them.
+The shared diagnostic projection retains numeric codes and measured facts.
+
+The existing engine completion loop is distinct from the new BEGIN-only contention
+retry. It retains one immutable attempt/outcome/completion instant while retrying
+only durable completion recording; it never re-executes the target. Store's exact
+completion_already_committed, termination_completion_committed and runner-failure
+identity checks resolve an earlier unknown commit. Durable conflicts still stop the
+normal completion path; shutdown interrupts later recovery retries. The adapter's
+existing CompletionError::Transient category covers an unavailable durable store,
+including LOCKED/I/O; this is not a claim those causes are SQLite BUSY or permission
+to replay arbitrary mutation requests. No new engine retry loop was introduced.
+
+The new ordinary mutation wrapper retries only BUSY before BEGIN, after which the
+body and commit run once. The postcommit readback releases advisory writer ownership,
+uses the original request deadline and zero SQLite busy handler, and reports an
+already-committed durable outcome if reading the result fails. Tests verify this
+through actual postcommit invalid UTF-8/JSON and durable row/event ledgers. Raw Core
+adapter failures outside an observed write use persistence_port/adapter with unknown
+outcome rather than inventing timing/rollback or collapsing LOCKED into BUSY.
+
+Automatic orphan scanning now streams directory entries and checks elapsed time and
+foreground intent between entries instead of collecting/sorting the entire tree
+before it can yield. Pending prune intent is checked again before filesystem work.
+A deterministic held shared-intent fixture inserted after the intent commit proves
+the file survives and the next pass resumes. Another test admits action100 and
+refuses101 independently of the elapsed dimension; an expired pass preserves pending
+work. On Linux these new controls and the existing maintenance suite passed12/12.
+The separate-process Store control proves foreground intent, immediate background
+deferral and automatic OS lock recovery after a writer process is killed. The
+single-budget fixture explicitly holds advisory admission and the connection mutex
+before a real external SQLite writer; one total5s failure preserves the disabled,
+unremoved row. Short released contention records successful wait/transaction timing.
+Native Windows/macOS timing and permission behavior remain unmeasured here.

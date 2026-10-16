@@ -336,6 +336,8 @@ fn close_store(store: Store) -> Check<()> {
     let Store {
         connection,
         paths: _,
+        writable: _,
+        write_observation: _,
         #[cfg(test)]
             history_observation: _,
         #[cfg(windows)]

@@ -642,18 +642,21 @@ async fn handle_tools_call(paths: &StatePaths, id: Value, params: Value) -> Json
                 ]
             }),
         ),
-        Err(err) => JsonRpcResponse::success(
-            id,
-            json!({
+        Err(err) => {
+            let mut result = json!({
                 "content": [
                     {
                         "type": "text",
-                        "text": format!("Error: {err:#}")
+                        "text": format!("Error: {}", crate::safe_error_chain(&err))
                     }
                 ],
                 "isError": true
-            }),
-        ),
+            });
+            if crate::persistence_diagnostic(&err).is_some() {
+                result["error"] = crate::error_document(&err);
+            }
+            JsonRpcResponse::success(id, result)
+        }
     }
 }
 
@@ -1693,7 +1696,11 @@ fn handle_resources_read(paths: &StatePaths, id: Value, params: &Value) -> JsonR
                 ]
             }),
         ),
-        Err(err) => JsonRpcResponse::error(id, -32603, format!("Failed to read resource: {err:#}")),
+        Err(err) => JsonRpcResponse::error(
+            id,
+            -32603,
+            format!("Failed to read resource: {}", crate::safe_error_chain(&err)),
+        ),
     }
 }
 

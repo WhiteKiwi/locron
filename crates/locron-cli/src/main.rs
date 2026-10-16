@@ -3830,6 +3830,7 @@ async fn daemon_with_lock(
         first_reconcile: AtomicBool::new(true),
         last_clock_sample: Mutex::new(None),
         compiled_schedules: Mutex::new(BTreeMap::new()),
+        maintenance_cursor: Mutex::new(maintenance::MaintenanceCursor::default()),
         wake: Mutex::new(None),
         wake_task: Mutex::new(None),
         service_mode,
@@ -4070,6 +4071,7 @@ struct StoreAdapter {
     first_reconcile: AtomicBool,
     last_clock_sample: Mutex<Option<(i64, u64)>>,
     compiled_schedules: Mutex<BTreeMap<(String, i64), locron_core::CompiledSchedule>>,
+    maintenance_cursor: Mutex<maintenance::MaintenanceCursor>,
     wake: Mutex<Option<Arc<tokio::sync::Notify>>>,
     wake_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     service_mode: bool,
@@ -4344,9 +4346,22 @@ impl DaemonStore for StoreAdapter {
         Ok(total)
     }
     async fn maintain(&self) -> Result<(), String> {
-        maintenance::maintain(&self.store, &self.paths, &self.lifetime, self.now_us())
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+        let mut cursor = match self.maintenance_cursor.try_lock() {
+            Ok(cursor) => cursor,
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(()),
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                return Err("maintenance cursor mutex poisoned".into());
+            }
+        };
+        maintenance::maintain_with_cursor(
+            &self.store,
+            &self.paths,
+            &self.lifetime,
+            self.now_us(),
+            &mut cursor,
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
     }
     async fn admit(&self, capacity: usize) -> Result<Vec<AdmittedAttempt>, String> {
         let settings = self.store.settings().map_err(|e| e.to_string())?;
@@ -5896,11 +5911,38 @@ fn render_error(format: Format, command: &str, error: &anyhow::Error) {
     if format == Format::Json {
         println!(
             "{}",
-            json!({"schema":"locron.cli/v1","ok":false,"command":command,"error":{"code":error_code(error),"message":error.to_string()},"warnings":[]})
+            json!({"schema":"locron.cli/v1","ok":false,"command":command,"error":error_document(error),"warnings":[]})
         )
     } else {
-        eprintln!("error: {error:#}")
+        eprintln!("error: {}", safe_error_chain(error))
     }
+}
+
+/// Find the safe storage projection before any renderer traverses adapter sources.
+fn persistence_diagnostic(error: &anyhow::Error) -> Option<&locron_core::PersistenceDiagnostic> {
+    error.chain().find_map(|cause| {
+        cause
+            .downcast_ref::<StoreError>()
+            .and_then(StoreError::diagnostic)
+            .or_else(|| {
+                cause
+                    .downcast_ref::<CoreError>()
+                    .and_then(CoreError::persistence_diagnostic)
+            })
+    })
+}
+
+fn safe_error_chain(error: &anyhow::Error) -> String {
+    persistence_diagnostic(error).map_or_else(|| format!("{error:#}"), ToString::to_string)
+}
+
+fn error_document(error: &anyhow::Error) -> Value {
+    let mut document = json!({"code":error_code(error),"message":error.to_string()});
+    if let Some(storage) = persistence_diagnostic(error) {
+        document["message"] = json!(storage.to_string());
+        document["storage"] = json!(storage);
+    }
+    document
 }
 fn render_stream_result(
     command: &str,
@@ -5935,16 +5977,12 @@ fn render_stream_error(command: &str, error: &anyhow::Error) {
                 "reason":target.reason,
             })
         });
-    render_stream_result(
-        command,
-        false,
-        data,
-        &[],
-        Some(json!({"code":error_code(error),"message":error.to_string()})),
-    );
+    render_stream_result(command, false, data, &[], Some(error_document(error)));
 }
 fn error_code(error: &anyhow::Error) -> &'static str {
-    if error.downcast_ref::<TargetOutcomeError>().is_some() {
+    if persistence_diagnostic(error).is_some() {
+        "state_error"
+    } else if error.downcast_ref::<TargetOutcomeError>().is_some() {
         "target_outcome"
     } else if let Some(update) = error.downcast_ref::<SelfUpdateError>() {
         match update {
@@ -5987,7 +6025,9 @@ fn error_code(error: &anyhow::Error) -> &'static str {
     }
 }
 fn exit_code(error: &anyhow::Error) -> i32 {
-    if error.downcast_ref::<TargetOutcomeError>().is_some() {
+    if persistence_diagnostic(error).is_some() {
+        5
+    } else if error.downcast_ref::<TargetOutcomeError>().is_some() {
         1
     } else if let Some(update) = error.downcast_ref::<SelfUpdateError>() {
         match update {
@@ -6197,6 +6237,7 @@ mod tests {
             first_reconcile: AtomicBool::new(first_reconcile),
             last_clock_sample: Mutex::new(None),
             compiled_schedules: Mutex::new(BTreeMap::new()),
+            maintenance_cursor: Mutex::new(maintenance::MaintenanceCursor::default()),
             wake: Mutex::new(None),
             wake_task: Mutex::new(None),
             service_mode: false,
@@ -7490,3 +7531,6 @@ mod tests {
 #[cfg(test)]
 #[path = "explicit_prune/qualification.rs"]
 mod prune_qualification;
+
+#[cfg(test)]
+mod storage_diagnostics_tests;

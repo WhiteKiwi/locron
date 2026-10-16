@@ -1,4 +1,7 @@
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use crate::store::contention::Operation;
+#[cfg(test)]
+use rusqlite::TransactionBehavior;
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::{StoreError, StoreResult};
 
@@ -18,28 +21,31 @@ const RETENTION_RECOVERY_SCHEMA: &str = include_str!("../migrations/0003_retenti
 const GLOBAL_ENVIRONMENT_SCHEMA: &str = include_str!("../migrations/0004_global_environment.sql");
 const HTTP_CONTENT_TYPE_SCHEMA: &str = include_str!("../migrations/0005_http_content_type.sql");
 
-pub(crate) fn migrate(
+pub(crate) fn migrate_admitted(
     connection: &mut Connection,
     binary_version: &str,
     now_us: i64,
+    operation: &Operation,
 ) -> StoreResult<()> {
     #[cfg(windows)]
     let initial_execution_path = Some(locron_core::execution::default_execution_path());
     #[cfg(not(windows))]
     let initial_execution_path: Option<String> = None;
-    migrate_with_initial_execution_path(
+    migrate_with_initial_execution_path_admitted(
         connection,
         binary_version,
         now_us,
         initial_execution_path.as_deref(),
+        operation,
     )
 }
 
-fn migrate_with_initial_execution_path(
+fn migrate_with_initial_execution_path_admitted(
     connection: &mut Connection,
     binary_version: &str,
     now_us: i64,
     initial_execution_path: Option<&str>,
+    operation: &Operation,
 ) -> StoreResult<()> {
     let application_id: i32 =
         connection.pragma_query_value(None, "application_id", |row| row.get(0))?;
@@ -55,14 +61,14 @@ fn migrate_with_initial_execution_path(
     }
 
     if version == 0 {
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = operation.begin(connection)?;
         initialize_schema(&tx, binary_version, now_us, initial_execution_path)?;
-        tx.commit()?;
+        operation.commit(tx)?;
     }
     verify_migration(connection, 1, INITIAL_SCHEMA)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 2 {
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = operation.begin(connection)?;
         if migration_pending(&tx, 1)? {
             tx.execute_batch(DISABLED_CURSOR_SCHEMA)?;
             tx.pragma_update(None, "user_version", 2)?;
@@ -71,12 +77,12 @@ fn migrate_with_initial_execution_path(
                 params![DISABLED_CURSOR_MIGRATION_NAME, checksum(DISABLED_CURSOR_SCHEMA), binary_version, now_us],
             )?;
         }
-        tx.commit()?;
+        operation.commit(tx)?;
     }
     verify_migration(connection, 2, DISABLED_CURSOR_SCHEMA)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 3 {
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = operation.begin(connection)?;
         if migration_pending(&tx, 2)? {
             tx.execute_batch(RETENTION_RECOVERY_SCHEMA)?;
             tx.pragma_update(None, "user_version", 3)?;
@@ -85,12 +91,12 @@ fn migrate_with_initial_execution_path(
                 params![RETENTION_RECOVERY_MIGRATION_NAME, checksum(RETENTION_RECOVERY_SCHEMA), binary_version, now_us],
             )?;
         }
-        tx.commit()?;
+        operation.commit(tx)?;
     }
     verify_migration(connection, 3, RETENTION_RECOVERY_SCHEMA)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 4 {
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = operation.begin(connection)?;
         if migration_pending(&tx, 3)? {
             tx.execute_batch(GLOBAL_ENVIRONMENT_SCHEMA)?;
             tx.pragma_update(None, "user_version", 4)?;
@@ -99,12 +105,12 @@ fn migrate_with_initial_execution_path(
                 params![GLOBAL_ENVIRONMENT_MIGRATION_NAME, checksum(GLOBAL_ENVIRONMENT_SCHEMA), binary_version, now_us],
             )?;
         }
-        tx.commit()?;
+        operation.commit(tx)?;
     }
     verify_migration(connection, 4, GLOBAL_ENVIRONMENT_SCHEMA)?;
     let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if version < 5 {
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = operation.begin(connection)?;
         if migration_pending(&tx, 4)? {
             tx.execute_batch(HTTP_CONTENT_TYPE_SCHEMA)?;
             tx.pragma_update(None, "user_version", 5)?;
@@ -113,7 +119,7 @@ fn migrate_with_initial_execution_path(
                 params![HTTP_CONTENT_TYPE_MIGRATION_NAME, checksum(HTTP_CONTENT_TYPE_SCHEMA), binary_version, now_us],
             )?;
         }
-        tx.commit()?;
+        operation.commit(tx)?;
     }
     verify_migration(connection, 5, HTTP_CONTENT_TYPE_SCHEMA)?;
     Ok(())
@@ -199,6 +205,34 @@ fn verify_migration(connection: &Connection, version: i64, sql: &str) -> StoreRe
 fn checksum(sql: &str) -> String {
     let digest = crc32fast::hash(sql.as_bytes());
     format!("crc32:{digest:08x}")
+}
+
+#[cfg(test)]
+fn migrate(connection: &mut Connection, binary_version: &str, now_us: i64) -> StoreResult<()> {
+    connection.busy_timeout(std::time::Duration::ZERO)?;
+    migrate_admitted(
+        connection,
+        binary_version,
+        now_us,
+        &Operation::new("migration", None),
+    )
+}
+
+#[cfg(test)]
+fn migrate_with_initial_execution_path(
+    connection: &mut Connection,
+    binary_version: &str,
+    now_us: i64,
+    initial_execution_path: Option<&str>,
+) -> StoreResult<()> {
+    connection.busy_timeout(std::time::Duration::ZERO)?;
+    migrate_with_initial_execution_path_admitted(
+        connection,
+        binary_version,
+        now_us,
+        initial_execution_path,
+        &Operation::new("migration", None),
+    )
 }
 
 #[cfg(test)]
