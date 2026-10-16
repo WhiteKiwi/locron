@@ -796,6 +796,25 @@ pub(crate) fn create_private_file(path: &std::path::Path) -> io::Result<()> {
     }
 }
 
+pub(crate) fn filesystem_deadline() -> Instant {
+    Instant::now() + ADAPTER_TIMEOUT
+}
+
+pub(crate) fn remove_private_file_strict(
+    path: &std::path::Path,
+    parent: crate::filesystem::DirectoryGuard,
+    deadline: Instant,
+) -> io::Result<()> {
+    filesystem_worker::remove_file(adapter_path(path)?, parent, deadline)
+}
+
+pub(crate) fn move_empty_directory_new(
+    owner: std::sync::Arc<crate::filesystem::MoveOwnership>,
+    deadline: Instant,
+) -> io::Result<()> {
+    filesystem_worker::move_empty_directory_new(owner, deadline)
+}
+
 fn adapter_path(path: &std::path::Path) -> io::Result<&str> {
     path.to_str().ok_or_else(|| {
         io::Error::new(

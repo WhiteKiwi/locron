@@ -663,6 +663,342 @@ pub fn remove_private_file(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Removes an existing private Windows file with the native readonly/sharing policy.
+/// The admitted parent remains owned through actual native return and cleanup.
+/// Absence succeeds; this never clears attributes, repairs permissions or retries.
+#[cfg(windows)]
+pub fn remove_private_file_strict(path: &Path) -> io::Result<()> {
+    let deadline = crate::windows::filesystem_deadline();
+    let file = match private_operation_until(deadline, || {
+        open_private(path, OpenOptions::new().read(true))
+    }) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let path = file.normalized_path().to_owned();
+    let (file, guard) = file.into_parts();
+    drop(file);
+    ensure_private_deadline(deadline)?;
+    crate::windows::remove_private_file_strict(&path, guard, deadline)
+}
+
+#[cfg(windows)]
+fn ensure_private_deadline(deadline: std::time::Instant) -> io::Result<()> {
+    if std::time::Instant::now() >= deadline {
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "guarded filesystem deadline elapsed; native completion may be uncertain",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn private_operation_until<T>(
+    deadline: std::time::Instant,
+    operation: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
+    ensure_private_deadline(deadline)?;
+    let result = operation();
+    ensure_private_deadline(deadline)?;
+    result
+}
+
+/// Initializes and moves a caller-created, still-empty disposable Windows directory.
+///
+/// The caller must hold a genuine exclusive creation receipt for `basename` beneath
+/// the private source parent, immediately disable recursive cleanup, and provide no
+/// caller bytes or children. This is not authority to adopt or repair an existing or
+/// already-refused root. The helper owns every source-leaf guard and performs only
+/// DACL initialization; actual TokenUser ownership is required before mutation.
+///
+/// One native no-replace move is followed by private/full-identity destination
+/// admission while the original physical object remains alive. Unknown completion
+/// retains one process-wide owner and refuses further moves. There is no replay,
+/// rollback or path-based deletion. Synchronous OS calls cannot be preempted; late
+/// results fail under the same absolute deadline.
+#[cfg(windows)]
+pub fn move_empty_private_directory(
+    source_parent: std::sync::Arc<DirectoryGuard>,
+    destination_parent: std::sync::Arc<DirectoryGuard>,
+    basename: &std::ffi::OsStr,
+    deadline: std::time::Instant,
+) -> io::Result<DirectoryGuard> {
+    let lease = MoveLease::acquire(&MOVE_STATE)?;
+    let owner =
+        prepare_empty_directory_move(source_parent, destination_parent, basename, deadline)?;
+    let result = crate::windows::move_empty_directory_new(std::sync::Arc::clone(&owner), deadline);
+    finish_empty_directory_move(lease, owner, result, deadline)
+}
+
+/// Private immutable authority shared only with the fixed native move request.
+#[cfg(windows)]
+pub(crate) struct MoveOwnership {
+    _source_parent: std::sync::Arc<DirectoryGuard>,
+    _destination_parent: std::sync::Arc<DirectoryGuard>,
+    _original: File,
+    identity: FileIdentity,
+    source: PathBuf,
+    destination: PathBuf,
+}
+
+#[cfg(windows)]
+impl MoveOwnership {
+    pub(crate) fn source(&self) -> &Path {
+        &self.source
+    }
+
+    pub(crate) fn destination(&self) -> &Path {
+        &self.destination
+    }
+}
+
+#[cfg(windows)]
+enum MoveState {
+    Ready,
+    Active,
+    Quarantined {
+        _owner: std::sync::Arc<MoveOwnership>,
+    },
+}
+
+#[cfg(windows)]
+static MOVE_STATE: std::sync::Mutex<MoveState> = std::sync::Mutex::new(MoveState::Ready);
+
+#[cfg(windows)]
+struct MoveLease<'a>(&'a std::sync::Mutex<MoveState>);
+
+#[cfg(windows)]
+impl<'a> MoveLease<'a> {
+    fn acquire(state: &'a std::sync::Mutex<MoveState>) -> io::Result<Self> {
+        let mut slot = state
+            .lock()
+            .map_err(|_| io::Error::other("private directory move admission is unavailable"))?;
+        if !matches!(*slot, MoveState::Ready) {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "private directory move ownership is active or quarantined",
+            ));
+        }
+        *slot = MoveState::Active;
+        Ok(Self(state))
+    }
+
+    fn quarantine(self, owner: std::sync::Arc<MoveOwnership>) {
+        // Poison never restores admission. Retain the sole owner even on that path.
+        let mut slot = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *slot = MoveState::Quarantined { _owner: owner };
+    }
+}
+
+#[cfg(windows)]
+impl Drop for MoveLease<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut slot) = self.0.lock()
+            && matches!(*slot, MoveState::Active)
+        {
+            *slot = MoveState::Ready;
+        }
+    }
+}
+
+#[cfg(windows)]
+fn move_basename(basename: &std::ffi::OsStr) -> io::Result<&str> {
+    use std::path::Component;
+
+    let name = basename.to_str().ok_or_else(move_binding_refused)?;
+    let mut components = Path::new(basename).components();
+    if !matches!(components.next(), Some(Component::Normal(value)) if value == basename)
+        || components.next().is_some()
+        || name.ends_with(['.', ' '])
+        || name.chars().any(|ch| {
+            ch <= '\u{1f}' || matches!(ch, '<' | '>' | ':' | '"' | '|' | '?' | '*' | '/' | '\\')
+        })
+    {
+        return Err(move_binding_refused());
+    }
+    let device = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let port = device
+        .strip_prefix("COM")
+        .or_else(|| device.strip_prefix("LPT"));
+    if matches!(
+        device.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$" | "CLOCK$"
+    ) || port.is_some_and(|number| {
+        matches!(
+            number,
+            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+        )
+    }) {
+        return Err(move_binding_refused());
+    }
+    Ok(name)
+}
+
+#[cfg(windows)]
+fn move_binding_refused() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "private directory move identity, namespace or empty-root binding refused",
+    )
+}
+
+#[cfg(windows)]
+fn directory_identity(guard: &DirectoryGuard) -> io::Result<FileIdentity> {
+    let file_id::FileId::HighRes {
+        volume_serial_number,
+        file_id,
+    } = file_id::get_high_res_file_id(guard.normalized_path())?
+    else {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "full directory identity is unavailable",
+        ));
+    };
+    Ok(FileIdentity {
+        volume_serial_number,
+        file_id,
+    })
+}
+
+#[cfg(windows)]
+fn empty_directory(path: &Path) -> io::Result<()> {
+    match fs::read_dir(path)?.next() {
+        None => Ok(()),
+        Some(Err(error)) => Err(error),
+        Some(Ok(_)) => Err(move_binding_refused()),
+    }
+}
+
+#[cfg(windows)]
+fn prepare_empty_directory_move(
+    source_parent: std::sync::Arc<DirectoryGuard>,
+    destination_parent: std::sync::Arc<DirectoryGuard>,
+    basename: &std::ffi::OsStr,
+    deadline: std::time::Instant,
+) -> io::Result<std::sync::Arc<MoveOwnership>> {
+    ensure_private_deadline(deadline)?;
+    let basename = move_basename(basename)?;
+    let admitted_source = private_operation_until(deadline, || {
+        DirectoryGuard::existing_private(source_parent.normalized_path())
+    })?;
+    let admitted_destination = private_operation_until(deadline, || {
+        DirectoryGuard::ancestors(destination_parent.normalized_path())
+    })?;
+    if admitted_source.normalized_path() != source_parent.normalized_path()
+        || admitted_destination.normalized_path() != destination_parent.normalized_path()
+        || source_parent.normalized_path() == destination_parent.normalized_path()
+    {
+        return Err(move_binding_refused());
+    }
+    let source_volume = private_operation_until(deadline, || directory_identity(&admitted_source))?
+        .volume_serial_number;
+    let destination_volume =
+        private_operation_until(deadline, || directory_identity(&admitted_destination))?
+            .volume_serial_number;
+    if source_volume != destination_volume {
+        return Err(move_binding_refused());
+    }
+    let source = source_parent.normalized_path().join(basename);
+    let destination = destination_parent.normalized_path().join(basename);
+    let initial = private_operation_until(deadline, || DirectoryGuard::ancestors(&source))?;
+    private_operation_until(deadline, || empty_directory(&source))?;
+    // The caller's genuine fresh receipt and private parent authorize initialization.
+    // Never first refuse private admission and then attempt to repair that object.
+    private_operation_until(deadline, || restrict_owned(&source, true))?;
+    let private = private_operation_until(deadline, || DirectoryGuard::existing_private(&source))?;
+    let identity = private_operation_until(deadline, || directory_identity(&private))?;
+    let original =
+        private_operation_until(deadline, || windows::movable_directory_handle(&source))?;
+    private_operation_until(deadline, || empty_directory(&source))?;
+    let owner = std::sync::Arc::new(MoveOwnership {
+        _source_parent: source_parent,
+        _destination_parent: destination_parent,
+        _original: original,
+        identity,
+        source,
+        destination,
+    });
+    // Only parent guards and the DELETE-sharing physical handle survive native issue.
+    drop((private, initial, admitted_source, admitted_destination));
+    ensure_private_deadline(deadline)?;
+    Ok(owner)
+}
+
+#[cfg(windows)]
+fn bind_moved_directory(
+    owner: &MoveOwnership,
+    deadline: std::time::Instant,
+) -> io::Result<DirectoryGuard> {
+    let destination = private_operation_until(deadline, || {
+        DirectoryGuard::existing_private(owner.destination())
+    })?;
+    if private_operation_until(deadline, || directory_identity(&destination))? != owner.identity {
+        return Err(move_binding_refused());
+    }
+    private_operation_until(deadline, || empty_directory(owner.destination()))?;
+    private_operation_until(deadline, || match fs::symlink_metadata(owner.source()) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+        Ok(_) => Err(move_binding_refused()),
+    })?;
+    ensure_private_deadline(deadline)?;
+    Ok(destination)
+}
+
+#[cfg(windows)]
+fn resolve_refused_move(owner: &MoveOwnership, deadline: std::time::Instant) -> io::Result<()> {
+    let source = private_operation_until(deadline, || {
+        DirectoryGuard::existing_private(owner.source())
+    })?;
+    if private_operation_until(deadline, || directory_identity(&source))? != owner.identity {
+        return Err(move_binding_refused());
+    }
+    private_operation_until(deadline, || empty_directory(owner.source()))?;
+    // Observe only the fixed destination; existence grants no adoption/deletion authority.
+    private_operation_until(deadline, || {
+        match fs::symlink_metadata(owner.destination()) {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    })
+}
+
+#[cfg(windows)]
+fn finish_empty_directory_move(
+    lease: MoveLease<'_>,
+    owner: std::sync::Arc<MoveOwnership>,
+    result: io::Result<()>,
+    deadline: std::time::Instant,
+) -> io::Result<DirectoryGuard> {
+    match result {
+        Ok(()) => match bind_moved_directory(&owner, deadline) {
+            Ok(destination) => Ok(destination),
+            Err(error) => {
+                lease.quarantine(owner);
+                Err(error)
+            }
+        },
+        Err(error) => {
+            // The bridge reserves raw OS codes for validated on-time native refusals.
+            if error.raw_os_error().is_none() || resolve_refused_move(&owner, deadline).is_err() {
+                lease.quarantine(owner);
+            }
+            Err(error)
+        }
+    }
+}
+
 /// Explicitly restricts a current-user-owned object, without taking foreign ownership.
 /// This operation is intended for explicit repairs and disposable test setup.
 pub fn restrict_owned(path: &Path, directory: bool) -> io::Result<()> {
@@ -862,6 +1198,20 @@ mod windows {
             .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
             .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
             .open(path)
+    }
+
+    pub(super) fn movable_directory_handle(path: &Path) -> io::Result<File> {
+        let file = OpenOptions::new()
+            .access_mode(READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | 4)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)?;
+        reject_reparse(&file, path)?;
+        if !file.metadata()?.is_dir() {
+            return Err(unsafe_path(path));
+        }
+        verify_private(&file, path, true)?;
+        Ok(file)
     }
 
     pub(super) fn reject_reparse(file: &File, path: &Path) -> io::Result<()> {
@@ -1309,6 +1659,374 @@ mod tests {
             .open(path)
             .unwrap();
         fixture_descriptor(&metadata)
+    }
+
+    // Failed controls expose a closed fact, never SID/DACL/path/identity or unexpected bytes.
+    #[track_caller]
+    fn assert_private_fact(fact: bool) {
+        assert!(fact, "private filesystem control fact failed");
+    }
+
+    struct MoveFixture {
+        source_parent: std::sync::Arc<DirectoryGuard>,
+        destination_parent: std::sync::Arc<DirectoryGuard>,
+        name: std::ffi::OsString,
+        source_id: FileIdentity,
+        _temporary: tempfile::TempDir,
+    }
+
+    impl MoveFixture {
+        fn new() -> Self {
+            let temporary = tempfile::tempdir().unwrap();
+            let source_parent = std::sync::Arc::new(
+                DirectoryGuard::private(&temporary.path().join("private empty staging")).unwrap(),
+            );
+            let destination_parent = std::sync::Arc::new(
+                DirectoryGuard::private(&temporary.path().join("outside evidence")).unwrap(),
+            );
+            let name = std::ffi::OsString::from("empty movable root");
+            // Core controls run in the original PowerShell context. Its default
+            // owner may be Administrators, so use the existing explicit-private
+            // creator for this known disposable control. This does NOT qualify
+            // the exclusive TempDir producer used by the original PR144 rows.
+            let source =
+                DirectoryGuard::private(&source_parent.normalized_path().join(&name)).unwrap();
+            let source_id = directory_identity(&source).unwrap();
+            drop(source);
+            Self {
+                _temporary: temporary,
+                source_parent,
+                destination_parent,
+                name,
+                source_id,
+            }
+        }
+
+        fn source(&self) -> PathBuf {
+            self.source_parent.normalized_path().join(&self.name)
+        }
+
+        fn destination(&self) -> PathBuf {
+            self.destination_parent.normalized_path().join(&self.name)
+        }
+
+        fn prepare(&self, deadline: Instant) -> std::sync::Arc<MoveOwnership> {
+            prepare_empty_directory_move(
+                std::sync::Arc::clone(&self.source_parent),
+                std::sync::Arc::clone(&self.destination_parent),
+                &self.name,
+                deadline,
+            )
+            .unwrap()
+        }
+
+        fn move_root(&self, deadline: Instant) -> io::Result<DirectoryGuard> {
+            move_empty_private_directory(
+                std::sync::Arc::clone(&self.source_parent),
+                std::sync::Arc::clone(&self.destination_parent),
+                &self.name,
+                deadline,
+            )
+        }
+    }
+
+    #[test]
+    fn private_empty_move_preserves_full_identity_and_refuses_a_retained_source_leaf() {
+        let fixture = MoveFixture::new();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let state = std::sync::Mutex::new(MoveState::Ready);
+        let lease = MoveLease::acquire(&state).unwrap();
+        let owner = fixture.prepare(deadline);
+        let pin = DirectoryGuard::existing_private(&fixture.source()).unwrap();
+        let result =
+            crate::windows::move_empty_directory_new(std::sync::Arc::clone(&owner), deadline);
+        let error = finish_empty_directory_move(lease, owner, result, deadline).unwrap_err();
+        assert_private_fact(error.raw_os_error().is_some_and(|code| code != 0));
+        assert_private_fact(directory_identity(&pin).unwrap() == fixture.source_id);
+        assert_private_fact(fs::read_dir(fixture.source()).unwrap().next().is_none());
+        assert_private_fact(!fixture.destination().exists());
+        assert_private_fact(matches!(*state.lock().unwrap(), MoveState::Ready));
+        drop(pin);
+        let moved = fixture.move_root(deadline).unwrap();
+        assert_private_fact(directory_identity(&moved).unwrap() == fixture.source_id);
+        assert_private_fact(moved.normalized_path() == fixture.destination());
+        assert_private_fact(is_private(moved.normalized_path(), true).unwrap());
+        assert_private_fact(
+            fs::read_dir(moved.normalized_path())
+                .unwrap()
+                .next()
+                .is_none(),
+        );
+        assert_private_fact(!fixture.source().exists());
+        drop(moved);
+    }
+
+    #[test]
+    fn private_empty_move_never_replaces_a_file_or_empty_or_populated_directory() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        for shape in ["file", "empty", "populated"] {
+            let fixture = MoveFixture::new();
+            let destination = fixture.destination();
+            let (original, expected_id) = if shape == "file" {
+                let mut file = create_private_new(&destination).unwrap();
+                file.write_all(b"preserve collision").unwrap();
+                file.sync_all().unwrap();
+                let identity = file_identity(&file).unwrap();
+                drop(file);
+                let original = OpenOptions::new()
+                    .read(true)
+                    .share_mode(7)
+                    .open(&destination)
+                    .unwrap();
+                (original, identity)
+            } else {
+                let guard = DirectoryGuard::private(&destination).unwrap();
+                if shape == "populated" {
+                    create_private_new(&destination.join("preserved child"))
+                        .unwrap()
+                        .write_all(b"preserve collision")
+                        .unwrap();
+                }
+                let identity = directory_identity(&guard).unwrap();
+                let original = windows::movable_directory_handle(&destination).unwrap();
+                // An empty target must be genuinely replaceable by a bad rename;
+                // retaining this guard would hide Rust's replacement fallback.
+                drop(guard);
+                (original, identity)
+            };
+            let expected_descriptor = fixture_descriptor(&original);
+            let error = fixture
+                .move_root(Instant::now() + Duration::from_secs(30))
+                .unwrap_err();
+            assert_private_fact(error.raw_os_error().is_some());
+            if shape == "file" {
+                let file = open_private(&destination, OpenOptions::new().read(true)).unwrap();
+                assert_private_fact(file_identity(&file).unwrap() == expected_id);
+                assert_private_fact(fixture_descriptor(&file) == expected_descriptor);
+                assert_private_fact(fs::read(&destination).unwrap() == b"preserve collision");
+            } else {
+                let guard = DirectoryGuard::existing_private(&destination).unwrap();
+                assert_private_fact(directory_identity(&guard).unwrap() == expected_id);
+                assert_private_fact(
+                    fixture_directory_descriptor(&destination) == expected_descriptor,
+                );
+                let names: Vec<_> = fs::read_dir(&destination)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect();
+                if shape == "empty" {
+                    assert_private_fact(names.is_empty());
+                } else {
+                    assert_private_fact(names == [std::ffi::OsString::from("preserved child")]);
+                    assert_private_fact(
+                        fs::read(destination.join("preserved child")).unwrap()
+                            == b"preserve collision",
+                    );
+                }
+            }
+            let source = DirectoryGuard::existing_private(&fixture.source()).unwrap();
+            assert_private_fact(directory_identity(&source).unwrap() == fixture.source_id);
+            assert_private_fact(fs::read_dir(fixture.source()).unwrap().next().is_none());
+            drop(original);
+        }
+    }
+
+    #[test]
+    fn private_empty_move_expiry_and_nonempty_preparation_never_issue_or_repair() {
+        let fixture = MoveFixture::new();
+        let descriptor = fixture_directory_descriptor(&fixture.source());
+        let expired = Instant::now();
+        assert_private_fact(
+            fixture.move_root(expired).unwrap_err().kind() == io::ErrorKind::TimedOut,
+        );
+        assert_private_fact(!fixture.destination().exists());
+        assert_private_fact(fixture_directory_descriptor(&fixture.source()) == descriptor);
+        let path = fixture.source().join("existing child");
+        create_private_new(&path)
+            .unwrap()
+            .write_all(b"unchanged")
+            .unwrap();
+        assert_private_fact(
+            fixture
+                .move_root(Instant::now() + Duration::from_secs(30))
+                .unwrap_err()
+                .kind()
+                == io::ErrorKind::PermissionDenied,
+        );
+        assert_private_fact(!fixture.destination().exists());
+        assert_private_fact(fs::read(&path).unwrap() == b"unchanged");
+        assert_private_fact(fixture_directory_descriptor(&fixture.source()) == descriptor);
+        for invalid in [
+            "", ".", "..", "a/b", "a\\b", "a:b", "CON", "LPT1.txt", "bad.",
+        ] {
+            assert_private_fact(move_basename(std::ffi::OsStr::new(invalid)).is_err());
+        }
+    }
+
+    #[test]
+    fn private_empty_move_wrong_and_missing_postbindings_quarantine_original_without_bytes() {
+        for wrong_identity in [false, true] {
+            let fixture = MoveFixture::new();
+            let state = std::sync::Mutex::new(MoveState::Ready);
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let lease = MoveLease::acquire(&state).unwrap();
+            let owner = fixture.prepare(deadline);
+            let original = std::sync::Arc::downgrade(&owner);
+            if wrong_identity {
+                drop(DirectoryGuard::private(&fixture.destination()).unwrap());
+            }
+            // Inject a claimed completion without native mutation. Real filesystem
+            // admission must reject absence or a different private empty object.
+            assert_private_fact(
+                finish_empty_directory_move(lease, owner, Ok(()), deadline).is_err(),
+            );
+            assert_private_fact(original.upgrade().is_some());
+            assert_private_fact(
+                MoveLease::acquire(&state).err().unwrap().kind() == io::ErrorKind::WouldBlock,
+            );
+            let source = DirectoryGuard::existing_private(&fixture.source()).unwrap();
+            assert_private_fact(directory_identity(&source).unwrap() == fixture.source_id);
+            assert_private_fact(fs::read_dir(fixture.source()).unwrap().next().is_none());
+            if wrong_identity {
+                let destination = DirectoryGuard::existing_private(&fixture.destination()).unwrap();
+                assert_ne!(directory_identity(&destination).unwrap(), fixture.source_id);
+                assert_private_fact(
+                    fs::read_dir(fixture.destination())
+                        .unwrap()
+                        .next()
+                        .is_none(),
+                );
+            }
+            // This local test slot has no pending native operation. Production's
+            // single static quarantine has no reset or recursive cleanup path.
+            drop(source);
+            drop(state);
+            assert_private_fact(original.upgrade().is_none());
+        }
+    }
+
+    #[test]
+    fn private_empty_move_expired_postbinding_retains_owner_after_confirmed_native_move() {
+        let fixture = MoveFixture::new();
+        let state = std::sync::Mutex::new(MoveState::Ready);
+        let lease = MoveLease::acquire(&state).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let owner = fixture.prepare(deadline);
+        let original = std::sync::Arc::downgrade(&owner);
+        crate::windows::move_empty_directory_new(std::sync::Arc::clone(&owner), deadline).unwrap();
+        // Native movement really returned; now exercise the expired delivery gate
+        // with an already-expired budget, without sleeping or claiming OS preemption.
+        assert_private_fact(
+            finish_empty_directory_move(lease, owner, Ok(()), Instant::now())
+                .unwrap_err()
+                .kind()
+                == io::ErrorKind::TimedOut,
+        );
+        assert_private_fact(original.upgrade().is_some());
+        assert_private_fact(MoveLease::acquire(&state).is_err());
+        assert_private_fact(!fixture.source().exists());
+        let destination = DirectoryGuard::existing_private(&fixture.destination()).unwrap();
+        assert_private_fact(directory_identity(&destination).unwrap() == fixture.source_id);
+        assert_private_fact(
+            fs::read_dir(fixture.destination())
+                .unwrap()
+                .next()
+                .is_none(),
+        );
+        drop(destination);
+        drop(state);
+        assert_private_fact(original.upgrade().is_none());
+    }
+
+    #[test]
+    fn private_empty_move_unknown_result_keeps_the_sole_parent_guards() {
+        let fixture = MoveFixture::new();
+        let state = std::sync::Mutex::new(MoveState::Ready);
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let lease = MoveLease::acquire(&state).unwrap();
+        let owner = fixture.prepare(deadline);
+        let source = owner.source().to_owned();
+        let parent = fixture.source_parent.normalized_path().to_owned();
+        let displaced = parent.with_file_name("parent must remain anchored");
+        let ancestry = std::sync::Arc::downgrade(&fixture.source_parent);
+        let original = std::sync::Arc::downgrade(&owner);
+        let MoveFixture {
+            source_parent,
+            destination_parent,
+            _temporary: temporary,
+            ..
+        } = fixture;
+        drop((source_parent, destination_parent));
+        // Inject an unknown transport outcome. No native action runs in this
+        // control; real pending-child ownership is qualified by the worker tests.
+        let error = io::Error::other("injected unknown move result");
+        assert_private_fact(
+            finish_empty_directory_move(lease, owner, Err(error), deadline).is_err(),
+        );
+        assert_private_fact(original.upgrade().is_some());
+        assert_private_fact(ancestry.upgrade().is_some());
+        assert_private_fact(fs::read_dir(&source).unwrap().next().is_none());
+        assert_private_fact(fs::rename(&parent, &displaced).is_err());
+        assert_private_fact(MoveLease::acquire(&state).is_err());
+        // This local slot has no admitted native work. Release the exact control
+        // owner, then require the same parent operation to succeed without it.
+        drop(state);
+        assert_private_fact(original.upgrade().is_none());
+        assert_private_fact(ancestry.upgrade().is_none());
+        fs::rename(&parent, &displaced).unwrap();
+        assert_private_fact(displaced.join("empty movable root").is_dir());
+        drop(temporary);
+    }
+
+    #[test]
+    fn strict_private_remover_preserves_actual_readonly_and_sharing_refusals() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = DirectoryGuard::private(&temporary.path().join("strict removal")).unwrap();
+        let path = root.normalized_path().join("readonly.txt");
+        let mut file = create_private_new(&path).unwrap();
+        file.write_all(b"preserved native refusal").unwrap();
+        file.sync_all().unwrap();
+        let identity = file_identity(&file).unwrap();
+        let descriptor = fixture_descriptor(&file);
+        drop(file);
+        let mut permissions = fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions.clone()).unwrap();
+        assert_private_fact(
+            remove_private_file_strict(&path)
+                .unwrap_err()
+                .raw_os_error()
+                == Some(5),
+        );
+        let file = open_private(&path, OpenOptions::new().read(true)).unwrap();
+        assert_private_fact(file_identity(&file).unwrap() == identity);
+        assert_private_fact(fixture_descriptor(&file) == descriptor);
+        assert_private_fact(fs::read(&path).unwrap() == b"preserved native refusal");
+        assert_private_fact(file.metadata().unwrap().permissions().readonly());
+        drop(file);
+        #[expect(
+            clippy::permissions_set_readonly_false,
+            reason = "Clear only this verified test-owned Windows attribute after native refusal; owner and DACL remain unchanged."
+        )]
+        permissions.set_readonly(false);
+        fs::set_permissions(&path, permissions).unwrap();
+        let held = open_private(&path, OpenOptions::new().read(true)).unwrap();
+        assert_private_fact(matches!(
+            remove_private_file_strict(&path)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32 | 33)
+        ));
+        assert_private_fact(file_identity(&held).unwrap() == identity);
+        assert_private_fact(fs::read(&path).unwrap() == b"preserved native refusal");
+        drop(held);
+        remove_private_file_strict(&path).unwrap();
+        remove_private_file_strict(&path).unwrap();
+        assert_private_fact(!path.exists());
+        let absent = temporary.path().join("never created").join("leaf");
+        remove_private_file_strict(&absent).unwrap();
+        assert_private_fact(!absent.parent().unwrap().exists());
     }
 
     #[test]

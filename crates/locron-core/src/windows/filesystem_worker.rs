@@ -41,8 +41,25 @@ struct Request {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     reply: mpsc::SyncSender<io::Result<Value>>,
+    _ownership: RequestOwnership,
     #[cfg(test)]
     diagnostic: Arc<Diagnostic>,
+}
+
+enum RequestOwnership {
+    None,
+    Remove {
+        _parent: crate::filesystem::DirectoryGuard,
+    },
+    Move {
+        _owner: Arc<crate::filesystem::MoveOwnership>,
+    },
+}
+
+impl Request {
+    fn destructive(&self) -> bool {
+        matches!(self.operation, "remove_file" | "move_empty_directory_new")
+    }
 }
 
 #[cfg(test)]
@@ -305,13 +322,74 @@ pub(super) fn request(
     path: Option<&str>,
     deadline: Instant,
 ) -> io::Result<Value> {
-    #[cfg(test)]
-    let entered = Instant::now();
     remaining(deadline)?;
     if !matches!(operation, "sid" | "create_directory" | "create_file") {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "unknown filesystem selector",
+        ));
+    }
+    request_owned(operation, &json!(path), RequestOwnership::None, deadline)
+}
+
+pub(super) fn remove_file(
+    path: &str,
+    parent: crate::filesystem::DirectoryGuard,
+    deadline: Instant,
+) -> io::Result<()> {
+    let reply = request_owned(
+        "remove_file",
+        &json!(path),
+        RequestOwnership::Remove { _parent: parent },
+        deadline,
+    )
+    .map_err(|error| owned_exchange_error(&error))?;
+    finish_mutation(&reply, deadline)
+}
+
+pub(super) fn move_empty_directory_new(
+    owner: Arc<crate::filesystem::MoveOwnership>,
+    deadline: Instant,
+) -> io::Result<()> {
+    let path = json!({
+        "source":super::adapter_path(owner.source())?,
+        "destination":super::adapter_path(owner.destination())?,
+    });
+    let reply = request_owned(
+        "move_empty_directory_new",
+        &path,
+        RequestOwnership::Move { _owner: owner },
+        deadline,
+    )
+    .map_err(|error| owned_exchange_error(&error))?;
+    finish_mutation(&reply, deadline)
+}
+
+fn owned_exchange_error(error: &io::Error) -> io::Error {
+    // Only a validated native-refusal frame may supply an OS code to the caller.
+    io::Error::new(error.kind(), "owned filesystem exchange failed")
+}
+
+fn request_owned(
+    operation: &'static str,
+    path: &Value,
+    ownership: RequestOwnership,
+    deadline: Instant,
+) -> io::Result<Value> {
+    #[cfg(test)]
+    let entered = Instant::now();
+    remaining(deadline)?;
+    if !matches!(
+        (operation, &ownership),
+        (
+            "sid" | "create_directory" | "create_file",
+            RequestOwnership::None
+        ) | ("remove_file", RequestOwnership::Remove { .. })
+            | ("move_empty_directory_new", RequestOwnership::Move { .. })
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "filesystem request ownership mismatch",
         ));
     }
     let id = NEXT_ID
@@ -346,6 +424,7 @@ pub(super) fn request(
         deadline,
         cancelled: Arc::clone(&cancelled),
         reply,
+        _ownership: ownership,
         #[cfg(test)]
         diagnostic: Arc::clone(&diagnostic),
     };
@@ -441,6 +520,7 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
     let mut worker: Option<Worker> = None;
     let mut quarantine = false;
     let mut quarantined_spawn = None;
+    let mut quarantined_request = None;
     loop {
         let request = if worker.is_some() && !quarantine {
             if let Ok(request) = tokio::time::timeout(IDLE, receiver.recv()).await {
@@ -503,6 +583,9 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
                     quarantined_spawn = ownership;
                     fail_queued(&mut receiver, &error);
                     let _ = request.reply.send(Err(error));
+                    if quarantine {
+                        quarantined_request = Some(request);
+                    }
                     continue;
                 }
             }
@@ -526,6 +609,11 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
                 quarantine = true;
                 fail_queued(&mut receiver, &cleanup);
                 let _ = request.reply.send(Err(cleanup));
+                quarantined_request = Some(request);
+                #[cfg(test)]
+                if let Some(probe) = &owned.mutation_probe {
+                    probe.event("owner-quarantined");
+                }
                 continue;
             }
             #[cfg(test)]
@@ -535,7 +623,16 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
             worker = None;
             fail_queued(&mut receiver, error);
         }
-        let _ = request.reply.send(result);
+        if request.destructive() {
+            // The command has returned (or cleanup was confirmed). Release its
+            // namespace pins before publishing the result; a move caller still
+            // retains its separate Arc through destination admission.
+            let reply = request.reply.clone();
+            drop(request);
+            let _ = reply.send(result);
+        } else {
+            let _ = request.reply.send(result);
+        }
     }
     if !quarantine
         && let Some(owned) = worker.as_mut()
@@ -543,13 +640,13 @@ async fn own_worker(mut receiver: queue::Receiver<Request>) {
     {
         quarantine = true;
     }
-    if quarantine || quarantined_spawn.is_some() {
+    if quarantine || quarantined_spawn.is_some() || quarantined_request.is_some() {
         #[cfg(test)]
         if let Some(probe) = worker.as_ref().and_then(|owned| owned.eof_probe.as_ref()) {
             probe.quarantined();
         }
         // Even a private/fixture channel EOF cannot release uncertain native ownership.
-        // This owner retains its child/Job/stock handles; process exit closes them in the kernel.
+        // Active request ancestry and child/Job/stock handles survive until process exit.
         loop {
             std::thread::park();
         }
@@ -598,6 +695,8 @@ struct Worker {
     phases: Arc<ChildPhases>,
     #[cfg(test)]
     eof_probe: Option<eof_probe::Probe>,
+    #[cfg(test)]
+    mutation_probe: Option<MutationProbe>,
 }
 
 impl Worker {
@@ -676,11 +775,19 @@ impl Worker {
             phases,
             #[cfg(test)]
             eof_probe: eof_probe::take(),
+            #[cfg(test)]
+            mutation_probe: None,
         })
     }
 
     async fn exchange(&mut self, request: &Request) -> io::Result<Value> {
         remaining(request.deadline)?;
+        #[cfg(test)]
+        if request.destructive() && self.mutation_probe.is_none() {
+            self.mutation_probe = NEXT_MUTATION_PROBE.lock().unwrap().take();
+        }
+        #[cfg(test)]
+        let mutation_probe = self.mutation_probe.as_ref();
         let deadline = tokio::time::Instant::from_std(request.deadline);
         let Self {
             stdin,
@@ -699,11 +806,25 @@ impl Worker {
                     let bytes = read_frame(stdout).await?;
                     #[cfg(test)]
                     request.diagnostic.record("reply-received", *pid);
-                    validate_frame(&bytes, request, *pid)
+                    let result = validate_frame(&bytes, request, *pid)?;
+                    #[cfg(test)]
+                    if let Some(probe) = mutation_probe
+                        && request.operation == "remove_file" {
+                        if !matches!(MutationOutcome::parse(&result)?, MutationOutcome::Completed) {
+                            return Err(io::Error::other("owned mutation fixture did not complete"));
+                        }
+                        probe.event("native-removal-completed");
+                        return Err(io::Error::other("owned fixture withheld mutation reply"));
+                    }
+                    Ok(result)
                 } => result,
                 result = stderr => {
                     let bytes = result.map_err(io::Error::other)??;
-                    Err(io::Error::other(format!("filesystem worker stderr closed: {}", String::from_utf8_lossy(&bytes).trim())))
+                    if request.destructive() {
+                        Err(io::Error::other("owned filesystem worker stderr closed"))
+                    } else {
+                        Err(io::Error::other(format!("filesystem worker stderr closed: {}", String::from_utf8_lossy(&bytes).trim())))
+                    }
                 }
                 () = cancelled(&request.cancelled) => Err(io::Error::new(io::ErrorKind::TimedOut, "filesystem caller deadline elapsed")),
             }
@@ -722,6 +843,10 @@ impl Worker {
 
     async fn cleanup(&mut self) -> io::Result<()> {
         let deadline = Instant::now() + CLEANUP;
+        #[cfg(test)]
+        if let Some(probe) = &mut self.mutation_probe {
+            probe.start();
+        }
         #[cfg(test)]
         if let Some(probe) = self.eof_probe.as_mut() {
             probe.start(deadline);
@@ -750,6 +875,10 @@ impl Worker {
                     ));
                 }
                 remaining(deadline)?;
+                #[cfg(test)]
+                if let Some(probe) = &mut self.mutation_probe {
+                    probe.confirm_until(deadline).await?;
+                }
                 #[cfg(test)]
                 if let Some(probe) = self.eof_probe.as_mut() {
                     probe.confirm_tree_and_read_until(deadline).await?;
@@ -815,7 +944,13 @@ struct Creation {
 }
 
 fn validate_frame(bytes: &[u8], request: &Request, pid: u32) -> io::Result<Value> {
-    let reply: Reply = serde_json::from_slice(bytes).map_err(io::Error::other)?;
+    let reply: Reply = serde_json::from_slice(bytes).map_err(|error| {
+        if request.destructive() {
+            invalid_mutation()
+        } else {
+            io::Error::other(error)
+        }
+    })?;
     if reply.version != 1 || reply.id != request.id || reply.pid != pid {
         return Err(io::Error::other("filesystem reply identity mismatch"));
     }
@@ -832,6 +967,8 @@ fn validate_frame(bytes: &[u8], request: &Request, pid: u32) -> io::Result<Value
         {
             return Err(io::Error::other("filesystem SID reply is invalid"));
         }
+    } else if request.destructive() {
+        MutationOutcome::parse(&reply.result)?;
     } else {
         let created: Creation =
             serde_json::from_value(reply.result.clone()).map_err(io::Error::other)?;
@@ -846,12 +983,278 @@ fn validate_frame(bytes: &[u8], request: &Request, pid: u32) -> io::Result<Value
     Ok(reply.result)
 }
 
+enum MutationOutcome {
+    Completed,
+    NativeRefusal(i32),
+    AdapterRefusal,
+}
+
+fn invalid_mutation() -> io::Error {
+    io::Error::other("invalid owned filesystem result")
+}
+
+impl MutationOutcome {
+    fn parse(value: &Value) -> io::Result<Self> {
+        let object = value.as_object().ok_or_else(invalid_mutation)?;
+        if object.len() != 3
+            || !["outcome", "hresult", "win32_error"]
+                .iter()
+                .all(|field| object.contains_key(*field))
+        {
+            return Err(invalid_mutation());
+        }
+        match object["outcome"].as_str() {
+            Some("completed") if object["hresult"].is_null() && object["win32_error"].is_null() => {
+                Ok(Self::Completed)
+            }
+            Some("adapter_refusal")
+                if object["hresult"].is_null() && object["win32_error"].is_null() =>
+            {
+                Ok(Self::AdapterRefusal)
+            }
+            Some("native_refusal") => {
+                let hresult = object["hresult"]
+                    .as_i64()
+                    .and_then(|value| i32::try_from(value).ok())
+                    .ok_or_else(invalid_mutation)?;
+                let code = object["win32_error"]
+                    .as_u64()
+                    .and_then(|value| u16::try_from(value).ok())
+                    .filter(|value| *value != 0)
+                    .ok_or_else(invalid_mutation)?;
+                if u32::from_ne_bytes(hresult.to_ne_bytes()) != 0x8007_0000 | u32::from(code) {
+                    return Err(invalid_mutation());
+                }
+                Ok(Self::NativeRefusal(i32::from(code)))
+            }
+            _ => Err(invalid_mutation()),
+        }
+    }
+}
+
+fn finish_mutation(reply: &Value, deadline: Instant) -> io::Result<()> {
+    let outcome = MutationOutcome::parse(reply)?;
+    remaining(deadline)?;
+    match outcome {
+        MutationOutcome::Completed => Ok(()),
+        MutationOutcome::NativeRefusal(code) => Err(io::Error::from_raw_os_error(code)),
+        MutationOutcome::AdapterRefusal => {
+            Err(io::Error::other("filesystem adapter refused operation"))
+        }
+    }
+}
+
+#[cfg(test)]
+static NEXT_MUTATION_PROBE: std::sync::Mutex<Option<MutationProbe>> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+struct MutationProbe {
+    reader: Option<io::PipeReader>,
+    pending: Option<JoinHandle<io::Result<()>>>,
+    events: mpsc::SyncSender<&'static str>,
+}
+
+#[cfg(test)]
+impl MutationProbe {
+    fn event(&self, phase: &'static str) {
+        self.events.try_send(phase).unwrap();
+    }
+
+    fn start(&mut self) {
+        use std::io::Read as _;
+        let Some(mut reader) = self.reader.take() else {
+            return;
+        };
+        let events = self.events.clone();
+        self.pending = Some(tokio::task::spawn_blocking(move || {
+            events.try_send("native-cleanup-entered").unwrap();
+            reader.read_exact(&mut [0_u8; 1])?;
+            events.try_send("native-cleanup-completed").unwrap();
+            Ok(())
+        }));
+    }
+
+    async fn confirm_until(&mut self, deadline: Instant) -> io::Result<()> {
+        self.event("tree-confirmed");
+        let pending = self.pending.as_mut().unwrap();
+        tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), pending)
+            .await
+            .map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "owned cleanup read remains pending",
+                )
+            })?
+            .map_err(io::Error::other)?
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Read;
     use std::os::windows::process::CommandExt;
     use std::process::{Child, Command as StdCommand, Stdio};
+
+    #[test]
+    fn owned_mutation_frames_preserve_only_consistent_native_codes() {
+        let request = fixture_request("remove_file");
+        for code in [2_u16, 3, 5, 15, 32, 33, 183, u16::MAX] {
+            let hresult = i32::from_ne_bytes((0x8007_0000 | u32::from(code)).to_ne_bytes());
+            let result = json!({"outcome":"native_refusal","hresult":hresult,"win32_error":code});
+            let bytes = serde_json::to_vec(&json!({"version":1,"id":"1","pid":42,"result":result}))
+                .unwrap();
+            let reply = validate_frame(&bytes, &request, 42).unwrap();
+            assert_eq!(
+                finish_mutation(&reply, super::super::filesystem_deadline())
+                    .unwrap_err()
+                    .raw_os_error(),
+                Some(i32::from(code))
+            );
+        }
+        for result in [
+            json!({"outcome":"completed","hresult":null,"win32_error":null}),
+            json!({"outcome":"adapter_refusal","hresult":null,"win32_error":null}),
+        ] {
+            assert!(MutationOutcome::parse(&result).is_ok());
+        }
+        let secret = "private-path-SID-SQL-body-must-never-render";
+        for result in [
+            json!({"outcome":"completed","win32_error":null}),
+            json!({"outcome":"completed","hresult":null,"win32_error":null,"secret":secret}),
+            json!({"outcome":secret,"hresult":null,"win32_error":null}),
+            json!({"outcome":"completed","hresult":-2_147_024_891_i32,"win32_error":5}),
+            json!({"outcome":"native_refusal","hresult":-2_147_024_891_i32,"win32_error":32}),
+            json!({"outcome":"native_refusal","hresult":null,"win32_error":5}),
+            json!({"outcome":"native_refusal","hresult":-2_147_024_891_i32,"win32_error":0}),
+            json!({"outcome":"native_refusal","hresult":-2_147_024_891_i32,"win32_error":65_536}),
+            json!({"outcome":"native_refusal","hresult":-2_147_024_891_i32,"win32_error":5.0}),
+            json!({"outcome":"native_refusal","hresult":2_147_942_405_u64,"win32_error":5}),
+            json!({"outcome":"native_refusal","hresult":-2_146_233_079_i32,"win32_error":5}),
+        ] {
+            let error = MutationOutcome::parse(&result).err().unwrap();
+            assert_eq!(error.to_string(), "invalid owned filesystem result");
+            assert!(!error.to_string().contains(secret));
+        }
+        let mut bad = json!({"version":1,"id":"1","pid":42,"result":null});
+        bad[secret] = json!(secret);
+        let error = validate_frame(&serde_json::to_vec(&bad).unwrap(), &request, 42).unwrap_err();
+        assert_eq!(error.to_string(), "invalid owned filesystem result");
+        let error = owned_exchange_error(&io::Error::from_raw_os_error(5));
+        assert_eq!(error.raw_os_error(), None);
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        for operation in ["remove_file", "move_empty_directory_new"] {
+            let error =
+                super::request(operation, None, super::super::filesystem_deadline()).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        }
+    }
+
+    #[test]
+    fn late_validated_mutation_delivery_never_supplies_success_or_native_refusal() {
+        for result in [
+            json!({"outcome":"completed","hresult":null,"win32_error":null}),
+            json!({"outcome":"native_refusal","hresult":-2_147_024_891_i32,"win32_error":5}),
+        ] {
+            let request = fixture_request("remove_file");
+            let bytes = serde_json::to_vec(&json!({"version":1,"id":"1","pid":42,"result":result}))
+                .unwrap();
+            let validated = validate_frame(&bytes, &request, 42).unwrap();
+            let (reply, receiver) = mpsc::sync_channel(1);
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let observed = Arc::clone(&cancelled);
+            let deadline = Instant::now() + Duration::from_millis(40);
+            let worker = std::thread::spawn(move || {
+                while !observed.load(Ordering::Acquire) {
+                    assert!(Instant::now() < deadline + CLEANUP);
+                    std::thread::yield_now();
+                }
+                reply.send(Ok(validated)).unwrap();
+            });
+            let error = wait_for_reply(&receiver, &cancelled, deadline).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+            assert_eq!(error.raw_os_error(), None);
+            if worker.is_finished() {
+                worker.join().unwrap();
+            }
+            let expired = deadline.checked_sub(CLEANUP).unwrap();
+            let error = finish_mutation(&result, expired).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+            assert_eq!(error.raw_os_error(), None);
+        }
+    }
+
+    #[test]
+    fn strict_removal_preserves_native_refusals_and_warm_worker() {
+        run_isolated_fixture("strict-remove", "fixed-worker-strict-remove-confirmed");
+    }
+
+    #[test]
+    fn uncertain_active_removal_retains_sole_ancestry_until_process_disposal() {
+        let mut temporary = tempfile::tempdir().unwrap();
+        temporary.disable_cleanup(true);
+        let positive = temporary.path().join("unguarded");
+        let renamed = temporary.path().join("positive");
+        std::fs::create_dir(&positive).unwrap();
+        std::fs::rename(&positive, &renamed).unwrap();
+        std::fs::remove_dir(&renamed).unwrap();
+        let stdout = temporary.path().join("stdout");
+        let stderr = temporary.path().join("stderr");
+        let root = temporary.path().join("private");
+        let destination = temporary.path().join("moved");
+        let ready = temporary.path().join("strict-quarantine-ready");
+        let mut child = FixtureChild(
+            StdCommand::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "windows::filesystem_worker::tests::worker_fixture_child",
+                    "--nocapture",
+                ])
+                .env("LOCRON_FIXED_WORKER_FIXTURE", "strict-remove-quarantine")
+                .current_dir(temporary.path())
+                .creation_flags(0x0800_0000)
+                .stdin(Stdio::null())
+                .stdout(std::fs::File::create(&stdout).unwrap())
+                .stderr(std::fs::File::create(&stderr).unwrap())
+                .spawn()
+                .unwrap(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(90);
+        loop {
+            remaining(deadline).unwrap();
+            assert!(
+                child.0.try_wait().unwrap().is_none(),
+                "owned removal helper exited before quarantine"
+            );
+            if ready.is_file() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(std::fs::read(&ready).unwrap(), b"active-ancestry-retained");
+        assert_eq!(
+            std::fs::rename(&root, &destination)
+                .unwrap_err()
+                .raw_os_error(),
+            Some(32)
+        );
+        assert!(!destination.exists());
+        child.0.kill().unwrap();
+        loop {
+            remaining(deadline).unwrap();
+            if child.0.try_wait().unwrap().is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::fs::rename(&root, &destination).unwrap();
+        assert_eq!(std::fs::read_dir(&destination).unwrap().count(), 0);
+        std::fs::remove_dir(&destination).unwrap();
+        for path in [&stdout, &stderr, &ready] {
+            std::fs::remove_file(path).unwrap();
+        }
+        temporary.close().unwrap();
+    }
 
     #[test]
     fn fixed_policy_assertion_precedes_binary_binding_without_a_request_selector() {
@@ -990,6 +1393,7 @@ mod tests {
             deadline,
             cancelled: Arc::new(AtomicBool::new(false)),
             reply,
+            _ownership: RequestOwnership::None,
             diagnostic: Arc::new(Diagnostic::new(
                 "1".to_owned(),
                 operation,
@@ -1218,6 +1622,14 @@ mod tests {
             return;
         };
         assert!(DISPATCHER.get().is_none());
+        if mode == "strict-remove" {
+            strict_remove_fixture();
+            return;
+        }
+        if mode == "strict-remove-quarantine" {
+            strict_remove_quarantine_fixture();
+            return;
+        }
         if mode == "phase-order" {
             phase_order_fixture();
             return;
@@ -1275,6 +1687,128 @@ mod tests {
         assert!(crate::filesystem::is_private(&path, false).unwrap());
         assert_eq!(LAST_PID.load(Ordering::Acquire), *pid);
         println!("fixed-worker-reuse-confirmed");
+    }
+
+    #[allow(clippy::permissions_set_readonly_false)]
+    fn strict_remove_fixture() {
+        use crate::filesystem::{create_private_new, file_identity, open_private};
+        use std::io::Write as _;
+        use std::os::windows::fs::MetadataExt as _;
+        let temporary = tempfile::tempdir().unwrap();
+        let path = temporary.path().join("private 한글").join("retained.txt");
+        let mut file = create_private_new(&path).unwrap();
+        file.write_all(b"private-native-refusal-data").unwrap();
+        let identity = file_identity(&file).unwrap();
+        drop(file);
+        let pid = LAST_PID.load(Ordering::Acquire);
+        assert_ne!(pid, 0);
+        let attributes = std::fs::metadata(&path).unwrap().file_attributes();
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        let error = crate::filesystem::remove_private_file_strict(&path).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(5));
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        let mut reader = open_private(&path, std::fs::OpenOptions::new().read(true)).unwrap();
+        (file_identity(&reader).unwrap() == identity)
+            .then_some(())
+            .expect("strict refusal must retain the original file identity");
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).unwrap();
+        (bytes == b"private-native-refusal-data")
+            .then_some(())
+            .expect("strict refusal must retain the original private bytes");
+        assert_eq!(reader.metadata().unwrap().file_attributes(), attributes | 1);
+        drop(reader);
+        assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&path, permissions).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().file_attributes(),
+            attributes
+        );
+        crate::filesystem::remove_private_file_strict(&path).unwrap();
+        assert!(!path.exists());
+        crate::filesystem::remove_private_file_strict(&path).unwrap();
+        let absent = path.parent().unwrap().join("absent").join("none");
+        crate::filesystem::remove_private_file_strict(&absent).unwrap();
+        assert!(!absent.parent().unwrap().exists());
+        drop(create_private_new(&path).unwrap());
+        let holder = open_private(&path, std::fs::OpenOptions::new().read(true)).unwrap();
+        let identity = file_identity(&holder).unwrap();
+        let error = crate::filesystem::remove_private_file_strict(&path).unwrap_err();
+        assert!(matches!(error.raw_os_error(), Some(32 | 33)));
+        assert_eq!(
+            error.kind(),
+            io::Error::from_raw_os_error(error.raw_os_error().unwrap()).kind()
+        );
+        (file_identity(&holder).unwrap() == identity)
+            .then_some(())
+            .expect("sharing refusal must retain the original file identity");
+        assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
+        drop(holder);
+        crate::filesystem::remove_private_file_strict(&path).unwrap();
+        assert!(!path.exists());
+        assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
+        let file = create_private_new(&path).unwrap();
+        let (leaf, parent) = file.into_parts();
+        drop(leaf);
+        let next = NEXT_ID.load(Ordering::Relaxed);
+        let expired = Instant::now()
+            .checked_sub(Duration::from_millis(1))
+            .unwrap();
+        let error = remove_file(path.to_str().unwrap(), parent, expired).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(error.raw_os_error(), None);
+        assert_eq!(NEXT_ID.load(Ordering::Relaxed), next);
+        assert!(path.is_file());
+        crate::filesystem::remove_private_file_strict(&path).unwrap();
+        std::fs::remove_dir(path.parent().unwrap()).unwrap();
+        println!("fixed-worker-strict-remove-confirmed");
+    }
+
+    fn strict_remove_quarantine_fixture() {
+        use std::io::Write as _;
+        let path = std::env::current_dir()
+            .unwrap()
+            .join("private")
+            .join("leaf");
+        let file = crate::filesystem::create_private_new(&path).unwrap();
+        let (leaf, parent) = file.into_parts();
+        drop(leaf);
+        let (reader, mut writer) = io::pipe().unwrap();
+        let (events, receipts) = mpsc::sync_channel(8);
+        *NEXT_MUTATION_PROBE.lock().unwrap() = Some(MutationProbe {
+            reader: Some(reader),
+            pending: None,
+            events,
+        });
+        let deadline = super::super::filesystem_deadline();
+        let error = remove_file(path.to_str().unwrap(), parent, deadline).unwrap_err();
+        assert_eq!(error.raw_os_error(), None);
+        let mut phases = Vec::new();
+        while !phases.contains(&"owner-quarantined") {
+            phases.push(receipts.recv_timeout(remaining(deadline).unwrap()).unwrap());
+        }
+        assert_eq!(phases.first(), Some(&"native-removal-completed"));
+        assert!(phases.contains(&"native-cleanup-entered"));
+        assert!(phases.contains(&"tree-confirmed"));
+        assert!(!phases.contains(&"native-cleanup-completed"));
+        assert!(!path.exists());
+        let pid = LAST_PID.load(Ordering::Acquire);
+        assert!(super::request("sid", None, deadline).is_err());
+        assert_eq!(LAST_PID.load(Ordering::Acquire), pid);
+        writer.write_all(&[1]).unwrap();
+        drop(writer);
+        assert_eq!(
+            receipts.recv_timeout(remaining(deadline).unwrap()).unwrap(),
+            "native-cleanup-completed"
+        );
+        std::fs::write("strict-quarantine-ready", b"active-ancestry-retained").unwrap();
+        loop {
+            std::thread::park();
+        }
     }
 
     fn wait_for_phases(phases: &ChildPhases, expected: &[&str], deadline: Instant) {

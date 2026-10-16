@@ -150,6 +150,7 @@ fn exchange_sid(sender: &queue::Sender<Request>, started: Instant) {
             deadline: request_deadline,
             cancelled: Arc::clone(&cancelled),
             reply,
+            _ownership: super::RequestOwnership::None,
             diagnostic: Arc::new(Diagnostic::new(
                 "1".to_owned(),
                 "sid",

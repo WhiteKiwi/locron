@@ -86,7 +86,7 @@ pub(super) fn remove_output_with_sync(
         Ok(_) => {}
     }
     #[cfg(windows)]
-    let removed = locron_core::filesystem::remove_private_file(path);
+    let removed = locron_core::filesystem::remove_private_file_strict(path);
     #[cfg(not(windows))]
     let removed = std::fs::remove_file(path);
     match removed {
