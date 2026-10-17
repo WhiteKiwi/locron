@@ -19,10 +19,15 @@ therefore retains 84 History files plus Add/Run/Cancel carriers. No later observ
 uses those earlier files; the returned bytes already have separate ownership.
 
 Retire only the current successfully captured History leaf immediately after the
-existing status-zero/root-exit/read checks and reader/child closure. Use the existing
+existing status-zero/root-exit/read checks and reader/child closure. The reusable
+Command still owns its configured stdout duplicate after spawn; for successful
+History only, reset that stdout to null after the body returns and before unlink.
+Select retirement in the Default-Command wrapper, exclude held-duplicate controls,
+and keep InitialRunOwner and the original capture body unchanged. Use the existing
 normal guarded `remove_private_file`, with the original Control check before and
-after. Close that leaf's retained original guard before its guarded removal, keep
-the owning private root and parent-chain protection, and preserve removal errors.
+after. Split that leaf's original guard into its file and parent guard, close the
+file, and retain the parent guard through removal. Keep the owning private root
+and parent-chain protection, and preserve removal errors.
 Do not use the strict filesystem-worker remover's separate adapter deadline.
 
 The lifetime capture count and generated name continue increasing and retain the
@@ -56,7 +61,8 @@ the old OS cause. Do not retry an unchanged source until it turns green.
    it before a separate development session changes source.
 2. **Implement the narrow fixture lifetime change.** Verify: only the Windows CLI
    support module and existing CI capture step change; actual successful History
-   child/read precede retirement, original guards/errors/clocks and all other
+   child/read and parent Command stdout closure precede retirement; the original
+   parent guard survives removal, and original errors/clocks and all other
    capture paths remain. No product code, dependencies or oracle weakening.
 3. **Qualify ownership and real native behavior.** Verify: focused real CLI History
    captures return valid owned bytes and remove only completed carriers, keep private

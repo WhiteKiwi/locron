@@ -6427,8 +6427,13 @@ planning/issue readback precedes separate development and same-source full CI.
 Follow `planning/WINDOWS_HISTORY_CAPTURE_RETIREMENT_2026-10-17.md` to finish the
 remaining #172 cancellation cleanup failure. The Windows-only test owner retires
 only a successful History stdout carrier after actual child exit, the existing
-bounded independent same-file-identity read, and reader/child closure. Existing
-guarded removal keeps private parent/no-follow checks; its pre/post checks use
+bounded independent same-file-identity read, and reader/child closure. A reusable
+Command retains its parent stdout duplicate after spawn: close that configured
+stdout by resetting only a successful non-held History Command to null in the
+Default-Command wrapper before retirement. Keep InitialRunOwner and the capture
+body unchanged. Split the original carrier into file/parent guard, close its file
+and retain the original parent through guarded removal. The existing removal
+keeps private parent/no-follow checks; its pre/post checks use
 the original Control clock. Returned bytes remain owned by the caller. Capture
 names and the lifetime count remain monotonic, while completed History guards
 and leaves stop accumulating until final recursive cleanup. Special capture,

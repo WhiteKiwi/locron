@@ -7321,3 +7321,14 @@ native8-second cancellation/30-second capture and complete cleanup oracles on al
 three Windows hosts. Linux-only cost measurements or structural counts cannot
 qualify native latency. No source changes or runtime-success claim accompany this
 research; parent owns the subsequent reviewed plan and publication.
+
+Pre-commit ownership review also found the reusable `std::process::Command`'s
+configured stdout retains its parent duplicate after `spawn`; reaping the Child
+alone does not close that parent writer. Retiring inside the capture body while
+the borrowed Command still owns this no-delete-sharing duplicate could cause a
+Windows sharing refusal. The reviewed correction selects only successful,
+non-held History retirement in the Default-Command wrapper after the original
+body returns, resets that Command's stdout to null, then closes the original file
+while retaining its original parent guard through existing guarded removal.
+InitialRunOwner and all other phases remain unchanged. This closes a real owner;
+it does not waive an observed sharing failure or permit unlink of a live producer.
