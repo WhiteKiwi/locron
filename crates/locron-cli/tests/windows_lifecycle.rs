@@ -246,9 +246,9 @@ impl Fixture {
             }
             assert!(
                 matches!(run.state.as_str(), "queued" | "starting" | "running"),
-                "gated target ended as {}: {:?}",
+                "gated target ended as {}: {}",
                 run.state,
-                run.reason
+                failed_continuation_facts(&store, &self.paths, run_id, run.reason.as_deref())
             );
             assert!(Instant::now() < deadline, "gated target did not start");
             std::thread::sleep(Duration::from_millis(20));
@@ -294,7 +294,8 @@ impl Fixture {
             }
             assert!(
                 Instant::now() < deadline,
-                "native heartbeat was not readable after exit ; {progress}"
+                "native heartbeat was not readable after exit ; {progress}; {}",
+                failed_continuation_facts(&store, &self.paths, run_id, None)
             );
             std::thread::sleep(Duration::from_millis(20));
         };
@@ -317,7 +318,8 @@ impl Fixture {
             }
             assert!(
                 Instant::now() < deadline,
-                "native target stopped making progress ; {progress}"
+                "native target stopped making progress ; {progress}; {}",
+                failed_continuation_facts(&store, &self.paths, run_id, None)
             );
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -337,9 +339,9 @@ impl Fixture {
             }
             assert!(
                 matches!(run.state.as_str(), "queued" | "starting" | "running"),
-                "native target ended as {}: {:?}",
+                "native target ended as {}: {}",
                 run.state,
-                run.reason
+                failed_continuation_facts(&store, &self.paths, run_id, run.reason.as_deref())
             );
             assert!(
                 Instant::now() < deadline,
