@@ -720,3 +720,16 @@ process-tree termination, durable cancellation, private-state ownership, indepen
 capture identities, bounded output, original deadlines and refusal controls.
 Qualification must execute the corrected control and complete native platform
 matrix on the final source before this residual failure is reported as resolved.
+
+### Windows cancellation qualification phases (2026-10-17)
+
+Qualification measures cancellation after proving that an actual owned process is
+running and making progress. Preparing isolated state and reaching that premise
+must remain bounded, and failures there remain setup failures. From immediately
+before the actual cancellation request, require durable cancellation, confirmed
+process termination, stopped progress and complete owned cleanup within eight
+seconds. The entire fixture retains its entry-born thirty-second ceiling and the
+product retains its default five-second termination grace. An expired phase or
+late cleanup cannot become success. This explicitly replaces the Windows fixture's
+inherited eight seconds from daemon spawn; it does not promise or demonstrate an
+eight-second cold-start-plus-cancellation product guarantee.

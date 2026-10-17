@@ -7332,3 +7332,49 @@ body returns, resets that Command's stdout to null, then closes the original fil
 while retaining its original parent guard through existing guarded removal.
 InitialRunOwner and all other phases remain unchanged. This closes a real owner;
 it does not waive an observed sharing failure or permit unlink of a live producer.
+
+## Cancellation premise and observation budget — 2026-10-17
+
+Source b317bc76ec6de316360a65845beeda91642ee4af, CI38990074641, finishes
+16/17 actual jobs successfully. All three Windows rows pass both new History
+retirement regressions and the original combined native capture contract. The
+MSRV row separately fails durable_cancel_terminates_a_running_process in History
+with Expired; this is not a successful cancellation followed by slow cleanup.
+Daemon spawn returns at365291us and the first qualifying progress observation
+is4333446us in the same Control clock. Thus readiness consumes over
+3.968s of its inherited daemon-spawn-return+8s deadline. The first daemon cancel
+signal is at daemon_t_us4387206; durable Cancelled and execution completion are
+unobserved before expiry. Its later owned DropState takes8973us, with root absence
+and cleanup confirmed afterward. Preserve this failed result.
+
+The noncooperative native target writes real increasing counters every25ms for
+up to30s. The Windows runner preserves default termination_grace=5s and only
+forces the owned tree after that grace. Less than4.032s remains even before the
+Cancel request once readiness is proved: this execution cannot fit the required
+5s grace. The final capture wrapper gap is about1–2ms; cumulative retirement
+overhead and the cause of the readiness delay are not isolated. Run's847010us
+producer timestamp belongs to a separate producer-local clock and cannot locate
+enqueue in the Control timeline. Moving Add alone before daemon spawn has no
+measured sufficient saving. Do not assert a cold Add or scheduling root cause.
+
+The Unix test also inherited an8s post-spawn observation clock. The product's
+termination contract specifies configured/default5s grace and confirmed tree
+termination, not an8s cold daemon startup plus registration, target readiness,
+cancellation and fixture deletion guarantee. Select explicit Windows phase
+qualification instead of an unchanged rerun or an unsupported performance claim.
+Setup remains under the original entry-born30s ceiling. Immediately before actual
+Cancel dispatch, after actual Running plus at least2 strictly increasing progress
+counters and daemon-live proof, monotonically shorten the fixture case ceiling to
+min(existing outer ceiling, now+8s). The8s includes request cost, durable commit,
+delivery, full production grace, stopped progress, reap and owned cleanup.
+
+The existing authenticated probe requires an already-published case. Publish the
+outer ceiling as the initial cancellation setup case; preserve probe clocks and
+its completion seal. A fixture-only shortening operation checks admission and
+current expiry before and after a CAS of the nonzero case slot; it may only keep
+or decrease that deadline and never reset it or reopen admission. Driver polling
+already recomputes the effective deadline. Regression controls must refuse an
+extension, an absent case, and any transition after expiry/refusal, and prove the
+shorter deadline governs subsequent work. Both standalone and combined cases use
+this same path. This is an explicit test-clock scope correction: the previous
+requirement that setup consume the same8s is superseded, not silently preserved.

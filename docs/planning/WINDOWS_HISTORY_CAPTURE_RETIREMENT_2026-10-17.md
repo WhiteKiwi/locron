@@ -75,3 +75,48 @@ the old OS cause. Do not retry an unchanged source until it turns green.
    diff/results, merges the follow-up PR and checks main tree equality. Update #172
    with measured native intervals, source/tree/CI/merge receipts and actual remaining
    acceptance. Do not close broader clean-machine/release tasks from this result.
+
+## Reviewed phase amendment after b317 native results
+
+b317's CI38990074641 completes16/17 actual jobs. Both History retirement
+regressions and the original combined native capture contract pass on all three
+Windows rows. MSRV standalone cancellation instead expires during History: actual
+daemon spawn returns at365291us, readiness is first observed at4333446us, leaving
+less than4.032s of the inherited8s, before the required5s production force-stop
+grace. Durable Cancelled is unobserved; later cleanup takes8973us. This failed
+result remains evidence. Run's847010us producer timestamp has its own local origin;
+it cannot isolate setup/Add cost in the Control clock. Add-only extraction is
+therefore not selected as an unmeasured sufficient fix.
+
+The SPEC phase amendment explicitly supersedes the earlier plan's post-spawn8s
+total Windows cancellation requirement. Setup runs under the same entry-born30s
+outer horizon. After actual Running plus at least two strictly increasing counters
+and daemon-live proof, immediately before actual Cancel dispatch, monotonically
+shorten the current case ceiling to min(current, now+8s). Near the outer horizon
+only its remaining time is available; never grant30+8s. This change measures the
+actual cancellation contract while retaining every real readiness and termination
+oracle. It is a fixture clock-scope correction, not a proven setup optimization.
+
+1. **Review amended contract and failure evidence.** Verify: SPEC, Findings and
+   Implementation record the new origin, unchanged total ceiling/product grace,
+   preserved b317 failure and unmeasured OS cause. Update/read back #172 and parent
+   review before development source changes.
+2. **Implement monotonic phase admission in the separate development session.**
+   Verify: cancellation_daemon publishes the existing outer ceiling at real spawn;
+   cancel_work shortens it before constructing/dispatching Cancel after real
+   readiness. A fixture-only primitive requires a nonzero case, prechecks admission
+   and expiry, rejects extension, CASes only to an equal/earlier encoded deadline,
+   then postchecks. Never reset case/probe/admitted or promote a late result.
+   Both standalone/combined share this path. Other cases and product source stay
+   unchanged, including the authenticated probe's original seal and deadlines.
+3. **Verify actual limits and final source.** Verify: focused native controls prove
+   shortening takes effect, extension/absent-case/expired/refused admission cannot
+   be accepted or reopened, and outer cap remains. Execute these serially in the
+   existing cancellation step, keeping original exact cancel and combined capture
+   controls. All17 actual jobs, all three native rows, strict lint and Audit must
+   pass on one final source. Existing paired-manifest CI coherence runs; separate
+   path-filtered workflow is not described as a current-head run.
+4. **Publish and restore protection.** Verify: complete diff review, restore/read
+   back the three native required contexts alongside the existing11, ready/merge
+   the follow-up PR at the verified head, check main tree equality, record receipts
+   and close only #172/#180/#181 after their final criteria succeed.

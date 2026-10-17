@@ -6447,3 +6447,30 @@ unchanged original capture control. A lower final file count is not proof of a
 faster total case or the historical OS cause. Measure the already-recorded native
 cleanup interval and require every actual CI job to pass on the final source.
 Parent plan/issue review precedes separate source implementation and publication.
+
+## Bound cancellation after its real running premise — 2026-10-17
+
+Apply the phase amendment in
+`planning/WINDOWS_HISTORY_CAPTURE_RETIREMENT_2026-10-17.md`. b317's retirement
+controls pass on all three Windows rows, but a separate actual cancel case spends
+over3.968s reaching real running progress and cannot then fit the unchanged5s
+production grace into its remaining post-spawn8s. This is not a cleanup failure.
+For cancellation only, publish the existing entry-born30s outer ceiling as the
+initial setup case at actual daemon spawn. Preserve the real authenticated probe,
+registration, manual Run, actual History and strictly increasing progress premise.
+Immediately before actual Cancel CLI dispatch, after the daemon-live readiness
+proof, shorten the nonzero case deadline to min(current ceiling, now+8s). All
+subsequent cancellation, stopped-progress, reap and cleanup use that tighter clock.
+
+The fixture-only shortening primitive prechecks existing admission/expiry, rejects
+an absent case or attempted extension, changes the encoded case slot by CAS, and
+postchecks admission/expiry. Never reset the slot, extend a deadline, clear a
+failure or reopen admission. The original driver observes the tightened limit on
+each polling iteration. Keep the same path for standalone and combined controls;
+all non-cancellation case clocks and product code remain unchanged. Test monotonic
+shortening and refusal after expiry/closed admission in the native capture step.
+Keep25ms progress observations,5s product grace,30s whole-fixture and35min job
+limits. This explicitly supersedes the former Windows post-spawn8s total premise;
+it is a reviewed change to test scope, not a performance fix or an unchanged clock.
+Require fresh final-source complete CI, all three native rows, Audit and unchanged
+paired-manifest coherence before publication and restoring native required checks.
