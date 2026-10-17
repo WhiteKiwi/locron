@@ -764,3 +764,12 @@ timestamps combined with the real filesystem clock must not accidentally request
 age-based removal of the reference. Isolate that fixture's retention setting;
 preserve its exact recovery, orphan-removal and file-survival assertions and all
 existing progress budgets. Default production retention remains unchanged.
+
+## Qualify recovery after releasing a real reader (2026-10-17)
+
+After an actual held reader causes the required timeout and leaves recovery
+pending, release that same reader before qualifying eventual recovery. Follow
+real bounded maintenance passes to completion within the existing progress
+allowance. Preserve the original held-reader error, elapsed-time, pending-state,
+exact recovery count and complete frame assertions. The initial refusal and
+post-release completion remain separate observations with unchanged limits.

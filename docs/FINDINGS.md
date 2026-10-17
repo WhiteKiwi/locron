@@ -7491,3 +7491,27 @@ Other orphan fixtures either already isolate retention or have no matching run
 rows; no broader fixture or default policy change is indicated. Preserve all
 250ms/100-action/5s limits and real-error refusal. Parent documentation/issue
 readback and review precede separate development and fresh final-source CI.
+
+## Windows post-reader-release completion assumes one pass — 2026-10-17
+
+Source50e1e789b3ba5b6c730a3eb083cefc1602273d37, CI38998271829 completes
+16 actual jobs successfully and one MSRV failure. Job117295539216 fails only
+reader_sharing_timeout_keeps_recovery_pending_until_a_later_pass at
+maintenance.rs1610: the successful post-release report has recovered0, expected1.
+The suite is17PASS/1FAIL; later HTTP31/31 passes. Both other native jobs pass in
+full. The corrected orphan fixture passes; do not conflate the two failures.
+
+The original held-reader phase has already proved a real Windows sharing refusal,
+maintenance Err after4500ms and before8s, retained partial/no final and one pending
+artifact. It then drops that exact reader and invokes one ordinary bounded pass.
+The documented250ms/100-action contract permits successful partial/zero progress
+there. This trace does not isolate its native deferral boundary or OS cause.
+
+Select only the later post-release completion call for the unchanged maintain_until
+helper, retaining real passes/cursor, fixed5s progress checks, per-pass100 actions
+and immediate real-error failure. Preserve the entire initial sharing/timeout/
+pending block and every final exact count/frame assertion literally. This
+explicitly amends the prior plan's exclusion of Windows controls only for this
+observed positive completion; no initial refusal, timeout, product or frozen
+qualification row changes are selected. Parent plan/issue readback and separate
+development precede new complete final-source qualification.

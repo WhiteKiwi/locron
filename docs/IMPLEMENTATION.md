@@ -6534,3 +6534,20 @@ Review the small inverse, run maintenance/full CLI units on stable and MSRV with
 fresh clean-head artifact bindings, and require fmt/strict lint, all17 actual CI
 jobs/Audit/native3 before protection restoration and publication. Preserve the
 failed f475 job and distinguish its passing HTTP suite from maintenance failure.
+
+## Resume Windows recovery after the verified reader timeout — 2026-10-17
+
+Apply the post-reader-release amendment in
+planning/BOUNDED_MAINTENANCE_FIXTURE_RESUMPTION_2026-10-17.md. Only replace the
+successful later maintain(...,11) call in the named Windows reader-timeout test
+with the unchanged maintain_until helper and outputs_recovered>=1 predicate.
+Keep its exact recovered1 and partial/final/frame assertions. Preserve the entire
+preceding real sharing error,4500ms-to8s timeout, pending1 and same-reader release
+block byte-for-byte. No production/helper/budget or other fixture changes.
+
+Review the exact inverse and Windows scope, verify local stable/MSRV maintenance
+and full CLI with fresh clean-head bindings plus fmt/strict lint, then require new
+all17 actual CI jobs/Audit/native3. The new Windows path must execute in native CI;
+Linux-only tests cannot qualify it. Preserve50e's failure and its passing orphan,
+cancellation/capture and HTTP controls. Protection restoration and merge/tree/
+issue completion still require the final verified source.

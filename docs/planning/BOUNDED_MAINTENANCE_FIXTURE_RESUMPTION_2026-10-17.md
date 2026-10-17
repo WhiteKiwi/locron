@@ -58,3 +58,30 @@ instrumented. This is a fixture isolation correction, not a production policy fi
    bindings, fmt/strict lint, then all17 actual CI jobs/Audit/native3 pass on the
    new source. Restore/read back native3 required contexts preserving old11/strict,
    merge verified head, verify main tree and complete #172/#180/#181 criteria.
+
+## Windows post-reader-release completion amendment
+
+50e1 source CI38998271829 completes16success/1MSRVfailure. The maintenance
+suite17PASS/1FAIL reaches the post-release recovered1 assertion in
+reader_sharing_timeout_keeps_recovery_pending_until_a_later_pass with actual0.
+Its earlier real sharing refusal/4500ms-to8s Err/pending1 checks have passed,
+as have the orphan fixture and later HTTP31/31. Native x64stable/ARM full jobs pass.
+One successful250ms pass is not proof of eventual recovery after releasing a
+reader. Actual native deferral boundary remains unknown.
+
+1. **Review this explicit scope amendment.** Verify: SPEC, Findings and
+   Implementation distinguish initial real refusal from later completion. Update
+   and read back #172/#181 and parent-review before separate source development.
+   Preserve50e failure and the other passing controls as their actual observations.
+2. **Change only later positive completion.** Verify: replace maintain(...,11)
+   with unchanged maintain_until and recovered>=1 in this named Windows test.
+   Exact inverse preserves the whole initial sharing/timeout/pending/reader-drop
+   block, all final recovered1/file/frame assertions, helper, production and other
+   fixtures. Existing5s progress/250ms/100 actions and real-error refusal stay.
+   This supersedes the previous blanket Windows exclusion only for this call.
+3. **Qualify and publish.** Verify: independent review, stable/MSRV maintenance
+   and artifact-bound fullCLI, fmt/strict lint, then new same-source all17CI/Audit
+   and native3 pass, including this actual Windows-only path. No unchanged rerun,
+   test skip or timeout enlargement. Restore/read back native3 required checks
+   preserving old11/strict, merge verified head, verify main tree and close only
+   #172/#180/#181 after their real criteria succeed.
