@@ -1212,6 +1212,8 @@ jobs:
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
+          cargo test -p locron --test cli --locked windows_cli_control::cancellation_deadline_ -- --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test -p locron --test cli --locked durable_cancel_terminates_a_running_process -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Refuse a foreign native wake peer
