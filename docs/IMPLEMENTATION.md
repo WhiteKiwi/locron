@@ -6404,3 +6404,20 @@ read-only behavior and every native gate. Original isolated legacy-step tests
 remain useful recovery fixtures for databases created by earlier binaries.
 Parent planning/issue readback precedes separate development; final same-source
 CI qualification and repository publication follow.
+
+
+## Native fixture setup and scheduling correction — 2026-10-17
+
+Apply [the fixture plan](planning/WINDOWS_BOUNDED_FIXTURE_SETUP_2026-10-17.md)
+following the atomic migration implementation. Select only the3 guarded output
+prune cases for one outer test worker. Their real per-case databases, all
+assertions and5s initialization allowance remain literal; no product WAL change.
+For supervisor in-flight expiry, positively admit the same real request to its
+selected gate under original STOP_TIMEOUT setup, then only shorten Admission's
+effective deadline to100ms. Retain the250ms return and every original ownership,
+heartbeat, quarantine and cleanup oracle. The earlier requirement to include
+pre-gate scheduling/native setup in the100ms fixture premise is superseded only
+for this in-flight control. Expired pre-dispatch and late-ready response controls
+remain. Production Worker::request/Budget/Admission behavior, all other CI commands,
+service's64 cases/two workers and the35-minute native limit are unchanged. Parent
+planning/issue readback precedes separate development and same-source full CI.

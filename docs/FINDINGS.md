@@ -7212,3 +7212,38 @@ leaving version1, apply pending2–5 and let final ALTER fail. Verify the origin
 version/ledger/defaults and absence of all intermediate changes after rollback.
 Count actual successful Operation commits for fresh/upgrade/current states; no
 new rusqlite feature, OS clock allowance or weakened native oracle is required.
+
+
+## Bounded native fixture scheduling and in-flight expiry — 2026-10-17
+
+At684304e, CI38983914154 MSRV job117250826731 passed complete native
+Core/library/service gates but all3 windows_prune_tests refused Store creation.
+Each has a distinct TempDir/DB/admission files. All3 overlapped in one process.
+WAL receipts show one successful attempt, mode=wal, DONE/autocommit=true, no
+BUSY/retry/error. Remaining entry allowance was1.977767s/1.976741s/0.959860s;
+query_one elapsed6.966293s/7.004655s/5.999612s while finalize took microseconds.
+All refused at after-wal under the original5s budget before pruning assertions.
+Row delivery preceded the long second step to DONE. rusqlite query_one explicitly
+steps again; SQLite OP_JournalMode/OP_ResultRow and VdbeHalt/vdbeCommit permit
+implicit-transaction native completion there. This locates latency without
+identifying an OS call, security holder or shared database. Core preparation has
+a global filesystem dispatcher, but no evidence attributes this SQL delay to it.
+Select only these3 independent tests for the serial default already used by
+native Core/full libraries. Retain every case, subfixture and original deadline.
+
+Earlier8ef6584 supervisor failures occurred at the actual selected-gate assertion
+after a100ms request expired. The four selected paths use direct native handle,
+ACL, sync and rename calls; shared filesystem dispatcher/SID initialization is
+not established as their cause. Distinct roots cannot guarantee native setup or
+thread dispatch completes in100ms. The intended in-flight-I/O expiry control
+needs positive gate entry before measuring its withheld interval. Use one actual
+request under the existing STOP_TIMEOUT setup ceiling, then shorten its SAME
+Admission deadline to min(original setup deadline, now+100ms) through stop_at.
+Await the actual receipt with production Budget::await_response and retain the
+250ms return, quarantine, held activation lease, child heartbeat, no late shutdown,
+no later admission, exact one attempt and released worker cleanup assertions.
+An already-expired request still refuses before dispatch with an unentered gate;
+the existing late-ready response control still checks caller-budget expiry.
+This explicitly replaces the unsupported pre-gate100ms fixture premise, not any
+product request deadline or the actual100ms/250ms in-flight control. No fake entered
+flag, new request, response replay or increased existing deadline is selected.
