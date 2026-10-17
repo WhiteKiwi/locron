@@ -2,7 +2,6 @@
 #![cfg(windows)]
 
 use locron_store::{FrameChannel, FrameReader, StatePaths};
-use std::path::Path;
 
 pub(super) const HEARTBEAT_FAILURE_PHYSICAL_CAP: u64 = 8 * 1024;
 pub(super) const HEARTBEAT_FAILURE_PAYLOAD_CAP: u64 = 4 * 1024;
