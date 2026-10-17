@@ -781,3 +781,13 @@ when earlier bounded passes yield. Qualification that mutates a finalized output
 must first establish actual finalization. Preserve real-reader no-completion and
 receiver limits, exact final payloads, private-state refusal and all existing
 product limits. Partial success is neither a completion nor an expected error.
+
+## Require all native Windows results before ordinary PR acceptance (2026-10-17)
+
+Ordinary pull requests must not satisfy their required Windows check unless all
+three supported native qualification environments and Windows lint succeed.
+Failure, cancellation or skipped native qualification must block acceptance.
+When repository-administration writes are unavailable, enforce this through an
+existing required CI result without changing repository permissions or weakening
+the existing strict checks. Preserve exploratory-dispatch scope, native execution
+limits, original test commands and truthful failed results.

@@ -7540,3 +7540,34 @@ orphan canaries or frozen exact-report qualification rows. Missing-root refusal
 is checked before the pass budget; other negative controls must still observe an
 actual Err and may not promote successful0 to expected failure. Their prior
 passed observations are not claims of unconditional pass admission or scanentry.
+
+## Required Windows enforcement without administration writes — 2026-10-17
+
+Source517b0ccf6ffc71f4a3155f2d339ba26be8b93d96 completes CI39000739527
+attempt1 with17 actual successes, the original2 exploratory skips, all native3
+controls and Audit39000735224 successful. The reviewed ruleset update adding
+native3 to existing11 required contexts then fails HTTP403, Resource not
+accessible by integration. Fresh readback confirms the original11/strict rules
+remain unchanged. Repository-level admin visibility does not grant this
+connection administration-write permission. No alternate identity or settings
+permission bypass is selected.
+
+Separate source research confirms windows-foundation is an independent fixed
+three-row matrix with fail-fast:false and no continue-on-error. The existing
+required windows-lint-foundation has no dependencies or reverse edge. Adding
+only its dependency on foundation is acyclic. Its job must use always() combined
+with its original ordinary-event predicate: otherwise an unsuccessful dependency
+may skip the required job, which GitHub documents may not block merging. A first
+conditional step must throw whenever the aggregate needs result is not success;
+success then proceeds through the original six lint commands. Failed, cancelled,
+skipped, empty or unknown native result must fail the required ordinary check.
+The exploratory full_windows dispatch retains its original intentional exclusion.
+
+Primary semantics: https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks
+and https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#needs-context .
+This authorized workflow dependency strengthens ordinary PR enforcement without
+editing repository-administration settings. It substitutes functional mandatory
+native3 acceptance through an existing required context for the unavailable
+three separately registered contexts. Do not claim14 registered checks: settings
+stay11/strict. Parent plan/issue readback precedes separate CI-only development;
+new final-source complete CI must qualify the dependency and original commands.

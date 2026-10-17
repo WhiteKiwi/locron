@@ -6563,3 +6563,23 @@ recovered1 before reading the actual final file/candidate and changing its ACL.
 Together with the named post-timeout completion, these are the only three Windows
 positive call sites selected. No negative/timeout/frozen assertion or helper changes.
 Require exact inverse review of the finite replacements and complete native CI.
+
+## Gate the existing required Windows result on native qualification — 2026-10-17
+
+Follow planning/WINDOWS_REQUIRED_DEPENDENCY_GATE_2026-10-17.md after the
+administration-write403. Change only windows-lint-foundation scheduling and its
+first guard: needs windows-foundation; always() AND the original ordinary-event
+predicate; throw unless the aggregate dependency result is success. Then run the
+original checkout/toolchain/cache and all six exact lint commands. The fixed
+native matrix, fail-fast policy, test commands, both35-minute job execution
+allowances, permissions and exploratory scope remain literal. Dependency waiting
+delays lint feedback until native completion; this is the tradeoff for enforcing
+all native results with an existing required context and no administration write.
+
+Review the whole-workflow inverse and DAG/result truth table, parse the YAML,
+preserve all product/source files, then require fresh final-source17-job CI/native3,
+Audit and actual required-lint execution only after all native jobs succeed.
+Refresh clean-head local artifact bindings. Existing11/strict rules must read
+back unchanged; the combined required result replaces the earlier plan's
+unavailable14-context registration criterion. Merge only that qualified head,
+verify exact main tree and close #172/#180/#181 after their remaining criteria.
