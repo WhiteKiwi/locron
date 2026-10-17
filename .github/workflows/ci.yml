@@ -1272,7 +1272,7 @@ jobs:
       - name: Verify registered dashboard composition contracts
         run: cargo test -p locron --bin locron --locked -- service::windows_dashboard_tests
       - name: Verify guarded Windows output pruning
-        run: cargo test -p locron --bin locron --locked -- tests::windows_prune_tests
+        run: cargo test -p locron --bin locron --locked -- tests::windows_prune_tests --test-threads=1
       - name: Verify all output maintenance and recovery contracts
         run: cargo test -p locron --bin locron --locked -- maintenance::tests
       - name: Verify all three native MCP admission helpers
