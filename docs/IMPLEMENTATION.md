@@ -6623,3 +6623,16 @@ and all19-test observations. Record each compiler distinctly. Create a fresh
 isolated diagnostic branch from this reviewed documentation/observation head;
 retain its one-workflow-only scope, real artifact hashes and original limits.
 Failed run39006260491 remains failed with actual lifecycle repetitions0.
+
+### Observe all existing shared target failure sites
+
+Extend only four failure-format argument lists in the shared Windows lifecycle
+fixture: the existing forbidden-state assertions before running and while
+waiting for completion, plus the existing continuation baseline/advance deadline
+assertions. Reuse the reviewed closed formatter; current wait-state reason is
+passed directly, progress failure passes None to avoid stale reason evidence.
+Rust assertion arguments execute only on failure, so passing loops perform no
+extra Store/file reads. Do not change any predicate, clock, sleep, return, test
+body, publisher operation or observation parser. Inverse-review these four
+format-only changes and preserve all existing controls. After native diagnostic
+qualification resume the original final17-CI publication gate.

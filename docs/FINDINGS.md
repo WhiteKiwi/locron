@@ -7634,3 +7634,24 @@ compiler, then build/run the actual native stable CLI and lifecycle executable.
 Keep the existing50-observation limit/first-failure stop/35-minute job unchanged.
 The new diagnostic branch starts from reviewed observation source plus this
 documentation; only its CI differs. Preserve the first refused run honestly.
+
+## Route the observed terminal failure into the existing observer — 2026-10-17
+
+Separate research confirms diagnostic a0f3489/run39006951600/job117321251025:
+strict native1.98.0 Clippy succeeds, stable real test/production builds succeed,
+iterations1–16 each19PASS, iteration17 stops18PASS/1FAIL. The failure is the
+original idle-HTTP dashboard test, at wait_marker_run338: target failed/exit101.
+The shared completion helper does not call the new observer, so exact stage/kind
+remains unknown. A persist/raw5 line also appears in successful iterations from
+the intentional held-reader control; it cannot identify the failed child.
+No iteration18 ran. Receipt artifact12091187964 retains actual probe outputs.
+
+The minimal complete shared-target coverage is four existing failed assertions:
+wait_running forbidden-state, wait_marker_run forbidden-state, continuation
+baseline deadline, continuation advance deadline. Append the existing bounded
+formatter only in their lazy failure arguments. Wait-state paths use that
+iteration's run.reason; progress paths pass None because their initial running
+snapshot is stale. The formatter independently reads actual attempts and still
+refuses nonterminal/non101/nonfinalized output. No successful-loop I/O or new
+polling is needed; predicates/clocks/returns/sleeps and original16 bodies stay
+exact. No behavior change or heartbeat retry is selected.

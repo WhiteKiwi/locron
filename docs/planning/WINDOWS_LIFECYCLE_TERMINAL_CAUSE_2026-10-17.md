@@ -53,3 +53,23 @@ artifacts. Source observations and all19 tests remain unchanged. Parent updates
 and reads back #172, rereads this complete amendment, and creates a fresh
 isolated branch before development. All original35-minute/50-first-failure/
 artifact-integrity/non-reproduction/final17-CI acceptance remains unchanged.
+
+## Cover the actual completion-helper failure before another probe
+
+Probe39006951600 has native strict1.98 lint and real stable builds; iterations
+1–16 each19PASS, then17 stops18PASS/1FAIL at the original idle-HTTP test's
+wait_marker_run forbidden-state assertion: exit101, exactcause still unknown.
+The control's separate raw5 output is not this child's cause.
+
+Verify before development: SPEC→separate research/Findings→Implementation, #172
+exact readback and parent entire amended-plan review. Add only four lazy failure
+format calls to the existing typed observer: wait_running forbidden-state,
+wait_marker_run forbidden-state, continuation baseline deadline and advance
+deadline. Current wait-state reason is used; continuation failure passes None
+for stale initial reason. All predicates/clocks/sleeps/returns/original16 bodies/
+publisher/parser/control bytes stay exact. No success-path Store/file work.
+Verify independent four-format inverse/fmt/strict local lint, then a fresh
+isolated probe of the updated source with the already-correct1.98 lint/stable
+execution harness, original19/defaultparallel/50-first-failure/35min bounds.
+Keep failed17 and all previous failures; no behavior fix or raw5 cause claim.
+All original final-head17-CI/native3/Audit/local/protection/main-tree gates remain.

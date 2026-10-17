@@ -802,3 +802,11 @@ original deadlines and ownership/cleanup behavior. Capture the actual failure
 stage before selecting a corrective behavior. Additional diagnostic repetitions
 must be finite, stop at their first failure and never turn a failed observation
 into a passing qualification.
+
+### Cover the native target's actual failure observation point
+
+A controlled target's unexpected terminal failure must receive the same closed,
+bounded diagnosis whether detected before running, while checking continuation,
+or while waiting for completion. Existing assertions, time limits and passing
+behavior remain unchanged. Diagnose a progress deadline only after its original
+assertion fails; live or unavailable output remains unobserved.
