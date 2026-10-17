@@ -6421,3 +6421,24 @@ for this in-flight control. Expired pre-dispatch and late-ready response control
 remain. Production Worker::request/Budget/Admission behavior, all other CI commands,
 service's64 cases/two workers and the35-minute native limit are unchanged. Parent
 planning/issue readback precedes separate development and same-source full CI.
+
+## Dispose completed History capture carriers — 2026-10-17
+
+Follow `planning/WINDOWS_HISTORY_CAPTURE_RETIREMENT_2026-10-17.md` to finish the
+remaining #172 cancellation cleanup failure. The Windows-only test owner retires
+only a successful History stdout carrier after actual child exit, the existing
+bounded independent same-file-identity read, and reader/child closure. Existing
+guarded removal keeps private parent/no-follow checks; its pre/post checks use
+the original Control clock. Returned bytes remain owned by the caller. Capture
+names and the lifetime count remain monotonic, while completed History guards
+and leaves stop accumulating until final recursive cleanup. Special capture,
+paired, producer, live, nonzero and failed-read ownership remain unchanged.
+
+This is a fixture resource-lifetime change. Keep original 25ms observations,
+8s cancellation including cleanup, 30s capture, production 5s termination grace,
+all original assertions, and the three native Windows rows. Add focused real-CLI
+regressions to the existing native capture step; run them independently of the
+unchanged original capture control. A lower final file count is not proof of a
+faster total case or the historical OS cause. Measure the already-recorded native
+cleanup interval and require every actual CI job to pass on the final source.
+Parent plan/issue review precedes separate source implementation and publication.

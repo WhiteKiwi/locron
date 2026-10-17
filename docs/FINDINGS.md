@@ -7247,3 +7247,77 @@ the existing late-ready response control still checks caller-budget expiry.
 This explicitly replaces the unsupported pre-gate100ms fixture premise, not any
 product request deadline or the actual100ms/250ms in-flight control. No fake entered
 flag, new request, response replay or increased existing deadline is selected.
+
+### Completed History capture retirement research (2026-10-17)
+
+Source reviewed: main d4d2c12, before the Windows capture cleanup follow-up.
+Final ca5bc7e MSRV job117258276483 in run38986232389 fails the cancellation
+positive control's original case deadline, not its30-second outer horizon.
+The first work result is Success/Progress; actual History h84 reports Cancelled
+at10,792,459us and stopped progress count204 at10,819,871us. DropState enters at
+10,842,582us and returns at12,745,396us, a1,902,814us interval. The checked state
+path is absent and CLEANED at12,745,451us, after the approximately11,826,489us
+case deadline (actual daemon spawn return3,826,489us plus8seconds). Later cleanup
+cannot turn the failed original result into success. The matched daemon attempt
+records execution=cancelled and completion=ok. Its CleanupWait/exit1 is fixture
+teardown, not evidence of an independently failed daemon. The lower-level OS
+cause of the long TempDir drop remains unknown.
+
+`tests/support/private_state.rs` stores a PathBuf and tempfile::TempDir. Owner
+release drops that state after its retained producer, paired, capture, metadata,
+client, runtime and directory guards. In particular `release_producers` explicitly
+drops startup_reader first; the successful cancellation path retains producer
+readers/writers until that release, so its conditional has_owners check admits the
+release. There is no source-established startup-reader leak in this observed path.
+
+In `tests/support/windows_cli_control.rs`, every History poll invokes the actual
+CLI and creates a fresh `cli-stdout-NNNN` guarded file. `new_capture` advances the
+monotonic capture_count and appends its original GuardedFile. The child receives
+a duplicated writer. After try_wait returns its actual exit, collect_capture opens
+an independent reader, compares full original/reader identity, and bounds the read
+at64KiB+1. Successful output closes the reader and drops the reaped active CLI,
+but leaves the original capture in Owner.captures. No later History observation
+reads those earlier files: the output bytes have already been returned and parsed.
+All originals are closed together in release, and all filesystem leaves remain
+for TempDir's recursive drop. The observed h84/epoch87 therefore supports a
+source-derived84 completed History carriers plus Add/Run/Cancel carriers; it is
+not an independently enumerated file inventory or a per-file deletion cost.
+
+Selected minimal fixture correction, subject to parent plan/issue review:
+retire ONLY the current successful Phase::History carrier after actual status0,
+confirmed root reap, completed bounded independent same-identity read, and closure
+of its reader/Child. Retain its normalized path before closing its original leaf
+guard, then use existing filesystem::remove_private_file with the original Control
+pre/post checks. That helper privately/no-follow reopens the leaf, closes its leaf
+handle while retaining its parent-chain guard, calls std::fs::remove_file, then
+drops the parent guard. This reuses the existing removal security semantics; it
+does not claim an atomic file-ID-conditioned unlink against a hostile same-user
+replacement. Do not use remove_private_file_strict: it dispatches to the shared
+filesystem worker with a separately derived30-second adapter allowance. No new
+worker, retry, allowance, private-state access exception or product API is needed.
+Removal must finish under the same caller clock; a failure/late return remains a
+failure and exact owned state remains available to original cleanup/quarantine.
+
+Keep capture_count monotonic and its original capture_path/MAX_CLI_CAPTURES bound,
+even when the retired last Vec slot is removed. Never reuse a previous pathname,
+truncate a previous file, or replace create-new with open-existing. Full identity
+must remain stable across creation/independent collection during each carrier's
+lifetime; deleted objects' historical file IDs are not promised never to be reused
+by the OS. Preserve the existing simultaneous Version first/second identity and
+held-writer/no-clobber checks literally. Phase::Capture, Add/Run/Cancel, paired and
+producer records, held duplicates, live/oversized/failed reads, and failed child
+statuses retain their existing ownership and cleanup paths. The selection removes
+only unnecessary completed History leaves from the final batch; it does not prove
+a faster total8-second case or explain the historical1.902-second native interval.
+
+Proposed implementation file: only the Windows CLI fixture support module above.
+Qualification should cover a real successful History process and independent read
+before retirement, exact retired-path absence with still-owned sibling/canary and
+private root intact, monotonic next path and refused pre-existing collision, and
+non-History/held-duplicate retention. Preserve all existing Version/Oversized/Live,
+paired and genuine cancellation controls. Measure actual retired count and final
+remaining History carrier count with bounded scalar evidence; execute the original
+native8-second cancellation/30-second capture and complete cleanup oracles on all
+three Windows hosts. Linux-only cost measurements or structural counts cannot
+qualify native latency. No source changes or runtime-success claim accompany this
+research; parent owns the subsequent reviewed plan and publication.

@@ -709,3 +709,14 @@ early. Qualification distinguishes these failure conditions while retaining the
 original product deadlines, privacy boundaries and supported-platform requirements.
 CI reliability corrections must preserve these behaviors and report required failures
 truthfully.
+
+## Complete owned Windows capture cleanup (2026-10-17)
+
+The remaining hosted Windows cancellation capture control must complete its real
+owned-state cleanup within its existing allowance. A successful cancellation and
+late cleanup remain distinct observations; late cleanup never changes an expired
+result into success. Resolve the demonstrated cleanup cost while preserving actual
+process-tree termination, durable cancellation, private-state ownership, independent
+capture identities, bounded output, original deadlines and refusal controls.
+Qualification must execute the corrected control and complete native platform
+matrix on the final source before this residual failure is reported as resolved.
