@@ -6474,3 +6474,24 @@ limits. This explicitly supersedes the former Windows post-spawn8s total premise
 it is a reviewed change to test scope, not a performance fix or an unchanged clock.
 Require fresh final-source complete CI, all three native rows, Audit and unchanged
 paired-manifest coherence before publication and restoring native required checks.
+
+## Acknowledge actual SSE stages before fixture mutations — 2026-10-17
+
+Follow `planning/WINDOWS_SSE_OBSERVATION_HANDSHAKE_2026-10-17.md` after the
+final-source ARM HTTP event-order failure. Change only the live SSE integration
+fixture: replace elapsed300/600ms assumptions with incremental reads of the same
+real authenticated response. Preserve the reader's response, partial text buffer
+and complete event history across queued, starting-pair, two-output and
+running-pair acknowledgments. Validate actual stage names/state/attempt/sequence
+before the corresponding next Store mutation; then complete and drain to actual
+terminal EOF. Keep all original final assertions byte-for-byte, including exact
+run/attempt states, both output payloads/sequences and one final termination.
+
+Use Response::chunk and existing SSE block parsing with the original10s per-read
+timeout. Leave other read_sse callers and all product sources/200ms polling
+unchanged. Do not add a reader task, fabricated observation, retry, timeout
+increase or native job allowance. Verify the real live/reconnect/disconnect/output
+stream tests and complete HTTP suite locally, strict lint/formatting, then a new
+complete17-job final-source CI/Audit run with all three original native rows.
+Parent plan/issue readback and review precede separate development and final
+protection restoration, merge/tree verification and issue closure.

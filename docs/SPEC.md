@@ -733,3 +733,14 @@ product retains its default five-second termination grace. An expired phase or
 late cleanup cannot become success. This explicitly replaces the Windows fixture's
 inherited eight seconds from daemon spawn; it does not promise or demonstrate an
 eight-second cold-start-plus-cancellation product guarantee.
+
+### Observe live stream premises before advancing fixtures (2026-10-17)
+
+Live-stream qualification must observe the real preceding stage before advancing
+the owned lifecycle. Elapsed time alone cannot prove that a polling observer saw
+an intermediate state or output. Preserve the required queued, starting, output,
+running and terminal event ordering, exact payloads, reconnect/disconnect behavior
+and terminal stream closure. Retain the existing ten-second allowance for each
+stream read and the production polling interval; this is not a new global
+ten-second test horizon. Missing observations, read failures and premature closure
+remain failures.

@@ -7378,3 +7378,41 @@ extension, an absent case, and any transition after expiry/refusal, and prove th
 shorter deadline governs subsequent work. Both standalone and combined cases use
 this same path. This is an explicit test-clock scope correction: the previous
 requirement that setup consume the same8s is superseded, not silently preserved.
+
+## SSE live fixture advances before observation — 2026-10-17
+
+Source d0c06293e194890b3f3f7a16a0527d9e99dea4e4, CI38993049610, passes
+all three native cancellation and capture steps. MSRV's complete job succeeds.
+ARM job117279470281 instead fails the final HTTP contract suite:30PASS/1FAIL,
+sse_stream_live_run_events at contract.rs1927. Actual names are
+run,run,attempt,run,attempt,output,output,run,attempt,termination; the fixture
+requires both output events before the running run/attempt pair. Preserve this
+failure, independently of the corrected cancellation/cleanup observations.
+
+The test opens the actual cookie-authenticated SSE connection, then drives Store
+admission, partial-frame writes, mark-running and completion using300/600ms sleeps.
+It consumes the response only after these transitions. Production runs_stream
+polls current durable state/attempts/files every200ms, emitting changed run and
+attempt state before output frames found in that same poll. It does not replay
+unobserved intermediate snapshots. A600ms delay cannot guarantee an actual poll
+observed the two partial frames before mark-running under hosted scheduling/I/O.
+The observed sequence is consistent with first seeing frames in a running-state
+poll; lower-level scheduling/I/O causation is not identified by this trace.
+
+Select a test-only causal observation handshake on the same response: acknowledge
+queued before admission, starting run+attempt before publishing frames, both real
+output frames before mark-running, and running run+attempt before completion.
+Then drain the actual stream through terminal event and EOF. An incremental
+collector can own reqwest::Response, retain the partial text buffer and all parsed
+events, and use Response::chunk with existing parse_sse_block. It needs no spawned
+task, channel, dependency, fake event or product hook. Coalesced surplus events
+and fragmented blocks must remain available across stages. Original final exact
+state, output, ordering, one-terminal and reason assertions remain literal.
+
+The original read_sse helper uses timeout(limit,chunks.next()) for each chunk;
+its10s argument is not a global deadline. Retain10s per awaited chunk for the new
+live reader and leave existing read_sse callers unchanged. Do not claim a new
+global10s bound or expand the limit. Missing stage/early EOF/read error refuses;
+normal final collection requires actual EOF. Production200ms polling, privacy,
+durable behavior and the35-minute native CI job remain unchanged. This fixes a
+fixture premise, not a claim that the product durably queues all SSE transitions.
