@@ -41,3 +41,15 @@ The existing required lint guard genuinely fails on this native failure.
    require final-head all17 ordinary CI/native3/Audit, fresh local artifact-bound
    suites and existing11/strict plus required native dependency. Merge only the
    verified head, check main tree and owning criteria; keep failed history intact.
+
+## Diagnostic harness compiler correction before execution
+
+The first probe39006260491 stopped at strict stable1.99.1 lint on unchanged
+fetch_update deprecation; actual lifecycle iterations0, not a reproduced101.
+Before a new separately implemented harness, retain that failed receipt and
+use the ordinary required strict-lint compiler1.98.0 explicitly. Verify both
+compiler identities, lint with1.98.0, then build/run real stable CLI/lifecycle
+artifacts. Source observations and all19 tests remain unchanged. Parent updates
+and reads back #172, rereads this complete amendment, and creates a fresh
+isolated branch before development. All original35-minute/50-first-failure/
+artifact-integrity/non-reproduction/final17-CI acceptance remains unchanged.

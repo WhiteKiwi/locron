@@ -6611,3 +6611,15 @@ Select a behavioral fix only after actual evidence and a new reviewed plan; do
 not promote non-reproduction to a cause/fix or transfer diagnostic qualification
 to the eventual final head. Complete final-source17CI/native3/Audit/local bound
 suites and unchanged11/strict plus dependency-gate verification before merge.
+
+### Repair the diagnostic compiler selection before native execution
+
+The first isolated harness accidentally ran strict lint on stable1.99.1 rather
+than the repository's required1.98.0 lint compiler and stopped on an unchanged
+product deprecation before executing tests. Keep observation/product source
+unchanged. Install and identify both native compilers; use explicit cargo+1.98.0
+for strict lifecycle Clippy and stable for actual CLI/lifecycle CargoJSON builds
+and all19-test observations. Record each compiler distinctly. Create a fresh
+isolated diagnostic branch from this reviewed documentation/observation head;
+retain its one-workflow-only scope, real artifact hashes and original limits.
+Failed run39006260491 remains failed with actual lifecycle repetitions0.

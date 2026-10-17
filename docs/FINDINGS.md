@@ -7618,3 +7618,19 @@ is hosted negative enforcement evidence, beyond the prior static truth table.
 The macOS job's separate ENOTFOUND failure remains preserved. Its attempted
 job-only rerun was refused because the workflow was running; actual retries0.
 Suspend that old-head rerun while this native failure requires investigation.
+
+## Align diagnostic lint with the existing required compiler — 2026-10-17
+
+Diagnostic243746c/run39006260491/job117319260895 attempt1 stops before
+any lifecycle build or test. Rust stable resolved to1.99.1; strict Clippy rejects
+the pre-existing AtomicU64::fetch_update in filesystem_worker.rs396 as newly
+deprecated (renamed try_update). This is not the target exit101 and not evidence
+against the new observer. Actual lifecycle repetitions0. Receipt artifact
+12091471077 retained the refusal. The ordinary required lint deliberately uses
+Rust1.98.0; native stable tests permit compiler warnings. Do not modify product
+source or suppress warnings to repair an accidental diagnostic-only lint scope.
+Use the existing pinned1.98.0 strict native lifecycle Clippy, record that distinct
+compiler, then build/run the actual native stable CLI and lifecycle executable.
+Keep the existing50-observation limit/first-failure stop/35-minute job unchanged.
+The new diagnostic branch starts from reviewed observation source plus this
+documentation; only its CI differs. Preserve the first refused run honestly.
