@@ -7389,7 +7389,9 @@ fn cancellation_deadline_rejects_extension_and_missing_admission() {
 #[test]
 fn cancellation_deadline_cannot_revive_expired_or_closed_control() {
     let now = Instant::now();
-    let entered = now - Duration::from_secs(2);
+    let entered = now
+        .checked_sub(Duration::from_secs(2))
+        .expect("monotonic clock supports the fixed expired-control interval");
     let outer = entered + Duration::from_secs(30);
     let shortened_to_past = Control::new(entered, outer);
     shortened_to_past.publish_case(outer).unwrap();
