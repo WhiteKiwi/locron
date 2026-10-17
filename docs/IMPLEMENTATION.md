@@ -6583,3 +6583,31 @@ Refresh clean-head local artifact bindings. Existing11/strict rules must read
 back unchanged; the combined required result replaces the earlier plan's
 unavailable14-context registration criterion. Merge only that qualified head,
 verify exact main tree and close #172/#180/#181 after their remaining criteria.
+
+## Capture the terminal native target's closed failure classification — 2026-10-17
+
+Follow planning/WINDOWS_LIFECYCLE_TERMINAL_CAUSE_2026-10-17.md. Lease only the
+Windows lifecycle test file for failure-only observation and error emission.
+Pass owned fixture paths into the existing failure formatter. Read only a
+terminal exit101 attempt with finalized output; enforce small explicit physical,
+frame and retained-payload limits, guarded canonical-file access and existing
+frame validation. Assemble only STDERR, require complete framing and exactly one
+strict closed record, then render typed enums/numeric scalars or unobserved.
+Never forward raw captured bytes, path/error display strings or panic output.
+Best-effort diagnostic refusal must preserve the original failed assertion.
+
+Observe create/write/flush I/O errors using inspect_err before their unchanged
+expect handling; preserve the existing persist log/operation/control literally.
+Real FrameWriter controls cover fragmented records, wrong channel, malformed or
+duplicate records, damaged/truncated/oversized files and missing/refused reads.
+All original lifecycle bodies, clocks, ownership and cleanup remain exact except
+the formatter's added path argument. No publisher retry or product change.
+
+After independent review, use a separate worktree/diagnostic branch with an
+isolated version of the existing dispatchable CI workflow: real same-source CLI
+and lifecycle build, provenance, complete suite up to50 times, stop on first
+failure,35-minute job limit. Do not push that reduced workflow to the PR branch.
+Select a behavioral fix only after actual evidence and a new reviewed plan; do
+not promote non-reproduction to a cause/fix or transfer diagnostic qualification
+to the eventual final head. Complete final-source17CI/native3/Audit/local bound
+suites and unchanged11/strict plus dependency-gate verification before merge.

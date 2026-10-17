@@ -7571,3 +7571,50 @@ native3 acceptance through an existing required context for the unavailable
 three separately registered contexts. Do not claim14 registered checks: settings
 stay11/strict. Parent plan/issue readback precedes separate CI-only development;
 new final-source complete CI must qualify the dependency and original commands.
+
+## Native lifecycle target exits101 without retained cause — 2026-10-17
+
+Source13705bdfdc5896b2495b36fd4491aa776a12b812 CI39003147356 x64stable
+job117310099259 fails actual_dashboard_exit_closes_active_sse_while_a_native_job_continues
+at windows_lifecycle.rs272. Expected running, observed failed; actual reason is
+process exited with status exit code101, attempt1/failed/outcome failed/exit101,
+output finalized/retained559/physical717/discarded0/truncatedfalse. Suite15PASS/
+1FAIL finishes12.69s; later HTTP31/31 passes. MSRV and ARM native jobs succeed.
+Do not infer production cancellation, heartbeat persist, raw5 or a particular
+holder from these facts. The target's60s gate expiry does not fit the observed
+suite duration. Creation/write/flush/persist expects remain possible panic sites.
+
+Separate research inspected the full job log and every34 members of the available
+x64stable prune artifact. No child payload or structured heartbeat cause is
+retained there. Native evidence staging/upload was skipped after lifecycle
+failure; the actual717-byte framed output belonged to a temporary fixture with
+no failure-preservation hook. Existing failed_continuation_facts emits durable
+metadata only. A persist failure already writes a closed native-heartbeat-failure
+record to STDERR, which the engine captures into run frames. Other heartbeat
+snapshot I/O stages have no corresponding closed record. Findings5337 already
+warns that ordinary Rust file opens permit delete sharing; an ordinary observer
+does not itself establish a rename conflict.
+
+Select failure-only extraction from the actual terminal101 attempt's canonical
+finalized framed output, using guarded private opens, explicit file/frame/payload
+caps and existing frame validation. Reassemble STDERR across frames and recognize
+only one exact closed stage/counter/allowlisted-kind/raw-i32 record; malformed,
+missing, duplicate, oversized, refused or nonterminal data stays unobserved.
+Never print raw payload. Add closed create/write/flush error emission through
+inspect_err before the unchanged expects; leave the existing persist operation,
+its log, panic behavior and held-destination/same-candidate control literal.
+No retry or publisher behavior fix is justified yet.
+
+Use a separate, finite native diagnostic branch to compile the real CLI/lifecycle
+binary, record source/tree/artifact provenance and execute the complete lifecycle
+suite up to50 times, stopping at its first nonzero result. Preserve original
+selectors, all per-case clocks/cleanup and a35-minute job limit. This is cause
+capture, not repetition until success and not a replacement for final17-job CI.
+If no failure is observed, report non-reproduction without claiming a cause/fix.
+
+The new required Windows lint guard117315518703 actually FAILS its first guard
+after the native failure; checkout and all six lint commands are skipped. This
+is hosted negative enforcement evidence, beyond the prior static truth table.
+The macOS job's separate ENOTFOUND failure remains preserved. Its attempted
+job-only rerun was refused because the workflow was running; actual retries0.
+Suspend that old-head rerun while this native failure requires investigation.

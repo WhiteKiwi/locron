@@ -791,3 +791,14 @@ When repository-administration writes are unavailable, enforce this through an
 existing required CI result without changing repository permissions or weakening
 the existing strict checks. Preserve exploratory-dispatch scope, native execution
 limits, original test commands and truthful failed results.
+
+## Diagnose an unexpected native fixture target exit safely (2026-10-17)
+
+If a controlled native qualification target ends before its required continuation,
+preserve the failed state and original lifecycle assertions. Report only bounded,
+closed classifications from that terminated target's finalized output; never
+publish raw job output, paths, arguments, tokens or panic text. Preserve all
+original deadlines and ownership/cleanup behavior. Capture the actual failure
+stage before selecting a corrective behavior. Additional diagnostic repetitions
+must be finite, stop at their first failure and never turn a failed observation
+into a passing qualification.
