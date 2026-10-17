@@ -6495,3 +6495,25 @@ stream tests and complete HTTP suite locally, strict lint/formatting, then a new
 complete17-job final-source CI/Audit run with all three original native rows.
 Parent plan/issue readback and review precede separate development and final
 protection restoration, merge/tree verification and issue closure.
+
+## Resume portable maintenance fixture work under its existing budget — 2026-10-17
+
+Follow `planning/BOUNDED_MAINTENANCE_FIXTURE_RESUMPTION_2026-10-17.md` after the
+LinuxMSRV successful-zero resumed-prune report. Only the top-level maintenance
+test module changes. Reuse the unchanged maintain_until helper for the finite
+named positive recovery/prune cases and shared finalized setup. Continue to run
+actual production250ms/100-action passes with one retained cursor under the
+existing5s progress deadline; real errors still fail immediately. Accumulate
+report fields and retain every exact final count, file/frame and durable-row
+assertion. A recovered report is published only after durable reconciliation;
+keep the real retention-candidate query after acknowledged setup.
+
+For foreground intent, wait under that same existing helper until the actual
+BEFORE_PRUNE_IO hook holds its shared lock, then keep the original zero-pruned,
+file-present/pending1 checks. Drop that exact handle and await accumulated prune1,
+retaining original absent-file/empty-pending checks. This explicitly replaces the
+first-call timing premise with actual hook acknowledgment. The expired initial
+pass and action-limit/refusal/held-reader/frozen qualification controls remain
+literal. No helper, product budget or error policy changes. Verify maintenance
+and the complete CLI unit suite on stable/MSRV, strict lint/format, independent
+diff review and fresh full final-source CI/Audit before publication.

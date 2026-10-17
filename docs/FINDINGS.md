@@ -7416,3 +7416,47 @@ global10s bound or expand the limit. Missing stage/early EOF/read error refuses;
 normal final collection requires actual EOF. Production200ms polling, privacy,
 durable behavior and the35-minute native CI job remain unchanged. This fixes a
 fixture premise, not a claim that the product durably queues all SSE transitions.
+
+## Remaining portable maintenance completion assumptions — 2026-10-17
+
+Source678b7cf92f8fe937d874c9441c354af5062ffc18, CI38995426850 LinuxMSRV
+job117286813154 fails foreground_after_prune_intent_preserves_file_and_next_pass_resumes
+at maintenance.rs1109: the resumed successful report has outputs_pruned0, expected1.
+CLI units99PASS/1FAIL; missing later qualification artifacts are consequences of
+that failed workspace step. The trace does not record the exact deferral boundary
+or the file/pending observations after the failing assertion. Preserve this
+failure; do not infer a completed prune or a measured scheduler/filesystem cause.
+
+The source100-action/250ms soft-pass contract permits successful zero/partial
+reports at readiness and phase boundaries, including before a resumed pending
+prune. Findings6635 already documents the same mismatch in two other positive
+maintenance fixtures. Their existing maintain_until helper retains the real
+MaintenanceCursor, checks each pass's100-action cap and a fixed5s progress deadline
+before/after actual work, accumulates reports and unwraps real errors immediately.
+Reuse this contract for the remaining named top-level positive recovery/pruning
+fixtures, with their exact final report counts/files/rows preserved.
+
+Select repairs_and_finalizes_a_referenced_partial; both branches of
+reconciles_an_already_renamed_final_and_a_missing_artifact; finalized_fixture setup;
+foreground_after_prune_intent_preserves_file_and_next_pass_resumes;
+expired_pass_preserves_pending_work_and_a_later_pass_completes_it's later completion;
+resumes_pending_output_prune_before_deleting_run_metadata setup and completion;
+completes_pending_prune_when_the_output_directory_is_already_missing setup and
+completion. Recovery readiness can use outputs_recovered>=1 because that counter
+increments only after reconcile_output_finalized successfully returns. Retain
+exact1 and the existing real retention-candidate query afterward. This avoids a
+new potentially blocking Store query inside the helper's completion predicate.
+
+For the foreground case, also establish the real initial premise by bounded
+passes until the existing hook actually retains the shared intent handle; then
+preserve aggregate pruned0, file-present and pending1. Any pass that stops before
+the hook is setup, not proof that the writer caused yielding. Releasing that exact
+handle precedes the separate bounded resumption, whose exact1/file-absent/pending0
+assertions remain. The initial phase's meaning changes from an assumed single
+invocation to acknowledged real hook entry; no oracle is dropped.
+
+Keep the explicit expired initial pass/actions0/elapsed bound, action100 boundary,
+Windows held-reader/time/refusal/unsafe cases and frozen output-repair qualification
+rows unchanged. These exercise separate timing/safety contracts, including exact
+per-pass action reports. No production source,250ms/100-action policy, Store5s
+admission, helper progress allowance or CI timeout changes are selected.

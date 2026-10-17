@@ -744,3 +744,14 @@ and terminal stream closure. Retain the existing ten-second allowance for each
 stream read and the production polling interval; this is not a new global
 ten-second test horizon. Missing observations, read failures and premature closure
 remain failures.
+
+### Qualify bounded maintenance by real progress (2026-10-17)
+
+An automatic maintenance pass may yield successfully before completing an action.
+Qualification of eventual recovery or pruning must follow actual bounded passes
+to their required durable result while preserving exact final counts and state.
+Qualification of foreground yielding must prove actual intent acquisition before
+checking retained output and pending work. Preserve the production action/time
+budgets, the existing five-second test progress allowance and immediate refusal
+of real errors. Explicit expiry, action-limit and refusal controls remain distinct
+observations; eventual progress cannot replace their safety assertions.
