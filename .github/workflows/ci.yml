@@ -1362,13 +1362,18 @@ jobs:
           path: prune-qualification/
 
   windows-lint-foundation:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
+    needs: windows-foundation
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || !inputs.full_windows) }}
     name: Windows lint foundation / Rust 1.98.0
     timeout-minutes: 35
     runs-on: windows-2025
     env:
       RUSTUP_TOOLCHAIN: 1.98.0
     steps:
+      - name: Require successful native Windows qualification
+        if: ${{ needs.windows-foundation.result != 'success' }}
+        shell: pwsh
+        run: throw 'Native Windows qualification did not succeed'
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@v1
         with:
