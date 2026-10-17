@@ -6517,3 +6517,20 @@ pass and action-limit/refusal/held-reader/frozen qualification controls remain
 literal. No helper, product budget or error policy changes. Verify maintenance
 and the complete CLI unit suite on stable/MSRV, strict lint/format, independent
 diff review and fresh full final-source CI/Audit before publication.
+
+## Keep the referenced-run orphan fixture within retention — 2026-10-17
+
+Apply the amendment in
+planning/BOUNDED_MAINTENANCE_FIXTURE_RESUMPTION_2026-10-17.md after f475's
+MSRV file-survival failure. Only the existing-run orphan test changes: capture
+one orphan_pass_time value, set run_retention_age_us to none through Store before
+the first maintenance call, and use that value for the unchanged maintain_until
+helper. This matches existing orphan-cursor isolation while preserving real file
+mtime eligibility. Synthetic finished_at9 must not request legitimate90-day run
+retention during this orphan-safety control. Preserve every original exact count
+and file assertion. No production default, helper, budget or other fixture changes.
+
+Review the small inverse, run maintenance/full CLI units on stable and MSRV with
+fresh clean-head artifact bindings, and require fmt/strict lint, all17 actual CI
+jobs/Audit/native3 before protection restoration and publication. Preserve the
+failed f475 job and distinguish its passing HTTP suite from maintenance failure.

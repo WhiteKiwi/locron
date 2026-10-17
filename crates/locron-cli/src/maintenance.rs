@@ -1425,7 +1425,11 @@ mod tests {
         // The owning daemon dies; the restarted daemon recovers the
         // referenced partial and removes the unreferenced 2.log.
         let restarted = restart_lifetime(&store, 9);
-        let report = maintain_until(&store, &paths, &restarted, orphan_pass_time(), |report| {
+        let now_us = orphan_pass_time();
+        store
+            .set_setting("run_retention_age_us", "none", now_us)
+            .unwrap();
+        let report = maintain_until(&store, &paths, &restarted, now_us, |report| {
             report.outputs_recovered >= 1 && report.orphans_removed >= 1
         });
 

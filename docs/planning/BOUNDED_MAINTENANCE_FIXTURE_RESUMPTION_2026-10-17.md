@@ -32,3 +32,29 @@ contract documented in Findings6635; its exact native deferral cause is unknown.
 4. **Publish verified result.** Verify: restore/read back native3 required checks
    while preserving old11/strict rules; merge reviewed head, verify exact main tree
    and close only #172/#180/#181 after all their actual criteria succeed.
+
+## Referenced-run orphan isolation amendment
+
+f475 source CI38996053842 finishes16success/1MSRVfailure. Maintenance
+job117288877733 observes exact recovery1/orphan1, then referenced1.log absent.
+HTTP31/31 passes afterward; x64 stable and ARM jobs pass completely. The fixture
+finishes its synthetic run at epoch9 but maintains at real2026+2h, legitimately
+meeting default90-day run retention. A later bounded pass may therefore prune the
+reference before orphan scanning completes. Actual per-pass native timing is not
+instrumented. This is a fixture isolation correction, not a production policy fix.
+
+1. **Review isolation before implementation.** Verify: SPEC, Findings and
+   Implementation record the incompatible clocks and source-backed retention
+   mechanism. Update/read back #172/#181 and parent-review this amendment before
+   separate development. Preserve f475's failure and passing HTTP observations.
+2. **Isolate only the existing-run orphan control.** Verify: capture one
+   orphan_pass_time value; set run_retention_age_us=none through Store before the
+   first maintenance call and pass that same time to unchanged maintain_until.
+   Preserve the original exact recovered1/orphan1 and referenced-present/orphan-
+   absent assertions literally. No production policy/helper/budget/other test
+   changes; existing orphan-cursor isolation is the precedent.
+3. **Qualify and publish the new source.** Verify: independent minimal-diff
+   review, stable/MSRV maintenance and full CLI with actual clean-head artifact
+   bindings, fmt/strict lint, then all17 actual CI jobs/Audit/native3 pass on the
+   new source. Restore/read back native3 required contexts preserving old11/strict,
+   merge verified head, verify main tree and complete #172/#180/#181 criteria.

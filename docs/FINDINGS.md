@@ -7460,3 +7460,34 @@ Windows held-reader/time/refusal/unsafe cases and frozen output-repair qualifica
 rows unchanged. These exercise separate timing/safety contracts, including exact
 per-pass action reports. No production source,250ms/100-action policy, Store5s
 admission, helper progress allowance or CI timeout changes are selected.
+
+## Orphan fixture mixes ancient lifecycle and real filesystem clocks — 2026-10-17
+
+Source f475e4c7b24fdc426a0813a9b7fdab5d8cbe0f68, CI38996053842 finishes
+16 actual jobs successfully and one MSRV failure. Windows job117288877733
+maintenance control orphan_cleanup_removes_unreferenced_canonical_file_inside_existing_run
+passes exact recovered1/orphan1 counts but fails referenced final1.log survival
+at maintenance.rs1434. Its later HTTP suite passes31/31, including the SSE fixture.
+The other two native jobs pass completely. This failure is not an SSE failure.
+
+Separate source research confirms admit_one uses synthetic timestamps1/2/3 and
+restart_lifetime(...,9) finishes the run at9 microseconds since epoch. Maintenance
+instead receives orphan_pass_time(), real wall clock plus two hours, to qualify
+filesystem orphan age. Migration0003 defaults run age retention to7776000000000us
+(90 days). The run is legitimately old enough for retention. Recovery finalizes
+its output at the current maintenance time, so output-age retention is not the
+cause of that selection. maintain_inner recovers referenced output before
+select_run_retention; a later bounded pass can prune the now-pending run's output
+before orphan scanning finishes. Logs do not enumerate those individual pass
+boundaries; this is a source-backed permitted mechanism, not measured native
+scheduler timing or proof of a product orphan-safety violation.
+
+The retained_orphan_cursor fixture already disables run_retention_age_us for the
+same isolation purpose. Select the same public setting only in this existing-run
+orphan fixture, before any maintenance, using one captured orphan_pass_time value
+for setting and passes. Keep the original exact recovery/orphan counts and both
+file assertions literal. One run cannot meet the default count-retention cutoff.
+Other orphan fixtures either already isolate retention or have no matching run
+rows; no broader fixture or default policy change is indicated. Preserve all
+250ms/100-action/5s limits and real-error refusal. Parent documentation/issue
+readback and review precede separate development and fresh final-source CI.

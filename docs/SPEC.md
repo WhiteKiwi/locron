@@ -755,3 +755,12 @@ checking retained output and pending work. Preserve the production action/time
 budgets, the existing five-second test progress allowance and immediate refusal
 of real errors. Explicit expiry, action-limit and refusal controls remain distinct
 observations; eventual progress cannot replace their safety assertions.
+
+### Isolate orphan safety from age-based retention (2026-10-17)
+
+Qualification that unreferenced output is removed while referenced output survives
+must keep that referenced run eligible to remain. Synthetic ancient lifecycle
+timestamps combined with the real filesystem clock must not accidentally request
+age-based removal of the reference. Isolate that fixture's retention setting;
+preserve its exact recovery, orphan-removal and file-survival assertions and all
+existing progress budgets. Default production retention remains unchanged.
