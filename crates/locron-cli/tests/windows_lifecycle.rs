@@ -1,8 +1,11 @@
 //! Native role ownership/control checks against the separate CLI executable.
 #![cfg(windows)]
 
+#[path = "support/windows_heartbeat_failure.rs"]
+mod windows_heartbeat_failure;
+
 use futures_util::StreamExt;
-use locron_store::{DaemonLock, FrameChannel, FrameReader, RoleLockMetadata, StatePaths, Store};
+use locron_store::{DaemonLock, RoleLockMetadata, StatePaths, Store};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::process::CommandExt;
@@ -10,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
+use windows_heartbeat_failure::{HeartbeatFailurePhase, read_finalized_heartbeat_failure};
 
 fn cli_executable() -> PathBuf {
     std::env::var_os("LOCRON_TEST_BINARY").map_or_else(
@@ -23,6 +27,36 @@ fn cli_executable() -> PathBuf {
             path
         },
     )
+}
+
+static FIXTURE_PREPARATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn check_fixture_preparation_deadline(deadline: Instant) {
+    assert!(
+        Instant::now() < deadline,
+        "native fixture preparation deadline"
+    );
+}
+
+fn acquire_fixture_preparation(deadline: Instant) -> std::sync::MutexGuard<'static, ()> {
+    loop {
+        check_fixture_preparation_deadline(deadline);
+        match FIXTURE_PREPARATION.try_lock() {
+            Ok(token) => {
+                check_fixture_preparation_deadline(deadline);
+                return token;
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                panic!("native fixture preparation coordinator poisoned");
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                assert!(!remaining.is_zero(), "native fixture preparation deadline");
+                std::thread::sleep(Duration::from_millis(1).min(remaining));
+                check_fixture_preparation_deadline(deadline);
+            }
+        }
+    }
 }
 
 struct Fixture {
@@ -42,14 +76,24 @@ impl Fixture {
     }
 
     fn new() -> Self {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let _preparation = acquire_fixture_preparation(deadline);
+        check_fixture_preparation_deadline(deadline);
         let mut fixture = Self::absent();
+        check_fixture_preparation_deadline(deadline);
         let guard = locron_core::filesystem::DirectoryGuard::private(&fixture.paths.root)
             .expect("private fixture state");
+        check_fixture_preparation_deadline(deadline);
         fixture.paths = StatePaths::new(guard.normalized_path().to_path_buf());
+        check_fixture_preparation_deadline(deadline);
         drop(Store::open(fixture.paths.clone(), "test", 1).expect("initialized fixture store"));
+        check_fixture_preparation_deadline(deadline);
         // The test binary and CLI must derive identical versioned SID/file identities.
         locron_core::notification::instance_identity(&fixture.paths.root)
             .expect("native state identity");
+        check_fixture_preparation_deadline(deadline);
+        drop(guard);
+        check_fixture_preparation_deadline(deadline);
         fixture
     }
 
@@ -683,162 +727,6 @@ fn failed_continuation_facts(
     )
 }
 
-const HEARTBEAT_FAILURE_PHYSICAL_CAP: u64 = 8 * 1024;
-const HEARTBEAT_FAILURE_PAYLOAD_CAP: u64 = 4 * 1024;
-const HEARTBEAT_FAILURE_FRAME_CAP: usize = 32;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum HeartbeatFailurePhase {
-    Create,
-    Write,
-    Flush,
-    Persist,
-}
-
-impl HeartbeatFailurePhase {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Create => "create",
-            Self::Write => "write",
-            Self::Flush => "flush",
-            Self::Persist => "persist",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct HeartbeatFailure {
-    phase: HeartbeatFailurePhase,
-    counter: u64,
-    kind: std::io::ErrorKind,
-    raw_os: Option<i32>,
-}
-
-impl std::fmt::Display for HeartbeatFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "phase={} counter={} kind={:?} raw_os={:?}",
-            self.phase.as_str(),
-            self.counter,
-            self.kind,
-            self.raw_os,
-        )
-    }
-}
-
-fn parse_heartbeat_failure(stderr: &[u8]) -> Option<HeartbeatFailure> {
-    let stderr = std::str::from_utf8(stderr).ok()?;
-    let mut observed = None;
-    for line in stderr.split_inclusive('\n') {
-        if !line.contains("native-heartbeat-failure") {
-            continue;
-        }
-        if observed.is_some() {
-            return None;
-        }
-        let line = line.strip_suffix('\n')?;
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        let (phase, rest) = line
-            .strip_prefix("native-heartbeat-failure phase=")?
-            .split_once(" counter=")?;
-        let phase = match phase {
-            "create" => HeartbeatFailurePhase::Create,
-            "write" => HeartbeatFailurePhase::Write,
-            "flush" => HeartbeatFailurePhase::Flush,
-            "persist" => HeartbeatFailurePhase::Persist,
-            _ => return None,
-        };
-        let (counter_text, rest) = rest.split_once(" kind=")?;
-        let counter = counter_text.parse::<u64>().ok()?;
-        if counter.to_string() != counter_text {
-            return None;
-        }
-        let (kind, raw_os) = rest.split_once(" raw_os=")?;
-        let kind = match kind {
-            "NotFound" => std::io::ErrorKind::NotFound,
-            "PermissionDenied" => std::io::ErrorKind::PermissionDenied,
-            "AlreadyExists" => std::io::ErrorKind::AlreadyExists,
-            "Interrupted" => std::io::ErrorKind::Interrupted,
-            "InvalidInput" => std::io::ErrorKind::InvalidInput,
-            "InvalidData" => std::io::ErrorKind::InvalidData,
-            "WouldBlock" => std::io::ErrorKind::WouldBlock,
-            "TimedOut" => std::io::ErrorKind::TimedOut,
-            "WriteZero" => std::io::ErrorKind::WriteZero,
-            "BrokenPipe" => std::io::ErrorKind::BrokenPipe,
-            "StorageFull" => std::io::ErrorKind::StorageFull,
-            "Other" => std::io::ErrorKind::Other,
-            _ => return None,
-        };
-        let raw_os = if raw_os == "None" {
-            None
-        } else {
-            let raw_text = raw_os.strip_prefix("Some(")?.strip_suffix(')')?;
-            let raw = raw_text.parse::<i32>().ok()?;
-            if raw.to_string() != raw_text {
-                return None;
-            }
-            Some(raw)
-        };
-        observed = Some(HeartbeatFailure {
-            phase,
-            counter,
-            kind,
-            raw_os,
-        });
-    }
-    observed
-}
-
-fn read_finalized_heartbeat_failure(
-    paths: &StatePaths,
-    run_id: &str,
-    attempt: u16,
-    physical: u64,
-    payload: u64,
-) -> Option<HeartbeatFailure> {
-    if !(8..=HEARTBEAT_FAILURE_PHYSICAL_CAP).contains(&physical)
-        || payload > HEARTBEAT_FAILURE_PAYLOAD_CAP
-    {
-        return None;
-    }
-    let path = paths.final_output(run_id, attempt).ok()?;
-    let stable = locron_core::filesystem::open_private_read_stable(&path).ok()?;
-    if stable.metadata().ok()?.len() != physical {
-        return None;
-    }
-    // Retain the stable read guard across the reader's guarded reopen and all reads.
-    // The file/retained-byte caps do not change FrameReader's existing 1 MiB maximum
-    // internal allocation when a corrupt frame declares an oversized payload.
-    let mut reader = FrameReader::open(stable.normalized_path()).ok()?;
-    let mut consumed = 8_u64;
-    let mut retained = 0_u64;
-    let mut frames = 0;
-    let mut stderr = Vec::new();
-    while consumed < physical {
-        if frames == HEARTBEAT_FAILURE_FRAME_CAP {
-            return None;
-        }
-        let frame = reader.next_frame().ok()??;
-        frames += 1;
-        let length = u64::try_from(frame.payload.len()).ok()?;
-        consumed = consumed.checked_add(locron_store::FRAME_HEADER_LEN as u64 + length)?;
-        retained = retained.checked_add(length)?;
-        if consumed > physical || retained > HEARTBEAT_FAILURE_PAYLOAD_CAP {
-            return None;
-        }
-        if frame.channel == FrameChannel::Stderr {
-            stderr.extend_from_slice(&frame.payload);
-        }
-    }
-    // FrameReader treats a short trailing header as EOF. Exact physical accounting
-    // above refuses that partial stream instead of accepting its earlier record.
-    if consumed != physical || retained != payload || stable.metadata().ok()?.len() != physical {
-        return None;
-    }
-    parse_heartbeat_failure(&stderr)
-}
-
 fn emit_heartbeat_failure(phase: HeartbeatFailurePhase, counter: u64, error: &std::io::Error) {
     // Failed diagnostic writes must not replace the original snapshot error.
     let _ = writeln!(
@@ -848,188 +736,6 @@ fn emit_heartbeat_failure(phase: HeartbeatFailurePhase, counter: u64, error: &st
         error.kind(),
         error.raw_os_error(),
     );
-}
-
-mod heartbeat_failure_observation {
-    use super::*;
-    use locron_store::FrameWriter;
-
-    const RECORD: &[u8] =
-        b"native-heartbeat-failure phase=persist counter=8 kind=PermissionDenied raw_os=Some(5)\n";
-
-    fn required<T, E>(result: Result<T, E>) -> T {
-        result.unwrap_or_else(|_| panic!("heartbeat observation control setup refused"))
-    }
-
-    struct FramedFixture {
-        _temporary: tempfile::TempDir,
-        paths: StatePaths,
-        run_id: String,
-        physical: u64,
-        payload: u64,
-    }
-
-    impl FramedFixture {
-        fn new(frames: &[(FrameChannel, &[u8])]) -> Self {
-            let temporary = required(tempfile::tempdir());
-            let paths = StatePaths::new(temporary.path().join("private observation"));
-            let run_id = uuid::Uuid::from_u128(901).to_string();
-            let path = required(paths.final_output(&run_id, 1));
-            let mut writer = required(FrameWriter::create(&path));
-            let mut payload = 0;
-            for (channel, bytes) in frames {
-                required(writer.write(*channel, 1, bytes));
-                payload += bytes.len() as u64;
-            }
-            let physical = required(writer.sync());
-            drop(writer);
-            Self {
-                _temporary: temporary,
-                paths,
-                run_id,
-                physical,
-                payload,
-            }
-        }
-
-        fn path(&self) -> PathBuf {
-            required(self.paths.final_output(&self.run_id, 1))
-        }
-
-        fn observe(&self) -> Option<HeartbeatFailure> {
-            read_finalized_heartbeat_failure(
-                &self.paths,
-                &self.run_id,
-                1,
-                self.physical,
-                self.payload,
-            )
-        }
-
-        fn replace_bytes(&mut self, bytes: &[u8]) {
-            let mut file = required(locron_core::filesystem::open_private(
-                &self.path(),
-                std::fs::OpenOptions::new().write(true).truncate(true),
-            ));
-            required(file.write_all(bytes));
-            required(file.sync_all());
-            self.physical = bytes.len() as u64;
-        }
-    }
-
-    #[test]
-    fn observes_one_fragmented_stderr_record_as_typed_fields() {
-        let fixture = FramedFixture::new(&[
-            (FrameChannel::Stdout, b"unrelated stdout"),
-            (FrameChannel::Stderr, b"unrelated panic prefix\n"),
-            (FrameChannel::Stderr, &RECORD[..19]),
-            (FrameChannel::Stdout, b"interleaved stdout"),
-            (FrameChannel::Stderr, &RECORD[19..]),
-            (FrameChannel::Stderr, b"unrelated panic suffix\n"),
-        ]);
-        let expected = HeartbeatFailure {
-            phase: HeartbeatFailurePhase::Persist,
-            counter: 8,
-            kind: std::io::ErrorKind::PermissionDenied,
-            raw_os: Some(5),
-        };
-        assert_eq!(fixture.observe(), Some(expected));
-        assert_eq!(
-            expected.to_string(),
-            "phase=persist counter=8 kind=PermissionDenied raw_os=Some(5)"
-        );
-        for (phase, label) in [
-            (HeartbeatFailurePhase::Create, "create"),
-            (HeartbeatFailurePhase::Write, "write"),
-            (HeartbeatFailurePhase::Flush, "flush"),
-            (HeartbeatFailurePhase::Persist, "persist"),
-        ] {
-            for (raw, expected_raw) in [
-                ("None", None),
-                ("Some(-2147483648)", Some(i32::MIN)),
-                ("Some(2147483647)", Some(i32::MAX)),
-            ] {
-                let record = format!(
-                    "native-heartbeat-failure phase={label} counter=18446744073709551615 kind=Other raw_os={raw}\r\n"
-                );
-                let fixture = FramedFixture::new(&[(FrameChannel::Stderr, record.as_bytes())]);
-                let observed = fixture.observe().unwrap();
-                assert_eq!(observed.phase, phase);
-                assert_eq!(observed.counter, u64::MAX);
-                assert_eq!(observed.kind, std::io::ErrorKind::Other);
-                assert_eq!(observed.raw_os, expected_raw);
-            }
-        }
-    }
-
-    #[test]
-    fn malformed_duplicate_partial_and_wrong_channel_records_stay_unobserved() {
-        for channel in [FrameChannel::Stdout, FrameChannel::Body] {
-            assert!(FramedFixture::new(&[(channel, RECORD)]).observe().is_none());
-        }
-        let duplicate = FramedFixture::new(&[
-            (FrameChannel::Stderr, RECORD),
-            (FrameChannel::Stderr, RECORD),
-        ]);
-        assert!(duplicate.observe().is_none());
-        for record in [
-            "native-heartbeat-failure phase=unknown counter=8 kind=Other raw_os=None\n",
-            "native-heartbeat-failure phase=create counter=8 kind=unknown raw_os=None\n",
-            "native-heartbeat-failure phase=create counter=8 kind=Other raw_os=Some(2147483648)\n",
-            "native-heartbeat-failure phase=create counter=8 kind=Other raw_os=Some(-2147483649)\n",
-            "native-heartbeat-failure phase=create counter=18446744073709551616 kind=Other raw_os=None\n",
-            "native-heartbeat-failure phase=create counter=-1 kind=Other raw_os=None\n",
-            "native-heartbeat-failure phase=create counter=08 kind=Other raw_os=None\n",
-            "native-heartbeat-failure phase=create counter=8 kind=Other raw_os=Some(+5)\n",
-            "native-heartbeat-failure phase=create counter=8 kind=Other raw_os=None extra=private\n",
-            "prefix native-heartbeat-failure phase=create counter=8 kind=Other raw_os=None\n",
-            "native-heartbeat-failure phase=create counter=8 kind=Other raw_os=None",
-        ] {
-            let fixture = FramedFixture::new(&[(FrameChannel::Stderr, record.as_bytes())]);
-            assert!(fixture.observe().is_none());
-        }
-    }
-
-    #[test]
-    fn corrupt_truncated_oversized_missing_and_refused_frames_stay_unobserved() {
-        for damage in 0..4 {
-            let mut fixture = FramedFixture::new(&[(FrameChannel::Stderr, RECORD)]);
-            let mut bytes = required(std::fs::read(fixture.path()));
-            match damage {
-                0 => bytes[0] ^= 1,
-                1 => *bytes.last_mut().unwrap() ^= 1,
-                2 => {
-                    bytes.pop();
-                }
-                _ => bytes.push(0),
-            }
-            fixture.replace_bytes(&bytes);
-            assert!(fixture.observe().is_none());
-        }
-        for length in [
-            HEARTBEAT_FAILURE_PAYLOAD_CAP as usize + 1,
-            HEARTBEAT_FAILURE_PHYSICAL_CAP as usize + 1,
-        ] {
-            let bytes = vec![b'x'; length];
-            let fixture = FramedFixture::new(&[(FrameChannel::Stderr, &bytes)]);
-            assert!(fixture.observe().is_none());
-        }
-        let mut frames = vec![(FrameChannel::Stdout, b"x".as_slice()); 31];
-        frames.push((FrameChannel::Stderr, RECORD));
-        assert!(FramedFixture::new(&frames).observe().is_some());
-        frames.insert(0, (FrameChannel::Stdout, b"x"));
-        assert!(FramedFixture::new(&frames).observe().is_none());
-        let fixture = FramedFixture::new(&[(FrameChannel::Stderr, RECORD)]);
-        let held = required(locron_core::filesystem::open_private(
-            &fixture.path(),
-            std::fs::OpenOptions::new().read(true).write(true),
-        ));
-        assert!(fixture.observe().is_none());
-        drop(held);
-        assert!(fixture.observe().is_some());
-        required(std::fs::remove_file(fixture.path()));
-        assert!(fixture.observe().is_none());
-    }
 }
 
 struct NativeProcess {

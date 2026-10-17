@@ -1273,6 +1273,8 @@ jobs:
         run: cargo build -p locron --locked
       - name: Verify actual registered daemon lifetimes
         run: cargo test -p locron --test windows_lifecycle --locked
+      - name: Verify closed native heartbeat observations
+        run: cargo test -p locron --test windows_heartbeat_observation --locked
       - name: Verify registered dashboard composition contracts
         run: cargo test -p locron --bin locron --locked -- service::windows_dashboard_tests
       - name: Verify guarded Windows output pruning
@@ -1388,6 +1390,7 @@ jobs:
       - run: cargo clippy -p locron --bin locron --test windows_lifecycle --test mcp --locked -- -D warnings
       - run: cargo clippy -p locron --bin locron-service-launcher --test windows_service_launcher --features windows-service-launcher --locked -- -D warnings
       - run: cargo clippy -p locron --test cli --locked -- -D warnings
+      - run: cargo clippy -p locron --test windows_heartbeat_observation --locked -- -D warnings
 
   windows-full-test:
     name: Windows exploratory tests / ${{ matrix.platform }} / Rust ${{ matrix.rust }}
