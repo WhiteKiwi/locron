@@ -61,3 +61,15 @@ existing candidate-path equality expressions to a named boolean and assert it
 with fixed text, preserving the exact condition and privacy. No assert_eq! path
 printing or lint waiver. Parent records #172/exact readback and rereads this
 amendment before separate correction; qualify the changed final source afresh.
+
+## Diagnose a distinct startup deadline before choosing another fix
+
+39013682255 executes24 tests:23PASS including all5 retry controls and both
+dashboard cases; crash-tree wait_running's original30s deadline fails with no
+state/read facts. Preserve the failure and unknown cause. Parent research/Docs/
+#172 exact readback/whole review precede separate source: add only GatedStart
+ProgressSite, a failure-only formatter using existing typed heartbeat read, and
+that deadline's lazy message arguments currentrunstate + existing bounded
+attempt/output facts + closed read classification. No predicate, clock, sleep,
+call argument, test body, publisher, PID/owner, behavior or limit changes.
+Verify exact inverse/fmt/strict lint then native diagnosis/current final gates.

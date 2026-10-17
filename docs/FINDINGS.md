@@ -7708,3 +7708,20 @@ Use a named boolean for each same-candidate comparison and assert that boolean
 with fixed text. Do not adopt assert_eq! on paths, which would print owned paths
 on failure. This changes no condition, clock, retry operation or native oracle.
 Actual24-test iterations0; preserve this failed receipt.
+
+## Observe the distinct native startup deadline — 2026-10-17
+
+Separate research confirms39013682255/job117341282554 native strict1.98 and
+stable builds pass; iteration1 stops23PASS/1FAIL39.04s. All five retry controls
+and both original dashboard cases pass. The real default-sharing control
+reports raw5_then_published; this proves that observed control outcome, not the
+historical counter855 holder. Failure is the original crash-tree fixture's
+wait_running30s deadline253. Its accepted queued/starting/running state and
+failed heartbeat read are absent from the message, so the cause remains unknown.
+
+Reuse current run.state, existing bounded attempt/output facts and one closed
+heartbeat read ONLY in that failed deadline's formatting. Add an explicit gated
+startup ProgressSite rather than mislabeling an existing site. Preserve all
+predicates/clocks/sleeps/returns/call arguments/test bodies. Do not reopen a PID
+or call role-lock metadata a process-exit observation: the real Child is owned
+by the caller, not this helper. No retry, startup budget or product fix selected.

@@ -6684,3 +6684,13 @@ bind the existing equality expression to same_candidate, then assert the boolean
 with a fixed message. No raw path Debug output, lint suppression or other change.
 Verify exact inverse/whole-source conservation and native strict lint before
 counting any Windows execution as qualified.
+
+### Diagnose the existing gated-start deadline only after failure
+
+Add the closed GatedStart ProgressSite and a small formatter that instantiates
+LifecycleProgress, performs its existing typed heartbeat read once and formats
+its closed fields. Append that and current run.state/existing terminal-attempt
+facts only to wait_running's original deadline assertion failure arguments.
+No additional successful-loop I/O, polling, PID reopen or owner inference.
+Existing terminal101/finalized output restrictions remain. Inverse-review only
+this observation delta and requalify current source through the normal gates.
