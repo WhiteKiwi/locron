@@ -85,3 +85,27 @@ reader. Actual native deferral boundary remains unknown.
    test skip or timeout enlargement. Restore/read back native3 required checks
    preserving old11/strict, merge verified head, verify main tree and close only
    #172/#180/#181 after their real criteria succeed.
+
+## Finite expansion to the other two Windows positive premises
+
+Separate source audit finds the same successful-partial premise in the owned-reader
+worker and unsafe-object run25 setup. Neither is reported as a failed50e control.
+This explicitly expands the previous single-call amendment to three named positive
+call sites only; initial refusal/timing and frozen qualification remain unchanged.
+
+1. **Review before these additional edits.** Verify: SPEC/Findings/Implementation
+   record both actual source assumptions and distinguish them from observed
+   failure. Update/read back #172/#181 and parent-review before separate development.
+2. **Acknowledge the real positive premises.** Verify: owned-reader worker uses
+   unchanged maintain_until recovered>=1, sends the report directly, and removes
+   only the redundant Result-envelope unwrap. Keep original150ms no-completion,
+   5s receiver, join and every final exact report/file/frame assertion. Helper5s
+   starts in the worker and includes held-reader work; realErr immediately fails.
+   Unsafe-object run25 setup uses the same helper plus exact recovered1 before
+   finalfile/candidate reads and actualACL mutation. Preserve every subsequent
+   unsafe/refusal assertion. Inverse restores every other byte, including all
+   negative/timeout/orphan/frozen controls, production and helper.
+3. **Qualify and publish all three Windows positive corrections together.**
+   Verify: same stable/MSRV fullCLI/maintenance/fmt/strictlint/independent review
+   and new final-source17CI/Audit/native3, then unchanged protection/merge/tree/
+   issue-closure criteria. Existing limits stay; successful0 never counts asErr.

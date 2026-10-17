@@ -773,3 +773,11 @@ real bounded maintenance passes to completion within the existing progress
 allowance. Preserve the original held-reader error, elapsed-time, pending-state,
 exact recovery count and complete frame assertions. The initial refusal and
 post-release completion remain separate observations with unchanged limits.
+
+### Observe other Windows recovery premises (2026-10-17)
+
+A recovery-completion notification must represent actual completed recovery, even
+when earlier bounded passes yield. Qualification that mutates a finalized output
+must first establish actual finalization. Preserve real-reader no-completion and
+receiver limits, exact final payloads, private-state refusal and all existing
+product limits. Partial success is neither a completion nor an expected error.

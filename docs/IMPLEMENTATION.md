@@ -6551,3 +6551,15 @@ all17 actual CI jobs/Audit/native3. The new Windows path must execute in native 
 Linux-only tests cannot qualify it. Preserve50e's failure and its passing orphan,
 cancellation/capture and HTTP controls. Protection restoration and merge/tree/
 issue completion still require the final verified source.
+
+### Complete the finite Windows positive-premise correction
+
+Apply the two-positive-premise expansion in the bounded maintenance plan. The
+owned-reader worker uses existing maintain_until until recovered>=1, sends its
+report directly and retains the original150ms/5s receiver and join checks; remove
+only the now-unneeded Result-envelope unwrap. Err still immediately fails inside
+the helper. The unsafe-object fixture's run25 setup uses the same helper and exact
+recovered1 before reading the actual final file/candidate and changing its ACL.
+Together with the named post-timeout completion, these are the only three Windows
+positive call sites selected. No negative/timeout/frozen assertion or helper changes.
+Require exact inverse review of the finite replacements and complete native CI.

@@ -7515,3 +7515,28 @@ explicitly amends the prior plan's exclusion of Windows controls only for this
 observed positive completion; no initial refusal, timeout, product or frozen
 qualification row changes are selected. Parent plan/issue readback and separate
 development precede new complete final-source qualification.
+
+## Two additional Windows positive premises share the bounded-pass contract
+
+The separate50e Windows-source audit finds two other positive single-pass
+assumptions, without claiming they failed in CI38998271829. In
+recovery_waits_for_an_owned_reader_and_preserves_frames the worker sends one
+maintain result; a successful0 could arrive before the150ms no-completion check
+or fail the later exact1. In unsafe_objects_preserve_recovery_prunes_and_unrelated_targets,
+run25 setup invokes one maintain before reading the final path and selecting its
+output row. A successful0 need not have finalized that fixture. Select only these
+positive premises for the unchanged maintain_until recovered>=1 helper.
+
+The worker sends the completed report directly; removing only the redundant
+Result-envelope unwrap does not swallow a real maintenance error, which the
+helper immediately panics on and therefore fails the receiver/join. Keep original
+150ms no-completion and5s receiver limits and all final exact report/file/frame
+assertions. Its fixed5s progress clock includes work while the reader is held.
+For run25 setup retain an explicit recovered1 acknowledgment before file/row reads
+and actual ACL mutation. Parent plan/issue review precedes these additional edits.
+
+Do not change initial held-reader timeout, unsafe recovery/prune refusals, unsafe
+orphan canaries or frozen exact-report qualification rows. Missing-root refusal
+is checked before the pass budget; other negative controls must still observe an
+actual Err and may not promote successful0 to expected failure. Their prior
+passed observations are not claims of unconditional pass admission or scanentry.
