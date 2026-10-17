@@ -73,3 +73,11 @@ isolated probe of the updated source with the already-correct1.98 lint/stable
 execution harness, original19/defaultparallel/50-first-failure/35min bounds.
 Keep failed17 and all previous failures; no behavior fix or raw5 cause claim.
 All original final-head17-CI/native3/Audit/local/protection/main-tree gates remain.
+
+## Evidence-conditioned behavior correction selected
+
+Probe39008090099 captures actual failed-child persist/raw5 at counter855.
+Continue the separately reviewed WINDOWS_GATED_HEARTBEAT_RETRY_2026-10-17.md.
+It supersedes only the no-behavior-change phase and one original gated publish
+call's literal conservation; all prior failure/history/observation/final gates
+remain. Original one-shot publisher/persist/log/held-control are still literal.

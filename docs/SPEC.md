@@ -810,3 +810,14 @@ bounded diagnosis whether detected before running, while checking continuation,
 or while waiting for completion. Existing assertions, time limits and passing
 behavior remain unchanged. Diagnose a progress deadline only after its original
 assertion fails; live or unavailable output remains unobserved.
+
+## Preserve native heartbeat publication through bounded access conflicts
+
+A native qualification target must preserve its last complete progress counter
+when an observed Windows access conflict temporarily refuses atomic publication.
+It may retry only that observed refusal using the same fully written candidate
+within a short finite publication allowance. Preserve every outer lifecycle
+deadline and required progress observation. Permanent refusal and other errors
+remain failures; never replace them with success or create a new counter/file
+on each retry. Report at most one closed terminal publication error. This is
+fixture behavior, with no change to product process/output handling or security.

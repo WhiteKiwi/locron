@@ -7655,3 +7655,47 @@ snapshot is stale. The formatter independently reads actual attempts and still
 refuses nonterminal/non101/nonfinalized output. No successful-loop I/O or new
 polling is needed; predicates/clocks/returns/sleeps and original16 bodies stay
 exact. No behavior change or heartbeat retry is selected.
+
+## Actual gated heartbeat publication refusal — 2026-10-17
+
+Separate research independently confirms diagnostic f1aadf8/run39008090099/
+job117324576383: strict native1.98 Clippy and stable real builds pass, four
+complete19-test suites pass, iteration5 stops18PASS/1FAIL. The original idle-HTTP
+test fails its continuation-advance deadline319. Its own actual attempt is
+failed/finished/exit101 with finalized output565/723, discarded0/truncatedfalse;
+the strict observer reports phase=persist counter855 PermissionDenied/raw5.
+This is the failed child's record, distinct from the deliberate counter8 refusal
+control. The native persist subcall and conflicting holder are still unknown.
+Locked tempfile persist first changes attributes then performs MoveFileEx;
+ordinary Rust read handles permit READ|WRITE|DELETE sharing. Do not claim that
+a particular reader, antivirus or system service caused this refusal.
+
+Select a gated-fixture-only bounded same-candidate retry for this observed raw5.
+Keep the original first snapshot/persist operation; its native call is not
+preemptible. Bound ADDITIONAL retry admission by min(original absolute60s gate
+deadline, publication entry+100ms), including callback/sleep time, without reset.
+Retry only the same PersistError.file and only raw5; unsupported errors return
+immediately. Preserve original one-shot publisher/persist/log and existing held
+control. The new publisher emits one closed terminal record, because logging
+each retry would produce duplicate records rejected by the strict observer.
+
+Separate research recommends real held-share1 release and permanent-refusal
+controls, pre-expired retry admission, genuine missing-parent non5 refusal and
+a factual default-sharing comparison. Use an already observed native refusal
+as the retry helper input: expired admission returns that actual error/candidate,
+not a fabricated raw5 or synthetic OS failure. Synchronous first-refusal release
+avoids scheduler-dependent sleeps; its existing30s control horizon is distinct
+from the exact100ms permanent-refusal control. Default sharing may permit
+replacement or return actual raw5; either branch must prove atomic complete
+counters and same-candidate recovery, and cannot identify the historical holder.
+
+### Deliver qualification through the active repository connection
+
+The shell GitHub credential now returns401 while the active GitHub connector
+continues authenticated repository reads/writes; managed environment status
+reports no configured outbound identity. Do not expose or replace credentials.
+Use the active connector's Git objects/ref APIs for publication. Since that
+connection exposes no workflow-dispatch mutation, allow the isolated diagnostic
+workflow to run on push ONLY to its single named diagnostic qualification branch,
+retaining dispatch support and excluding main/pull_request events. This is an
+execution transport adjustment, not permission bypass or a test-policy change.

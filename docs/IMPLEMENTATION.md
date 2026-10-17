@@ -6636,3 +6636,43 @@ extra Store/file reads. Do not change any predicate, clock, sleep, return, test
 body, publisher operation or observation parser. Inverse-review these four
 format-only changes and preserve all existing controls. After native diagnostic
 qualification resume the original final17-CI publication gate.
+
+## Bound gated fixture heartbeat retries after an actual raw5 — 2026-10-17
+
+Follow planning/WINDOWS_GATED_HEARTBEAT_RETRY_2026-10-17.md. Add a new gated
+publisher and a retry helper consuming a genuine PersistError. The existing
+snapshot is created once. Perform the original one-shot NamedTempFile.persist;
+on refusal only, retry the same owned file for raw5 until the immutable horizon
+min(existing gate deadline, publisher entry+100ms). Check admission before and
+after the refusal callback, after a sleep of at most min(1ms, remaining), and
+before each additional native attempt. No recreated candidate, incremented
+counter, deadline reset or accepted unsupported error. Return the last actual
+refusal on expiry. Native calls are non-preemptible;100ms bounds retry admission,
+not wall completion or the already-existing first operation.
+
+A no-op refusal callback serves the gated publisher; real native controls use
+it to verify old7/candidate identity and release the exact held handle before
+retry. Callback work consumes the same horizon. Retry calls use the unchanged
+low-level tempfile persist operation without per-attempt logs. Only a terminal
+error produces one closed existing-format record and the original panic shape.
+Keep the old one-shot publisher and persist/log/control literal. Change only
+the gated target's existing publish call to pass its unchanged60s deadline;
+this one-call exception supersedes original16-body conservation at this scope.
+All15 other bodies and every original lifecycle oracle/clock remain exact.
+
+Five real native controls qualify release/same-candidate success, permanent
+100ms refusal, pre-expired retry admission, genuine missing-parent non5 refusal
+and default-sharing outcomes with exact complete counters. Original3 observation
+controls remain; resulting complete native inventory24. Independent inverse/
+fmt/strict local lint precede a new isolated actual24/defaultparallel/max50/
+first-failure/35min probe and final-head all17 ordinaryCI/native3/Audit, fresh
+local bound suites, required gate/settings and main-tree delivery verification.
+
+### Isolated qualification trigger with the active connection
+
+Publish exact reviewed tree/blob objects using the authenticated repository
+connector, read back expected refs/tree, then fetch public Git objects locally
+without the expired shell credential. The separate probe workflow may additionally
+trigger on push only to diagnostic/windows-gated-heartbeat-qualification; its
+job accepts that exact branch/event or the existing explicit dispatch. No main
+or PR push selector is added. Keep the reduced workflow outside the PR source.
