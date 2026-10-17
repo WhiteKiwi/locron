@@ -250,7 +250,13 @@ impl Fixture {
                 run.state,
                 failed_continuation_facts(&store, &self.paths, run_id, run.reason.as_deref())
             );
-            assert!(Instant::now() < deadline, "gated target did not start");
+            assert!(
+                Instant::now() < deadline,
+                "gated target did not start; last_polled_state={}; {}; post_deadline_heartbeat={}",
+                run.state,
+                failed_continuation_facts(&store, &self.paths, run_id, run.reason.as_deref()),
+                failed_gated_start_progress(&self.paths.root.join("native-completed.heartbeat"))
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
     }
@@ -389,6 +395,7 @@ enum ProgressSite {
     PreservedBaseline,
     PreservedAdvance,
     DescendantPreCrash,
+    GatedStart,
 }
 
 impl ProgressSite {
@@ -397,6 +404,7 @@ impl ProgressSite {
             Self::PreservedBaseline => "preserved_baseline",
             Self::PreservedAdvance => "preserved_advance",
             Self::DescendantPreCrash => "descendant_pre_crash",
+            Self::GatedStart => "gated_start",
         }
     }
 }
@@ -581,6 +589,12 @@ impl std::fmt::Display for LifecycleProgress {
             None => formatter.write_str("none"),
         }
     }
+}
+
+fn failed_gated_start_progress(path: &Path) -> String {
+    let mut progress = LifecycleProgress::new(ProgressSite::GatedStart, None);
+    let _ = progress.read_heartbeat(path);
+    progress.to_string()
 }
 
 fn bounded_failure_reason(reason: Option<&str>) -> String {
