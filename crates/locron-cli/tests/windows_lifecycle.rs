@@ -1358,7 +1358,8 @@ mod gated_heartbeat_retry {
             };
             self.check();
             assert_eq!(refusal.error.raw_os_error(), Some(5));
-            assert!(refusal.file.path() == candidate_path);
+            let same_candidate = refusal.file.path() == candidate_path;
+            assert!(same_candidate, "heartbeat candidate identity changed");
             self.counter("7");
             (refusal, candidate_path)
         }
@@ -1382,7 +1383,8 @@ mod gated_heartbeat_retry {
         let result = retry_heartbeat_persist(refusal, &fixture.path, fixture.deadline, |refusal| {
             fixture.check();
             assert_eq!(refusal.error.raw_os_error(), Some(5));
-            assert!(refusal.file.path() == candidate_path);
+            let same_candidate = refusal.file.path() == candidate_path;
+            assert!(same_candidate, "heartbeat candidate identity changed");
             fixture.counter("7");
             callbacks += 1;
             drop(held.take());
@@ -1403,7 +1405,8 @@ mod gated_heartbeat_retry {
         let deadline = Instant::now() + Duration::from_millis(100);
         let result = retry_heartbeat_persist(refusal, &fixture.path, deadline, |refusal| {
             assert_eq!(refusal.error.raw_os_error(), Some(5));
-            assert!(refusal.file.path() == candidate_path);
+            let same_candidate = refusal.file.path() == candidate_path;
+            assert!(same_candidate, "heartbeat candidate identity changed");
             fixture.counter("7");
         });
         let Err(refusal) = result else {
@@ -1412,7 +1415,8 @@ mod gated_heartbeat_retry {
         assert!(Instant::now() >= deadline);
         fixture.check();
         assert_eq!(refusal.error.raw_os_error(), Some(5));
-        assert!(refusal.file.path() == candidate_path);
+        let same_candidate = refusal.file.path() == candidate_path;
+        assert!(same_candidate, "heartbeat candidate identity changed");
         fixture.counter("7");
         drop(held);
         drop(required(refusal.file.persist(&fixture.path)));
@@ -1437,7 +1441,8 @@ mod gated_heartbeat_retry {
         };
         assert_eq!(callbacks, 0);
         assert_eq!(refusal.error.raw_os_error(), raw_os);
-        assert!(refusal.file.path() == candidate_path);
+        let same_candidate = refusal.file.path() == candidate_path;
+        assert!(same_candidate, "heartbeat candidate identity changed");
         fixture.counter("7");
         assert_eq!(required(std::fs::read_to_string(refusal.file.path())), "8");
         drop(required(refusal.file.persist(&fixture.path)));
@@ -1460,7 +1465,8 @@ mod gated_heartbeat_retry {
         };
         let raw_os = refusal.error.raw_os_error();
         assert!(raw_os.is_some() && raw_os != Some(5));
-        assert!(refusal.file.path() == candidate_path);
+        let same_candidate = refusal.file.path() == candidate_path;
+        assert!(same_candidate, "heartbeat candidate identity changed");
         required(std::fs::create_dir(destination.parent().unwrap()));
         fixture.check();
         let mut callbacks = 0;
@@ -1472,7 +1478,8 @@ mod gated_heartbeat_retry {
         };
         assert_eq!(callbacks, 0);
         assert_eq!(refusal.error.raw_os_error(), raw_os);
-        assert!(refusal.file.path() == candidate_path);
+        let same_candidate = refusal.file.path() == candidate_path;
+        assert!(same_candidate, "heartbeat candidate identity changed");
         fixture.counter("7");
         assert_eq!(required(std::fs::read_to_string(refusal.file.path())), "8");
         drop(required(refusal.file.persist(&fixture.path)));
@@ -1497,7 +1504,8 @@ mod gated_heartbeat_retry {
             }
             Err(refusal) => {
                 assert_eq!(refusal.error.raw_os_error(), Some(5));
-                assert!(refusal.file.path() == candidate_path);
+                let same_candidate = refusal.file.path() == candidate_path;
+                assert!(same_candidate, "heartbeat candidate identity changed");
                 fixture.counter("7");
                 let mut old = String::new();
                 required(reader.read_to_string(&mut old));
@@ -1506,7 +1514,8 @@ mod gated_heartbeat_retry {
                 let result =
                     retry_heartbeat_persist(refusal, &fixture.path, fixture.deadline, |refusal| {
                         assert_eq!(refusal.error.raw_os_error(), Some(5));
-                        assert!(refusal.file.path() == candidate_path);
+                        let same_candidate = refusal.file.path() == candidate_path;
+                        assert!(same_candidate, "heartbeat candidate identity changed");
                         fixture.counter("7");
                     });
                 drop(required(result));
