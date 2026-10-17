@@ -4996,12 +4996,40 @@ impl Owner {
         poll_span: Option<Duration>,
     ) -> Result<Output, Code> {
         self.call_context.begin(&self.control, phase);
-        let result = self.captured_output_body(
-            phase,
-            CaptureSource::Default(command),
-            hold_duplicate,
-            poll_span,
-        );
+        let index = self.captures.len();
+        let result = self
+            .captured_output_body(
+                phase,
+                CaptureSource::Default(&mut *command),
+                hold_duplicate,
+                poll_span,
+            )
+            .and_then(|output| {
+                if matches!(phase, Phase::History) && !hold_duplicate {
+                    self.control.check(self.control.deadline)?;
+                    if index.checked_add(1) != Some(self.captures.len()) {
+                        return Err(Code::Native);
+                    }
+                    // Command retains its parent stdout duplicate even after actual reap.
+                    self.control.observations.intent(Operation::DropStdout);
+                    command.stdout(Stdio::null());
+                    let capture = self.captures.pop().ok_or(Code::Native)?;
+                    let path = capture.normalized_path().to_path_buf();
+                    let (file, parent_guard) = capture.into_parts();
+                    drop(file);
+                    self.control.check(self.control.deadline)?;
+                    let removed = locron_core::filesystem::remove_private_file(&path);
+                    self.control.observations.io(
+                        Operation::DropStdout,
+                        ChildRole::ControlCli,
+                        &removed,
+                    );
+                    drop(parent_guard);
+                    self.control.check(self.control.deadline)?;
+                    removed.map_err(|_| Code::Cleanup)?;
+                }
+                Ok(output)
+            });
         self.call_context.returned(&self.control, &result);
         result
     }
@@ -5830,12 +5858,19 @@ enum PairedCase {
 }
 
 #[derive(Clone, Copy)]
+enum HistoryRetirementCase {
+    Completed,
+    Retained,
+}
+
+#[derive(Clone, Copy)]
 enum CaseKind {
     Wake,
     Cancel,
     Peer(PeerMode),
     Capture(CaptureCase),
     Paired(PairedCase),
+    HistoryRetirement(HistoryRetirementCase),
     #[cfg(debug_assertions)]
     Producer(ProducerControl),
 }
@@ -5906,6 +5941,7 @@ fn admit_control(
                     }
                     CaseKind::Capture(case) => capture_work(&mut owner, case),
                     CaseKind::Paired(case) => paired_work(&mut owner, case),
+                    CaseKind::HistoryRetirement(case) => history_retirement_work(&mut owner, case),
                     #[cfg(debug_assertions)]
                     CaseKind::Producer(ProducerControl::Queued) => {
                         owner.prepare_producers(ProducerKind::QueuedControl)?;
@@ -7130,6 +7166,165 @@ fn assert_startup_hint_controls(entered: Instant, deadline: Instant) {
         startup_hint(&expired, complete.as_bytes(), [0; 16]),
         Err(Code::Expired)
     );
+}
+
+fn history_retirement_work(owner: &mut Owner, case: HistoryRetirementCase) -> Result<(), Code> {
+    owner.retain_guard()?;
+    match case {
+        HistoryRetirementCase::Completed => {
+            let canary_path = owner.root()?.join("retirement-canary");
+            let mut canary = create_private_new(&canary_path).map_err(|_| Code::Native)?;
+            canary.write_all(b"preserved").map_err(|_| Code::Native)?;
+            let canary_identity = file_identity(&canary).map_err(|_| Code::Native)?;
+            for number in 1..=2 {
+                let path = owner.capture_path(number)?;
+                let mut command = owner.command()?;
+                command.args(["--json", "history"]);
+                let output = owner.output(Phase::History, &mut command)?;
+                // JSON is parsed only after the successful child/read and retirement.
+                let envelope: serde_json::Value =
+                    serde_json::from_slice(&output.stdout).map_err(|_| Code::Run)?;
+                assert_eq!(envelope["ok"], true);
+                assert_eq!(envelope["data"], serde_json::json!([]));
+                assert!(!path.try_exists().map_err(|_| Code::Native)?);
+                assert_eq!(owner.capture_count, number);
+                assert!(owner.captures.is_empty());
+                assert!(owner.capture_reader.is_none());
+                assert!(owner.active_cli.is_none());
+                assert!(owner.completed_cli);
+                assert!(owner.guard.is_some());
+                assert!(is_private(owner.root()?, true).map_err(|_| Code::Native)?);
+                assert_eq!(
+                    file_identity(&canary).map_err(|_| Code::Native)?,
+                    canary_identity
+                );
+                owner.control.check(owner.control.deadline)?;
+                drop(command);
+            }
+            let collision_path = owner.capture_path(3)?;
+            let mut collision = create_private_new(&collision_path).map_err(|_| Code::Native)?;
+            collision
+                .write_all(b"no-clobber")
+                .map_err(|_| Code::Native)?;
+            let identity = file_identity(&collision).map_err(|_| Code::Native)?;
+            let result = owner.output(Phase::History, owner.command()?.args(["--json", "history"]));
+            assert!(matches!(result, Err(Code::CaptureCollision)));
+            assert_eq!(owner.capture_count, 3);
+            assert!(owner.captures.is_empty());
+            assert!(owner.active_cli.is_none());
+            assert_eq!(
+                file_identity(&collision).map_err(|_| Code::Native)?,
+                identity
+            );
+            assert_eq!(
+                std::fs::read(&collision_path).map_err(|_| Code::Native)?,
+                b"no-clobber"
+            );
+            assert_eq!(
+                std::fs::read(&canary_path).map_err(|_| Code::Native)?,
+                b"preserved"
+            );
+        }
+        HistoryRetirementCase::Retained => {
+            let output = owner.captured_output(
+                Phase::Capture,
+                owner.command()?.arg("--version"),
+                true,
+                None,
+            )?;
+            assert_eq!(
+                output.stdout,
+                concat!("locron ", env!("CARGO_PKG_VERSION"), "\n").as_bytes()
+            );
+            let version_identity = file_identity(&owner.captures[0]).map_err(|_| Code::Native)?;
+            let failed = owner.output(
+                Phase::History,
+                owner
+                    .command()?
+                    .args(["--json", "history", "--limit", "not-a-number"]),
+            );
+            assert!(matches!(failed, Err(Code::Cli)));
+            assert_eq!(owner.captures.len(), 2);
+            assert!(owner.active_cli.is_none());
+            assert!(owner.capture_reader.is_none());
+            assert!(
+                owner
+                    .capture_path(2)?
+                    .try_exists()
+                    .map_err(|_| Code::Native)?
+            );
+
+            let mut producer = Command::new(std::env::current_exe().map_err(|_| Code::Native)?);
+            producer
+                .args([
+                    "--exact",
+                    OUTPUT_SELECTOR,
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env("WINDOWS_CLI_OUTPUT_ROLE", "oversized-v1");
+            let oversized = owner.output(Phase::History, &mut producer);
+            assert!(matches!(oversized, Err(Code::CaptureOversized)));
+            assert_eq!(owner.captures.len(), 3);
+            assert_eq!(owner.capture_count, 3);
+            assert!(owner.capture_reader.is_some());
+            assert!(
+                owner
+                    .active_cli
+                    .as_mut()
+                    .ok_or(Code::Native)?
+                    .try_wait()
+                    .map_err(|_| Code::Native)?
+                    .is_some()
+            );
+            assert!(owner.capture_duplicate.is_some());
+            assert_eq!(
+                file_identity(&owner.captures[0]).map_err(|_| Code::Native)?,
+                version_identity
+            );
+            assert_eq!(owner.control.stdout_bytes.load(Ordering::Acquire), 65_537);
+            for number in 1..=3 {
+                assert!(
+                    owner
+                        .capture_path(number)?
+                        .try_exists()
+                        .map_err(|_| Code::Native)?
+                );
+            }
+        }
+    }
+    owner.control.check(owner.control.deadline)
+}
+
+fn verify_history_retirement(case: HistoryRetirementCase) {
+    let mut driver = admit(None).expect("resource-free History retirement admission failed");
+    let deadline = driver.control.deadline;
+    assert!(driver.dispatch(CaseKind::HistoryRetirement(case)).is_ok());
+    let observed = driver.receive_until(deadline);
+    let completed = if observed.flags & CLEANED == 0 {
+        driver.wait_cleanup_until(deadline)
+    } else {
+        observed
+    };
+    driver.finish_if_returned();
+    assert!(
+        Instant::now() < deadline,
+        "History retirement exceeded its original horizon"
+    );
+    assert!(
+        completed.succeeded(),
+        "History retirement/cleanup failed: {completed}"
+    );
+}
+
+#[test]
+fn history_capture_retirement_removes_only_completed_fresh_history() {
+    verify_history_retirement(HistoryRetirementCase::Completed);
+}
+
+#[test]
+fn history_capture_retirement_preserves_non_history_and_failed_carriers() {
+    verify_history_retirement(HistoryRetirementCase::Retained);
 }
 
 #[test]

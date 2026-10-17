@@ -1248,6 +1248,8 @@ jobs:
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
+          cargo test -p locron --test cli --locked windows_cli_control::history_capture_retirement_ -- --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test -p locron --test cli --locked windows_cli_control::native_cli_output_capture_contract -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native registered service semantics
