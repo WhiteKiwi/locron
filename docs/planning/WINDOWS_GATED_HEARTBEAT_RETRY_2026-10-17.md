@@ -73,3 +73,10 @@ that deadline's lazy message arguments currentrunstate + existing bounded
 attempt/output facts + closed read classification. No predicate, clock, sleep,
 call argument, test body, publisher, PID/owner, behavior or limit changes.
 Verify exact inverse/fmt/strict lint then native diagnosis/current final gates.
+
+## Isolate the new control family's process-local preparation
+
+Continue WINDOWS_HEARTBEAT_CONTROL_PROCESS_ISOLATION_2026-10-17.md after the
+actual four Store-preparation failures. It replaces only single-binary24 with
+full21 lifecycle/retry +full3 observer binaries, retaining default parallelism
+inside both, union24 and all existing clocks/first-failure/final gates.

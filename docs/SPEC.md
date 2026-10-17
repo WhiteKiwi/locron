@@ -821,3 +821,24 @@ deadline and required progress observation. Permanent refusal and other errors
 remain failures; never replace them with success or create a new counter/file
 on each retry. Report at most one closed terminal publication error. This is
 fixture behavior, with no change to product process/output handling or security.
+
+## Keep diagnostic controls independent of lifecycle admission
+
+Qualification must retain the original native lifecycle workload and all of its
+real admission/deadline assertions. Newly added diagnostic parser/file controls
+must run in their own test process so their private-file preparation cannot
+consume lifecycle fixtures' shared process admission capacity. Run every control
+and preserve each family's default test parallelism, original limits and exact
+success/refusal assertions. Process isolation must not skip, retry, extend or
+convert any failed case into success.
+
+### Bound independent fixture preparation before lifecycle qualification
+
+Coordinate only independent lifecycle fixture preparation so unrelated fresh
+state creation does not compete for one process's bounded preparation service.
+Give preparation one entry-born thirty-second horizon including queue waiting,
+keep exactly one real store open under its existing five-second policy, and
+release preparation ownership before lifecycle work starts. Real errors and
+late preparation still fail immediately. Preserve cold/first-run/refusal cases
+that intentionally create absent state and every existing lifecycle deadline;
+this changes setup scheduling, not product admission or test success criteria.

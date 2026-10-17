@@ -7725,3 +7725,63 @@ startup ProgressSite rather than mislabeling an existing site. Preserve all
 predicates/clocks/sleeps/returns/call arguments/test bodies. Do not reopen a PID
 or call role-lock metadata a process-exit observation: the real Child is owned
 by the caller, not this helper. No retry, startup budget or product fix selected.
+
+## Isolate new framed-observation controls from lifecycle admission
+
+Separate research confirms39014926684/job117344965992: native strict/build
+pass; iterations1–3 each24PASS; iteration4 stops20PASS/4FAIL in Fixture::new
+Store::open, before those lifecycle scenarios run. One writer admission waits
+5.061s of5.078s; three database-preparation failures consume5.084s with admission
+wait0.369/2.046/4.544s. TimedOut/rawNone does not identify an OS/SQL holder.
+The earlier crash-tree30s startup failure did not recur in this run.
+
+Core has one process-global filesystem DISPATCHER, bounded channel16 and a
+worker that awaits each exchange before taking the next request. Real FrameWriter
+creation and fresh Store private writer-lock/DB/sidecar creation share it. The
+three new observer tests create36 independent FramedFixtures (13+14+9), each
+with real guarded creation/sync. Their overlap adds new process-local admission
+pressure to the original lifecycle fixtures. Retry controls use std/tempfile
+and add no Core worker requests. Fresh Store roots have distinct writer locks;
+DatabaseAdmission deadline checks can report expiry after prior preparation,
+not proof of a contended DB lock. This establishes a shared-pressure mechanism,
+not the historical request/lock holder or a product-policy defect.
+
+Move only the three new framed-observer controls into a separate integration
+process. Share the identical observer implementation with both binaries. Run
+all21 lifecycle/retry cases at original default parallelism, then all3 observer
+controls at their default parallelism. Preserve exact24-case coverage and every
+5s/30s/other clock; no case skips, retries, serialization within a family, budget
+extension or relaxed assertion. Both binaries must execute in every native CI
+row and every finite diagnostic observation; bind/hash all real artifacts.
+
+Counter-check: the four failed cases are the first four alphabetically. The
+runner's actual libtest worker count/start timestamps are unavailable; with
+four workers they may expire before an observer case starts. Therefore actual
+observer overlap is unproven. Select the split as a controlled independence
+change, not a proven cure for cold Store admission or the earlier startup
+timeout. Fresh native outcomes must decide any further preparation change.
+
+## Coordinate positive fixture preparation without changing Store policy
+
+Separate research confirms all10 original Fixture::new callers use initialized
+state for positive lifecycle/ownership/recovery controls, not a four-way cold
+Store-creation performance oracle. The three explicit absent-state controls
+(invalid supervised arguments, first-run daemon, first-run dashboard) call
+Fixture::absent and remain unchanged. DirectoryGuard::private already invokes
+SID/worker-backed private creation before Store.open's5s Operation, so a
+one-time worker warmup would be redundant. Later lock/DB/sidecar preparation
+from concurrent fixtures still shares the process worker. A particular timed
+out request/holder and the historical startup cause remain unknown.
+
+Select a bounded test-only preparation coordinator in addition to the independent
+observer process split. A process-local Mutex<()> schedules only Fixture::new
+construction under a new entry-born30s preparation horizon. Waiting/try_lock/
+clipped<=1ms sleeps and original preparation phases consume that same horizon.
+Keep exactly ONE original Store.open with its real5s Operation and immediate
+Err failure; no warmup, replay or product policy change. RAII releases before
+any daemon/lifecycle body. Poison explicitly refuses; a real preparation panic
+may cascade later refusals and cannot become a pass. Check the horizon around
+phases and after local guard destruction before return; native calls/drop are
+non-preemptible, so do not claim hard30s wall completion. This is an explicit
+setup scheduling tradeoff and a controlled preparation change, not proof of the
+historical request holder or a claim that original cold concurrency passed.

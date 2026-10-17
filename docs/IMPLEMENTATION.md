@@ -6694,3 +6694,40 @@ facts only to wait_running's original deadline assertion failure arguments.
 No additional successful-loop I/O, polling, PID reopen or owner inference.
 Existing terminal101/finalized output restrictions remain. Inverse-review only
 this observation delta and requalify current source through the normal gates.
+
+## Keep framed control preparation in a separate process
+
+Follow planning/WINDOWS_HEARTBEAT_CONTROL_PROCESS_ISOLATION_2026-10-17.md.
+Extract only the shared closed failure types/parser/finalized-frame reader into
+a Windows integration-test support module, retaining their bodies and making
+only required sibling visibility/import changes. Keep error emission in the
+lifecycle binary. Move the existing three observer test bodies into a new
+windows_heartbeat_observation integration target; preserve their literal
+assertions/FrameWriter setup and all21 lifecycle/retry bodies/clocks/controls.
+No production/dependency changes or test-only admission override.
+
+Keep the original lifecycle native command (now21 cases) unchanged and add a
+separate native step for the3 observer controls. Preserve all six original
+required lint commands; append strict Clippy for the new integration target.
+The required native dependency/matrix/17 actual jobs/35-minute limits remain.
+The isolated harness builds/selects/hashes both actual test executables before
+building the production CLI LAST. Each of max50 observations invokes the full21
+then full3 with default parallelism per binary, exact inventories and totals;
+stop on either nonzero or integrity/count refusal, never mask the first result.
+The complete union remains24; no new case clock or runtime retry is introduced.
+
+### Bound only positive lifecycle fixture construction
+
+Add a process-local Mutex<()> scheduling token and bounded try_lock helper in
+the lifecycle test target. At Fixture::new entry create one30s absolute
+preparation deadline. Admit the token with try_lock, immediate poison refusal,
+<=1ms remaining sleeps and pre/post admission checks. Retain the original
+absent-root/privateguard/ONE Store.open/identity sequence; check before/after
+each phase, explicitly drop the local private guard and check once more before
+return. The RAII token remains held through setup and is released before the
+returned fixture's daemon/control/lifecycle work. No original test body/call,
+Store5s deadline, helper retry, or Fixture::absent path changes. This is not a
+cold-start throughput qualification. Native calls/destructors remain
+non-preemptible; late completion fails the existing preparation horizon.
+Verify exact setup-expression conservation, all24 bodies/other clocks, bounded
+ownership and real error propagation, then full source-bound native gates.
