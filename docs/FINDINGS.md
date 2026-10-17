@@ -7247,3 +7247,541 @@ the existing late-ready response control still checks caller-budget expiry.
 This explicitly replaces the unsupported pre-gate100ms fixture premise, not any
 product request deadline or the actual100ms/250ms in-flight control. No fake entered
 flag, new request, response replay or increased existing deadline is selected.
+
+### Completed History capture retirement research (2026-10-17)
+
+Source reviewed: main d4d2c12, before the Windows capture cleanup follow-up.
+Final ca5bc7e MSRV job117258276483 in run38986232389 fails the cancellation
+positive control's original case deadline, not its30-second outer horizon.
+The first work result is Success/Progress; actual History h84 reports Cancelled
+at10,792,459us and stopped progress count204 at10,819,871us. DropState enters at
+10,842,582us and returns at12,745,396us, a1,902,814us interval. The checked state
+path is absent and CLEANED at12,745,451us, after the approximately11,826,489us
+case deadline (actual daemon spawn return3,826,489us plus8seconds). Later cleanup
+cannot turn the failed original result into success. The matched daemon attempt
+records execution=cancelled and completion=ok. Its CleanupWait/exit1 is fixture
+teardown, not evidence of an independently failed daemon. The lower-level OS
+cause of the long TempDir drop remains unknown.
+
+`tests/support/private_state.rs` stores a PathBuf and tempfile::TempDir. Owner
+release drops that state after its retained producer, paired, capture, metadata,
+client, runtime and directory guards. In particular `release_producers` explicitly
+drops startup_reader first; the successful cancellation path retains producer
+readers/writers until that release, so its conditional has_owners check admits the
+release. There is no source-established startup-reader leak in this observed path.
+
+In `tests/support/windows_cli_control.rs`, every History poll invokes the actual
+CLI and creates a fresh `cli-stdout-NNNN` guarded file. `new_capture` advances the
+monotonic capture_count and appends its original GuardedFile. The child receives
+a duplicated writer. After try_wait returns its actual exit, collect_capture opens
+an independent reader, compares full original/reader identity, and bounds the read
+at64KiB+1. Successful output closes the reader and drops the reaped active CLI,
+but leaves the original capture in Owner.captures. No later History observation
+reads those earlier files: the output bytes have already been returned and parsed.
+All originals are closed together in release, and all filesystem leaves remain
+for TempDir's recursive drop. The observed h84/epoch87 therefore supports a
+source-derived84 completed History carriers plus Add/Run/Cancel carriers; it is
+not an independently enumerated file inventory or a per-file deletion cost.
+
+Selected minimal fixture correction, subject to parent plan/issue review:
+retire ONLY the current successful Phase::History carrier after actual status0,
+confirmed root reap, completed bounded independent same-identity read, and closure
+of its reader/Child. Retain its normalized path before closing its original leaf
+guard, then use existing filesystem::remove_private_file with the original Control
+pre/post checks. That helper privately/no-follow reopens the leaf, closes its leaf
+handle while retaining its parent-chain guard, calls std::fs::remove_file, then
+drops the parent guard. This reuses the existing removal security semantics; it
+does not claim an atomic file-ID-conditioned unlink against a hostile same-user
+replacement. Do not use remove_private_file_strict: it dispatches to the shared
+filesystem worker with a separately derived30-second adapter allowance. No new
+worker, retry, allowance, private-state access exception or product API is needed.
+Removal must finish under the same caller clock; a failure/late return remains a
+failure and exact owned state remains available to original cleanup/quarantine.
+
+Keep capture_count monotonic and its original capture_path/MAX_CLI_CAPTURES bound,
+even when the retired last Vec slot is removed. Never reuse a previous pathname,
+truncate a previous file, or replace create-new with open-existing. Full identity
+must remain stable across creation/independent collection during each carrier's
+lifetime; deleted objects' historical file IDs are not promised never to be reused
+by the OS. Preserve the existing simultaneous Version first/second identity and
+held-writer/no-clobber checks literally. Phase::Capture, Add/Run/Cancel, paired and
+producer records, held duplicates, live/oversized/failed reads, and failed child
+statuses retain their existing ownership and cleanup paths. The selection removes
+only unnecessary completed History leaves from the final batch; it does not prove
+a faster total8-second case or explain the historical1.902-second native interval.
+
+Proposed implementation file: only the Windows CLI fixture support module above.
+Qualification should cover a real successful History process and independent read
+before retirement, exact retired-path absence with still-owned sibling/canary and
+private root intact, monotonic next path and refused pre-existing collision, and
+non-History/held-duplicate retention. Preserve all existing Version/Oversized/Live,
+paired and genuine cancellation controls. Measure actual retired count and final
+remaining History carrier count with bounded scalar evidence; execute the original
+native8-second cancellation/30-second capture and complete cleanup oracles on all
+three Windows hosts. Linux-only cost measurements or structural counts cannot
+qualify native latency. No source changes or runtime-success claim accompany this
+research; parent owns the subsequent reviewed plan and publication.
+
+Pre-commit ownership review also found the reusable `std::process::Command`'s
+configured stdout retains its parent duplicate after `spawn`; reaping the Child
+alone does not close that parent writer. Retiring inside the capture body while
+the borrowed Command still owns this no-delete-sharing duplicate could cause a
+Windows sharing refusal. The reviewed correction selects only successful,
+non-held History retirement in the Default-Command wrapper after the original
+body returns, resets that Command's stdout to null, then closes the original file
+while retaining its original parent guard through existing guarded removal.
+InitialRunOwner and all other phases remain unchanged. This closes a real owner;
+it does not waive an observed sharing failure or permit unlink of a live producer.
+
+## Cancellation premise and observation budget — 2026-10-17
+
+Source b317bc76ec6de316360a65845beeda91642ee4af, CI38990074641, finishes
+16/17 actual jobs successfully. All three Windows rows pass both new History
+retirement regressions and the original combined native capture contract. The
+MSRV row separately fails durable_cancel_terminates_a_running_process in History
+with Expired; this is not a successful cancellation followed by slow cleanup.
+Daemon spawn returns at365291us and the first qualifying progress observation
+is4333446us in the same Control clock. Thus readiness consumes over
+3.968s of its inherited daemon-spawn-return+8s deadline. The first daemon cancel
+signal is at daemon_t_us4387206; durable Cancelled and execution completion are
+unobserved before expiry. Its later owned DropState takes8973us, with root absence
+and cleanup confirmed afterward. Preserve this failed result.
+
+The noncooperative native target writes real increasing counters every25ms for
+up to30s. The Windows runner preserves default termination_grace=5s and only
+forces the owned tree after that grace. Less than4.032s remains even before the
+Cancel request once readiness is proved: this execution cannot fit the required
+5s grace. The final capture wrapper gap is about1–2ms; cumulative retirement
+overhead and the cause of the readiness delay are not isolated. Run's847010us
+producer timestamp belongs to a separate producer-local clock and cannot locate
+enqueue in the Control timeline. Moving Add alone before daemon spawn has no
+measured sufficient saving. Do not assert a cold Add or scheduling root cause.
+
+The Unix test also inherited an8s post-spawn observation clock. The product's
+termination contract specifies configured/default5s grace and confirmed tree
+termination, not an8s cold daemon startup plus registration, target readiness,
+cancellation and fixture deletion guarantee. Select explicit Windows phase
+qualification instead of an unchanged rerun or an unsupported performance claim.
+Setup remains under the original entry-born30s ceiling. Immediately before actual
+Cancel dispatch, after actual Running plus at least2 strictly increasing progress
+counters and daemon-live proof, monotonically shorten the fixture case ceiling to
+min(existing outer ceiling, now+8s). The8s includes request cost, durable commit,
+delivery, full production grace, stopped progress, reap and owned cleanup.
+
+The existing authenticated probe requires an already-published case. Publish the
+outer ceiling as the initial cancellation setup case; preserve probe clocks and
+its completion seal. A fixture-only shortening operation checks admission and
+current expiry before and after a CAS of the nonzero case slot; it may only keep
+or decrease that deadline and never reset it or reopen admission. Driver polling
+already recomputes the effective deadline. Regression controls must refuse an
+extension, an absent case, and any transition after expiry/refusal, and prove the
+shorter deadline governs subsequent work. Both standalone and combined cases use
+this same path. This is an explicit test-clock scope correction: the previous
+requirement that setup consume the same8s is superseded, not silently preserved.
+
+## SSE live fixture advances before observation — 2026-10-17
+
+Source d0c06293e194890b3f3f7a16a0527d9e99dea4e4, CI38993049610, passes
+all three native cancellation and capture steps. MSRV's complete job succeeds.
+ARM job117279470281 instead fails the final HTTP contract suite:30PASS/1FAIL,
+sse_stream_live_run_events at contract.rs1927. Actual names are
+run,run,attempt,run,attempt,output,output,run,attempt,termination; the fixture
+requires both output events before the running run/attempt pair. Preserve this
+failure, independently of the corrected cancellation/cleanup observations.
+
+The test opens the actual cookie-authenticated SSE connection, then drives Store
+admission, partial-frame writes, mark-running and completion using300/600ms sleeps.
+It consumes the response only after these transitions. Production runs_stream
+polls current durable state/attempts/files every200ms, emitting changed run and
+attempt state before output frames found in that same poll. It does not replay
+unobserved intermediate snapshots. A600ms delay cannot guarantee an actual poll
+observed the two partial frames before mark-running under hosted scheduling/I/O.
+The observed sequence is consistent with first seeing frames in a running-state
+poll; lower-level scheduling/I/O causation is not identified by this trace.
+
+Select a test-only causal observation handshake on the same response: acknowledge
+queued before admission, starting run+attempt before publishing frames, both real
+output frames before mark-running, and running run+attempt before completion.
+Then drain the actual stream through terminal event and EOF. An incremental
+collector can own reqwest::Response, retain the partial text buffer and all parsed
+events, and use Response::chunk with existing parse_sse_block. It needs no spawned
+task, channel, dependency, fake event or product hook. Coalesced surplus events
+and fragmented blocks must remain available across stages. Original final exact
+state, output, ordering, one-terminal and reason assertions remain literal.
+
+The original read_sse helper uses timeout(limit,chunks.next()) for each chunk;
+its10s argument is not a global deadline. Retain10s per awaited chunk for the new
+live reader and leave existing read_sse callers unchanged. Do not claim a new
+global10s bound or expand the limit. Missing stage/early EOF/read error refuses;
+normal final collection requires actual EOF. Production200ms polling, privacy,
+durable behavior and the35-minute native CI job remain unchanged. This fixes a
+fixture premise, not a claim that the product durably queues all SSE transitions.
+
+## Remaining portable maintenance completion assumptions — 2026-10-17
+
+Source678b7cf92f8fe937d874c9441c354af5062ffc18, CI38995426850 LinuxMSRV
+job117286813154 fails foreground_after_prune_intent_preserves_file_and_next_pass_resumes
+at maintenance.rs1109: the resumed successful report has outputs_pruned0, expected1.
+CLI units99PASS/1FAIL; missing later qualification artifacts are consequences of
+that failed workspace step. The trace does not record the exact deferral boundary
+or the file/pending observations after the failing assertion. Preserve this
+failure; do not infer a completed prune or a measured scheduler/filesystem cause.
+
+The source100-action/250ms soft-pass contract permits successful zero/partial
+reports at readiness and phase boundaries, including before a resumed pending
+prune. Findings6635 already documents the same mismatch in two other positive
+maintenance fixtures. Their existing maintain_until helper retains the real
+MaintenanceCursor, checks each pass's100-action cap and a fixed5s progress deadline
+before/after actual work, accumulates reports and unwraps real errors immediately.
+Reuse this contract for the remaining named top-level positive recovery/pruning
+fixtures, with their exact final report counts/files/rows preserved.
+
+Select repairs_and_finalizes_a_referenced_partial; both branches of
+reconciles_an_already_renamed_final_and_a_missing_artifact; finalized_fixture setup;
+foreground_after_prune_intent_preserves_file_and_next_pass_resumes;
+expired_pass_preserves_pending_work_and_a_later_pass_completes_it's later completion;
+resumes_pending_output_prune_before_deleting_run_metadata setup and completion;
+completes_pending_prune_when_the_output_directory_is_already_missing setup and
+completion. Recovery readiness can use outputs_recovered>=1 because that counter
+increments only after reconcile_output_finalized successfully returns. Retain
+exact1 and the existing real retention-candidate query afterward. This avoids a
+new potentially blocking Store query inside the helper's completion predicate.
+
+For the foreground case, also establish the real initial premise by bounded
+passes until the existing hook actually retains the shared intent handle; then
+preserve aggregate pruned0, file-present and pending1. Any pass that stops before
+the hook is setup, not proof that the writer caused yielding. Releasing that exact
+handle precedes the separate bounded resumption, whose exact1/file-absent/pending0
+assertions remain. The initial phase's meaning changes from an assumed single
+invocation to acknowledged real hook entry; no oracle is dropped.
+
+Keep the explicit expired initial pass/actions0/elapsed bound, action100 boundary,
+Windows held-reader/time/refusal/unsafe cases and frozen output-repair qualification
+rows unchanged. These exercise separate timing/safety contracts, including exact
+per-pass action reports. No production source,250ms/100-action policy, Store5s
+admission, helper progress allowance or CI timeout changes are selected.
+
+## Orphan fixture mixes ancient lifecycle and real filesystem clocks — 2026-10-17
+
+Source f475e4c7b24fdc426a0813a9b7fdab5d8cbe0f68, CI38996053842 finishes
+16 actual jobs successfully and one MSRV failure. Windows job117288877733
+maintenance control orphan_cleanup_removes_unreferenced_canonical_file_inside_existing_run
+passes exact recovered1/orphan1 counts but fails referenced final1.log survival
+at maintenance.rs1434. Its later HTTP suite passes31/31, including the SSE fixture.
+The other two native jobs pass completely. This failure is not an SSE failure.
+
+Separate source research confirms admit_one uses synthetic timestamps1/2/3 and
+restart_lifetime(...,9) finishes the run at9 microseconds since epoch. Maintenance
+instead receives orphan_pass_time(), real wall clock plus two hours, to qualify
+filesystem orphan age. Migration0003 defaults run age retention to7776000000000us
+(90 days). The run is legitimately old enough for retention. Recovery finalizes
+its output at the current maintenance time, so output-age retention is not the
+cause of that selection. maintain_inner recovers referenced output before
+select_run_retention; a later bounded pass can prune the now-pending run's output
+before orphan scanning finishes. Logs do not enumerate those individual pass
+boundaries; this is a source-backed permitted mechanism, not measured native
+scheduler timing or proof of a product orphan-safety violation.
+
+The retained_orphan_cursor fixture already disables run_retention_age_us for the
+same isolation purpose. Select the same public setting only in this existing-run
+orphan fixture, before any maintenance, using one captured orphan_pass_time value
+for setting and passes. Keep the original exact recovery/orphan counts and both
+file assertions literal. One run cannot meet the default count-retention cutoff.
+Other orphan fixtures either already isolate retention or have no matching run
+rows; no broader fixture or default policy change is indicated. Preserve all
+250ms/100-action/5s limits and real-error refusal. Parent documentation/issue
+readback and review precede separate development and fresh final-source CI.
+
+## Windows post-reader-release completion assumes one pass — 2026-10-17
+
+Source50e1e789b3ba5b6c730a3eb083cefc1602273d37, CI38998271829 completes
+16 actual jobs successfully and one MSRV failure. Job117295539216 fails only
+reader_sharing_timeout_keeps_recovery_pending_until_a_later_pass at
+maintenance.rs1610: the successful post-release report has recovered0, expected1.
+The suite is17PASS/1FAIL; later HTTP31/31 passes. Both other native jobs pass in
+full. The corrected orphan fixture passes; do not conflate the two failures.
+
+The original held-reader phase has already proved a real Windows sharing refusal,
+maintenance Err after4500ms and before8s, retained partial/no final and one pending
+artifact. It then drops that exact reader and invokes one ordinary bounded pass.
+The documented250ms/100-action contract permits successful partial/zero progress
+there. This trace does not isolate its native deferral boundary or OS cause.
+
+Select only the later post-release completion call for the unchanged maintain_until
+helper, retaining real passes/cursor, fixed5s progress checks, per-pass100 actions
+and immediate real-error failure. Preserve the entire initial sharing/timeout/
+pending block and every final exact count/frame assertion literally. This
+explicitly amends the prior plan's exclusion of Windows controls only for this
+observed positive completion; no initial refusal, timeout, product or frozen
+qualification row changes are selected. Parent plan/issue readback and separate
+development precede new complete final-source qualification.
+
+## Two additional Windows positive premises share the bounded-pass contract
+
+The separate50e Windows-source audit finds two other positive single-pass
+assumptions, without claiming they failed in CI38998271829. In
+recovery_waits_for_an_owned_reader_and_preserves_frames the worker sends one
+maintain result; a successful0 could arrive before the150ms no-completion check
+or fail the later exact1. In unsafe_objects_preserve_recovery_prunes_and_unrelated_targets,
+run25 setup invokes one maintain before reading the final path and selecting its
+output row. A successful0 need not have finalized that fixture. Select only these
+positive premises for the unchanged maintain_until recovered>=1 helper.
+
+The worker sends the completed report directly; removing only the redundant
+Result-envelope unwrap does not swallow a real maintenance error, which the
+helper immediately panics on and therefore fails the receiver/join. Keep original
+150ms no-completion and5s receiver limits and all final exact report/file/frame
+assertions. Its fixed5s progress clock includes work while the reader is held.
+For run25 setup retain an explicit recovered1 acknowledgment before file/row reads
+and actual ACL mutation. Parent plan/issue review precedes these additional edits.
+
+Do not change initial held-reader timeout, unsafe recovery/prune refusals, unsafe
+orphan canaries or frozen exact-report qualification rows. Missing-root refusal
+is checked before the pass budget; other negative controls must still observe an
+actual Err and may not promote successful0 to expected failure. Their prior
+passed observations are not claims of unconditional pass admission or scanentry.
+
+## Required Windows enforcement without administration writes — 2026-10-17
+
+Source517b0ccf6ffc71f4a3155f2d339ba26be8b93d96 completes CI39000739527
+attempt1 with17 actual successes, the original2 exploratory skips, all native3
+controls and Audit39000735224 successful. The reviewed ruleset update adding
+native3 to existing11 required contexts then fails HTTP403, Resource not
+accessible by integration. Fresh readback confirms the original11/strict rules
+remain unchanged. Repository-level admin visibility does not grant this
+connection administration-write permission. No alternate identity or settings
+permission bypass is selected.
+
+Separate source research confirms windows-foundation is an independent fixed
+three-row matrix with fail-fast:false and no continue-on-error. The existing
+required windows-lint-foundation has no dependencies or reverse edge. Adding
+only its dependency on foundation is acyclic. Its job must use always() combined
+with its original ordinary-event predicate: otherwise an unsuccessful dependency
+may skip the required job, which GitHub documents may not block merging. A first
+conditional step must throw whenever the aggregate needs result is not success;
+success then proceeds through the original six lint commands. Failed, cancelled,
+skipped, empty or unknown native result must fail the required ordinary check.
+The exploratory full_windows dispatch retains its original intentional exclusion.
+
+Primary semantics: https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks
+and https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#needs-context .
+This authorized workflow dependency strengthens ordinary PR enforcement without
+editing repository-administration settings. It substitutes functional mandatory
+native3 acceptance through an existing required context for the unavailable
+three separately registered contexts. Do not claim14 registered checks: settings
+stay11/strict. Parent plan/issue readback precedes separate CI-only development;
+new final-source complete CI must qualify the dependency and original commands.
+
+## Native lifecycle target exits101 without retained cause — 2026-10-17
+
+Source13705bdfdc5896b2495b36fd4491aa776a12b812 CI39003147356 x64stable
+job117310099259 fails actual_dashboard_exit_closes_active_sse_while_a_native_job_continues
+at windows_lifecycle.rs272. Expected running, observed failed; actual reason is
+process exited with status exit code101, attempt1/failed/outcome failed/exit101,
+output finalized/retained559/physical717/discarded0/truncatedfalse. Suite15PASS/
+1FAIL finishes12.69s; later HTTP31/31 passes. MSRV and ARM native jobs succeed.
+Do not infer production cancellation, heartbeat persist, raw5 or a particular
+holder from these facts. The target's60s gate expiry does not fit the observed
+suite duration. Creation/write/flush/persist expects remain possible panic sites.
+
+Separate research inspected the full job log and every34 members of the available
+x64stable prune artifact. No child payload or structured heartbeat cause is
+retained there. Native evidence staging/upload was skipped after lifecycle
+failure; the actual717-byte framed output belonged to a temporary fixture with
+no failure-preservation hook. Existing failed_continuation_facts emits durable
+metadata only. A persist failure already writes a closed native-heartbeat-failure
+record to STDERR, which the engine captures into run frames. Other heartbeat
+snapshot I/O stages have no corresponding closed record. Findings5337 already
+warns that ordinary Rust file opens permit delete sharing; an ordinary observer
+does not itself establish a rename conflict.
+
+Select failure-only extraction from the actual terminal101 attempt's canonical
+finalized framed output, using guarded private opens, explicit file/frame/payload
+caps and existing frame validation. Reassemble STDERR across frames and recognize
+only one exact closed stage/counter/allowlisted-kind/raw-i32 record; malformed,
+missing, duplicate, oversized, refused or nonterminal data stays unobserved.
+Never print raw payload. Add closed create/write/flush error emission through
+inspect_err before the unchanged expects; leave the existing persist operation,
+its log, panic behavior and held-destination/same-candidate control literal.
+No retry or publisher behavior fix is justified yet.
+
+Use a separate, finite native diagnostic branch to compile the real CLI/lifecycle
+binary, record source/tree/artifact provenance and execute the complete lifecycle
+suite up to50 times, stopping at its first nonzero result. Preserve original
+selectors, all per-case clocks/cleanup and a35-minute job limit. This is cause
+capture, not repetition until success and not a replacement for final17-job CI.
+If no failure is observed, report non-reproduction without claiming a cause/fix.
+
+The new required Windows lint guard117315518703 actually FAILS its first guard
+after the native failure; checkout and all six lint commands are skipped. This
+is hosted negative enforcement evidence, beyond the prior static truth table.
+The macOS job's separate ENOTFOUND failure remains preserved. Its attempted
+job-only rerun was refused because the workflow was running; actual retries0.
+Suspend that old-head rerun while this native failure requires investigation.
+
+## Align diagnostic lint with the existing required compiler — 2026-10-17
+
+Diagnostic243746c/run39006260491/job117319260895 attempt1 stops before
+any lifecycle build or test. Rust stable resolved to1.99.1; strict Clippy rejects
+the pre-existing AtomicU64::fetch_update in filesystem_worker.rs396 as newly
+deprecated (renamed try_update). This is not the target exit101 and not evidence
+against the new observer. Actual lifecycle repetitions0. Receipt artifact
+12091471077 retained the refusal. The ordinary required lint deliberately uses
+Rust1.98.0; native stable tests permit compiler warnings. Do not modify product
+source or suppress warnings to repair an accidental diagnostic-only lint scope.
+Use the existing pinned1.98.0 strict native lifecycle Clippy, record that distinct
+compiler, then build/run the actual native stable CLI and lifecycle executable.
+Keep the existing50-observation limit/first-failure stop/35-minute job unchanged.
+The new diagnostic branch starts from reviewed observation source plus this
+documentation; only its CI differs. Preserve the first refused run honestly.
+
+## Route the observed terminal failure into the existing observer — 2026-10-17
+
+Separate research confirms diagnostic a0f3489/run39006951600/job117321251025:
+strict native1.98.0 Clippy succeeds, stable real test/production builds succeed,
+iterations1–16 each19PASS, iteration17 stops18PASS/1FAIL. The failure is the
+original idle-HTTP dashboard test, at wait_marker_run338: target failed/exit101.
+The shared completion helper does not call the new observer, so exact stage/kind
+remains unknown. A persist/raw5 line also appears in successful iterations from
+the intentional held-reader control; it cannot identify the failed child.
+No iteration18 ran. Receipt artifact12091187964 retains actual probe outputs.
+
+The minimal complete shared-target coverage is four existing failed assertions:
+wait_running forbidden-state, wait_marker_run forbidden-state, continuation
+baseline deadline, continuation advance deadline. Append the existing bounded
+formatter only in their lazy failure arguments. Wait-state paths use that
+iteration's run.reason; progress paths pass None because their initial running
+snapshot is stale. The formatter independently reads actual attempts and still
+refuses nonterminal/non101/nonfinalized output. No successful-loop I/O or new
+polling is needed; predicates/clocks/returns/sleeps and original16 bodies stay
+exact. No behavior change or heartbeat retry is selected.
+
+## Actual gated heartbeat publication refusal — 2026-10-17
+
+Separate research independently confirms diagnostic f1aadf8/run39008090099/
+job117324576383: strict native1.98 Clippy and stable real builds pass, four
+complete19-test suites pass, iteration5 stops18PASS/1FAIL. The original idle-HTTP
+test fails its continuation-advance deadline319. Its own actual attempt is
+failed/finished/exit101 with finalized output565/723, discarded0/truncatedfalse;
+the strict observer reports phase=persist counter855 PermissionDenied/raw5.
+This is the failed child's record, distinct from the deliberate counter8 refusal
+control. The native persist subcall and conflicting holder are still unknown.
+Locked tempfile persist first changes attributes then performs MoveFileEx;
+ordinary Rust read handles permit READ|WRITE|DELETE sharing. Do not claim that
+a particular reader, antivirus or system service caused this refusal.
+
+Select a gated-fixture-only bounded same-candidate retry for this observed raw5.
+Keep the original first snapshot/persist operation; its native call is not
+preemptible. Bound ADDITIONAL retry admission by min(original absolute60s gate
+deadline, publication entry+100ms), including callback/sleep time, without reset.
+Retry only the same PersistError.file and only raw5; unsupported errors return
+immediately. Preserve original one-shot publisher/persist/log and existing held
+control. The new publisher emits one closed terminal record, because logging
+each retry would produce duplicate records rejected by the strict observer.
+
+Separate research recommends real held-share1 release and permanent-refusal
+controls, pre-expired retry admission, genuine missing-parent non5 refusal and
+a factual default-sharing comparison. Use an already observed native refusal
+as the retry helper input: expired admission returns that actual error/candidate,
+not a fabricated raw5 or synthetic OS failure. Synchronous first-refusal release
+avoids scheduler-dependent sleeps; its existing30s control horizon is distinct
+from the exact100ms permanent-refusal control. Default sharing may permit
+replacement or return actual raw5; either branch must prove atomic complete
+counters and same-candidate recovery, and cannot identify the historical holder.
+
+### Deliver qualification through the active repository connection
+
+The shell GitHub credential now returns401 while the active GitHub connector
+continues authenticated repository reads/writes; managed environment status
+reports no configured outbound identity. Do not expose or replace credentials.
+Use the active connector's Git objects/ref APIs for publication. Since that
+connection exposes no workflow-dispatch mutation, allow the isolated diagnostic
+workflow to run on push ONLY to its single named diagnostic qualification branch,
+retaining dispatch support and excluding main/pull_request events. This is an
+execution transport adjustment, not permission bypass or a test-policy change.
+
+### Native lint identifies privacy-preserving equality spelling
+
+Qualification39013228865/job117339969918 stops before tests at native1.98
+Clippy: nine new path-equality assert!(left==right) sites trigger manual_assert_eq.
+Use a named boolean for each same-candidate comparison and assert that boolean
+with fixed text. Do not adopt assert_eq! on paths, which would print owned paths
+on failure. This changes no condition, clock, retry operation or native oracle.
+Actual24-test iterations0; preserve this failed receipt.
+
+## Observe the distinct native startup deadline — 2026-10-17
+
+Separate research confirms39013682255/job117341282554 native strict1.98 and
+stable builds pass; iteration1 stops23PASS/1FAIL39.04s. All five retry controls
+and both original dashboard cases pass. The real default-sharing control
+reports raw5_then_published; this proves that observed control outcome, not the
+historical counter855 holder. Failure is the original crash-tree fixture's
+wait_running30s deadline253. Its accepted queued/starting/running state and
+failed heartbeat read are absent from the message, so the cause remains unknown.
+
+Reuse current run.state, existing bounded attempt/output facts and one closed
+heartbeat read ONLY in that failed deadline's formatting. Add an explicit gated
+startup ProgressSite rather than mislabeling an existing site. Preserve all
+predicates/clocks/sleeps/returns/call arguments/test bodies. Do not reopen a PID
+or call role-lock metadata a process-exit observation: the real Child is owned
+by the caller, not this helper. No retry, startup budget or product fix selected.
+
+## Isolate new framed-observation controls from lifecycle admission
+
+Separate research confirms39014926684/job117344965992: native strict/build
+pass; iterations1–3 each24PASS; iteration4 stops20PASS/4FAIL in Fixture::new
+Store::open, before those lifecycle scenarios run. One writer admission waits
+5.061s of5.078s; three database-preparation failures consume5.084s with admission
+wait0.369/2.046/4.544s. TimedOut/rawNone does not identify an OS/SQL holder.
+The earlier crash-tree30s startup failure did not recur in this run.
+
+Core has one process-global filesystem DISPATCHER, bounded channel16 and a
+worker that awaits each exchange before taking the next request. Real FrameWriter
+creation and fresh Store private writer-lock/DB/sidecar creation share it. The
+three new observer tests create36 independent FramedFixtures (13+14+9), each
+with real guarded creation/sync. Their overlap adds new process-local admission
+pressure to the original lifecycle fixtures. Retry controls use std/tempfile
+and add no Core worker requests. Fresh Store roots have distinct writer locks;
+DatabaseAdmission deadline checks can report expiry after prior preparation,
+not proof of a contended DB lock. This establishes a shared-pressure mechanism,
+not the historical request/lock holder or a product-policy defect.
+
+Move only the three new framed-observer controls into a separate integration
+process. Share the identical observer implementation with both binaries. Run
+all21 lifecycle/retry cases at original default parallelism, then all3 observer
+controls at their default parallelism. Preserve exact24-case coverage and every
+5s/30s/other clock; no case skips, retries, serialization within a family, budget
+extension or relaxed assertion. Both binaries must execute in every native CI
+row and every finite diagnostic observation; bind/hash all real artifacts.
+
+Counter-check: the four failed cases are the first four alphabetically. The
+runner's actual libtest worker count/start timestamps are unavailable; with
+four workers they may expire before an observer case starts. Therefore actual
+observer overlap is unproven. Select the split as a controlled independence
+change, not a proven cure for cold Store admission or the earlier startup
+timeout. Fresh native outcomes must decide any further preparation change.
+
+## Coordinate positive fixture preparation without changing Store policy
+
+Separate research confirms all10 original Fixture::new callers use initialized
+state for positive lifecycle/ownership/recovery controls, not a four-way cold
+Store-creation performance oracle. The three explicit absent-state controls
+(invalid supervised arguments, first-run daemon, first-run dashboard) call
+Fixture::absent and remain unchanged. DirectoryGuard::private already invokes
+SID/worker-backed private creation before Store.open's5s Operation, so a
+one-time worker warmup would be redundant. Later lock/DB/sidecar preparation
+from concurrent fixtures still shares the process worker. A particular timed
+out request/holder and the historical startup cause remain unknown.
+
+Select a bounded test-only preparation coordinator in addition to the independent
+observer process split. A process-local Mutex<()> schedules only Fixture::new
+construction under a new entry-born30s preparation horizon. Waiting/try_lock/
+clipped<=1ms sleeps and original preparation phases consume that same horizon.
+Keep exactly ONE original Store.open with its real5s Operation and immediate
+Err failure; no warmup, replay or product policy change. RAII releases before
+any daemon/lifecycle body. Poison explicitly refuses; a real preparation panic
+may cascade later refusals and cannot become a pass. Check the horizon around
+phases and after local guard destruction before return; native calls/drop are
+non-preemptible, so do not claim hard30s wall completion. This is an explicit
+setup scheduling tradeoff and a controlled preparation change, not proof of the
+historical request holder or a claim that original cold concurrency passed.

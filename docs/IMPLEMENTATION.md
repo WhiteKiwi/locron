@@ -6421,3 +6421,313 @@ for this in-flight control. Expired pre-dispatch and late-ready response control
 remain. Production Worker::request/Budget/Admission behavior, all other CI commands,
 service's64 cases/two workers and the35-minute native limit are unchanged. Parent
 planning/issue readback precedes separate development and same-source full CI.
+
+## Dispose completed History capture carriers — 2026-10-17
+
+Follow `planning/WINDOWS_HISTORY_CAPTURE_RETIREMENT_2026-10-17.md` to finish the
+remaining #172 cancellation cleanup failure. The Windows-only test owner retires
+only a successful History stdout carrier after actual child exit, the existing
+bounded independent same-file-identity read, and reader/child closure. A reusable
+Command retains its parent stdout duplicate after spawn: close that configured
+stdout by resetting only a successful non-held History Command to null in the
+Default-Command wrapper before retirement. Keep InitialRunOwner and the capture
+body unchanged. Split the original carrier into file/parent guard, close its file
+and retain the original parent through guarded removal. The existing removal
+keeps private parent/no-follow checks; its pre/post checks use
+the original Control clock. Returned bytes remain owned by the caller. Capture
+names and the lifetime count remain monotonic, while completed History guards
+and leaves stop accumulating until final recursive cleanup. Special capture,
+paired, producer, live, nonzero and failed-read ownership remain unchanged.
+
+This is a fixture resource-lifetime change. Keep original 25ms observations,
+8s cancellation including cleanup, 30s capture, production 5s termination grace,
+all original assertions, and the three native Windows rows. Add focused real-CLI
+regressions to the existing native capture step; run them independently of the
+unchanged original capture control. A lower final file count is not proof of a
+faster total case or the historical OS cause. Measure the already-recorded native
+cleanup interval and require every actual CI job to pass on the final source.
+Parent plan/issue review precedes separate source implementation and publication.
+
+## Bound cancellation after its real running premise — 2026-10-17
+
+Apply the phase amendment in
+`planning/WINDOWS_HISTORY_CAPTURE_RETIREMENT_2026-10-17.md`. b317's retirement
+controls pass on all three Windows rows, but a separate actual cancel case spends
+over3.968s reaching real running progress and cannot then fit the unchanged5s
+production grace into its remaining post-spawn8s. This is not a cleanup failure.
+For cancellation only, publish the existing entry-born30s outer ceiling as the
+initial setup case at actual daemon spawn. Preserve the real authenticated probe,
+registration, manual Run, actual History and strictly increasing progress premise.
+Immediately before actual Cancel CLI dispatch, after the daemon-live readiness
+proof, shorten the nonzero case deadline to min(current ceiling, now+8s). All
+subsequent cancellation, stopped-progress, reap and cleanup use that tighter clock.
+
+The fixture-only shortening primitive prechecks existing admission/expiry, rejects
+an absent case or attempted extension, changes the encoded case slot by CAS, and
+postchecks admission/expiry. Never reset the slot, extend a deadline, clear a
+failure or reopen admission. The original driver observes the tightened limit on
+each polling iteration. Keep the same path for standalone and combined controls;
+all non-cancellation case clocks and product code remain unchanged. Test monotonic
+shortening and refusal after expiry/closed admission in the native cancellation step.
+Keep25ms progress observations,5s product grace,30s whole-fixture and35min job
+limits. This explicitly supersedes the former Windows post-spawn8s total premise;
+it is a reviewed change to test scope, not a performance fix or an unchanged clock.
+Require fresh final-source complete CI, all three native rows, Audit and unchanged
+paired-manifest coherence before publication and restoring native required checks.
+
+## Acknowledge actual SSE stages before fixture mutations — 2026-10-17
+
+Follow `planning/WINDOWS_SSE_OBSERVATION_HANDSHAKE_2026-10-17.md` after the
+final-source ARM HTTP event-order failure. Change only the live SSE integration
+fixture: replace elapsed300/600ms assumptions with incremental reads of the same
+real authenticated response. Preserve the reader's response, partial text buffer
+and complete event history across queued, starting-pair, two-output and
+running-pair acknowledgments. Validate actual stage names/state/attempt/sequence
+before the corresponding next Store mutation; then complete and drain to actual
+terminal EOF. Keep all original final assertions byte-for-byte, including exact
+run/attempt states, both output payloads/sequences and one final termination.
+
+Use Response::chunk and existing SSE block parsing with the original10s per-read
+timeout. Leave other read_sse callers and all product sources/200ms polling
+unchanged. Do not add a reader task, fabricated observation, retry, timeout
+increase or native job allowance. Verify the real live/reconnect/disconnect/output
+stream tests and complete HTTP suite locally, strict lint/formatting, then a new
+complete17-job final-source CI/Audit run with all three original native rows.
+Parent plan/issue readback and review precede separate development and final
+protection restoration, merge/tree verification and issue closure.
+
+## Resume portable maintenance fixture work under its existing budget — 2026-10-17
+
+Follow `planning/BOUNDED_MAINTENANCE_FIXTURE_RESUMPTION_2026-10-17.md` after the
+LinuxMSRV successful-zero resumed-prune report. Only the top-level maintenance
+test module changes. Reuse the unchanged maintain_until helper for the finite
+named positive recovery/prune cases and shared finalized setup. Continue to run
+actual production250ms/100-action passes with one retained cursor under the
+existing5s progress deadline; real errors still fail immediately. Accumulate
+report fields and retain every exact final count, file/frame and durable-row
+assertion. A recovered report is published only after durable reconciliation;
+keep the real retention-candidate query after acknowledged setup.
+
+For foreground intent, wait under that same existing helper until the actual
+BEFORE_PRUNE_IO hook holds its shared lock, then keep the original zero-pruned,
+file-present/pending1 checks. Drop that exact handle and await accumulated prune1,
+retaining original absent-file/empty-pending checks. This explicitly replaces the
+first-call timing premise with actual hook acknowledgment. The expired initial
+pass and action-limit/refusal/held-reader/frozen qualification controls remain
+literal. No helper, product budget or error policy changes. Verify maintenance
+and the complete CLI unit suite on stable/MSRV, strict lint/format, independent
+diff review and fresh full final-source CI/Audit before publication.
+
+## Keep the referenced-run orphan fixture within retention — 2026-10-17
+
+Apply the amendment in
+planning/BOUNDED_MAINTENANCE_FIXTURE_RESUMPTION_2026-10-17.md after f475's
+MSRV file-survival failure. Only the existing-run orphan test changes: capture
+one orphan_pass_time value, set run_retention_age_us to none through Store before
+the first maintenance call, and use that value for the unchanged maintain_until
+helper. This matches existing orphan-cursor isolation while preserving real file
+mtime eligibility. Synthetic finished_at9 must not request legitimate90-day run
+retention during this orphan-safety control. Preserve every original exact count
+and file assertion. No production default, helper, budget or other fixture changes.
+
+Review the small inverse, run maintenance/full CLI units on stable and MSRV with
+fresh clean-head artifact bindings, and require fmt/strict lint, all17 actual CI
+jobs/Audit/native3 before protection restoration and publication. Preserve the
+failed f475 job and distinguish its passing HTTP suite from maintenance failure.
+
+## Resume Windows recovery after the verified reader timeout — 2026-10-17
+
+Apply the post-reader-release amendment in
+planning/BOUNDED_MAINTENANCE_FIXTURE_RESUMPTION_2026-10-17.md. Only replace the
+successful later maintain(...,11) call in the named Windows reader-timeout test
+with the unchanged maintain_until helper and outputs_recovered>=1 predicate.
+Keep its exact recovered1 and partial/final/frame assertions. Preserve the entire
+preceding real sharing error,4500ms-to8s timeout, pending1 and same-reader release
+block byte-for-byte. No production/helper/budget or other fixture changes.
+
+Review the exact inverse and Windows scope, verify local stable/MSRV maintenance
+and full CLI with fresh clean-head bindings plus fmt/strict lint, then require new
+all17 actual CI jobs/Audit/native3. The new Windows path must execute in native CI;
+Linux-only tests cannot qualify it. Preserve50e's failure and its passing orphan,
+cancellation/capture and HTTP controls. Protection restoration and merge/tree/
+issue completion still require the final verified source.
+
+### Complete the finite Windows positive-premise correction
+
+Apply the two-positive-premise expansion in the bounded maintenance plan. The
+owned-reader worker uses existing maintain_until until recovered>=1, sends its
+report directly and retains the original150ms/5s receiver and join checks; remove
+only the now-unneeded Result-envelope unwrap. Err still immediately fails inside
+the helper. The unsafe-object fixture's run25 setup uses the same helper and exact
+recovered1 before reading the actual final file/candidate and changing its ACL.
+Together with the named post-timeout completion, these are the only three Windows
+positive call sites selected. No negative/timeout/frozen assertion or helper changes.
+Require exact inverse review of the finite replacements and complete native CI.
+
+## Gate the existing required Windows result on native qualification — 2026-10-17
+
+Follow planning/WINDOWS_REQUIRED_DEPENDENCY_GATE_2026-10-17.md after the
+administration-write403. Change only windows-lint-foundation scheduling and its
+first guard: needs windows-foundation; always() AND the original ordinary-event
+predicate; throw unless the aggregate dependency result is success. Then run the
+original checkout/toolchain/cache and all six exact lint commands. The fixed
+native matrix, fail-fast policy, test commands, both35-minute job execution
+allowances, permissions and exploratory scope remain literal. Dependency waiting
+delays lint feedback until native completion; this is the tradeoff for enforcing
+all native results with an existing required context and no administration write.
+
+Review the whole-workflow inverse and DAG/result truth table, parse the YAML,
+preserve all product/source files, then require fresh final-source17-job CI/native3,
+Audit and actual required-lint execution only after all native jobs succeed.
+Refresh clean-head local artifact bindings. Existing11/strict rules must read
+back unchanged; the combined required result replaces the earlier plan's
+unavailable14-context registration criterion. Merge only that qualified head,
+verify exact main tree and close #172/#180/#181 after their remaining criteria.
+
+## Capture the terminal native target's closed failure classification — 2026-10-17
+
+Follow planning/WINDOWS_LIFECYCLE_TERMINAL_CAUSE_2026-10-17.md. Lease only the
+Windows lifecycle test file for failure-only observation and error emission.
+Pass owned fixture paths into the existing failure formatter. Read only a
+terminal exit101 attempt with finalized output; enforce small explicit physical,
+frame and retained-payload limits, guarded canonical-file access and existing
+frame validation. Assemble only STDERR, require complete framing and exactly one
+strict closed record, then render typed enums/numeric scalars or unobserved.
+Never forward raw captured bytes, path/error display strings or panic output.
+Best-effort diagnostic refusal must preserve the original failed assertion.
+
+Observe create/write/flush I/O errors using inspect_err before their unchanged
+expect handling; preserve the existing persist log/operation/control literally.
+Real FrameWriter controls cover fragmented records, wrong channel, malformed or
+duplicate records, damaged/truncated/oversized files and missing/refused reads.
+All original lifecycle bodies, clocks, ownership and cleanup remain exact except
+the formatter's added path argument. No publisher retry or product change.
+
+After independent review, use a separate worktree/diagnostic branch with an
+isolated version of the existing dispatchable CI workflow: real same-source CLI
+and lifecycle build, provenance, complete suite up to50 times, stop on first
+failure,35-minute job limit. Do not push that reduced workflow to the PR branch.
+Select a behavioral fix only after actual evidence and a new reviewed plan; do
+not promote non-reproduction to a cause/fix or transfer diagnostic qualification
+to the eventual final head. Complete final-source17CI/native3/Audit/local bound
+suites and unchanged11/strict plus dependency-gate verification before merge.
+
+### Repair the diagnostic compiler selection before native execution
+
+The first isolated harness accidentally ran strict lint on stable1.99.1 rather
+than the repository's required1.98.0 lint compiler and stopped on an unchanged
+product deprecation before executing tests. Keep observation/product source
+unchanged. Install and identify both native compilers; use explicit cargo+1.98.0
+for strict lifecycle Clippy and stable for actual CLI/lifecycle CargoJSON builds
+and all19-test observations. Record each compiler distinctly. Create a fresh
+isolated diagnostic branch from this reviewed documentation/observation head;
+retain its one-workflow-only scope, real artifact hashes and original limits.
+Failed run39006260491 remains failed with actual lifecycle repetitions0.
+
+### Observe all existing shared target failure sites
+
+Extend only four failure-format argument lists in the shared Windows lifecycle
+fixture: the existing forbidden-state assertions before running and while
+waiting for completion, plus the existing continuation baseline/advance deadline
+assertions. Reuse the reviewed closed formatter; current wait-state reason is
+passed directly, progress failure passes None to avoid stale reason evidence.
+Rust assertion arguments execute only on failure, so passing loops perform no
+extra Store/file reads. Do not change any predicate, clock, sleep, return, test
+body, publisher operation or observation parser. Inverse-review these four
+format-only changes and preserve all existing controls. After native diagnostic
+qualification resume the original final17-CI publication gate.
+
+## Bound gated fixture heartbeat retries after an actual raw5 — 2026-10-17
+
+Follow planning/WINDOWS_GATED_HEARTBEAT_RETRY_2026-10-17.md. Add a new gated
+publisher and a retry helper consuming a genuine PersistError. The existing
+snapshot is created once. Perform the original one-shot NamedTempFile.persist;
+on refusal only, retry the same owned file for raw5 until the immutable horizon
+min(existing gate deadline, publisher entry+100ms). Check admission before and
+after the refusal callback, after a sleep of at most min(1ms, remaining), and
+before each additional native attempt. No recreated candidate, incremented
+counter, deadline reset or accepted unsupported error. Return the last actual
+refusal on expiry. Native calls are non-preemptible;100ms bounds retry admission,
+not wall completion or the already-existing first operation.
+
+A no-op refusal callback serves the gated publisher; real native controls use
+it to verify old7/candidate identity and release the exact held handle before
+retry. Callback work consumes the same horizon. Retry calls use the unchanged
+low-level tempfile persist operation without per-attempt logs. Only a terminal
+error produces one closed existing-format record and the original panic shape.
+Keep the old one-shot publisher and persist/log/control literal. Change only
+the gated target's existing publish call to pass its unchanged60s deadline;
+this one-call exception supersedes original16-body conservation at this scope.
+All15 other bodies and every original lifecycle oracle/clock remain exact.
+
+Five real native controls qualify release/same-candidate success, permanent
+100ms refusal, pre-expired retry admission, genuine missing-parent non5 refusal
+and default-sharing outcomes with exact complete counters. Original3 observation
+controls remain; resulting complete native inventory24. Independent inverse/
+fmt/strict local lint precede a new isolated actual24/defaultparallel/max50/
+first-failure/35min probe and final-head all17 ordinaryCI/native3/Audit, fresh
+local bound suites, required gate/settings and main-tree delivery verification.
+
+### Isolated qualification trigger with the active connection
+
+Publish exact reviewed tree/blob objects using the authenticated repository
+connector, read back expected refs/tree, then fetch public Git objects locally
+without the expired shell credential. The separate probe workflow may additionally
+trigger on push only to diagnostic/windows-gated-heartbeat-qualification; its
+job accepts that exact branch/event or the existing explicit dispatch. No main
+or PR push selector is added. Keep the reduced workflow outside the PR source.
+
+### Spell candidate-identity checks without exposing paths
+
+Resolve native manual_assert_eq only in the nine new retry-control comparisons:
+bind the existing equality expression to same_candidate, then assert the boolean
+with a fixed message. No raw path Debug output, lint suppression or other change.
+Verify exact inverse/whole-source conservation and native strict lint before
+counting any Windows execution as qualified.
+
+### Diagnose the existing gated-start deadline only after failure
+
+Add the closed GatedStart ProgressSite and a small formatter that instantiates
+LifecycleProgress, performs its existing typed heartbeat read once and formats
+its closed fields. Append that and current run.state/existing terminal-attempt
+facts only to wait_running's original deadline assertion failure arguments.
+No additional successful-loop I/O, polling, PID reopen or owner inference.
+Existing terminal101/finalized output restrictions remain. Inverse-review only
+this observation delta and requalify current source through the normal gates.
+
+## Keep framed control preparation in a separate process
+
+Follow planning/WINDOWS_HEARTBEAT_CONTROL_PROCESS_ISOLATION_2026-10-17.md.
+Extract only the shared closed failure types/parser/finalized-frame reader into
+a Windows integration-test support module, retaining their bodies and making
+only required sibling visibility/import changes. Keep error emission in the
+lifecycle binary. Move the existing three observer test bodies into a new
+windows_heartbeat_observation integration target; preserve their literal
+assertions/FrameWriter setup and all21 lifecycle/retry bodies/clocks/controls.
+No production/dependency changes or test-only admission override.
+
+Keep the original lifecycle native command (now21 cases) unchanged and add a
+separate native step for the3 observer controls. Preserve all six original
+required lint commands; append strict Clippy for the new integration target.
+The required native dependency/matrix/17 actual jobs/35-minute limits remain.
+The isolated harness builds/selects/hashes both actual test executables before
+building the production CLI LAST. Each of max50 observations invokes the full21
+then full3 with default parallelism per binary, exact inventories and totals;
+stop on either nonzero or integrity/count refusal, never mask the first result.
+The complete union remains24; no new case clock or runtime retry is introduced.
+
+### Bound only positive lifecycle fixture construction
+
+Add a process-local Mutex<()> scheduling token and bounded try_lock helper in
+the lifecycle test target. At Fixture::new entry create one30s absolute
+preparation deadline. Admit the token with try_lock, immediate poison refusal,
+<=1ms remaining sleeps and pre/post admission checks. Retain the original
+absent-root/privateguard/ONE Store.open/identity sequence; check before/after
+each phase, explicitly drop the local private guard and check once more before
+return. The RAII token remains held through setup and is released before the
+returned fixture's daemon/control/lifecycle work. No original test body/call,
+Store5s deadline, helper retry, or Fixture::absent path changes. This is not a
+cold-start throughput qualification. Native calls/destructors remain
+non-preemptible; late completion fails the existing preparation horizon.
+Verify exact setup-expression conservation, all24 bodies/other clocks, bounded
+ownership and real error propagation, then full source-bound native gates.

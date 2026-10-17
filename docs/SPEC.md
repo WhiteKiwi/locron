@@ -709,3 +709,136 @@ early. Qualification distinguishes these failure conditions while retaining the
 original product deadlines, privacy boundaries and supported-platform requirements.
 CI reliability corrections must preserve these behaviors and report required failures
 truthfully.
+
+## Complete owned Windows capture cleanup (2026-10-17)
+
+The remaining hosted Windows cancellation capture control must complete its real
+owned-state cleanup within its existing allowance. A successful cancellation and
+late cleanup remain distinct observations; late cleanup never changes an expired
+result into success. Resolve the demonstrated cleanup cost while preserving actual
+process-tree termination, durable cancellation, private-state ownership, independent
+capture identities, bounded output, original deadlines and refusal controls.
+Qualification must execute the corrected control and complete native platform
+matrix on the final source before this residual failure is reported as resolved.
+
+### Windows cancellation qualification phases (2026-10-17)
+
+Qualification measures cancellation after proving that an actual owned process is
+running and making progress. Preparing isolated state and reaching that premise
+must remain bounded, and failures there remain setup failures. From immediately
+before the actual cancellation request, require durable cancellation, confirmed
+process termination, stopped progress and complete owned cleanup within eight
+seconds. The entire fixture retains its entry-born thirty-second ceiling and the
+product retains its default five-second termination grace. An expired phase or
+late cleanup cannot become success. This explicitly replaces the Windows fixture's
+inherited eight seconds from daemon spawn; it does not promise or demonstrate an
+eight-second cold-start-plus-cancellation product guarantee.
+
+### Observe live stream premises before advancing fixtures (2026-10-17)
+
+Live-stream qualification must observe the real preceding stage before advancing
+the owned lifecycle. Elapsed time alone cannot prove that a polling observer saw
+an intermediate state or output. Preserve the required queued, starting, output,
+running and terminal event ordering, exact payloads, reconnect/disconnect behavior
+and terminal stream closure. Retain the existing ten-second allowance for each
+stream read and the production polling interval; this is not a new global
+ten-second test horizon. Missing observations, read failures and premature closure
+remain failures.
+
+### Qualify bounded maintenance by real progress (2026-10-17)
+
+An automatic maintenance pass may yield successfully before completing an action.
+Qualification of eventual recovery or pruning must follow actual bounded passes
+to their required durable result while preserving exact final counts and state.
+Qualification of foreground yielding must prove actual intent acquisition before
+checking retained output and pending work. Preserve the production action/time
+budgets, the existing five-second test progress allowance and immediate refusal
+of real errors. Explicit expiry, action-limit and refusal controls remain distinct
+observations; eventual progress cannot replace their safety assertions.
+
+### Isolate orphan safety from age-based retention (2026-10-17)
+
+Qualification that unreferenced output is removed while referenced output survives
+must keep that referenced run eligible to remain. Synthetic ancient lifecycle
+timestamps combined with the real filesystem clock must not accidentally request
+age-based removal of the reference. Isolate that fixture's retention setting;
+preserve its exact recovery, orphan-removal and file-survival assertions and all
+existing progress budgets. Default production retention remains unchanged.
+
+## Qualify recovery after releasing a real reader (2026-10-17)
+
+After an actual held reader causes the required timeout and leaves recovery
+pending, release that same reader before qualifying eventual recovery. Follow
+real bounded maintenance passes to completion within the existing progress
+allowance. Preserve the original held-reader error, elapsed-time, pending-state,
+exact recovery count and complete frame assertions. The initial refusal and
+post-release completion remain separate observations with unchanged limits.
+
+### Observe other Windows recovery premises (2026-10-17)
+
+A recovery-completion notification must represent actual completed recovery, even
+when earlier bounded passes yield. Qualification that mutates a finalized output
+must first establish actual finalization. Preserve real-reader no-completion and
+receiver limits, exact final payloads, private-state refusal and all existing
+product limits. Partial success is neither a completion nor an expected error.
+
+## Require all native Windows results before ordinary PR acceptance (2026-10-17)
+
+Ordinary pull requests must not satisfy their required Windows check unless all
+three supported native qualification environments and Windows lint succeed.
+Failure, cancellation or skipped native qualification must block acceptance.
+When repository-administration writes are unavailable, enforce this through an
+existing required CI result without changing repository permissions or weakening
+the existing strict checks. Preserve exploratory-dispatch scope, native execution
+limits, original test commands and truthful failed results.
+
+## Diagnose an unexpected native fixture target exit safely (2026-10-17)
+
+If a controlled native qualification target ends before its required continuation,
+preserve the failed state and original lifecycle assertions. Report only bounded,
+closed classifications from that terminated target's finalized output; never
+publish raw job output, paths, arguments, tokens or panic text. Preserve all
+original deadlines and ownership/cleanup behavior. Capture the actual failure
+stage before selecting a corrective behavior. Additional diagnostic repetitions
+must be finite, stop at their first failure and never turn a failed observation
+into a passing qualification.
+
+### Cover the native target's actual failure observation point
+
+A controlled target's unexpected terminal failure must receive the same closed,
+bounded diagnosis whether detected before running, while checking continuation,
+or while waiting for completion. Existing assertions, time limits and passing
+behavior remain unchanged. Diagnose a progress deadline only after its original
+assertion fails; live or unavailable output remains unobserved.
+
+## Preserve native heartbeat publication through bounded access conflicts
+
+A native qualification target must preserve its last complete progress counter
+when an observed Windows access conflict temporarily refuses atomic publication.
+It may retry only that observed refusal using the same fully written candidate
+within a short finite publication allowance. Preserve every outer lifecycle
+deadline and required progress observation. Permanent refusal and other errors
+remain failures; never replace them with success or create a new counter/file
+on each retry. Report at most one closed terminal publication error. This is
+fixture behavior, with no change to product process/output handling or security.
+
+## Keep diagnostic controls independent of lifecycle admission
+
+Qualification must retain the original native lifecycle workload and all of its
+real admission/deadline assertions. Newly added diagnostic parser/file controls
+must run in their own test process so their private-file preparation cannot
+consume lifecycle fixtures' shared process admission capacity. Run every control
+and preserve each family's default test parallelism, original limits and exact
+success/refusal assertions. Process isolation must not skip, retry, extend or
+convert any failed case into success.
+
+### Bound independent fixture preparation before lifecycle qualification
+
+Coordinate only independent lifecycle fixture preparation so unrelated fresh
+state creation does not compete for one process's bounded preparation service.
+Give preparation one entry-born thirty-second horizon including queue waiting,
+keep exactly one real store open under its existing five-second policy, and
+release preparation ownership before lifecycle work starts. Real errors and
+late preparation still fail immediately. Preserve cold/first-run/refusal cases
+that intentionally create absent state and every existing lifecycle deadline;
+this changes setup scheduling, not product admission or test success criteria.

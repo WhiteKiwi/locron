@@ -1212,6 +1212,8 @@ jobs:
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
+          cargo test -p locron --test cli --locked windows_cli_control::cancellation_deadline_ -- --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test -p locron --test cli --locked durable_cancel_terminates_a_running_process -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Refuse a foreign native wake peer
@@ -1248,6 +1250,8 @@ jobs:
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
+          cargo test -p locron --test cli --locked windows_cli_control::history_capture_retirement_ -- --test-threads=1 --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test -p locron --test cli --locked windows_cli_control::native_cli_output_capture_contract -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native registered service semantics
@@ -1269,6 +1273,8 @@ jobs:
         run: cargo build -p locron --locked
       - name: Verify actual registered daemon lifetimes
         run: cargo test -p locron --test windows_lifecycle --locked
+      - name: Verify closed native heartbeat observations
+        run: cargo test -p locron --test windows_heartbeat_observation --locked
       - name: Verify registered dashboard composition contracts
         run: cargo test -p locron --bin locron --locked -- service::windows_dashboard_tests
       - name: Verify guarded Windows output pruning
@@ -1358,13 +1364,18 @@ jobs:
           path: prune-qualification/
 
   windows-lint-foundation:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
+    needs: windows-foundation
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || !inputs.full_windows) }}
     name: Windows lint foundation / Rust 1.98.0
     timeout-minutes: 35
     runs-on: windows-2025
     env:
       RUSTUP_TOOLCHAIN: 1.98.0
     steps:
+      - name: Require successful native Windows qualification
+        if: ${{ needs.windows-foundation.result != 'success' }}
+        shell: pwsh
+        run: throw 'Native Windows qualification did not succeed'
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@v1
         with:
@@ -1379,6 +1390,7 @@ jobs:
       - run: cargo clippy -p locron --bin locron --test windows_lifecycle --test mcp --locked -- -D warnings
       - run: cargo clippy -p locron --bin locron-service-launcher --test windows_service_launcher --features windows-service-launcher --locked -- -D warnings
       - run: cargo clippy -p locron --test cli --locked -- -D warnings
+      - run: cargo clippy -p locron --test windows_heartbeat_observation --locked -- -D warnings
 
   windows-full-test:
     name: Windows exploratory tests / ${{ matrix.platform }} / Rust ${{ matrix.rust }}

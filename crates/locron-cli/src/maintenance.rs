@@ -962,7 +962,9 @@ mod tests {
         // The daemon owning this attempt dies; the restarted daemon's
         // maintenance recovers the partial.
         let restarted = restart_lifetime(&store, 9);
-        let report = maintain(&store, &paths, &restarted, 10).unwrap();
+        let report = maintain_until(&store, &paths, &restarted, 10, |report| {
+            report.outputs_recovered >= 1
+        });
 
         assert_eq!(report.outputs_recovered, 1);
         assert!(!partial.exists());
@@ -992,7 +994,9 @@ mod tests {
         drop(writer);
 
         let restarted = restart_lifetime(&store, 9);
-        let report = maintain(&store, &paths, &restarted, 10).unwrap();
+        let report = maintain_until(&store, &paths, &restarted, 10, |report| {
+            report.outputs_recovered >= 1
+        });
 
         assert_eq!(report.outputs_recovered, 1);
         assert!(final_path.is_file());
@@ -1001,7 +1005,13 @@ mod tests {
         let missing_run = uuid::Uuid::from_u128(7).to_string();
         admit_one(&missing_store, &missing_run);
         let missing_restarted = restart_lifetime(&missing_store, 9);
-        let report = maintain(&missing_store, &missing_paths, &missing_restarted, 10).unwrap();
+        let report = maintain_until(
+            &missing_store,
+            &missing_paths,
+            &missing_restarted,
+            10,
+            |report| report.outputs_missing >= 1,
+        );
         assert_eq!(report.outputs_missing, 1);
         assert!(
             missing_store
@@ -1084,7 +1094,10 @@ mod tests {
         writer.sync().unwrap();
         drop(writer);
         terminalize(&store, &run_id, 11);
-        maintain(&store, &paths, &lifetime, 12).unwrap();
+        let report = maintain_until(&store, &paths, &lifetime, 12, |report| {
+            report.outputs_recovered >= 1
+        });
+        assert_eq!(report.outputs_recovered, 1);
         let candidate = store.output_retention_candidates(1).unwrap().remove(0);
         (temporary, paths, store, lifetime, candidate)
     }
@@ -1103,12 +1116,14 @@ mod tests {
                 *captured.borrow_mut() = Some(intent);
             }))
         });
-        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
+        let report = maintain_until(&store, &paths, &lifetime, 14, |_| held.borrow().is_some());
         assert_eq!(report.outputs_pruned, 0);
         assert!(paths.outputs.join(&candidate.relative_path).is_file());
         assert_eq!(store.pending_output_prunes(10).unwrap().len(), 1);
         drop(held.borrow_mut().take());
-        let report = maintain(&store, &paths, &lifetime, 15).unwrap();
+        let report = maintain_until(&store, &paths, &lifetime, 15, |report| {
+            report.outputs_pruned >= 1
+        });
         assert_eq!(report.outputs_pruned, 1);
         assert!(!paths.outputs.join(&candidate.relative_path).exists());
         assert!(store.pending_output_prunes(10).unwrap().is_empty());
@@ -1153,12 +1168,10 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(1));
         assert!(paths.outputs.join(&candidate.relative_path).is_file());
         assert_eq!(store.pending_output_prunes(10).unwrap().len(), 1);
-        assert_eq!(
-            maintain(&store, &paths, &lifetime, 15)
-                .unwrap()
-                .outputs_pruned,
-            1
-        );
+        let report = maintain_until(&store, &paths, &lifetime, 15, |report| {
+            report.outputs_pruned >= 1
+        });
+        assert_eq!(report.outputs_pruned, 1);
     }
 
     #[test]
@@ -1271,12 +1284,17 @@ mod tests {
         drop(writer);
         terminalize(&store, &run_id, 11);
         // The terminal attempt's output is now a recovery candidate.
-        maintain(&store, &paths, &lifetime, 12).unwrap();
+        let report = maintain_until(&store, &paths, &lifetime, 12, |report| {
+            report.outputs_recovered >= 1
+        });
+        assert_eq!(report.outputs_recovered, 1);
         let output = store.output_retention_candidates(1).unwrap().remove(0);
         store.mark_output_prune_pending(&output, 13).unwrap();
         store.set_setting("run_retention_count", "0", 13).unwrap();
 
-        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
+        let report = maintain_until(&store, &paths, &lifetime, 14, |report| {
+            report.outputs_pruned >= 1 && report.runs_pruned >= 1
+        });
 
         assert_eq!(report.outputs_pruned, 1);
         assert_eq!(report.runs_pruned, 1);
@@ -1296,12 +1314,17 @@ mod tests {
         writer.sync().unwrap();
         drop(writer);
         terminalize(&store, &run_id, 11);
-        maintain(&store, &paths, &lifetime, 12).unwrap();
+        let report = maintain_until(&store, &paths, &lifetime, 12, |report| {
+            report.outputs_recovered >= 1
+        });
+        assert_eq!(report.outputs_recovered, 1);
         let output = store.output_retention_candidates(1).unwrap().remove(0);
         store.mark_output_prune_pending(&output, 13).unwrap();
         fs::remove_dir_all(&directory).unwrap();
 
-        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
+        let report = maintain_until(&store, &paths, &lifetime, 14, |report| {
+            report.outputs_pruned >= 1
+        });
 
         assert_eq!(report.outputs_pruned, 1);
         assert!(store.pending_output_prunes(1).unwrap().is_empty());
@@ -1402,7 +1425,11 @@ mod tests {
         // The owning daemon dies; the restarted daemon recovers the
         // referenced partial and removes the unreferenced 2.log.
         let restarted = restart_lifetime(&store, 9);
-        let report = maintain_until(&store, &paths, &restarted, orphan_pass_time(), |report| {
+        let now_us = orphan_pass_time();
+        store
+            .set_setting("run_retention_age_us", "none", now_us)
+            .unwrap();
+        let report = maintain_until(&store, &paths, &restarted, now_us, |report| {
             report.outputs_recovered >= 1 && report.orphans_removed >= 1
         });
 
@@ -1512,11 +1539,12 @@ mod tests {
             let (sender, receiver) = mpsc::channel();
             let recovery = std::thread::spawn(move || {
                 sender
-                    .send(maintain(
+                    .send(maintain_until(
                         &maintenance_store,
                         &maintenance_paths,
                         &maintenance_lifetime,
                         10,
+                        |report| report.outputs_recovered >= 1,
                     ))
                     .unwrap();
             });
@@ -1525,10 +1553,7 @@ mod tests {
                 Err(mpsc::RecvTimeoutError::Timeout)
             ));
             drop(reader);
-            let report = receiver
-                .recv_timeout(Duration::from_secs(5))
-                .unwrap()
-                .unwrap();
+            let report = receiver.recv_timeout(Duration::from_secs(5)).unwrap();
             recovery.join().unwrap();
 
             assert_eq!(report.outputs_recovered, 1);
@@ -1578,7 +1603,9 @@ mod tests {
             );
             drop(reader);
 
-            let report = maintain(&store, &paths, &lifetime, 11).unwrap();
+            let report = maintain_until(&store, &paths, &lifetime, 11, |report| {
+                report.outputs_recovered >= 1
+            });
 
             assert_eq!(report.outputs_recovered, 1);
             assert!(!partial.exists());
@@ -1619,7 +1646,10 @@ mod tests {
 
             let run_id = uuid::Uuid::from_u128(25).to_string();
             let (_temporary, paths, store, lifetime, _partial) = partial_fixture(&run_id);
-            maintain(&store, &paths, &lifetime, 10).unwrap();
+            let report = maintain_until(&store, &paths, &lifetime, 10, |report| {
+                report.outputs_recovered >= 1
+            });
+            assert_eq!(report.outputs_recovered, 1);
             let final_path = paths.final_output(&run_id, 1).unwrap();
             let original = fs::read(&final_path).unwrap();
             let output = store.output_retention_candidates(1).unwrap().remove(0);

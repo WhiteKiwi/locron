@@ -1,6 +1,9 @@
 //! Native role ownership/control checks against the separate CLI executable.
 #![cfg(windows)]
 
+#[path = "support/windows_heartbeat_failure.rs"]
+mod windows_heartbeat_failure;
+
 use futures_util::StreamExt;
 use locron_store::{DaemonLock, RoleLockMetadata, StatePaths, Store};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -10,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
+use windows_heartbeat_failure::{HeartbeatFailurePhase, read_finalized_heartbeat_failure};
 
 fn cli_executable() -> PathBuf {
     std::env::var_os("LOCRON_TEST_BINARY").map_or_else(
@@ -23,6 +27,36 @@ fn cli_executable() -> PathBuf {
             path
         },
     )
+}
+
+static FIXTURE_PREPARATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn check_fixture_preparation_deadline(deadline: Instant) {
+    assert!(
+        Instant::now() < deadline,
+        "native fixture preparation deadline"
+    );
+}
+
+fn acquire_fixture_preparation(deadline: Instant) -> std::sync::MutexGuard<'static, ()> {
+    loop {
+        check_fixture_preparation_deadline(deadline);
+        match FIXTURE_PREPARATION.try_lock() {
+            Ok(token) => {
+                check_fixture_preparation_deadline(deadline);
+                return token;
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => {
+                panic!("native fixture preparation coordinator poisoned");
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                assert!(!remaining.is_zero(), "native fixture preparation deadline");
+                std::thread::sleep(Duration::from_millis(1).min(remaining));
+                check_fixture_preparation_deadline(deadline);
+            }
+        }
+    }
 }
 
 struct Fixture {
@@ -42,14 +76,24 @@ impl Fixture {
     }
 
     fn new() -> Self {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let _preparation = acquire_fixture_preparation(deadline);
+        check_fixture_preparation_deadline(deadline);
         let mut fixture = Self::absent();
+        check_fixture_preparation_deadline(deadline);
         let guard = locron_core::filesystem::DirectoryGuard::private(&fixture.paths.root)
             .expect("private fixture state");
+        check_fixture_preparation_deadline(deadline);
         fixture.paths = StatePaths::new(guard.normalized_path().to_path_buf());
+        check_fixture_preparation_deadline(deadline);
         drop(Store::open(fixture.paths.clone(), "test", 1).expect("initialized fixture store"));
+        check_fixture_preparation_deadline(deadline);
         // The test binary and CLI must derive identical versioned SID/file identities.
         locron_core::notification::instance_identity(&fixture.paths.root)
             .expect("native state identity");
+        check_fixture_preparation_deadline(deadline);
+        drop(guard);
+        check_fixture_preparation_deadline(deadline);
         fixture
     }
 
@@ -246,11 +290,17 @@ impl Fixture {
             }
             assert!(
                 matches!(run.state.as_str(), "queued" | "starting" | "running"),
-                "gated target ended as {}: {:?}",
+                "gated target ended as {}: {}",
                 run.state,
-                run.reason
+                failed_continuation_facts(&store, &self.paths, run_id, run.reason.as_deref())
             );
-            assert!(Instant::now() < deadline, "gated target did not start");
+            assert!(
+                Instant::now() < deadline,
+                "gated target did not start; last_polled_state={}; {}; post_deadline_heartbeat={}",
+                run.state,
+                failed_continuation_facts(&store, &self.paths, run_id, run.reason.as_deref()),
+                failed_gated_start_progress(&self.paths.root.join("native-completed.heartbeat"))
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
     }
@@ -273,7 +323,7 @@ impl Fixture {
             run.state,
             "running",
             "{}",
-            failed_continuation_facts(&store, run_id, run.reason.as_deref())
+            failed_continuation_facts(&store, &self.paths, run_id, run.reason.as_deref())
         );
         assert_eq!(run.finished_at_us, None);
         assert!(
@@ -294,7 +344,8 @@ impl Fixture {
             }
             assert!(
                 Instant::now() < deadline,
-                "native heartbeat was not readable after exit ; {progress}"
+                "native heartbeat was not readable after exit ; {progress}; {}",
+                failed_continuation_facts(&store, &self.paths, run_id, None)
             );
             std::thread::sleep(Duration::from_millis(20));
         };
@@ -317,7 +368,8 @@ impl Fixture {
             }
             assert!(
                 Instant::now() < deadline,
-                "native target stopped making progress ; {progress}"
+                "native target stopped making progress ; {progress}; {}",
+                failed_continuation_facts(&store, &self.paths, run_id, None)
             );
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -337,9 +389,9 @@ impl Fixture {
             }
             assert!(
                 matches!(run.state.as_str(), "queued" | "starting" | "running"),
-                "native target ended as {}: {:?}",
+                "native target ended as {}: {}",
                 run.state,
-                run.reason
+                failed_continuation_facts(&store, &self.paths, run_id, run.reason.as_deref())
             );
             assert!(
                 Instant::now() < deadline,
@@ -387,6 +439,7 @@ enum ProgressSite {
     PreservedBaseline,
     PreservedAdvance,
     DescendantPreCrash,
+    GatedStart,
 }
 
 impl ProgressSite {
@@ -395,6 +448,7 @@ impl ProgressSite {
             Self::PreservedBaseline => "preserved_baseline",
             Self::PreservedAdvance => "preserved_advance",
             Self::DescendantPreCrash => "descendant_pre_crash",
+            Self::GatedStart => "gated_start",
         }
     }
 }
@@ -581,6 +635,12 @@ impl std::fmt::Display for LifecycleProgress {
     }
 }
 
+fn failed_gated_start_progress(path: &Path) -> String {
+    let mut progress = LifecycleProgress::new(ProgressSite::GatedStart, None);
+    let _ = progress.read_heartbeat(path);
+    progress.to_string()
+}
+
 fn bounded_failure_reason(reason: Option<&str>) -> String {
     let Some(reason) = reason else {
         return "unobserved".to_owned();
@@ -605,13 +665,18 @@ fn bounded_failure_reason(reason: Option<&str>) -> String {
     format!("redacted(reason_bytes={})", reason.len().min(256))
 }
 
-fn failed_continuation_facts(store: &Store, run_id: &str, reason: Option<&str>) -> String {
-    let attempts = store
-        .attempts_for_run(run_id)
-        .expect("failed continuation attempt observation");
+fn failed_continuation_facts(
+    store: &Store,
+    paths: &StatePaths,
+    run_id: &str,
+    reason: Option<&str>,
+) -> String {
     let reason = bounded_failure_reason(reason);
+    let Ok(attempts) = store.attempts_for_run(run_id) else {
+        return format!("run_reason={reason}; attempt=unobserved; heartbeat_failure=unobserved");
+    };
     let Some(attempt) = attempts.first() else {
-        return format!("run_reason={reason}; attempt=unobserved");
+        return format!("run_reason={reason}; attempt=unobserved; heartbeat_failure=unobserved");
     };
     let state: String = attempt.state.chars().take(32).collect();
     let outcome: String = attempt
@@ -621,6 +686,28 @@ fn failed_continuation_facts(store: &Store, run_id: &str, reason: Option<&str>) 
         .chars()
         .take(32)
         .collect();
+    let heartbeat_failure = attempt
+        .output
+        .as_ref()
+        .and_then(|output| {
+            if attempt.state != "failed"
+                || attempt.finished_at_us.is_none()
+                || attempt.exit_code != Some(101)
+                || output.state != "finalized"
+                || output.truncated
+                || output.discarded_bytes != 0
+            {
+                return None;
+            }
+            read_finalized_heartbeat_failure(
+                paths,
+                run_id,
+                u16::try_from(attempt.attempt_number).ok()?,
+                u64::try_from(output.physical_bytes).ok()?,
+                u64::try_from(output.retained_payload_bytes).ok()?,
+            )
+        })
+        .map_or_else(|| "unobserved".to_owned(), |failure| failure.to_string());
     let output = attempt.output.as_ref().map_or_else(
         || "unobserved".to_owned(),
         |output| {
@@ -635,9 +722,20 @@ fn failed_continuation_facts(store: &Store, run_id: &str, reason: Option<&str>) 
         },
     );
     format!(
-        "run_reason={reason}; attempt={} state={state} outcome={outcome} exit_code={:?} output={output}",
+        "run_reason={reason}; attempt={} state={state} outcome={outcome} exit_code={:?} output={output}; heartbeat_failure={heartbeat_failure}",
         attempt.attempt_number, attempt.exit_code,
     )
+}
+
+fn emit_heartbeat_failure(phase: HeartbeatFailurePhase, counter: u64, error: &std::io::Error) {
+    // Failed diagnostic writes must not replace the original snapshot error.
+    let _ = writeln!(
+        std::io::stderr().lock(),
+        "native-heartbeat-failure phase={} counter={counter} kind={:?} raw_os={:?}",
+        phase.as_str(),
+        error.kind(),
+        error.raw_os_error(),
+    );
 }
 
 struct NativeProcess {
@@ -834,9 +932,15 @@ impl Drop for NativeProcess {
 
 fn heartbeat_snapshot(path: &Path, value: u64) -> tempfile::NamedTempFile {
     let mut snapshot = tempfile::NamedTempFile::new_in(path.parent().expect("heartbeat parent"))
+        .inspect_err(|error| emit_heartbeat_failure(HeartbeatFailurePhase::Create, value, error))
         .expect("private heartbeat snapshot");
-    write!(snapshot, "{value}").expect("complete heartbeat snapshot");
-    snapshot.flush().expect("flush heartbeat snapshot");
+    write!(snapshot, "{value}")
+        .inspect_err(|error| emit_heartbeat_failure(HeartbeatFailurePhase::Write, value, error))
+        .expect("complete heartbeat snapshot");
+    snapshot
+        .flush()
+        .inspect_err(|error| emit_heartbeat_failure(HeartbeatFailurePhase::Flush, value, error))
+        .expect("flush heartbeat snapshot");
     snapshot
 }
 
@@ -863,6 +967,283 @@ fn persist_heartbeat(
             error.error.raw_os_error(),
         );
     })
+}
+
+fn retry_heartbeat_persist(
+    mut refusal: tempfile::PersistError,
+    path: &Path,
+    deadline: Instant,
+    mut on_refusal: impl FnMut(&tempfile::PersistError),
+) -> Result<std::fs::File, tempfile::PersistError> {
+    loop {
+        if refusal.error.raw_os_error() != Some(5) || Instant::now() >= deadline {
+            return Err(refusal);
+        }
+        on_refusal(&refusal);
+        if Instant::now() >= deadline {
+            return Err(refusal);
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(refusal);
+        }
+        std::thread::sleep(Duration::from_millis(1).min(remaining));
+        if Instant::now() >= deadline {
+            return Err(refusal);
+        }
+        // Admission is bounded; an already-started native persist is not preemptible.
+        // Reuse the actual refused file without recreating or logging a candidate.
+        match refusal.file.persist(path) {
+            Ok(file) => return Ok(file),
+            Err(error) => refusal = error,
+        }
+    }
+}
+
+fn publish_gated_heartbeat(path: &Path, value: u64, gate_deadline: Instant) {
+    let entered = Instant::now();
+    let deadline = gate_deadline.min(entered + Duration::from_millis(100));
+    // Preserve the original first snapshot/persist even if its native I/O consumes
+    // the additional-retry allowance. Expiry returns the last actual refusal.
+    let result = heartbeat_snapshot(path, value)
+        .persist(path)
+        .or_else(|refusal| retry_heartbeat_persist(refusal, path, deadline, |_| {}));
+    if let Err(error) = result {
+        emit_heartbeat_failure(HeartbeatFailurePhase::Persist, value, &error.error);
+        panic!(
+            "publish heartbeat snapshot: phase=persist counter={value} kind={:?} raw_os={:?}",
+            error.error.kind(),
+            error.error.raw_os_error(),
+        );
+    }
+}
+
+mod gated_heartbeat_retry {
+    use super::*;
+
+    fn required<T, E>(result: Result<T, E>) -> T {
+        result.unwrap_or_else(|_| panic!("gated heartbeat control operation refused"))
+    }
+
+    struct CounterFixture {
+        _temporary: tempfile::TempDir,
+        path: PathBuf,
+        deadline: Instant,
+    }
+
+    impl CounterFixture {
+        fn new() -> Self {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let temporary = required(tempfile::tempdir());
+            let path = temporary.path().join("counter.heartbeat");
+            publish_heartbeat(&path, 7);
+            Self {
+                _temporary: temporary,
+                path,
+                deadline,
+            }
+        }
+
+        fn check(&self) {
+            assert!(
+                Instant::now() < self.deadline,
+                "gated heartbeat control deadline"
+            );
+        }
+
+        fn counter(&self, expected: &str) {
+            self.check();
+            assert_eq!(required(std::fs::read_to_string(&self.path)), expected);
+            self.check();
+        }
+
+        fn hold_destination(&self) -> std::fs::File {
+            self.check();
+            let held = required(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(1)
+                    .open(&self.path),
+            );
+            self.check();
+            held
+        }
+
+        fn refused_candidate(&self) -> (tempfile::PersistError, PathBuf) {
+            self.check();
+            let candidate = heartbeat_snapshot(&self.path, 8);
+            let candidate_path = candidate.path().to_path_buf();
+            let Err(refusal) = candidate.persist(&self.path) else {
+                panic!("held gated heartbeat destination accepted replacement");
+            };
+            self.check();
+            assert_eq!(refusal.error.raw_os_error(), Some(5));
+            let same_candidate = refusal.file.path() == candidate_path;
+            assert!(same_candidate, "heartbeat candidate identity changed");
+            self.counter("7");
+            (refusal, candidate_path)
+        }
+
+        fn published(&self, candidate_path: &Path) {
+            self.counter("8");
+            assert!(matches!(
+                std::fs::symlink_metadata(candidate_path),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound
+            ));
+            self.check();
+        }
+    }
+
+    #[test]
+    fn held_refusal_releases_the_exact_handle_and_publishes_the_same_candidate() {
+        let fixture = CounterFixture::new();
+        let mut held = Some(fixture.hold_destination());
+        let (refusal, candidate_path) = fixture.refused_candidate();
+        let mut callbacks = 0;
+        let result = retry_heartbeat_persist(refusal, &fixture.path, fixture.deadline, |refusal| {
+            fixture.check();
+            assert_eq!(refusal.error.raw_os_error(), Some(5));
+            let same_candidate = refusal.file.path() == candidate_path;
+            assert!(same_candidate, "heartbeat candidate identity changed");
+            fixture.counter("7");
+            callbacks += 1;
+            drop(held.take());
+            assert!(held.is_none());
+            fixture.check();
+        });
+        drop(required(result));
+        assert!(callbacks >= 1);
+        assert!(held.is_none());
+        fixture.published(&candidate_path);
+    }
+
+    #[test]
+    fn permanent_held_refusal_exhausts_one_hundred_ms_admission_without_replacing_old_counter() {
+        let fixture = CounterFixture::new();
+        let held = fixture.hold_destination();
+        let (refusal, candidate_path) = fixture.refused_candidate();
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let result = retry_heartbeat_persist(refusal, &fixture.path, deadline, |refusal| {
+            assert_eq!(refusal.error.raw_os_error(), Some(5));
+            let same_candidate = refusal.file.path() == candidate_path;
+            assert!(same_candidate, "heartbeat candidate identity changed");
+            fixture.counter("7");
+        });
+        let Err(refusal) = result else {
+            panic!("permanent held heartbeat destination accepted replacement");
+        };
+        assert!(Instant::now() >= deadline);
+        fixture.check();
+        assert_eq!(refusal.error.raw_os_error(), Some(5));
+        let same_candidate = refusal.file.path() == candidate_path;
+        assert!(same_candidate, "heartbeat candidate identity changed");
+        fixture.counter("7");
+        drop(held);
+        drop(required(refusal.file.persist(&fixture.path)));
+        fixture.published(&candidate_path);
+    }
+
+    #[test]
+    fn expired_retry_returns_the_real_refusal_without_callback_or_another_persist() {
+        let fixture = CounterFixture::new();
+        let held = fixture.hold_destination();
+        let (refusal, candidate_path) = fixture.refused_candidate();
+        let raw_os = refusal.error.raw_os_error();
+        // Releasing first makes an accidental additional persist observable as8.
+        drop(held);
+        let deadline = Instant::now();
+        let mut callbacks = 0;
+        let result = retry_heartbeat_persist(refusal, &fixture.path, deadline, |_| {
+            callbacks += 1;
+        });
+        let Err(refusal) = result else {
+            panic!("expired heartbeat retry admitted another persist");
+        };
+        assert_eq!(callbacks, 0);
+        assert_eq!(refusal.error.raw_os_error(), raw_os);
+        let same_candidate = refusal.file.path() == candidate_path;
+        assert!(same_candidate, "heartbeat candidate identity changed");
+        fixture.counter("7");
+        assert_eq!(required(std::fs::read_to_string(refusal.file.path())), "8");
+        drop(required(refusal.file.persist(&fixture.path)));
+        fixture.published(&candidate_path);
+    }
+
+    #[test]
+    fn absent_destination_parent_returns_a_genuine_non_five_refusal_without_retry() {
+        let fixture = CounterFixture::new();
+        let destination = fixture
+            .path
+            .parent()
+            .unwrap()
+            .join("absent")
+            .join("counter");
+        let candidate = heartbeat_snapshot(&fixture.path, 8);
+        let candidate_path = candidate.path().to_path_buf();
+        let Err(refusal) = candidate.persist(&destination) else {
+            panic!("absent heartbeat parent accepted replacement");
+        };
+        let raw_os = refusal.error.raw_os_error();
+        assert!(raw_os.is_some() && raw_os != Some(5));
+        let same_candidate = refusal.file.path() == candidate_path;
+        assert!(same_candidate, "heartbeat candidate identity changed");
+        required(std::fs::create_dir(destination.parent().unwrap()));
+        fixture.check();
+        let mut callbacks = 0;
+        let result = retry_heartbeat_persist(refusal, &destination, fixture.deadline, |_| {
+            callbacks += 1;
+        });
+        let Err(refusal) = result else {
+            panic!("unsupported heartbeat refusal was accepted");
+        };
+        assert_eq!(callbacks, 0);
+        assert_eq!(refusal.error.raw_os_error(), raw_os);
+        let same_candidate = refusal.file.path() == candidate_path;
+        assert!(same_candidate, "heartbeat candidate identity changed");
+        fixture.counter("7");
+        assert_eq!(required(std::fs::read_to_string(refusal.file.path())), "8");
+        drop(required(refusal.file.persist(&fixture.path)));
+        fixture.published(&candidate_path);
+    }
+
+    #[test]
+    fn default_sharing_reader_preserves_complete_counters_for_its_actual_native_outcome() {
+        let fixture = CounterFixture::new();
+        let mut reader = required(std::fs::File::open(&fixture.path));
+        let candidate = heartbeat_snapshot(&fixture.path, 8);
+        let candidate_path = candidate.path().to_path_buf();
+        match candidate.persist(&fixture.path) {
+            Ok(file) => {
+                drop(file);
+                let mut old = String::new();
+                required(reader.read_to_string(&mut old));
+                assert_eq!(old, "7");
+                drop(reader);
+                fixture.published(&candidate_path);
+                println!("native-heartbeat-default-sharing outcome=published");
+            }
+            Err(refusal) => {
+                assert_eq!(refusal.error.raw_os_error(), Some(5));
+                let same_candidate = refusal.file.path() == candidate_path;
+                assert!(same_candidate, "heartbeat candidate identity changed");
+                fixture.counter("7");
+                let mut old = String::new();
+                required(reader.read_to_string(&mut old));
+                assert_eq!(old, "7");
+                drop(reader);
+                let result =
+                    retry_heartbeat_persist(refusal, &fixture.path, fixture.deadline, |refusal| {
+                        assert_eq!(refusal.error.raw_os_error(), Some(5));
+                        let same_candidate = refusal.file.path() == candidate_path;
+                        assert!(same_candidate, "heartbeat candidate identity changed");
+                        fixture.counter("7");
+                    });
+                drop(required(result));
+                fixture.published(&candidate_path);
+                println!("native-heartbeat-default-sharing outcome=raw5_then_published");
+            }
+        }
+    }
 }
 
 #[test]
@@ -1008,7 +1389,7 @@ fn native_process_target() {
         let mut heartbeat = 0_u64;
         while !gate.exists() {
             assert!(Instant::now() < deadline, "native target gate did not open");
-            publish_heartbeat(&marker.with_extension("heartbeat"), heartbeat);
+            publish_gated_heartbeat(&marker.with_extension("heartbeat"), heartbeat, deadline);
             heartbeat += 1;
             std::thread::sleep(Duration::from_millis(10));
         }
