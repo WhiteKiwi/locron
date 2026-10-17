@@ -1539,11 +1539,12 @@ mod tests {
             let (sender, receiver) = mpsc::channel();
             let recovery = std::thread::spawn(move || {
                 sender
-                    .send(maintain(
+                    .send(maintain_until(
                         &maintenance_store,
                         &maintenance_paths,
                         &maintenance_lifetime,
                         10,
+                        |report| report.outputs_recovered >= 1,
                     ))
                     .unwrap();
             });
@@ -1552,10 +1553,7 @@ mod tests {
                 Err(mpsc::RecvTimeoutError::Timeout)
             ));
             drop(reader);
-            let report = receiver
-                .recv_timeout(Duration::from_secs(5))
-                .unwrap()
-                .unwrap();
+            let report = receiver.recv_timeout(Duration::from_secs(5)).unwrap();
             recovery.join().unwrap();
 
             assert_eq!(report.outputs_recovered, 1);
@@ -1605,7 +1603,9 @@ mod tests {
             );
             drop(reader);
 
-            let report = maintain(&store, &paths, &lifetime, 11).unwrap();
+            let report = maintain_until(&store, &paths, &lifetime, 11, |report| {
+                report.outputs_recovered >= 1
+            });
 
             assert_eq!(report.outputs_recovered, 1);
             assert!(!partial.exists());
@@ -1646,7 +1646,10 @@ mod tests {
 
             let run_id = uuid::Uuid::from_u128(25).to_string();
             let (_temporary, paths, store, lifetime, _partial) = partial_fixture(&run_id);
-            maintain(&store, &paths, &lifetime, 10).unwrap();
+            let report = maintain_until(&store, &paths, &lifetime, 10, |report| {
+                report.outputs_recovered >= 1
+            });
+            assert_eq!(report.outputs_recovered, 1);
             let final_path = paths.final_output(&run_id, 1).unwrap();
             let original = fs::read(&final_path).unwrap();
             let output = store.output_retention_candidates(1).unwrap().remove(0);
