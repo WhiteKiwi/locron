@@ -1784,6 +1784,58 @@ async fn read_sse(
     events
 }
 
+/// Retains one real response across fixture mutations, including partial blocks
+/// and any additional events coalesced into the same chunk.
+struct LiveSseCollector {
+    response: reqwest::Response,
+    buffer: String,
+    events: Vec<SseEvent>,
+}
+
+impl LiveSseCollector {
+    fn new(response: reqwest::Response) -> Self {
+        Self {
+            response,
+            buffer: String::new(),
+            events: Vec::new(),
+        }
+    }
+
+    async fn read_chunk(&mut self) -> bool {
+        // Match the original live test's allowance for each awaited chunk.
+        let chunk = tokio::time::timeout(Duration::from_secs(10), self.response.chunk())
+            .await
+            .expect("live SSE chunk deadline")
+            .expect("live SSE chunk read");
+        let Some(chunk) = chunk else { return false };
+        self.buffer.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(offset) = self.buffer.find("\n\n") {
+            let block = self.buffer[..offset].to_owned();
+            drop(self.buffer.drain(..offset + 2));
+            if let Some(event) = parse_sse_block(&block) {
+                self.events.push(event);
+            }
+        }
+        true
+    }
+
+    async fn observe(&mut self, stage: &str, observed: impl Fn(&[SseEvent]) -> bool) {
+        while !observed(&self.events) {
+            assert!(
+                self.read_chunk().await,
+                "live SSE ended before {stage}: {:?}",
+                self.events
+            );
+        }
+    }
+
+    async fn finish(mut self) -> Vec<SseEvent> {
+        while self.read_chunk().await {}
+        assert!(self.buffer.trim().is_empty(), "incomplete SSE block at EOF");
+        self.events
+    }
+}
+
 /// Whether `wanted` appears as a (not necessarily contiguous) subsequence of
 /// the event names.
 fn contains_subsequence(events: &[SseEvent], wanted: &[&str]) -> bool {
@@ -1867,11 +1919,16 @@ async fn sse_stream_live_run_events() {
         "text/event-stream"
     );
 
-    // Let the first poll observe the durably queued run, then drive the
-    // lifecycle through the store's public admission and completion APIs (no
-    // daemon runs in tests), pausing between stages so the 200 ms stream
-    // poll observes each transition.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Acknowledge each real stream observation before the next public Store
+    // mutation; elapsed time alone cannot prove that the 200 ms poll ran.
+    let mut stream = LiveSseCollector::new(response);
+    stream
+        .observe("queued run", |events| {
+            events
+                .iter()
+                .any(|event| event.name == "run" && event.data["state"] == json!("queued"))
+        })
+        .await;
     let store = locron_store::Store::open(
         server.paths.clone(),
         env!("CARGO_PKG_VERSION"),
@@ -1886,7 +1943,18 @@ async fn sse_stream_live_run_events() {
     assert_eq!(admission.attempts.len(), 1);
     assert_eq!(admission.attempts[0].run_id, run_id);
     assert_eq!(admission.attempts[0].attempt_number, 1);
-    tokio::time::sleep(Duration::from_millis(600)).await;
+    stream
+        .observe("starting run and attempt", |events| {
+            events
+                .iter()
+                .any(|event| event.name == "run" && event.data["state"] == json!("starting"))
+                && events.iter().any(|event| {
+                    event.name == "attempt"
+                        && event.data["attempt_number"] == json!(1)
+                        && event.data["state"] == json!("starting")
+                })
+        })
+        .await;
 
     // Live frames arrive from the in-progress partial artifact.
     let output_dir = server.paths.outputs.join(&run_id);
@@ -1900,12 +1968,33 @@ async fn sse_stream_live_run_events() {
         .write(FrameChannel::Stderr, 250, b"oops")
         .expect("stderr frame");
     drop(writer);
-    tokio::time::sleep(Duration::from_millis(600)).await;
+    stream
+        .observe("both live output frames", |events| {
+            [0, 1].into_iter().all(|seq| {
+                events.iter().any(|event| {
+                    event.name == "output"
+                        && event.data["attempt_number"] == json!(1)
+                        && event.data["seq"] == json!(seq)
+                })
+            })
+        })
+        .await;
 
     store
         .mark_attempt_running(&run_id, 1, test_now_us())
         .expect("mark running");
-    tokio::time::sleep(Duration::from_millis(600)).await;
+    stream
+        .observe("running run and attempt", |events| {
+            events
+                .iter()
+                .any(|event| event.name == "run" && event.data["state"] == json!("running"))
+                && events.iter().any(|event| {
+                    event.name == "attempt"
+                        && event.data["attempt_number"] == json!(1)
+                        && event.data["state"] == json!("running")
+                })
+        })
+        .await;
 
     store
         .complete_attempt(&locron_store::AttemptCompletion {
@@ -1923,7 +2012,7 @@ async fn sse_stream_live_run_events() {
         .expect("complete attempt");
 
     // The stream ends after the single terminal event.
-    let events = read_sse(response, None, Duration::from_secs(10)).await;
+    let events = stream.finish().await;
     assert!(
         contains_subsequence(
             &events,
