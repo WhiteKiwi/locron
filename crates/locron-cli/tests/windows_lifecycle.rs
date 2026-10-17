@@ -1249,6 +1249,274 @@ fn persist_heartbeat(
     })
 }
 
+fn retry_heartbeat_persist(
+    mut refusal: tempfile::PersistError,
+    path: &Path,
+    deadline: Instant,
+    mut on_refusal: impl FnMut(&tempfile::PersistError),
+) -> Result<std::fs::File, tempfile::PersistError> {
+    loop {
+        if refusal.error.raw_os_error() != Some(5) || Instant::now() >= deadline {
+            return Err(refusal);
+        }
+        on_refusal(&refusal);
+        if Instant::now() >= deadline {
+            return Err(refusal);
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(refusal);
+        }
+        std::thread::sleep(Duration::from_millis(1).min(remaining));
+        if Instant::now() >= deadline {
+            return Err(refusal);
+        }
+        // Admission is bounded; an already-started native persist is not preemptible.
+        // Reuse the actual refused file without recreating or logging a candidate.
+        match refusal.file.persist(path) {
+            Ok(file) => return Ok(file),
+            Err(error) => refusal = error,
+        }
+    }
+}
+
+fn publish_gated_heartbeat(path: &Path, value: u64, gate_deadline: Instant) {
+    let entered = Instant::now();
+    let deadline = gate_deadline.min(entered + Duration::from_millis(100));
+    // Preserve the original first snapshot/persist even if its native I/O consumes
+    // the additional-retry allowance. Expiry returns the last actual refusal.
+    let result = heartbeat_snapshot(path, value)
+        .persist(path)
+        .or_else(|refusal| retry_heartbeat_persist(refusal, path, deadline, |_| {}));
+    if let Err(error) = result {
+        emit_heartbeat_failure(HeartbeatFailurePhase::Persist, value, &error.error);
+        panic!(
+            "publish heartbeat snapshot: phase=persist counter={value} kind={:?} raw_os={:?}",
+            error.error.kind(),
+            error.error.raw_os_error(),
+        );
+    }
+}
+
+mod gated_heartbeat_retry {
+    use super::*;
+
+    fn required<T, E>(result: Result<T, E>) -> T {
+        result.unwrap_or_else(|_| panic!("gated heartbeat control operation refused"))
+    }
+
+    struct CounterFixture {
+        _temporary: tempfile::TempDir,
+        path: PathBuf,
+        deadline: Instant,
+    }
+
+    impl CounterFixture {
+        fn new() -> Self {
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let temporary = required(tempfile::tempdir());
+            let path = temporary.path().join("counter.heartbeat");
+            publish_heartbeat(&path, 7);
+            Self {
+                _temporary: temporary,
+                path,
+                deadline,
+            }
+        }
+
+        fn check(&self) {
+            assert!(
+                Instant::now() < self.deadline,
+                "gated heartbeat control deadline"
+            );
+        }
+
+        fn counter(&self, expected: &str) {
+            self.check();
+            assert_eq!(required(std::fs::read_to_string(&self.path)), expected);
+            self.check();
+        }
+
+        fn hold_destination(&self) -> std::fs::File {
+            self.check();
+            let held = required(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(1)
+                    .open(&self.path),
+            );
+            self.check();
+            held
+        }
+
+        fn refused_candidate(&self) -> (tempfile::PersistError, PathBuf) {
+            self.check();
+            let candidate = heartbeat_snapshot(&self.path, 8);
+            let candidate_path = candidate.path().to_path_buf();
+            let Err(refusal) = candidate.persist(&self.path) else {
+                panic!("held gated heartbeat destination accepted replacement");
+            };
+            self.check();
+            assert_eq!(refusal.error.raw_os_error(), Some(5));
+            assert!(refusal.file.path() == candidate_path);
+            self.counter("7");
+            (refusal, candidate_path)
+        }
+
+        fn published(&self, candidate_path: &Path) {
+            self.counter("8");
+            assert!(matches!(
+                std::fs::symlink_metadata(candidate_path),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound
+            ));
+            self.check();
+        }
+    }
+
+    #[test]
+    fn held_refusal_releases_the_exact_handle_and_publishes_the_same_candidate() {
+        let fixture = CounterFixture::new();
+        let mut held = Some(fixture.hold_destination());
+        let (refusal, candidate_path) = fixture.refused_candidate();
+        let mut callbacks = 0;
+        let result = retry_heartbeat_persist(refusal, &fixture.path, fixture.deadline, |refusal| {
+            fixture.check();
+            assert_eq!(refusal.error.raw_os_error(), Some(5));
+            assert!(refusal.file.path() == candidate_path);
+            fixture.counter("7");
+            callbacks += 1;
+            drop(held.take());
+            assert!(held.is_none());
+            fixture.check();
+        });
+        drop(required(result));
+        assert!(callbacks >= 1);
+        assert!(held.is_none());
+        fixture.published(&candidate_path);
+    }
+
+    #[test]
+    fn permanent_held_refusal_exhausts_one_hundred_ms_admission_without_replacing_old_counter() {
+        let fixture = CounterFixture::new();
+        let held = fixture.hold_destination();
+        let (refusal, candidate_path) = fixture.refused_candidate();
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let result = retry_heartbeat_persist(refusal, &fixture.path, deadline, |refusal| {
+            assert_eq!(refusal.error.raw_os_error(), Some(5));
+            assert!(refusal.file.path() == candidate_path);
+            fixture.counter("7");
+        });
+        let Err(refusal) = result else {
+            panic!("permanent held heartbeat destination accepted replacement");
+        };
+        assert!(Instant::now() >= deadline);
+        fixture.check();
+        assert_eq!(refusal.error.raw_os_error(), Some(5));
+        assert!(refusal.file.path() == candidate_path);
+        fixture.counter("7");
+        drop(held);
+        drop(required(refusal.file.persist(&fixture.path)));
+        fixture.published(&candidate_path);
+    }
+
+    #[test]
+    fn expired_retry_returns_the_real_refusal_without_callback_or_another_persist() {
+        let fixture = CounterFixture::new();
+        let held = fixture.hold_destination();
+        let (refusal, candidate_path) = fixture.refused_candidate();
+        let raw_os = refusal.error.raw_os_error();
+        // Releasing first makes an accidental additional persist observable as8.
+        drop(held);
+        let deadline = Instant::now();
+        let mut callbacks = 0;
+        let result = retry_heartbeat_persist(refusal, &fixture.path, deadline, |_| {
+            callbacks += 1;
+        });
+        let Err(refusal) = result else {
+            panic!("expired heartbeat retry admitted another persist");
+        };
+        assert_eq!(callbacks, 0);
+        assert_eq!(refusal.error.raw_os_error(), raw_os);
+        assert!(refusal.file.path() == candidate_path);
+        fixture.counter("7");
+        assert_eq!(required(std::fs::read_to_string(refusal.file.path())), "8");
+        drop(required(refusal.file.persist(&fixture.path)));
+        fixture.published(&candidate_path);
+    }
+
+    #[test]
+    fn absent_destination_parent_returns_a_genuine_non_five_refusal_without_retry() {
+        let fixture = CounterFixture::new();
+        let destination = fixture
+            .path
+            .parent()
+            .unwrap()
+            .join("absent")
+            .join("counter");
+        let candidate = heartbeat_snapshot(&fixture.path, 8);
+        let candidate_path = candidate.path().to_path_buf();
+        let Err(refusal) = candidate.persist(&destination) else {
+            panic!("absent heartbeat parent accepted replacement");
+        };
+        let raw_os = refusal.error.raw_os_error();
+        assert!(raw_os.is_some() && raw_os != Some(5));
+        assert!(refusal.file.path() == candidate_path);
+        required(std::fs::create_dir(destination.parent().unwrap()));
+        fixture.check();
+        let mut callbacks = 0;
+        let result = retry_heartbeat_persist(refusal, &destination, fixture.deadline, |_| {
+            callbacks += 1;
+        });
+        let Err(refusal) = result else {
+            panic!("unsupported heartbeat refusal was accepted");
+        };
+        assert_eq!(callbacks, 0);
+        assert_eq!(refusal.error.raw_os_error(), raw_os);
+        assert!(refusal.file.path() == candidate_path);
+        fixture.counter("7");
+        assert_eq!(required(std::fs::read_to_string(refusal.file.path())), "8");
+        drop(required(refusal.file.persist(&fixture.path)));
+        fixture.published(&candidate_path);
+    }
+
+    #[test]
+    fn default_sharing_reader_preserves_complete_counters_for_its_actual_native_outcome() {
+        let fixture = CounterFixture::new();
+        let mut reader = required(std::fs::File::open(&fixture.path));
+        let candidate = heartbeat_snapshot(&fixture.path, 8);
+        let candidate_path = candidate.path().to_path_buf();
+        match candidate.persist(&fixture.path) {
+            Ok(file) => {
+                drop(file);
+                let mut old = String::new();
+                required(reader.read_to_string(&mut old));
+                assert_eq!(old, "7");
+                drop(reader);
+                fixture.published(&candidate_path);
+                println!("native-heartbeat-default-sharing outcome=published");
+            }
+            Err(refusal) => {
+                assert_eq!(refusal.error.raw_os_error(), Some(5));
+                assert!(refusal.file.path() == candidate_path);
+                fixture.counter("7");
+                let mut old = String::new();
+                required(reader.read_to_string(&mut old));
+                assert_eq!(old, "7");
+                drop(reader);
+                let result =
+                    retry_heartbeat_persist(refusal, &fixture.path, fixture.deadline, |refusal| {
+                        assert_eq!(refusal.error.raw_os_error(), Some(5));
+                        assert!(refusal.file.path() == candidate_path);
+                        fixture.counter("7");
+                    });
+                drop(required(result));
+                fixture.published(&candidate_path);
+                println!("native-heartbeat-default-sharing outcome=raw5_then_published");
+            }
+        }
+    }
+}
+
 #[test]
 fn native_heartbeat_snapshot_target() {
     let Some(path) = std::env::var_os("WINDOWS_NATIVE_HEARTBEAT_SNAPSHOT") else {
@@ -1392,7 +1660,7 @@ fn native_process_target() {
         let mut heartbeat = 0_u64;
         while !gate.exists() {
             assert!(Instant::now() < deadline, "native target gate did not open");
-            publish_heartbeat(&marker.with_extension("heartbeat"), heartbeat);
+            publish_gated_heartbeat(&marker.with_extension("heartbeat"), heartbeat, deadline);
             heartbeat += 1;
             std::thread::sleep(Duration::from_millis(10));
         }
