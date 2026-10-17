@@ -2,8 +2,8 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::Path;
-use std::time::{Duration, UNIX_EPOCH};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use anyhow::{Context, Result, anyhow, bail};
 use locron_store::{
@@ -11,8 +11,49 @@ use locron_store::{
 };
 
 const MAX_ACTIONS: usize = 100;
+const MAX_ELAPSED: Duration = Duration::from_millis(250);
 const OUTPUT_MAX_AGE_US: i64 = 30 * 24 * 60 * 60 * 1_000_000;
 const ORPHAN_GRACE_US: i64 = 60 * 60 * 1_000_000;
+
+#[cfg(test)]
+type ScanHook = Box<dyn FnMut(&Path)>;
+#[cfg(test)]
+thread_local! {
+    static SCAN_ENTRY: std::cell::RefCell<Option<ScanHook>> = const { std::cell::RefCell::new(None) };
+    static BEFORE_PRUNE_IO: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Bounded in-memory continuation of one automatic orphan sweep.
+/// Each iterator retains its admitted parent until it closes, including between passes.
+#[derive(Default)]
+pub struct MaintenanceCursor {
+    outputs: Option<PathBuf>,
+    directories: Option<DirectoryScan>,
+    current: Option<RunScan>,
+    output_guard: Option<locron_core::filesystem::DirectoryGuard>,
+}
+
+struct DirectoryScan {
+    entries: fs::ReadDir,
+}
+
+struct RunScan {
+    #[cfg(not(windows))]
+    directory: PathBuf,
+    run_id: String,
+    entries: fs::ReadDir,
+    pending: Option<fs::DirEntry>,
+    _guard: locron_core::filesystem::DirectoryGuard,
+}
+
+impl MaintenanceCursor {
+    fn reset(&mut self) {
+        self.current = None;
+        self.directories = None;
+        self.output_guard = None;
+        self.outputs = None;
+    }
+}
 
 /// Counts durable artifact or run actions performed by one maintenance pass.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -31,33 +72,76 @@ pub struct MaintenanceReport {
     pub orphans_removed: usize,
 }
 
-struct Pass {
+struct Pass<'a> {
+    store: &'a Store,
+    deadline: Instant,
+    deferred: bool,
     report: MaintenanceReport,
     errors: Vec<String>,
 }
 
-impl Pass {
-    fn new() -> Self {
+fn is_deferred(error: &anyhow::Error) -> bool {
+    // Admission and pre-BEGIN contention already produce this explicit marker.
+    // A raw BUSY does not prove that no transaction or commit was attempted.
+    matches!(
+        error.downcast_ref::<StoreError>(),
+        Some(StoreError::MaintenanceDeferred)
+    )
+}
+
+impl<'a> Pass<'a> {
+    fn new(store: &'a Store, deadline: Instant) -> Self {
         Self {
+            store,
+            deadline,
+            deferred: false,
             report: MaintenanceReport::default(),
             errors: Vec::new(),
         }
     }
 
     fn remaining(&self) -> usize {
-        MAX_ACTIONS.saturating_sub(self.report.actions)
+        if self.deferred || Instant::now() >= self.deadline {
+            0
+        } else {
+            MAX_ACTIONS.saturating_sub(self.report.actions)
+        }
+    }
+
+    fn ready(&self) -> Result<bool> {
+        Ok(self.remaining() > 0 && self.unit_ready()?)
+    }
+
+    fn unit_ready(&self) -> Result<bool> {
+        Ok(!self.deferred
+            && Instant::now() < self.deadline
+            && !self.store.maintenance_should_yield()?)
     }
 
     fn take_action(&mut self) -> bool {
-        if self.remaining() == 0 {
-            return false;
+        match self.ready() {
+            Ok(true) => {
+                self.report.actions += 1;
+                true
+            }
+            Ok(false) => {
+                self.deferred = true;
+                false
+            }
+            Err(error) => {
+                self.record("check maintenance admission", error);
+                false
+            }
         }
-        self.report.actions += 1;
-        true
     }
 
-    fn record(&mut self, context: &str, error: impl std::fmt::Display) {
-        self.errors.push(format!("{context}: {error}"));
+    fn record(&mut self, context: &str, error: impl Into<anyhow::Error>) {
+        let error = error.into();
+        if is_deferred(&error) {
+            self.deferred = true;
+        } else {
+            self.errors.push(format!("{context}: {error}"));
+        }
     }
 
     fn finish(self) -> Result<MaintenanceReport> {
@@ -73,40 +157,129 @@ impl Pass {
     }
 }
 
-/// Runs one deterministic maintenance pass with a shared 100-action budget.
+/// Runs one maintenance pass with 100 actions and a 250 ms soft elapsed budget.
 ///
 /// `lifetime_id` is the live daemon's scheduler lifetime. Output recovery only
 /// considers terminal attempts or attempts owned by another lifetime, so a
 /// just-admitted attempt whose partial file does not exist yet is never
 /// reconciled as missing while the live daemon owns it.
+#[cfg(test)]
 pub fn maintain(
     store: &Store,
     paths: &StatePaths,
     lifetime_id: &str,
     now_us: i64,
 ) -> Result<MaintenanceReport> {
+    maintain_with_cursor(
+        store,
+        paths,
+        lifetime_id,
+        now_us,
+        &mut MaintenanceCursor::default(),
+    )
+}
+
+/// Runs one bounded pass, preserving at most two guarded scan iterators for later passes.
+pub fn maintain_with_cursor(
+    store: &Store,
+    paths: &StatePaths,
+    lifetime_id: &str,
+    now_us: i64,
+    cursor: &mut MaintenanceCursor,
+) -> Result<MaintenanceReport> {
     if store.paths() != paths {
         bail!("maintenance store and state paths do not match");
     }
-    #[cfg(windows)]
-    let _output_guard = locron_core::filesystem::DirectoryGuard::existing_private(&paths.outputs)
-        .context("validate managed output root")?;
+    if cursor
+        .outputs
+        .as_ref()
+        .is_some_and(|outputs| outputs != &paths.outputs)
+    {
+        cursor.reset();
+    }
+    let deadline = Instant::now() + MAX_ELAPSED;
+    let result = store.with_background_budget(deadline, || {
+        maintain_inner(store, paths, lifetime_id, now_us, deadline, cursor)
+    });
+    if result.is_err() {
+        cursor.reset();
+    }
+    result
+}
+
+fn maintain_inner(
+    store: &Store,
+    paths: &StatePaths,
+    lifetime_id: &str,
+    now_us: i64,
+    deadline: Instant,
+    cursor: &mut MaintenanceCursor,
+) -> Result<MaintenanceReport> {
+    if cursor.output_guard.is_none() {
+        cursor.output_guard = Some(
+            locron_core::filesystem::DirectoryGuard::existing_private(&paths.outputs)
+                .context("validate managed output root")?,
+        );
+        cursor.outputs = Some(paths.outputs.clone());
+    }
     #[cfg(not(windows))]
     require_directory(&paths.outputs).context("validate managed output root")?;
 
-    let mut pass = Pass::new();
-    resume_output_prunes(store, paths, now_us, &mut pass)?;
-    recover_referenced_outputs(store, paths, lifetime_id, now_us, &mut pass)?;
+    let mut pass = Pass::new(store, deadline);
+    macro_rules! phase {
+        ($action:expr) => {
+            if let Err(error) = $action {
+                if is_deferred(&error) {
+                    return pass.finish();
+                }
+                return Err(error);
+            }
+        };
+    }
+    if !pass.ready()? {
+        return pass.finish();
+    }
+    phase!(resume_output_prunes(store, paths, now_us, &mut pass));
+    if !pass.ready()? {
+        return pass.finish();
+    }
+    phase!(recover_referenced_outputs(
+        store,
+        paths,
+        lifetime_id,
+        now_us,
+        &mut pass
+    ));
 
-    let pending_runs = store
+    if !pass.ready()? {
+        return pass.finish();
+    }
+    let pending_runs = match store
         .pending_run_retention(MAX_ACTIONS)
-        .context("list pending run retention")?;
+        .context("list pending run retention")
+    {
+        Ok(candidates) => candidates,
+        Err(error) if is_deferred(&error) => return pass.finish(),
+        Err(error) => return Err(error),
+    };
     let pending_ids = pending_runs
         .iter()
         .map(|candidate| candidate.run_id.clone())
         .collect::<BTreeSet<_>>();
-    prune_pending_run_outputs(store, paths, now_us, &pending_ids, &mut pass)?;
-    prune_output_limits(store, paths, now_us, &mut pass)?;
+    if !pass.ready()? {
+        return pass.finish();
+    }
+    phase!(prune_pending_run_outputs(
+        store,
+        paths,
+        now_us,
+        &pending_ids,
+        &mut pass
+    ));
+    if !pass.ready()? {
+        return pass.finish();
+    }
+    phase!(prune_output_limits(store, paths, now_us, &mut pass));
     for candidate in &pending_runs {
         if !pass.take_action() {
             break;
@@ -117,8 +290,16 @@ pub fn maintain(
             Err(error) => pass.record("finish pending run retention", error),
         }
     }
-    select_run_retention(store, now_us, &mut pass)?;
-    remove_verified_orphans(store, paths, now_us, &mut pass)?;
+    if !pass.ready()? {
+        return pass.finish();
+    }
+    phase!(select_run_retention(store, now_us, &mut pass));
+    if !pass.ready()? {
+        return pass.finish();
+    }
+    phase!(remove_verified_orphans(
+        store, paths, now_us, &mut pass, cursor
+    ));
     pass.finish()
 }
 
@@ -126,7 +307,7 @@ fn resume_output_prunes(
     store: &Store,
     paths: &StatePaths,
     now_us: i64,
-    pass: &mut Pass,
+    pass: &mut Pass<'_>,
 ) -> Result<()> {
     let candidates = store
         .pending_output_prunes(pass.remaining())
@@ -135,7 +316,7 @@ fn resume_output_prunes(
         if !pass.take_action() {
             break;
         }
-        match remove_and_finish_output(store, paths, &candidate, now_us, false) {
+        match remove_and_finish_output(store, paths, &candidate, now_us, false, pass) {
             Ok(()) => pass.report.outputs_pruned += 1,
             Err(error) => pass.record("resume output prune", error),
         }
@@ -148,7 +329,7 @@ fn recover_referenced_outputs(
     paths: &StatePaths,
     lifetime_id: &str,
     now_us: i64,
-    pass: &mut Pass,
+    pass: &mut Pass<'_>,
 ) -> Result<()> {
     let candidates = store
         .referenced_partial_artifacts(pass.remaining(), lifetime_id)
@@ -168,6 +349,7 @@ fn recover_referenced_outputs(
             candidate.attempt_number,
             &candidate.relative_path,
             now_us,
+            pass,
         ) {
             Ok(true) => pass.report.outputs_recovered += 1,
             Ok(false) => pass.report.outputs_missing += 1,
@@ -184,7 +366,11 @@ fn recover_output(
     attempt_number: i64,
     relative_path: &str,
     now_us: i64,
+    pass: &Pass<'_>,
 ) -> Result<bool> {
+    if !pass.unit_ready()? {
+        return Err(StoreError::MaintenanceDeferred.into());
+    }
     let attempt = u16::try_from(attempt_number).context("attempt number is outside path range")?;
     let partial = paths.partial_output(run_id, attempt)?;
     let final_path = paths.final_output(run_id, attempt)?;
@@ -220,7 +406,13 @@ fn recover_output(
     }
     let repaired = match (partial_kind, final_kind) {
         (FileKind::Regular, FileKind::Missing) => {
+            if !pass.unit_ready()? {
+                return Err(StoreError::MaintenanceDeferred.into());
+            }
             let repair = repair_partial(&partial).context("repair partial frame tail")?;
+            if !pass.unit_ready()? {
+                return Err(StoreError::MaintenanceDeferred.into());
+            }
             #[cfg(windows)]
             locron_core::filesystem::rename_private(&partial, &final_path)
                 .context("atomically finalize repaired output")?;
@@ -231,6 +423,9 @@ fn recover_output(
             repair
         }
         (FileKind::Missing | FileKind::Unsafe, FileKind::Regular) => {
+            if !pass.unit_ready()? {
+                return Err(StoreError::MaintenanceDeferred.into());
+            }
             repair_partial(&final_path).context("repair finalized frame tail")?
         }
         (FileKind::Regular, FileKind::Regular) => {
@@ -265,7 +460,7 @@ fn prune_pending_run_outputs(
     paths: &StatePaths,
     now_us: i64,
     pending_ids: &BTreeSet<String>,
-    pass: &mut Pass,
+    pass: &mut Pass<'_>,
 ) -> Result<()> {
     if pending_ids.is_empty() || pass.remaining() == 0 {
         return Ok(());
@@ -280,7 +475,7 @@ fn prune_pending_run_outputs(
         if !pass.take_action() {
             break;
         }
-        match remove_and_finish_output(store, paths, &candidate, now_us, true) {
+        match remove_and_finish_output(store, paths, &candidate, now_us, true, pass) {
             Ok(()) => pass.report.outputs_pruned += 1,
             Err(error) => pass.record("prune output before metadata", error),
         }
@@ -292,7 +487,7 @@ fn prune_output_limits(
     store: &Store,
     paths: &StatePaths,
     now_us: i64,
-    pass: &mut Pass,
+    pass: &mut Pass<'_>,
 ) -> Result<()> {
     if pass.remaining() == 0 {
         return Ok(());
@@ -312,7 +507,7 @@ fn prune_output_limits(
         if !pass.take_action() {
             break;
         }
-        match remove_and_finish_output(store, paths, &candidate, now_us, true) {
+        match remove_and_finish_output(store, paths, &candidate, now_us, true, pass) {
             Ok(()) => {
                 retained = retained.saturating_sub(candidate.physical_bytes);
                 pass.report.outputs_pruned += 1;
@@ -329,6 +524,7 @@ fn remove_and_finish_output(
     candidate: &RetentionCandidate,
     now_us: i64,
     mark_pending: bool,
+    pass: &Pass<'_>,
 ) -> Result<()> {
     let attempt = u16::try_from(candidate.attempt_number)
         .context("retention attempt number is outside path range")?;
@@ -339,6 +535,15 @@ fn remove_and_finish_output(
     }
     if mark_pending {
         store.mark_output_prune_pending(candidate, now_us)?;
+    }
+    #[cfg(test)]
+    BEFORE_PRUNE_IO.with(|hook| {
+        if let Some(action) = hook.borrow_mut().take() {
+            action();
+        }
+    });
+    if !pass.unit_ready()? {
+        return Err(StoreError::MaintenanceDeferred.into());
     }
     #[cfg(windows)]
     locron_core::filesystem::remove_private_file(&path).context("remove retained output")?;
@@ -372,7 +577,7 @@ fn remove_and_finish_output(
     Ok(())
 }
 
-fn select_run_retention(store: &Store, now_us: i64, pass: &mut Pass) -> Result<()> {
+fn select_run_retention(store: &Store, now_us: i64, pass: &mut Pass<'_>) -> Result<()> {
     let candidates = store
         .run_retention_candidates(now_us, pass.remaining())
         .context("list run metadata retention candidates")?;
@@ -396,9 +601,10 @@ fn remove_verified_orphans(
     store: &Store,
     paths: &StatePaths,
     now_us: i64,
-    pass: &mut Pass,
+    pass: &mut Pass<'_>,
+    cursor: &mut MaintenanceCursor,
 ) -> Result<()> {
-    if pass.remaining() == 0 || now_us < ORPHAN_GRACE_US {
+    if !pass.ready()? || now_us < ORPHAN_GRACE_US {
         return Ok(());
     }
     let cutoff = UNIX_EPOCH
@@ -406,105 +612,138 @@ fn remove_verified_orphans(
             u64::try_from(now_us - ORPHAN_GRACE_US).unwrap_or(0),
         ))
         .ok_or_else(|| anyhow!("orphan cutoff is outside system time range"))?;
-    let mut directories = sorted_entries(&paths.outputs)?;
-    for directory in directories.drain(..) {
-        if pass.remaining() == 0 {
+    if cursor.directories.is_none() {
+        cursor.directories = Some(DirectoryScan {
+            entries: fs::read_dir(&paths.outputs)?,
+        });
+        cursor.outputs = Some(paths.outputs.clone());
+    }
+    loop {
+        if !pass.ready()? {
             break;
         }
-        let directory_name = directory.file_name();
-        let Some(run_id) = directory_name.to_str() else {
-            continue;
-        };
-        if !is_canonical_uuid(run_id) {
-            continue;
-        }
-        let directory_path = directory.path();
-        #[cfg(windows)]
-        let _directory_guard =
-            match locron_core::filesystem::DirectoryGuard::existing_private(&directory_path) {
-                Ok(guard) => guard,
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
-                    ) =>
-                {
-                    continue;
-                }
-                Err(error) => return Err(error).context("validate orphan output directory"),
-            };
-        #[cfg(not(windows))]
-        if !is_safe_directory(&directory_path)? {
-            continue;
-        }
-        let run_exists = match store.run(run_id) {
-            Ok(_) => true,
-            Err(StoreError::NotFound(_)) => false,
-            Err(error) => {
-                pass.record("verify orphan run identity", error);
-                continue;
-            }
-        };
-        for entry in sorted_entries(&directory_path)? {
-            if pass.remaining() == 0 {
+        if cursor.current.is_none() {
+            let next = cursor
+                .directories
+                .as_mut()
+                .and_then(|scan| scan.entries.next());
+            let Some(directory) = next else {
+                cursor.current = None;
+                cursor.directories = None;
                 break;
-            }
-            let path = entry.path();
-            if !is_canonical_output_name(&entry.file_name())
-                || file_kind(&path)? != FileKind::Regular
-            {
+            };
+            let directory = directory?;
+            let directory_name = directory.file_name();
+            let Some(run_id) = directory_name
+                .to_str()
+                .filter(|name| is_canonical_uuid(name))
+            else {
+                continue;
+            };
+            let directory_path = directory.path();
+            #[cfg(not(windows))]
+            if !is_safe_directory(&directory_path)? {
                 continue;
             }
-            if run_exists {
-                let relative_path = format!("{run_id}/{}", entry.file_name().to_string_lossy());
-                match store.output_artifact_references(run_id, &relative_path) {
-                    Ok(true) => continue,
-                    Ok(false) => {}
-                    Err(error) => {
-                        pass.record("verify output artifact reference", error);
+            let guard =
+                match locron_core::filesystem::DirectoryGuard::existing_private(&directory_path) {
+                    Ok(guard) => guard,
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+                        ) =>
+                    {
                         continue;
                     }
-                }
-            }
-            #[cfg(windows)]
-            let metadata =
-                locron_core::filesystem::open_private(&path, fs::OpenOptions::new().read(true))?
-                    .metadata()?;
-            #[cfg(not(windows))]
-            let metadata = fs::symlink_metadata(&path)?;
-            if metadata
-                .modified()
-                .context("read orphan modification time")?
-                > cutoff
-            {
+                    Err(error) => return Err(error).context("validate orphan output directory"),
+                };
+            cursor.current = Some(RunScan {
+                entries: fs::read_dir(&directory_path)?,
+                #[cfg(not(windows))]
+                directory: directory_path,
+                run_id: run_id.to_owned(),
+                pending: None,
+                _guard: guard,
+            });
+        }
+        if !pass.ready()? {
+            break;
+        }
+        let current = cursor
+            .current
+            .as_mut()
+            .ok_or_else(|| anyhow!("orphan cursor has no current directory"))?;
+        #[cfg(not(windows))]
+        if !is_safe_directory(&current.directory)? {
+            cursor.current = None;
+            continue;
+        }
+        let next = current
+            .pending
+            .take()
+            .map(Ok)
+            .or_else(|| current.entries.next());
+        let Some(entry) = next else {
+            cursor.current = None;
+            continue;
+        };
+        let entry = entry?;
+        let path = entry.path();
+        if !is_canonical_output_name(&entry.file_name()) || file_kind(&path)? != FileKind::Regular {
+            continue;
+        }
+        let relative_path = format!("{}/{}", current.run_id, entry.file_name().to_string_lossy());
+        match store.output_artifact_references(&current.run_id, &relative_path) {
+            Ok(true) => {
+                #[cfg(test)]
+                SCAN_ENTRY.with(|hook| {
+                    if let Some(hook) = hook.borrow_mut().as_mut() {
+                        hook(&path);
+                    }
+                });
                 continue;
             }
-            if !pass.take_action() {
+            Ok(false) => {}
+            Err(error) => {
+                pass.record("verify output artifact reference", error);
+                current.pending = Some(entry);
                 break;
             }
-            #[cfg(windows)]
-            let removal = locron_core::filesystem::remove_private_file(&path);
-            #[cfg(not(windows))]
-            let removal = fs::remove_file(&path);
-            match removal {
-                Ok(()) => {
-                    pass.report.orphans_removed += 1;
-                    #[cfg(unix)]
-                    if let Err(error) = sync_directory(&directory_path) {
-                        pass.record("sync orphan output directory", error);
-                    }
+        }
+        #[cfg(windows)]
+        let metadata =
+            locron_core::filesystem::open_private(&path, fs::OpenOptions::new().read(true))?
+                .metadata()?;
+        #[cfg(not(windows))]
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata
+            .modified()
+            .context("read orphan modification time")?
+            > cutoff
+        {
+            continue;
+        }
+        if !pass.take_action() {
+            current.pending = Some(entry);
+            break;
+        }
+        #[cfg(windows)]
+        let removal = locron_core::filesystem::remove_private_file(&path);
+        #[cfg(not(windows))]
+        let removal = fs::remove_file(&path);
+        match removal {
+            Ok(()) => {
+                pass.report.orphans_removed += 1;
+                #[cfg(unix)]
+                if let Err(error) = sync_directory(&current.directory) {
+                    pass.record("sync orphan output directory", error);
                 }
-                Err(error) => pass.record("remove verified orphan output", error),
             }
+            Err(error) => pass.record("remove verified orphan output", error),
         }
     }
     Ok(())
-}
-
-fn sorted_entries(path: &Path) -> Result<Vec<fs::DirEntry>> {
-    let mut entries = fs::read_dir(path)?.collect::<std::io::Result<Vec<_>>>()?;
-    entries.sort_by_key(fs::DirEntry::file_name);
-    Ok(entries)
 }
 
 fn is_canonical_uuid(value: &str) -> bool {
@@ -594,6 +833,73 @@ mod tests {
         let paths = StatePaths::new(temp.path().join("private"));
         let store = Store::open(paths.clone(), "test", 1).unwrap();
         (temp, paths, store)
+    }
+
+    #[test]
+    fn only_explicit_cooperative_deferral_returns_a_successful_partial_pass() {
+        let (_temp, paths, store) = open_store();
+        // Rollback-journal readers allow BEGIN and UPDATE but prevent COMMIT.
+        // Such BUSY is a persistence failure, never an admission deferral.
+        let database = paths.root.join("commit-busy.db");
+        let mut writer = rusqlite::Connection::open(&database).unwrap();
+        writer
+            .execute_batch("CREATE TABLE value (n INTEGER); INSERT INTO value VALUES(1)")
+            .unwrap();
+        writer.busy_timeout(Duration::ZERO).unwrap();
+        let reader = rusqlite::Connection::open(&database).unwrap();
+        reader.execute_batch("BEGIN; SELECT * FROM value").unwrap();
+        let transaction = writer
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        transaction.execute("UPDATE value SET n=2", []).unwrap();
+        let busy = transaction.commit().unwrap_err();
+        assert_eq!(
+            busy.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::DatabaseBusy)
+        );
+        let mut pass = Pass::new(&store, Instant::now() + MAX_ELAPSED);
+        pass.record("persist maintenance", StoreError::Sqlite(busy));
+        assert!(!pass.deferred);
+        assert!(pass.finish().is_err());
+        reader.execute_batch("ROLLBACK").unwrap();
+
+        let mut pass = Pass::new(&store, Instant::now() + MAX_ELAPSED);
+        pass.record("yield maintenance", StoreError::MaintenanceDeferred);
+        assert!(pass.deferred);
+        assert_eq!(pass.finish().unwrap(), MaintenanceReport::default());
+    }
+
+    fn maintain_until(
+        store: &Store,
+        paths: &StatePaths,
+        lifetime: &str,
+        now_us: i64,
+        complete: impl Fn(&MaintenanceReport) -> bool,
+    ) -> MaintenanceReport {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut cursor = MaintenanceCursor::default();
+        let mut total = MaintenanceReport::default();
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "bounded maintenance did not complete: {total:?}"
+            );
+            let pass = maintain_with_cursor(store, paths, lifetime, now_us, &mut cursor).unwrap();
+            assert!(
+                Instant::now() < deadline,
+                "bounded maintenance exceeded its progress deadline"
+            );
+            assert!(pass.actions <= MAX_ACTIONS);
+            total.actions += pass.actions;
+            total.outputs_recovered += pass.outputs_recovered;
+            total.outputs_missing += pass.outputs_missing;
+            total.outputs_pruned += pass.outputs_pruned;
+            total.runs_pruned += pass.runs_pruned;
+            total.orphans_removed += pass.orphans_removed;
+            if complete(&total) {
+                return total;
+            }
+        }
     }
 
     fn write_private(path: &Path, bytes: &[u8]) {
@@ -750,13 +1056,205 @@ mod tests {
         terminalize(&store, &run_id, 11);
         store.set_setting("output_limit_bytes", "0", 13).unwrap();
 
-        // The attempt is terminal now, so the pass recovers the partial and
-        // then prunes it under the zero-byte limit.
-        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
+        // Recovery and pruning can occupy separate bounded passes.
+        let report = maintain_until(&store, &paths, &lifetime, 14, |report| {
+            report.outputs_pruned >= 1
+        });
 
         assert_eq!(report.outputs_pruned, 1);
         assert!(!paths.final_output(&run_id, 1).unwrap().exists());
         assert_eq!(store.retained_output_bytes().unwrap(), 0);
+    }
+
+    fn finalized_fixture() -> (
+        tempfile::TempDir,
+        StatePaths,
+        Store,
+        String,
+        RetentionCandidate,
+    ) {
+        let (temporary, paths, store) = open_store();
+        let run_id = uuid::Uuid::from_u128(180).to_string();
+        let lifetime = admit_one(&store, &run_id);
+        let directory = paths.output_directory(&run_id).unwrap();
+        locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
+        let partial = paths.partial_output(&run_id, 1).unwrap();
+        let mut writer = FrameWriter::create(&partial).unwrap();
+        writer.write(FrameChannel::Stdout, 1, b"retained").unwrap();
+        writer.sync().unwrap();
+        drop(writer);
+        terminalize(&store, &run_id, 11);
+        maintain(&store, &paths, &lifetime, 12).unwrap();
+        let candidate = store.output_retention_candidates(1).unwrap().remove(0);
+        (temporary, paths, store, lifetime, candidate)
+    }
+
+    #[test]
+    fn foreground_after_prune_intent_preserves_file_and_next_pass_resumes() {
+        let (_temporary, paths, store, lifetime, candidate) = finalized_fixture();
+        store.set_setting("output_limit_bytes", "0", 13).unwrap();
+        let intent_path = paths.root.join("writer-intent.lock");
+        let held = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let captured = held.clone();
+        BEFORE_PRUNE_IO.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                let intent = locron_core::filesystem::open_private_or_create(&intent_path).unwrap();
+                intent.try_lock_shared().unwrap();
+                *captured.borrow_mut() = Some(intent);
+            }))
+        });
+        let report = maintain(&store, &paths, &lifetime, 14).unwrap();
+        assert_eq!(report.outputs_pruned, 0);
+        assert!(paths.outputs.join(&candidate.relative_path).is_file());
+        assert_eq!(store.pending_output_prunes(10).unwrap().len(), 1);
+        drop(held.borrow_mut().take());
+        let report = maintain(&store, &paths, &lifetime, 15).unwrap();
+        assert_eq!(report.outputs_pruned, 1);
+        assert!(!paths.outputs.join(&candidate.relative_path).exists());
+        assert!(store.pending_output_prunes(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn hundredth_reserved_prune_unit_executes_without_starting_a_hundred_and_first() {
+        let (_temporary, paths, store, _lifetime, candidate) = finalized_fixture();
+        // Isolate the action dimension from the separately tested elapsed dimension.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        store.with_background_budget(deadline, || {
+            let mut pass = Pass::new(&store, deadline);
+            pass.report.actions = MAX_ACTIONS - 1;
+            assert!(pass.take_action());
+            remove_and_finish_output(&store, &paths, &candidate, 13, true, &pass).unwrap();
+            assert_eq!(pass.report.actions, MAX_ACTIONS);
+            assert!(!pass.take_action());
+        });
+        assert!(!paths.outputs.join(&candidate.relative_path).exists());
+        assert!(store.pending_output_prunes(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn expired_pass_preserves_pending_work_and_a_later_pass_completes_it() {
+        let (_temporary, paths, store, lifetime, candidate) = finalized_fixture();
+        store.mark_output_prune_pending(&candidate, 13).unwrap();
+        let deadline = Instant::now();
+        let started = Instant::now();
+        let report = store
+            .with_background_budget(deadline, || {
+                maintain_inner(
+                    &store,
+                    &paths,
+                    &lifetime,
+                    14,
+                    deadline,
+                    &mut MaintenanceCursor::default(),
+                )
+            })
+            .unwrap();
+        assert_eq!(report.actions, 0);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(paths.outputs.join(&candidate.relative_path).is_file());
+        assert_eq!(store.pending_output_prunes(10).unwrap().len(), 1);
+        assert_eq!(
+            maintain(&store, &paths, &lifetime, 15)
+                .unwrap()
+                .outputs_pruned,
+            1
+        );
+    }
+
+    #[test]
+    fn retained_orphan_cursor_crosses_slow_referenced_prefix_between_passes() {
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                SCAN_ENTRY.with(|hook| hook.borrow_mut().take());
+            }
+        }
+        let (_temporary, paths, store, lifetime, candidate) = finalized_fixture();
+        let run_id = candidate.run_id.clone();
+        let directory = paths.output_directory(&run_id).unwrap();
+        for number in 2..=10 {
+            write_private(
+                &directory.join(format!("{number}.log")),
+                b"retained or orphan",
+            );
+        }
+        let entries = fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        let orphans = entries
+            .iter()
+            .rev()
+            .filter(|path| path.file_name().unwrap() != "1.log")
+            .take(2)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let referenced = entries
+            .iter()
+            .filter(|path| !orphans.contains(*path))
+            .cloned()
+            .collect::<Vec<_>>();
+        let now_us = orphan_pass_time();
+        store
+            .set_setting("run_retention_age_us", "none", now_us)
+            .unwrap();
+        let external = rusqlite::Connection::open(&paths.database).unwrap();
+        for path in &referenced {
+            let number: i64 = path.file_stem().unwrap().to_str().unwrap().parse().unwrap();
+            if number == 1 {
+                continue;
+            }
+            external.execute("INSERT INTO attempts(run_id,attempt_number,lifetime_id,state,started_at_us,finished_at_us) VALUES(?1,?2,?3,'succeeded',?4,?4)", rusqlite::params![run_id,number,lifetime,now_us]).unwrap();
+            external.execute("INSERT INTO output_artifacts(run_id,attempt_number,relative_path,state,finalized_at_us) VALUES(?1,?2,?3,'finalized',?4)", rusqlite::params![run_id,number,format!("{run_id}/{number}.log"),now_us]).unwrap();
+        }
+        external
+            .execute("UPDATE output_artifacts SET finalized_at_us=?1", [now_us])
+            .unwrap();
+        drop(external);
+        let visited = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let captured = visited.clone();
+        SCAN_ENTRY.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move |path| {
+                captured.borrow_mut().push(path.to_path_buf());
+                // One completed read consumes this pass; restarting enumeration would
+                // repeatedly inspect its first referenced entry and never reach the tail.
+                std::thread::sleep(MAX_ELAPSED + Duration::from_millis(5));
+            }))
+        });
+        let _reset = Reset;
+        let mut cursor = MaintenanceCursor {
+            output_guard: Some(
+                locron_core::filesystem::DirectoryGuard::existing_private(&paths.outputs).unwrap(),
+            ),
+            outputs: Some(paths.outputs.clone()),
+            ..MaintenanceCursor::default()
+        };
+        let mut removed = 0;
+        let mut passes = 0;
+        while orphans.iter().any(|path| path.exists()) {
+            passes += 1;
+            assert!(passes <= entries.len() + 2, "orphan scan did not resume");
+            let deadline = Instant::now() + MAX_ELAPSED;
+            let report = store.with_background_budget(deadline, || {
+                let mut pass = Pass::new(&store, deadline);
+                remove_verified_orphans(&store, &paths, now_us, &mut pass, &mut cursor).unwrap();
+                pass.finish().unwrap()
+            });
+            removed += report.orphans_removed;
+            assert!(report.actions <= MAX_ACTIONS);
+        }
+        assert!(passes > 1);
+        assert_eq!(removed, orphans.len());
+        let visited = visited.borrow();
+        assert_eq!(visited.len(), visited.iter().collect::<BTreeSet<_>>().len());
+        assert!(referenced.iter().all(|path| path.is_file()));
+        assert_eq!(
+            store
+                .output_retention_candidates(MAX_ACTIONS)
+                .unwrap()
+                .len(),
+            referenced.len()
+        );
     }
 
     #[test]
@@ -810,9 +1308,8 @@ mod tests {
         assert!(!directory.exists());
     }
 
-    #[test]
-    fn orphan_cleanup_is_bounded_and_ignores_unexpected_objects() {
-        let (_temp, paths, store) = open_store();
+    fn orphan_fixture() -> (tempfile::TempDir, StatePaths, Store, PathBuf) {
+        let (temporary, paths, store) = open_store();
         let run_id = uuid::Uuid::from_u128(4).to_string();
         let directory = paths.output_directory(&run_id).unwrap();
         locron_core::filesystem::DirectoryGuard::private(&directory).unwrap();
@@ -820,19 +1317,68 @@ mod tests {
             write_private(&directory.join(format!("{attempt}.log")), b"old");
         }
         fs::create_dir(directory.join("unexpected")).unwrap();
+        (temporary, paths, store, directory)
+    }
 
-        let report = maintain(&store, &paths, "no-lifetime", orphan_pass_time()).unwrap();
+    fn remaining_orphan_files(directory: &Path) -> usize {
+        fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_type().unwrap().is_file())
+            .count()
+    }
 
+    #[test]
+    fn orphan_cleanup_is_bounded_and_ignores_unexpected_objects() {
+        let (_temporary, paths, store, directory) = orphan_fixture();
+        let mut cursor = MaintenanceCursor::default();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let now_us = orphan_pass_time();
+        let mut removed = 0;
+        while removed < 101 {
+            assert!(
+                Instant::now() < deadline,
+                "orphan maintenance did not complete"
+            );
+            let report =
+                maintain_with_cursor(&store, &paths, "no-lifetime", now_us, &mut cursor).unwrap();
+            assert!(
+                Instant::now() < deadline,
+                "orphan maintenance exceeded its progress deadline"
+            );
+            assert!(report.actions <= MAX_ACTIONS);
+            assert_eq!(report.actions, report.orphans_removed);
+            removed += report.orphans_removed;
+            assert_eq!(remaining_orphan_files(&directory), 101 - removed);
+            assert!(directory.join("unexpected").is_dir());
+        }
+        assert_eq!(removed, 101);
+        assert_eq!(remaining_orphan_files(&directory), 0);
+    }
+
+    #[test]
+    fn orphan_action_budget_completes_the_hundredth_and_refuses_the_next() {
+        let (_temporary, paths, store, directory) = orphan_fixture();
+        let mut cursor = MaintenanceCursor {
+            output_guard: Some(
+                locron_core::filesystem::DirectoryGuard::existing_private(&paths.outputs).unwrap(),
+            ),
+            outputs: Some(paths.outputs.clone()),
+            ..MaintenanceCursor::default()
+        };
+        // Isolate action admission from the independently qualified250 ms pass clock.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let report = store.with_background_budget(deadline, || {
+            let mut pass = Pass::new(&store, deadline);
+            remove_verified_orphans(&store, &paths, orphan_pass_time(), &mut pass, &mut cursor)
+                .unwrap();
+            assert!(!pass.take_action());
+            pass.finish().unwrap()
+        });
+        assert!(Instant::now() < deadline);
         assert_eq!(report.actions, MAX_ACTIONS);
         assert_eq!(report.orphans_removed, MAX_ACTIONS);
-        assert_eq!(
-            fs::read_dir(&directory)
-                .unwrap()
-                .filter_map(std::result::Result::ok)
-                .filter(|entry| entry.file_type().unwrap().is_file())
-                .count(),
-            1
-        );
+        assert_eq!(remaining_orphan_files(&directory), 1);
         assert!(directory.join("unexpected").is_dir());
     }
 
@@ -856,7 +1402,9 @@ mod tests {
         // The owning daemon dies; the restarted daemon recovers the
         // referenced partial and removes the unreferenced 2.log.
         let restarted = restart_lifetime(&store, 9);
-        let report = maintain(&store, &paths, &restarted, orphan_pass_time()).unwrap();
+        let report = maintain_until(&store, &paths, &restarted, orphan_pass_time(), |report| {
+            report.outputs_recovered >= 1 && report.orphans_removed >= 1
+        });
 
         assert_eq!(report.outputs_recovered, 1);
         assert_eq!(report.orphans_removed, 1);

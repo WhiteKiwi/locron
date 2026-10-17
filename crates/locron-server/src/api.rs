@@ -113,6 +113,9 @@ impl ApiError {
 /// (IMPLEMENTATION.md §5): `not_found` → 404, `durable_conflict` → 409,
 /// daemon-required categories → 503, everything else → 500 `state_error`.
 pub(crate) fn store_error_response(error: &StoreError) -> Response {
+    if let Some(storage) = error.diagnostic() {
+        return envelope::storage_error(storage);
+    }
     let (status, code, message) = match error {
         StoreError::NotFound(message) => (StatusCode::NOT_FOUND, "not_found", message.clone()),
         StoreError::Conflict(message) => {

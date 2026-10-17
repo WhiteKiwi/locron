@@ -6495,3 +6495,755 @@ guard/resource/oracle/clock or production change. Counters/optional barrier have
 no custom Drop; no hidden release timing or runtime PASS is established.
 The [complete plan](planning/WINDOWS_STORE_FIXTURE_HISTORY_FIELD_2026-10-06.md)
 retains published/failed evidence and the ongoing run; Source is separately gated.
+
+## SQLite contention research (#180, #181; 2026-10-16)
+
+At base a3f43fc15e1a5db75d811e65e35add59d51c055a all production SQL writes are
+in store.rs and migration.rs. The complete writer/delegate/read-only inventory,
+lock order and safe-retry boundaries are in
+[the contention plan](planning/SQLITE_CONTENTION_2026-10-16.md). remove_job and six
+other mutation families use autocommit rather than the existing immediate
+transaction boundary. Store's mutex is per instance, so it cannot arbitrate CLI,
+API/MCP or daemon processes. Core's StorePort mapping currently merges SQLite
+BUSY and LOCKED into Unavailable("SQLite is busy"), losing primary/extended codes;
+CLI/API direct Store paths return state_error and actual CLI exit5. CLI.md's broad
+busy exit4 wording does not describe that actual removal behavior.
+
+Windows SqlitePreparation::new and windows_configure each establish independent
+five-second allowances before migrations, while Unix configure installs a
+five-second SQLite busy handler. A correct single budget must flow through these
+existing adapters as well as the new advisory admission and connection mutex.
+Windows' current WAL loop already finalizes each fixed PRAGMA before retry; preserve
+that boundary and its diagnostic tests. std::fs File independent-open shared and
+exclusive try-lock APIs fit the existing Rust1.94 foundation and safe-code policy;
+existing guarded permanent-file primitives preserve private no-reparse admission.
+Native Windows/macOS contention behavior is not measured by this Linux inspection.
+
+A controlled Python SQLite3.53.1 in-memory fixture with60000 terminal rows,100 jobs,
+three-way finish-time ties and the exact existing runs_retention(state,finished_at_us,id)
+index measured30 iterations of the existing global newer-row count versus a LIMIT1000
+count. Mean query time was4.816 ms versus0.132 ms; counts were59999 versus1000, which
+produce the same >=1000 decision. Both EXPLAIN QUERY PLAN results use the covering
+runs_retention index (state=? AND finished_at_us>?). This supports bounded threshold
+probes without changing indexes, but is not bundled-SQLite transaction-hold evidence
+or a claim about the unknown original production holder. Composed Store fixture
+measurements and retention-policy regression tests remain required.
+
+Automatic maintenance currently caps100 actions but has no elapsed budget. Some
+SQL mutations already commit separately; output repair/remove occurs outside SQLite
+transactions and must stay there. Its synchronous composition permits scoped
+thread-local background priority without changing concurrent foreground priority.
+
+### Bundled-SQLite transaction-hold qualification (2026-10-16)
+
+The composed development build was measured against base
+`a3f43fc15e1a5db75d811e65e35add59d51c055a` with Rust1.98 debug test binaries and
+bundled SQLite3.53.2 on Linux. The baseline changes only add test-only monotonic
+timing immediately after successful BEGIN IMMEDIATE through successful COMMIT.
+The new build uses its latest-write observation with the same boundary. Both use
+isolated temporary state, existing schema/indexes, full synchronous durability and
+the same independently checked result ledgers. The ignored qualification fixtures
+were explicitly executed; they are not counted as passed merely because ignored.
+
+| Fixed fixture,20 rounds | Baseline median hold | New median hold | Median reduction |
+| --- | ---: | ---: | ---: |
+|128 scheduled occurrences,16 KiB immutable target payload each |39,069 µs |25,678 µs |34.28% |
+|60,000 terminal rows across100 jobs,three-way finish ties,global count1000 |11,183.5 µs |1,954.5 µs |82.52% |
+
+Every materialization round inserted128 distinct occurrences with64 queued and64
+skipped-concurrency rows, no duplicates and nominal-time sum20,928. Every retention
+round preserved60,000 run rows and reserved exactly the same oldest run. The
+materialization hold ranges were33,434–91,242 µs versus22,634–63,777 µs; retention
+ranges were10,797–13,577 µs versus1,848–2,693 µs. Wall-time medians were39,107 versus
+35,729.5 µs and11,211.5 versus2,016.5 µs respectively.
+
+An earlier alternating run during MSRV compilation measured33.51% and82.67% median
+hold reductions; the reported run reversed baseline/new order after that build
+completed. These fixed debug/Linux fixtures demonstrate about34% and83% shorter
+writer hold; host scheduling outliers remain, and this is no universal latency or
+native-platform guarantee. Per-round timings, full result ledgers, binary hashes,
+ordering/load observations and baseline instrumentation are preserved in
+[the measurement receipt](planning/SQLITE_CONTENTION_MEASUREMENTS_2026-10-16.json).
+The measured new binaries bind a composed uncommitted development snapshot;
+repository-head regression qualification is recorded separately in Issues.
+
+### Composed storage boundaries and recovery review
+
+The implementation preserves the original adapter error through explicit
+`StoreError::original_error()` inspection. Its safe wrapper excludes that cause
+from Display, Debug and standard Error::source traversal: SQLite/JSON/OS messages
+may contain configured values, and an anyhow alternate chain must not reveal them.
+The shared diagnostic projection retains numeric codes and measured facts.
+
+The existing engine completion loop is distinct from the new BEGIN-only contention
+retry. It retains one immutable attempt/outcome/completion instant while retrying
+only durable completion recording; it never re-executes the target. Store's exact
+completion_already_committed, termination_completion_committed and runner-failure
+identity checks resolve an earlier unknown commit. Durable conflicts still stop the
+normal completion path; shutdown interrupts later recovery retries. The adapter's
+existing CompletionError::Transient category covers an unavailable durable store,
+including LOCKED/I/O; this is not a claim those causes are SQLite BUSY or permission
+to replay arbitrary mutation requests. No new engine retry loop was introduced.
+
+The new ordinary mutation wrapper retries only BUSY before BEGIN, after which the
+body and commit run once. The postcommit readback releases advisory writer ownership,
+uses the original request deadline and zero SQLite busy handler, and reports an
+already-committed durable outcome if reading the result fails. Tests verify this
+through actual postcommit invalid UTF-8/JSON and durable row/event ledgers. Raw Core
+adapter failures outside an observed write use persistence_port/adapter with unknown
+outcome rather than inventing timing/rollback or collapsing LOCKED into BUSY.
+
+Automatic orphan scanning now streams directory entries and checks elapsed time and
+foreground intent between entries instead of collecting/sorting the entire tree
+before it can yield. Pending prune intent is checked again before filesystem work.
+A deterministic held shared-intent fixture inserted after the intent commit proves
+the file survives and the next pass resumes. Another test admits action100 and
+refuses101 independently of the elapsed dimension; an expired pass preserves pending
+work. The initial Linux maintenance controls passed12/12; adding the retained
+iterator regression brings the composed maintenance suite to13/13. A scan paused
+after completed referenced entries resumes its two guarded iterators on subsequent
+passes, crosses the slow referenced prefix, removes both later orphans, and preserves
+every referenced artifact. The daemon composition retains this bounded cursor;
+sweep completion, errors and state-path changes close/reset its scan resources.
+The separate-process Store control proves foreground intent, immediate background
+deferral and automatic OS lock recovery after a writer process is killed. The
+single-budget fixture explicitly holds advisory admission and the connection mutex
+before a real external SQLite writer; one total5s failure preserves the disabled,
+unremoved row. Short released contention records successful wait/transaction timing.
+Native Windows/macOS timing and permission behavior remain unmeasured here.
+
+
+The real COMMIT failure control enables deferred foreign keys, executes the body
+once, and receives SQLite19/787 at COMMIT. Even though transaction drop subsequently
+restores autocommit and the independent row ledger proves rollback, its diagnostic
+conservatively retains unknown outcome, retries0 and retryable=false. Separate
+controls exercise actual SQLITE_LOCKED6, invalid database26 and a real guarded writer
+path I/O failure; none becomes retryable BUSY. UUID-shaped-name removal resolves one
+existing live identity inside its transaction and cannot soft-delete two matching
+jobs. The complete writer inventory was rescanned after implementation: all23 mutation
+implementations use shared admission; every production migration begin/commit uses
+the same opening operation. Historical migration files/checksums are unchanged.
+
+On the final development snapshot, `cargo +1.98.0 clippy -p locron-store -p locron
+--bin locron --all-targets -- -D warnings`, formatting and whitespace checks passed.
+Parent-owned full workspace/MSRV qualification, artifact bindings and exact-revision
+publication evidence belong to Issues; these local findings do not assert native
+Windows/macOS or hosted-CI acceptance.
+
+### Linux maintenance one-pass fixture failures at 7fde
+
+Native Linux stable CI job116792218392 returned successful maintenance reports with
+outputs_pruned0 (global-output-limit fixture) and orphans_removed0 (existing-run orphan
+fixture); their original one-pass expected1 assertions failed. The remaining prune
+contract checks passed. Both cases pass without load locally, and source inspection
+shows legitimate elapsed-budget returns between recovery and the later prune/orphan
+phase. The CI output did not capture exact stage elapsed time, so runner load is a
+plausible explanation rather than a measured root cause. The two fixtures must instead
+retain the production cursor and verify the same exact final counts/files/bytes across
+bounded passes, with each pass capped at100 actions and a fixed five-second progress
+deadline. This follows the selected250 ms soft-pass contract; it neither changes the
+production budget nor relaxes the final safety oracles. The deterministic expired-pass,
+post-intent yield and slow referenced-prefix cursor regressions remain authoritative.
+
+### macOS raw-byte state refusal envelope at 7fde
+
+Native macOS aarch64 stable CI job116792218274 at
+`7fde26bc4b10f3adf955ed936ecd0e9fdb175503` passed CLI unit/prune qualification but
+failed the three non-UTF-8 state-discovery controls at their complete-envelope
+comparison. The existing macOS fixture expects native refusal with OS92 and an empty
+owned parent; its retired envelope requires only the raw message `Illegal byte
+sequence (os error 92)`. The reported assertion prints no actual payload, so the
+new diagnostic field values have not yet been independently observed on this host.
+
+Source trace confirms `Store::open` creates operation `open`, sets stage
+`state_preparation`, and calls `paths.ensure()` before admission, connection opening
+or SQLite work. A native path-preparation I/O refusal therefore has the agreed safe
+16-field projection: kind `io`, OS92, null SQLite codes, measured elapsed microseconds,
+zero admission/connection/SQLite waits, transaction/commit time and retries,
+retryable=false, durable_outcome=`not_committed`, and lock_owner=`unknown`. The safe
+message reports those static facts and elapsed time instead of the raw OS text or
+path bytes. Only the macOS expectation is updated to this exact complete envelope;
+the preview result, exit5, empty stderr,1024-byte output bound, raw-byte path
+selection and empty-parent checks remain unchanged. Linux keeps its successful
+raw-byte path controls. Native macOS rerun remains required to establish acceptance;
+Linux compilation/tests do not execute the macOS branch.
+The ten Linux `state_discovery::` tests pass after this expectation change. Compact
+serialization of the fixed expected envelope, including its terminal newline, is739
+bytes at elapsed0 and774 bytes at the largest u64 elapsed value, preserving the
+existing1024-byte bound without depending on native timing.
+
+### PR144 permanent writer-lock ownership inventory at 7fde
+
+Native MSRV CI job116792218513 reached the Server library and reported72 passing
+tests plus `dashboard_boolean_qualification_195_owned` failing with `foreign state
+object retained; private uncompleted roots retained`. Source confirms the populated
+row cleanup allowlist includes the database and sidecars but omits the newly permanent
+`writer-intent.lock` and `writer.lock`; the child ownership manifests also only record
+leaves with explicit fixture creators. Admitting arbitrary discovered files would
+weaken that ownership boundary.
+
+The fixture therefore explicitly creates and records exactly those two empty private
+leaves before starting Store for populated runtime rows. Their guarded identities,
+sizes and hashes join the existing before/after non-SQLite equality oracle; cleanup
+requires the original identity, private regular no-follow leaf and empty contents.
+Only populated rows admit these exact names. Parser/absent rows create neither, and
+the absence oracle explicitly rejects either lock leaf. All195 keys, native ownership
+receipts, full logical/file comparisons, complete cleanup and original deadlines
+remain required. This is a fixture inventory correction, with no production lock
+lifecycle or product behavior change; native reruns remain required.
+
+### macOS x64 partial orphan pass at 7fde
+
+Native macOS x64 CI job116792218435 completed60 actions in the101-orphan fixture,
+then failed its former exact100 one-pass assertion; the other97 checks including
+prune contracts passed. This establishes a successful partial pass, not an elapsed
+measurement or a policy failure. Qualification must independently test both selected
+limits: production250 ms passes retain the cursor, remove at most100 objects each,
+preserve the exact remaining-file ledger and unexpected directory, and eventually
+remove all101 within the fixed five-second test progress deadline. An isolated
+production orphan-scan control uses a five-second fixture-only deadline to prove the
+100th action completes and the101st is refused, without changing production budgets.
+
+### Local cancellation qualification requires an orphan reaper (103c)
+
+The unchanged Unix durable-cancellation fixture failed its original shared eight-second
+deadline during both concurrent full suites at103c44f and during a subsequent isolated
+run. A separate owned-state observation of the actual103c production binary (SHA256
+c695e094096acde44e2c84f017b731f9c9548b43f05a31fd1ab61f02b755a45c) captured wake
+readiness at0.041 s, running at0.080 s and successful CLI cancellation plus its durable
+request at0.090 s. By0.297 s the shell was gone and its sleep child was a zombie,
+reparented to PID1 in the original process group. PID1 is tail in this container and
+does not reap adopted children. At the original eight-second boundary (8.087 s observed)
+the run remained running and the same zombie remained visible; at10.353 s Store recorded
+cancelled. This matches the existing Unix runner's two five-second termination graces
+before its successful-KILL zombie fallback. The daemon log contained no persistence
+degradation/lock error; the durable request and process termination were prompt.
+
+The complete monotonic timeline, process-group state, durable run/attempt/event ledgers
+and daemon logs remain in the isolated local receipt
+`/workspace/scratch/locron-contention-evidence/cancel-investigation-103c-b/`.
+The earlier scratch observer setup error is preserved separately; it is not a product
+or fixture result. The extra observation after eight seconds is diagnostic evidence,
+not a relaxed acceptance deadline or a claim the failed original test passed.
+
+A root verification-only PR_SET_CHILD_SUBREAPER wrapper then ran the identical existing
+fixture, unchanged target, original eight-second deadline and original assertions. It
+passed in0.31 s while the wrapper reaped one adopted orphan. This demonstrates a local
+normal-init/reaper prerequisite, not a need to change cancellation, signals, writer
+coordination or the test's timeout. Final complete toolchain qualification uses that
+verification environment and preserves the original failed logs; native results remain
+separate evidence. No cancellation product/test source was changed for this finding.
+
+### Native Windows unused scan-path lint follow-up
+
+Windows strict-lint job116795537236 passed the earlier Store import check, then exposed
+RunScan.directory as unused: its path safety recheck and directory sync uses are Unix-only.
+Gate only that private field and its initializer with cfg(not(windows)); retain the
+Windows ReadDir/guard continuation and all runtime behavior. Linux focused strict CLI
+Clippy passes with this minimal source correction. Native Windows lint must rerun on the
+new head; this local check does not substitute for native qualification.
+
+### Isolated Windows contention fixtures at fixed source d631eef
+
+The additional native run38848553036 checked out exact product source
+`d631eefd239e6e5bb8ac3bae64e547130f5e3db0` independently of the temporary workflow
+commit. Its x64 stable job116804443256, ARM64 stable job116804443034 and x64 MSRV1.94
+job116804443369 each executed the Store library directly:133 passed,1 failed and3
+intentionally ignored. The shared-deadline, released external writer, real LOCKED,
+failed COMMIT, crash-release, committed-readback and transaction qualification
+controls explicitly passed on all three native rows. Earlier Server-library
+failures had prevented these Store executables from running; these receipts close
+that observation gap without changing the existing foundation gates.
+
+The sole Store failure occurs before read-only opening: the fixture copies its
+checkpointed database with std::fs::copy, then the unchanged private-file validator
+at contention.rs959 returns PermissionDenied/unsafe private permissions for the
+destination. On Windows that validator verifies the native descriptor rather than
+repairing it. Construct the fixture destination with Core's existing guarded
+private-file creator, copy the checkpointed bytes through retained source/destination
+handles, sync the destination and close both handles before the same validator and
+read-only open. Preserve every read-only diagnostic, no-create and refusal assertion;
+this changes fixture construction only, not production permissions or validation.
+
+The same three rows also reached all separate integration executables. Each reports
+CLI1 pass/4 failures, API0 pass/2 failures and MCP0 pass/1 failure; API logs identify
+wal-open/PermissionDenied before the expected SQLite contention. Source trace finds
+the common seed helper drops its Store before the raw held-writer connection opens.
+That connection can recreate WAL/SHM with inherited Windows permissions before the
+tested Store admits them. In contrast, the passing native Store contention controls
+retain their Store while the raw connection holds BEGIN IMMEDIATE. Retain an idle
+Store in the shared held-writer fixture, with the raw connection dropping first;
+assert private database/WAL/SHM before and after raw BEGIN. Keep every real SQLite
+lock, SQL execution, outcome/code/redaction assertion and original deadline. This
+also changes only fixture lifetime/setup. Fresh native runs must confirm both
+fixture corrections; Linux checks alone do not establish native acceptance.
+
+### Unix contention fixture privacy under an ordinary umask at ff97993
+
+After retaining the idle Store in the shared held-writer fixture, ordinary Linux
+x64 stable and MSRV CI reach the new private-file assertion and fail before the
+external-writer BUSY assertion. The root's isolated MCP control reproduces the same
+failure in0.02s with a child-only umask022; the default local umask0077 control passes.
+This occurs without running the rest of the MCP suite and does not require a global
+state or ordering explanation. The failing loop checks the main database first.
+
+The shared seed helper opens an absent database through Unix Store::open, which
+uses ordinary SQLite Connection::open rather than a private leaf creator. SQLite's
+default new main-file mode0644 is narrowed to0600 by0077 but remains0644 under022;
+its WAL/SHM permissions derive from that main database. Earlier private-WAL research
+and the existing MCP cancellation fixture already use an exclusive private empty
+main-file creator for this reason. Retaining a Store fixes native handle lifetime
+but does not change the initial Unix file mode.
+
+Select Unix-only preparation in the shared seed helper: exclusively create the
+absent main database through Core's existing guarded create_private_new, require an
+empty private regular file, record its device/inode, and close its creator before
+the original Store::open. A guarded existing read after real initialization must
+confirm the same device/inode and private file, then close before job seeding. An
+unexpected existing file refuses CreateNew. No chmod, process umask mutation, existing
+file adoption or sidecar manufacture is selected. Windows private Store creation and
+the raw-connection-before-idle-Store drop order remain unchanged. All existing
+privacy, SQL, code/outcome/redaction and original deadline assertions remain exact.
+Qualification must include full MCP plus CLI/HTTP contention controls under child
+umask022, with the077 control retained; native acceptance still requires its own run.
+
+The separate ff97993 isolated Windows run38849740946 passes Store134, CLI5, API2 and
+MCP1 on x64 stable and ARM64. The MSRV row passes Store134, CLI5 and MCP1 but its two
+API fixtures fail during initial Store creation before the external writer exists:
+slow native migration/commit exceeds the shared five-second opening allowance.
+Those failed setup receipts remain failed; this Unix fixture correction neither
+widens that product deadline nor claims native MSRV API acceptance.
+
+### Windows SID unwind fixture and deadline research (2026-10-16)
+
+The owner-requested CI review read the complete ObsDog Primary guidelines at exact
+revisions [CI/CD optimization](https://app.obsdog.ai/wiki/?document=doc_01a100b93ce57543afc8e0e282624b26&space=spc_e642627646453ea633d4b0a6da31410c)
+`rev_2d175b8cb99580567a65ea1e06fc2615` and
+[verification selection](https://app.obsdog.ai/wiki/?document=doc_cbb83df8d13683e772063a2a6b8d356c&space=spc_e642627646453ea633d4b0a6da31410c)
+`rev_787d6b89e8a3bf6d544f599c96c06190`. Apply their single-worker diagnosis,
+small deterministic core controls, explicit phase/results and preservation of
+required failures. They do not justify broader duplicate integration runs, retries,
+timeout inflation or increased test concurrency as a repair for this failure.
+
+[Windows MSRV job116810653241](https://github.com/WhiteKiwi/locron/actions/runs/38850575751/job/116810653241)
+ran the existing Core library with test-threads=1:136 passed,1 failed. Its SID
+spawn-refusal/disconnect/unwind fixture reports the expected worker panic at
+windows.rs1066, then the classification assertion at1089 sees TimedOut instead of
+Other. The preceding test-completion and failing-test lines are about1.027 s apart;
+these buffered logs do not measure the worker's individual phases. The panic report
+includes the suggestion to enable RUST_BACKTRACE, not a generated backtrace.
+Neither hook-lock contention, symbol work, unwind latency nor scheduler delay is
+individually established as the native cause. This source file is unchanged between
+baseline a3f43fc and product536671f.
+
+The production bounded_cached_sid, cached_sid and receive_sid_reply paths recheck
+the original absolute deadline after receiving a query result or error. Therefore
+an owner failure observed after expiry correctly becomes TimedOut. The fixture's
+unconditional Other oracle assumes owner unwinding completes before its existing
+one-second deadline. Its panic! also invokes global reporting outside the identity
+contract before dropping the owner's sender and initializer permit.
+
+Rust's official [panic-hook contract](https://doc.rust-lang.org/std/panic/fn.set_hook.html)
+places reporting before the panic runtime; its
+[resume_unwind contract](https://doc.rust-lang.org/std/panic/fn.resume_unwind.html)
+starts real unwinding without invoking that hook. Version-specific
+[Rust1.94 default_hook](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/panicking.rs#L240)
+takes the capture-buffer mutex and a backtrace/output mutex even with backtraces off;
+[libtest](https://github.com/rust-lang/rust/blob/1.94.0/library/test/src/lib.rs#L127)
+propagates output capture to spawned threads. This establishes an uncontrolled
+reporting dependency, not proof that either mutex stalled on the failed host.
+[pytest's own guidance](https://docs.pytest.org/en/stable/explanation/flaky.html)
+also recommends isolating uncontrolled state and joining owned threads. As concrete
+project examples, [Tokio task-local tests](https://github.com/tokio-rs/tokio/blob/master/tokio/tests/task_local.rs#L45)
+observe polling/disposal through channels and propagate actual panics with
+resume_unwind; [Crossbeam channel tests](https://github.com/crossbeam-rs/crossbeam/blob/master/crossbeam-channel/tests/mpsc.rs#L649)
+distinguish timeout from disconnection. These illustrate state/event contracts;
+they do not establish the cause of this repository's Windows failure.
+
+A bounded independent Linux scratch probe extracts the production WorkerPermits,
+permit Drop, remaining and SID reply/cache/owner routines byte-for-byte, without
+Windows native-query dependencies. Its source receipt binds windows.rs SHA256
+`bf6918bc3e39b11d59d83b3f08f55f91b2d9a4e558e283091a5f2983ab5156d7` and probe SHA256
+`fce6877124932be97d7fedbd7392fa3d0991b2fdf7fbb9952d6c329b7cf8417d`.
+The unmodified three-mode fixture and a candidate changing only its panic expression
+both pass on Rust1.94.0 and1.98.0. With an explicitly gated slow panic hook, the same
+one-second production deadline returns TimedOut at1,000,130/1,000,243 us respectively;
+the cache stays empty and the initializer remains unavailable until the gate opens,
+the owner really unwinds, join returns Err and the permit becomes available. Under
+the same installed slow-hook condition, resume_unwind invokes that hook zero times
+and passes every original classification/join/cache/permit assertion in222/259 us.
+All eight probe invocations pass their intended controls. This reproduces a sufficient
+failure mechanism; it is not a native Windows timing reproduction or a speed claim.
+The initial scratch wrapper visibility compile error was corrected before these
+runs; it was not a product result.
+
+Full extraction/source hashes, upstream source receipts, exact compiler/binary facts,
+commands and captured outcomes are retained in
+`/workspace/scratch/locron-contention-evidence/sid-failure-research/` as
+probe-source-receipt.json, rust-source-receipt.json, project-source-receipt.json and
+probe-results.json. Local paths are handoff hints, not repository test dependencies.
+Recommended minimal correction: make only this fixture's injected owner failure use
+resume_unwind with the same static payload, preserving actual thread unwinding,
+the original one-second deadlines and every error/cache/query/permit/join assertion.
+Keep production identity/cache/deadline code unchanged. Fresh native Core execution
+on x64 stable/MSRV and ARM64 stable plus existing deadline/late-owner controls remains
+required; portable probes and Linux compilation cannot qualify Windows runtime.
+
+### CI optimization scope for the SID correction
+
+The same final-source ordinary run38850575751 completed14 jobs successfully, failed
+three Windows foundation rows and intentionally skipped two exploratory rows, with
+30m31s overall elapsed time. The MSRV Core test was already single-worker. Separate
+hosted VMs execute the native matrix rows; serializing that matrix is not evidence
+of a repair for this SID failure. Existing embedded-SQLite/private-file controls
+protect actual storage and permission contracts and are not removed merely because
+their names are integration tests. The selected optimization follows the retrieved
+guideline's earlier step: eliminate obsolete work before changing suite concurrency.
+
+Previous PR run38849681653 overlapped latest run38850575751 by4m51s. During that
+overlap the superseded run occupied four jobs for a summed875 job-wall-seconds
+(Windows MSRV287s, ARM64 290s, x64 stable283s, macOS x64 15s). This is elapsed job
+occupancy, not billed CPU time or a measured counterfactual performance improvement.
+Older d631 run38846298169 did not overlap either run. The workflow currently has
+no cancellation group. A workflow/event/PR-number group with PR-only cancellation
+can remove this class of obsolete execution; unique run IDs for non-PR events keep
+existing main/manual history and avoid cross-workflow or cross-PR cancellation.
+
+The [GitHub concurrency contract](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+documents group isolation and conditional cancellation.
+[Tokio's real CI](https://github.com/tokio-rs/tokio/blob/52ac7816230efabcae6fcc09cbe7ae630a48eddf/.github/workflows/ci.yml#L9)
+uses PR/SHA grouping; its broader matrix is an example, not this repository's policy.
+The [required-check contract](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks)
+requires preserving result semantics; no job/path skip is selected here. Existing
+action references mix major tags, historical commit pins and rust-toolchain master.
+This bounded phase selects only the six master references for a major alias. Upstream
+v1 and master both resolve to683b588c487a69d01f6c6ddf40f036ff682cc2c8 at this review;
+using v1 follows the user's guideline without changing that observed implementation
+or the pinned compiler inputs. Repository Actions-permission inspection returned403;
+no permission or branch-protection change is selected or assumed.
+
+### Complete Windows foundation follow-up (2026-10-16)
+
+The user selected all current foundation failures. Separate research sessions reviewed
+the exact native receipts and primary platform sources in the
+[daemon readiness record](planning/WINDOWS_CI_DAEMON_RESEARCH_2026-10-16.md),
+[default-owner record](planning/WINDOWS_CI_OWNER_RESEARCH_2026-10-16.md) and
+[prune record](planning/WINDOWS_CI_PRUNE_RESEARCH_2026-10-16.md).
+The daemon role lock precedes Store initialization and listener creation; existing
+debug v2 observations can sequence genuine fixture setup but cannot authorize a
+peer. History code5 identifies only other, not a measured terminal or Starting state.
+Windows default TokenOwner may differ from TokenUser; exact native owner classes
+are still unknown. Rust1.94/1.98 deletion may ignore readonly after DeleteFileW refusal;
+N08's actual response/poststate is still unknown. EL07 needs its existing structured
+creator record. These distinctions select closed observations and the bounded fixture
+repair in the [complete plan](planning/WINDOWS_FOUNDATION_REPAIR_2026-10-16.md),
+preserving private guards, original clocks, native row meanings and required gates.
+
+Run38857980733's three existing Windows Core steps have returned success after the
+SID fixture correction; this intermediate step result is not whole-foundation PASS.
+
+### Foundation observation and fixture qualification boundary
+
+The selected phase adds closed ownership diagnostics only in the existing toolchain
+and PR144 producer steps, a fixed query-only PowerShell helper,85 additive API-prune
+observation lines, and the Windows daemon fixture correction. The workflow inverse
+restores every original byte after removing the two inserts and added standard-library
+imports. All original jobs, commands, conditions, matrices, cache policy and artifact
+bindings remain. Unconfirmed diagnostic children retain their exact process and I/O
+owners for the CI step/interpreter lifetime; that lifetime ending is not reported as
+disposal. Query metadata never replaces retained-handle artifact admission.
+
+The daemon helper's full patch inverse restores the planning baseline, with105
+independently compared protected regions. Existing5s/8s/30s origins,200ms authenticated
+probe, negative peers, exact cleanup and post-cancel oracles remain. Startup reads
+apply only to genuine debug cases; Starting's closed classification also applies to
+the existing release fixture paths. A complete successful startup prefix followed
+by an incomplete later row remains pending and can consume the original setup budget.
+No new allowance or readiness authority follows from it.
+
+Root formatting succeeds on Rust1.94/1.98; affected Unix Clippy denies warnings and
+passes. Exact portable parser/classifier controls pass2/2 on each compiler, with
+native-owner fields omitted from the extraction; this is not a full Windows helper
+typecheck. Query-controller checks pass22 Python controls,5 portable PowerShell helper
+protocol cases and9 caller/mock-child controls. Actionlint1.7.12 passes. Linux
+PowerShell7.6.7 and mock identities do not qualify WindowsPowerShell5.1, TokenOwner,
+ACL or actual platform behavior. Native source-matched qualification remains required.
+
+### Causal foundation facts and selected follow-up (2026-10-16)
+
+Completed c231 CI38860620196 qualifies all3 Core steps and all8 daemon selectors;
+all14 non-foundation jobs pass, while all3 whole foundation jobs still fail.
+Actual x64 default-owner contrasts and all6 API N08 response/absence/SQL outcomes
+are recorded with primary MSYS, Rust, Framework and Microsoft references in
+[the causal findings](planning/WINDOWS_FOUNDATION_CAUSAL_FINDINGS_2026-10-16.md).
+ARM observer timeout remains unknown, not a token measurement. Native retained guards
+and original row ledgers remain authority. No fresh creator failure selects migration.
+Separate research rejects ordinary protected creation as an exclusive receipt and
+Rust rename as no-clobber; empty private staging plus no-replace move/full-ID rebind
+is selected under bounded owner/quarantine controls. The complete repair plan governs
+all later implementation and actual same-head qualification.
+
+### Known-junction fixture representation follow-up (2026-10-16)
+
+Native run38867063921 on source9088/tree3edb6b (merge checkout b22cd729) confirms
+Core148 on all3 rows, all6 complete PR144195 ledgers and their39 runtime cleanups,
+and safe N08 readonly/pending outcomes in both library contexts. The common failure
+is N06-api's initial literal target comparison, before prune. Explicit qualification
+stops at API; CLI has not executed. Both x64 jobs additionally reach35 minutes.
+Rust [1.94 readlink](https://github.com/rust-lang/rust/blob/1.94.0/library/std/src/sys/fs/windows.rs#L723-L770)
+and [1.98 friendly conversion](https://github.com/rust-lang/rust/blob/1.98.0/library/std/src/sys/args/windows.rs#L354-L386)
+can remove a short verbatim drive prefix; Core normalized paths retain it. Actual
+prefixes remain unobserved. Preserve retained-target and complete private/full-ID
+checks while comparing canonical representations in the disposable fixture only.
+The [N06 amendment](planning/WINDOWS_FOUNDATION_N06_REPAIR_2026-10-16.md) records
+the narrow decision and closed native observations; no product guard is weakened.
+
+### Measured Windows tail duplication and bounded scheduling (2026-10-16)
+
+Source9088 CI38867063921 recompiles190 crates for doctor in99/139/141s across
+ARM/MSRV/x64stable; service CLI relinking costs24.36/28.33/24.43s. ARM HTTP
+contracts add48 crates/31.96s. B recovery already uses the same default test profile.
+These observed costs bound potential savings; new integration links still cost time.
+Service64 runtime383.45/382.78s includes two intentional three-by60s retry waits.
+Independent source audit finds isolated fixture/Job/ID/child-env ownership for the
+complete64 selection, with no service process-global fault/environment mutation.
+The original100ms/80ms scheduler-sensitive controls and native qualification remain.
+The [tail plan](planning/WINDOWS_FOUNDATION_TAIL_OPTIMIZATION_2026-10-16.md)
+selects coherent B reuse and only this service selection's bounded two-worker
+exception, with unchanged real wait oracles. Upload-only copies preserve original
+cold-Core plus actual B members and record source identities/hashes; they never
+become qualification inputs. Source-matched full native success is still pending.
+Primary [CargoJSON](https://doc.rust-lang.org/cargo/reference/external-tools.html#json-messages),
+[Cargo build-cache inputs](https://doc.rust-lang.org/cargo/reference/build-cache.html#cache-internals)
+and [artifact layout](https://github.com/actions/upload-artifact#upload-using-multiple-paths-and-exclusions)
+explain fresh selection, feature/profile separation and common-root packaging.
+
+### Remaining native fixture input/publication failures (2026-10-16)
+
+Sourceed37/tree9f57 run38874052234 (same-tree merge2bd1b965) completes all14
+other jobs/Core148x3/service64x3 successfully. Service runtime is192.80/196.51/
+194.20s, retaining both real180s wait oracles. All3 foundations fail, not timeout.
+All6 libraries fail only N06-api's checked actual-target canonicalization before
+prune; actual prefix/kind/raw code is unobserved. MSRV alone reports ProgressOpen/
+Other/raw32 in durable_cancel and the output contract's later genuine cancel
+producer, before8s; the exact native holder is unknown. Subsequent cleanup exit1
+does not establish natural daemon death. Native-tail prepare passes all3, but
+skipped default-success tail/copy steps remain unqualified. Both Linux full suites
+pass615/0/3ignored on this head. No prior-head PASS is transferred.
+
+Separate research traced official PowerShell6/7's unconditional NT-prefix plus
+Framework GetFullPath writer, Framework extended-path preservation and Rust's
+single-prefix read_link conversion. This supports a possible double prefix, not
+the unbound deployed5.1 writer or actual historical spelling. Official5.1 Target
+supports a fully qualified path. Strict VerbatimDisk-to-ordinary creator input
+conformance to the SAME held target is selected, with component/reserved-name/
+legacy259UTF16 gates, original-deadline canonical and full private-ID proofs, and
+unmodified actual read_link/postoracles. Rust's internal verbatim promotion means
+those two OS proofs alone cannot replace strict legacy-parser validation. The
+existing private stock converter is a pattern, not a new public Core API.
+
+Source also exposes final progress during transient FullControl(DELETE)/share3
+creation, incompatible with the existing no-SHARE_DELETE reader. Returned generic
+RW/share3 is compatible. Exactflags controls demonstrate the mechanism, not the
+historical MSRV holder. Known private pending creation, close, one no-clobber move,
+privateRW reopen with fullID equality removes that exposure. Independent review
+requires closing the returned RW leaf BEFORE recreating the FullControl holder;
+otherwise the control's own open would fail32. Both narrow corrections can be
+composed in one new-head run without a separate observation-only run, provided
+closed diagnostics precede fallible observations and all actual oracles remain.
+
+The [fixture publication amendment](planning/WINDOWS_FOUNDATION_FIXTURE_PUBLICATION_2026-10-16.md)
+records complete primary references, strict controls, ownership/error limits,
+source leases and same-head native acceptance. No source implementation precedes
+whole-plan Issues readback and Root final review; no retry or deadline growth.
+
+### Final checksum, readiness and receiver budget boundaries (2026-10-16)
+
+Actual105dcaf/tree973c run38880152406 concludes CANCELLED:13 other jobs pass,
+3 foundations fail and macOS x64 reaches its original30-minute limit. All3 Core148,
+all6 Engine75/Server75/Store134+3ignored contexts, all6 PR144195/39cleanup ledgers
+and all3 complete prune88(API45+CLI43) receivers pass. Actual N06 objects bind
+canonical/fullID with original pending/canary/cleanup intact. Cancel/publication/
+output capture pass all3; original CLI23/24 pass. Service64 passes192.57/192.92/
+194.54s. Final native upload/copy steps are skipped and remain unqualified.
+
+All3 actual Engine failures are frozen-ledger/ValueError BEFORE any output tests.
+The exact Git ledger matches the fixed LF checksum; current unspecified attributes
+allow a locally reproduced Git autocrlf LF-to-CRLF transform that changes raw SHA
+while preserving JSON. Actual native hash/endings remain unobserved. Pinning only
+this ledger to LF, like the existing GroupB ledger, preserves the exact checksum
+and all original oracles; normalization or alternate hashes are rejected.
+
+ARM withheld-return fails Setup0.89s at actual ReadyOpen/raw32 before its controlled
+return gate; holder/lower syscall remains unknown. Its producer already stages,
+closes and publishes without overwrite. Microsoft's rename explanation demonstrates
+name visibility before MoveFileEx closes its DELETE handle; pinned tempfile uses
+that path. This mechanism supports bounded read-only readiness observation, not a
+historical holder claim. Separate review selects ONLY timely negative-peer ReadyOpen32
+continuation under original live-child/Control/5ms/30s checks. Read errors, other
+open errors and bad bytes still refuse. Real held-handle controls must observe32
+before release, later read exact readiness/fullID, and prove persistent contention
+expires under an isolated shortened gate without poisoning the original Control.
+
+The actual bounded macOS prune ZIP contains API44/FI07/1PASS80.09s and CLI29/42
+completed keys before cancellation; SEL03 is merely first unfinished. Server build
+167s rebuilt64 artifacts and selected a different executable from the completed
+full-workspace Server. Current producer359/330s and receiver/runtime costs exceed
+old ed37's225/236s,116s,API52.52s/CLI100.43s. Select one shared Unix receiver argv
+change to workspace/all-targets no-run CargoJSON, matching the already tested
+dependency graph. Preserve package/profile/native/source/binding/conservation and
+all driver/key/status checks. No fresh gate, guaranteed saving or timeout growth.
+
+The [final-gates amendment](planning/WINDOWS_FOUNDATION_FINAL_GATES_2026-10-16.md)
+records primary Git, Microsoft, tempfile and Cargo references, exact source leases,
+closed observations, controls and same-head acceptance. Whole-plan Issue readback
+and final Root review precede separate implementation; frozen SPEC stays unchanged.
+
+### Native runtime duplication after complete fixture qualification (2026-10-16)
+
+Run38886903109 at ea3d986/tree092a105, actual same-tree merge e202e1b, completes
+14 actual jobs but all3 foundations reach35minutes. All5 Unix jobs pass; Macx64
+finishes26m54. All3 Core148, six full Engine75/Server75/Store134+3ignored contexts,
+six PR144195/39cleanup/80-document ledgers, native prune88 and output91 gates pass.
+Original CLI23PASS/0testFAIL/1INCOMPLETE: MSRV capture is interrupted. New readiness/
+withheld/publication passall3. Stable/ARM pass service64(193.38/194.93s), GUI12,
+lifecycle16, dashboard4, guardedprune3, maintenance17 and MCPhelpers3; MCP18 starts
+then is interrupted. MSRV service/tail remain unrun. Final40/41 are skippedall3;
+prepare17 and emitted output PASS do not independently qualify final copies/raw
+Store/caller capture hashes or upload provenance.
+
+Actual MSRV A/B complete-library steps take457/487s, dominated by Server296.03/
+306.07s and Store140.57/114.54s runtime. Stable steps326/351s, ARM375/418s.
+Scoped no-run query reuse has only about60–71s maximum measured compile opportunity,
+insufficient for the remaining MSRV180s service plus tail. Step30 ordinary dev
+graph completes33.63/24.12s; MCP compile finishes3.49/2.78s before actual18tests
+begin. Neither is an observed compile failure or a demonstrated MCP deadlock.
+
+Separate source/actual-ledger/consumer audits compare identical three-package/lib/
+locked/thread1 commands. All3 paired195 ledgers share exact AStore-helper fullID/
+SHA/features and Acontroller fullID/SHA. B retains genuine controller39/Store26
+populated uses (13 absent), own Server tickets/current_exe/fullID/hash/admission,
+fresh evidence and39 cleanups. The own A/B Server fullIDs AND hashes differ.
+Retiring A's full-suite repeat consciously loses that alternate physical image
+context; it does not preserve byte equality, two Server contexts or six future
+ledgers. B retains every unique test assertion per original native host and actual
+original A helper consumption. Native-tail provenance does not consume either
+PR144 ledger/A binary path; both original producers and all B source roles remain.
+
+The [library deduplication amendment](planning/WINDOWS_FOUNDATION_LIBRARY_DEDUP_2026-10-16.md)
+explicitly supersedes only older two-context/six-ledger requirements. It selects
+two-step deletion, preserves the complete B run/second upload and every producer/
+oracle/clock/thread/limit, and requires whole-plan Issues/readback/final Root review
+before separate development. Independent review found no unique A-namespace test
+assertion; changed-head full native/final-copy acceptance is still required.
+
+The independently read complete current CI/CD guideline is now
+rev_fde9dd96cde270be7c997dfd18ee8b69 (newer than the earlier recorded revision),
+SHA256 f4f77ffc4112f5342e90002988bb0f36b30db89ec2b0c60e46da9ed533b1677e;
+verification selection remains rev_787d6b89e8a3bf6d544f599c96c06190,
+SHA256 b12def3cd7a129c0de23a3cc87fbc680086f59046293c2bebd991ab05a17beb1.
+Their duplicate-work/default-one-worker/core-preservation guidance supports this
+explicit repository-specific audit, not silent weakening. A third independent
+comparison finds the exact ordered287(package,test,status) entries identical in
+each actual native A/B pair (284PASS plus the same3ordinaryignored). Complete
+source locators and reports are in the amendment; no future result is inferred.
+
+### Preserve authoritative test-only worker phase receipts (2026-10-16)
+
+Current57e4/tree89f24 run38892570339 MSRV job116945340333 fails Core147/1 in118.07s,
+before library deduplication. Isolated phase-order child times out30.01s at shared
+wait_for_phases1824; parent1610 reports it. Which of3 waits/which phase/actual mutex
+holder or schedule are UNOBSERVED. A preceding native request completed before the
+fixture waited; missing receipt alone does not establish failed native work.
+
+Separate source review finds cfg(test) ChildPhases::observe.try_lock silently
+drops recognized fixed tokens under contention, while the exact-order reader
+takes that mutex. Stderr parsing advances without replay; stdout reply and stderr
+final-phase collection are independent. This is a demonstrated defect consistent
+with the timeout, not a historical-callsite attribution. Independent exact-source
+scratch controls on1.94/1.98 prove9/9 loss under an actually held mutex, exact9 when
+uncontended, and candidate lock retention9 then clear/5 after actual contention/
+release. They are portable synchronization proof, not native qualification.
+
+The holder/reentrancy/poison audit finds bounded data-only critical sections
+(up to16 records), no await/sleep/native I/O/reentrant observe on the success path,
+and no inverse Diagnostic-to-phase lock cycle. record_at does not emit I/O.
+Select only test-only observe.try_lock→lock, preserving poison refusal/atomic/
+fixed tokens/caps and every9/5/5 ordering, real child/PID/30s/90s/ownership assertion.
+Std lock is not a timed/preemptible OS guarantee; failed assertions may retain a
+guard until unwind. Production bytes and best-effort attach/Diagnostic stay exact.
+The [phase receipt plan](planning/WINDOWS_WORKER_PHASE_RECEIPTS_2026-10-16.md)
+requires Docs/whole Issues/readback/final review before separate implementation,
+then all3 native Core and full same-head CI/final-copy acceptance. Existing native
+tests and meaningful scratch controls suffice; no mirrored repository test is added.
+
+
+## Atomic pending migration publication research — 2026-10-16
+
+Source8ef6584, CI38916287297 attempt3, MSRV job117043164522: Server74PASS/1FAIL,
+HTTP01 actual-store-creator refuses before the row body. Safe diagnostic reports
+open9.135400s, admission5.069ms, SQLite1.086780s and commit3.663074s, stage begin,
+admission_timeout, retries0, no SQLite codes, unknown/nonretryable outcome. This
+establishes measured commit cost and an expired budget before another migration
+BEGIN, not the identity of a historical lock holder or the cause of all native
+latency. Already-started I/O remains nonpreemptible.
+
+The actual migration implementation applies five ordinary transactional DDL
+steps in five immediate transactions when creating current state. The immutable
+SQL contains no nested transaction commands, VACUUM or transaction-incompatible
+PRAGMA. One transaction can therefore preserve the same SQL bytes, checksums,
+per-step predecessor checks and metadata while removing four COMMIT boundaries.
+This is a source-established reduction in durability barriers, not a promised
+Windows elapsed-time result or a diagnosis of host scheduling. A current schema
+needs no BEGIN/COMMIT. Recheck markers and the complete existing ledger after
+BEGIN because a pre-admission version may be stale. Historical partial schemas
+remain supported; they are upgraded from their verified committed version.
+
+SQLite primary references read for this review:
+- https://www.sqlite.org/lang_transaction.html — an explicit transaction persists
+  through its statements until COMMIT/ROLLBACK; BEGIN IMMEDIATE acquires write
+  intent, and a competing writer can return BUSY.
+- https://www.sqlite.org/atomiccommit.html — all database changes in a transaction
+  become visible together or none do. FULL durability remains selected.
+
+A real late-DDL failure can prove all-pending rollback without synthetic timing:
+start a valid v1 database, precreate the final http_content_type column while
+leaving version1, apply pending2–5 and let final ALTER fail. Verify the original
+version/ledger/defaults and absence of all intermediate changes after rollback.
+Count actual successful Operation commits for fresh/upgrade/current states; no
+new rusqlite feature, OS clock allowance or weakened native oracle is required.
+
+
+## Bounded native fixture scheduling and in-flight expiry — 2026-10-17
+
+At684304e, CI38983914154 MSRV job117250826731 passed complete native
+Core/library/service gates but all3 windows_prune_tests refused Store creation.
+Each has a distinct TempDir/DB/admission files. All3 overlapped in one process.
+WAL receipts show one successful attempt, mode=wal, DONE/autocommit=true, no
+BUSY/retry/error. Remaining entry allowance was1.977767s/1.976741s/0.959860s;
+query_one elapsed6.966293s/7.004655s/5.999612s while finalize took microseconds.
+All refused at after-wal under the original5s budget before pruning assertions.
+Row delivery preceded the long second step to DONE. rusqlite query_one explicitly
+steps again; SQLite OP_JournalMode/OP_ResultRow and VdbeHalt/vdbeCommit permit
+implicit-transaction native completion there. This locates latency without
+identifying an OS call, security holder or shared database. Core preparation has
+a global filesystem dispatcher, but no evidence attributes this SQL delay to it.
+Select only these3 independent tests for the serial default already used by
+native Core/full libraries. Retain every case, subfixture and original deadline.
+
+Earlier8ef6584 supervisor failures occurred at the actual selected-gate assertion
+after a100ms request expired. The four selected paths use direct native handle,
+ACL, sync and rename calls; shared filesystem dispatcher/SID initialization is
+not established as their cause. Distinct roots cannot guarantee native setup or
+thread dispatch completes in100ms. The intended in-flight-I/O expiry control
+needs positive gate entry before measuring its withheld interval. Use one actual
+request under the existing STOP_TIMEOUT setup ceiling, then shorten its SAME
+Admission deadline to min(original setup deadline, now+100ms) through stop_at.
+Await the actual receipt with production Budget::await_response and retain the
+250ms return, quarantine, held activation lease, child heartbeat, no late shutdown,
+no later admission, exact one attempt and released worker cleanup assertions.
+An already-expired request still refuses before dispatch with an unentered gate;
+the existing late-ready response control still checks caller-budget expiry.
+This explicitly replaces the unsupported pre-gate100ms fixture premise, not any
+product request deadline or the actual100ms/250ms in-flight control. No fake entered
+flag, new request, response replay or increased existing deadline is selected.

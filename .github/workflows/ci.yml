@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   frontend:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.full_windows }}
@@ -27,7 +31,7 @@ jobs:
         working-directory: crates/locron-server/frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         env:
           TMPDIR: ${{ runner.temp }}
         with:
@@ -64,7 +68,7 @@ jobs:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
@@ -78,6 +82,108 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $hostTriple = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
           if ($hostTriple -ne '${{ matrix.platform }}') { throw "Wrong native toolchain: $hostTriple" }
+          $ownerResult = @{version=1; status='unobserved'; error_class='probe_unavailable'}
+          $ownerProcess = [Diagnostics.Process]::new()
+          $ownerStarted = $false
+          $ownerDocument = $null
+          $ownerRead = $null
+          $ownerErrorDrain = $null
+          $ownerReason = 'probe_unavailable'
+          $ownerClock = [Diagnostics.Stopwatch]::StartNew()
+          try {
+            $ownerPending = Get-Variable -Name locronOwnerObservationPending -Scope Script -ErrorAction SilentlyContinue
+            if ($null -ne $ownerPending -and $null -ne $ownerPending.Value) { $ownerReason = 'cleanup_unconfirmed'; throw 'unavailable' }
+            if (-not [IO.Path]::IsPathRooted($env:SystemRoot)) { throw 'unavailable' }
+            $ownerProcess.StartInfo.FileName = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+            foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-owner-observation.ps1'))) {
+              $ownerProcess.StartInfo.ArgumentList.Add($argument)
+            }
+            $ownerProcess.StartInfo.UseShellExecute = $false
+            $ownerProcess.StartInfo.RedirectStandardInput = $true
+            $ownerProcess.StartInfo.RedirectStandardOutput = $true
+            $ownerProcess.StartInfo.RedirectStandardError = $true
+            $ownerProcess.StartInfo.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
+            if (-not $ownerProcess.Start()) { throw 'unavailable' }
+            $ownerStarted = $true
+            $ownerErrorDrain = $ownerProcess.StandardError.BaseStream.CopyToAsync([IO.Stream]::Null)
+            $ownerProcess.StandardInput.WriteLine('{"version":1,"phase":"native_toolchain","objects":[]}')
+            $ownerProcess.StandardInput.Close()
+            $ownerBytes = [byte[]]::new(8193)
+            $ownerCount = 0
+            while ($true) {
+              $ownerRemaining = [Math]::Max(0, 5000 - $ownerClock.ElapsedMilliseconds)
+              if ($ownerRemaining -le 0) { $ownerReason = 'timeout'; throw 'unavailable' }
+              $ownerRead = $ownerProcess.StandardOutput.BaseStream.ReadAsync($ownerBytes, $ownerCount, $ownerBytes.Length - $ownerCount)
+              if (-not $ownerRead.Wait([int]$ownerRemaining)) { $ownerReason = 'timeout'; throw 'unavailable' }
+              $ownerLength = $ownerRead.GetAwaiter().GetResult()
+              if ($ownerLength -eq 0) { break }
+              $ownerCount += $ownerLength
+              if ($ownerCount -gt 8192) { $ownerReason = 'invalid_output'; throw 'unavailable' }
+            }
+            $ownerRemaining = [Math]::Max(0, 5000 - $ownerClock.ElapsedMilliseconds)
+            if ($ownerRemaining -le 0 -or -not $ownerProcess.WaitForExit([int]$ownerRemaining)) { $ownerReason = 'timeout'; throw 'unavailable' }
+            if ($ownerProcess.ExitCode -ne 0) { $ownerReason = 'child_failed'; throw 'unavailable' }
+            $ownerReason = 'invalid_output'
+            $ownerText = [Text.UTF8Encoding]::new($false, $true).GetString($ownerBytes, 0, $ownerCount)
+            $ownerDocument = [Text.Json.JsonDocument]::Parse($ownerText)
+            $ownerRoot = $ownerDocument.RootElement
+            $ownerProperties = @($ownerRoot.EnumerateObject())
+            if ($ownerProperties.Count -ne 2 -or @($ownerProperties.Name | Sort-Object -Unique).Count -ne 2 -or ($ownerProperties.Name | Where-Object { $_ -cnotin @('version', 'records') })) { throw 'unavailable' }
+            if ($ownerRoot.GetProperty('version').GetInt32() -ne 1) { throw 'unavailable' }
+            $ownerRecords = $ownerRoot.GetProperty('records')
+            if ($ownerRecords.GetArrayLength() -ne 1) { throw 'unavailable' }
+            $ownerRecord = $ownerRecords[0]
+            $ownerBooleanKeys = @('token_owner_matches_user', 'token_owner_is_system', 'token_owner_is_builtin_admin', 'file_owner_present', 'file_owner_matches_user', 'file_owner_matches_token_owner', 'file_owner_is_system', 'file_owner_is_builtin_admin', 'dacl_protected')
+            $ownerKeys = @('schema', 'role', 'status', 'error_class', 'token_impersonation') + $ownerBooleanKeys
+            $ownerProperties = @($ownerRecord.EnumerateObject())
+            if ($ownerProperties.Count -ne $ownerKeys.Count -or @($ownerProperties.Name | Sort-Object -Unique).Count -ne $ownerKeys.Count -or ($ownerProperties.Name | Where-Object { $_ -cnotin $ownerKeys })) { throw 'unavailable' }
+            if ($ownerRecord.GetProperty('schema').GetString() -cne 'locron.windows-owner-observation/v1' -or $ownerRecord.GetProperty('role').GetString() -cne 'native_toolchain') { throw 'unavailable' }
+            $ownerStatus = $ownerRecord.GetProperty('status').GetString()
+            $ownerError = $ownerRecord.GetProperty('error_class').GetString()
+            $ownerImpersonation = $ownerRecord.GetProperty('token_impersonation').GetString()
+            if ($ownerStatus -cnotin @('observed', 'unobserved') -or $ownerError -cnotin @($null, 'permission_denied', 'not_found', 'invalid_argument', 'io', 'other') -or $ownerImpersonation -cnotin @($null, 'none', 'anonymous', 'identification', 'impersonation', 'delegation', 'unobserved')) { throw 'unavailable' }
+            foreach ($ownerKey in $ownerBooleanKeys) {
+              if ($ownerRecord.GetProperty($ownerKey).ValueKind -notin @([Text.Json.JsonValueKind]::Null, [Text.Json.JsonValueKind]::True, [Text.Json.JsonValueKind]::False)) { throw 'unavailable' }
+              if ($ownerKey.StartsWith('file_') -or $ownerKey -ceq 'dacl_protected') {
+                if ($ownerRecord.GetProperty($ownerKey).ValueKind -ne [Text.Json.JsonValueKind]::Null) { throw 'unavailable' }
+              } elseif ($ownerStatus -ceq 'observed' -and $ownerRecord.GetProperty($ownerKey).ValueKind -eq [Text.Json.JsonValueKind]::Null) { throw 'unavailable' }
+            }
+            if ($ownerStatus -ceq 'observed' -and ($null -ne $ownerError -or $null -eq $ownerImpersonation)) { throw 'unavailable' }
+            $ownerResult = $ownerText | ConvertFrom-Json -ErrorAction Stop
+          } catch {
+            $ownerStatus = if ($ownerReason -ceq 'cleanup_unconfirmed') { 'cleanup_unconfirmed' } else { 'unobserved' }
+            $ownerResult = @{version=1; status=$ownerStatus; error_class=$ownerReason}
+          } finally {
+            $ownerConfirmed = -not $ownerStarted
+            if ($ownerStarted) {
+              $ownerCleanupClock = [Diagnostics.Stopwatch]::StartNew()
+              try {
+                if (-not $ownerProcess.HasExited) { $ownerProcess.Kill() }
+                $ownerCleanupRemaining = [Math]::Max(0, 1000 - $ownerCleanupClock.ElapsedMilliseconds)
+                $null = $ownerProcess.WaitForExit([int]$ownerCleanupRemaining)
+                foreach ($ownerTask in @($ownerRead, $ownerErrorDrain)) {
+                  if ($null -ne $ownerTask -and -not $ownerTask.IsCompleted) {
+                    $ownerCleanupRemaining = [Math]::Max(0, 1000 - $ownerCleanupClock.ElapsedMilliseconds)
+                    $null = $ownerTask.Wait([int]$ownerCleanupRemaining)
+                  }
+                }
+                $ownerConfirmed = $ownerProcess.HasExited -and ($null -eq $ownerRead -or $ownerRead.IsCompleted) -and ($null -eq $ownerErrorDrain -or $ownerErrorDrain.IsCompleted)
+              } catch { $ownerConfirmed = $false }
+            }
+            if (-not $ownerConfirmed) {
+              # Retained only for this CI step; step exit is not a disposal confirmation.
+              $script:locronOwnerObservationPending = @($ownerProcess, $ownerRead, $ownerErrorDrain)
+              $ownerResult = @{version=1; status='cleanup_unconfirmed'; error_class='cleanup_unconfirmed'}
+            }
+            try {
+              if ($null -ne $ownerDocument) { $ownerDocument.Dispose() }
+              if ($ownerConfirmed) { $ownerProcess.Dispose() }
+            } catch {
+              $script:locronOwnerObservationPending = @($ownerProcess, $ownerRead, $ownerErrorDrain)
+              $ownerResult = @{version=1; status='cleanup_unconfirmed'; error_class='cleanup_unconfirmed'}
+            }
+          }
+          Write-Output ('windows-owner-observation ' + ($ownerResult | ConvertTo-Json -Compress -Depth 4))
       - name: Compile staged Windows workspace
         run: cargo check --workspace --locked
       - name: Verify cold core contracts with isolated fault fixtures
@@ -98,7 +204,7 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import hashlib, json, os, pathlib, re, subprocess, sys, tempfile, zlib
+          import hashlib, json, os, pathlib, re, subprocess, sys, tempfile, threading, time, zlib
 
           def command(args, environment=None):
               result = subprocess.run(args, check=False, text=True, encoding="utf-8", capture_output=True, env=environment)
@@ -106,6 +212,134 @@ jobs:
                   sys.stderr.write(result.stderr)
                   raise SystemExit(result.returncode)
               return result.stdout
+
+          def validated_owner_records(output, expected_roles):
+              def unique(pairs):
+                  result = {}
+                  for key, value in pairs:
+                      if key in result:
+                          raise ValueError("invalid observation")
+                      result[key] = value
+                  return result
+              if len(output) > 8192:
+                  raise ValueError("invalid observation")
+              value = json.loads(output.decode("utf-8"), object_pairs_hook=unique)
+              if set(value) != {"version", "records"} or type(value["version"]) is not int or value["version"] != 1 or type(value["records"]) is not list or len(value["records"]) != len(expected_roles):
+                  raise ValueError("invalid observation")
+              booleans = {"token_owner_matches_user", "token_owner_is_system", "token_owner_is_builtin_admin", "file_owner_present", "file_owner_matches_user", "file_owner_matches_token_owner", "file_owner_is_system", "file_owner_is_builtin_admin", "dacl_protected"}
+              keys = booleans | {"schema", "role", "status", "error_class", "token_impersonation"}
+              for row, role in zip(value["records"], expected_roles):
+                  if type(row) is not dict or set(row) != keys or row["schema"] != "locron.windows-owner-observation/v1" or row["role"] != role or row["status"] not in ("observed", "unobserved"):
+                      raise ValueError("invalid observation")
+                  if row["error_class"] not in (None, "permission_denied", "not_found", "invalid_argument", "io", "other") or row["token_impersonation"] not in (None, "none", "anonymous", "identification", "impersonation", "delegation", "unobserved"):
+                      raise ValueError("invalid observation")
+                  if any(row[key] is not None and type(row[key]) is not bool for key in booleans):
+                      raise ValueError("invalid observation")
+                  if row["status"] == "observed" and (row["error_class"] is not None or row["token_impersonation"] is None or any(row[key] is None for key in booleans if key.startswith("token_"))):
+                      raise ValueError("invalid observation")
+                  file_keys = {key for key in booleans if key.startswith("file_")} | {"dacl_protected"}
+                  if role == "producer_observer_token":
+                      if any(row[key] is not None for key in file_keys):
+                          raise ValueError("invalid observation")
+                  elif row["status"] == "observed" and (row["file_owner_present"] is None or row["dacl_protected"] is None or (row["file_owner_present"] and any(row[key] is None for key in file_keys))):
+                      raise ValueError("invalid observation")
+              return value
+
+          owner_observation_pending = None
+
+          def run_owner_observation(args, encoded, expected_roles):
+              global owner_observation_pending
+              result = {"version": 1, "status": "unobserved", "error_class": "probe_unavailable"}
+              if owner_observation_pending is not None:
+                  return {"version": 1, "status": "cleanup_unconfirmed", "error_class": "cleanup_unconfirmed"}
+              process = None
+              workers = []
+              state = {"output": None, "read_error": False, "write_error": False}
+              deadline = time.monotonic() + 5
+              try:
+                  process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+                  def send():
+                      try:
+                          remaining = memoryview(encoded)
+                          while remaining:
+                              written = process.stdin.write(remaining)
+                              if not written:
+                                  raise OSError("observation input refused")
+                              remaining = remaining[written:]
+                      except Exception:
+                          state["write_error"] = True
+                      finally:
+                          try:
+                              process.stdin.close()
+                          except Exception:
+                              state["write_error"] = True
+                  def receive():
+                      output = bytearray()
+                      try:
+                          while len(output) <= 8192:
+                              chunk = process.stdout.read(8193 - len(output))
+                              if not chunk:
+                                  break
+                              output.extend(chunk)
+                          state["output"] = bytes(output)
+                      except Exception:
+                          state["read_error"] = True
+                      finally:
+                          try:
+                              process.stdout.close()
+                          except Exception:
+                              state["read_error"] = True
+                  for action in (send, receive):
+                      worker = threading.Thread(target=action, daemon=True)
+                      workers.append(worker)
+                      worker.start()
+                  process.wait(timeout=max(0, deadline - time.monotonic()))
+                  for worker in workers:
+                      worker.join(timeout=max(0, deadline - time.monotonic()))
+                  if time.monotonic() >= deadline or any(worker.is_alive() for worker in workers):
+                      raise subprocess.TimeoutExpired("owner observation", 5)
+                  if process.returncode:
+                      result["error_class"] = "child_failed"
+                  elif state["read_error"] or state["write_error"] or state["output"] is None:
+                      result["error_class"] = "invalid_output"
+                  else:
+                      result = validated_owner_records(state["output"], expected_roles)
+              except subprocess.TimeoutExpired:
+                  result["error_class"] = "timeout"
+              except Exception:
+                  result["error_class"] = "invalid_output"
+              finally:
+                  if process is not None:
+                      cleanup = time.monotonic() + 1
+                      confirmed = False
+                      try:
+                          if process.poll() is None:
+                              process.kill()
+                          process.wait(timeout=max(0, cleanup - time.monotonic()))
+                          for worker in workers:
+                              worker.join(timeout=max(0, cleanup - time.monotonic()))
+                          confirmed = not any(worker.is_alive() for worker in workers)
+                      except Exception:
+                          pass
+                      if not confirmed:
+                          # Retain the exact child and pending bounded I/O; never close a blocked reader.
+                          owner_observation_pending = (process, workers)
+                          result = {"version": 1, "status": "cleanup_unconfirmed", "error_class": "cleanup_unconfirmed"}
+              return result
+
+          def observe_owners(objects):
+              try:
+                  encoded = json.dumps({"version": 1, "phase": "producer", "objects": objects}, ensure_ascii=True).encode("utf-8")
+                  if len(encoded) > 16384 or len(objects) > 4:
+                      return {"version": 1, "status": "unobserved", "error_class": "invalid_request"}
+                  system = pathlib.Path(os.environ.get("SystemRoot", ""))
+                  if not system.is_absolute():
+                      return {"version": 1, "status": "unobserved", "error_class": "probe_unavailable"}
+                  script = pathlib.Path(".github/scripts/windows-owner-observation.ps1").resolve(strict=True)
+                  args = [str(system / "System32/WindowsPowerShell/v1.0/powershell.exe"), "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(script)]
+                  return run_owner_observation(args, encoded, ["producer_observer_token", *[item["role"] for item in objects]])
+              except Exception:
+                  return {"version": 1, "status": "unobserved", "error_class": "probe_unavailable"}
 
           compiler = command(["rustc", "-vV"])
           hosts = [line[6:] for line in compiler.splitlines() if line.startswith("host: ")]
@@ -170,6 +404,11 @@ jobs:
                                     package("locron"), "example", "dashboard_pr144_wake_fixture", False)
           store = artifact(["cargo", "test", "-p", "locron-store", "-p", "locron-engine", "-p", "locron-server", "--lib", "--no-run", "--locked", "--message-format=json"],
                            package("locron-store"), "lib", "locron_store", True)
+          if os.name == "nt":
+              observation = observe_owners([{"role": "pr144_namespace", "path": str(namespace)},
+                                            {"role": "pr144_controller", "path": controller["path"]},
+                                            {"role": "pr144_store", "path": store["path"]}])
+              print("windows-owner-observation " + json.dumps(observation, sort_keys=True, separators=(",", ":")))
           checkout = command(["git", "rev-parse", "HEAD"]).strip()
           assert len(checkout) == 40
           parent = build_parent if os.name == "nt" else pathlib.Path(tempfile.mkdtemp(prefix="locron-pr144-build-", dir=os.environ["RUNNER_TEMP"]))
@@ -203,9 +442,9 @@ jobs:
           PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
           PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           PRUNE_QUALIFICATION_STAGE: prune-producer
-        shell: pwsh
+        shell: bash
         run: |
-          $program = @'
+          python - <<'PY'
           import collections
           import hashlib
           import json
@@ -418,34 +657,16 @@ jobs:
           except Exception as error:
               print("prune-artifact-binding FAIL phase=" + PHASE + " kind=" + type(error).__name__, file=sys.stderr)
               sys.exit(1)
-          '@
-          $program | python -
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify durable store and runtime library contracts
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
-        env:
-          CARGO_TARGET_DIR: ${{ env.LOCRON_PR144_CARGO_TARGET_DIR }}
-        run: |
-          python -c "import os, pathlib, sys; value = os.environ.get('CARGO_TARGET_DIR', ''); sys.exit(0 if value and pathlib.Path(value).is_absolute() else 'missing or relative qualification target')"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test -p locron-store -p locron-engine -p locron-server --lib --locked -- --test-threads=2
-      - name: Upload redacted PR144 row completion evidence
-        if: ${{ always() && steps.pr144_helpers.outcome == 'success' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: pr144-windows-${{ matrix.platform }}-rust-${{ matrix.rust }}
-          if-no-files-found: error
-          retention-days: 14
-          path: ${{ env.LOCRON_PR144_EVIDENCE_DIR }}/*.json
+          PY
       - name: Verify durable store and runtime library contracts
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
         env:
           CARGO_TARGET_DIR: ${{ env.LOCRON_PRUNE_RECOVERY_CARGO_TARGET_DIR }}
           LOCRON_PR144_EVIDENCE_DIR: ${{ env.LOCRON_PR144_SECOND_EVIDENCE_DIR }}
+        shell: bash
         run: |
           python -c "import os, pathlib, sys; value = os.environ.get('CARGO_TARGET_DIR', ''); sys.exit(0 if value and pathlib.Path(value).is_absolute() else 'missing or relative qualification target')"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test -p locron-store -p locron-engine -p locron-server --lib --locked -- --test-threads=2
+          cargo test -p locron-store -p locron-engine -p locron-server --lib --locked -- --test-threads=1
       - name: Upload second redacted PR144 row completion evidence
         if: ${{ always() && steps.pr144_helpers.outcome == 'success' }}
         uses: actions/upload-artifact@v7
@@ -963,8 +1184,16 @@ jobs:
           '@
           $program | python -
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify native default doctor facts and output
+      - name: Prepare verified native foundation tail target
+        id: native_tail
         if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: python scripts/ci_windows_foundation_tail.py prepare
+      - name: Verify native default doctor facts and output
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_default_doctor_
@@ -974,63 +1203,68 @@ jobs:
           cargo test -p locron --test cli --locked human_forms_leave_the_json_envelope_untouched -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native CLI wake ownership
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked wake_socket_makes_new_manual_run_promptly_visible_to_daemon -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native CLI cancellation ownership
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked durable_cancel_terminates_a_running_process -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Refuse a foreign native wake peer
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::foreign_wake_peer_is_refused_before_frame -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Refuse a malformed native wake acknowledgment
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::malformed_wake_ack_is_refused -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bound an idle native wake peer
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::idle_wake_peer_expires_original_probe_deadline -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain native owners across a withheld return
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::withheld_native_return_retains_case_owner_at_deadline -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify private native peer publication
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::private_peer_publication_preserves_no_clobber_boundary -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify owned bounded native CLI output capture
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         shell: pwsh
         run: |
           cargo test -p locron --test cli --locked windows_cli_control::native_cli_output_capture_contract -- --exact --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native registered service semantics
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
-        run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=1'
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
+        run: 'cargo test -p locron --bin locron --locked -- service:: --test-threads=2'
       - name: Verify optional native GUI launcher semantics
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         run: cargo test -p locron --test windows_service_launcher --features windows-service-launcher --locked -- --test-threads=1
       - name: Diagnose the stock Windows adapter after cold contracts
         if: always()
         shell: pwsh
-        run: ./.github/scripts/windows-adapter-diagnostic.ps1
+        run: |
+          if ('${{ steps.native_tail.outcome }}' -ne 'success') {
+            Write-Output 'Windows adapter diagnostics unavailable: tail target preparation failed'
+            exit 1
+          }
+          ./.github/scripts/windows-adapter-diagnostic.ps1
       - name: Build the native CLI for isolated Windows acceptance
         run: cargo build -p locron --locked
       - name: Verify actual registered daemon lifetimes
@@ -1038,7 +1272,7 @@ jobs:
       - name: Verify registered dashboard composition contracts
         run: cargo test -p locron --bin locron --locked -- service::windows_dashboard_tests
       - name: Verify guarded Windows output pruning
-        run: cargo test -p locron --bin locron --locked -- tests::windows_prune_tests
+        run: cargo test -p locron --bin locron --locked -- tests::windows_prune_tests --test-threads=1
       - name: Verify all output maintenance and recovery contracts
         run: cargo test -p locron --bin locron --locked -- maintenance::tests
       - name: Verify all three native MCP admission helpers
@@ -1084,7 +1318,7 @@ jobs:
           cargo test -p locron-server --test history_active --locked history_active_public_lifecycle_http -- --exact --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify native HTTP API and stream contracts
-        if: ${{ !cancelled() && steps.native_core.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_core.outcome == 'success' && steps.native_tail.outcome == 'success' }}
         run: cargo test -p locron-server --test contract --locked
       - name: Record native artifact evidence
         shell: pwsh
@@ -1100,26 +1334,19 @@ jobs:
             elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
           }
           $facts | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath windows-native-evidence.json -Encoding utf8
-          Get-FileHash -Algorithm SHA256 -LiteralPath target/debug/locron.exe | Format-List | Out-File -FilePath windows-native-sha256.txt -Encoding utf8
+          Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'debug/locron.exe') | Format-List | Out-File -FilePath windows-native-sha256.txt -Encoding utf8
+      - name: Stage verified native artifact upload copies
+        env:
+          PRUNE_QUALIFICATION_PLATFORM: ${{ matrix.platform }}
+          PRUNE_QUALIFICATION_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: python scripts/ci_windows_foundation_tail.py stage
       - uses: actions/upload-artifact@v7
         with:
           name: windows-native-${{ matrix.platform }}-rust-${{ matrix.rust }}
           if-no-files-found: error
           retention-days: 14
-          path: |
-            target/debug/locron.exe
-            target/debug/locron-service-launcher.exe
-            target/debug/deps/locron_core-*.exe
-            target/debug/deps/locron_store-*.exe
-            target/debug/deps/locron_engine-*.exe
-            target/debug/deps/locron_server-*.exe
-            target/debug/deps/windows_lifecycle-*.exe
-            target/debug/deps/windows_service_launcher-*.exe
-            target/debug/deps/mcp-*.exe
-            target/debug/deps/contract-*.exe
-            windows-native-evidence.json
-            engine-output-qualification/
-            windows-native-sha256.txt
+          path: windows-native-upload/
 
       - name: Upload actual prune and state qualification receipts
         if: always()
@@ -1139,7 +1366,7 @@ jobs:
       RUSTUP_TOOLCHAIN: 1.98.0
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.98.0
           components: rustfmt, clippy
@@ -1175,7 +1402,7 @@ jobs:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
@@ -1732,7 +1959,7 @@ jobs:
       RUSTUP_TOOLCHAIN: 1.98.0
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:
           toolchain: 1.98.0
           components: clippy
@@ -1783,7 +2010,7 @@ jobs:
     runs-on: ${{ matrix.runner.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
@@ -2538,7 +2765,7 @@ jobs:
               data = metadata("scoped-metadata")
               target = pathlib.Path(data["target_directory"]).resolve(strict=True)
               recovery_path.resolve(strict=True).relative_to(target)
-              status, messages, _ = invoke(["cargo", "test", "-p", "locron-server", "--lib", "--locked", "--no-run", "--message-format=json"], "server-build")
+              status, messages, _ = invoke(["cargo", "test", "--workspace", "--all-targets", "--locked", "--no-run", "--message-format=json"], "server-build")
               require(status == 0, "server-build-status")
               server = artifact(messages, package(data, "locron-server"), "locron_server", "lib", True)
               server_path = pathlib.Path(server["executable"])
@@ -2807,7 +3034,7 @@ jobs:
     runs-on: ${{ matrix.runner.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
@@ -2842,7 +3069,7 @@ jobs:
       RUSTUP_TOOLCHAIN: 1.94.0
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2
@@ -3076,7 +3303,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.94.0
       - uses: Swatinem/rust-cache@v2

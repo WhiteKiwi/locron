@@ -27,6 +27,6 @@ pub use store::{
     Admission, AdmitAttempt, AttemptCompletion, CancelOutcome, CancellationPreview, CreateJob,
     CursorUpdate, EventRecord, ImportBatch, ImportJob, ImportResolution, ImportSummary,
     JobIdentity, JobListRecord, JobRecord, LatestRunSummary, MaterializedRun, NewScheduledRun,
-    OutputRecord, ReconciliationSummary, RetentionCandidate, RetryPlan, RunRecord, SettingsRecord,
-    StartDecision, Store, StoreError, StorePortError, StoreResult, UpdateJob,
+    ObservedFailure, OutputRecord, ReconciliationSummary, RetentionCandidate, RetryPlan, RunRecord,
+    SettingsRecord, StartDecision, Store, StoreError, StorePortError, StoreResult, UpdateJob,
 };

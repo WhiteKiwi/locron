@@ -357,7 +357,7 @@ categories. Errors map to HTTP statuses as follows:
 | 401 | unauthenticated (no or invalid token/session) |
 | 403 | refused or permission: Host not loopback, Origin mismatch, CSRF mismatch |
 | 404 | `not_found` |
-| 409 | `durable_conflict` (revision mismatch, no-op update, quarantine conflicts, busy) |
+| 409 | `durable_conflict` (revision mismatch, no-op update, quarantine conflicts, domain conflicts) |
 | 503 | daemon-required or state unavailable |
 | 500 | unexpected internal failure (`state_error`) |
 
@@ -483,6 +483,30 @@ Every command supports one JSON document on stdout:
 
 Errors use the same envelope with `ok: false` and an `error` object containing a stable lowercase-snake-case `code`, human message, and optional structured details. Version output uses the same envelope with `"command":"version"` and `data` `{"version":"0.1.1"}`. IDs are lowercase canonical UUID strings. Instants are RFC 3339 UTC with microseconds. Durations are integer microseconds. Arbitrary output bytes are represented with an explicit UTF-8 or base64 encoding tag.
 
+Persistence failures add `error.storage` to CLI JSON, terminal stream results and
+the API envelope. The object contains `operation`, `stage`, `kind`, `elapsed_us`,
+`admission_wait_us`, `connection_wait_us`, `sqlite_wait_us`, `transaction_us`,
+`commit_us`, `retries`, `sqlite_primary_code`, `sqlite_extended_code`,
+`os_error_code`, `retryable`, `durable_outcome`, and `lock_owner`. Numeric error
+codes are `null` when unavailable. Durations use monotonic measured microseconds;
+they describe observed time, including OS operations that cannot be interrupted.
+`kind` distinguishes `busy`, `locked`, `io`, `sqlite`, and `admission_timeout`;
+`durable_outcome` is `not_committed`, `unknown`, or `committed`, and `lock_owner`
+is `unknown`. A `committed` failure means the mutation succeeded but reading its
+result failed; inspect the durable state before retrying.
+Operation/stage/classification values are safe static labels. This object contains
+no SQL, raw adapter messages, paths, job identifiers, arguments, environment values,
+headers, or bodies.
+
+SQLite contention and other structured persistence failures use `state_error`
+and CLI exit 5; the API retains HTTP 500. This also applies when the failure
+crosses the shared Core boundary. Domain conflicts and protocol/argument errors
+retain their existing categories. Human diagnostics report the safe operation,
+stage, measured wait, numeric codes and next step at every verbosity; they never
+append an underlying adapter chain. MCP tool failures retain text content and
+`isError: true`, and add an `error` object with the same `code`, safe `message`
+and `storage` projection. MCP protocol errors keep their JSON-RPC behavior.
+
 Progress, verbose context, debug traces, and wait/follow output do not corrupt the JSON result. Streaming JSON uses newline-delimited envelopes with schema `locron.stream/v1`; the final record is a terminal result. Human prose is not a compatibility surface.
 
 ## Export and import
@@ -551,8 +575,14 @@ create/update/no-op actions; prospective collision allocations are shown as non-
 | 1 | A waited-for target reached a non-success terminal outcome |
 | 2 | CLI syntax or validation error |
 | 3 | Requested identity not found or durable conflict |
-| 4 | State unavailable, busy, locked for migration, daemon unavailable where required, or incompatible schema |
+| 4 | State unavailable, daemon ownership conflict, locked for migration, daemon unavailable where required, or incompatible schema |
 | 5 | Unexpected storage, I/O, protocol, or internal failure |
 | 130 | The foreground client was interrupted; durable execution is not implicitly cancelled |
 
 Machine output additionally carries the stable error or outcome code, so callers need not infer detail from the numeric category.
+
+A mutation refused by an explicitly read-only Store reports storage.kind=`read_only`
+and stage=`access_mode`, retaining `state_error`/exit5 (API HTTP500). It has no SQLite
+code because the application refuses before SQL execution; original numeric codes
+are emitted only when supplied by the adapter. This refusal creates no writer
+coordination file and is nonretryable without selecting a writable Store.

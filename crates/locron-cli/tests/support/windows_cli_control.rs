@@ -145,7 +145,7 @@ impl Phase {
 }
 
 // Scalar observations are independent returned facts, never ownership/readiness.
-const OP_NAMES: [&str; 62] = [
+const OP_NAMES: [&str; 64] = [
     "unobserved",
     "StateSetup",
     "StateGuard",
@@ -208,6 +208,8 @@ const OP_NAMES: [&str; 62] = [
     "CaptureCliWait",
     "StdoutControlWrite",
     "StdoutControlFlush",
+    "StartupHintOpen",
+    "StartupHintRead",
 ];
 
 #[derive(Clone, Copy)]
@@ -274,6 +276,10 @@ enum Operation {
     CaptureCliWait,
     StdoutControlWrite,
     StdoutControlFlush,
+    #[cfg(debug_assertions)]
+    StartupHintOpen,
+    #[cfg(debug_assertions)]
+    StartupHintRead,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -314,7 +320,7 @@ const INVALID_EVENT: u64 = u64::MAX;
 
 fn event_word(tag: u8, operation: Operation, role: ChildRole, payload: u64) -> u64 {
     let operation = operation as u8;
-    if !(1..=4).contains(&tag) || !(1..=61).contains(&operation) || payload > PAYLOAD_MASK {
+    if !(1..=4).contains(&tag) || !(1..=63).contains(&operation) || payload > PAYLOAD_MASK {
         return INVALID_EVENT;
     }
     VALID_EVENT
@@ -516,7 +522,7 @@ fn event_header(word: u64, tag: u8) -> Option<(u8, ChildRole, u64)> {
     if word & VALID_EVENT == 0
         || word & !allowed != 0
         || (word >> 60) & 7 != u64::from(tag)
-        || !(1..=61).contains(&operation)
+        || !(1..=63).contains(&operation)
     {
         return None;
     }
@@ -771,7 +777,7 @@ impl CallWordKind {
             Self::Wrapper => v[0] <= 14 && (1..=513).contains(&v[1]) && v[3] <= 14 && v[4] <= 5,
             Self::Read => (1..=513).contains(&v[1]) && (1..=262_143).contains(&v[2]),
             Self::History => {
-                (1..=5).contains(&v[0])
+                (1..=6).contains(&v[0])
                     && (1..=513).contains(&v[1])
                     && (1..=1023).contains(&v[2])
                     && v[3] <= 5
@@ -1075,6 +1081,47 @@ struct PendingHistory {
     entered: Instant,
 }
 
+// The original numeric classes remain stable; Starting uses one spare bit-pattern.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+enum HistoryState {
+    Queued = 1,
+    Running,
+    Cancelled,
+    Succeeded,
+    Other,
+    Starting,
+}
+
+impl HistoryState {
+    fn classify(state: &str) -> Self {
+        match state {
+            "queued" => Self::Queued,
+            "running" => Self::Running,
+            "cancelled" => Self::Cancelled,
+            "succeeded" => Self::Succeeded,
+            "starting" => Self::Starting,
+            _ => Self::Other,
+        }
+    }
+
+    fn wake_complete(self) -> Result<bool, Code> {
+        match self {
+            Self::Succeeded => Ok(true),
+            Self::Queued | Self::Starting | Self::Running => Ok(false),
+            _ => Err(Code::Run),
+        }
+    }
+
+    fn cancel_ready(self, samples: usize) -> Result<bool, Code> {
+        match self {
+            Self::Running => Ok(samples >= 2),
+            Self::Queued | Self::Starting => Ok(false),
+            _ => Err(Code::Run),
+        }
+    }
+}
+
 // Worker-local cells hold only finite counters and actual Instant context.
 struct CallContext {
     attempts: std::cell::Cell<u16>,
@@ -1318,13 +1365,7 @@ impl CallContext {
 
     fn history_return(&self, control: &Control, result: &Result<String, Code>, returned: Instant) {
         if let (Some(history), Ok(state)) = (self.pending.get(), result) {
-            let state = match state.as_str() {
-                "queued" => 1,
-                "running" => 2,
-                "cancelled" => 3,
-                "succeeded" => 4,
-                _ => 5,
-            };
+            let state = HistoryState::classify(state) as u64;
             control.calls.last_history.store(
                 call_word(
                     CallWordKind::History,
@@ -2564,6 +2605,36 @@ fn decode_wake(bytes: &[u8], context: [u8; 16], run: bool) -> Result<WakeLedger,
     } else {
         Ok(ledger)
     }
+}
+
+#[cfg(debug_assertions)]
+fn startup_hint(control: &Control, bytes: &[u8], context: [u8; 16]) -> Result<bool, Code> {
+    control.check(control.deadline)?;
+    let result = (|| {
+        if bytes.len() > 65_536 {
+            return Err(Code::CaptureOversized);
+        }
+        let end = bytes
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(0, |index| index + 1);
+        let ledger = decode_wake(&bytes[..end], context, false).map_err(|_| Code::Native)?;
+        if [0, 1, 2, 5]
+            .into_iter()
+            .any(|index| ledger.ops[index].edge == Some(2))
+        {
+            return Err(Code::Native);
+        }
+        let returned = ledger.ops[5];
+        // A partial later row keeps this hint pending, even after startup returned.
+        // That can consume remaining setup time; it grants no authority or new time.
+        Ok(end == bytes.len()
+            && returned.edge == Some(1)
+            && returned.returned != 0
+            && !returned.pending)
+    })();
+    control.check(control.deadline)?;
+    result
 }
 
 #[cfg(debug_assertions)]
@@ -3871,6 +3942,8 @@ struct Owner {
     producers: Producers,
     #[cfg(debug_assertions)]
     initial_run: Option<PreparedInitialRunCommand>,
+    #[cfg(debug_assertions)]
+    startup_reader: Option<GuardedFile>,
 }
 
 impl Owner {
@@ -3901,6 +3974,8 @@ impl Owner {
             producers: Producers::empty(),
             #[cfg(debug_assertions)]
             initial_run: None,
+            #[cfg(debug_assertions)]
+            startup_reader: None,
         }
     }
 
@@ -4153,6 +4228,92 @@ impl Owner {
     }
 
     #[cfg(debug_assertions)]
+    fn wait_daemon_startup_hint(&mut self) -> Result<(), Code> {
+        self.control.check(self.control.deadline)?;
+        if self.startup_reader.is_some() || !self.producers.enabled {
+            return Err(Code::Native);
+        }
+        let expected = self.producers.snapshot.identities[0].ok_or(Code::Native)?;
+        let path = self.producers.readers[0]
+            .as_ref()
+            .ok_or(Code::Native)?
+            .normalized_path()
+            .to_path_buf();
+        self.control.check(self.control.deadline)?;
+        self.control.observations.intent(Operation::StartupHintOpen);
+        let opened =
+            locron_core::filesystem::open_private(&path, std::fs::OpenOptions::new().read(true));
+        match opened {
+            Ok(reader) => self.startup_reader = Some(reader),
+            Err(error) => {
+                self.control.observations.error(
+                    Operation::StartupHintOpen,
+                    ChildRole::Daemon,
+                    &error,
+                );
+                self.control.check(self.control.deadline)?;
+                return Err(Code::Native);
+            }
+        }
+        self.control.check(self.control.deadline)?;
+        let identity = file_identity(self.startup_reader.as_ref().ok_or(Code::Native)?);
+        self.control
+            .observations
+            .io(Operation::StartupHintOpen, ChildRole::Daemon, &identity);
+        self.control.check(self.control.deadline)?;
+        if identity.map_err(|_| Code::Native)? != expected {
+            return Err(Code::Native);
+        }
+        self.check_producer_cursors()?;
+        let mut bytes = Vec::with_capacity(65_537);
+        let mut buffer = [0; 4096];
+        loop {
+            self.live(0, self.control.deadline)?;
+            self.control.check(self.control.deadline)?;
+            self.control.observations.intent(Operation::StartupHintRead);
+            let count = buffer.len().min(65_537 - bytes.len());
+            let read = self
+                .startup_reader
+                .as_mut()
+                .ok_or(Code::Native)?
+                .read(&mut buffer[..count]);
+            self.control
+                .observations
+                .io(Operation::StartupHintRead, ChildRole::Daemon, &read);
+            self.control.check(self.control.deadline)?;
+            let count = read.map_err(|_| Code::Native)?;
+            bytes.extend_from_slice(&buffer[..count]);
+            if startup_hint(&self.control, &bytes, self.producers.context)? {
+                self.check_producer_cursors()?;
+                return self.live(0, self.control.deadline);
+            }
+            // This independent regular-file cursor may yield more bytes after EOF.
+            pause(
+                &self.control,
+                self.control.deadline,
+                Duration::from_millis(5),
+            )?;
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn check_producer_cursors(&mut self) -> Result<(), Code> {
+        for reader in &mut self.producers.readers {
+            self.control.check(self.control.deadline)?;
+            self.control.observations.intent(Operation::StartupHintRead);
+            let cursor = reader.as_mut().ok_or(Code::Native)?.stream_position();
+            self.control
+                .observations
+                .io(Operation::StartupHintRead, ChildRole::Daemon, &cursor);
+            self.control.check(self.control.deadline)?;
+            if cursor.map_err(|_| Code::Native)? != 0 {
+                return Err(Code::Native);
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
     fn initial_run_output(&mut self) -> Result<Output, Code> {
         // A Phase/env/string cannot elect this path. Pure fixed-slot validation
         // happens before stdout creation, native spawn or any fallback.
@@ -4270,6 +4431,8 @@ impl Owner {
 
     #[cfg(debug_assertions)]
     fn release_producers(&mut self) -> Result<(), Code> {
+        cleanup_gate(&self.control)?;
+        drop(self.startup_reader.take());
         cleanup_gate(&self.control)?;
         drop(self.initial_run.take());
         cleanup_gate(&self.control)?;
@@ -5942,6 +6105,8 @@ pub fn run_wake_case() -> CaseResult {
 fn wake_work(owner: &mut Owner) -> Result<(), Code> {
     owner.retain_guard()?;
     owner.expected_role(0)?;
+    #[cfg(debug_assertions)]
+    owner.wait_daemon_startup_hint()?;
     owner.probe(0, None)?;
     owner.output(
         Phase::Add,
@@ -5956,10 +6121,8 @@ fn wake_work(owner: &mut Owner) -> Result<(), Code> {
     let run_id = owner.initial_submit()?;
     owner.call_context.stage.set(1);
     loop {
-        match owner.history("wake", &run_id)?.as_str() {
-            "succeeded" => break Ok(()),
-            "queued" | "running" => {}
-            _ => break Err(Code::Run),
+        if HistoryState::classify(&owner.history("wake", &run_id)?).wake_complete()? {
+            break Ok(());
         }
         pause(
             &owner.control,
@@ -5979,6 +6142,8 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
     owner.retain_guard()?;
     owner.live(0, owner.control.deadline)?;
     owner.expected_role(0)?;
+    #[cfg(debug_assertions)]
+    owner.wait_daemon_startup_hint()?;
     owner.probe(0, None)?;
     owner.control.check(owner.control.deadline)?;
     owner.control.observations.intent(Operation::CaseCurrentExe);
@@ -6022,12 +6187,9 @@ fn cancel_work(owner: &mut Owner) -> Result<(), Code> {
     loop {
         let state = owner.history("cancel", &run_id)?;
         let counters = read_progress(&owner.control, &progress, &owner.call_context)?;
-        if state == "running" && counters.len() >= 2 {
+        if HistoryState::classify(&state).cancel_ready(counters.len())? {
             owner.live(0, owner.control.deadline)?;
             break;
-        }
-        if !matches!(state.as_str(), "queued" | "running") {
-            return Err(Code::Run);
         }
         pause(
             &owner.control,
@@ -6829,11 +6991,160 @@ fn assert_call_word_domains() {
     }
 }
 
+fn assert_history_classification_controls() {
+    for (text, code, wake) in [
+        ("queued", 1, Ok(false)),
+        ("running", 2, Ok(false)),
+        ("cancelled", 3, Err(Code::Run)),
+        ("succeeded", 4, Ok(true)),
+        ("starting", 6, Ok(false)),
+    ] {
+        let state = HistoryState::classify(text);
+        assert_eq!(state as u8, code);
+        assert_eq!(state.wake_complete(), wake);
+        for samples in 0..=2 {
+            let expected = match text {
+                "queued" | "starting" => Ok(false),
+                "running" => Ok(samples == 2),
+                _ => Err(Code::Run),
+            };
+            assert_eq!(state.cancel_ready(samples), expected);
+        }
+    }
+    for text in [
+        "failed",
+        "timed_out",
+        "interrupted_unknown",
+        "skipped_overlap",
+        "skipped_concurrency",
+        "retry_wait",
+        "unknown",
+        "Starting",
+        "",
+    ] {
+        let state = HistoryState::classify(text);
+        assert_eq!(state, HistoryState::Other);
+        assert_eq!(state as u8, 5);
+        assert_eq!(state.wake_complete(), Err(Code::Run));
+        for samples in 0..=2 {
+            assert_eq!(state.cancel_ready(samples), Err(Code::Run));
+        }
+    }
+    let fields = [6, 513, 1023, 5, 30_000_000, 0, 0];
+    let word = 0x8007_270e_02ff_f00e;
+    assert_eq!(call_word(CallWordKind::History, fields), word);
+    assert_eq!(call_fields(CallWordKind::History, word), Some(fields));
+    assert!(call_fields(CallWordKind::History, 0x8007_270e_02ff_f00f).is_none());
+}
+
+#[cfg(debug_assertions)]
+fn assert_startup_hint_controls(entered: Instant, deadline: Instant) {
+    let control = Control::new(entered, deadline);
+    for operation in [Operation::StartupHintOpen, Operation::StartupHintRead] {
+        let word = event_word(1, operation, ChildRole::Daemon, 0);
+        let Some((observed, role, payload)) = event_header(word, 1) else {
+            panic!("startup operation left the general event domain");
+        };
+        assert_eq!(observed, operation as u8);
+        assert!(role == ChildRole::Daemon && payload == 0);
+        let fields = [0, 1, 1, u64::from(operation as u8), 0, 1, 0];
+        assert_eq!(call_word(CallWordKind::NativeEnter, fields), CALL_INVALID);
+        assert!(
+            call_fields(
+                CallWordKind::NativeEnter,
+                CALL_VALID | 1 << 15 | 1 << 25 | u64::from(operation as u8) << 43 | 1 << 53,
+            )
+            .is_none()
+        );
+    }
+    assert_eq!(OP_NAMES[62], "StartupHintOpen");
+    assert_eq!(OP_NAMES[63], "StartupHintRead");
+    assert!(OP_NAMES.get(64).is_none());
+    assert!(event_header(VALID_EVENT | 1 << 60 | 64 << 38, 1).is_none());
+    let mut rows = Vec::new();
+    for op in ["role_lock", "store_open", "settings", "begin_lifetime"] {
+        for edge in ["enter", "ok"] {
+            rows.push(wake_phase_vector(
+                u16::try_from(rows.len() + 1).unwrap(),
+                0,
+                0,
+                op,
+                edge,
+                None,
+            ));
+        }
+    }
+    let complete = rows.concat();
+    let pending = rows[..7].concat();
+    assert_eq!(startup_hint(&control, b"", [0; 16]), Ok(false));
+    assert_eq!(
+        startup_hint(&control, pending.as_bytes(), [0; 16]),
+        Ok(false)
+    );
+    assert_eq!(
+        startup_hint(&control, complete.as_bytes(), [0; 16]),
+        Ok(true)
+    );
+    let split = complete.len() - 5;
+    assert_eq!(
+        startup_hint(&control, &complete.as_bytes()[..split], [0; 16]),
+        Ok(false)
+    );
+    let mut appended = complete.as_bytes()[..split].to_vec();
+    appended.extend_from_slice(&complete.as_bytes()[split..]);
+    assert_eq!(startup_hint(&control, &appended, [0; 16]), Ok(true));
+    let later = complete.clone() + &wake_phase_vector(9, 1, 0, "tick", "enter", None);
+    assert_eq!(startup_hint(&control, later.as_bytes(), [0; 16]), Ok(true));
+    assert_eq!(
+        startup_hint(&control, &later.as_bytes()[..later.len() - 1], [0; 16]),
+        Ok(false)
+    );
+    let failed = pending.clone() + &wake_phase_vector(8, 0, 0, "begin_lifetime", "err", None);
+    assert_eq!(
+        startup_hint(&control, failed.as_bytes(), [0; 16]),
+        Err(Code::Native)
+    );
+    for invalid in [
+        complete.replace("ctx=00", "ctx=10"),
+        complete.replace("role=daemon", "role=run"),
+        complete.replace("seq=8 ", "seq=7 "),
+        complete.replace("seq=8 ", "seq=9 "),
+        complete.replace("op=begin_lifetime", "op=private_unknown"),
+    ] {
+        assert_eq!(
+            startup_hint(&control, invalid.as_bytes(), [0; 16]),
+            Err(Code::Native)
+        );
+    }
+    let mut capped = complete.as_bytes().to_vec();
+    capped.resize(65_535, b'x');
+    capped.push(b'\n');
+    assert_eq!(startup_hint(&control, &capped, [0; 16]), Ok(true));
+    capped.push(b'x');
+    assert_eq!(
+        startup_hint(&control, &capped, [0; 16]),
+        Err(Code::CaptureOversized)
+    );
+    let expired = Control::new(entered, entered);
+    assert_eq!(
+        startup_hint(&expired, complete.as_bytes(), [0; 16]),
+        Err(Code::Expired)
+    );
+}
+
 #[test]
 fn native_cli_output_capture_contract() {
     let entered = Instant::now();
     let deadline = entered + Duration::from_secs(30);
     assert_call_word_domains();
+    assert!(Instant::now() < deadline, "pure control allowance expired");
+    #[cfg(debug_assertions)]
+    assert_startup_hint_controls(entered, deadline);
+    assert_history_classification_controls();
+    assert!(
+        Instant::now() < deadline,
+        "pure controls exhausted original allowance"
+    );
     for case in [
         CaptureCase::Version,
         CaptureCase::Oversized,
@@ -7889,6 +8200,30 @@ fn native_cli_output_target() {
     }
 }
 
+fn publish_progress_writer(
+    stage: GuardedFile,
+    destination: &Path,
+    control: &Control,
+) -> Result<(GuardedFile, DirectoryGuard), Code> {
+    let original =
+        peer_operation(control, || file_identity(&stage))?.map_err(|_| Code::Progress)?;
+    let (stage, parent) = close_peer_stage(stage, control)?;
+    persist_peer_stage(stage, destination, control)?.map_err(|_| Code::Progress)?;
+    let writer = peer_operation(control, || {
+        locron_core::filesystem::open_private(
+            destination,
+            std::fs::OpenOptions::new().read(true).write(true),
+        )
+    })?
+    .map_err(|_| Code::Progress)?;
+    let published =
+        peer_operation(control, || file_identity(&writer))?.map_err(|_| Code::Progress)?;
+    if published != original {
+        return Err(Code::Progress);
+    }
+    Ok((writer, parent))
+}
+
 #[test]
 fn native_cancel_target() {
     let Some(role) = std::env::var_os("WINDOWS_CLI_CANCEL_ROLE") else {
@@ -7907,9 +8242,10 @@ fn native_cancel_target() {
         control.check(deadline)?;
         let guard = guarded.map_err(|_| Code::Progress)?;
         control.check(deadline)?;
-        let opened = create_private_new(&path);
+        let opened = create_private_new(&parent.join("cancel-progress-pending"));
         control.check(deadline)?;
-        let mut writer = opened.map_err(|_| Code::Progress)?;
+        let stage = opened.map_err(|_| Code::Progress)?;
+        let (mut writer, stage_parent) = publish_progress_writer(stage, &path, &control)?;
         for counter in 0_u64..1201 {
             if Instant::now() >= deadline {
                 break;
@@ -7927,6 +8263,7 @@ fn native_cancel_target() {
             );
         }
         drop(writer);
+        drop(stage_parent);
         drop(guard);
         Ok(())
     })();
@@ -8112,6 +8449,108 @@ fn peer_publication_proof(root: &Path, control: &Control) -> Result<(), Code> {
     Ok(())
 }
 
+fn progress_publication_proof(root: &Path, control: &Control) -> Result<(), Code> {
+    let pending = root.join("progress-proof-pending");
+    let destination = root.join("progress-proof-final");
+    let stage =
+        peer_operation(control, || create_private_new(&pending))?.map_err(|_| Code::Progress)?;
+    let original =
+        peer_operation(control, || file_identity(&stage))?.map_err(|_| Code::Progress)?;
+    let (file, parent) = stage.into_parts();
+    // Close the ordinary RW leaf before recreating the transient constructor's
+    // exact access/share combination. This is not the historical failed holder.
+    peer_operation(control, || drop(file))?;
+    let held = peer_operation(control, || {
+        std::fs::OpenOptions::new()
+            .access_mode(0x001f_01ff)
+            .share_mode(3)
+            .custom_flags(0x0020_0000)
+            .open(&pending)
+    })?
+    .map_err(|_| Code::Progress)?;
+    let metadata = peer_operation(control, || held.metadata())?.map_err(|_| Code::Progress)?;
+    if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
+        return Err(Code::Progress);
+    }
+    peer_final_absent(&destination, control)?;
+    let refused = peer_operation(control, || open_read_no_follow(&pending))?;
+    if refused.err().and_then(|error| error.raw_os_error()) != Some(32) {
+        return Err(Code::Progress);
+    }
+    peer_operation(control, || drop(held))?;
+    let stage = peer_operation(control, || {
+        locron_core::filesystem::open_private(
+            &pending,
+            std::fs::OpenOptions::new().read(true).write(true),
+        )
+    })?
+    .map_err(|_| Code::Progress)?;
+    let reopened =
+        peer_operation(control, || file_identity(&stage))?.map_err(|_| Code::Progress)?;
+    if reopened != original {
+        return Err(Code::Progress);
+    }
+    let (mut writer, published_parent) = publish_progress_writer(stage, &destination, control)?;
+    let published =
+        peer_operation(control, || file_identity(&writer))?.map_err(|_| Code::Progress)?;
+    if published != original {
+        return Err(Code::Progress);
+    }
+    let records = b"0000000000000000\n0000000000000001\n";
+    peer_operation(control, || writer.write_all(records))?.map_err(|_| Code::Progress)?;
+    peer_operation(control, || writer.flush())?.map_err(|_| Code::Progress)?;
+    let mut missing = false;
+    if read_progress_body(control, &destination, &mut missing)? != [0, 1] || missing {
+        return Err(Code::Progress);
+    }
+    // The independent strict reader above ran while the same-ID RW writer lived.
+    peer_operation(control, || drop(writer))?;
+    peer_operation(control, || drop((published_parent, parent)))?;
+
+    let collision_path = root.join("progress-collision");
+    let mut collision = peer_operation(control, || create_private_new(&collision_path))?
+        .map_err(|_| Code::Progress)?;
+    peer_operation(control, || collision.write_all(records))?.map_err(|_| Code::Progress)?;
+    peer_operation(control, || collision.flush())?.map_err(|_| Code::Progress)?;
+    let original =
+        peer_operation(control, || file_identity(&collision))?.map_err(|_| Code::Progress)?;
+    let (file, collision_parent) = collision.into_parts();
+    // A no-DELETE destination leaf must not mask a replacing implementation.
+    peer_operation(control, || drop(file))?;
+    let mut candidate = peer_operation(control, || {
+        create_private_new(&root.join("progress-collision-pending"))
+    })?
+    .map_err(|_| Code::Progress)?;
+    let candidate_bytes = b"0000000000000002\n";
+    peer_operation(control, || candidate.write_all(candidate_bytes))?
+        .map_err(|_| Code::Progress)?;
+    peer_operation(control, || candidate.flush())?.map_err(|_| Code::Progress)?;
+    let (candidate, candidate_parent) = close_peer_stage(candidate, control)?;
+    let Err(refusal) = persist_peer_stage(candidate, &collision_path, control)? else {
+        return Err(Code::Progress);
+    };
+    if refusal.error.kind() != io::ErrorKind::AlreadyExists {
+        return Err(Code::Progress);
+    }
+    let reopened = peer_operation(control, || open_read_no_follow(&collision_path))?
+        .map_err(|_| Code::Progress)?;
+    let unchanged =
+        peer_operation(control, || file_identity(&reopened))?.map_err(|_| Code::Progress)?;
+    if unchanged != original {
+        return Err(Code::Progress);
+    }
+    peer_operation(control, || drop(reopened))?;
+    if peer_file_bytes(&collision_path, 35, control)? != records
+        || peer_file_bytes(refusal.path.as_ref(), 18, control)? != candidate_bytes
+    {
+        return Err(Code::Progress);
+    }
+    // Keep the actual disabled-cleanup error and both parents through readback.
+    peer_operation(control, || drop(refusal))?;
+    peer_operation(control, || drop((candidate_parent, collision_parent)))?;
+    Ok(())
+}
+
 fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
     let deadline = control.deadline;
     control.check(deadline)?;
@@ -8141,6 +8580,7 @@ fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
         control.check(deadline)?;
         if matches!(mode, PeerMode::PublicationProof) {
             peer_publication_proof(&root, control)?;
+            progress_publication_proof(&root, control)?;
         }
         let final_ready = root.join("peer-ready");
         let created = create_private_new(&root.join("peer-ready-pending"));
@@ -8189,6 +8629,279 @@ fn peer_target(mode: PeerMode, control: &Control) -> Result<(), Code> {
     })
 }
 
+#[derive(Clone, Copy)]
+enum ReadyScope {
+    ActualMarker,
+    ControlRelease,
+    ControlPersistent,
+}
+
+impl ReadyScope {
+    fn name(self) -> &'static str {
+        match self {
+            Self::ActualMarker => "actual_marker",
+            Self::ControlRelease => "control_release",
+            Self::ControlPersistent => "control_persistent",
+        }
+    }
+}
+
+fn peer_ready_check(owner: &Owner, gate: &Control) -> Result<(), Code> {
+    owner.control.check(owner.control.deadline)?;
+    gate.check(gate.deadline)
+}
+
+fn wait_peer_ready(
+    owner: &mut Owner,
+    ready: &Path,
+    gate: &Control,
+    scope: ReadyScope,
+    mut on_open32: impl FnMut(),
+) -> Result<(), Code> {
+    let mut sharing_observed = false;
+    loop {
+        peer_ready_check(owner, gate)?;
+        // A shortened proof gate must never poison this original child/control.
+        owner.live(0, owner.control.deadline)?;
+        peer_ready_check(owner, gate)?;
+        gate.observations.intent(Operation::ReadyOpen);
+        let file = open_read_no_follow(ready);
+        gate.observations
+            .io(Operation::ReadyOpen, ChildRole::NegativePeer, &file);
+        peer_ready_check(owner, gate)?;
+        match file {
+            Ok(mut file) => {
+                let mut byte = Vec::new();
+                peer_ready_check(owner, gate)?;
+                gate.observations.intent(Operation::ReadyRead);
+                let read = (&mut *file).take(2).read_to_end(&mut byte);
+                gate.observations
+                    .io(Operation::ReadyRead, ChildRole::NegativePeer, &read);
+                if read.is_ok() {
+                    gate.observations.ready(&byte);
+                }
+                peer_ready_check(owner, gate)?;
+                read.map_err(|_| Code::Native)?;
+                // Empty is not published. It follows the original NotFound
+                // continuation with the same child/liveness/outer clock.
+                if !byte.is_empty() {
+                    if byte != b"1" {
+                        return Err(Code::Native);
+                    }
+                    return Ok(());
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                let Some(raw @ 32) = error.raw_os_error() else {
+                    return Err(Code::Native);
+                };
+                owner.live(0, owner.control.deadline)?;
+                peer_ready_check(owner, gate)?;
+                if !sharing_observed {
+                    eprintln!(
+                        "ready_open_sharing/v1 scope={} kind={} raw={raw}",
+                        scope.name(),
+                        KIND_NAMES[usize::from(kind_bucket(error.kind()))],
+                    );
+                    sharing_observed = true;
+                }
+                peer_ready_check(owner, gate)?;
+                // The control releases its real holder only after actual timely32.
+                // Production never changes ownership or a file in this callback.
+                on_open32();
+                peer_ready_check(owner, gate)?;
+            }
+        }
+        peer_ready_check(owner, gate)?;
+        pause(gate, gate.deadline, Duration::from_millis(5))?;
+        peer_ready_check(owner, gate)?;
+    }
+}
+
+fn peer_ready_fixture(
+    owner: &Owner,
+    name: &str,
+    bytes: &[u8],
+) -> Result<
+    (
+        PathBuf,
+        locron_core::filesystem::FileIdentity,
+        DirectoryGuard,
+    ),
+    Code,
+> {
+    let path = owner.root()?.join(name);
+    let mut marker =
+        peer_operation(&owner.control, || create_private_new(&path))?.map_err(|_| Code::Native)?;
+    peer_operation(&owner.control, || marker.write_all(bytes))?.map_err(|_| Code::Native)?;
+    peer_operation(&owner.control, || marker.flush())?.map_err(|_| Code::Native)?;
+    let identity =
+        peer_operation(&owner.control, || file_identity(&marker))?.map_err(|_| Code::Native)?;
+    if !peer_operation(&owner.control, || is_private(&path, false))?.map_err(|_| Code::Native)? {
+        return Err(Code::Native);
+    }
+    let (file, parent) = marker.into_parts();
+    peer_operation(&owner.control, || drop(file))?;
+    Ok((path, identity, parent))
+}
+
+fn peer_ready_holder(control: &Control, path: &Path) -> Result<File, Code> {
+    let held = peer_operation(control, || {
+        std::fs::OpenOptions::new()
+            .access_mode(0x001f_01ff)
+            .share_mode(3)
+            .custom_flags(0x0020_0000)
+            .open(path)
+    })?
+    .map_err(|_| Code::Native)?;
+    let metadata = peer_operation(control, || held.metadata())?.map_err(|_| Code::Native)?;
+    if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
+        return Err(Code::Native);
+    }
+    Ok(held)
+}
+
+fn peer_ready_readback(
+    control: &Control,
+    path: &Path,
+    expected: locron_core::filesystem::FileIdentity,
+) -> Result<(), Code> {
+    let mut marker =
+        peer_operation(control, || open_read_no_follow(path))?.map_err(|_| Code::Native)?;
+    let identity = peer_operation(control, || file_identity(&marker))?.map_err(|_| Code::Native)?;
+    let private = peer_operation(control, || is_private(path, false))?.map_err(|_| Code::Native)?;
+    let mut bytes = Vec::new();
+    peer_operation(control, || (&mut *marker).take(2).read_to_end(&mut bytes))?
+        .map_err(|_| Code::Native)?;
+    if identity != expected || !private || bytes != b"1" {
+        return Err(Code::Native);
+    }
+    peer_operation(control, || drop(marker))
+}
+
+fn peer_ready_release_control(owner: &mut Owner) -> Result<(), Code> {
+    let (path, identity, parent) = peer_ready_fixture(owner, "ready-control-release", b"1")?;
+    let mut held = Some(peer_ready_holder(&owner.control, &path)?);
+    // Synthetic observations stay separate from the actual marker's facts.
+    let gate = Control::new(owner.control.entered, owner.control.deadline);
+    wait_peer_ready(owner, &path, &gate, ReadyScope::ControlRelease, || {
+        drop(held.take());
+    })?;
+    if held.is_some() {
+        return Err(Code::Native);
+    }
+    peer_ready_readback(&owner.control, &path, identity)?;
+    peer_operation(&owner.control, || drop(parent))
+}
+
+fn peer_ready_persistent_control(owner: &mut Owner) -> Result<(), Code> {
+    let (path, identity, parent) = peer_ready_fixture(owner, "ready-control-persistent", b"1")?;
+    let held = peer_ready_holder(&owner.control, &path)?;
+    owner.live(0, owner.control.deadline)?;
+    let captured = Instant::now();
+    let deadline = owner
+        .control
+        .deadline
+        .min(captured + Duration::from_millis(100));
+    // Only this isolated negative gate expires. The original case is never reset.
+    let gate = Control::new(owner.control.entered, deadline);
+    let mut observed32 = false;
+    let result = wait_peer_ready(owner, &path, &gate, ReadyScope::ControlPersistent, || {
+        observed32 = true;
+    });
+    owner.control.check(owner.control.deadline)?;
+    owner.live(0, owner.control.deadline)?;
+    if !matches!(result, Err(Code::Expired))
+        || !observed32
+        || gate.observations.snapshot().ready_read != 0
+    {
+        return Err(Code::Native);
+    }
+    let refused = peer_operation(&owner.control, || open_read_no_follow(&path))?;
+    if refused.err().and_then(|error| error.raw_os_error()) != Some(32) {
+        return Err(Code::Native);
+    }
+    peer_operation(&owner.control, || drop(held))?;
+    peer_ready_readback(&owner.control, &path, identity)?;
+    peer_operation(&owner.control, || drop(parent))
+}
+
+fn peer_ready_invalid_controls(owner: &mut Owner) -> Result<(), Code> {
+    for (name, bytes) in [
+        ("ready-control-invalid-one", b"0".as_slice()),
+        ("ready-control-invalid-two", b"11".as_slice()),
+    ] {
+        let (path, _, parent) = peer_ready_fixture(owner, name, bytes)?;
+        let gate = Control::new(owner.control.entered, owner.control.deadline);
+        let mut continued32 = false;
+        let result = wait_peer_ready(owner, &path, &gate, ReadyScope::ControlRelease, || {
+            continued32 = true;
+        });
+        peer_ready_check(owner, &gate)?;
+        owner.live(0, owner.control.deadline)?;
+        let expected = 2 | (u64::try_from(bytes.len()).map_err(|_| Code::Native)? << 2);
+        if !matches!(result, Err(Code::Native))
+            || continued32
+            || event_header(gate.observations.snapshot().ready_read, 4)
+                != Some((
+                    Operation::ReadyRead as u8,
+                    ChildRole::NegativePeer,
+                    expected,
+                ))
+        {
+            return Err(Code::Native);
+        }
+        peer_operation(&owner.control, || drop(parent))?;
+    }
+    Ok(())
+}
+
+fn peer_ready_nonfile_control(owner: &mut Owner) -> Result<(), Code> {
+    let path = owner.root()?.to_path_buf();
+    let gate = Control::new(owner.control.entered, owner.control.deadline);
+    let mut continued32 = false;
+    let result = wait_peer_ready(owner, &path, &gate, ReadyScope::ControlRelease, || {
+        continued32 = true;
+    });
+    peer_ready_check(owner, &gate)?;
+    owner.live(0, owner.control.deadline)?;
+    let (operation, role, payload) =
+        event_header(gate.observations.snapshot().io_error, 1).ok_or(Code::Native)?;
+    if !matches!(result, Err(Code::Native))
+        || continued32
+        || operation != Operation::ReadyOpen as u8
+        || role != ChildRole::NegativePeer
+        || decode_signed(payload).map_err(|_| Code::Native)? == Some(32)
+        || (payload >> 33) == u64::from(kind_bucket(io::ErrorKind::NotFound))
+    {
+        return Err(Code::Native);
+    }
+    Ok(())
+}
+
+fn peer_ready_controls(owner: &mut Owner) -> Result<(), Code> {
+    peer_ready_release_control(owner)?;
+    peer_ready_persistent_control(owner)?;
+    peer_ready_invalid_controls(owner)?;
+    peer_ready_nonfile_control(owner)?;
+    let gate = Control::new(owner.control.entered, owner.control.entered);
+    let path = owner.root()?.join("peer-ready");
+    let mut continued32 = false;
+    let result = wait_peer_ready(owner, &path, &gate, ReadyScope::ControlRelease, || {
+        continued32 = true;
+    });
+    owner.control.check(owner.control.deadline)?;
+    owner.live(0, owner.control.deadline)?;
+    if !matches!(result, Err(Code::Expired))
+        || continued32
+        || gate.observations.snapshot().intent != 0
+    {
+        return Err(Code::Native);
+    }
+    Ok(())
+}
+
 fn setup_peer(owner: &mut Owner, mode: PeerMode) -> Result<(), Code> {
     owner.retain_guard()?;
     owner.control.step(Phase::Setup, owner.control.deadline)?;
@@ -8211,51 +8924,12 @@ fn setup_peer(owner: &mut Owner, mode: PeerMode) -> Result<(), Code> {
         None,
         ChildRole::NegativePeer,
     )?;
-    let ready = owner.root()?.join("peer-ready");
-    loop {
-        owner.live(0, owner.control.deadline)?;
-        owner.control.check(owner.control.deadline)?;
-        owner.control.observations.intent(Operation::ReadyOpen);
-        let file = open_read_no_follow(&ready);
-        owner
-            .control
-            .observations
-            .io(Operation::ReadyOpen, ChildRole::NegativePeer, &file);
-        owner.control.check(owner.control.deadline)?;
-        match file {
-            Ok(mut file) => {
-                let mut byte = Vec::new();
-                owner.control.check(owner.control.deadline)?;
-                owner.control.observations.intent(Operation::ReadyRead);
-                let read = (&mut *file).take(2).read_to_end(&mut byte);
-                owner
-                    .control
-                    .observations
-                    .io(Operation::ReadyRead, ChildRole::NegativePeer, &read);
-                if read.is_ok() {
-                    owner.control.observations.ready(&byte);
-                }
-                owner.control.check(owner.control.deadline)?;
-                read.map_err(|_| Code::Native)?;
-                // Empty is not published. It follows the original NotFound
-                // continuation with the same child/liveness/outer clock.
-                if !byte.is_empty() {
-                    if byte != b"1" {
-                        return Err(Code::Native);
-                    }
-                    break;
-                }
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(_) => return Err(Code::Native),
-        }
-        pause(
-            &owner.control,
-            owner.control.deadline,
-            Duration::from_millis(5),
-        )?;
+    if matches!(mode, PeerMode::PublicationProof) {
+        peer_ready_controls(owner)?;
     }
-    Ok(())
+    let ready = owner.root()?.join("peer-ready");
+    let control = Arc::clone(&owner.control);
+    wait_peer_ready(owner, &ready, &control, ReadyScope::ActualMarker, || {})
 }
 
 fn refused_peer(mode: PeerMode, expected: Code) {

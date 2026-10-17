@@ -1669,19 +1669,54 @@ mod tests {
             });
             let release = ReleaseGate(Arc::clone(&gate));
             *worker.admission.gate.lock().unwrap() = Some(Arc::clone(&gate));
-            let action = if matches!(
-                boundary,
-                Boundary::BeforeMetadataRead | Boundary::MetadataRead
-            ) {
-                Action::Observe { stopping: false }
-            } else {
-                Action::Refuse("native withheld I/O fixture".into())
+            let action = || {
+                if matches!(
+                    boundary,
+                    Boundary::BeforeMetadataRead | Boundary::MetadataRead
+                ) {
+                    Action::Observe { stopping: false }
+                } else {
+                    Action::Refuse("native withheld I/O fixture".into())
+                }
             };
+            let expired = worker.request(action(), Instant::now()).await.unwrap_err();
+            assert!(expired.expired);
+            assert!(
+                !gate.entered.load(Ordering::Acquire),
+                "an already-expired request reached {boundary:?}"
+            );
+
+            // Establish actual in-flight I/O within the original setup ceiling.
+            // This is the same request and receipt used by the timeout assertion.
+            let setup_deadline = Instant::now() + STOP_TIMEOUT;
+            let budget = worker.budget(setup_deadline);
+            let (response, receipt) = tokio::sync::oneshot::channel();
+            worker
+                .requests
+                .as_ref()
+                .unwrap()
+                .try_send(super::Request {
+                    action: action(),
+                    budget: budget.clone(),
+                    response,
+                })
+                .unwrap_or_else(|_| panic!("native I/O request dispatch failed at {boundary:?}"));
+            while !gate.entered.load(Ordering::Acquire) {
+                assert!(
+                    Instant::now() < setup_deadline,
+                    "the actual native I/O boundary {boundary:?} was not entered"
+                );
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            assert!(
+                Instant::now() < setup_deadline,
+                "native I/O boundary {boundary:?} was observed after setup expiry"
+            );
             let started = Instant::now();
-            let error = worker
-                .request(action, started + Duration::from_millis(100))
-                .await
-                .unwrap_err();
+            worker
+                .admission
+                .stop_at(setup_deadline.min(started + Duration::from_millis(100)));
+            let error = budget.await_response(receipt).await.unwrap_err();
             assert!(error.expired);
             assert!(started.elapsed() < Duration::from_millis(250));
             assert!(

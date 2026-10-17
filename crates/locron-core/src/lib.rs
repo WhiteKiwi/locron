@@ -21,7 +21,7 @@ pub mod time;
 #[cfg(windows)]
 pub mod windows;
 
-pub use error::{CoreError, Result, ValidationError};
+pub use error::{CoreError, PersistenceDiagnostic, Result, ValidationError};
 pub use id::{AttemptNumber, EventId, JobId, RevisionNumber, RunId, SchedulerLifetimeId};
 pub use schedule::{
     CompiledSchedule, ElapsedKind, OmittedRange, OmittedRangeKind, ScheduleReconciliation,

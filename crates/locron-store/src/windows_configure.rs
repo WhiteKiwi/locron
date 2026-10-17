@@ -13,6 +13,7 @@ use diagnostics::{Gate, Snapshot, Stamp};
 const CONFIGURE_ALLOWANCE: Duration = Duration::from_secs(5);
 const CONTENTION_YIELD: Duration = Duration::from_millis(10);
 
+#[cfg(test)]
 pub(crate) fn configure(connection: &Connection, trace: &OpenTrace) -> StoreResult<()> {
     configure_until(
         connection,
@@ -24,7 +25,7 @@ pub(crate) fn configure(connection: &Connection, trace: &OpenTrace) -> StoreResu
     )
 }
 
-fn configure_until(
+pub(crate) fn configure_until(
     connection: &Connection,
     trace: &OpenTrace,
     deadline: Instant,

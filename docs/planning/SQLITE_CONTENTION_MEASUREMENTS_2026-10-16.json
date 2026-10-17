@@ -1,0 +1,574 @@
+{
+  "purpose": "Bundled-SQLite transaction-hold qualification for #180/#181; isolated temporary state only",
+  "baseline_revision": "a3f43fc15e1a5db75d811e65e35add59d51c055a",
+  "current_binding": "Composed uncommitted development build; exact test binary SHA256 below. Final repository-head qualification remains separate.",
+  "toolchain": "Rust 1.98.0 x86_64-unknown-linux-gnu, debug test profile",
+  "bundled_sqlite_version": "3.53.2",
+  "timing_boundary": "Immediately after successful BEGIN IMMEDIATE through successful COMMIT, including commit. Baseline adds only cfg(test) Instant/readout; current uses Store::last_write_observation.transaction_us.",
+  "fixtures": {
+    "materialization": {
+      "rounds": 20,
+      "fresh_state_per_round": true,
+      "occurrences": 128,
+      "snapshot_payload_bytes": 16384,
+      "policy": "allow, per-job concurrency64",
+      "equivalent_result": {
+        "inserted": 128,
+        "duplicates": 0,
+        "queued": 64,
+        "skipped_concurrency": 64,
+        "sum_nominal_us": 20928
+      }
+    },
+    "retention": {
+      "rounds": 20,
+      "terminal_runs": 60000,
+      "jobs": 100,
+      "finished_time_ties": 3,
+      "global_retention_count": 1000,
+      "age_retention": null,
+      "equivalent_result": {
+        "runs_unchanged": 60000,
+        "pending_rows": 1,
+        "pending_candidate": "oldest run 00000000-0000-0000-0000-000000002710"
+      },
+      "between_rounds": "Test control deletes pending intent only; production recheck and insert execute each round."
+    }
+  },
+  "limitations": [
+    "Linux host only; no native macOS/Windows result",
+    "Fixture measurements do not identify an original production lock holder or predict every workload",
+    "An initial alternating run overlapped MSRV compilation; a second run reversed order after compilation completed. Scheduler outliers remain; medians and all per-round values are retained.",
+    "Debug-profile test binaries; no release-performance claim"
+  ],
+  "baseline_instrumentation_diff": "diff --git a/crates/locron-store/src/store.rs b/crates/locron-store/src/store.rs\nindex 0c03f87..1ee1149 100644\n--- a/crates/locron-store/src/store.rs\n+++ b/crates/locron-store/src/store.rs\n@@ -25,6 +25,8 @@ mod activity;\n mod cancellation;\n #[cfg(test)]\n mod history_qualification;\n+#[cfg(test)]\n+mod transaction_qualification;\n pub use cancellation::CancellationPreview;\n \n #[cfg(test)]\n@@ -1537,6 +1539,8 @@ impl Store {\n     ) -> StoreResult<MaterializedRun> {\n         let mut conn = self.conn()?;\n         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;\n+        #[cfg(test)]\n+        let qualification_begin = std::time::Instant::now();\n         let changed = tx.execute(\"UPDATE schedule_cursors SET cursor_us=?4,one_time_resolved=CASE WHEN ?6 THEN 1 ELSE one_time_resolved END,updated_at_us=?5,disabled_since_us=NULL WHERE job_id=?1 AND revision=?2 AND revision=(SELECT current_revision FROM jobs WHERE id=?1) AND cursor_us=?3\", params![job_id,cursor.expected_revision,cursor.expected_cursor_us,cursor.new_cursor_us,now_us,cursor.resolve_one_time])?;\n         if changed != 1 {\n             return Err(StoreError::Conflict(\"schedule cursor changed\".into()));\n@@ -1625,6 +1629,8 @@ impl Store {\n             )?;\n         }\n         tx.commit()?;\n+        #[cfg(test)]\n+        eprintln!(\"BASELINE transaction_us={}\", qualification_begin.elapsed().as_micros());\n         Ok(result)\n     }\n \n@@ -3014,6 +3020,8 @@ impl Store {\n     ) -> StoreResult<()> {\n         let mut conn = self.conn()?;\n         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;\n+        #[cfg(test)]\n+        let qualification_begin = std::time::Instant::now();\n         let (retention_count, retention_age_us): (i64, Option<i64>) = tx.query_row(\n             \"SELECT run_retention_count,run_retention_age_us FROM settings WHERE singleton=1\",\n             [],\n@@ -3051,6 +3059,8 @@ impl Store {\n             params![candidate.run_id, now_us],\n         )?;\n         tx.commit()?;\n+        #[cfg(test)]\n+        eprintln!(\"BASELINE retention transaction_us={}\", qualification_begin.elapsed().as_micros());\n         Ok(())\n     }\n \n",
+  "loaded_run": {
+    "metadata": {
+      "start_utc": "2026-10-16T02:47:53.882705+00:00",
+      "load_start": [
+        4.50439453125,
+        2.490234375,
+        1.16064453125
+      ],
+      "runs": [
+        {
+          "role": "baseline",
+          "fixture": "materialization",
+          "status": 0,
+          "binary_sha256": "097fc9c25c3b677cac98ebe53b1fbf46f4dd99be933745ef7f8ad31dbc92d414",
+          "load_after": [
+            4.50439453125,
+            2.490234375,
+            1.16064453125
+          ]
+        },
+        {
+          "role": "current",
+          "fixture": "materialization",
+          "status": 0,
+          "binary_sha256": "1aa14fcd803bc1330249a04e02ef8da53dad360966f75fc57218473689c09306",
+          "load_after": [
+            4.2236328125,
+            2.46533203125,
+            1.15966796875
+          ]
+        },
+        {
+          "role": "baseline",
+          "fixture": "retention",
+          "status": 0,
+          "binary_sha256": "097fc9c25c3b677cac98ebe53b1fbf46f4dd99be933745ef7f8ad31dbc92d414",
+          "load_after": [
+            4.3662109375,
+            2.5244140625,
+            1.18603515625
+          ]
+        },
+        {
+          "role": "current",
+          "fixture": "retention",
+          "status": 0,
+          "binary_sha256": "1aa14fcd803bc1330249a04e02ef8da53dad360966f75fc57218473689c09306",
+          "load_after": [
+            4.3662109375,
+            2.5244140625,
+            1.18603515625
+          ]
+        }
+      ],
+      "end_utc": "2026-10-16T02:48:04.213271+00:00"
+    },
+    "measurements": {
+      "baseline_materialization": {
+        "transaction_us": [
+          39318,
+          35393,
+          37099,
+          34213,
+          34984,
+          36702,
+          35118,
+          37170,
+          32973,
+          35786,
+          33924,
+          34129,
+          34205,
+          37109,
+          35065,
+          33274,
+          34497,
+          34119,
+          35226,
+          36963
+        ],
+        "hold_median_us": 35091.5,
+        "hold_min_us": 32973,
+        "hold_max_us": 39318,
+        "wall_median_us": 35122.0,
+        "ledger_lines": [
+          "bundled materialize iteration=0 elapsed_us=39355 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=1 elapsed_us=35429 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=2 elapsed_us=37139 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=3 elapsed_us=34247 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=4 elapsed_us=35015 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=5 elapsed_us=36738 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=6 elapsed_us=35147 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=7 elapsed_us=37211 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=8 elapsed_us=33006 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=9 elapsed_us=35845 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=10 elapsed_us=33967 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=11 elapsed_us=34164 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=12 elapsed_us=34239 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=13 elapsed_us=37142 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=14 elapsed_us=35097 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=15 elapsed_us=33311 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=16 elapsed_us=34528 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=17 elapsed_us=34154 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=18 elapsed_us=35258 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=19 elapsed_us=37002 ledger=(128, 64, 64, 20928)"
+        ]
+      },
+      "baseline_retention": {
+        "transaction_us": [
+          17638,
+          16888,
+          17200,
+          16200,
+          16678,
+          16402,
+          16450,
+          16845,
+          15032,
+          14522,
+          16034,
+          16026,
+          15408,
+          16050,
+          16776,
+          16063,
+          16343,
+          15914,
+          16723,
+          42375
+        ],
+        "hold_median_us": 16372.5,
+        "hold_min_us": 14522,
+        "hold_max_us": 42375,
+        "wall_median_us": 16404.5,
+        "ledger_lines": [
+          "bundled retention sqlite=3.53.2 iteration=0 elapsed_us=17674 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=1 elapsed_us=16925 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=2 elapsed_us=17243 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=3 elapsed_us=16235 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=4 elapsed_us=16712 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=5 elapsed_us=16447 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=6 elapsed_us=16489 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=7 elapsed_us=16874 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=8 elapsed_us=15067 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=9 elapsed_us=14556 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=10 elapsed_us=16071 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=11 elapsed_us=16060 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=12 elapsed_us=15445 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=13 elapsed_us=16081 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=14 elapsed_us=16809 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=15 elapsed_us=16098 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=16 elapsed_us=16362 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=17 elapsed_us=15955 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=18 elapsed_us=16760 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=19 elapsed_us=42402 rows=60000 pending=1"
+        ]
+      },
+      "current_materialization": {
+        "transaction_us": [
+          23811,
+          23918,
+          23722,
+          23839,
+          23197,
+          22843,
+          23379,
+          23303,
+          23651,
+          23032,
+          22861,
+          23423,
+          22808,
+          24783,
+          22916,
+          22915,
+          23360,
+          22821,
+          23696,
+          23274
+        ],
+        "hold_median_us": 23331.5,
+        "hold_min_us": 22808,
+        "hold_max_us": 24783,
+        "wall_median_us": 32676.5,
+        "ledger_lines": [
+          "bundled materialize iteration=0 elapsed_us=33254 transaction_us=23811 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=1 elapsed_us=33312 transaction_us=23918 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=2 elapsed_us=33021 transaction_us=23722 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=3 elapsed_us=33183 transaction_us=23839 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=4 elapsed_us=32702 transaction_us=23197 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=5 elapsed_us=32184 transaction_us=22843 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=6 elapsed_us=32679 transaction_us=23379 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=7 elapsed_us=32583 transaction_us=23303 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=8 elapsed_us=32904 transaction_us=23651 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=9 elapsed_us=32319 transaction_us=23032 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=10 elapsed_us=32136 transaction_us=22861 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=11 elapsed_us=32674 transaction_us=23423 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=12 elapsed_us=32300 transaction_us=22808 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=13 elapsed_us=34114 transaction_us=24783 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=14 elapsed_us=32604 transaction_us=22916 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=15 elapsed_us=32192 transaction_us=22915 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=16 elapsed_us=33407 transaction_us=23360 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=17 elapsed_us=32469 transaction_us=22821 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=18 elapsed_us=39046 transaction_us=23696 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=19 elapsed_us=32549 transaction_us=23274 ledger=(128, 64, 64, 20928)"
+        ]
+      },
+      "current_retention": {
+        "transaction_us": [
+          3806,
+          3003,
+          2685,
+          2621,
+          2608,
+          2643,
+          2969,
+          2666,
+          3101,
+          2866,
+          2807,
+          2826,
+          3122,
+          5273,
+          2900,
+          2848,
+          2678,
+          2658,
+          2909,
+          2736
+        ],
+        "hold_median_us": 2837.0,
+        "hold_min_us": 2608,
+        "hold_max_us": 5273,
+        "wall_median_us": 2926.0,
+        "ledger_lines": [
+          "bundled retention sqlite=3.53.2 iteration=0 elapsed_us=3864 transaction_us=3806 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=1 elapsed_us=3102 transaction_us=3003 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=2 elapsed_us=2774 transaction_us=2685 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=3 elapsed_us=2711 transaction_us=2621 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=4 elapsed_us=2734 transaction_us=2608 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=5 elapsed_us=2732 transaction_us=2643 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=6 elapsed_us=3057 transaction_us=2969 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=7 elapsed_us=2754 transaction_us=2666 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=8 elapsed_us=3188 transaction_us=3101 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=9 elapsed_us=2956 transaction_us=2866 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=10 elapsed_us=2896 transaction_us=2807 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=11 elapsed_us=2915 transaction_us=2826 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=12 elapsed_us=3209 transaction_us=3122 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=13 elapsed_us=5363 transaction_us=5273 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=14 elapsed_us=2988 transaction_us=2900 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=15 elapsed_us=2937 transaction_us=2848 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=16 elapsed_us=2759 transaction_us=2678 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=17 elapsed_us=2741 transaction_us=2658 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=18 elapsed_us=2990 transaction_us=2909 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=19 elapsed_us=2818 transaction_us=2736 rows=60000 pending=1"
+        ]
+      }
+    }
+  },
+  "after_build_run": {
+    "metadata": {
+      "start_utc": "2026-10-16T02:48:53.505374+00:00",
+      "load_start": [
+        2.177734375,
+        2.2236328125,
+        1.15380859375
+      ],
+      "runs": [
+        {
+          "role": "current",
+          "fixture": "materialization",
+          "status": 0,
+          "binary_sha256": "1aa14fcd803bc1330249a04e02ef8da53dad360966f75fc57218473689c09306",
+          "load_after": [
+            2.177734375,
+            2.2236328125,
+            1.15380859375
+          ]
+        },
+        {
+          "role": "baseline",
+          "fixture": "materialization",
+          "status": 0,
+          "binary_sha256": "097fc9c25c3b677cac98ebe53b1fbf46f4dd99be933745ef7f8ad31dbc92d414",
+          "load_after": [
+            2.0830078125,
+            2.203125,
+            1.15283203125
+          ]
+        },
+        {
+          "role": "current",
+          "fixture": "retention",
+          "status": 0,
+          "binary_sha256": "1aa14fcd803bc1330249a04e02ef8da53dad360966f75fc57218473689c09306",
+          "load_after": [
+            2.0830078125,
+            2.203125,
+            1.15283203125
+          ]
+        },
+        {
+          "role": "baseline",
+          "fixture": "retention",
+          "status": 0,
+          "binary_sha256": "097fc9c25c3b677cac98ebe53b1fbf46f4dd99be933745ef7f8ad31dbc92d414",
+          "load_after": [
+            2.06982421875,
+            2.1962890625,
+            1.16259765625
+          ]
+        }
+      ],
+      "end_utc": "2026-10-16T02:49:06.959041+00:00"
+    },
+    "measurements": {
+      "baseline_materialization": {
+        "transaction_us": [
+          40983,
+          91242,
+          85987,
+          82358,
+          35182,
+          33965,
+          45007,
+          36303,
+          33802,
+          35747,
+          33434,
+          40993,
+          70301,
+          82703,
+          78653,
+          80175,
+          37155,
+          33462,
+          35974,
+          34073
+        ],
+        "hold_median_us": 39069.0,
+        "hold_min_us": 33434,
+        "hold_max_us": 91242,
+        "wall_median_us": 39107.0,
+        "ledger_lines": [
+          "bundled materialize iteration=0 elapsed_us=41026 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=1 elapsed_us=91282 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=2 elapsed_us=86023 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=3 elapsed_us=82397 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=4 elapsed_us=35214 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=5 elapsed_us=33993 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=6 elapsed_us=45039 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=7 elapsed_us=36337 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=8 elapsed_us=33836 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=9 elapsed_us=35782 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=10 elapsed_us=33468 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=11 elapsed_us=41057 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=12 elapsed_us=70337 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=13 elapsed_us=82749 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=14 elapsed_us=78702 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=15 elapsed_us=80242 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=16 elapsed_us=37188 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=17 elapsed_us=33490 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=18 elapsed_us=36014 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=19 elapsed_us=34106 ledger=(128, 64, 64, 20928)"
+        ]
+      },
+      "baseline_retention": {
+        "transaction_us": [
+          12261,
+          11723,
+          11019,
+          11325,
+          11158,
+          10797,
+          10940,
+          13124,
+          11857,
+          11363,
+          13034,
+          11209,
+          11116,
+          10956,
+          10834,
+          10843,
+          10891,
+          10882,
+          11342,
+          13577
+        ],
+        "hold_median_us": 11183.5,
+        "hold_min_us": 10797,
+        "hold_max_us": 13577,
+        "wall_median_us": 11211.5,
+        "ledger_lines": [
+          "bundled retention sqlite=3.53.2 iteration=0 elapsed_us=12293 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=1 elapsed_us=11750 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=2 elapsed_us=11048 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=3 elapsed_us=11351 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=4 elapsed_us=11188 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=5 elapsed_us=10822 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=6 elapsed_us=10969 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=7 elapsed_us=13150 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=8 elapsed_us=11883 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=9 elapsed_us=11389 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=10 elapsed_us=13061 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=11 elapsed_us=11235 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=12 elapsed_us=11145 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=13 elapsed_us=10981 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=14 elapsed_us=10860 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=15 elapsed_us=10870 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=16 elapsed_us=10915 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=17 elapsed_us=10908 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=18 elapsed_us=11370 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=19 elapsed_us=13607 rows=60000 pending=1"
+        ]
+      },
+      "current_materialization": {
+        "transaction_us": [
+          33914,
+          24932,
+          25376,
+          26872,
+          24547,
+          25980,
+          38376,
+          36595,
+          40398,
+          48399,
+          63777,
+          26668,
+          34013,
+          23225,
+          24791,
+          23986,
+          24058,
+          23793,
+          22634,
+          24107
+        ],
+        "hold_median_us": 25678.0,
+        "hold_min_us": 22634,
+        "hold_max_us": 63777,
+        "wall_median_us": 35729.5,
+        "ledger_lines": [
+          "bundled materialize iteration=0 elapsed_us=44427 transaction_us=33914 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=1 elapsed_us=35919 transaction_us=24932 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=2 elapsed_us=34663 transaction_us=25376 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=3 elapsed_us=39858 transaction_us=26872 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=4 elapsed_us=34171 transaction_us=24547 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=5 elapsed_us=35540 transaction_us=25980 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=6 elapsed_us=50988 transaction_us=38376 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=7 elapsed_us=49326 transaction_us=36595 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=8 elapsed_us=56158 transaction_us=40398 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=9 elapsed_us=66997 transaction_us=48399 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=10 elapsed_us=83897 transaction_us=63777 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=11 elapsed_us=39564 transaction_us=26668 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=12 elapsed_us=45132 transaction_us=34013 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=13 elapsed_us=32645 transaction_us=23225 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=14 elapsed_us=34200 transaction_us=24791 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=15 elapsed_us=33260 transaction_us=23986 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=16 elapsed_us=34079 transaction_us=24058 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=17 elapsed_us=33388 transaction_us=23793 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=18 elapsed_us=31922 transaction_us=22634 ledger=(128, 64, 64, 20928)",
+          "bundled materialize iteration=19 elapsed_us=33432 transaction_us=24107 ledger=(128, 64, 64, 20928)"
+        ]
+      },
+      "current_retention": {
+        "transaction_us": [
+          2693,
+          2148,
+          1853,
+          1873,
+          1886,
+          2094,
+          2012,
+          1934,
+          2229,
+          2101,
+          1973,
+          2023,
+          1911,
+          2036,
+          2109,
+          1916,
+          1910,
+          1936,
+          1900,
+          1848
+        ],
+        "hold_median_us": 1954.5,
+        "hold_min_us": 1848,
+        "hold_max_us": 2693,
+        "wall_median_us": 2016.5,
+        "ledger_lines": [
+          "bundled retention sqlite=3.53.2 iteration=0 elapsed_us=2732 transaction_us=2693 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=1 elapsed_us=2219 transaction_us=2148 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=2 elapsed_us=1915 transaction_us=1853 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=3 elapsed_us=1931 transaction_us=1873 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=4 elapsed_us=1974 transaction_us=1886 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=5 elapsed_us=2156 transaction_us=2094 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=6 elapsed_us=2073 transaction_us=2012 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=7 elapsed_us=1997 transaction_us=1934 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=8 elapsed_us=2291 transaction_us=2229 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=9 elapsed_us=2165 transaction_us=2101 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=10 elapsed_us=2036 transaction_us=1973 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=11 elapsed_us=2084 transaction_us=2023 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=12 elapsed_us=1971 transaction_us=1911 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=13 elapsed_us=2096 transaction_us=2036 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=14 elapsed_us=2169 transaction_us=2109 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=15 elapsed_us=1977 transaction_us=1916 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=16 elapsed_us=1971 transaction_us=1910 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=17 elapsed_us=1997 transaction_us=1936 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=18 elapsed_us=1959 transaction_us=1900 rows=60000 pending=1",
+          "bundled retention sqlite=3.53.2 iteration=19 elapsed_us=1906 transaction_us=1848 rows=60000 pending=1"
+        ]
+      }
+    }
+  },
+  "bundled_query_plan": {
+    "full_count": [
+      "SEARCH newer USING COVERING INDEX runs_retention (state=? AND finished_at_us>?)"
+    ],
+    "threshold_count": [
+      "CO-ROUTINE (subquery-1)",
+      "SEARCH newer USING COVERING INDEX runs_retention (state=? AND finished_at_us>?)",
+      "SCAN (subquery-1)"
+    ],
+    "verification": "Explicit EXPLAIN QUERY PLAN for both equivalent newer-terminal global probes with same tie predicate; existing covering index, no schema/index change."
+  }
+}

@@ -664,3 +664,48 @@ Dashboard job creation, job updates and settings accept native JSON boolean dry-
 ## Dashboard cookie recovery correction (2026-10-05)
 
 Ambiguous or malformed session cookies refuse protected API access and token paste while the public entry page and viewer bundle remain loadable. A valid session with an unusable CSRF cookie receives the existing generic authentication refusal from session status so the dashboard can show its token entry flow. Re-pasting the exact token may recover only a unique readable malformed CSRF cookie when no CSRF echo is supplied; duplicate or unreadable cookies and supplied bad echoes still refuse before body access. Token validation precedes new cookies, and normal bearer, form, header and safe public flows retain their contracts.
+
+## Storage contention and foreground progress amendment (2026-10-16)
+
+Issues #180 and #181 select one consistent contention policy across the CLI, local API,
+MCP and daemon. A failed state operation distinguishes temporary writer contention from
+locked-resource and other persistence failures. Human and machine diagnostics retain the
+existing error categories and CLI exit status 5, and add safe operation/stage, measured
+elapsed and wait times, retry count, original numeric primary/extended error codes when
+available, and useful recovery guidance. Unknown ownership or durable outcome stays
+explicitly unknown. Diagnostics never reveal configured values, command arguments,
+request contents or credentials, including at verbose/debug levels.
+
+Concurrent mutations share a bounded wait policy and preserve standalone CLI operation
+while the daemon is stopped. Automatic cleanup yields to waiting foreground work and is
+bounded by both an action budget and elapsed time, with safe pending work resumed later.
+Already-started operating-system I/O cannot be forcibly bounded. Short-lived contention
+may recover within one total five-second wait budget; retries never replay an uncertain
+commit or external side effect. Locked-resource, I/O, corruption and validation failures
+do not become blindly retryable contention. Scheduling uniqueness, atomic capacity and
+revision checks, cancellation, crash durability, private-state protections, retention
+policy and non-mutating/read-only behavior remain required. Advisory coordination cannot
+control external writers or promise strict FIFO fairness. Qualification uses isolated
+owned state; production jobs, installed binaries and services are outside this change.
+
+### Atomic schema upgrade publication (2026-10-16)
+
+Opening older supported state publishes all required schema changes atomically.
+Before a successful commit, readers retain the previously committed schema and
+settings; a failed upgrade leaves that prior state recoverable. Initial defaults
+and all supported schema changes become visible together for new state. Existing
+configured values and the recorded history of completed upgrades are preserved.
+Already-current state is verified without an additional write. The existing total
+five-second admission budget, crash durability and uncertain-commit policy apply.
+
+## Windows identity failure and deadline clarification (2026-10-16)
+
+A Windows identity request whose existing deadline has elapsed reports a timeout,
+including when its initializer fails concurrently. An on-time initializer refusal,
+disconnect or unwind reports its corresponding failure without publishing a verified
+identity. Unfinished initialization retains its admission until its owned work and
+native resources are disposed; observing a failure must not admit replacement work
+early. Qualification distinguishes these failure conditions while retaining the
+original product deadlines, privacy boundaries and supported-platform requirements.
+CI reliability corrections must preserve these behaviors and report required failures
+truthfully.

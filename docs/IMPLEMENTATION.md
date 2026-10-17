@@ -6200,3 +6200,224 @@ read-guard then state-guard drops, all constructors/history counters/rows/clocks
 and every other field. Full canonical/physical two-line inverse and protected
 bytes precede Root staged/unstaged review; fresh changed-head type/runtime
 evidence stays distinct from existing failure/history and deferred Windows CI.
+
+## Shared SQLite contention implementation (#180, #181; 2026-10-16)
+
+The SPEC contention amendment and ARCHITECTURE/STORAGE contract are implemented by
+[the concrete contention plan](planning/SQLITE_CONTENTION_2026-10-16.md). It inventories
+every writer and read-only exception, fixes lock order and one deadline, defines
+safe retry/diagnostic compatibility, immutable preparation, retention probes,
+background progress and100-action/250 ms maintenance boundaries, and supplies
+concrete Verify criteria for each change phase. FINDINGS records the research and
+measured query-plan evidence. Parent review and issue updates precede source edits;
+the separate development sub-session owns implementation and verification.
+
+The contention plan's preparation clarification explicitly carries one Operation
+through bounded read-only preparation, releases that mutex before writer admission,
+and revalidates manual enqueue's current live revision/definition under BEGIN.
+This is part of the original atomic scheduling invariant; it grants no stale enqueue
+or fresh wait allowance after preparation.
+
+The contention plan additionally retains the original operation/deadline across
+postcommit result readback after writer release. Such adapter failures are safe
+structured diagnostics with committed outcome; preparation/readback cannot start
+fresh SQLite waits. Removal still resolves and updates exactly one identity even
+when a live name equals another job's UUID. These boundary details precede source.
+
+The contention plan's orphan-traversal cursor is retained by the daemon composition
+between bounded passes. Two guarded directory iterators at most preserve scan progress
+without a schema change, growing queue or observer mutation; current file protection
+is rechecked per entry. This prevents repeated-prefix starvation under the elapsed
+budget and precedes the separate composition/maintenance implementation.
+
+## Windows SID fixture and obsolete PR CI correction (2026-10-16)
+
+Continue owning #172 and parent #31 using
+[the reviewed four-step plan](planning/WINDOWS_SID_CI_RELIABILITY_2026-10-16.md).
+The SPEC identity paragraph clarifies the already implemented deadline/error/cache
+contract; it introduces no product timeout or platform-support change. FINDINGS
+records the actual native failure, primary Rust/project references and controlled
+portable contrast. A fixture-only hookless unwind retains the real worker, original
+one-second deadline and all original failure/cache/permit/join assertions.
+
+CI retains every current job, command, result, artifact binding and required check.
+Only obsolete pull-request executions share a cancellation group; workflow/event/PR
+identity separates their owners, while main and manual executions use unique run IDs.
+The existing single-worker Core command stays unchanged. The verified rust-toolchain
+major alias replaces master without changing its current upstream commit or selected
+Rust versions. No new preflight, retry, suite filtering, cache movement, broad matrix
+serialization or manual/nightly workflow is introduced. Exact-source native Core
+results qualify this correction separately from the remaining foundation failures.
+
+## Current Windows foundation repair (2026-10-16)
+
+Continue the frozen SPEC through the
+[complete repair plan](planning/WINDOWS_FOUNDATION_REPAIR_2026-10-16.md).
+Read-only owner/response/persistence observations precede any causal product repair.
+Genuine debug-daemon fixtures may use a separately retained guarded startup hint
+within their original case/outer clocks before the unchanged authenticated probe;
+Starting remains a nonterminal waiting state only at the pre-running boundary.
+Separate development leases preserve artifact authority, full original native row
+oracles, private-state guards and cleanup ownership. Parent Issue readback and final
+plan review precede source. All current foundation failures remain in scope and any
+later permission/removal/schema repair requires an evidence-led plan amendment.
+
+## Evidence-led Windows foundation completion (2026-10-16)
+
+The [causal repair plan](planning/WINDOWS_FOUNDATION_CAUSAL_REPAIR_2026-10-16.md)
+continues the frozen SPEC and completed observations. Existing Bash standardizes
+the actual producer/test contexts; library thread count follows the serial guideline.
+This acknowledges MSYS security initialization rather than claiming an owner-only
+token change. Original guarded artifact checks, target namespaces and uploads remain.
+
+Genuine exclusive EMPTY roots initialize their private DACL under the existing private
+evidence guard, then move without replacement outside evidence before any caller bytes.
+Shared typed owners and full-ID/private postbinding preserve ancestry and original
+physical lifetime; uncertain outcomes retain one bounded fail-fast owner. Parser
+preparation becomes finite without moving its original parser-phase origin; runtime
+preparation clips its original30s allowance. All original90s/600s/cleanup clocks remain.
+
+Only Windows explicit API/CLI output removers use a new fixed native strict deletion
+selector with actual checked HResult/code. Generic/automatic/token/lock cleanup and
+all Unix expressions remain exact. Request-owned ancestry survives unconfirmed cleanup;
+healthy native refusal keeps the worker warm. Original SQL pending/stop/finish ordering
+and complete native oracles remain. Parent whole-plan Issue readback/final reread precedes
+separate file leases; same-head all3 native/full CI evidence precedes completion claims.
+
+## Known-junction fixture binding follow-up (2026-10-16)
+
+The [N06 amendment](planning/WINDOWS_FOUNDATION_N06_REPAIR_2026-10-16.md)
+continues the frozen SPEC after actual Core/PR144/readonly refusal qualification.
+Only Windows API/CLI N06 setup compares canonical target representation AND an
+independently private-admitted full identity under the original deadline and live
+target guard. Original observed spelling, later nonmutation/durable oracles and
+nonrecursive cleanup remain literal. Native spelling facts stay closed booleans.
+The remaining measured CI budget/duplicate-build work requires a separate plan
+before source; no timeout, test scope or support acceptance is waived.
+
+## Measured foundation tail reuse (2026-10-16)
+
+The [tail optimization plan](planning/WINDOWS_FOUNDATION_TAIL_OPTIMIZATION_2026-10-16.md)
+amends only tail build routing, upload packaging and the measured service scheduling
+exception. Both guarded producer namespaces and both complete library contexts remain.
+A CI-only helper verifies original production/recovery/binding and global cold-Core
+identity/hash before and after coherent B tail execution. Upload-only copies preserve
+all original executable roles with source/copy provenance in one checkout archive root;
+no copied artifact is ever admitted or executed. Only service:: uses two workers,
+retaining both real180s minimum-wait oracles and all64 cases. Other current commands,
+Core/library serialization, cache,35-minute limit and required contexts remain.
+Tail failure scheduling adds an explicit preparation-success prerequisite; the
+always-run diagnostic reports unavailable/nonzero before Cargo when preparation
+fails. Every original diagnostic still executes on the successful B route, and
+no failed admission silently compiles or runs a global-target replacement.
+
+## Remaining Windows fixture input and publication (2026-10-16)
+
+Continue the frozen SPEC through the
+[fixture publication amendment](planning/WINDOWS_FOUNDATION_FIXTURE_PUBLICATION_2026-10-16.md).
+The completed ed37 native run qualifies service64 on two workers and all14 other
+jobs, while all3 foundations still fail. N06 creator input becomes a strictly
+validated ordinary DOS representation of the same live held target, with original
+deadline canonical/private full-ID proofs BEFORE the unchanged creator. Actual
+read_link remains untouched; closed prefix/error facts precede the fallible actual
+target query and all original postconditions remain. This selects input conformance,
+not an asserted historical malformed-prefix cause.
+
+Genuine cancel progress uses a known private sibling stage, closes its leaf,
+publishes once without replacement, then opens compatible private RW and verifies
+the complete creator identity. Original parent/root ownership, error quarantine,
+17-byte progress/cancel/cleanup oracles and clocks remain. The existing selected
+publication proof adds real exactflags, final-absence, sameID/live-reader and
+collision controls without a new selector. Exact historical raw32 holder remains
+unknown. Separate leased developers implement only these three fixture files after
+whole-plan Issues readback/final Root review. Same-head complete native libraries,
+prune/PR144/tail provenance and all other CI gates remain required.
+
+## Complete checksum, readiness and receiver-budget gates (2026-10-16)
+
+Continue the frozen SPEC through the
+[final-gates amendment](planning/WINDOWS_FOUNDATION_FINAL_GATES_2026-10-16.md).
+Current105dcaf qualifies the N06/progress corrections on all3 rows, but actual
+Engine checksums, ARM pre-query readiness and macOS x64 receiver completion leave
+the whole CI unqualified. Pin only the fixed Engine ledger's LF input, preserving
+its blob/hash/checks. Extract the existing negative-peer ready loop and narrowly
+continue only timely actual open32 under the original live child/Control/pause;
+all read/other-open/bad-byte errors retain refusal. Existing publication selection
+adds real release/persistent32 controls with separately labelled closed facts.
+A shortened isolated negative gate retains the same entered and never poisons or
+extends main admission, query, ownership or cleanup clocks. This explicitly amends
+the previous fixture plan's no-reader-retry rule for this read-only setup only.
+
+The shared Unix receiver selects Server via workspace/all-targets no-run CargoJSON,
+reusing the graph already fully tested. It retains the original locked build,
+unique package/lib/test-profile selection, native/identity/hash/source/binding
+checks and complete actual API/CLI oracles. Windows receiver, producers, cache,
+matrix and job limits remain exact. Separate file leases and whole-plan Issues
+readback/final Root review precede source. Completion requires same-head all17
+actual CI jobs, original native controls and final upload-copy provenance; skipped
+staging or historical success is never transferred.
+
+## One complete native library context after runtime audit (2026-10-16)
+
+Continue the frozen SPEC with the
+[library deduplication amendment](planning/WINDOWS_FOUNDATION_LIBRARY_DEDUP_2026-10-16.md).
+Actual ea3 CI qualifies readiness/output/Core/library/prune gates, but35-minute
+cancellation leaves the native tail/final copies unqualified. Runtime dominates;
+small query-only build reuse cannot recover the missing MSRV allowance. Retire
+the first A-target complete-library repeat and its first evidence upload while
+preserving both original producers and the entire B-target complete command/
+fresh evidence/second upload. B's real PR144 actors still consume original AStore/
+controller full identities/hashes. The alternate A Server/Engine/full Store
+runtime image and first ledger are explicitly retired, not equated to B bytes.
+Future native evidence is three complete195 ledgers, one per original native host,
+with every unique source assertion and actual helper/ownership/cleanup invariant.
+All other tests/queries/roles, final original binding/GLOBAL cold-Core/copy verifier,
+threads/cache/matrix/35-minute limit remain literal. Source is delegated only
+after final Docs/Issues/readback/independent review; no earlier pass transfers.
+
+## Test-only fixed worker phase recorder completeness (2026-10-16)
+
+Apply the [phase receipt plan](planning/WINDOWS_WORKER_PHASE_RECEIPTS_2026-10-16.md)
+within frozen SPEC and the existing library-deduplication acceptance. A completed
+native Core fixture's30s receipt timeout exposes a source-level lossy-observer race;
+its exact historical phase/schedule is unknown. Change only cfg(test) observe's
+queue acquisition to lock after auditing all bounded holders; preserve poison/
+parser/atomic/cap and exact real-child9/5/5 phase assertions and original clocks.
+Do not change production worker code or best-effort Diagnostic/attach. Portable
+held-mutex controls show the mechanism; same-head native Core148 on all3 hosts and
+all17 CI jobs with complete final binding/copy/upload remain required. Parent
+planning/Issues/readback review precedes separate one-line development.
+
+
+## Atomic pending migration publication — 2026-10-16
+
+The SPEC atomic-upgrade amendment and
+[complete plan](planning/ATOMIC_PENDING_MIGRATIONS_2026-10-16.md) replace only the
+earlier requirement to commit each pending schema step separately. Apply all
+pending steps under one admitted immediate transaction, reread markers and verify
+the complete existing ledger after BEGIN, and preserve immutable SQL/checksums,
+per-step predecessor rechecks, Windows default capture and existing configured
+values. Current-schema verification takes no write transaction. Failed pending
+chains roll back to the last committed supported schema. Preserve the one5s
+deadline, FULL/WAL/privacy, pre-BEGIN BUSY-only retry, unknown COMMIT outcomes,
+read-only behavior and every native gate. Original isolated legacy-step tests
+remain useful recovery fixtures for databases created by earlier binaries.
+Parent planning/issue readback precedes separate development; final same-source
+CI qualification and repository publication follow.
+
+
+## Native fixture setup and scheduling correction — 2026-10-17
+
+Apply [the fixture plan](planning/WINDOWS_BOUNDED_FIXTURE_SETUP_2026-10-17.md)
+following the atomic migration implementation. Select only the3 guarded output
+prune cases for one outer test worker. Their real per-case databases, all
+assertions and5s initialization allowance remain literal; no product WAL change.
+For supervisor in-flight expiry, positively admit the same real request to its
+selected gate under original STOP_TIMEOUT setup, then only shorten Admission's
+effective deadline to100ms. Retain the250ms return and every original ownership,
+heartbeat, quarantine and cleanup oracle. The earlier requirement to include
+pre-gate scheduling/native setup in the100ms fixture premise is superseded only
+for this in-flight control. Expired pre-dispatch and late-ready response controls
+remain. Production Worker::request/Budget/Admission behavior, all other CI commands,
+service's64 cases/two workers and the35-minute native limit are unchanged. Parent
+planning/issue readback precedes separate development and same-source full CI.

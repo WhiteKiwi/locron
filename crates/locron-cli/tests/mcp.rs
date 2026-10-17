@@ -27,10 +27,14 @@ struct McpClient {
 
 impl McpClient {
     fn spawn(state: &Path) -> Self {
+        Self::spawn_with_verbosity(state, "-v")
+    }
+
+    fn spawn_with_verbosity(state: &Path, verbosity: &str) -> Self {
         let mut child = Command::new(assert_cmd::cargo::cargo_bin!("locron"))
             .arg("--state-dir")
             .arg(state)
-            .arg("-v")
+            .arg(verbosity)
             .arg("mcp")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -510,3 +514,6 @@ mod mutation_input_validation;
 
 #[path = "mcp/cancellation_preview.rs"]
 mod cancellation_preview;
+
+#[path = "mcp/storage_contention.rs"]
+mod storage_contention;

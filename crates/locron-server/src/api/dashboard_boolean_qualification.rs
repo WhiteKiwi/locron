@@ -15,6 +15,7 @@ const CONTROL_CAP: usize = 16 * 1024;
 const SNAPSHOT_CAP: usize = 16 * 1024 * 1024;
 const RESPONSE_CAP: usize = 1024 * 1024;
 const CELL_CAP: usize = 1024 * 1024;
+const WRITER_LOCKS: [&str; 2] = ["writer-intent.lock", "writer.lock"];
 #[cfg(unix)]
 const STORE_SELECTOR: &str =
     "store::dashboard_pr144_snapshot_fixture::owned_snapshot_fixture_child";
@@ -1528,10 +1529,13 @@ fn absence(state: &Path) -> Check<()> {
         "state.db-wal",
         "state.db-shm",
         "state.db-journal",
-    ] {
+    ]
+    .into_iter()
+    .chain(WRITER_LOCKS)
+    {
         match fs::symlink_metadata(state.join(name)) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-            _ => return Err("absent database or sidecar created"),
+            _ => return Err("absent database, sidecar or writer lock created"),
         }
     }
     Ok(())
@@ -1563,7 +1567,10 @@ fn non_sqlite(ticket: &Ticket) -> Check<Value> {
         "dashboard.token",
         "dashboard.token.lock",
         "outputs/owned-output",
-    ] {
+    ]
+    .into_iter()
+    .chain(WRITER_LOCKS.into_iter().filter(|_| populated(ticket.row)))
+    {
         let path = ticket.state.join(name);
         let file = private_read(&path)?;
         inventory[name] = json!({"identity":identity(&file)?,"sha256":sha256(&file)?,"size":file.metadata().map_err(|_| "sentinel metadata failed")?.len()});
@@ -2092,7 +2099,20 @@ struct FreshRoot {
     state_anchor: String,
 }
 
-fn fresh_root(nonce: &str, #[cfg(windows)] evidence_guard: &DirectoryGuard) -> Check<FreshRoot> {
+fn fresh_root(
+    nonce: &str,
+    #[cfg(windows)] evidence_guard: &std::sync::Arc<DirectoryGuard>,
+    #[cfg(windows)] original_deadline: Option<Instant>,
+) -> Check<FreshRoot> {
+    #[cfg(windows)]
+    let preparation_deadline = {
+        let entry_cap = Instant::now()
+            .checked_add(Duration::from_secs(30))
+            .ok_or("root preparation horizon overflow")?;
+        original_deadline.map_or(entry_cap, |deadline| deadline.min(entry_cap))
+    };
+    #[cfg(windows)]
+    root_preparation_check(preparation_deadline)?;
     #[cfg(not(windows))]
     let base = fs::canonicalize(
         std::env::var_os("RUNNER_TEMP").ok_or("required hosted fixture base missing")?,
@@ -2106,26 +2126,57 @@ fn fresh_root(nonce: &str, #[cfg(windows)] evidence_guard: &DirectoryGuard) -> C
             .ok_or("guarded fixture parent missing")?,
     )
     .map_err(|_| "hosted fixture base canonicalization failed")?;
+    #[cfg(windows)]
+    root_preparation_check(preparation_deadline)?;
     let base_guard =
         DirectoryGuard::ancestors(&base).map_err(|_| "fixture parent chain refused")?;
+    #[cfg(windows)]
+    root_preparation_check(preparation_deadline)?;
+    #[cfg(not(windows))]
     let temporary = tempfile::Builder::new()
         .prefix("locron-pr144-")
         .tempdir_in(base_guard.normalized_path())
         .map_err(|_| "fresh mkdtemp failed")?;
+    #[cfg(windows)]
+    let temporary = tempfile::Builder::new()
+        .prefix("locron-pr144-")
+        .tempdir_in(evidence_guard.normalized_path())
+        .map_err(|_| "fresh mkdtemp failed")?;
     // Immediate keep: a failed/foreign/in-flight root must never be recursively removed by Drop.
     let parent = temporary.keep();
+    #[cfg(not(windows))]
     let parent_guard =
         DirectoryGuard::private(&parent).map_err(|_| "initial parent privacy failed")?;
+    #[cfg(windows)]
+    let parent_guard = {
+        root_preparation_check(preparation_deadline)?;
+        let basename = parent.file_name().ok_or("fresh root basename missing")?;
+        let guard = locron_core::filesystem::move_empty_private_directory(
+            std::sync::Arc::clone(evidence_guard),
+            std::sync::Arc::new(base_guard),
+            basename,
+            preparation_deadline,
+        )
+        .map_err(|_| "fresh empty root preparation or destination binding failed")?;
+        root_preparation_check(preparation_deadline)?;
+        guard
+    };
     let parent = parent_guard.normalized_path().to_path_buf();
     let state_guard = DirectoryGuard::private(&parent.join("state"))
         .map_err(|_| "initial state privacy failed")?;
+    #[cfg(windows)]
+    root_preparation_check(preparation_deadline)?;
     let state = state_guard.normalized_path().to_path_buf();
     let mut subdirectories = Vec::new();
     for name in ["outputs", "tmp"] {
+        #[cfg(windows)]
+        root_preparation_check(preparation_deadline)?;
         subdirectories.push(
             DirectoryGuard::private(&state.join(name))
                 .map_err(|_| "initial owned subdirectory failed")?,
         );
+        #[cfg(windows)]
+        root_preparation_check(preparation_deadline)?;
     }
     #[cfg(unix)]
     let directory_identities = {
@@ -2142,11 +2193,17 @@ fn fresh_root(nonce: &str, #[cfg(windows)] evidence_guard: &DirectoryGuard) -> C
         identities
     };
     let parent_anchor = owned_file(&parent.join("anchor"), format!("{nonce}:parent").as_bytes())?;
+    #[cfg(windows)]
+    root_preparation_check(preparation_deadline)?;
     let state_anchor = owned_file(&state.join("sentinel"), format!("{nonce}:state").as_bytes())?;
+    #[cfg(windows)]
+    root_preparation_check(preparation_deadline)?;
     owned_file(
         &state.join("outputs/owned-output"),
         format!("{nonce}:output").as_bytes(),
     )?;
+    #[cfg(windows)]
+    root_preparation_check(preparation_deadline)?;
     Ok(FreshRoot {
         parent,
         state,
@@ -2158,6 +2215,14 @@ fn fresh_root(nonce: &str, #[cfg(windows)] evidence_guard: &DirectoryGuard) -> C
         parent_anchor,
         state_anchor,
     })
+}
+
+#[cfg(windows)]
+fn root_preparation_check(deadline: Instant) -> Check<()> {
+    require(
+        Instant::now() < deadline,
+        "fresh root preparation horizon expired",
+    )
 }
 
 fn exact_entries(path: &Path, allowed: &BTreeSet<String>) -> Check<Vec<(PathBuf, String)>> {
@@ -2242,6 +2307,7 @@ fn cleanup(
         state_files.insert("dashboard.token.lock".to_owned());
     }
     if row.is_some_and(populated) {
+        state_files.extend(WRITER_LOCKS.map(str::to_owned));
         state_files.extend(
             [
                 "state.db",
@@ -2288,7 +2354,7 @@ fn cleanup(
                     identity(&file)? == expected,
                     "owned state leaf replaced; retained",
                 )?;
-                if name == "dashboard.token.lock" {
+                if name == "dashboard.token.lock" || WRITER_LOCKS.contains(&name.as_str()) {
                     require(
                         file.metadata()
                             .map_err(|_| "cleanup permanent lock metadata failed")?
@@ -3003,12 +3069,14 @@ async fn qualification() -> Check<()> {
     )?;
     let evidence_guard =
         DirectoryGuard::private(&evidence).map_err(|_| "initial fresh evidence privacy failed")?;
+    #[cfg(windows)]
+    let evidence_guard = std::sync::Arc::new(evidence_guard);
     let evidence = evidence_guard.normalized_path().to_path_buf();
     let nonce = uuid::Uuid::now_v7().to_string();
     #[cfg(not(windows))]
     let parser_root = fresh_root(&nonce)?;
     #[cfg(windows)]
-    let parser_root = fresh_root(&nonce, &evidence_guard)?;
+    let parser_root = fresh_root(&nonce, &evidence_guard, None)?;
     let mut completed = parser_rows(&server.path, &parser_root.state, &nonce)?;
     let parser_ownership = owned_manifest(&parser_root.parent)?;
     cleanup(parser_root, None, None, &parser_ownership)?;
@@ -3044,7 +3112,16 @@ async fn qualification() -> Check<()> {
         #[cfg(not(windows))]
         let root = fresh_root(&nonce)?;
         #[cfg(windows)]
-        let root = fresh_root(&nonce, &evidence_guard)?;
+        let root = fresh_root(
+            &nonce,
+            &evidence_guard,
+            Some(clock.until(30)?.min(phase_deadline)),
+        )?;
+        if populated(row) {
+            for name in WRITER_LOCKS {
+                owned_file(&root.state.join(name), b"")?;
+            }
+        }
         owned_file(&root.state.join("dashboard.token.lock"), b"")?;
         let ticket = Ticket {
             schema: "locron.private.pr144/v1".to_owned(),
