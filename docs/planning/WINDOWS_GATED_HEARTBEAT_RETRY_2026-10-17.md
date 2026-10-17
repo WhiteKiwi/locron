@@ -53,3 +53,11 @@ workflow adds push ONLY for diagnostic/windows-gated-heartbeat-qualification,
 with an exact event/ref guard, while retaining explicit dispatch. No main/PR
 trigger or reduced PR workflow is allowed. Update/read back #172 and reread this
 whole amendment before separate CI development; all24/50/35min/final gates stay.
+
+## Native lint-only correction
+
+39013228865 stops before tests at nine manual_assert_eq lints. Bind only those
+existing candidate-path equality expressions to a named boolean and assert it
+with fixed text, preserving the exact condition and privacy. No assert_eq! path
+printing or lint waiver. Parent records #172/exact readback and rereads this
+amendment before separate correction; qualify the changed final source afresh.

@@ -7699,3 +7699,12 @@ connection exposes no workflow-dispatch mutation, allow the isolated diagnostic
 workflow to run on push ONLY to its single named diagnostic qualification branch,
 retaining dispatch support and excluding main/pull_request events. This is an
 execution transport adjustment, not permission bypass or a test-policy change.
+
+### Native lint identifies privacy-preserving equality spelling
+
+Qualification39013228865/job117339969918 stops before tests at native1.98
+Clippy: nine new path-equality assert!(left==right) sites trigger manual_assert_eq.
+Use a named boolean for each same-candidate comparison and assert that boolean
+with fixed text. Do not adopt assert_eq! on paths, which would print owned paths
+on failure. This changes no condition, clock, retry operation or native oracle.
+Actual24-test iterations0; preserve this failed receipt.

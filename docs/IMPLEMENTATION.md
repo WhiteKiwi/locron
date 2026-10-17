@@ -6676,3 +6676,11 @@ without the expired shell credential. The separate probe workflow may additional
 trigger on push only to diagnostic/windows-gated-heartbeat-qualification; its
 job accepts that exact branch/event or the existing explicit dispatch. No main
 or PR push selector is added. Keep the reduced workflow outside the PR source.
+
+### Spell candidate-identity checks without exposing paths
+
+Resolve native manual_assert_eq only in the nine new retry-control comparisons:
+bind the existing equality expression to same_candidate, then assert the boolean
+with a fixed message. No raw path Debug output, lint suppression or other change.
+Verify exact inverse/whole-source conservation and native strict lint before
+counting any Windows execution as qualified.
