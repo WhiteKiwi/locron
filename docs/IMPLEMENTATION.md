@@ -6468,7 +6468,7 @@ postchecks admission/expiry. Never reset the slot, extend a deadline, clear a
 failure or reopen admission. The original driver observes the tightened limit on
 each polling iteration. Keep the same path for standalone and combined controls;
 all non-cancellation case clocks and product code remain unchanged. Test monotonic
-shortening and refusal after expiry/closed admission in the native capture step.
+shortening and refusal after expiry/closed admission in the native cancellation step.
 Keep25ms progress observations,5s product grace,30s whole-fixture and35min job
 limits. This explicitly supersedes the former Windows post-spawn8s total premise;
 it is a reviewed change to test scope, not a performance fix or an unchanged clock.
