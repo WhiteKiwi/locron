@@ -69,7 +69,7 @@ predicates = "3.1"
 tempfile.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
-interprocess = { version = "=2.4.4", features = ["tokio"] }
+interprocess = { version = "=2.4.5", features = ["tokio"] }
 rusqlite = { workspace = true, features = ["serialize", "limits", "hooks"] }
 
 [lints]
