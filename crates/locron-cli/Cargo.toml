@@ -60,7 +60,7 @@ uuid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 fs_at = "=0.2.1"
-zip = { version = "=9.0.3", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "=9.1.3", default-features = false, features = ["deflate-flate2"] }
 
 [dev-dependencies]
 rusqlite.workspace = true
@@ -69,7 +69,7 @@ predicates = "3.1"
 tempfile.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
-interprocess = { version = "=2.4.6", features = ["tokio"] }
+interprocess = { version = "=2.4.7", features = ["tokio"] }
 rusqlite = { workspace = true, features = ["serialize", "limits", "hooks"] }
 
 [lints]
