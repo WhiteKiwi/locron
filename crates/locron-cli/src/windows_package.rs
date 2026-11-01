@@ -272,7 +272,7 @@ pub(super) fn read_archive(
             "Windows ZIP expands beyond its size limit"
         );
         let name = member
-            .name()
+            .name()?
             .strip_prefix(&root)
             .ok_or_else(|| anyhow::anyhow!("invalid ZIP root"))?
             .to_owned();
