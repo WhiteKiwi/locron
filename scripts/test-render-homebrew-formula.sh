@@ -34,7 +34,21 @@ grep -Fqx "      sha256 \"$a_sha\"" "$formula"
 grep -Fqx "      sha256 \"$b_sha\"" "$formula"
 grep -Fqx "      sha256 \"$c_sha\"" "$formula"
 grep -Fqx "      sha256 \"$d_sha\"" "$formula"
-grep -Fqx '    touch lib/".disable-self-update"' "$formula"
+assert_private_marker() {
+  candidate=$1
+  grep -Fqx '    (libexec/"locron").mkpath' "$candidate" &&
+    grep -Fqx '    touch libexec/"locron/.disable-self-update"' "$candidate" &&
+    ! grep -Eq '^[[:space:]]*(touch[[:space:]]+lib/|lib\.mkpath)' "$candidate"
+}
+assert_private_marker "$formula"
+
+# A formula that creates both markers still collides in the shared prefix.
+cp "$formula" "$broken_formula"
+printf '%s\n' '    touch lib/".disable-self-update"' >> "$broken_formula"
+if assert_private_marker "$broken_formula" >/dev/null 2>&1; then
+  echo "regression check accepted the legacy shared-prefix marker" >&2
+  exit 1
+fi
 
 if grep -Eq '@[A-Z0-9_]+@|[[:blank:]]$' "$formula"; then
   echo "rendered formula contains a template token or trailing whitespace" >&2

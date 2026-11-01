@@ -399,33 +399,44 @@ fn lifecycle_human_modes_render_labeled_reports_instead_of_json() {
 
 #[test]
 fn marker_refusal_directs_to_brew_services() {
+    assert_marker_refusal_directs_to_brew_services("lib");
+}
+
+#[test]
+fn marker_refusal_directs_to_brew_services_with_keg_private_marker() {
+    assert_marker_refusal_directs_to_brew_services("libexec/locron");
+}
+
+fn assert_marker_refusal_directs_to_brew_services(marker_directory: &str) {
     let _serial = serialized();
     let tmp = tempfile::tempdir().unwrap();
     let fake_dir = tmp.path().join("fake");
     fs::create_dir_all(&fake_dir).unwrap();
     let fake = fake_dir.join("locron");
     fs::copy(assert_cmd::cargo::cargo_bin("locron"), &fake).unwrap();
-    let marker_dir = tmp.path().join("lib");
+    let marker_dir = tmp.path().join(marker_directory);
     fs::create_dir_all(&marker_dir).unwrap();
     fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
     let (state, log) = seeded(
         tmp.path(),
         "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
     );
-    let output = Command::new(&fake)
-        .env("LOCRON_SERVICE_BACKEND", "fake")
-        .env("LOCRON_SERVICE_FAKE_STATE", &state)
-        .env("LOCRON_SERVICE_FAKE_LOG", &log)
-        .args(["service", "install", "--json"])
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(3));
-    let envelope = envelope(&output);
-    assert_eq!(envelope["ok"], false);
-    assert_eq!(envelope["error"]["code"], "service_managed_install");
-    let message = envelope["error"]["message"].as_str().unwrap();
-    assert!(message.contains("brew services start locron"));
-    assert_eq!(calls(&log), Vec::<String>::new());
+    for subcommand in ["install", "uninstall"] {
+        let output = Command::new(&fake)
+            .env("LOCRON_SERVICE_BACKEND", "fake")
+            .env("LOCRON_SERVICE_FAKE_STATE", &state)
+            .env("LOCRON_SERVICE_FAKE_LOG", &log)
+            .args(["service", subcommand, "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(3));
+        let envelope = envelope(&output);
+        assert_eq!(envelope["ok"], false);
+        assert_eq!(envelope["error"]["code"], "service_managed_install");
+        let message = envelope["error"]["message"].as_str().unwrap();
+        assert!(message.contains("brew services start locron"));
+        assert_eq!(calls(&log), Vec::<String>::new());
+    }
 }
 
 #[test]
@@ -686,13 +697,22 @@ fn dashboard_status_reports_a_missing_token_without_generating_one() {
 
 #[test]
 fn dashboard_enable_refuses_managed_binaries_before_generating_the_token() {
+    assert_dashboard_refuses_managed_binaries("lib");
+}
+
+#[test]
+fn dashboard_enable_refuses_managed_binaries_before_generating_the_token_with_keg_private_marker() {
+    assert_dashboard_refuses_managed_binaries("libexec/locron");
+}
+
+fn assert_dashboard_refuses_managed_binaries(marker_directory: &str) {
     let _serial = serialized();
     let tmp = tempfile::tempdir().unwrap();
     let fake_dir = tmp.path().join("fake");
     fs::create_dir_all(&fake_dir).unwrap();
     let fake = fake_dir.join("locron");
     fs::copy(assert_cmd::cargo::cargo_bin("locron"), &fake).unwrap();
-    let marker_dir = tmp.path().join("lib");
+    let marker_dir = tmp.path().join(marker_directory);
     fs::create_dir_all(&marker_dir).unwrap();
     fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
     let state_dir = tmp.path().join("state");
@@ -700,30 +720,43 @@ fn dashboard_enable_refuses_managed_binaries_before_generating_the_token() {
         tmp.path(),
         "{\"session\":true,\"loaded\":false,\"enabled\":false,\"registered\":false}",
     );
-    let output = Command::new(&fake)
-        .env("LOCRON_SERVICE_BACKEND", "fake")
-        .env("LOCRON_SERVICE_FAKE_STATE", &state)
-        .env("LOCRON_SERVICE_FAKE_LOG", &log)
-        .arg("--state-dir")
-        .arg(&state_dir)
-        .args(["dashboard", "enable", "--json"])
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(3));
-    let envelope = envelope(&output);
-    assert_eq!(envelope["error"]["code"], "service_managed_install");
-    assert!(
-        envelope["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("brew services"),
-        "guidance must point at the package manager"
-    );
-    assert!(
-        !state_dir.join("dashboard.token").exists(),
-        "refusal must happen before the token is generated"
-    );
-    assert_eq!(calls(&log), Vec::<String>::new());
+    for subcommand in ["enable", "disable"] {
+        if subcommand == "disable" {
+            fs::create_dir_all(&state_dir).unwrap();
+            fs::write(state_dir.join("dashboard.token"), "preserve-token").unwrap();
+        }
+        let output = Command::new(&fake)
+            .env("LOCRON_SERVICE_BACKEND", "fake")
+            .env("LOCRON_SERVICE_FAKE_STATE", &state)
+            .env("LOCRON_SERVICE_FAKE_LOG", &log)
+            .arg("--state-dir")
+            .arg(&state_dir)
+            .args(["dashboard", subcommand, "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(3));
+        let envelope = envelope(&output);
+        assert_eq!(envelope["error"]["code"], "service_managed_install");
+        assert!(
+            envelope["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("brew services"),
+            "guidance must point at the package manager"
+        );
+        if subcommand == "enable" {
+            assert!(
+                !state_dir.join("dashboard.token").exists(),
+                "refusal must happen before the token is generated"
+            );
+        } else {
+            assert_eq!(
+                fs::read_to_string(state_dir.join("dashboard.token")).unwrap(),
+                "preserve-token"
+            );
+        }
+        assert_eq!(calls(&log), Vec::<String>::new());
+    }
 }
 
 #[test]

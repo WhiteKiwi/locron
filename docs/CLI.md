@@ -229,8 +229,9 @@ wake notification.
 - It resolves the latest release through the GitHub releases API (`https://api.github.com/repos/WhiteKiwi/locron/releases/latest`, overridable with `LOCRON_UPDATE_API_BASE`), then downloads the target platform's tarball and the release's `SHA256SUMS.txt` from `https://github.com/WhiteKiwi/locron/releases/download/<tag>/` (overridable with `LOCRON_UPDATE_ASSET_BASE`).
 - The tarball is verified against its published SHA-256 before anything is touched; the binary is then replaced with one temp file and an atomic rename in the executable's directory. A failed, cancelled, or interrupted update leaves the existing binary installed and working.
 - When the running version is the latest (or newer), the command exits 0 with `updated: false` and downloads nothing.
-- Self-update first honors the Homebrew/package-manager marker (`lib/.disable-self-update` next to
-  the executable): it refuses with exit 3 and code `update_managed_install`, directing the user to
+- Self-update first honors the Homebrew/package-manager marker (`libexec/locron/.disable-self-update`
+  under the keg, or the legacy `lib/.disable-self-update`, resolved relative to the canonical
+  executable's `bin` directory): it refuses with exit 3 and code `update_managed_install`, directing the user to
   `brew upgrade locron`. Otherwise it proceeds only when the canonical executable has the valid
   versioned standalone-installer receipt written beside it by `install.sh`. A missing, malformed,
   or mismatched receipt refuses before network access with exit 3 and code
@@ -272,7 +273,7 @@ After a successful replace, self-update runs `locron service install` on the rep
 - The registration always records the canonicalized absolute path of the running binary, so repeating an install after an update or a binary move refreshes the registration onto the current binary. A loaded service is signaled with SIGTERM and restarted under the engine's ordinary graceful-shutdown rules; active work completes or retries per the normal policies.
 - When no per-user service manager session is available (SSH, containers, a machine without systemd), `service install` completes successfully with exit 0 and prints explicit guidance for registering and starting the daemon later. `service uninstall` still removes a stale registration.
 - When a manually started daemon holds the state-directory lock, `service install` registers and enables the service but defers the start, with guidance; the service starts when the manual daemon exits. This preserves the single-owner guarantee: a registered service never creates a second scheduler for one state directory.
-- Installations whose binary carries the package-manager marker (`lib/.disable-self-update` next to the executable) refuse `install` and `uninstall` with exit 3 and code `service_managed_install`, directing the user to the package manager's own service mechanism (for Homebrew, `brew services`).
+- Installations whose binary carries the package-manager marker (`libexec/locron/.disable-self-update` under the keg, or the legacy `lib/.disable-self-update`, located from the canonical executable) refuse `install` and `uninstall` with exit 3 and code `service_managed_install`, directing the user to the package manager's own service mechanism (for Homebrew, `brew services`).
 - `service uninstall` signals SIGTERM, waits for the daemon process to exit, removes the service from the manager, and deletes the registration file. The binary itself is never touched.
 
 Machine output for a successful `service install` carries `data`:

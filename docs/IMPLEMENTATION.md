@@ -6733,6 +6733,39 @@ Verify exact setup-expression conservation, all24 bodies/other clocks, bounded
 ownership and real error propagation, then full source-bound native gates.
 
 
+## Keg-private Homebrew marker — 2026-10-30
+
+Continue issue [#188](https://github.com/WhiteKiwi/locron/issues/188). New Homebrew
+formulae create only `libexec/locron/.disable-self-update` under the keg. The
+binary recognizes this path and the legacy `lib/.disable-self-update`, both
+relative to its canonical executable's parent. Do not move or remove a marker
+at runtime, infer ownership from the shared prefix, or change standalone receipt
+validation. Preserve existing managed-install error codes and refusal ordering
+before network access, service mutations or dashboard token creation.
+
+Implementation and verification order:
+
+1. Record findings and this plan in a documentation commit before source changes.
+   Verify: the documentation commit precedes the implementation commit.
+2. Share the two-path marker predicate between self-update and service admission.
+   Verify: separate new-only and legacy-only fixtures reject self-update, service
+   install/uninstall and dashboard enable/disable, preserving stable error codes
+   and empty service call logs. Keep unmarked-install behavior unchanged.
+3. Update the formula template to create the private directory and marker only.
+   Verify: the renderer test requires the new marker and rejects a legacy `lib/`
+   marker even if the new marker is also present. Preserve literal caveat text.
+4. Update CLI/operator guidance and run the required formatting, lint and workspace
+   tests on Rust 1.98.0, 1.94.0 and stable when those toolchains are available.
+   Verify: report each executed command and result separately; missing toolchains
+   or native Homebrew verification are blockers, not passing evidence.
+
+Release and host migration remain outside this implementation. Do not update the
+published tap for the existing 0.9.6 binary: it does not recognize the new marker.
+After a release containing the binary change, the release renderer can update the
+tap; actual Homebrew/mise coexistence, tap CI and host migration still need their
+issue acceptance evidence. Keep #188 open through those steps.
+
+
 ## Cargo dependency audit follow-up — 2026-11-01
 
 PR #187 updates the Cargo minor/patch dependency group. Audit run 40233855873

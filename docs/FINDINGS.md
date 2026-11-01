@@ -7785,3 +7785,24 @@ phases and after local guard destruction before return; native calls/drop are
 non-preemptible, so do not claim hard30s wall completion. This is an explicit
 setup scheduling tradeoff and a controlled preparation change, not proof of the
 historical request holder or a claim that original cold concurrency passed.
+
+
+## Homebrew marker collides with mise's linked marker — 2026-10-30
+
+Issue [#188](https://github.com/WhiteKiwi/locron/issues/188) records an installation
+collision: both locron and mise place `lib/.disable-self-update` in their kegs,
+which Homebrew links into one shared prefix. Overwriting that link for locron can
+then prevent a later mise installation from linking. The issue's progress comment
+reports isolated Homebrew reproduction and a temporary host workaround; those are
+maintainer-reported observations, not tests rerun in this cloud workspace.
+
+At main `ce3647a10323f4d782f8504f531500374ab8b6d6`, the formula template writes
+the shared `lib/` path and both self-update and service admission only check that
+legacy location. The reported local fix commits are not on a remote branch at
+this observation. This independent cloud branch preserves those local commits.
+
+Use keg-private `libexec/locron/.disable-self-update` for new formulae and retain
+legacy-marker recognition in the binary. Both checks remain relative to the
+canonical executable, so another formula's shared prefix marker cannot classify
+a standalone installation. The frozen installation/service ownership contract
+already requires these refusals; no SPEC behavior amendment is needed.

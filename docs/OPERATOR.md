@@ -80,7 +80,7 @@ manually supervised setup.
 - **Install script installs** update with `locron self-update`: the exact standalone receipt beside
   the binary authorizes replacement. The command verifies the archive and replaces the binary
   atomically. Older script installs must rerun the installer once to adopt the receipt.
-- **Homebrew** installs update with `brew upgrade locron`; the formula marks the install (`lib/.disable-self-update`) so `locron self-update` refuses and points to Homebrew. A running `brew services` service keeps the old code until `brew services restart locron`.
+- **Homebrew** installs update with `brew upgrade locron`; the formula marks the keg privately (`libexec/locron/.disable-self-update`; the legacy `lib/.disable-self-update` is also honored) so `locron self-update` refuses and points to Homebrew. A running `brew services` service keeps the old code until `brew services restart locron`.
 - **Cargo** installs update with `cargo install --locked locron` and uninstall with
   `cargo uninstall locron`. Self-update refuses before network access, but `service install` and
   `dashboard enable` remain available because Cargo does not own those registrations.

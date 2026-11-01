@@ -113,8 +113,6 @@ const ENV_API_BASE: &str = "LOCRON_UPDATE_API_BASE";
 const ENV_ASSET_BASE: &str = "LOCRON_UPDATE_ASSET_BASE";
 const API_BASE: &str = "https://api.github.com";
 const ASSET_BASE: &str = "https://github.com/WhiteKiwi/locron";
-/// Package-manager marker, relative to the canonicalized executable directory.
-const MANAGED_MARKER: &str = "../lib/.disable-self-update";
 const INSTALL_RECEIPT: &str = ".locron-install-receipt-v1";
 const INSTALL_RECEIPT_PAYLOAD: &[u8] = b"locron.install/v1\nstandalone\n";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
@@ -425,8 +423,7 @@ fn detect_target() -> Result<String> {
 fn require_standalone_install() -> Result<()> {
     let executable = canonical_executable()?;
     let directory = executable.parent().unwrap_or_else(|| Path::new("/"));
-    let marker = directory.join(MANAGED_MARKER);
-    if marker.exists() {
+    if crate::managed_install::has_marker(&executable) {
         return Err(SelfUpdateError::ManagedInstall.into());
     }
     let receipt = directory.join(INSTALL_RECEIPT);
