@@ -346,7 +346,7 @@ fn serialized() -> std::sync::MutexGuard<'static, ()> {
 
 /// A writable copy of the real binary at `dir/fake/locron`, so the build
 /// artifact is never replaced and the package-manager marker path
-/// (`dir/lib/.disable-self-update`) stays per-test.
+/// (`dir/libexec/locron/.disable-self-update` or the legacy `dir/lib` marker) stays per-test.
 fn fake_binary(dir: &Path) -> std::path::PathBuf {
     let fake_dir = dir.join("fake");
     fs::create_dir_all(&fake_dir).unwrap();
@@ -697,15 +697,45 @@ fn atomic_replace_keeps_a_running_process_on_the_old_binary() {
 
 #[test]
 fn marker_file_refusal_directs_to_brew_upgrade() {
+    assert_marker_file_refusal_directs_to_brew_upgrade("lib", false);
+}
+
+#[test]
+fn marker_file_refusal_directs_to_brew_upgrade_with_keg_private_marker() {
+    assert_marker_file_refusal_directs_to_brew_upgrade("libexec/locron", false);
+}
+
+#[cfg(unix)]
+#[test]
+fn keg_private_marker_refuses_self_update_through_a_prefix_symlink() {
+    assert_marker_file_refusal_directs_to_brew_upgrade("libexec/locron", true);
+}
+
+fn assert_marker_file_refusal_directs_to_brew_upgrade(marker_directory: &str, via_symlink: bool) {
     let _serial = serialized();
     let dir = tempfile::tempdir().unwrap();
     let fake = fake_binary(dir.path());
-    let marker_dir = dir.path().join("lib");
+    let marker_dir = dir.path().join(marker_directory);
     fs::create_dir_all(&marker_dir).unwrap();
     fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
 
+    #[cfg(unix)]
+    let executable = if via_symlink {
+        let linked = dir.path().join("prefix-bin/locron");
+        fs::create_dir_all(linked.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&fake, &linked).unwrap();
+        linked
+    } else {
+        fake
+    };
+    #[cfg(not(unix))]
+    let executable = {
+        assert!(!via_symlink, "the symlink fixture is Unix-only");
+        fake
+    };
+
     // The marker is checked before any network access.
-    let mut command = Command::new(&fake);
+    let mut command = Command::new(&executable);
     command
         .env("LOCRON_UPDATE_API_BASE", "http://127.0.0.1:1")
         .env("LOCRON_UPDATE_ASSET_BASE", "http://127.0.0.1:1");

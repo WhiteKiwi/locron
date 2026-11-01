@@ -521,18 +521,10 @@ fn status(ctx: &ServiceContext, port: &dyn ServicePort) -> Result<ServiceStatus,
 /// Refuse install and uninstall on package-manager-managed binaries: the
 /// package manager owns the service lifecycle there.
 fn refuse_managed_install(ctx: &ServiceContext) -> Result<(), ServiceError> {
-    if managed_marker_path(&ctx.executable).exists() {
+    if crate::managed_install::has_marker(&ctx.executable) {
         return Err(ServiceError::ManagedInstall);
     }
     Ok(())
-}
-
-/// The package-manager marker next to a canonicalized executable.
-fn managed_marker_path(executable: &Path) -> PathBuf {
-    executable
-        .parent()
-        .unwrap_or_else(|| Path::new("/"))
-        .join("../lib/.disable-self-update")
 }
 
 /// The canonicalized absolute path of the running binary.
@@ -2751,24 +2743,26 @@ mod tests {
 
     #[test]
     fn dashboard_flows_refuse_managed_binaries_before_touching_anything() {
-        let tmp = tempfile::tempdir().unwrap();
-        let bin = tmp.path().join("bin");
-        fs::create_dir_all(&bin).unwrap();
-        let marker_dir = tmp.path().join("lib");
-        fs::create_dir_all(&marker_dir).unwrap();
-        fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
-        let ctx = ctx_with_target(tmp.path(), &bin.join("locron"), Target::Dashboard);
-        let port = fake(true, false, false, false);
-        let error = dashboard_enable(&ctx, &port, false).unwrap_err();
-        assert!(matches!(error, ServiceError::ManagedInstall));
-        let paths = StatePaths::new(tmp.path().join("state"));
-        assert!(
-            !paths.root.join("dashboard.token").exists(),
-            "refusal must happen before the token is generated"
-        );
-        let error = dashboard_disable(&ctx, &port).unwrap_err();
-        assert!(matches!(error, ServiceError::ManagedInstall));
-        assert_eq!(calls(&port), Vec::<String>::new());
+        for marker_directory in ["libexec/locron", "lib"] {
+            let tmp = tempfile::tempdir().unwrap();
+            let bin = tmp.path().join("bin");
+            fs::create_dir_all(&bin).unwrap();
+            let marker_dir = tmp.path().join(marker_directory);
+            fs::create_dir_all(&marker_dir).unwrap();
+            fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
+            let ctx = ctx_with_target(tmp.path(), &bin.join("locron"), Target::Dashboard);
+            let port = fake(true, false, false, false);
+            let error = dashboard_enable(&ctx, &port, false).unwrap_err();
+            assert!(matches!(error, ServiceError::ManagedInstall));
+            let paths = StatePaths::new(tmp.path().join("state"));
+            assert!(
+                !paths.root.join("dashboard.token").exists(),
+                "refusal must happen before the token is generated"
+            );
+            let error = dashboard_disable(&ctx, &port).unwrap_err();
+            assert!(matches!(error, ServiceError::ManagedInstall));
+            assert_eq!(calls(&port), Vec::<String>::new());
+        }
     }
 
     #[test]
@@ -2974,18 +2968,22 @@ mod tests {
 
     #[test]
     fn managed_install_refuses_with_brew_guidance() {
-        let tmp = tempfile::tempdir().unwrap();
-        let bin = tmp.path().join("bin");
-        fs::create_dir_all(&bin).unwrap();
-        let marker_dir = tmp.path().join("lib");
-        fs::create_dir_all(&marker_dir).unwrap();
-        fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
-        let port = fake(true, false, false, false);
-        let ctx = ctx_with(tmp.path(), &bin.join("locron"));
-        let error = install(&ctx, &port).unwrap_err();
-        assert!(matches!(error, ServiceError::ManagedInstall));
-        assert!(error.to_string().contains("brew services"));
-        assert_eq!(calls(&port), Vec::<String>::new());
+        for marker_directory in ["libexec/locron", "lib"] {
+            let tmp = tempfile::tempdir().unwrap();
+            let bin = tmp.path().join("bin");
+            fs::create_dir_all(&bin).unwrap();
+            let marker_dir = tmp.path().join(marker_directory);
+            fs::create_dir_all(&marker_dir).unwrap();
+            fs::write(marker_dir.join(".disable-self-update"), "").unwrap();
+            let port = fake(true, false, false, false);
+            let ctx = ctx_with(tmp.path(), &bin.join("locron"));
+            let error = install(&ctx, &port).unwrap_err();
+            assert!(matches!(error, ServiceError::ManagedInstall));
+            assert!(error.to_string().contains("brew services"));
+            let error = uninstall(&ctx, &port).unwrap_err();
+            assert!(matches!(error, ServiceError::ManagedInstall));
+            assert_eq!(calls(&port), Vec::<String>::new());
+        }
     }
 
     #[test]
