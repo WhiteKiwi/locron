@@ -28,8 +28,8 @@ class Locron < Formula
     # Mark this install as package-manager-managed so that
     # `locron self-update` refuses to replace the binary and
     # directs users to `brew upgrade locron`.
-    lib.mkpath
-    touch lib/".disable-self-update"
+    (libexec/"locron").mkpath
+    touch libexec/"locron/.disable-self-update"
   end
 
   service do

@@ -2,6 +2,7 @@
 
 mod explicit_prune;
 mod maintenance;
+mod managed_install;
 mod mcp;
 mod self_update;
 mod service;
