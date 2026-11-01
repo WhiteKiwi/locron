@@ -6765,6 +6765,23 @@ After a release containing the binary change, the release renderer can update th
 tap; actual Homebrew/mise coexistence, tap CI and host migration still need their
 issue acceptance evidence. Keep #188 open through those steps.
 
+
+## Cargo dependency audit follow-up — 2026-11-01
+
+PR #187 updates the Cargo minor/patch dependency group. Audit run 40233855873
+reports RUSTSEC-2026-0382 in rustls-webpki 0.103.15: certificate verification
+may accept distrusted intermediates. The advisory identifies 0.103.16 as the
+patched stable release. The frozen SPEC requires TLS certificate verification.
+Update the vulnerable transitive dependency without disabling audit rules or
+changing product behavior, direct dependency scope, or Rust 1.94 support.
+
+1. Confirm the advisory and selected dependency graph.
+   Verify: the chosen stable patch addresses RUSTSEC-2026-0382.
+2. Update the lockfile in a development sub-session with minimal unrelated churn.
+   Verify: Cargo resolves the patched version under the existing manifests.
+3. Run dependency audit and relevant MSRV checks, then publish to the same PR.
+   Verify: audit and existing CI gates succeed at the updated head.
+
 ## ZIP 9 compatibility follow-up — 2026-11-01
 
 PR #186 upgrades the Windows archive dependency to ZIP 9.0.3. The existing
