@@ -6733,6 +6733,21 @@ Verify exact setup-expression conservation, all24 bodies/other clocks, bounded
 ownership and real error propagation, then full source-bound native gates.
 
 
+## ZIP 9 compatibility follow-up — 2026-11-01
+
+PR #186 upgrades the Windows archive dependency to ZIP 9.0.3. The existing
+SPEC archive validation and rejection contracts remain frozen. Hosted CI run
+39166269321 reports E0599 in windows_package.rs because member.name() now
+returns Result<Cow<str>, ZipError>. Preserve decoding errors and the existing
+root/member allowlist checks; do not silently substitute or normalize names.
+
+1. Inspect ZIP 9's exact API and all call sites before adapting the reader.
+   Verify: every affected name access propagates errors and has a valid lifetime.
+2. Apply the minimal compatibility change in a development sub-session.
+   Verify: malformed names retain rejection and existing archive checks remain.
+3. Run formatting and relevant build/tests, then publish to the existing PR.
+   Verify: native Windows package/foundation CI succeeds at the updated head.
+
 ## Keg-private Homebrew marker — 2026-10-30
 
 Continue issue [#188](https://github.com/WhiteKiwi/locron/issues/188). New Homebrew
